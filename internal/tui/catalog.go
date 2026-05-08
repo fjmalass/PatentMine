@@ -18,6 +18,7 @@ var commandHelpEntries = []HelpEntry{
 	{Usage: keyCommand + commandImport + " <google-patents-url>", Description: TextHelpImportPatent},
 	{Usage: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
 	{Usage: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
+	{Usage: keyCommand + commandRefreshDetails, Description: TextHelpRefreshDetails},
 	{Usage: keyCommand + commandOpen + " US11611785B2", Description: TextHelpOpenPatent},
 	{Usage: keyCommand + domain.RelationCites, Description: TextHelpShowCites},
 	{Usage: keyCommand + commandCitedBy, Description: TextHelpShowCitedBy},
@@ -68,6 +69,114 @@ func RenderHelp(text TextCatalog) string {
 		b.WriteString(example + "\n")
 	}
 	return b.String()
+}
+
+func RenderContextHelp(text TextCatalog, mode viewMode) string {
+	var b strings.Builder
+	b.WriteString(text.T(TextHelpPopupTitle) + " · " + screenTitleForMode(mode) + "\n\n")
+	b.WriteString(text.T(TextHelpScreen) + "\n\n")
+	writeHelpEntries(&b, contextHelpEntries(mode), text)
+	b.WriteString("\n" + text.T(TextHelpGlobal) + "\n\n")
+	writeHelpEntries(&b, globalHelpEntries(), text)
+	return b.String()
+}
+
+func contextHelpEntries(mode viewMode) []HelpEntry {
+	switch mode {
+	case viewList:
+		return []HelpEntry{
+			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Usage: keySearch + "term", Description: TextHelpFilterPatents},
+			{Usage: keyCites, Description: TextHelpJumpCitations},
+			{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
+			{Usage: keyClassification, Description: TextHelpJumpClassification},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	case viewDetail:
+		return []HelpEntry{
+			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Usage: keyCites, Description: TextHelpJumpCitations},
+			{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
+			{Usage: keyClassification, Description: TextHelpJumpClassification},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	case viewCites, viewCitedBy:
+		return []HelpEntry{
+			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: "10" + keyDown + "/" + "10" + keyUp, Description: TextHelpMoveList},
+			{Usage: "10" + keyGoto, Description: TextHelpMoveList},
+			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Usage: keyYes, Description: TextHelpRefAdd},
+			{Usage: keyIgnore, Description: TextHelpReviewIgnored},
+			{Usage: keyUnreview, Description: TextHelpReviewUnderReview},
+			{Usage: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	case viewReview:
+		return []HelpEntry{
+			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: "10" + keyDown + "/" + "10" + keyUp, Description: TextHelpMoveList},
+			{Usage: "10" + keyGoto, Description: TextHelpMoveList},
+			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Usage: keyYes, Description: TextHelpRefAdd},
+			{Usage: keyIgnore, Description: TextHelpReviewIgnored},
+			{Usage: keyUnreview, Description: TextHelpReviewUnderReview},
+			{Usage: keyWeb, Description: TextHelpOpenBrowser},
+			{Usage: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	case viewClassifications:
+		return []HelpEntry{
+			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: "10" + keyDown + "/" + "10" + keyUp, Description: TextHelpMoveList},
+			{Usage: "10" + keyGoto, Description: TextHelpMoveList},
+			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Usage: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	case viewPreview:
+		return []HelpEntry{
+			{Usage: keyYes, Description: TextHelpRefAdd},
+			{Usage: keyIgnore, Description: TextHelpReviewIgnored},
+			{Usage: keyUnreview, Description: TextHelpReviewUnderReview},
+			{Usage: keyNo + "/" + keyEsc, Description: TextHelpBackOrQuit},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+		}
+	case viewInventors:
+		return []HelpEntry{
+			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	case viewText, viewRefs, viewNotes, viewAI:
+		return []HelpEntry{
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	default:
+		return []HelpEntry{
+			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
+			{Usage: keyQuit, Description: TextHelpBackOrQuit},
+		}
+	}
+}
+
+func globalHelpEntries() []HelpEntry {
+	return []HelpEntry{
+		{Usage: keyCommand + commandHelp, Description: TextHelpShowHelp},
+		{Usage: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
+		{Usage: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
+		{Usage: keyCommand + commandRefreshDetails, Description: TextHelpRefreshDetails},
+		{Usage: keyCommand + commandBrowser, Description: TextHelpOpenBrowser},
+	}
 }
 
 func writeHelpEntries(b *strings.Builder, entries []HelpEntry, text TextCatalog) {

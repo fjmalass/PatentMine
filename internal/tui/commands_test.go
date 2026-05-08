@@ -13,6 +13,7 @@ func TestParseCommand(t *testing.T) {
 		{":open US11611785B2", "open", []string{"US11611785B2"}},
 		{":import https://patents.google.com/patent/US11611785B2/en?oq=US11611785B2+", "import", []string{"https://patents.google.com/patent/US11611785B2/en?oq=US11611785B2+"}},
 		{":refresh citedby", "refresh", []string{"citedby"}},
+		{":refresh-details", "refresh-details", nil},
 		{":ref export", "ref", []string{"export"}},
 		{":help", "help", nil},
 	}

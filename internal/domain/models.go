@@ -11,6 +11,7 @@ const (
 	CitationStatusUnderReview = "under_review"
 	CitationStatusStored      = "stored"
 	CitationStatusIgnored     = "ignored"
+	CitationStatusCached      = "cached"
 )
 
 type Patent struct {

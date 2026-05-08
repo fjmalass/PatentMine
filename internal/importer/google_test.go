@@ -35,6 +35,36 @@ func TestEstimatedExpirationDate(t *testing.T) {
 	}
 }
 
+func TestAdjustedExpirationDateFromGoogleEvents(t *testing.T) {
+	html := `
+		<section>
+			<h2>Application US15/189,931 events</h2>
+			<ul>
+				<li itemprop="events">2019-02-26 Application granted</li>
+				<li itemprop="events">Status Active legal-status Critical Current</li>
+				<li itemprop="events">2036-11-15 Adjusted expiration legal-status Critical</li>
+			</ul>
+		</section>`
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := adjustedExpirationDate(doc); got != "2036-11-15" {
+		t.Fatalf("expected adjusted expiration date, got %q", got)
+	}
+}
+
+func TestAdjustedExpirationDateIgnoresLegalStatusExpiresWithoutAdjustedEvent(t *testing.T) {
+	html := `<section>Legal status Active, expires 2036-11-15</section>`
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := adjustedExpirationDate(doc); got != "" {
+		t.Fatalf("expected no adjusted expiration date, got %q", got)
+	}
+}
+
 func TestExtractClassificationsReadsGooglePluralItemprop(t *testing.T) {
 	html := `
 		<div>
@@ -100,6 +130,33 @@ func TestExtractCitationEdges(t *testing.T) {
 	}
 	if !foundCitedBy {
 		t.Errorf("did not find expected citation US2222222B2 (cited_by)")
+	}
+}
+
+func TestExtractCitationEdgesIgnoresFamilyAndUnstructuredPatentLinks(t *testing.T) {
+	html := `
+		<div>
+			<div itemprop="forwardReferences">
+				<a href="/patent/US2222222B2/en">US2222222B2</a>
+			</div>
+			<div itemprop="forwardReferencesFamily">
+				<a href="/patent/US3333333B2/en">US3333333B2</a>
+			</div>
+			<section>
+				<h3>Cited By</h3>
+				<a href="/patent/US4444444B2/en">US4444444B2</a>
+			</section>
+		</div>`
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges := extractCitationEdges(doc, "US11611785B2")
+	if len(edges) != 1 {
+		t.Fatalf("expected only one structured cited-by edge, got %+v", edges)
+	}
+	if edges[0].TargetPatent != "US2222222B2" || edges[0].RelationType != domain.RelationCitedBy {
+		t.Fatalf("unexpected edge %+v", edges[0])
 	}
 }
 

@@ -72,6 +72,51 @@ func TestRepositoryIgnoresDuplicateClassificationsInImportBundle(t *testing.T) {
 	}
 }
 
+func TestRepositoryRefreshPrunesStaleCitationsAndPreservesStatus(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepo(t)
+	initial := domain.PatentBundle{
+		Patent: domain.Patent{Number: "US-REFRESH", Title: "Refresh citations"},
+		Citations: []domain.CitationEdge{
+			{TargetPatent: "US1", RelationType: domain.RelationCites},
+			{TargetPatent: "US2", RelationType: domain.RelationCitedBy},
+			{TargetPatent: "US3", RelationType: domain.RelationCitedBy},
+		},
+	}
+	if err := repo.UpsertPatentBundle(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	citedBy, err := repo.ListCitations(ctx, "US-REFRESH", domain.RelationCitedBy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(citedBy) != 2 {
+		t.Fatalf("expected initial cited-by count 2, got %d", len(citedBy))
+	}
+	if err := repo.UpdateCitationStatus(ctx, citedBy[0], domain.CitationStatusIgnored); err != nil {
+		t.Fatal(err)
+	}
+
+	refreshed := initial
+	refreshed.Citations = []domain.CitationEdge{
+		{TargetPatent: "US1", RelationType: domain.RelationCites},
+		{TargetPatent: citedBy[0].TargetPatent, RelationType: domain.RelationCitedBy},
+	}
+	if err := repo.UpsertPatentBundle(ctx, refreshed); err != nil {
+		t.Fatal(err)
+	}
+	citedBy, err = repo.ListCitations(ctx, "US-REFRESH", domain.RelationCitedBy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(citedBy) != 1 {
+		t.Fatalf("expected stale cited-by row to be pruned, got %+v", citedBy)
+	}
+	if citedBy[0].Status != domain.CitationStatusIgnored {
+		t.Fatalf("expected status to be preserved, got %q", citedBy[0].Status)
+	}
+}
+
 func TestRepositoryOperations(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestRepo(t)

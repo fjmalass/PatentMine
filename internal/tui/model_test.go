@@ -70,6 +70,36 @@ func TestPreviewOverlayUsesBorderAndSmallerWidth(t *testing.T) {
 	}
 }
 
+func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
+	model := Model{mode: viewCites}
+	got := model.renderScreenHeader()
+	if !strings.Contains(got, "Citations") {
+		t.Fatalf("expected citations title, got %q", got)
+	}
+}
+
+func TestHelpKeyOpensContextPopup(t *testing.T) {
+	model := Model{
+		mode:    viewCites,
+		text:    EnglishText(),
+		repo:    citationRepo{edges: sampleCitationEdges(2)},
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   100,
+		height:  20,
+	}
+	updated, _ := model.Update(teaKey(keyHelp))
+	got := updated.(Model)
+	if got.mode != viewHelpPopup {
+		t.Fatalf("expected mode %q, got %q", viewHelpPopup, got.mode)
+	}
+	if !strings.Contains(got.View(), "Help · Citations") {
+		t.Fatalf("expected contextual help title, got %q", got.View())
+	}
+	if !strings.Contains(got.View(), "This Screen") {
+		t.Fatalf("expected contextual help popup, got %q", got.View())
+	}
+}
+
 func TestNavigationStackGoesBackToPreviousView(t *testing.T) {
 	model := Model{mode: viewList, selected: 3}
 	model = model.navigateTo(viewDetail)
@@ -340,6 +370,29 @@ func TestViewCitationsShowsIndexedRows(t *testing.T) {
 	}
 }
 
+func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
+	model := Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    storedCitationRepo{citationRepo: citationRepo{edges: sampleCitationEdges(1)}},
+		mode:    viewCites,
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   100,
+		height:  20,
+	}
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(Model)
+	if got.mode != viewPreview {
+		t.Fatalf("expected mode %q, got %q", viewPreview, got.mode)
+	}
+	if got.pendingBundle.Patent.Number != "US1000001B2" {
+		t.Fatalf("expected pending preview patent, got %+v", got.pendingBundle.Patent)
+	}
+	if view := got.View(); !strings.Contains(view, "Reference preview") || !strings.Contains(view, "US1000001B2") {
+		t.Fatalf("expected preview overlay content, got %q", view)
+	}
+}
+
 func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
 	model := Model{
 		ctx:          t.Context(),
@@ -356,6 +409,28 @@ func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
 	}
 	if !strings.Contains(got, ">") || !strings.Contains(got, "  1 US1000001B2") {
 		t.Fatalf("expected selected indexed review row, got %q", got)
+	}
+}
+
+func TestVisibleCitationEdgesReturnsCurrentPage(t *testing.T) {
+	model := Model{
+		ctx:           t.Context(),
+		text:          EnglishText(),
+		repo:          citationRepo{edges: sampleCitationEdges(12)},
+		mode:          viewCites,
+		current:       domain.Patent{Number: "US10218760B2"},
+		citesSelected: 7,
+		height:        12,
+	}
+	edges, err := model.visibleCitationEdges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edges) != 5 {
+		t.Fatalf("expected 5 visible edges, got %d", len(edges))
+	}
+	if edges[0].TargetPatent != "US1000006B2" {
+		t.Fatalf("expected current page to start at row 6, got %+v", edges[0])
 	}
 }
 
@@ -445,6 +520,23 @@ func (r citationRepo) ListCitations(context.Context, string, string) ([]domain.C
 
 func (r citationRepo) ListCitationsByStatus(context.Context, string) ([]domain.CitationEdge, error) {
 	return r.edges, nil
+}
+
+type storedCitationRepo struct {
+	citationRepo
+}
+
+func (r storedCitationRepo) GetPatent(_ context.Context, number string) (domain.Patent, error) {
+	return domain.Patent{
+		Number:              number,
+		Title:               "Stored citation patent",
+		Inventors:           []string{"Inventor One"},
+		PublicationDate:     "2019-01-01",
+		GrantDate:           "2020-01-01",
+		ExpirationDate:      "2040-01-01",
+		ExpirationEstimated: true,
+		SourceURL:           "https://patents.google.com/patent/" + number + "/en",
+	}, nil
 }
 
 func sampleClassifications(count int) []domain.Classification {

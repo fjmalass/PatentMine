@@ -3,9 +3,12 @@ package tui
 type TextKey string
 
 const (
-	TextHelpCommands  TextKey = "help.commands"
-	TextHelpShortcuts TextKey = "help.shortcuts"
-	TextHelpExamples  TextKey = "help.examples"
+	TextHelpCommands   TextKey = "help.commands"
+	TextHelpShortcuts  TextKey = "help.shortcuts"
+	TextHelpExamples   TextKey = "help.examples"
+	TextHelpScreen     TextKey = "help.screen"
+	TextHelpGlobal     TextKey = "help.global"
+	TextHelpPopupTitle TextKey = "help.popup.title"
 
 	TextDetailAssignee          TextKey = "detail.assignee"
 	TextDetailInventor          TextKey = "detail.inventor"
@@ -45,6 +48,7 @@ const (
 	TextHelpImportPatent         TextKey = "help.command.import_patent"
 	TextHelpRefreshCitedBy       TextKey = "help.command.refresh_cited_by"
 	TextHelpRefreshCitations     TextKey = "help.command.refresh_citations"
+	TextHelpRefreshDetails       TextKey = "help.command.refresh_details"
 	TextHelpOpenPatent           TextKey = "help.command.open_patent"
 	TextHelpShowCites            TextKey = "help.command.show_cites"
 	TextHelpShowCitedBy          TextKey = "help.command.show_cited_by"
@@ -101,9 +105,12 @@ type TextCatalog map[TextKey]string
 
 func EnglishText() TextCatalog {
 	return TextCatalog{
-		TextHelpCommands:  "Commands",
-		TextHelpShortcuts: "Shortcuts",
-		TextHelpExamples:  "Examples",
+		TextHelpCommands:   "Commands",
+		TextHelpShortcuts:  "Shortcuts",
+		TextHelpExamples:   "Examples",
+		TextHelpScreen:     "This Screen",
+		TextHelpGlobal:     "Global",
+		TextHelpPopupTitle: "Help",
 
 		TextDetailAssignee:          "Assignee",
 		TextDetailInventor:          "Inventor",
@@ -125,7 +132,7 @@ func EnglishText() TextCatalog {
 		TextValueClassificationHint: "%s opens detail - %s/%s page",
 		TextNavDefault:              "keys: %s/%s move, %s open/filter, %s jump, %s command, %s search, %s help, %s back, %s quit",
 		TextNavJump:                 "jump: press a hint key to move focus, esc cancels",
-		TextDetailOpenHint:          "Enter filters patents by the selected metadata value",
+		TextDetailOpenHint:          "Enter filters patents by the selected detail value",
 		TextListEmpty:               "No patents found.",
 		TextListFilter:              "filter",
 		TextMessageFilteredBy:       "filtered by %s: %s",
@@ -143,6 +150,7 @@ func EnglishText() TextCatalog {
 		TextHelpImportPatent:         "Import a specific Google Patents URL.",
 		TextHelpRefreshCitedBy:       "Re-fetch the current patent page and refresh cited-by records.",
 		TextHelpRefreshCitations:     "Re-fetch the current patent page and refresh cited references.",
+		TextHelpRefreshDetails:       "Refresh details for visible citation rows so title, inventors, and expiration are shown.",
 		TextHelpOpenPatent:           "Open a patent already stored in the database.",
 		TextHelpShowCites:            "Show patents cited by the current patent.",
 		TextHelpShowCitedBy:          "Show patents citing the current patent.",

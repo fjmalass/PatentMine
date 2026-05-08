@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -35,6 +36,7 @@ const (
 	viewRefs                 viewMode = "references"
 	viewAI                   viewMode = "ai"
 	viewHelp                 viewMode = "help"
+	viewHelpPopup            viewMode = "help-popup"
 	viewPreview              viewMode = "preview"
 	viewReview               viewMode = "review"
 	viewConfirmDelete        viewMode = "confirm-delete"
@@ -46,6 +48,10 @@ type Model struct {
 	ctx                    context.Context
 	repo                   storage.Repository
 	input                  textinput.Model
+	spinner                spinner.Model
+	loading                bool
+	loadingMsg             string
+	cancel                 context.CancelFunc
 	mode                   viewMode
 	patents                []domain.Patent
 	selected               int
@@ -95,11 +101,25 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 	input.Placeholder = ":add US11611785B2, :open US11611785B2, /machine learning"
 	input.Prompt = ""
 	input.CharLimit = 512
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
 	patents, _ := repo.ListPatents(ctx, "")
 	if logger == nil {
 		logger = slog.Default()
 	}
-	model := Model{ctx: ctx, repo: repo, input: input, mode: viewList, patents: patents, logger: logger, text: EnglishText()}
+	model := Model{
+		ctx:     ctx,
+		repo:    repo,
+		input:   input,
+		spinner: s,
+		mode:    viewList,
+		patents: patents,
+		logger:  logger,
+		text:    EnglishText(),
+	}
 	if len(patents) > 0 {
 		model.current = patents[0]
 	}
@@ -108,6 +128,20 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 
 type classificationEnrichedMsg struct {
 	Number string
+}
+
+type refreshResultMsg struct {
+	err            error
+	message        string
+	patent         domain.Patent
+	mode           viewMode
+	citesSelected  int
+	citedBySelected int
+}
+
+type refreshDetailsResultMsg struct {
+	err     error
+	message string
 }
 
 func (m Model) enrichClassificationDescriptionsCommand(number string) tea.Cmd {
@@ -159,6 +193,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case refreshResultMsg:
+		m.loading = false
+		m.cancel = nil
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.current = msg.patent
+		m.mode = msg.mode
+		m.citesSelected = msg.citesSelected
+		m.citedBySelected = msg.citedBySelected
+		m.message = msg.message
+		return m, nil
+	case refreshDetailsResultMsg:
+		m.loading = false
+		m.cancel = nil
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.message = msg.message
+		return m, nil
 	case browserOpenedMsg:
 		m.message = fmt.Sprintf(m.text.T(TextMessageBrowserOpened), msg.URL)
 		m.err = ""
@@ -173,6 +233,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.loading {
+			if msg.String() == keyEsc || msg.String() == keyQuit {
+				if m.cancel != nil {
+					m.cancel()
+					m.loading = false
+					m.cancel = nil
+					m.message = "operation cancelled"
+					return m, nil
+				}
+			}
+			if msg.String() == keyCtrlC {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.jumpMode {
 			if msg.String() == keyEsc {
 				m.jumpMode = false
@@ -220,6 +295,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.countBuffer = ""
 			if m.mode == viewPreview {
 				return m.storePendingPatent()
+			}
+			if m.mode == viewHelpPopup {
+				return m.goBack()
 			}
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
@@ -347,7 +425,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyWeb:
 			return m.openBrowser(nil)
 		case keyHelp:
-			m = m.navigateTo(viewHelp)
+			if m.mode == viewHelpPopup {
+				return m.goBack()
+			}
+			m = m.navigateTo(viewHelpPopup)
 		case keyYes:
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
@@ -494,6 +575,8 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.importGooglePatent(command.Args[0], importActionImported)
 	case commandRefresh:
 		return m.refreshCommand(command.Args)
+	case commandRefreshDetails:
+		return m.refreshVisibleCitationDetails()
 	case domain.RelationCites:
 		m = m.navigateTo(viewCites)
 	case commandCitedBy:
@@ -533,41 +616,47 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
-	pushedHistory := false
 	if verb != importActionRefreshed {
 		m.backStack = append(m.backStack, m.snapshot())
-		pushedHistory = true
 	}
-	bundle, err := importer.ImportGooglePatents(rawURL)
-	if err != nil {
-		if pushedHistory {
-			m.backStack = m.backStack[:len(m.backStack)-1]
-		}
-		m.err = "import failed without changing existing records: " + err.Error()
-		m.logger.Error("google patent import failed", "url", rawURL, "error", err)
-		return m, nil
-	}
-	if err := m.repo.UpsertPatentBundle(m.ctx, bundle); err != nil {
-		if pushedHistory {
-			m.backStack = m.backStack[:len(m.backStack)-1]
-		}
-		m.err = "import storage failed without deleting fixture data: " + err.Error()
-		m.logger.Error("google patent import storage failed", "url", rawURL, "patent", bundle.Patent.Number, "error", err)
-		return m, nil
-	}
-	p, err := m.repo.GetPatent(m.ctx, bundle.Patent.Number)
-	if err != nil {
-		if pushedHistory {
-			m.backStack = m.backStack[:len(m.backStack)-1]
-		}
-		m.err = err.Error()
-		return m, nil
-	}
-	m.current = p
-	m.mode = viewDetail
-	m.message = fmt.Sprintf("%s %s from %s", verb, bundle.Patent.Number, rawURL)
-	m.logger.Info("google patent imported", "url", rawURL, "patent", bundle.Patent.Number)
-	return m, nil
+
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.loading = true
+	m.loadingMsg = fmt.Sprintf("%s%s from %s...", strings.ToUpper(verb[:1]), verb[1:], rawURL)
+	m.cancel = cancel
+
+	repo := m.repo
+	logger := m.logger
+	currentStatus := m.current.Status
+
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			bundle, err := importer.ImportGooglePatents(rawURL)
+			if err != nil {
+				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
+			}
+			if verb == importActionRefreshed {
+				bundle.Patent.Status = currentStatus
+			} else {
+				bundle.Patent.Status = domain.CitationStatusStored
+			}
+			if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
+			}
+			p, err := repo.GetPatent(ctx, bundle.Patent.Number)
+			if err != nil {
+				return refreshResultMsg{err: err}
+			}
+
+			logger.Info("google patent imported", "url", rawURL, "patent", bundle.Patent.Number)
+			return refreshResultMsg{
+				patent:  p,
+				mode:    viewDetail,
+				message: fmt.Sprintf("%s %s from %s", verb, bundle.Patent.Number, rawURL),
+			}
+		},
+	)
 }
 
 func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
@@ -587,6 +676,7 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = "open a patent before refreshing citations"
 		return m, nil
 	}
+
 	rawURL := m.current.SourceURL
 	if rawURL == "" {
 		var err error
@@ -596,36 +686,169 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	beforeCites, _ := m.repo.ListCitations(m.ctx, m.current.Number, domain.RelationCites)
-	beforeCitedBy, _ := m.repo.ListCitations(m.ctx, m.current.Number, domain.RelationCitedBy)
-	model, cmd := m.importGooglePatent(rawURL, importActionRefreshed)
-	updated := model.(Model)
-	if updated.err != "" {
-		return updated, cmd
+
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.loading = true
+	m.loadingMsg = fmt.Sprintf("Refreshing %s...", m.current.Number)
+	m.cancel = cancel
+
+	// Capture state for the command
+	repo := m.repo
+	currentNumber := m.current.Number
+	text := m.text
+	currentMode := m.mode
+	citedBySelected := m.citedBySelected
+	citesSelected := m.citesSelected
+	logger := m.logger
+	currentStatus := m.current.Status
+
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			beforeCites, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCites)
+			beforeCitedBy, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCitedBy)
+
+			bundle, err := importer.ImportGooglePatents(rawURL)
+			if err != nil {
+				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
+			}
+
+			bundle.Patent.Status = currentStatus
+			if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
+			}
+
+			p, err := repo.GetPatent(ctx, currentNumber)
+			if err != nil {
+				return refreshResultMsg{err: err}
+			}
+
+			afterCites, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCites)
+			afterCitedBy, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCitedBy)
+
+			msg := refreshResultMsg{
+				patent: p,
+				mode:   currentMode,
+			}
+
+			switch target {
+			case refreshTargetCitedBy, domain.RelationCitedBy:
+				msg.mode = viewCitedBy
+				msg.citedBySelected = 0
+				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitedBy), len(afterCitedBy), len(beforeCitedBy))
+			case refreshTargetCitations, domain.RelationCites:
+				msg.mode = viewCites
+				msg.citesSelected = 0
+				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitations), len(afterCites), len(beforeCites))
+			default:
+				msg.citedBySelected = clamp(citedBySelected, 0, max(0, len(afterCitedBy)-1))
+				msg.citesSelected = clamp(citesSelected, 0, max(0, len(afterCites)-1))
+				msg.message = fmt.Sprintf(text.T(TextMessageRefreshAll), len(afterCites), len(beforeCites), len(afterCitedBy), len(beforeCitedBy))
+			}
+
+			logger.Info("citations refreshed", "url", rawURL, "patent", currentNumber, domain.RelationCites, len(afterCites), domain.RelationCitedBy, len(afterCitedBy))
+			return msg
+		},
+	)
+}
+
+func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
+	edges, err := m.visibleCitationEdges()
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
 	}
-	afterCites, _ := updated.repo.ListCitations(updated.ctx, updated.current.Number, domain.RelationCites)
-	afterCitedBy, _ := updated.repo.ListCitations(updated.ctx, updated.current.Number, domain.RelationCitedBy)
+	if len(edges) == 0 {
+		m.err = "open citations, cited-by, or a review queue before refreshing details"
+		return m, nil
+	}
 
-	// Keep current mode by default
-	updated.mode = m.mode
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.loading = true
+	m.loadingMsg = fmt.Sprintf("Refreshing details for %d citations...", len(edges))
+	m.cancel = cancel
 
-	switch target {
-	case refreshTargetCitedBy, domain.RelationCitedBy:
-		updated.mode = viewCitedBy
-		updated.citedBySelected = 0
-		updated.message = fmt.Sprintf(updated.text.T(TextMessageRefreshCitedBy), len(afterCitedBy), len(beforeCitedBy))
-	case refreshTargetCitations, domain.RelationCites:
-		updated.mode = viewCites
-		updated.citesSelected = 0
-		updated.message = fmt.Sprintf(updated.text.T(TextMessageRefreshCitations), len(afterCites), len(beforeCites))
+	repo := m.repo
+	logger := m.logger
+
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			updatedCount := 0
+			skippedCount := 0
+			for _, edge := range edges {
+				select {
+				case <-ctx.Done():
+					return refreshDetailsResultMsg{err: ctx.Err()}
+				default:
+				}
+
+				if edge.TargetTitle != "" && len(edge.TargetInventors) > 0 && edge.TargetExpirationDate != "" {
+					skippedCount++
+					continue
+				}
+
+				// Check if patent already exists
+				_, err := repo.GetPatent(ctx, edge.TargetPatent)
+				exists := err == nil
+
+				rawURL, err := importer.GooglePatentsURL(edge.TargetPatent)
+				if err != nil {
+					logger.Error("citation details url failed", "patent", edge.TargetPatent, "error", err)
+					skippedCount++
+					continue
+				}
+				bundle, err := importer.ImportGooglePatents(rawURL)
+				if err != nil {
+					logger.Error("citation details import failed", "patent", edge.TargetPatent, "error", err)
+					skippedCount++
+					continue
+				}
+
+				bundle.Patent.Status = domain.CitationStatusCached
+				if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+					logger.Error("citation details storage failed", "patent", edge.TargetPatent, "error", err)
+					return refreshDetailsResultMsg{err: err}
+				}
+
+				status := edge.Status
+				if !exists {
+					status = domain.CitationStatusIgnored
+				}
+				if err := repo.UpdateCitationStatus(ctx, edge, status); err != nil {
+					return refreshDetailsResultMsg{err: err}
+				}
+				updatedCount++
+			}
+			return refreshDetailsResultMsg{
+				message: fmt.Sprintf("citation details refreshed: %d updated, %d skipped", updatedCount, skippedCount),
+			}
+		},
+	)
+}
+
+func (m Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
+	var edges []domain.CitationEdge
+	var selected int
+	var err error
+	switch {
+	case m.isCitationView():
+		edges, err = m.currentCitationEdges()
+		selected = m.citationSelection()
+	case m.mode == viewReview:
+		edges, err = m.currentReviewCitationEdges()
+		selected = m.reviewSelected
 	default:
-		// Re-initialize selection indices to safe ranges for the current mode
-		updated.citedBySelected = clamp(m.citedBySelected, 0, max(0, len(afterCitedBy)-1))
-		updated.citesSelected = clamp(m.citesSelected, 0, max(0, len(afterCites)-1))
-		updated.message = fmt.Sprintf(updated.text.T(TextMessageRefreshAll), len(afterCites), len(beforeCites), len(afterCitedBy), len(beforeCitedBy))
+		return nil, nil
 	}
-	updated.logger.Info("citations refreshed", "url", rawURL, "patent", updated.current.Number, domain.RelationCites, len(afterCites), domain.RelationCitedBy, len(afterCitedBy))
-	return updated, cmd
+	if err != nil || len(edges) == 0 {
+		return nil, err
+	}
+	selected = clamp(selected, 0, len(edges)-1)
+	window := pageWindow(selected, len(edges), m.pageSize())
+	out := make([]domain.CitationEdge, window.End-window.Start)
+	copy(out, edges[window.Start:window.End])
+	return out, nil
 }
 
 func (m Model) refreshList() (tea.Model, tea.Cmd) {
@@ -804,18 +1027,20 @@ func (m Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	target := edge.TargetPatent
-	if _, err := m.repo.GetPatent(m.ctx, target); err == nil {
-		return m.openPatent(target)
-	}
-	rawURL, err := importer.GooglePatentsURL(target)
-	if err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
-	bundle, err := importer.ImportGooglePatents(rawURL)
-	if err != nil {
-		m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
-		return m, nil
+	var bundle domain.PatentBundle
+	if p, err := m.repo.GetPatent(m.ctx, target); err == nil {
+		bundle.Patent = p
+	} else {
+		rawURL, err := importer.GooglePatentsURL(target)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		bundle, err = importer.ImportGooglePatents(rawURL)
+		if err != nil {
+			m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
+			return m, nil
+		}
 	}
 	m.backStack = append(m.backStack, m.snapshot())
 	m.pendingBundle = bundle
@@ -861,6 +1086,7 @@ func (m Model) storePendingPatent() (tea.Model, tea.Cmd) {
 	if m.pendingBundle.Patent.Number == "" {
 		return m, nil
 	}
+	m.pendingBundle.Patent.Status = domain.CitationStatusStored
 	if err := m.repo.UpsertPatentBundle(m.ctx, m.pendingBundle); err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -970,18 +1196,20 @@ func (m Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	target := edge.TargetPatent
-	if _, err := m.repo.GetPatent(m.ctx, target); err == nil {
-		return m.openPatent(target)
-	}
-	rawURL, err := importer.GooglePatentsURL(target)
-	if err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
-	bundle, err := importer.ImportGooglePatents(rawURL)
-	if err != nil {
-		m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
-		return m, nil
+	var bundle domain.PatentBundle
+	if p, err := m.repo.GetPatent(m.ctx, target); err == nil {
+		bundle.Patent = p
+	} else {
+		rawURL, err := importer.GooglePatentsURL(target)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		bundle, err = importer.ImportGooglePatents(rawURL)
+		if err != nil {
+			m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
+			return m, nil
+		}
 	}
 	m.backStack = append(m.backStack, m.snapshot())
 	m.pendingBundle = bundle
@@ -1141,10 +1369,29 @@ func (m Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) styleRow(index int, selected int, content string) string {
+	style := lipgloss.NewStyle()
+	if index == selected {
+		style = style.Background(lipgloss.Color("236")) // Faint gray for selection
+	} else if index%2 != 0 {
+		style = style.Background(lipgloss.Color("233")) // Very dark gray for alternating
+	}
+
+	// Ensure the background spans the full width
+	if m.width > 0 {
+		contentWidth := lipgloss.Width(content)
+		if contentWidth < m.width {
+			content += strings.Repeat(" ", m.width-contentWidth)
+		}
+	}
+
+	return style.Render(content)
+}
+
 func (m Model) View() string {
 	bg := m.renderView()
 
-	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors {
+	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewHelpPopup {
 		var content string
 		if m.mode == viewPreview {
 			content = m.viewPreview()
@@ -1154,6 +1401,8 @@ func (m Model) View() string {
 			content = m.viewClassificationDetail()
 		} else if m.mode == viewClassifications {
 			content = m.viewClassifications()
+		} else if m.mode == viewHelpPopup {
+			content = m.viewHelpPopup()
 		} else {
 			content = m.viewInventors()
 		}
@@ -1169,9 +1418,7 @@ func (m Model) View() string {
 
 func (m Model) renderView() string {
 	var b strings.Builder
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("PatentMine")
-	b.WriteString(title + " ")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(string(m.mode)))
+	b.WriteString(m.renderScreenHeader())
 	b.WriteString("\n")
 	if m.input.Focused() {
 		b.WriteString(m.input.View() + "\n")
@@ -1181,7 +1428,8 @@ func (m Model) renderView() string {
 		b.WriteString(m.navDefault() + "\n")
 	}
 	b.WriteString(m.rule() + "\n")
-	switch m.mode {
+	mode := m.activeMode()
+	switch mode {
 	case viewList, viewConfirmDelete: // Also render list in background for delete confirmation
 		b.WriteString(m.viewList())
 	case viewDetail, viewPreview: // Also render detail in background for preview
@@ -1204,6 +1452,8 @@ func (m Model) renderView() string {
 		b.WriteString(m.viewAI())
 	case viewHelp:
 		b.WriteString(m.viewHelp())
+	case viewHelpPopup:
+		b.WriteString(m.viewDetail())
 	case viewReview:
 		b.WriteString(m.viewReviewQueue())
 	}
@@ -1363,7 +1613,7 @@ func (m Model) viewList() string {
 			style = style.Bold(true)
 		}
 
-		b.WriteString(style.Render(row) + "\n")
+		b.WriteString(m.styleRow(i, m.selected, style.Render(row)) + "\n")
 	}
 	return b.String()
 }
@@ -1649,7 +1899,7 @@ func (m Model) viewCitations(relation string) string {
 			m.pad(expDate, expWidth+2) +
 			m.pad(m.citationStatusLabel(edges[i].Status), statusWidth)
 
-		b.WriteString(row + "\n")
+		b.WriteString(m.styleRow(i, selected, row) + "\n")
 	}
 	return b.String()
 }
@@ -1723,7 +1973,7 @@ func (m Model) viewReviewQueue() string {
 			m.pad(expDate, expWidth+2) +
 			m.pad(edges[i].SourcePatent, sourceWidth)
 
-		b.WriteString(row + "\n")
+		b.WriteString(m.styleRow(i, selected, row) + "\n")
 	}
 	return b.String()
 }
@@ -2091,7 +2341,7 @@ func (m Model) viewClassifications() string {
 			m.pad(rowIndexLabel(i), indexWidth) +
 			m.pad(cls.Code, codeWidth) +
 			m.pad(m.truncate(cls.Description, descriptionWidth), descriptionWidth)
-		b.WriteString(row + "\n")
+		b.WriteString(m.styleRow(i, selected, row) + "\n")
 	}
 	return b.String()
 }
@@ -2161,7 +2411,8 @@ func (m Model) viewInventors() string {
 		if i == selected {
 			prefix = "> "
 		}
-		b.WriteString(fmt.Sprintf("%s%s\n", prefix, inventor))
+		row := fmt.Sprintf("%s%s", prefix, inventor)
+		b.WriteString(m.styleRow(i, selected, row) + "\n")
 	}
 	return b.String()
 }
@@ -2258,4 +2509,8 @@ func (m Model) viewAI() string {
 
 func (m Model) viewHelp() string {
 	return RenderHelp(m.text)
+}
+
+func (m Model) viewHelpPopup() string {
+	return RenderContextHelp(m.text, m.activeMode())
 }

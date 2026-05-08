@@ -16,6 +16,7 @@ import (
 var patentNumberPattern = regexp.MustCompile(`(?i)/patent/([^/?#]+)`)
 var patentIDPattern = regexp.MustCompile(`(?i)\b[A-Z]{2,}[0-9][A-Z0-9]*\b`)
 var classificationCodePattern = regexp.MustCompile(`\b(?:[A-HY]\d{2}[A-Z](?:\d+(?:/\d+)?)?|[A-HY]\d{2}|\d{1,3}/[A-Za-z0-9.]+)\b`)
+var datePattern = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
 
 func GooglePatentsURL(patentNumber string) (string, error) {
 	number := strings.ToUpper(strings.TrimSpace(patentNumber))
@@ -74,7 +75,10 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 		GrantDate:       attr(doc.Selection, "time[itemprop='grantDate']", "datetime"),
 		SourceURL:       rawURL,
 	}
-	if expirationDate := estimatedExpirationDate(patent.PublicationDate, patent.GrantDate); expirationDate != "" {
+	if expirationDate := adjustedExpirationDate(doc); expirationDate != "" {
+		patent.ExpirationDate = expirationDate
+		patent.ExpirationEstimated = false
+	} else if expirationDate := estimatedExpirationDate(patent.PublicationDate, patent.GrantDate); expirationDate != "" {
 		patent.ExpirationDate = expirationDate
 		patent.ExpirationEstimated = true
 	}
@@ -240,38 +244,8 @@ func extractCitationEdges(doc *goquery.Document, source string) []domain.Citatio
 			})
 		})
 	}
-	extractRows("[itemprop='backwardReferences']", "cites")
-	extractRows("[itemprop='backwardReferencesFamily']", "cites")
-	extractRows("[itemprop='forwardReferences']", "cited_by")
-	extractRows("[itemprop='forwardReferencesFamily']", "cited_by")
-
-	doc.Find("a[href*='/patent/']").Each(func(_ int, s *goquery.Selection) {
-		href, _ := s.Attr("href")
-		target := patentNumberFromURL(href)
-		if target == "" {
-			return
-		}
-
-		// Get all text from direct parent containers to avoid capturing headers from far away
-		parent := s.Closest("section, table, div")
-		if parent.Length() == 0 {
-			return
-		}
-
-		// Only check the header of this specific container
-		headerText := strings.ToLower(clean(parent.Find("h1, h2, h3, h4, th").First().Text()))
-		if headerText == "" {
-			// Fallback to searching the parent's immediate ID or class if no header
-			headerText = strings.ToLower(parent.AttrOr("id", "") + " " + parent.AttrOr("class", ""))
-		}
-
-		switch {
-		case strings.Contains(headerText, "cited by") || strings.Contains(headerText, "forward references"):
-			add(target, "cited_by")
-		case strings.Contains(headerText, "patent citations") || strings.Contains(headerText, "backward references") || strings.Contains(headerText, "references cited"):
-			add(target, "cites")
-		}
-	})
+	extractRows("[itemprop='backwardReferences']", domain.RelationCites)
+	extractRows("[itemprop='forwardReferences']", domain.RelationCitedBy)
 	return edges
 }
 
@@ -289,6 +263,44 @@ func normalizePatentID(value string) string {
 
 func clean(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func adjustedExpirationDate(doc *goquery.Document) string {
+	if doc == nil {
+		return ""
+	}
+	var expiration string
+	doc.Find("[itemprop='events'], tr, li, dd").EachWithBreak(func(_ int, row *goquery.Selection) bool {
+		date := adjustedExpirationDateFromText(row.Text())
+		if date == "" {
+			return true
+		}
+		expiration = date
+		return false
+	})
+	if expiration != "" {
+		return expiration
+	}
+	return adjustedExpirationDateFromText(doc.Text())
+}
+
+func adjustedExpirationDateFromText(text string) string {
+	text = clean(text)
+	lower := strings.ToLower(text)
+	labelIndex := strings.Index(lower, "adjusted expiration")
+	if labelIndex < 0 {
+		return ""
+	}
+	prefix := text[:labelIndex]
+	dates := datePattern.FindAllString(prefix, -1)
+	if len(dates) == 0 {
+		return ""
+	}
+	date := dates[len(dates)-1]
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		return ""
+	}
+	return date
 }
 
 func estimatedExpirationDate(publicationDate, grantDate string) string {
