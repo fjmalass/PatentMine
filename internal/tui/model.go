@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,67 +25,69 @@ import (
 type viewMode string
 
 const (
-	viewList    viewMode = "list"
-	viewDetail  viewMode = "detail"
-	viewCites   viewMode = "citations"
-	viewCitedBy viewMode = "cited-by"
-	viewClassifications viewMode = "classifications"
-	viewText          viewMode = "full text"
-	viewNotes         viewMode = "notes"
-	viewRefs          viewMode = "references"
-	viewAI            viewMode = "ai"
-	viewHelp          viewMode = "help"
-	viewPreview       viewMode = "preview"
-	viewReview        viewMode = "review"
-	viewConfirmDelete viewMode = "confirm-delete"
+	viewList                 viewMode = "list"
+	viewDetail               viewMode = "detail"
+	viewCites                viewMode = "citations"
+	viewCitedBy              viewMode = "cited-by"
+	viewClassifications      viewMode = "classifications"
+	viewText                 viewMode = "full text"
+	viewNotes                viewMode = "notes"
+	viewRefs                 viewMode = "references"
+	viewAI                   viewMode = "ai"
+	viewHelp                 viewMode = "help"
+	viewPreview              viewMode = "preview"
+	viewReview               viewMode = "review"
+	viewConfirmDelete        viewMode = "confirm-delete"
 	viewClassificationDetail viewMode = "classification-detail"
-	viewInventors     viewMode = "inventors"
+	viewInventors            viewMode = "inventors"
 )
 
 type Model struct {
-	ctx             context.Context
-	repo            storage.Repository
-	input           textinput.Model
-	mode            viewMode
-	patents         []domain.Patent
-	selected        int
-	detailSelected  int
-	citesSelected   int
-	citedBySelected int
-	reviewSelected  int
+	ctx                    context.Context
+	repo                   storage.Repository
+	input                  textinput.Model
+	mode                   viewMode
+	patents                []domain.Patent
+	selected               int
+	detailSelected         int
+	citesSelected          int
+	citedBySelected        int
+	reviewSelected         int
 	classificationSelected int
-	inventorSelected int
-	current         domain.Patent
-	pendingBundle   domain.PatentBundle
-	pendingCitation domain.CitationEdge
-	reviewStatus    string
-	filter          string
-	message         string
-	err             string
-	logger          *slog.Logger
-	text            TextCatalog
-	width           int
-	height          int
-	backStack       []navSnapshot
-	jumpMode        bool
+	inventorSelected       int
+	current                domain.Patent
+	pendingBundle          domain.PatentBundle
+	pendingCitation        domain.CitationEdge
+	reviewStatus           string
+	filter                 string
+	message                string
+	err                    string
+	logger                 *slog.Logger
+	text                   TextCatalog
+	width                  int
+	height                 int
+	backStack              []navSnapshot
+	jumpMode               bool
+	countBuffer            string
 }
 
 type navSnapshot struct {
-	mode            viewMode
-	patents         []domain.Patent
-	selected        int
-	detailSelected  int
-	citesSelected   int
-	citedBySelected int
-	reviewSelected  int
+	mode                   viewMode
+	patents                []domain.Patent
+	selected               int
+	detailSelected         int
+	citesSelected          int
+	citedBySelected        int
+	reviewSelected         int
 	classificationSelected int
-	current         domain.Patent
-	pendingBundle   domain.PatentBundle
-	pendingCitation domain.CitationEdge
-	reviewStatus    string
-	filter          string
-	message         string
-	err             string
+	current                domain.Patent
+	pendingBundle          domain.PatentBundle
+	pendingCitation        domain.CitationEdge
+	reviewStatus           string
+	filter                 string
+	message                string
+	err                    string
+	countBuffer            string
 }
 
 func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Model {
@@ -193,10 +196,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input, cmd = m.input.Update(msg)
 			return m, cmd
 		}
+		if isCountKey(msg.String()) {
+			m.countBuffer += msg.String()
+			return m, nil
+		}
 		switch msg.String() {
 		case keyCtrlC:
 			return m, tea.Quit
 		case keyEsc:
+			m.countBuffer = ""
 			return m.goBack()
 		case keyQuit:
 			if m.mode == viewList {
@@ -204,10 +212,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.goBack()
 		case keyCommand, keySearch:
+			m.countBuffer = ""
 			m.input.Focus()
 			m.input.SetValue(msg.String())
 			return m, nil
 		case keyEnter, keyOpen:
+			m.countBuffer = ""
 			if m.mode == viewPreview {
 				return m.storePendingPatent()
 			}
@@ -222,7 +232,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.filterBySelectedInventor()
 			}
 			if m.mode == viewClassifications {
-				m.mode = viewClassificationDetail
 				return m, nil
 			}
 			if m.isCitationView() {
@@ -243,58 +252,74 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case keyDown, keyArrowDown:
+			count := m.consumeCount(1)
 			if m.isCitationView() {
-				return m.moveCitationSelection(1), nil
+				return m.moveCitationSelection(count), nil
 			}
 			if m.mode == viewClassifications {
-				return m.moveClassificationSelection(1), nil
+				return m.moveClassificationSelection(count), nil
 			}
 			if m.mode == viewInventors {
-				return m.moveInventorSelection(1), nil
+				return m.moveInventorSelection(count), nil
 			}
 			if m.mode == viewReview {
-				return m.moveReviewSelection(1), nil
+				return m.moveReviewSelection(count), nil
 			}
 			if m.mode == viewDetail {
-				return m.moveDetailSelection(1), nil
+				return m.moveDetailSelection(count), nil
 			}
-			if m.mode == viewList && m.selected < len(m.patents)-1 {
-				m.selected++
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.selected = clamp(m.selected+count, 0, len(m.patents)-1)
 			}
 		case keyUp, keyArrowUp:
+			count := m.consumeCount(1)
 			if m.isCitationView() {
-				return m.moveCitationSelection(-1), nil
+				return m.moveCitationSelection(-count), nil
 			}
 			if m.mode == viewClassifications {
-				return m.moveClassificationSelection(-1), nil
+				return m.moveClassificationSelection(-count), nil
 			}
 			if m.mode == viewInventors {
-				return m.moveInventorSelection(-1), nil
+				return m.moveInventorSelection(-count), nil
 			}
 			if m.mode == viewReview {
-				return m.moveReviewSelection(-1), nil
+				return m.moveReviewSelection(-count), nil
 			}
 			if m.mode == viewDetail {
-				return m.moveDetailSelection(-1), nil
+				return m.moveDetailSelection(-count), nil
 			}
-			if m.mode == viewList && m.selected > 0 {
-				m.selected--
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.selected = clamp(m.selected-count, 0, len(m.patents)-1)
 			}
 		case keyCtrlF:
+			m.countBuffer = ""
 			if m.isCitationView() {
 				return m.moveCitationSelection(m.pageSize()), nil
+			}
+			if m.mode == viewClassifications {
+				return m.moveClassificationSelection(m.pageSize()), nil
 			}
 			if m.mode == viewReview {
 				return m.moveReviewSelection(m.pageSize()), nil
 			}
 		case keyCtrlD:
+			m.countBuffer = ""
 			if m.isCitationView() {
 				return m.moveCitationSelection(-m.pageSize()), nil
+			}
+			if m.mode == viewClassifications {
+				return m.moveClassificationSelection(-m.pageSize()), nil
 			}
 			if m.mode == viewReview {
 				return m.moveReviewSelection(-m.pageSize()), nil
 			}
+		case keyGoto:
+			if m.countBuffer != "" {
+				count := m.consumeCount(1)
+				return m.goToRow(count), nil
+			}
 		case keyJump:
+			m.countBuffer = ""
 			if m.hasJumpTargets() {
 				m.jumpMode = true
 			}
@@ -376,21 +401,22 @@ func (m Model) snapshot() navSnapshot {
 	patents := make([]domain.Patent, len(m.patents))
 	copy(patents, m.patents)
 	return navSnapshot{
-		mode:            m.mode,
-		patents:         patents,
-		selected:        m.selected,
-		detailSelected:  m.detailSelected,
-		citesSelected:   m.citesSelected,
-		citedBySelected: m.citedBySelected,
-		reviewSelected:  m.reviewSelected,
+		mode:                   m.mode,
+		patents:                patents,
+		selected:               m.selected,
+		detailSelected:         m.detailSelected,
+		citesSelected:          m.citesSelected,
+		citedBySelected:        m.citedBySelected,
+		reviewSelected:         m.reviewSelected,
 		classificationSelected: m.classificationSelected,
-		current:         m.current,
-		pendingBundle:   m.pendingBundle,
-		pendingCitation: m.pendingCitation,
-		reviewStatus:    m.reviewStatus,
-		filter:          m.filter,
-		message:         m.message,
-		err:             m.err,
+		current:                m.current,
+		pendingBundle:          m.pendingBundle,
+		pendingCitation:        m.pendingCitation,
+		reviewStatus:           m.reviewStatus,
+		filter:                 m.filter,
+		message:                m.message,
+		err:                    m.err,
+		countBuffer:            m.countBuffer,
 	}
 }
 
@@ -410,6 +436,7 @@ func (m Model) restore(snapshot navSnapshot) Model {
 	m.filter = snapshot.filter
 	m.message = snapshot.message
 	m.err = snapshot.err
+	m.countBuffer = snapshot.countBuffer
 	return m
 }
 
@@ -578,10 +605,10 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 	afterCites, _ := updated.repo.ListCitations(updated.ctx, updated.current.Number, domain.RelationCites)
 	afterCitedBy, _ := updated.repo.ListCitations(updated.ctx, updated.current.Number, domain.RelationCitedBy)
-	
+
 	// Keep current mode by default
 	updated.mode = m.mode
-	
+
 	switch target {
 	case refreshTargetCitedBy, domain.RelationCitedBy:
 		updated.mode = viewCitedBy
@@ -1052,9 +1079,9 @@ func (m Model) summarize() (tea.Model, tea.Cmd) {
 	}
 	classifications, _ := m.repo.ListClassifications(m.ctx, m.current.Number)
 	cites, _ := m.repo.ListCitations(m.ctx, m.current.Number, domain.RelationCites)
-	
-	// Convert Classification to ClassificationCode for AI summarizer compatibility if needed, 
-	// but better to update AI summarizer too. 
+
+	// Convert Classification to ClassificationCode for AI summarizer compatibility if needed,
+	// but better to update AI summarizer too.
 	// For now, let's see what Summarize expects.
 	artifact := ai.Summarize(m.current, classifications, cites)
 	if _, err := m.repo.AddAIArtifact(m.ctx, artifact); err != nil {
@@ -1202,32 +1229,36 @@ func (m Model) composite(bg, overlay string) string {
 
 	oWidth := lipgloss.Width(overlayLines[0])
 	oHeight := len(overlayLines)
-	
+
 	startX := (m.width - oWidth) / 2
 	startY := (m.height - oHeight) / 2
 
-	if startX < 0 { startX = 0 }
-	if startY < 0 { startY = 0 }
+	if startX < 0 {
+		startX = 0
+	}
+	if startY < 0 {
+		startY = 0
+	}
 
 	for i, oLine := range overlayLines {
 		y := startY + i
 		if y >= len(bgLines) || y >= m.height {
 			break
 		}
-		
+
 		bgLine := bgLines[y]
 		// Pad bgLine to m.width to ensure we can overwrite correctly
 		bgLineWidth := lipgloss.Width(bgLine)
 		if bgLineWidth < m.width {
 			bgLine += strings.Repeat(" ", m.width-bgLineWidth)
 		}
-		
+
 		// Truncate bg to startX
 		left := lipgloss.NewStyle().MaxWidth(startX).Render(bgLine)
 		// Since reverse truncation is hard with ANSI, we'll just fill the right side with spaces
 		// for this prototype. Real terminal transparency is complex.
 		right := strings.Repeat(" ", max(0, m.width-(startX+oWidth)))
-		
+
 		bgLines[y] = left + oLine + right
 	}
 
@@ -1431,7 +1462,7 @@ func (m Model) detailFields() []detailField {
 	fields := []detailField{
 		{label: TextDetailAssignee, value: p.Assignee, jumpLabel: jumpLabelAssignee},
 	}
-	
+
 	// Add grouped inventors as a single field
 	if len(p.Inventors) > 0 {
 		fields = append(fields, detailField{
@@ -1458,15 +1489,19 @@ func (m Model) detailFields() []detailField {
 			validClassifications = append(validClassifications, strings.TrimSpace(c))
 		}
 	}
+	classificationValue := m.text.T(TextValueEmpty)
+	classificationDisplayValue := classificationValue
 	if len(validClassifications) > 0 {
-		fields = append(fields, detailField{
-			label:        TextDetailClassification,
-			value:        p.ClassificationLabel,
-			displayValue: fmt.Sprintf("(%d) %s", len(validClassifications), p.ClassificationLabel),
-			jumpLabel:    jumpLabelClassification,
-			action:       detailActionClassification,
-		})
+		classificationValue = p.ClassificationLabel
+		classificationDisplayValue = fmt.Sprintf("(%d) %s", len(validClassifications), p.ClassificationLabel)
 	}
+	fields = append(fields, detailField{
+		label:        TextDetailClassification,
+		value:        classificationValue,
+		displayValue: classificationDisplayValue,
+		jumpLabel:    jumpLabelClassification,
+		action:       detailActionClassification,
+	})
 
 	fields = append(fields,
 		detailField{label: TextDetailExpiration, value: m.formatExpiration(p), jumpLabel: jumpLabelExpiration},
@@ -1556,18 +1591,14 @@ func (m Model) viewCitations(relation string) string {
 	}
 	selected := clamp(m.citationSelection(), 0, len(edges)-1)
 	m.setCitationSelection(selected)
-	pageSize := m.pageSize()
-	start := pageStart(selected, pageSize)
-	end := min(start+pageSize, len(edges))
-	page := start/pageSize + 1
-	pages := (len(edges) + pageSize - 1) / pageSize
+	window := pageWindow(selected, len(edges), m.pageSize())
 	var b strings.Builder
-	status := fmt.Sprintf(m.text.T(TextValuePageStatus), page, pages, start+1, end, len(edges))
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(status))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.citationOpenHint()))
 	b.WriteString("\n\n")
 
+	indexWidth := 4
 	numWidth := 14
 	titleWidth := 40
 	invWidth := 20
@@ -1581,6 +1612,7 @@ func (m Model) viewCitations(relation string) string {
 
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
+		m.pad("#", indexWidth) +
 		m.pad("Number", numWidth+2) +
 		m.pad("Title", titleWidth+2) +
 		m.pad("Inventor", invWidth+2) +
@@ -1590,17 +1622,17 @@ func (m Model) viewCitations(relation string) string {
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
 	b.WriteString("\n")
 
-	for i := start; i < end; i++ {
+	for i := window.Start; i < window.End; i++ {
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
 		}
 
-		jumpPrefix := m.jumpPrefix(i - start)
+		jumpPrefix := m.jumpPrefix(i - window.Start)
 		if jumpPrefix == "" && jumpPrefixWidth > 0 {
 			jumpPrefix = strings.Repeat(" ", jumpPrefixWidth)
 		}
-		
+
 		title := m.truncate(edges[i].TargetTitle, titleWidth)
 		inventors := m.truncate(formatInventorsShort(edges[i].TargetInventors), invWidth)
 		expDate := edges[i].TargetExpirationDate
@@ -1610,6 +1642,7 @@ func (m Model) viewCitations(relation string) string {
 
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
+			m.pad(rowIndexLabel(i), indexWidth) +
 			m.pad(edges[i].TargetPatent, numWidth+2) +
 			m.pad(title, titleWidth+2) +
 			m.pad(inventors, invWidth+2) +
@@ -1631,19 +1664,15 @@ func (m Model) viewReviewQueue() string {
 	}
 	selected := clamp(m.reviewSelected, 0, len(edges)-1)
 	m.reviewSelected = selected
-	pageSize := m.pageSize()
-	start := pageStart(selected, pageSize)
-	end := min(start+pageSize, len(edges))
-	page := start/pageSize + 1
-	pages := (len(edges) + pageSize - 1) / pageSize
+	window := pageWindow(selected, len(edges), m.pageSize())
 	var b strings.Builder
 	b.WriteString(m.citationStatusLabel(m.reviewStatus) + "\n")
-	status := fmt.Sprintf(m.text.T(TextValuePageStatus), page, pages, start+1, end, len(edges))
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(status))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.reviewOpenHint()))
 	b.WriteString("\n\n")
 
+	indexWidth := 4
 	numWidth := 14
 	titleWidth := 40
 	invWidth := 20
@@ -1657,6 +1686,7 @@ func (m Model) viewReviewQueue() string {
 
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
+		m.pad("#", indexWidth) +
 		m.pad("Number", numWidth+2) +
 		m.pad("Title", titleWidth+2) +
 		m.pad("Inventor", invWidth+2) +
@@ -1666,13 +1696,13 @@ func (m Model) viewReviewQueue() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
 	b.WriteString("\n")
 
-	for i := start; i < end; i++ {
+	for i := window.Start; i < window.End; i++ {
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
 		}
 
-		jumpPrefix := m.jumpPrefix(i - start)
+		jumpPrefix := m.jumpPrefix(i - window.Start)
 		if jumpPrefix == "" && jumpPrefixWidth > 0 {
 			jumpPrefix = strings.Repeat(" ", jumpPrefixWidth)
 		}
@@ -1686,6 +1716,7 @@ func (m Model) viewReviewQueue() string {
 
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
+			m.pad(rowIndexLabel(i), indexWidth) +
 			m.pad(edges[i].TargetPatent, numWidth+2) +
 			m.pad(title, titleWidth+2) +
 			m.pad(inventors, invWidth+2) +
@@ -1720,6 +1751,10 @@ func (m Model) citationOpenHint() string {
 
 func (m Model) reviewOpenHint() string {
 	return fmt.Sprintf(m.text.T(TextValueReviewOpenHint), keyEnter, keyYes, keyIgnore, keyUnreview, keyWeb, keyCtrlF, keyCtrlD)
+}
+
+func (m Model) classificationOpenHint() string {
+	return fmt.Sprintf(m.text.T(TextValueClassificationHint), keyEnter, keyCtrlF, keyCtrlD)
 }
 
 func (m Model) previewStorePrompt() string {
@@ -1954,13 +1989,6 @@ func (m Model) pageSize() int {
 	return max(5, m.height-8)
 }
 
-func pageStart(selected, pageSize int) int {
-	if pageSize <= 0 {
-		return 0
-	}
-	return (selected / pageSize) * pageSize
-}
-
 func clamp(value, low, high int) int {
 	if value < low {
 		return low
@@ -1971,29 +1999,99 @@ func clamp(value, low, high int) int {
 	return value
 }
 
+func rowIndexLabel(zeroBasedIndex int) string {
+	return fmt.Sprintf("%3d", zeroBasedIndex+1)
+}
+
+func isCountKey(key string) bool {
+	return len(key) == 1 && key[0] >= '0' && key[0] <= '9'
+}
+
+func (m *Model) consumeCount(defaultValue int) int {
+	if m.countBuffer == "" {
+		return defaultValue
+	}
+	count, err := strconv.Atoi(m.countBuffer)
+	m.countBuffer = ""
+	if err != nil || count <= 0 {
+		return defaultValue
+	}
+	return count
+}
+
+func (m Model) goToRow(index int) Model {
+	if index <= 0 {
+		index = 1
+	}
+	target := index - 1
+	switch {
+	case m.mode == viewList && len(m.patents) > 0:
+		m.selected = clamp(target, 0, len(m.patents)-1)
+	case m.mode == viewDetail:
+		fields := m.detailFields()
+		if len(fields) > 0 {
+			m.detailSelected = clamp(target, 0, len(fields)-1)
+		}
+	case m.isCitationView():
+		edges, err := m.currentCitationEdges()
+		if err == nil && len(edges) > 0 {
+			m.setCitationSelection(clamp(target, 0, len(edges)-1))
+		}
+	case m.mode == viewReview:
+		edges, err := m.currentReviewCitationEdges()
+		if err == nil && len(edges) > 0 {
+			m.reviewSelected = clamp(target, 0, len(edges)-1)
+		}
+	case m.mode == viewClassifications:
+		return m.goToClassification(index)
+	case m.mode == viewInventors && len(m.current.Inventors) > 0:
+		m.inventorSelected = clamp(target, 0, len(m.current.Inventors)-1)
+	}
+	return m
+}
+
 func (m Model) viewClassifications() string {
 	classifications, err := m.repo.ListClassifications(m.ctx, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
 	if len(classifications) == 0 {
-		return "No classification records.\n"
+		return m.text.T(TextValueEmpty) + "\n"
 	}
 
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	m.classificationSelected = selected
+	window := pageWindow(selected, len(classifications), m.pageSize())
 
 	var b strings.Builder
-	for i, cls := range classifications {
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.classificationOpenHint()))
+	b.WriteString("\n\n")
+
+	indexWidth := 4
+	codeWidth := 18
+	descriptionWidth := max(20, m.width-indexWidth-codeWidth-8)
+
+	header := m.pad("  ", 2) +
+		m.pad("#", indexWidth) +
+		m.pad("Code", codeWidth) +
+		m.pad("Description", descriptionWidth)
+
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
+	b.WriteString("\n")
+
+	for i := window.Start; i < window.End; i++ {
+		cls := classifications[i]
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
 		}
-		b.WriteString(prefix)
-		if cls.System != "" {
-			b.WriteString(fmt.Sprintf("[%s] ", cls.System))
-		}
-		b.WriteString(fmt.Sprintf("%s %s\n", cls.Code, cls.Description))
+		row := m.pad(prefix, 2) +
+			m.pad(rowIndexLabel(i), indexWidth) +
+			m.pad(cls.Code, codeWidth) +
+			m.pad(m.truncate(cls.Description, descriptionWidth), descriptionWidth)
+		b.WriteString(row + "\n")
 	}
 	return b.String()
 }
@@ -2005,11 +2103,11 @@ func (m Model) viewClassificationDetail() string {
 	}
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	cls := classifications[selected]
-	
+
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("System: %s\n", cls.System))
 	b.WriteString(fmt.Sprintf("Code: %s\n\n", cls.Code))
-	
+
 	if cls.System == "CPC" {
 		b.WriteString("Hierarchy:\n")
 		b.WriteString(fmt.Sprintf("  Section: %s\n", cls.Section))
@@ -2022,7 +2120,7 @@ func (m Model) viewClassificationDetail() string {
 		b.WriteString(fmt.Sprintf("  Class: %s\n", cls.Class))
 		b.WriteString(fmt.Sprintf("  Subclass: %s\n\n", cls.Subclass))
 	}
-	
+
 	b.WriteString("Description:\n")
 	b.WriteString(cls.Description)
 	return b.String()
@@ -2031,9 +2129,19 @@ func (m Model) viewClassificationDetail() string {
 func (m Model) moveClassificationSelection(delta int) Model {
 	classifications, _ := m.repo.ListClassifications(m.ctx, m.current.Number)
 	if len(classifications) == 0 {
+		m.countBuffer = ""
 		return m
 	}
 	m.classificationSelected = clamp(m.classificationSelected+delta, 0, len(classifications)-1)
+	return m
+}
+
+func (m Model) goToClassification(index int) Model {
+	classifications, _ := m.repo.ListClassifications(m.ctx, m.current.Number)
+	if len(classifications) == 0 {
+		return m
+	}
+	m.classificationSelected = clamp(index-1, 0, len(classifications)-1)
 	return m
 }
 

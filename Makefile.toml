@@ -1,42 +1,75 @@
 [config]
 default_to_workspace = false
+skip_core_tasks = true
 
 [env]
 GOCACHE = "/tmp/go-build"
+PATENTMINE_LOG_FILE = "./patentmine.log"
+PATENTMINE_MAX_LOGS = "5"
+PATENTMINE_MAX_LOG_BACKUPS = "5"
 
 [tasks.default]
 alias = "launch"
 
+[tasks.init]
+private = true
+
+[tasks.end]
+private = true
+
+[tasks.empty]
+private = true
+
 [tasks.launch]
 description = "Launch the PatentMine TUI."
+category = "Application"
 command = "go"
-args = ["run", "-buildvcs=false", "./cmd/patentmine"]
+args = [
+  "run",
+  "-buildvcs=false",
+  "./cmd/patentmine",
+  "--log-file",
+  "${PATENTMINE_LOG_FILE}",
+  "--max-logs",
+  "${PATENTMINE_MAX_LOGS}",
+]
 
 [tasks.run]
 alias = "launch"
 
+[tasks.cli-help]
+description = "Show PatentMine CLI flags."
+category = "Application"
+command = "go"
+args = ["run", "-buildvcs=false", "./cmd/patentmine", "--help"]
+
 [tasks.test]
 description = "Run all Go tests."
+category = "Development"
 command = "go"
 args = ["test", "./..."]
 
 [tasks.build]
 description = "Build the PatentMine binary at ./patentmine."
+category = "Development"
 command = "go"
 args = ["build", "-buildvcs=false", "-o", "patentmine", "./cmd/patentmine"]
 
 [tasks.tidy]
 description = "Resolve and tidy Go module dependencies."
+category = "Development"
 command = "go"
 args = ["mod", "tidy"]
 
 [tasks.fmt]
 description = "Format all Go files."
+category = "Development"
 command = "gofmt"
 args = [
   "-w",
   "cmd/patentmine/main.go",
   "internal/logging/logging.go",
+  "internal/logging/logging_test.go",
   "internal/domain/models.go",
   "internal/domain/models_test.go",
   "internal/storage/storage.go",
@@ -54,35 +87,48 @@ args = [
   "internal/tui/catalog.go",
   "internal/tui/catalog_test.go",
   "internal/tui/text.go",
+  "internal/tui/pagination.go",
   "internal/tui/model.go",
   "internal/tui/model_test.go",
 ]
 
 [tasks.check]
 description = "Format, test, and build."
+category = "Development"
 dependencies = ["fmt", "test", "build"]
 
 [tasks.clean]
 description = "Remove the built binary."
+category = "Maintenance"
 command = "rm"
 args = ["-f", "patentmine"]
 
 [tasks.reset-db]
 description = "Remove the local SQLite database so the next launch reseeds the fixture."
+category = "Maintenance"
 command = "rm"
 args = ["-f", "patentmine.db", "patentmine.db-shm", "patentmine.db-wal"]
 
 [tasks.logs]
 description = "Print the local TUI log file."
-command = "tail"
-args = ["-n", "80", "patentmine.log"]
+category = "Maintenance"
+command = "bash"
+args = ["scripts/show-log.sh"]
 
 [tasks.backup]
 description = "Create a timestamped backup of the database and PDFs using the backup script."
+category = "Maintenance"
 command = "bash"
 args = ["scripts/backup.sh"]
 
+[tasks.backup-log]
+description = "Create a dated backup of the current log and prune old log backups."
+category = "Maintenance"
+command = "bash"
+args = ["scripts/backup-log.sh"]
+
 [tasks.list-backups]
 description = "List all existing backups."
+category = "Maintenance"
 command = "ls"
 args = ["-lh", "backups/"]

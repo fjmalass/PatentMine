@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/importer"
 	"patentmine/internal/logging"
@@ -15,12 +19,21 @@ import (
 
 func main() {
 	ctx := context.Background()
-	logger, closeLog, err := logging.Open("./patentmine.log")
+	config, err := parseCLI(os.Args[1:])
+	if err != nil {
+		exit(err)
+	}
+	if config.Help {
+		showCLIHelp()
+		return
+	}
+
+	logger, closeLog, logPath, err := logging.Open(config.LogFile, config.MaxLogs)
 	if err != nil {
 		exit(err)
 	}
 	defer closeLog()
-	logger.Info("starting patentmine")
+	logger.Info("starting patentmine", "log_file", logPath, "max_logs", config.MaxLogs)
 	repo, err := sqliterepo.Open("./patentmine.db")
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
@@ -42,6 +55,87 @@ func main() {
 		exit(err)
 	}
 	logger.Info("stopped patentmine")
+}
+
+type cliConfig struct {
+	LogFile string
+	MaxLogs int
+	Help    bool
+}
+
+func parseCLI(args []string) (cliConfig, error) {
+	config := cliConfig{}
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
+	}
+	flags := flag.NewFlagSet("patentmine", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&config.LogFile, "log-file", "./patentmine.log", "base log file path; the current date is appended before the extension")
+	flags.IntVar(&config.MaxLogs, "max-logs", 5, "maximum dated log files to keep; set to 0 to disable pruning")
+	flags.BoolVar(&config.Help, "help", false, "show CLI help")
+	flags.BoolVar(&config.Help, "h", false, "show CLI help")
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			config.Help = true
+			return config, nil
+		}
+		return config, err
+	}
+	return config, nil
+}
+
+func showCLIHelp() {
+	if isTerminal(os.Stdout) && isTerminal(os.Stdin) && canOpenTTY() {
+		if _, err := tea.NewProgram(cliHelpModel{}, tea.WithAltScreen()).Run(); err == nil {
+			return
+		}
+	}
+	fmt.Print(cliHelpText())
+}
+
+func isTerminal(file *os.File) bool {
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func canOpenTTY() bool {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	_ = tty.Close()
+	return true
+}
+
+type cliHelpModel struct{}
+
+func (cliHelpModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m cliHelpModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(tea.KeyMsg); ok {
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (cliHelpModel) View() string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("PatentMine CLI")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("Press any key to close.")
+	return "\n" + title + "\n\n" + cliHelpText() + "\n" + hint + "\n"
+}
+
+func cliHelpText() string {
+	var b strings.Builder
+	b.WriteString("Usage:\n")
+	b.WriteString("  patentmine [flags]\n\n")
+	b.WriteString("Flags:\n")
+	b.WriteString("  --log-file PATH   Base log path. The app writes to PATH with YYYY-MM-DD before the extension.\n")
+	b.WriteString("                    Default: ./patentmine.log -> ./patentmine-2026-08-19.log\n")
+	b.WriteString("  --max-logs N      Maximum dated log files to keep. Use 0 to disable pruning. Default: 5\n")
+	b.WriteString("  --help, -h        Show this help.\n")
+	return b.String()
 }
 
 func seedFixture(ctx context.Context, repo *sqliterepo.Repository) error {

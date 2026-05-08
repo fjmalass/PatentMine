@@ -15,6 +15,7 @@ import (
 
 var patentNumberPattern = regexp.MustCompile(`(?i)/patent/([^/?#]+)`)
 var patentIDPattern = regexp.MustCompile(`(?i)\b[A-Z]{2,}[0-9][A-Z0-9]*\b`)
+var classificationCodePattern = regexp.MustCompile(`\b(?:[A-HY]\d{2}[A-Z](?:\d+(?:/\d+)?)?|[A-HY]\d{2}|\d{1,3}/[A-Za-z0-9.]+)\b`)
 
 func GooglePatentsURL(patentNumber string) (string, error) {
 	number := strings.ToUpper(strings.TrimSpace(patentNumber))
@@ -86,44 +87,75 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 	}
 	addSection(doc.Selection, &bundle, number, "claims", "section[itemprop='claims'] .claim, .claims .claim")
 	addSection(doc.Selection, &bundle, number, "description", "section[itemprop='description'] p, .description p")
-	// Extract all classifications (CPC and USPC) from the tree and specific tags
-	doc.Find("[itemprop='classification'], classification-cpc, .classification-cpc, classification-item, .classification-item").Each(func(_ int, row *goquery.Selection) {
-		code := clean(firstText(row, "[itemprop='code']", "[itemprop='Code']", ".code"))
-		description := clean(firstText(row, "[itemprop='description']", "[itemprop='Description']", ".description"))
-		
-		if code == "" {
-			// Fallback: search for "Code - Description" pattern in text
-			text := clean(row.Text())
-			if strings.Contains(text, " — ") {
-				parts := strings.SplitN(text, " — ", 2)
-				code = clean(parts[0])
-				description = clean(parts[1])
-			}
-		}
-
-		if code != "" {
-			cls := domain.ParseClassification(code)
-			cls.PatentNumber = number
-			cls.Description = description
-
-			found := false
-			for i, existing := range bundle.Classifications {
-				if existing.Code == cls.Code && existing.System == cls.System {
-					if existing.Description == "" && cls.Description != "" {
-						bundle.Classifications[i].Description = cls.Description
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				bundle.Classifications = append(bundle.Classifications, cls)
-			}
-		}
-	})
+	extractClassifications(doc, &bundle, number)
 	bundle.Citations = extractCitationEdges(doc, number)
 	bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: number, CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title)})
 	return bundle, nil
+}
+
+func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, number string) {
+	doc.Find("[itemprop='classifications'], [itemprop='classification'], classification-cpc, .classification-cpc, classification-item, .classification-item").Each(func(_ int, row *goquery.Selection) {
+		code := clean(classificationField(row, "[itemprop='code']", "[itemprop='Code']", ".code"))
+		description := clean(classificationField(row, "[itemprop='description']", "[itemprop='Description']", ".description"))
+
+		if code == "" {
+			code, description = classificationFromText(row.Text())
+		}
+		addClassification(bundle, number, code, description)
+	})
+}
+
+func classificationField(row *goquery.Selection, selectors ...string) string {
+	for _, selector := range selectors {
+		if row.Is(selector) {
+			if content, ok := row.Attr("content"); ok {
+				return content
+			}
+			return row.Text()
+		}
+		found := row.Find(selector).First()
+		if found.Length() == 0 {
+			continue
+		}
+		if content, ok := found.Attr("content"); ok {
+			return content
+		}
+		if text := found.Text(); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func classificationFromText(text string) (string, string) {
+	text = clean(text)
+	match := classificationCodePattern.FindStringIndex(text)
+	if match == nil || match[0] > 3 {
+		return "", ""
+	}
+	code := text[match[0]:match[1]]
+	description := strings.TrimSpace(text[match[1]:])
+	description = strings.TrimLeft(description, "-—–: ")
+	return code, clean(description)
+}
+
+func addClassification(bundle *domain.PatentBundle, number, code, description string) {
+	if strings.TrimSpace(code) == "" {
+		return
+	}
+	cls := domain.ParseClassification(code)
+	cls.PatentNumber = number
+	cls.Description = description
+
+	for i, existing := range bundle.Classifications {
+		if existing.Code == cls.Code && existing.System == cls.System {
+			if existing.Description == "" && cls.Description != "" {
+				bundle.Classifications[i].Description = cls.Description
+			}
+			return
+		}
+	}
+	bundle.Classifications = append(bundle.Classifications, cls)
 }
 
 func patentNumberFromURL(rawURL string) string {
@@ -219,13 +251,13 @@ func extractCitationEdges(doc *goquery.Document, source string) []domain.Citatio
 		if target == "" {
 			return
 		}
-		
+
 		// Get all text from direct parent containers to avoid capturing headers from far away
 		parent := s.Closest("section, table, div")
 		if parent.Length() == 0 {
 			return
 		}
-		
+
 		// Only check the header of this specific container
 		headerText := strings.ToLower(clean(parent.Find("h1, h2, h3, h4, th").First().Text()))
 		if headerText == "" {

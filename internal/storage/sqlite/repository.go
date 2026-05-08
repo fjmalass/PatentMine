@@ -191,50 +191,6 @@ func (r *Repository) migrate(ctx context.Context) error {
 	if _, err := r.db.ExecContext(ctx, `update citation_edges set labeled_at = ? where labeled_at = ''`, migratedAt); err != nil {
 		return err
 	}
-	// Migrate existing CPC data to new generic tables
-	hasCPCCodes, _ := r.hasTable(ctx, "cpc_codes")
-	if hasCPCCodes {
-		if _, err := r.db.ExecContext(ctx, `insert or ignore into patent_classifications (patent_number, system, code)
-			select patent_number, 'CPC', code from cpc_codes`); err != nil {
-			return err
-		}
-		// Try to migrate definitions
-		hasCPCDefs, _ := r.hasTable(ctx, "cpc_definitions")
-		if hasCPCDefs {
-			rows, err := r.db.QueryContext(ctx, `select code, description from cpc_definitions`)
-			if err == nil {
-				defer rows.Close()
-				for rows.Next() {
-					var code, description string
-					if err := rows.Scan(&code, &description); err == nil {
-						cls := domain.ParseClassification(code)
-						cls.Description = description
-						_, _ = r.db.ExecContext(ctx, `insert or ignore into classification_definitions 
-							(system, code, section, class, subclass, main_group, subgroup, description)
-							values (?, ?, ?, ?, ?, ?, ?, ?)`,
-							cls.System, cls.Code, cls.Section, cls.Class, cls.Subclass, cls.MainGroup, cls.Subgroup, cls.Description)
-					}
-				}
-			}
-		}
-		// Also migrate any descriptions stored directly in cpc_codes
-		rows, err := r.db.QueryContext(ctx, `select code, description from cpc_codes where description != ''`)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var code, description string
-				if err := rows.Scan(&code, &description); err == nil {
-					cls := domain.ParseClassification(code)
-					cls.Description = description
-					_, _ = r.db.ExecContext(ctx, `insert or ignore into classification_definitions 
-						(system, code, section, class, subclass, main_group, subgroup, description)
-						values (?, ?, ?, ?, ?, ?, ?, ?)
-						on conflict(system, code) do update set description = excluded.description`,
-						cls.System, cls.Code, cls.Section, cls.Class, cls.Subclass, cls.MainGroup, cls.Subgroup, cls.Description)
-				}
-			}
-		}
-	}
 	return nil
 }
 
