@@ -42,6 +42,7 @@ const (
 	viewConfirmDelete        viewMode = "confirm-delete"
 	viewClassificationDetail viewMode = "classification-detail"
 	viewInventors            viewMode = "inventors"
+	viewSplash               viewMode = "splash"
 )
 
 type Model struct {
@@ -52,9 +53,12 @@ type Model struct {
 	loading                bool
 	loadingMsg             string
 	cancel                 context.CancelFunc
+	ProjectID              string
 	mode                   viewMode
 	patents                []domain.Patent
+	projects               []domain.Project
 	selected               int
+	projectSelected        int
 	detailSelected         int
 	citesSelected          int
 	citedBySelected        int
@@ -75,12 +79,17 @@ type Model struct {
 	backStack              []navSnapshot
 	jumpMode               bool
 	countBuffer            string
+	sortColumn             string
+	sortOrder              string
+	classFilter            string
 }
 
 type navSnapshot struct {
 	mode                   viewMode
 	patents                []domain.Patent
+	projects               []domain.Project
 	selected               int
+	projectSelected        int
 	detailSelected         int
 	citesSelected          int
 	citedBySelected        int
@@ -94,6 +103,10 @@ type navSnapshot struct {
 	message                string
 	err                    string
 	countBuffer            string
+	ProjectID              string
+	sortColumn             string
+	sortOrder              string
+	classFilter            string
 }
 
 func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Model {
@@ -104,21 +117,38 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAccent))
 
-	patents, _ := repo.ListPatents(ctx, "")
+	projectID := "default"
+	projects, _ := repo.ListProjects(ctx)
+	patents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
+		Filter:      EmptyFilter,
+		ClassFilter: EmptyFilter,
+		SortColumn:  EmptySortColumn,
+		SortOrder:   EmptySortOrder,
+	})
 	if logger == nil {
 		logger = slog.Default()
 	}
 	model := Model{
-		ctx:     ctx,
-		repo:    repo,
-		input:   input,
-		spinner: s,
-		mode:    viewList,
-		patents: patents,
-		logger:  logger,
-		text:    EnglishText(),
+		ctx:             ctx,
+		repo:            repo,
+		input:           input,
+		spinner:         s,
+		ProjectID:       projectID,
+		mode:            viewSplash,
+		patents:         patents,
+		projects:        projects,
+		projectSelected: 0, // Default to first project
+		logger:          logger,
+		text:            EnglishText(),
+	}
+	// Try to select the default project in the list
+	for i, p := range projects {
+		if p.ID == projectID {
+			model.projectSelected = i
+			break
+		}
 	}
 	if len(patents) > 0 {
 		model.current = patents[0]
@@ -146,7 +176,7 @@ type refreshDetailsResultMsg struct {
 
 func (m Model) enrichClassificationDescriptionsCommand(number string) tea.Cmd {
 	return func() tea.Msg {
-		classifications, err := m.repo.ListClassifications(m.ctx, number)
+		classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, number)
 		if err != nil || len(classifications) == 0 {
 			return nil
 		}
@@ -177,7 +207,7 @@ func (m Model) enrichClassificationDescriptionsCommand(number string) tea.Cmd {
 		// Update missing descriptions in DB
 		for _, scraped := range bundle.Classifications {
 			if scraped.Description != "" {
-				_ = m.repo.UpdateClassificationDescription(m.ctx, scraped.System, scraped.Code, scraped.Description)
+				_ = m.repo.UpdateClassificationDescription(m.ctx, m.ProjectID, scraped.System, scraped.Code, scraped.Description)
 			}
 		}
 
@@ -228,11 +258,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case classificationEnrichedMsg:
 		if m.current.Number == msg.Number {
 			// Refresh current patent to pick up new descriptions
-			p, _ := m.repo.GetPatent(m.ctx, msg.Number)
+			p, _ := m.repo.GetPatent(m.ctx, m.ProjectID, msg.Number)
 			m.current = p
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.mode == viewSplash {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				m.projectSelected = clamp(m.projectSelected+1, 0, len(m.projects)-1)
+			case keyVimUp, keyArrowUp:
+				m.projectSelected = clamp(m.projectSelected-1, 0, len(m.projects)-1)
+			case keyEnter:
+				if len(m.projects) > 0 {
+					m.ProjectID = m.projects[m.projectSelected].ID
+					m.mode = viewList
+					return m.refreshList()
+				}
+			case keyNew:
+				m.input.Focus()
+				m.input.SetValue(":project create ")
+				return m, nil
+			case keyQuit:
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.loading {
 			if msg.String() == keyEsc || msg.String() == keyQuit {
 				if m.cancel != nil {
@@ -286,6 +337,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m.goBack()
+		case keyProject:
+			m.mode = viewSplash
+			m.projects, _ = m.repo.ListProjects(m.ctx)
+			// Set selection to current project
+			for i, p := range m.projects {
+				if p.ID == m.ProjectID {
+					m.projectSelected = i
+					break
+				}
+			}
+			return m, nil
 		case keyCommand, keySearch:
 			m.countBuffer = ""
 			m.input.Focus()
@@ -329,7 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = viewConfirmDelete
 				return m, nil
 			}
-		case keyDown, keyArrowDown:
+		case keyVimDown, keyArrowDown:
 			count := m.consumeCount(1)
 			if m.isCitationView() {
 				return m.moveCitationSelection(count), nil
@@ -349,7 +411,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewList && len(m.patents) > 0 {
 				m.selected = clamp(m.selected+count, 0, len(m.patents)-1)
 			}
-		case keyUp, keyArrowUp:
+		case keyVimUp, keyArrowUp:
 			count := m.consumeCount(1)
 			if m.isCitationView() {
 				return m.moveCitationSelection(-count), nil
@@ -481,10 +543,14 @@ func (m Model) navigateTo(mode viewMode) Model {
 func (m Model) snapshot() navSnapshot {
 	patents := make([]domain.Patent, len(m.patents))
 	copy(patents, m.patents)
+	projects := make([]domain.Project, len(m.projects))
+	copy(projects, m.projects)
 	return navSnapshot{
 		mode:                   m.mode,
 		patents:                patents,
+		projects:               projects,
 		selected:               m.selected,
+		projectSelected:        m.projectSelected,
 		detailSelected:         m.detailSelected,
 		citesSelected:          m.citesSelected,
 		citedBySelected:        m.citedBySelected,
@@ -498,13 +564,19 @@ func (m Model) snapshot() navSnapshot {
 		message:                m.message,
 		err:                    m.err,
 		countBuffer:            m.countBuffer,
+		ProjectID:              m.ProjectID,
+		sortColumn:             m.sortColumn,
+		sortOrder:              m.sortOrder,
+		classFilter:            m.classFilter,
 	}
 }
 
 func (m Model) restore(snapshot navSnapshot) Model {
 	m.mode = snapshot.mode
 	m.patents = snapshot.patents
+	m.projects = snapshot.projects
 	m.selected = snapshot.selected
+	m.projectSelected = snapshot.projectSelected
 	m.detailSelected = snapshot.detailSelected
 	m.citesSelected = snapshot.citesSelected
 	m.citedBySelected = snapshot.citedBySelected
@@ -518,6 +590,10 @@ func (m Model) restore(snapshot navSnapshot) Model {
 	m.message = snapshot.message
 	m.err = snapshot.err
 	m.countBuffer = snapshot.countBuffer
+	m.ProjectID = snapshot.ProjectID
+	m.sortColumn = snapshot.sortColumn
+	m.sortOrder = snapshot.sortOrder
+	m.classFilter = snapshot.classFilter
 	return m
 }
 
@@ -527,8 +603,8 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 		m.backStack = m.backStack[:len(m.backStack)-1]
 		return m.restore(last), nil
 	}
-	if m.mode == viewList && m.filter != "" {
-		m.filter = ""
+	if m.mode == viewList && m.filter != EmptyFilter {
+		m.filter = EmptyFilter
 		return m.refreshList()
 	}
 	if m.mode != viewList {
@@ -577,6 +653,10 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.refreshCommand(command.Args)
 	case commandRefreshDetails:
 		return m.refreshVisibleCitationDetails()
+	case commandClass:
+		return m.classCommand(command.Args)
+	case commandSort:
+		return m.sortCommand(command.Args)
 	case domain.RelationCites:
 		m = m.navigateTo(viewCites)
 	case commandCitedBy:
@@ -609,6 +689,8 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.openBrowser(command.Args)
 	case commandHelp, commandHelpShort, keyHelp:
 		m = m.navigateTo(viewHelp)
+	case commandProject:
+		return m.projectCommand(command.Args)
 	default:
 		m.err = "unknown command: " + command.Name
 	}
@@ -626,6 +708,7 @@ func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 	m.cancel = cancel
 
 	repo := m.repo
+	projectID := m.ProjectID
 	logger := m.logger
 	currentStatus := m.current.Status
 
@@ -641,10 +724,10 @@ func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 			} else {
 				bundle.Patent.Status = domain.CitationStatusStored
 			}
-			if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
 			}
-			p, err := repo.GetPatent(ctx, bundle.Patent.Number)
+			p, err := repo.GetPatent(ctx, projectID, bundle.Patent.Number)
 			if err != nil {
 				return refreshResultMsg{err: err}
 			}
@@ -672,7 +755,7 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = "usage: :refresh, :refresh citations, or :refresh citedby"
 		return m, nil
 	}
-	if m.current.Number == "" {
+	if m.current.Number == EmptyFilter {
 		m.err = "open a patent before refreshing citations"
 		return m, nil
 	}
@@ -694,6 +777,7 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 
 	// Capture state for the command
 	repo := m.repo
+	projectID := m.ProjectID
 	currentNumber := m.current.Number
 	text := m.text
 	currentMode := m.mode
@@ -705,8 +789,8 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			beforeCites, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCites)
-			beforeCitedBy, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCitedBy)
+			beforeCites, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCites, storage.ListCitationsOptions{})
+			beforeCitedBy, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCitedBy, storage.ListCitationsOptions{})
 
 			bundle, err := importer.ImportGooglePatents(rawURL)
 			if err != nil {
@@ -714,17 +798,17 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			}
 
 			bundle.Patent.Status = currentStatus
-			if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
 			}
 
-			p, err := repo.GetPatent(ctx, currentNumber)
+			p, err := repo.GetPatent(ctx, projectID, currentNumber)
 			if err != nil {
 				return refreshResultMsg{err: err}
 			}
 
-			afterCites, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCites)
-			afterCitedBy, _ := repo.ListCitations(ctx, currentNumber, domain.RelationCitedBy)
+			afterCites, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCites, storage.ListCitationsOptions{})
+			afterCitedBy, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCitedBy, storage.ListCitationsOptions{})
 
 			msg := refreshResultMsg{
 				patent: p,
@@ -769,6 +853,7 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 	m.cancel = cancel
 
 	repo := m.repo
+	projectID := m.ProjectID
 	logger := m.logger
 
 	return m, tea.Batch(
@@ -789,7 +874,7 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				}
 
 				// Check if patent already exists
-				_, err := repo.GetPatent(ctx, edge.TargetPatent)
+				_, err := repo.GetPatent(ctx, projectID, edge.TargetPatent)
 				exists := err == nil
 
 				rawURL, err := importer.GooglePatentsURL(edge.TargetPatent)
@@ -806,7 +891,7 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				}
 
 				bundle.Patent.Status = domain.CitationStatusCached
-				if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+				if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 					logger.Error("citation details storage failed", "patent", edge.TargetPatent, "error", err)
 					return refreshDetailsResultMsg{err: err}
 				}
@@ -815,7 +900,7 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				if !exists {
 					status = domain.CitationStatusIgnored
 				}
-				if err := repo.UpdateCitationStatus(ctx, edge, status); err != nil {
+				if err := repo.UpdateCitationStatus(ctx, projectID, edge, status); err != nil {
 					return refreshDetailsResultMsg{err: err}
 				}
 				updatedCount++
@@ -852,7 +937,13 @@ func (m Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
 }
 
 func (m Model) refreshList() (tea.Model, tea.Cmd) {
-	patents, err := m.repo.ListPatents(m.ctx, m.filter)
+	opts := storage.ListPatentsOptions{
+		Filter:      m.filter,
+		ClassFilter: m.classFilter,
+		SortColumn:  m.sortColumn,
+		SortOrder:   m.sortOrder,
+	}
+	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, opts)
 	if err != nil {
 		m.err = err.Error()
 		m.logger.Error("list patents failed", "filter", m.filter, "error", err)
@@ -1004,7 +1095,7 @@ func (m Model) moveDetailSelection(delta int) Model {
 
 func (m Model) openPatent(number string) (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
-	p, err := m.repo.GetPatent(m.ctx, number)
+	p, err := m.repo.GetPatent(m.ctx, m.ProjectID, number)
 	if err != nil {
 		m.backStack = m.backStack[:len(m.backStack)-1]
 		m.err = err.Error()
@@ -1028,7 +1119,7 @@ func (m Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 	}
 	target := edge.TargetPatent
 	var bundle domain.PatentBundle
-	if p, err := m.repo.GetPatent(m.ctx, target); err == nil {
+	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, target); err == nil {
 		bundle.Patent = p
 	} else {
 		rawURL, err := importer.GooglePatentsURL(target)
@@ -1071,10 +1162,10 @@ func (m Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if _, err := m.repo.GetPatent(m.ctx, edge.TargetPatent); err != nil {
+	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedCitation()
 	}
-	if err := m.repo.UpdateCitationStatus(m.ctx, edge, domain.CitationStatusStored); err != nil {
+	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, domain.CitationStatusStored); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -1087,20 +1178,20 @@ func (m Model) storePendingPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.pendingBundle.Patent.Status = domain.CitationStatusStored
-	if err := m.repo.UpsertPatentBundle(m.ctx, m.pendingBundle); err != nil {
+	if err := m.repo.UpsertPatentBundle(m.ctx, m.ProjectID, m.pendingBundle); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
 	number := m.pendingBundle.Patent.Number
 	if m.pendingCitation.TargetPatent != "" {
-		if err := m.repo.UpdateCitationStatus(m.ctx, m.pendingCitation, domain.CitationStatusStored); err != nil {
+		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, m.pendingCitation, domain.CitationStatusStored); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
 	}
 	m.pendingBundle = domain.PatentBundle{}
 	m.pendingCitation = domain.CitationEdge{}
-	p, err := m.repo.GetPatent(m.ctx, number)
+	p, err := m.repo.GetPatent(m.ctx, m.ProjectID, number)
 	if err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -1126,7 +1217,7 @@ func (m Model) skipPendingPatent() (tea.Model, tea.Cmd) {
 func (m Model) updatePendingCitation(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
 	number := m.pendingBundle.Patent.Number
 	if m.pendingCitation.TargetPatent != "" {
-		if err := m.repo.UpdateCitationStatus(m.ctx, m.pendingCitation, status); err != nil {
+		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, m.pendingCitation, status); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -1150,7 +1241,7 @@ func (m Model) updateSelectedCitationStatus(status string, messageKey TextKey) (
 	if !ok {
 		return m, nil
 	}
-	if err := m.repo.UpdateCitationStatus(m.ctx, edge, status); err != nil {
+	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -1162,7 +1253,11 @@ func (m Model) currentReviewCitationEdges() ([]domain.CitationEdge, error) {
 	if strings.TrimSpace(m.reviewStatus) == "" {
 		return nil, nil
 	}
-	return m.repo.ListCitationsByStatus(m.ctx, m.reviewStatus)
+	opts := storage.ListCitationsOptions{
+		SortColumn: m.sortColumn,
+		SortOrder:  m.sortOrder,
+	}
+	return m.repo.ListCitationsByStatus(m.ctx, m.ProjectID, m.reviewStatus, opts)
 }
 
 func (m Model) selectedReviewCitationEdge() (domain.CitationEdge, bool, error) {
@@ -1197,7 +1292,7 @@ func (m Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	}
 	target := edge.TargetPatent
 	var bundle domain.PatentBundle
-	if p, err := m.repo.GetPatent(m.ctx, target); err == nil {
+	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, target); err == nil {
 		bundle.Patent = p
 	} else {
 		rawURL, err := importer.GooglePatentsURL(target)
@@ -1228,10 +1323,10 @@ func (m Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if _, err := m.repo.GetPatent(m.ctx, edge.TargetPatent); err != nil {
+	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedReviewCitation()
 	}
-	if err := m.repo.UpdateCitationStatus(m.ctx, edge, domain.CitationStatusStored); err != nil {
+	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, domain.CitationStatusStored); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -1248,7 +1343,7 @@ func (m Model) updateSelectedReviewCitationStatus(status string, messageKey Text
 	if !ok {
 		return m, nil
 	}
-	if err := m.repo.UpdateCitationStatus(m.ctx, edge, status); err != nil {
+	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -1290,29 +1385,195 @@ func (m *Model) setCitationSelection(value int) {
 }
 
 func (m Model) currentCitationEdges() ([]domain.CitationEdge, error) {
-	if m.current.Number == "" {
+	if m.current.Number == EmptyFilter {
 		return nil, nil
 	}
 	relation := domain.RelationCites
 	if m.mode == viewCitedBy {
 		relation = domain.RelationCitedBy
 	}
-	return m.repo.ListCitations(m.ctx, m.current.Number, relation)
+	opts := storage.ListCitationsOptions{
+		SortColumn: m.sortColumn,
+		SortOrder:  m.sortOrder,
+	}
+	return m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
+}
+
+func (m Model) classCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 || args[0] == "clear" {
+		m.classFilter = EmptyFilter
+		m.message = "classification filter cleared"
+	} else {
+		m.classFilter = strings.ToUpper(args[0])
+		m.message = "filtering by classification: " + m.classFilter
+	}
+	m.mode = viewList
+	return m.refreshList()
+}
+
+func (m Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.err = "usage: :sort <column> [asc|desc]"
+		return m, nil
+	}
+
+	col := strings.ToLower(args[0])
+	order := domain.SortOrderAsc
+	if len(args) > 1 {
+		order = strings.ToLower(args[1])
+	}
+
+	if order != domain.SortOrderAsc && order != domain.SortOrderDesc {
+		m.err = "invalid order: " + order
+		return m, nil
+	}
+
+	switch col {
+	case domain.SortColumnNumber, domain.SortColumnTitle, domain.SortColumnDate, domain.SortColumnStatus, domain.SortColumnAssignee, domain.SortColumnInventor, domain.SortColumnClass, "cpc":
+		m.sortColumn = col
+		if col == "cpc" {
+			m.sortColumn = domain.SortColumnClass
+		}
+		m.sortOrder = order
+		m.message = fmt.Sprintf("sorting by %s %s", m.sortColumn, order)
+		return m.refreshList()
+	default:
+		m.err = "invalid sort column: " + col
+		return m, nil
+	}
+}
+
+func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.mode = viewSplash
+		m.projects, _ = m.repo.ListProjects(m.ctx)
+		// Set selection to current project
+		for i, p := range m.projects {
+			if p.ID == m.ProjectID {
+				m.projectSelected = i
+				break
+			}
+		}
+		return m, nil
+	}
+
+	sub := args[0]
+	switch sub {
+	case "list":
+		m.mode = viewSplash
+		m.projects, _ = m.repo.ListProjects(m.ctx)
+		// Set selection to current project
+		for i, p := range m.projects {
+			if p.ID == m.ProjectID {
+				m.projectSelected = i
+				break
+			}
+		}
+		return m, nil
+	case "create":
+		if len(args) < 2 {
+			m.err = "usage: :project create <id> [name]"
+			return m, nil
+		}
+		id := args[1]
+		name := id
+		if len(args) > 2 {
+			name = strings.Join(args[2:], " ")
+		}
+		p := domain.Project{ID: id, Name: name}
+		if err := m.repo.CreateProject(m.ctx, p); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "project created: " + id
+		m.projects, _ = m.repo.ListProjects(m.ctx)
+		return m, nil
+	case "add":
+		if len(args) != 2 {
+			m.err = "usage: :project add <project_id>"
+			return m, nil
+		}
+		if m.current.Number == EmptyFilter {
+			m.err = "open a patent first"
+			return m, nil
+		}
+		targetID := args[1]
+		if err := m.repo.AddPatentToProject(m.ctx, targetID, m.current.Number); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = fmt.Sprintf("added %s to project %s", m.current.Number, targetID)
+		return m, nil
+	case "switch":
+		if len(args) != 2 {
+			m.err = "usage: :project switch <id>"
+			return m, nil
+		}
+		id := args[1]
+		p, err := m.repo.GetProject(m.ctx, id)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.ProjectID = p.ID
+		m.mode = viewList
+		m.message = "switched to project: " + p.Name
+		return m.refreshList()
+	case "status":
+		if len(args) < 2 {
+			m.err = "usage: :project status <status>"
+			return m, nil
+		}
+		status := strings.Join(args[1:], " ")
+		p, err := m.repo.GetProject(m.ctx, m.ProjectID)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		p.Status = status
+		if err := m.repo.UpdateProject(m.ctx, p); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "project status updated"
+		return m, nil
+	case "comment":
+		if len(args) < 2 {
+			m.err = "usage: :project comment <text>"
+			return m, nil
+		}
+		comment := strings.Join(args[1:], " ")
+		p, err := m.repo.GetProject(m.ctx, m.ProjectID)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		p.Comments = comment
+		if err := m.repo.UpdateProject(m.ctx, p); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "project comment updated"
+		return m, nil
+	default:
+		m.err = "unknown project subcommand: " + sub
+	}
+	return m, nil
 }
 
 func (m Model) summarize() (tea.Model, tea.Cmd) {
-	if m.current.Number == "" {
+	if m.current.Number == EmptyFilter {
 		m.err = "open a patent before summarizing"
 		return m, nil
 	}
-	classifications, _ := m.repo.ListClassifications(m.ctx, m.current.Number)
-	cites, _ := m.repo.ListCitations(m.ctx, m.current.Number, domain.RelationCites)
+	classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
+	cites, _ := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, domain.RelationCites, storage.ListCitationsOptions{})
 
 	// Convert Classification to ClassificationCode for AI summarizer compatibility if needed,
 	// but better to update AI summarizer too.
 	// For now, let's see what Summarize expects.
 	artifact := ai.Summarize(m.current, classifications, cites)
-	if _, err := m.repo.AddAIArtifact(m.ctx, artifact); err != nil {
+	if _, err := m.repo.AddAIAnalysis(m.ctx, m.ProjectID, artifact); err != nil {
 		m.err = err.Error()
 		m.logger.Error("summary artifact insert failed", "patent", m.current.Number, "error", err)
 		return m, nil
@@ -1323,17 +1584,17 @@ func (m Model) summarize() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) compare(otherNumber string) (tea.Model, tea.Cmd) {
-	if m.current.Number == "" {
+	if m.current.Number == EmptyFilter {
 		m.err = "open a patent before comparing"
 		return m, nil
 	}
-	other, err := m.repo.GetPatent(m.ctx, otherNumber)
+	other, err := m.repo.GetPatent(m.ctx, m.ProjectID, otherNumber)
 	if err != nil {
 		m.err = err.Error()
 		m.logger.Error("comparison target open failed", "patent", otherNumber, "error", err)
 		return m, nil
 	}
-	if _, err := m.repo.AddAIArtifact(m.ctx, ai.Compare(m.current, other)); err != nil {
+	if _, err := m.repo.AddAIAnalysis(m.ctx, m.ProjectID, ai.Compare(m.current, other)); err != nil {
 		m.err = err.Error()
 		m.logger.Error("comparison artifact insert failed", "patent", m.current.Number, "other", otherNumber, "error", err)
 		return m, nil
@@ -1350,11 +1611,11 @@ func (m Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 	switch args[0] {
 	case refActionAdd:
-		if m.current.Number == "" {
+		if m.current.Number == EmptyFilter {
 			m.err = "open a patent before adding a reference"
 			return m, nil
 		}
-		if _, err := m.repo.AddReference(m.ctx, m.current.Number, sqliterepo.CitationLabel(m.current)); err != nil {
+		if _, err := m.repo.AddReference(m.ctx, m.ProjectID, m.current.Number, sqliterepo.CitationLabel(m.current)); err != nil {
 			m.err = err.Error()
 			m.logger.Error("reference insert failed", "patent", m.current.Number, "error", err)
 			return m, nil
@@ -1372,9 +1633,9 @@ func (m Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 func (m Model) styleRow(index int, selected int, content string) string {
 	style := lipgloss.NewStyle()
 	if index == selected {
-		style = style.Background(lipgloss.Color("236")) // Faint gray for selection
+		style = style.Background(lipgloss.Color(ColorHighlight)) // Selection highlight
 	} else if index%2 != 0 {
-		style = style.Background(lipgloss.Color("233")) // Very dark gray for alternating
+		style = style.Background(lipgloss.Color(ColorAltRow)) // Alternating row
 	}
 
 	// Ensure the background spans the full width
@@ -1409,7 +1670,7 @@ func (m Model) View() string {
 		overlay := m.previewOverlay(content)
 
 		// Dim the background to simulate transparency
-		dimmedBg := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(bg)
+		dimmedBg := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Render(bg)
 		return m.composite(dimmedBg, overlay)
 	}
 
@@ -1417,6 +1678,10 @@ func (m Model) View() string {
 }
 
 func (m Model) renderView() string {
+	if m.mode == viewSplash {
+		return m.viewSplash()
+	}
+
 	var b strings.Builder
 	b.WriteString(m.renderScreenHeader())
 	b.WriteString("\n")
@@ -1460,9 +1725,9 @@ func (m Model) renderView() string {
 	if m.err != "" || m.message != "" {
 		b.WriteString("\n" + m.rule() + "\n")
 		if m.err != "" {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.singleLine(m.err)) + "\n")
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorError)).Render(m.singleLine(m.err)) + "\n")
 		} else {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(m.singleLine(m.message)) + "\n")
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSuccess)).Render(m.singleLine(m.message)) + "\n")
 		}
 	}
 	return b.String()
@@ -1535,7 +1800,7 @@ func (m Model) singleLine(value string) string {
 }
 
 func (m Model) navDefault() string {
-	return fmt.Sprintf(m.text.T(TextNavDefault), keyDown, keyUp, keyEnter, keyJump, keyCommand, keySearch, keyHelp, keyEsc, keyQuit)
+	return fmt.Sprintf(m.text.T(TextNavDefault), keyVimDown, keyVimUp, keyEnter, keyJump, keyCommand, keySearch, keyHelp, keyEsc, keyQuit)
 }
 
 func (m Model) viewList() string {
@@ -1543,7 +1808,7 @@ func (m Model) viewList() string {
 		return m.text.T(TextListEmpty) + "\n"
 	}
 	var b strings.Builder
-	if m.filter != "" {
+	if m.filter != EmptyFilter {
 		b.WriteString(m.text.T(TextListFilter) + ": " + m.filter + "\n\n")
 	}
 
@@ -1569,7 +1834,7 @@ func (m Model) viewList() string {
 		m.pad("Expires", expWidth+2) +
 		m.pad("Status", statusWidth)
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
 
 	for i, p := range m.patents {
@@ -1682,7 +1947,7 @@ func (m Model) viewDetail() string {
 		b.WriteString(prefix + m.jumpPrefix(i) + m.detailRow(field.label, value))
 	}
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.text.T(TextDetailOpenHint)))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.text.T(TextDetailOpenHint)))
 	b.WriteString("\n")
 	b.WriteString(p.Abstract + "\n")
 	return b.String()
@@ -1711,6 +1976,7 @@ func (m Model) detailFields() []detailField {
 	citationCount, citationRefreshedAt, citedByCount, citedByRefreshedAt := m.citationStats(p.Number)
 	fields := []detailField{
 		{label: TextDetailAssignee, value: p.Assignee, jumpLabel: jumpLabelAssignee},
+		{label: TextDetailLatestAssignment, value: p.LatestAssignment, jumpLabel: "L"},
 	}
 
 	// Add grouped inventors as a single field
@@ -1767,8 +2033,8 @@ func (m Model) citationStats(number string) (int, time.Time, int, time.Time) {
 	if strings.TrimSpace(number) == "" || m.repo == nil {
 		return 0, time.Time{}, 0, time.Time{}
 	}
-	citations, _ := m.repo.ListCitations(m.ctx, number, domain.RelationCites)
-	citedBy, _ := m.repo.ListCitations(m.ctx, number, domain.RelationCitedBy)
+	citations, _ := m.repo.ListCitations(m.ctx, m.ProjectID, number, domain.RelationCites, storage.ListCitationsOptions{})
+	citedBy, _ := m.repo.ListCitations(m.ctx, m.ProjectID, number, domain.RelationCitedBy, storage.ListCitationsOptions{})
 	return len(citations), latestCitationRefresh(citations), len(citedBy), latestCitationRefresh(citedBy)
 }
 
@@ -1810,7 +2076,7 @@ func (m Model) detailRow(label TextKey, value string) string {
 	if strings.TrimSpace(value) == "" {
 		value = m.text.T(TextValueUnknown)
 	}
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	return fmt.Sprintf("%-12s %s\n", labelStyle.Render(m.text.T(label)+":"), value)
 }
 
@@ -1823,16 +2089,20 @@ func (m Model) formatExpiration(p domain.Patent) string {
 		label += " (est.)"
 	}
 	if p.IsExpired(time.Now()) {
-		return lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("244")).Render(label)
+		return lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color(ColorDisabled)).Render(label)
 	}
 	return label
 }
 
 func (m Model) viewCitations(relation string) string {
-	if m.current.Number == "" {
+	if m.current.Number == EmptyFilter {
 		return "Open a patent first.\n"
 	}
-	edges, err := m.repo.ListCitations(m.ctx, m.current.Number, relation)
+	opts := storage.ListCitationsOptions{
+		SortColumn: m.sortColumn,
+		SortOrder:  m.sortOrder,
+	}
+	edges, err := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 	if err != nil {
 		return err.Error() + "\n"
 	}
@@ -1843,9 +2113,9 @@ func (m Model) viewCitations(relation string) string {
 	m.setCitationSelection(selected)
 	window := pageWindow(selected, len(edges), m.pageSize())
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.citationOpenHint()))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.citationOpenHint()))
 	b.WriteString("\n\n")
 
 	indexWidth := 4
@@ -1869,7 +2139,7 @@ func (m Model) viewCitations(relation string) string {
 		m.pad("Expires", expWidth+2) +
 		m.pad("Status", statusWidth)
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
 
 	for i := window.Start; i < window.End; i++ {
@@ -1917,9 +2187,9 @@ func (m Model) viewReviewQueue() string {
 	window := pageWindow(selected, len(edges), m.pageSize())
 	var b strings.Builder
 	b.WriteString(m.citationStatusLabel(m.reviewStatus) + "\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.reviewOpenHint()))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.reviewOpenHint()))
 	b.WriteString("\n\n")
 
 	indexWidth := 4
@@ -1943,7 +2213,7 @@ func (m Model) viewReviewQueue() string {
 		m.pad("Expires", expWidth+2) +
 		m.pad("Source", sourceWidth)
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
 
 	for i := window.Start; i < window.End; i++ {
@@ -2054,10 +2324,10 @@ func (m Model) previewOverlay(content string) string {
 	width := m.overlayWidth()
 	style := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("245")).
+		BorderForeground(lipgloss.Color(ColorSubtle)).
 		Padding(1, 2).
 		Width(width).
-		Background(lipgloss.Color("235")) // Slightly lighter background for the box
+		Background(lipgloss.Color(ColorSurface)) // Slightly lighter background for the box
 	return style.Render(content)
 }
 
@@ -2088,7 +2358,7 @@ func (m Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	p := m.patents[m.selected]
-	if err := m.repo.DeletePatent(m.ctx, p.Number); err != nil {
+	if err := m.repo.DeletePatent(m.ctx, m.ProjectID, p.Number); err != nil {
 		m.err = err.Error()
 		m.mode = viewList
 		return m, nil
@@ -2158,7 +2428,7 @@ func (m Model) jumpPrefix(index int) string {
 	if !m.jumpMode || index < 0 || index >= len(labels) {
 		return ""
 	}
-	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")).Render(labels[index]) + " "
+	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(labels[index]) + " "
 }
 
 func (m Model) applyJump(key string) Model {
@@ -2301,7 +2571,7 @@ func (m Model) goToRow(index int) Model {
 }
 
 func (m Model) viewClassifications() string {
-	classifications, err := m.repo.ListClassifications(m.ctx, m.current.Number)
+	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
@@ -2314,9 +2584,9 @@ func (m Model) viewClassifications() string {
 	window := pageWindow(selected, len(classifications), m.pageSize())
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(m.classificationOpenHint()))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.classificationOpenHint()))
 	b.WriteString("\n\n")
 
 	indexWidth := 4
@@ -2328,7 +2598,7 @@ func (m Model) viewClassifications() string {
 		m.pad("Code", codeWidth) +
 		m.pad("Description", descriptionWidth)
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Underline(true).Render(header))
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
 
 	for i := window.Start; i < window.End; i++ {
@@ -2347,7 +2617,7 @@ func (m Model) viewClassifications() string {
 }
 
 func (m Model) viewClassificationDetail() string {
-	classifications, err := m.repo.ListClassifications(m.ctx, m.current.Number)
+	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil || len(classifications) == 0 {
 		return ""
 	}
@@ -2377,7 +2647,7 @@ func (m Model) viewClassificationDetail() string {
 }
 
 func (m Model) moveClassificationSelection(delta int) Model {
-	classifications, _ := m.repo.ListClassifications(m.ctx, m.current.Number)
+	classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if len(classifications) == 0 {
 		m.countBuffer = ""
 		return m
@@ -2387,7 +2657,7 @@ func (m Model) moveClassificationSelection(delta int) Model {
 }
 
 func (m Model) goToClassification(index int) Model {
-	classifications, _ := m.repo.ListClassifications(m.ctx, m.current.Number)
+	classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if len(classifications) == 0 {
 		return m
 	}
@@ -2445,7 +2715,7 @@ func (m Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) viewText() string {
-	sections, err := m.repo.ListTextSections(m.ctx, m.current.Number)
+	sections, err := m.repo.ListTextSections(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
@@ -2460,7 +2730,7 @@ func (m Model) viewText() string {
 }
 
 func (m Model) viewNotes() string {
-	notes, err := m.repo.ListNotes(m.ctx, m.current.Number)
+	notes, err := m.repo.ListNotes(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
@@ -2473,7 +2743,7 @@ func (m Model) viewNotes() string {
 }
 
 func (m Model) viewRefs() string {
-	refs, err := m.repo.ListReferences(m.ctx)
+	refs, err := m.repo.ListReferences(m.ctx, m.ProjectID)
 	if err != nil {
 		return err.Error() + "\n"
 	}
@@ -2488,8 +2758,87 @@ func (m Model) viewRefs() string {
 	return b.String()
 }
 
+func (m Model) viewSplash() string {
+	logo := `
+  ██████╗  █████╗ ████████╗███████╗███╗   ██╗████████╗███╗   ███╗██╗███╗   ██╗███████╗
+  ██╔══██╗██╔══██╗╚══██╔══╝██╔════╝████╗  ██║╚══██╔══╝████╗ ████║██║████╗  ██║██╔════╝
+  ██████╔╝███████║   ██║   █████╗  ██╔██╗ ██║   ██║   ██╔████╔██║██║██╔██╗ ██║█████╗  
+  ██╔═══╝ ██╔══██║   ██║   ██╔══╝  ██║╚██╗██║   ██║   ██║╚██╔╝██║██║██║╚██╗██║██╔══╝  
+  ██║     ██║  ██║   ██║   ███████╗██║ ╚████║   ██║   ██║ ╚═╝ ██║██║██║ ╚████║███████╗
+  ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝
+	`
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
+	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Italic(true)
+
+	var b strings.Builder
+	b.WriteString("\n\n")
+	b.WriteString(m.center(style.Render(logo)))
+	b.WriteString("\n")
+	b.WriteString(m.center(sub.Render("Local Patent Research & Intelligence")))
+	b.WriteString("\n\n" + m.rule() + "\n\n")
+
+	if m.input.Focused() {
+		b.WriteString(m.center(m.input.View()))
+		b.WriteString("\n\n")
+	}
+
+	b.WriteString(m.center(lipgloss.NewStyle().Bold(true).Underline(true).Render("SELECT PROJECT")))
+	b.WriteString("\n\n")
+
+	if len(m.projects) == 0 {
+		b.WriteString(m.center("No projects found. Create one with 'n'"))
+	} else {
+		// Header for project list
+		pHeader := fmt.Sprintf("   %-20s %-10s %-10s %s", "Name", "ID", "Status", "Updated")
+		b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(pHeader)))
+		b.WriteString("\n")
+
+		for i, p := range m.projects {
+			prefix := "  "
+			if i == m.projectSelected {
+				prefix = "→ "
+			}
+
+			// Format row
+			updated := p.UpdatedAt.Format("2006-01-02")
+			row := fmt.Sprintf("%-20s %-10s %-10s %s", p.Name, "["+p.ID+"]", p.Status, updated)
+
+			// Highlight selection
+			rowStyle := lipgloss.NewStyle()
+			if i == m.projectSelected {
+				rowStyle = rowStyle.Foreground(lipgloss.Color(ColorTheme)).Bold(true)
+			} else {
+				rowStyle = rowStyle.Foreground(lipgloss.Color(ColorSubtle))
+			}
+
+			b.WriteString(m.center(prefix + rowStyle.Render(row)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n\n" + m.rule() + "\n")
+	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("j/k: move · enter: select · n: new · q: quit")))
+
+	// Center vertically
+	content := b.String()
+	lines := strings.Count(content, "\n")
+	padding := (m.height - lines) / 2
+	if padding > 0 {
+		content = strings.Repeat("\n", padding) + content
+	}
+
+	return content
+}
+
+func (m Model) center(s string) string {
+	if m.width <= 0 {
+		return s
+	}
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, s)
+}
+
 func (m Model) viewAI() string {
-	artifacts, err := m.repo.ListAIArtifacts(m.ctx, m.current.Number)
+	artifacts, err := m.repo.ListAIAnalyses(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
@@ -2498,7 +2847,7 @@ func (m Model) viewAI() string {
 	}
 	var b strings.Builder
 	for _, artifact := range artifacts {
-		label := artifact.ArtifactType
+		label := artifact.AnalysisType
 		if artifact.ComparedPatentNumber != "" {
 			label += " vs " + artifact.ComparedPatentNumber
 		}

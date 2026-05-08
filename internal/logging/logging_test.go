@@ -8,13 +8,14 @@ import (
 )
 
 func TestDatedPathAddsDateBeforeExtension(t *testing.T) {
-	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
 	got := DatedPath("logs/patentmine.log", now)
-	want := filepath.Join("logs", "patentmine-2026-08-19.log")
+	want := "logs/patentmine-2026-05-08.log"
 	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
+		t.Errorf("expected %q, got %q", want, got)
 	}
 }
+
 
 func TestOpenPrunesOldDatedLogs(t *testing.T) {
 	dir := t.TempDir()

@@ -123,11 +123,50 @@ func (m Model) screenAccent() string {
 
 func (m Model) renderScreenHeader() string {
 	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
-	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("PatentMine"))
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorTheme)).Render("PatentMine"))
 	b.WriteString(" ")
+
+	// Project details
+	pName := m.ProjectID
+	if m.ProjectID == "default" {
+		pName = "Default"
+	}
+	// Try to find the name if we have projects loaded
+	for _, p := range m.projects {
+		if p.ID == m.ProjectID {
+			pName = p.Name
+			break
+		}
+	}
+
+	projectTag := lipgloss.NewStyle().
+		Background(lipgloss.Color(ColorSurface)).
+		Foreground(lipgloss.Color(ColorTheme)).
+		Padding(0, 1).
+		Render(fmt.Sprintf("PROJECT: %s (%s)", pName, m.ProjectID))
+	b.WriteString(projectTag)
+	b.WriteString(" ")
+
 	b.WriteString(accent.Render(m.screenTitle()))
+
+	var filters []string
+	if m.filter != EmptyFilter {
+		filters = append(filters, fmt.Sprintf("filter:%s", m.filter))
+	}
+	if m.classFilter != EmptyFilter {
+		filters = append(filters, fmt.Sprintf("class:%s", m.classFilter))
+	}
+	if m.sortColumn != "" {
+		filters = append(filters, fmt.Sprintf("sort:%s %s", m.sortColumn, m.sortOrder))
+	}
+
+	if len(filters) > 0 {
+		b.WriteString(" ")
+		b.WriteString(subtle.Render("· " + strings.Join(filters, ", ")))
+	}
+
 	if subtitle := strings.TrimSpace(m.screenSubtitle()); subtitle != "" {
 		b.WriteString(" ")
 		b.WriteString(subtle.Render("· " + subtitle))

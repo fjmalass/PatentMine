@@ -18,6 +18,7 @@ const (
 	TextDetailClassification    TextKey = "detail.classification"
 	TextDetailExpiration        TextKey = "detail.expiration"
 	TextDetailStatus            TextKey = "detail.status"
+	TextDetailLatestAssignment  TextKey = "detail.latest_assignment"
 	TextDetailStoredLocal       TextKey = "detail.stored_local"
 	TextDetailSource            TextKey = "detail.source"
 	TextDetailCitationCount     TextKey = "detail.citation_count"
@@ -77,6 +78,15 @@ const (
 	TextHelpJumpRefs             TextKey = "help.jump.refs"
 	TextHelpJumpAI               TextKey = "help.jump.ai"
 	TextHelpJumpWeb              TextKey = "help.jump.web"
+	TextHelpJumpProject          TextKey = "help.jump.project"
+	TextHelpProjectList          TextKey = "help.project.list"
+	TextHelpProjectCreate        TextKey = "help.project.create"
+	TextHelpProjectSwitch        TextKey = "help.project.switch"
+	TextHelpProjectAdd           TextKey = "help.project.add"
+	TextHelpProjectStatus        TextKey = "help.project.status"
+	TextHelpProjectComment       TextKey = "help.project.comment"
+	TextHelpSort                 TextKey = "help.sort"
+	TextHelpClass                TextKey = "help.class"
 	TextCitationsEmpty           TextKey = "citations.empty"
 	TextCitationsOpenFailed      TextKey = "citations.open_failed"
 	TextPreviewTitle             TextKey = "preview.title"
@@ -120,6 +130,7 @@ func EnglishText() TextCatalog {
 		TextDetailClassification:    "Classification",
 		TextDetailExpiration:        "Expiration",
 		TextDetailStatus:            "Status",
+		TextDetailLatestAssignment:  "Latest Assignment",
 		TextDetailStoredLocal:       "Stored",
 		TextDetailSource:            "Source",
 		TextDetailCitationCount:     "Citations",
@@ -180,6 +191,15 @@ func EnglishText() TextCatalog {
 		TextHelpJumpRefs:             "Jump to references",
 		TextHelpJumpAI:               "Jump to AI artifacts",
 		TextHelpJumpWeb:              "Open in system browser",
+		TextHelpJumpProject:          "Jump to project selection",
+		TextHelpProjectList:          "List all projects.",
+		TextHelpProjectCreate:        "Create a new project.",
+		TextHelpProjectSwitch:        "Switch to a different project.",
+		TextHelpProjectAdd:           "Add current patent to a project.",
+		TextHelpProjectStatus:        "Update current project status.",
+		TextHelpProjectComment:       "Update current project comment.",
+		TextHelpSort:                 "Sort the list by column (number, title, date, status, assignee, inventor, class).",
+		TextHelpClass:                "Filter the list by classification prefix.",
 		TextCitationsEmpty:           "No citation records.",
 		TextCitationsOpenFailed:      "patent is not stored and could not be imported",
 		TextPreviewTitle:             "Reference preview",

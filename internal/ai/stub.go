@@ -9,13 +9,13 @@ import (
 
 const Provider = "local-stub"
 
-func Summarize(p domain.Patent, classifications []domain.Classification, citations []domain.CitationEdge) domain.AIArtifact {
+func Summarize(p domain.Patent, classifications []domain.Classification, citations []domain.CitationEdge) domain.AIAnalysis {
 	body := fmt.Sprintf("Local summary for %s: %s. Assignee: %s. Classification coverage: %s. Citation count in this database: %d. Abstract focus: %s",
 		p.Number, p.Title, valueOrUnknown(p.Assignee), joinClassifications(classifications), len(citations), firstSentence(p.Abstract))
-	return domain.AIArtifact{PatentNumber: p.Number, ArtifactType: "summary", Provider: Provider, Body: body}
+	return domain.AIAnalysis{PatentNumber: p.Number, AnalysisType: domain.AnalysisTypeSummary, Provider: Provider, Body: body}
 }
 
-func Compare(base, other domain.Patent) domain.AIArtifact {
+func Compare(base, other domain.Patent) domain.AIAnalysis {
 	score := 0
 	if base.Assignee != "" && strings.EqualFold(base.Assignee, other.Assignee) {
 		score += 30
@@ -25,7 +25,7 @@ func Compare(base, other domain.Patent) domain.AIArtifact {
 		score = 100
 	}
 	body := fmt.Sprintf("Local comparison: %s vs %s. Deterministic relevance score: %d/100. Shared terms are derived from title and abstract overlap; matching assignee adds weight.", base.Number, other.Number, score)
-	return domain.AIArtifact{PatentNumber: base.Number, ArtifactType: "comparison", ComparedPatentNumber: other.Number, Provider: Provider, Body: body}
+	return domain.AIAnalysis{PatentNumber: base.Number, AnalysisType: domain.AnalysisTypeComparison, ComparedPatentNumber: other.Number, Provider: Provider, Body: body}
 }
 
 func joinClassifications(classifications []domain.Classification) string {

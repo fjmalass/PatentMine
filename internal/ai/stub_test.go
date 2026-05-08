@@ -14,7 +14,7 @@ func TestSummarizeAndCompare(t *testing.T) {
 		t.Fatalf("unexpected summary: %+v", summary)
 	}
 	comparison := Compare(p, domain.Patent{Number: "US2", Title: "Patent search method", Abstract: "A method searches documents.", Assignee: "Example"})
-	if comparison.ArtifactType != "comparison" || !strings.Contains(comparison.Body, "US1 vs US2") {
+	if comparison.AnalysisType != "comparison" || !strings.Contains(comparison.Body, "US1 vs US2") {
 		t.Fatalf("unexpected comparison: %+v", comparison)
 	}
 }

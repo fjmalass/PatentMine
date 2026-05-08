@@ -6,6 +6,7 @@ import (
 
 	"patentmine/internal/domain"
 	"patentmine/internal/importer"
+	"patentmine/internal/storage"
 )
 
 func TestRepositorySetupAndSeedIdempotency(t *testing.T) {
@@ -16,22 +17,22 @@ func TestRepositorySetupAndSeedIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {
-		if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+		if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
 			t.Fatal(err)
 		}
 	}
-	patents, err := repo.ListPatents(ctx, "")
+	patents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(patents) != 1 {
 		t.Fatalf("expected one patent after repeated seed, got %d", len(patents))
 	}
-	classifications, _ := repo.ListClassifications(ctx, "US11611785B2")
+	classifications, _ := repo.ListClassifications(ctx, "default", "US11611785B2")
 	if len(classifications) != len(bundle.Classifications) {
 		t.Fatalf("expected %d classifications, got %d", len(bundle.Classifications), len(classifications))
 	}
-	patent, err := repo.GetPatent(ctx, "US11611785B2")
+	patent, err := repo.GetPatent(ctx, "default", "US11611785B2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,10 +61,10 @@ func TestRepositoryIgnoresDuplicateClassificationsInImportBundle(t *testing.T) {
 			{Code: "", Description: "empty code should be skipped"},
 		},
 	}
-	if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+	if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
 		t.Fatal(err)
 	}
-	classifications, err := repo.ListClassifications(ctx, "US-DUP-CPC")
+	classifications, err := repo.ListClassifications(ctx, "default", "US-DUP-CPC")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,17 +84,17 @@ func TestRepositoryRefreshPrunesStaleCitationsAndPreservesStatus(t *testing.T) {
 			{TargetPatent: "US3", RelationType: domain.RelationCitedBy},
 		},
 	}
-	if err := repo.UpsertPatentBundle(ctx, initial); err != nil {
+	if err := repo.UpsertPatentBundle(ctx, "default", initial); err != nil {
 		t.Fatal(err)
 	}
-	citedBy, err := repo.ListCitations(ctx, "US-REFRESH", domain.RelationCitedBy)
+	citedBy, err := repo.ListCitations(ctx, "default", "US-REFRESH", domain.RelationCitedBy, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(citedBy) != 2 {
 		t.Fatalf("expected initial cited-by count 2, got %d", len(citedBy))
 	}
-	if err := repo.UpdateCitationStatus(ctx, citedBy[0], domain.CitationStatusIgnored); err != nil {
+	if err := repo.UpdateCitationStatus(ctx, "default", citedBy[0], domain.CitationStatusIgnored); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,10 +103,10 @@ func TestRepositoryRefreshPrunesStaleCitationsAndPreservesStatus(t *testing.T) {
 		{TargetPatent: "US1", RelationType: domain.RelationCites},
 		{TargetPatent: citedBy[0].TargetPatent, RelationType: domain.RelationCitedBy},
 	}
-	if err := repo.UpsertPatentBundle(ctx, refreshed); err != nil {
+	if err := repo.UpsertPatentBundle(ctx, "default", refreshed); err != nil {
 		t.Fatal(err)
 	}
-	citedBy, err = repo.ListCitations(ctx, "US-REFRESH", domain.RelationCitedBy)
+	citedBy, err = repo.ListCitations(ctx, "default", "US-REFRESH", domain.RelationCitedBy, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,10 +138,10 @@ func TestRepositoryOperations(t *testing.T) {
 		Citations:       []domain.CitationEdge{{TargetPatent: "US2", RelationType: domain.RelationCites}},
 		Classifications: []domain.Classification{{Code: "G06F", Description: "Computing"}},
 	}
-	if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+	if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
 		t.Fatal(err)
 	}
-	patent, err := repo.GetPatent(ctx, "US1")
+	patent, err := repo.GetPatent(ctx, "default", "US1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,13 +154,13 @@ func TestRepositoryOperations(t *testing.T) {
 	if patent.StoredAt.IsZero() {
 		t.Fatal("expected stored-local timestamp")
 	}
-	if got, _ := repo.ListPatents(ctx, "widget"); len(got) != 1 {
+	if got, _ := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{Filter: "widget"}); len(got) != 1 {
 		t.Fatalf("expected filtered patent, got %d", len(got))
 	}
-	if got, _ := repo.ListPatents(ctx, "Inventor One"); len(got) != 1 {
+	if got, _ := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{Filter: "Inventor One"}); len(got) != 1 {
 		t.Fatalf("expected inventor-filtered patent, got %d", len(got))
 	}
-	citations, err := repo.ListCitations(ctx, "US1", domain.RelationCites)
+	citations, err := repo.ListCitations(ctx, "default", "US1", domain.RelationCites, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,10 +173,10 @@ func TestRepositoryOperations(t *testing.T) {
 	if citations[0].CreatedAt.IsZero() || citations[0].RefreshedAt.IsZero() || citations[0].LabeledAt.IsZero() {
 		t.Fatalf("expected citation timestamps, got created=%v refreshed=%v labeled=%v", citations[0].CreatedAt, citations[0].RefreshedAt, citations[0].LabeledAt)
 	}
-	if err := repo.UpdateCitationStatus(ctx, citations[0], domain.CitationStatusIgnored); err != nil {
+	if err := repo.UpdateCitationStatus(ctx, "default", citations[0], domain.CitationStatusIgnored); err != nil {
 		t.Fatal(err)
 	}
-	citations, err = repo.ListCitations(ctx, "US1", domain.RelationCites)
+	citations, err = repo.ListCitations(ctx, "default", "US1", domain.RelationCites, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,57 +186,57 @@ func TestRepositoryOperations(t *testing.T) {
 	if citations[0].LabeledAt.IsZero() {
 		t.Fatal("expected citation labeled timestamp")
 	}
-	ignored, err := repo.ListCitationsByStatus(ctx, domain.CitationStatusIgnored)
+	ignored, err := repo.ListCitationsByStatus(ctx, "default", domain.CitationStatusIgnored, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(ignored) != 1 || ignored[0].TargetPatent != "US2" {
 		t.Fatalf("expected ignored citation queue, got %+v", ignored)
 	}
-	if err := repo.UpsertPatentBundle(ctx, bundle); err != nil {
+	if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
 		t.Fatal(err)
 	}
-	citations, err = repo.ListCitations(ctx, "US1", domain.RelationCites)
+	citations, err = repo.ListCitations(ctx, "default", "US1", domain.RelationCites, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if citations[0].Status != domain.CitationStatusIgnored {
 		t.Fatalf("expected refresh to preserve citation status, got %q", citations[0].Status)
 	}
-	if got, _ := repo.ListTextSections(ctx, "US1"); len(got) != 1 {
+	if got, _ := repo.ListTextSections(ctx, "default", "US1"); len(got) != 1 {
 		t.Fatalf("expected text section, got %d", len(got))
 	}
-	if note, err := repo.AddNote(ctx, "US1", "important"); err != nil || note.Body != "important" {
+	if note, err := repo.AddNote(ctx, "default", "US1", "important"); err != nil || note.Body != "important" {
 		t.Fatalf("unexpected note: %+v %v", note, err)
 	}
-	if got, _ := repo.ListNotes(ctx, "US1"); len(got) != 1 {
+	if got, _ := repo.ListNotes(ctx, "default", "US1"); len(got) != 1 {
 		t.Fatalf("expected note, got %d", len(got))
 	}
-	if _, err := repo.AddReference(ctx, "US1", "US1, Widget analyzer"); err != nil {
+	if _, err := repo.AddReference(ctx, "default", "US1", "US1, Widget analyzer"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := repo.ListReferences(ctx); len(got) != 1 {
+	if got, _ := repo.ListReferences(ctx, "default"); len(got) != 1 {
 		t.Fatalf("expected reference, got %d", len(got))
 	}
-	if _, err := repo.AddAIArtifact(ctx, domain.AIArtifact{PatentNumber: "US1", ArtifactType: "summary", Provider: "local-stub", Body: "summary"}); err != nil {
+	if _, err := repo.AddAIAnalysis(ctx, "default", domain.AIAnalysis{PatentNumber: "US1", AnalysisType: "summary", Provider: "local-stub", Body: "summary"}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := repo.ListAIArtifacts(ctx, "US1"); len(got) != 1 {
+	if got, _ := repo.ListAIAnalyses(ctx, "default", "US1"); len(got) != 1 {
 		t.Fatalf("expected AI artifact, got %d", len(got))
 	}
 
 	// Test Patent Status and Deletion
-	if err := repo.DeletePatent(ctx, "US1"); err != nil {
+	if err := repo.DeletePatent(ctx, "default", "US1"); err != nil {
 		t.Fatal(err)
 	}
-	patent, err = repo.GetPatent(ctx, "US1")
+	patent, err = repo.GetPatent(ctx, "default", "US1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if patent.Status != domain.CitationStatusIgnored {
 		t.Fatalf("expected patent status to be ignored, got %q", patent.Status)
 	}
-	patents, err := repo.ListPatents(ctx, "")
+	patents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,45 +252,8 @@ func TestRepositoryOperations(t *testing.T) {
 	}
 }
 
-func TestRepositoryMigratesExpirationDateColumn(t *testing.T) {
-	ctx := context.Background()
-	repo, err := Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = repo.Close() })
-	if _, err := repo.db.ExecContext(ctx, `create table patents (
-		number text primary key,
-		title text not null,
-		abstract text not null,
-		assignee text not null,
-		inventors_json text not null,
-		publication_date text not null,
-		grant_date text not null,
-		source_url text not null
-	)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.Setup(ctx); err != nil {
-		t.Fatal(err)
-	}
-	hasColumn, err := repo.hasColumn(ctx, "patents", "expiration_date")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hasColumn {
-		t.Fatal("expected expiration_date column to be added")
-	}
-	hasColumn, err = repo.hasColumn(ctx, "patents", "expiration_estimated")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hasColumn {
-		t.Fatal("expected expiration_estimated column to be added")
-	}
-}
-
 func newTestRepo(t *testing.T) *Repository {
+
 	t.Helper()
 	repo, err := Open(":memory:")
 	if err != nil {

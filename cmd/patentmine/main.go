@@ -28,13 +28,20 @@ func main() {
 		return
 	}
 
+	// Ensure directories exist
+	for _, dir := range []string{tui.DefaultDBDir, tui.DefaultLogDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			exit(fmt.Errorf("failed to create %s directory: %w", dir, err))
+		}
+	}
+
 	logger, closeLog, logPath, err := logging.Open(config.LogFile, config.MaxLogs)
 	if err != nil {
 		exit(err)
 	}
 	defer closeLog()
 	logger.Info("starting patentmine", "log_file", logPath, "max_logs", config.MaxLogs)
-	repo, err := sqliterepo.Open("./patentmine.db")
+	repo, err := sqliterepo.Open(tui.DefaultDBPath)
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
 		exit(err)
@@ -70,7 +77,7 @@ func parseCLI(args []string) (cliConfig, error) {
 	}
 	flags := flag.NewFlagSet("patentmine", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&config.LogFile, "log-file", "./patentmine.log", "base log file path; the current date is appended before the extension")
+	flags.StringVar(&config.LogFile, "log-file", tui.DefaultLogPath, "base log file path; the current date is appended before the extension")
 	flags.IntVar(&config.MaxLogs, "max-logs", 5, "maximum dated log files to keep; set to 0 to disable pruning")
 	flags.BoolVar(&config.Help, "help", false, "show CLI help")
 	flags.BoolVar(&config.Help, "h", false, "show CLI help")
@@ -121,8 +128,8 @@ func (m cliHelpModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (cliHelpModel) View() string {
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("PatentMine CLI")
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("Press any key to close.")
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(tui.ColorTheme)).Render("PatentMine CLI")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color(tui.ColorSubtle)).Render("Press any key to close.")
 	return "\n" + title + "\n\n" + cliHelpText() + "\n" + hint + "\n"
 }
 
@@ -132,7 +139,7 @@ func cliHelpText() string {
 	b.WriteString("  patentmine [flags]\n\n")
 	b.WriteString("Flags:\n")
 	b.WriteString("  --log-file PATH   Base log path. The app writes to PATH with YYYY-MM-DD before the extension.\n")
-	b.WriteString("                    Default: ./patentmine.log -> ./patentmine-2026-08-19.log\n")
+	b.WriteString("                    Default: logs/patentmine.log -> logs/patentmine-2026-05-08.log\n")
 	b.WriteString("  --max-logs N      Maximum dated log files to keep. Use 0 to disable pruning. Default: 5\n")
 	b.WriteString("  --help, -h        Show this help.\n")
 	return b.String()
@@ -143,11 +150,12 @@ func seedFixture(ctx context.Context, repo *sqliterepo.Repository) error {
 	if err != nil {
 		return err
 	}
-	existing, err := repo.GetPatent(ctx, "US11611785B2")
+	// Note: We use a placeholder project ID for seeding
+	existing, err := repo.GetPatent(ctx, "default", "US11611785B2")
 	if err == nil && existing.ExpirationDate != "" && existing.ExpirationEstimated == bundle.Patent.ExpirationEstimated {
 		return nil
 	}
-	return repo.UpsertPatentBundle(ctx, bundle)
+	return repo.UpsertPatentBundle(ctx, "default", bundle)
 }
 
 func exit(err error) {

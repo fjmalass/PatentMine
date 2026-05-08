@@ -4,12 +4,13 @@ skip_core_tasks = true
 
 [env]
 GOCACHE = "/tmp/go-build"
-PATENTMINE_LOG_FILE = "./patentmine.log"
+PATENTMINE_LOG_FILE = "logs/patentmine.log"
 PATENTMINE_MAX_LOGS = "5"
 PATENTMINE_MAX_LOG_BACKUPS = "5"
 
 [tasks.default]
-alias = "launch"
+alias = "run"
+
 
 [tasks.init]
 private = true
@@ -107,7 +108,7 @@ args = ["-f", "patentmine"]
 description = "Remove the local SQLite database so the next launch reseeds the fixture."
 category = "Maintenance"
 command = "rm"
-args = ["-f", "patentmine.db", "patentmine.db-shm", "patentmine.db-wal"]
+args = ["-rf", "db/"]
 
 [tasks.logs]
 description = "Print the local TUI log file."

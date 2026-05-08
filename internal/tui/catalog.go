@@ -15,11 +15,12 @@ type HelpEntry struct {
 var commandHelpEntries = []HelpEntry{
 	{Usage: "/term", Description: TextHelpFilterPatents},
 	{Usage: keyCommand + commandAdd + " US11611785B2", Description: TextHelpAddPatent},
-	{Usage: keyCommand + commandImport + " <google-patents-url>", Description: TextHelpImportPatent},
-	{Usage: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
-	{Usage: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
+	{Usage: keyCommand + commandImport + " <url>", Description: TextHelpImportPatent},
+	{Usage: keyCommand + commandRefresh + " [" + refreshTargetCitedBy + "|" + refreshTargetCitations + "|all]", Description: TextHelpRefreshCitations},
 	{Usage: keyCommand + commandRefreshDetails, Description: TextHelpRefreshDetails},
 	{Usage: keyCommand + commandOpen + " US11611785B2", Description: TextHelpOpenPatent},
+	{Usage: keyCommand + commandClass + " <cpc>", Description: TextHelpClass},
+	{Usage: keyCommand + commandSort + " <col> [asc|desc]", Description: TextHelpSort},
 	{Usage: keyCommand + domain.RelationCites, Description: TextHelpShowCites},
 	{Usage: keyCommand + commandCitedBy, Description: TextHelpShowCitedBy},
 	{Usage: keyCommand + commandClassification, Description: TextHelpShowClassification},
@@ -32,14 +33,21 @@ var commandHelpEntries = []HelpEntry{
 	{Usage: keyCommand + commandRef + " " + refActionExport, Description: TextHelpRefExport},
 	{Usage: keyCommand + commandIgnored, Description: TextHelpReviewIgnored},
 	{Usage: keyCommand + commandUnderReview, Description: TextHelpReviewUnderReview},
+	{Usage: keyCommand + commandProject + " list", Description: TextHelpProjectList},
+	{Usage: keyCommand + commandProject + " create <id> [name]", Description: TextHelpProjectCreate},
+	{Usage: keyCommand + commandProject + " switch <id>", Description: TextHelpProjectSwitch},
+	{Usage: keyCommand + commandProject + " add <id>", Description: TextHelpProjectAdd},
+	{Usage: keyCommand + commandProject + " status <text>", Description: TextHelpProjectStatus},
+	{Usage: keyCommand + commandProject + " comment <text>", Description: TextHelpProjectComment},
 	{Usage: keyCommand + commandBrowser, Description: TextHelpOpenBrowser},
 	{Usage: keyCommand + commandHelp, Description: TextHelpShowHelp},
 }
 
 var shortcutHelp = []HelpEntry{
-	{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+	{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 	{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 	{Usage: keyDelete, Description: TextHelpDeletePatent},
+	{Usage: keyProject, Description: TextHelpJumpProject},
 	{Usage: keyCites, Description: TextHelpJumpCitations},
 	{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
 	{Usage: keyClassification, Description: TextHelpJumpClassification},
@@ -55,7 +63,7 @@ var shortcutHelp = []HelpEntry{
 var helpExamples = []string{
 	":add US11611785B2",
 	":refresh citedby",
-	":import https://patents.google.com/patent/US11611785B2/en?oq=US11611785B2+",
+	":import https://patents.google.com/patent/US11611785B2/en",
 }
 
 func RenderHelp(text TextCatalog) string {
@@ -85,7 +93,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 	switch mode {
 	case viewList:
 		return []HelpEntry{
-			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Usage: keySearch + "term", Description: TextHelpFilterPatents},
 			{Usage: keyCites, Description: TextHelpJumpCitations},
@@ -96,7 +104,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 		}
 	case viewDetail:
 		return []HelpEntry{
-			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Usage: keyCites, Description: TextHelpJumpCitations},
 			{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
@@ -106,8 +114,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 		}
 	case viewCites, viewCitedBy:
 		return []HelpEntry{
-			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
-			{Usage: "10" + keyDown + "/" + "10" + keyUp, Description: TextHelpMoveList},
+			{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
 			{Usage: "10" + keyGoto, Description: TextHelpMoveList},
 			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Usage: keyYes, Description: TextHelpRefAdd},
@@ -119,8 +127,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 		}
 	case viewReview:
 		return []HelpEntry{
-			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
-			{Usage: "10" + keyDown + "/" + "10" + keyUp, Description: TextHelpMoveList},
+			{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
 			{Usage: "10" + keyGoto, Description: TextHelpMoveList},
 			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Usage: keyYes, Description: TextHelpRefAdd},
@@ -133,8 +141,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 		}
 	case viewClassifications:
 		return []HelpEntry{
-			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
-			{Usage: "10" + keyDown + "/" + "10" + keyUp, Description: TextHelpMoveList},
+			{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
 			{Usage: "10" + keyGoto, Description: TextHelpMoveList},
 			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Usage: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
@@ -151,7 +159,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 		}
 	case viewInventors:
 		return []HelpEntry{
-			{Usage: keyDown + "/" + keyUp + " or arrow keys", Description: TextHelpMoveList},
+			{Usage: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
 			{Usage: keyQuit, Description: TextHelpBackOrQuit},

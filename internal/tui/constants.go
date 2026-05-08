@@ -24,6 +24,9 @@ const (
 	commandHelpShort       = "h"
 	commandBrowser         = "browser"
 	commandWeb             = "web"
+	commandProject         = "project"
+	commandSort            = "sort"
+	commandClass           = "class"
 
 	refActionAdd    = "add"
 	refActionExport = "export"
@@ -47,11 +50,11 @@ const (
 	keySearch         = "/"
 	keyOpen           = "o"
 	keyDelete         = "D"
-	keyDown           = "j"
-	keyGoto           = "g"
+	keyVimDown        = "j"
+	keyVimUp          = "k"
 	keyArrowDown      = "down"
-	keyUp             = "k"
 	keyArrowUp        = "up"
+	keyGoto           = "g"
 	keyCites          = "c"
 	keyCitedBy        = "b"
 	keyClassification = "p"
@@ -61,9 +64,11 @@ const (
 	keyAI             = "a"
 	keyWeb            = "w"
 	keyJump           = "f"
+	keyProject        = "P"
 	keyHelp           = "?"
 	keyYes            = "y"
 	keyNo             = "n"
+	keyNew            = "n"
 	keyIgnore         = "i"
 	keyUnreview       = "u"
 
@@ -85,10 +90,34 @@ const (
 	jumpLabelCitedByCount   = "b"
 
 	inventorJumpNumberLabels = "123456789"
+
+	EmptyFilter = ""
+	EmptySortColumn = ""
+	EmptySortOrder = ""
+
+	ColorTheme     = "39"  // Blue
+	ColorAccent    = "205" // Pink/Magenta
+	ColorSubtle    = "245" // Light Gray
+	ColorHighlight = "236" // Dark Gray (Selection)
+	ColorAltRow    = "233" // Near Black (Alternating)
+	ColorSurface   = "235" // Very Dark Gray (Surface)
+	ColorError     = "9"   // Red
+	ColorSuccess   = "10"  // Green
+	ColorWarning   = "222" // Warm Yellow
+	ColorYellow    = "11"  // Bright Yellow
+	ColorDisabled  = "244" // Gray
+	ColorDim       = "240" // Muted Gray
+)
+
+const (
+	DefaultDBPath  = "db/patentmine.db"
+	DefaultLogPath = "logs/patentmine.log"
+	DefaultDBDir   = "db"
+	DefaultLogDir  = "logs"
 )
 
 var StatusColors = map[string]string{
-	domain.CitationStatusIgnored:     "244", // Gray
-	domain.CitationStatusUnderReview: "222", // Yellow
-	domain.CitationStatusStored:      "39",  // Blue (Theme color)
+	domain.CitationStatusIgnored:     ColorSubtle,
+	domain.CitationStatusUnderReview: "222", // Keep yellow for review
+	domain.CitationStatusStored:      ColorTheme,
 }

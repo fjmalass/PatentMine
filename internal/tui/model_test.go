@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/storage"
 )
 
 func TestFormatExpirationShowsEstimatedSuffix(t *testing.T) {
@@ -138,8 +139,8 @@ func TestApplyJumpSelectsDetailField(t *testing.T) {
 		current:  domain.Patent{Assignee: "Divx LLC", Inventors: []string{"Kourosh Soroushian"}},
 	}
 	got := model.applyJump(jumpLabelInventors)
-	if got.detailSelected != 1 {
-		t.Fatalf("expected detail selection 1, got %d", got.detailSelected)
+	if got.detailSelected != 2 {
+		t.Fatalf("expected detail selection 2, got %d", got.detailSelected)
 	}
 }
 
@@ -152,6 +153,7 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 	got := model.jumpLabels()
 	want := []string{
 		jumpLabelAssignee,
+		"L",
 		jumpLabelInventors,
 		jumpLabelPublication,
 		jumpLabelGrant,
@@ -321,13 +323,13 @@ func TestNumericPrefixMovesSelections(t *testing.T) {
 		selected: 0,
 	}
 	updated, _ := model.Update(teaKey("3"))
-	updated, _ = updated.Update(teaKey(keyDown))
+	updated, _ = updated.Update(teaKey(keyVimDown))
 	got := updated.(Model)
 	if got.selected != 3 {
 		t.Fatalf("expected 3j to move to row 4, got %d", got.selected)
 	}
 	updated, _ = got.Update(teaKey("2"))
-	updated, _ = updated.Update(teaKey(keyUp))
+	updated, _ = updated.Update(teaKey(keyVimUp))
 	got = updated.(Model)
 	if got.selected != 1 {
 		t.Fatalf("expected 2k to move to row 2, got %d", got.selected)
@@ -456,12 +458,12 @@ func TestDetailFieldsGroupInventors(t *testing.T) {
 		},
 	}
 	fields := model.detailFields()
-	// Index 1 is now the grouped inventors field
-	if fields[1].label != TextDetailInventors || fields[1].value != "Inventor One, Inventor Two" || fields[1].displayValue != "(2) Inventor One, Inventor Two" {
-		t.Fatalf("unexpected grouped inventors field: %+v", fields[1])
+	// Index 2 is now the grouped inventors field
+	if fields[2].label != TextDetailInventors || fields[2].value != "Inventor One, Inventor Two" || fields[2].displayValue != "(2) Inventor One, Inventor Two" {
+		t.Fatalf("unexpected grouped inventors field: %+v", fields[2])
 	}
-	if fields[1].jumpLabel != jumpLabelInventors {
-		t.Fatalf("unexpected inventor jump label: %q", fields[1].jumpLabel)
+	if fields[2].jumpLabel != jumpLabelInventors {
+		t.Fatalf("unexpected inventor jump label: %q", fields[2].jumpLabel)
 	}
 }
 
@@ -496,7 +498,7 @@ type emptyClassificationRepo struct {
 	stubRepo
 }
 
-func (emptyClassificationRepo) ListClassifications(context.Context, string) ([]domain.Classification, error) {
+func (emptyClassificationRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
 	return nil, nil
 }
 
@@ -505,7 +507,7 @@ type classificationRepo struct {
 	classifications []domain.Classification
 }
 
-func (r classificationRepo) ListClassifications(context.Context, string) ([]domain.Classification, error) {
+func (r classificationRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
 	return r.classifications, nil
 }
 
@@ -514,11 +516,11 @@ type citationRepo struct {
 	edges []domain.CitationEdge
 }
 
-func (r citationRepo) ListCitations(context.Context, string, string) ([]domain.CitationEdge, error) {
+func (r citationRepo) ListCitations(context.Context, string, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return r.edges, nil
 }
 
-func (r citationRepo) ListCitationsByStatus(context.Context, string) ([]domain.CitationEdge, error) {
+func (r citationRepo) ListCitationsByStatus(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return r.edges, nil
 }
 
@@ -526,7 +528,7 @@ type storedCitationRepo struct {
 	citationRepo
 }
 
-func (r storedCitationRepo) GetPatent(_ context.Context, number string) (domain.Patent, error) {
+func (r storedCitationRepo) GetPatent(_ context.Context, _ string, number string) (domain.Patent, error) {
 	return domain.Patent{
 		Number:              number,
 		Title:               "Stored citation patent",
@@ -579,42 +581,52 @@ func detailFieldIndex(text TextCatalog, label TextKey) int {
 
 type stubRepo struct{}
 
-func (stubRepo) Close() error                                                  { return nil }
-func (stubRepo) Setup(context.Context) error                                   { return nil }
-func (stubRepo) UpsertPatentBundle(context.Context, domain.PatentBundle) error { return nil }
-func (stubRepo) GetPatent(context.Context, string) (domain.Patent, error) {
-	return domain.Patent{}, nil
-}
-func (stubRepo) ListPatents(context.Context, string) ([]domain.Patent, error) { return nil, nil }
-func (stubRepo) ListCitations(context.Context, string, string) ([]domain.CitationEdge, error) {
+func (stubRepo) Close() error                                                            { return nil }
+func (stubRepo) Setup(context.Context) error                                             { return nil }
+func (stubRepo) CreateProject(context.Context, domain.Project) error                     { return nil }
+func (stubRepo) GetProject(context.Context, string) (domain.Project, error)              { return domain.Project{}, nil }
+func (stubRepo) ListProjects(context.Context) ([]domain.Project, error)                  { return nil, nil }
+func (stubRepo) UpdateProject(context.Context, domain.Project) error                     { return nil }
+func (stubRepo) DeleteProject(context.Context, string) error                             { return nil }
+func (stubRepo) AddPatentToProject(context.Context, string, string) error                { return nil }
+func (stubRepo) RemovePatentFromProject(context.Context, string, string) error           { return nil }
+func (stubRepo) UpsertPatentBundle(context.Context, string, domain.PatentBundle) error   { return nil }
+func (stubRepo) GetPatent(context.Context, string, string) (domain.Patent, error)         { return domain.Patent{}, nil }
+func (stubRepo) ListPatents(context.Context, string, storage.ListPatentsOptions) ([]domain.Patent, error) {
 	return nil, nil
 }
-func (stubRepo) ListCitationsByStatus(context.Context, string) ([]domain.CitationEdge, error) {
+
+func (stubRepo) ListCitations(context.Context, string, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return nil, nil
 }
-func (stubRepo) UpdateCitationStatus(context.Context, domain.CitationEdge, string) error { return nil }
-func (stubRepo) UpdatePatentStatus(context.Context, string, string) error                { return nil }
-func (stubRepo) UpdateClassificationDescription(context.Context, string, string, string) error {
+func (stubRepo) ListCitationsByStatus(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+	return nil, nil
+}
+func (stubRepo) UpdateCitationStatus(context.Context, string, domain.CitationEdge, string) error {
 	return nil
 }
-func (stubRepo) DeletePatent(context.Context, string) error { return nil }
-func (stubRepo) ListClassifications(context.Context, string) ([]domain.Classification, error) {
+func (stubRepo) UpdatePatentStatus(context.Context, string, string, string) error { return nil }
+func (stubRepo) UpdateClassificationDescription(context.Context, string, string, string, string) error {
+	return nil
+}
+func (stubRepo) DeletePatent(context.Context, string, string) error { return nil }
+func (stubRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
 	return nil, nil
 }
-func (stubRepo) ListTextSections(context.Context, string) ([]domain.PatentTextSection, error) {
+func (stubRepo) ListTextSections(context.Context, string, string) ([]domain.PatentTextSection, error) {
 	return nil, nil
 }
-func (stubRepo) AddNote(context.Context, string, string) (domain.ResearchNote, error) {
+func (stubRepo) AddNote(context.Context, string, string, string) (domain.ResearchNote, error) {
 	return domain.ResearchNote{}, nil
 }
-func (stubRepo) ListNotes(context.Context, string) ([]domain.ResearchNote, error) { return nil, nil }
-func (stubRepo) AddReference(context.Context, string, string) (domain.ReferenceEntry, error) {
+func (stubRepo) ListNotes(context.Context, string, string) ([]domain.ResearchNote, error) { return nil, nil }
+func (stubRepo) AddReference(context.Context, string, string, string) (domain.ReferenceEntry, error) {
 	return domain.ReferenceEntry{}, nil
 }
-func (stubRepo) ListReferences(context.Context) ([]domain.ReferenceEntry, error) { return nil, nil }
-func (stubRepo) AddAIArtifact(context.Context, domain.AIArtifact) (domain.AIArtifact, error) {
-	return domain.AIArtifact{}, nil
+func (stubRepo) ListReferences(context.Context, string) ([]domain.ReferenceEntry, error) { return nil, nil }
+func (stubRepo) AddAIAnalysis(context.Context, string, domain.AIAnalysis) (domain.AIAnalysis, error) {
+	return domain.AIAnalysis{}, nil
 }
-func (stubRepo) ListAIArtifacts(context.Context, string) ([]domain.AIArtifact, error) {
+func (stubRepo) ListAIAnalyses(context.Context, string, string) ([]domain.AIAnalysis, error) {
 	return nil, nil
 }

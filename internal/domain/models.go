@@ -14,6 +14,30 @@ const (
 	CitationStatusCached      = "cached"
 )
 
+const (
+	SortColumnNumber   = "number"
+	SortColumnTitle    = "title"
+	SortColumnDate     = "date"
+	SortColumnStatus   = "status"
+	SortColumnAssignee = "assignee"
+	SortColumnInventor = "inventor"
+	SortColumnClass    = "class"
+	SortColumnCPC      = "cpc"
+
+	SortOrderAsc  = "asc"
+	SortOrderDesc = "desc"
+)
+
+const (
+	AnalysisTypeSummary    = "summary"
+	AnalysisTypeComparison = "comparison"
+)
+
+const (
+	ProjectStatusActive   = "active"
+	ProjectStatusArchived = "archived"
+)
+
 type Patent struct {
 	Number              string
 	Title               string
@@ -28,6 +52,7 @@ type Patent struct {
 	StoredAt            time.Time
 	Status              string
 	ClassificationLabel string
+	LatestAssignment    string
 }
 
 type PatentTextSection struct {
@@ -76,10 +101,19 @@ type ReferenceEntry struct {
 	CreatedAt     time.Time
 }
 
-type AIArtifact struct {
+type Project struct {
+	ID        string
+	Name      string
+	Status    string
+	Comments  string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type AIAnalysis struct {
 	ID                   int64
 	PatentNumber         string
-	ArtifactType         string
+	AnalysisType         string
 	ComparedPatentNumber string
 	Provider             string
 	Body                 string

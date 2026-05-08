@@ -62,7 +62,7 @@ makers --list-all-steps
 
 ## Logging
 
-PatentMine writes logs to a dated file. By default, `./patentmine.log` becomes `./patentmine-YYYY-MM-DD.log`, for example `./patentmine-2026-08-19.log`. Runs on the same date append to the same file.
+PatentMine writes logs to a dated file in the `logs/` directory. By default, `logs/patentmine.log` becomes `logs/patentmine-YYYY-MM-DD.log`, for example `logs/patentmine-2026-05-08.log`. Runs on the same date append to the same file.
 
 Configure the base log path and retention:
 
@@ -98,7 +98,7 @@ PATENTMINE_MAX_LOG_BACKUPS=10 makers backup-log
 - `makers check`: run `fmt`, `test`, and `build`
 - `makers tidy`: resolve Go module dependencies
 - `makers logs`: print the last 80 TUI log lines
-- `makers reset-db`: remove the local SQLite database files
+- `makers reset-db`: remove the local `db/` directory
 - `makers backup`: create a timestamped backup
 - `makers backup-log`: create a dated backup of the current log
 - `makers list-backups`: list existing backups
