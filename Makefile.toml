@@ -1,0 +1,88 @@
+[config]
+default_to_workspace = false
+
+[env]
+GOCACHE = "/tmp/go-build"
+
+[tasks.default]
+alias = "launch"
+
+[tasks.launch]
+description = "Launch the PatentMine TUI."
+command = "go"
+args = ["run", "-buildvcs=false", "./cmd/patentmine"]
+
+[tasks.run]
+alias = "launch"
+
+[tasks.test]
+description = "Run all Go tests."
+command = "go"
+args = ["test", "./..."]
+
+[tasks.build]
+description = "Build the PatentMine binary at ./patentmine."
+command = "go"
+args = ["build", "-buildvcs=false", "-o", "patentmine", "./cmd/patentmine"]
+
+[tasks.tidy]
+description = "Resolve and tidy Go module dependencies."
+command = "go"
+args = ["mod", "tidy"]
+
+[tasks.fmt]
+description = "Format all Go files."
+command = "gofmt"
+args = [
+  "-w",
+  "cmd/patentmine/main.go",
+  "internal/logging/logging.go",
+  "internal/domain/models.go",
+  "internal/domain/models_test.go",
+  "internal/storage/storage.go",
+  "internal/storage/sqlite/repository.go",
+  "internal/storage/sqlite/repository_test.go",
+  "internal/importer/fixture.go",
+  "internal/importer/fixture_test.go",
+  "internal/importer/google.go",
+  "internal/importer/google_test.go",
+  "internal/ai/stub.go",
+  "internal/ai/stub_test.go",
+  "internal/tui/commands.go",
+  "internal/tui/commands_test.go",
+  "internal/tui/constants.go",
+  "internal/tui/catalog.go",
+  "internal/tui/catalog_test.go",
+  "internal/tui/text.go",
+  "internal/tui/model.go",
+  "internal/tui/model_test.go",
+]
+
+[tasks.check]
+description = "Format, test, and build."
+dependencies = ["fmt", "test", "build"]
+
+[tasks.clean]
+description = "Remove the built binary."
+command = "rm"
+args = ["-f", "patentmine"]
+
+[tasks.reset-db]
+description = "Remove the local SQLite database so the next launch reseeds the fixture."
+command = "rm"
+args = ["-f", "patentmine.db", "patentmine.db-shm", "patentmine.db-wal"]
+
+[tasks.logs]
+description = "Print the local TUI log file."
+command = "tail"
+args = ["-n", "80", "patentmine.log"]
+
+[tasks.backup]
+description = "Create a timestamped backup of the database and PDFs using the backup script."
+command = "bash"
+args = ["scripts/backup.sh"]
+
+[tasks.list-backups]
+description = "List all existing backups."
+command = "ls"
+args = ["-lh", "backups/"]

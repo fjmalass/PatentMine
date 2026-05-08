@@ -1,0 +1,48 @@
+{
+  "patent": {
+    "number": "US11611785B2",
+    "title": "System and method for analyzing patent documents using machine learning",
+    "abstract": "A computer implemented workflow ingests patent documents, extracts structured features, compares references, and presents ranked research results for review.",
+    "assignee": "Example Analytics LLC",
+    "inventors": ["Avery Chen", "Morgan Patel"],
+    "publication_date": "2023-03-21",
+    "grant_date": "2023-03-21",
+    "expiration_date": "2043-03-21",
+    "expiration_estimated": true,
+    "source_url": "https://patents.google.com/patent/US11611785B2/en?oq=US11611785B2+"
+  },
+  "sections": [
+    {
+      "section_type": "claims",
+      "ordinal": 1,
+      "text": "1. A computer implemented method comprising receiving patent document text, extracting metadata and citations, storing normalized records, and presenting a research interface configured to compare related patent documents."
+    },
+    {
+      "section_type": "description",
+      "ordinal": 1,
+      "text": "Patent research commonly requires review of claims, descriptions, classification codes, and citation relationships. Local persistence allows repeated review and annotation without re-fetching source documents."
+    },
+    {
+      "section_type": "summary",
+      "ordinal": 1,
+      "text": "The disclosed system combines structured patent import, citation graph storage, notes, reference lists, and generated research artifacts."
+    }
+  ],
+  "cpcs": [
+    {"code": "G06F16/33", "description": "Querying; searching; information retrieval"},
+    {"code": "G06N20/00", "description": "Machine learning"},
+    {"code": "G06Q50/18", "description": "Legal services; handling legal documents"}
+  ],
+  "citations": [
+    {"target_patent": "US20190347888A1", "relation_type": "cites"},
+    {"target_patent": "US20200125678A1", "relation_type": "cites"},
+    {"target_patent": "US11720555B2", "relation_type": "cited_by"},
+    {"target_patent": "US11816110B1", "relation_type": "cited_by"}
+  ],
+  "references": [
+    {
+      "patent_number": "US11611785B2",
+      "citation_label": "US11611785B2, System and method for analyzing patent documents using machine learning"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+/patentmine
+patentmine.db
+patentmine.log
+/pdfs/
+/backups/
+*.db-shm
+*.db-wal
