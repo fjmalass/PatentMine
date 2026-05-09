@@ -147,8 +147,40 @@ func (m Model) renderScreenHeader() string {
 		Padding(0, 1).
 		Render(fmt.Sprintf("PROJECT: %s (%s)", pName, m.ProjectID))
 	b.WriteString(projectTag)
-	b.WriteString(" ")
 
+	// Summary status badge
+	for _, p := range m.projects {
+		if p.ID != m.ProjectID {
+			continue
+		}
+		if p.SummaryStatus != "" {
+			label := p.SummaryStatus
+			if l, ok := SummaryStatusLabels[p.SummaryStatus]; ok {
+				label = l
+			}
+			color := ColorSubtle
+			if c, ok := SummaryStatusColors[p.SummaryStatus]; ok {
+				color = c
+			}
+			badge := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(color)).
+				Bold(true).
+				Render(" · " + label)
+			b.WriteString(badge)
+		}
+		break
+	}
+
+	// Unpaid invoice warning
+	if count := m.unpaidCounts[m.ProjectID]; count > 0 {
+		warn := lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ColorWarning)).
+			Bold(true).
+			Render(fmt.Sprintf(" · %d unpaid", count))
+		b.WriteString(warn)
+	}
+
+	b.WriteString(" ")
 	b.WriteString(accent.Render(m.screenTitle()))
 
 	var filters []string

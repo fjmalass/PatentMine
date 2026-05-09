@@ -7,9 +7,11 @@ import (
 
 func TestRenderHelpUsesCommandCatalog(t *testing.T) {
 	help := RenderHelp(EnglishText())
-	for _, entry := range commandHelpEntries {
-		if !strings.Contains(help, entry.Usage) {
-			t.Fatalf("help output missing command usage %q", entry.Usage)
+	for _, section := range commandHelpSections {
+		for _, entry := range section.Entries {
+			if !strings.Contains(help, entry.Usage) {
+				t.Fatalf("help output missing command usage %q (section %q)", entry.Usage, section.Title)
+			}
 		}
 	}
 	for _, entry := range shortcutHelp {

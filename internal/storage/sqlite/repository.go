@@ -51,6 +51,8 @@ func (r *Repository) createTables(ctx context.Context) error {
 			id text primary key,
 			name text not null,
 			status text not null default '%s',
+			summary_status text not null default '',
+			summary text not null default '',
 			comments text not null default '',
 			created_at text not null,
 			updated_at text not null
@@ -148,6 +150,38 @@ func (r *Repository) createTables(ctx context.Context) error {
 			foreign key (project_id) references projects(id),
 			foreign key (patent_number) references patents(number)
 		)`,
+		`create table if not exists project_events (
+			id integer primary key autoincrement,
+			project_id text not null,
+			event_type text not null,
+			event_date text not null default '',
+			due_date text not null default '',
+			reference text not null default '',
+			notes text not null default '',
+			created_at text not null,
+			foreign key (project_id) references projects(id)
+		)`,
+		`create table if not exists settings (
+			key text primary key,
+			value text not null
+		)`,
+		fmt.Sprintf(`create table if not exists project_invoices (
+			id integer primary key autoincrement,
+			project_id text not null,
+			direction text not null default '%s',
+			firm_name text not null default '',
+			invoice_number text not null default '',
+			amount text not null default '',
+			currency text not null default 'USD',
+			invoice_date text not null default '',
+			due_date text not null default '',
+			paid_date text not null default '',
+			status text not null default '%s',
+			description text not null default '',
+			notes text not null default '',
+			created_at text not null,
+			foreign key (project_id) references projects(id)
+		)`, domain.InvoiceDirectionToFirm, domain.InvoiceStatusOutstanding),
 	}
 	for _, stmt := range stmts {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
@@ -161,8 +195,8 @@ func (r *Repository) createTables(ctx context.Context) error {
 
 func (r *Repository) CreateProject(ctx context.Context, p domain.Project) error {
 	now := nowString()
-	if _, err := r.db.ExecContext(ctx, `insert into projects (id, name, status, comments, created_at, updated_at) values (?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Status, p.Comments, now, now); err != nil {
+	if _, err := r.db.ExecContext(ctx, `insert into projects (id, name, status, summary_status, summary, comments, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Status, p.SummaryStatus, p.Summary, p.Comments, now, now); err != nil {
 		return err
 	}
 	return nil
@@ -171,8 +205,8 @@ func (r *Repository) CreateProject(ctx context.Context, p domain.Project) error 
 func (r *Repository) GetProject(ctx context.Context, id string) (domain.Project, error) {
 	var p domain.Project
 	var createdAt, updatedAt string
-	err := r.db.QueryRowContext(ctx, `select id, name, status, comments, created_at, updated_at from projects where id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Status, &p.Comments, &createdAt, &updatedAt)
+	err := r.db.QueryRowContext(ctx, `select id, name, status, summary_status, summary, comments, created_at, updated_at from projects where id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Status, &p.SummaryStatus, &p.Summary, &p.Comments, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Project{}, fmt.Errorf("project not found")
@@ -185,7 +219,7 @@ func (r *Repository) GetProject(ctx context.Context, id string) (domain.Project,
 }
 
 func (r *Repository) ListProjects(ctx context.Context) ([]domain.Project, error) {
-	rows, err := r.db.QueryContext(ctx, `select id, name, status, comments, created_at, updated_at from projects order by updated_at desc`)
+	rows, err := r.db.QueryContext(ctx, `select id, name, status, summary_status, summary, comments, created_at, updated_at from projects order by updated_at desc`)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +228,7 @@ func (r *Repository) ListProjects(ctx context.Context) ([]domain.Project, error)
 	for rows.Next() {
 		var p domain.Project
 		var createdAt, updatedAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.Comments, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.SummaryStatus, &p.Summary, &p.Comments, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTime(createdAt)
@@ -205,8 +239,8 @@ func (r *Repository) ListProjects(ctx context.Context) ([]domain.Project, error)
 }
 
 func (r *Repository) UpdateProject(ctx context.Context, p domain.Project) error {
-	_, err := r.db.ExecContext(ctx, `update projects set name = ?, status = ?, comments = ?, updated_at = ? where id = ?`,
-		p.Name, p.Status, p.Comments, nowString(), p.ID)
+	_, err := r.db.ExecContext(ctx, `update projects set name = ?, status = ?, summary_status = ?, summary = ?, comments = ?, updated_at = ? where id = ?`,
+		p.Name, p.Status, p.SummaryStatus, p.Summary, p.Comments, nowString(), p.ID)
 	return err
 }
 
@@ -799,4 +833,136 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+// Settings
+
+func (r *Repository) GetSetting(ctx context.Context, key string) (string, error) {
+	var value string
+	err := r.db.QueryRowContext(ctx, `select value from settings where key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
+}
+
+func (r *Repository) SetSetting(ctx context.Context, key, value string) error {
+	_, err := r.db.ExecContext(ctx, `insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value`, key, value)
+	return err
+}
+
+// Project lifecycle events
+
+func (r *Repository) AddProjectEvent(ctx context.Context, e domain.ProjectEvent) (domain.ProjectEvent, error) {
+	now := nowString()
+	res, err := r.db.ExecContext(ctx,
+		`insert into project_events (project_id, event_type, event_date, due_date, reference, notes, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
+		e.ProjectID, e.EventType, e.EventDate, e.DueDate, e.Reference, e.Notes, now)
+	if err != nil {
+		return domain.ProjectEvent{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return domain.ProjectEvent{}, err
+	}
+	e.ID = id
+	e.CreatedAt = parseTime(now)
+	return e, nil
+}
+
+func (r *Repository) ListProjectEvents(ctx context.Context, projectID string) ([]domain.ProjectEvent, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select id, project_id, event_type, event_date, due_date, reference, notes, created_at from project_events where project_id = ? order by event_date desc, created_at desc`,
+		projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.ProjectEvent
+	for rows.Next() {
+		var e domain.ProjectEvent
+		var createdAt string
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.EventType, &e.EventDate, &e.DueDate, &e.Reference, &e.Notes, &createdAt); err != nil {
+			return nil, err
+		}
+		e.CreatedAt = parseTime(createdAt)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) DeleteProjectEvent(ctx context.Context, id int64) error {
+	_, err := r.db.ExecContext(ctx, `delete from project_events where id = ?`, id)
+	return err
+}
+
+// Project invoices
+
+func (r *Repository) AddProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) (domain.ProjectInvoice, error) {
+	now := nowString()
+	res, err := r.db.ExecContext(ctx,
+		`insert into project_invoices (project_id, direction, firm_name, invoice_number, amount, currency, invoice_date, due_date, paid_date, status, description, notes, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		inv.ProjectID, inv.Direction, inv.FirmName, inv.InvoiceNumber, inv.Amount, inv.Currency, inv.InvoiceDate, inv.DueDate, inv.PaidDate, inv.Status, inv.Description, inv.Notes, now)
+	if err != nil {
+		return domain.ProjectInvoice{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return domain.ProjectInvoice{}, err
+	}
+	inv.ID = id
+	inv.CreatedAt = parseTime(now)
+	return inv, nil
+}
+
+func (r *Repository) ListProjectInvoices(ctx context.Context, projectID string) ([]domain.ProjectInvoice, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select id, project_id, direction, firm_name, invoice_number, amount, currency, invoice_date, due_date, paid_date, status, description, notes, created_at from project_invoices where project_id = ? order by invoice_date desc, created_at desc`,
+		projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.ProjectInvoice
+	for rows.Next() {
+		var inv domain.ProjectInvoice
+		var createdAt string
+		if err := rows.Scan(&inv.ID, &inv.ProjectID, &inv.Direction, &inv.FirmName, &inv.InvoiceNumber, &inv.Amount, &inv.Currency, &inv.InvoiceDate, &inv.DueDate, &inv.PaidDate, &inv.Status, &inv.Description, &inv.Notes, &createdAt); err != nil {
+			return nil, err
+		}
+		inv.CreatedAt = parseTime(createdAt)
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) UpdateProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) error {
+	_, err := r.db.ExecContext(ctx,
+		`update project_invoices set direction=?, firm_name=?, invoice_number=?, amount=?, currency=?, invoice_date=?, due_date=?, paid_date=?, status=?, description=?, notes=? where id=?`,
+		inv.Direction, inv.FirmName, inv.InvoiceNumber, inv.Amount, inv.Currency, inv.InvoiceDate, inv.DueDate, inv.PaidDate, inv.Status, inv.Description, inv.Notes, inv.ID)
+	return err
+}
+
+func (r *Repository) DeleteProjectInvoice(ctx context.Context, id int64) error {
+	_, err := r.db.ExecContext(ctx, `delete from project_invoices where id = ?`, id)
+	return err
+}
+
+func (r *Repository) CountUnpaidInvoicesByProject(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select project_id, count(*) from project_invoices where status != 'paid' group by project_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var projectID string
+		var count int
+		if err := rows.Scan(&projectID, &count); err != nil {
+			return nil, err
+		}
+		out[projectID] = count
+	}
+	return out, rows.Err()
 }

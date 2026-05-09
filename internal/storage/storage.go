@@ -48,4 +48,20 @@ type Repository interface {
 	ListReferences(ctx context.Context, projectID string) ([]domain.ReferenceEntry, error)
 	AddAIAnalysis(ctx context.Context, projectID string, analysis domain.AIAnalysis) (domain.AIAnalysis, error)
 	ListAIAnalyses(ctx context.Context, projectID string, number string) ([]domain.AIAnalysis, error)
+
+	// Project lifecycle events
+	AddProjectEvent(ctx context.Context, e domain.ProjectEvent) (domain.ProjectEvent, error)
+	ListProjectEvents(ctx context.Context, projectID string) ([]domain.ProjectEvent, error)
+	DeleteProjectEvent(ctx context.Context, id int64) error
+
+	// Settings
+	GetSetting(ctx context.Context, key string) (string, error)
+	SetSetting(ctx context.Context, key, value string) error
+
+	// Project invoices
+	AddProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) (domain.ProjectInvoice, error)
+	ListProjectInvoices(ctx context.Context, projectID string) ([]domain.ProjectInvoice, error)
+	UpdateProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) error
+	DeleteProjectInvoice(ctx context.Context, id int64) error
+	CountUnpaidInvoicesByProject(ctx context.Context) (map[string]int, error)
 }

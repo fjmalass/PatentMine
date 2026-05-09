@@ -12,35 +12,73 @@ type HelpEntry struct {
 	Description TextKey
 }
 
-var commandHelpEntries = []HelpEntry{
-	{Usage: "/term", Description: TextHelpFilterPatents},
-	{Usage: keyCommand + commandAdd + " US11611785B2", Description: TextHelpAddPatent},
-	{Usage: keyCommand + commandImport + " <url>", Description: TextHelpImportPatent},
-	{Usage: keyCommand + commandRefresh + " [" + refreshTargetCitedBy + "|" + refreshTargetCitations + "|all]", Description: TextHelpRefreshCitations},
-	{Usage: keyCommand + commandRefreshDetails, Description: TextHelpRefreshDetails},
-	{Usage: keyCommand + commandOpen + " US11611785B2", Description: TextHelpOpenPatent},
-	{Usage: keyCommand + commandClass + " <cpc>", Description: TextHelpClass},
-	{Usage: keyCommand + commandSort + " <col> [asc|desc]", Description: TextHelpSort},
-	{Usage: keyCommand + domain.RelationCites, Description: TextHelpShowCites},
-	{Usage: keyCommand + commandCitedBy, Description: TextHelpShowCitedBy},
-	{Usage: keyCommand + commandClassification, Description: TextHelpShowClassification},
-	{Usage: keyCommand + commandText, Description: TextHelpShowText},
-	{Usage: keyCommand + commandRefs, Description: TextHelpShowRefs},
-	{Usage: keyCommand + commandNotes, Description: TextHelpShowNotes},
-	{Usage: keyCommand + commandSummarize, Description: TextHelpSummarize},
-	{Usage: keyCommand + commandCompare + " US11611785B2", Description: TextHelpCompare},
-	{Usage: keyCommand + commandRef + " " + refActionAdd, Description: TextHelpRefAdd},
-	{Usage: keyCommand + commandRef + " " + refActionExport, Description: TextHelpRefExport},
-	{Usage: keyCommand + commandIgnored, Description: TextHelpReviewIgnored},
-	{Usage: keyCommand + commandUnderReview, Description: TextHelpReviewUnderReview},
-	{Usage: keyCommand + commandProject + " list", Description: TextHelpProjectList},
-	{Usage: keyCommand + commandProject + " create <id> [name]", Description: TextHelpProjectCreate},
-	{Usage: keyCommand + commandProject + " switch <id>", Description: TextHelpProjectSwitch},
-	{Usage: keyCommand + commandProject + " add <id>", Description: TextHelpProjectAdd},
-	{Usage: keyCommand + commandProject + " status <text>", Description: TextHelpProjectStatus},
-	{Usage: keyCommand + commandProject + " comment <text>", Description: TextHelpProjectComment},
-	{Usage: keyCommand + commandBrowser, Description: TextHelpOpenBrowser},
-	{Usage: keyCommand + commandHelp, Description: TextHelpShowHelp},
+type HelpSection struct {
+	Title   string
+	Entries []HelpEntry
+}
+
+var commandHelpSections = []HelpSection{
+	{
+		Title: "Patents",
+		Entries: []HelpEntry{
+			{Usage: "/term", Description: TextHelpFilterPatents},
+			{Usage: keyCommand + commandAdd + " US11611785B2", Description: TextHelpAddPatent},
+			{Usage: keyCommand + commandImport + " <url>", Description: TextHelpImportPatent},
+			{Usage: keyCommand + commandOpen + " US11611785B2", Description: TextHelpOpenPatent},
+			{Usage: keyCommand + commandRefresh + " [" + refreshTargetCitedBy + "|" + refreshTargetCitations + "|all]", Description: TextHelpRefreshCitations},
+			{Usage: keyCommand + commandRefreshRefsDetails, Description: TextHelpRefreshDetails},
+			{Usage: keyCommand + commandClass + " <cpc>", Description: TextHelpClass},
+			{Usage: keyCommand + commandSort + " <col> [asc|desc]", Description: TextHelpSort},
+			{Usage: keyCommand + domain.RelationCites, Description: TextHelpShowCites},
+			{Usage: keyCommand + commandCitedBy, Description: TextHelpShowCitedBy},
+			{Usage: keyCommand + commandClassification, Description: TextHelpShowClassification},
+			{Usage: keyCommand + commandText, Description: TextHelpShowText},
+			{Usage: keyCommand + commandRefs, Description: TextHelpShowRefs},
+			{Usage: keyCommand + commandNotes, Description: TextHelpShowNotes},
+			{Usage: keyCommand + commandSummarize, Description: TextHelpSummarize},
+			{Usage: keyCommand + commandCompare + " US11611785B2", Description: TextHelpCompare},
+			{Usage: keyCommand + commandRef + " " + refActionAdd, Description: TextHelpRefAdd},
+			{Usage: keyCommand + commandRef + " " + refActionExport, Description: TextHelpRefExport},
+			{Usage: keyCommand + commandBrowser, Description: TextHelpOpenBrowser},
+		},
+	},
+	{
+		Title: "Review",
+		Entries: []HelpEntry{
+			{Usage: keyCommand + commandIgnored, Description: TextHelpReviewIgnored},
+			{Usage: keyCommand + commandUnderReview, Description: TextHelpReviewUnderReview},
+		},
+	},
+	{
+		Title: "Project",
+		Entries: []HelpEntry{
+			{Usage: keyCommand + commandProject + " list", Description: TextHelpProjectList},
+			{Usage: keyCommand + commandProject + " create <id> [name]", Description: TextHelpProjectCreate},
+			{Usage: keyCommand + commandProject + " switch <id>", Description: TextHelpProjectSwitch},
+			{Usage: keyCommand + commandProject + " add <id>", Description: TextHelpProjectAdd},
+			{Usage: keyCommand + commandProject + " status <active|archived>", Description: TextHelpProjectStatus},
+			{Usage: keyCommand + commandProject + " summary-status <stage>", Description: TextHelpProjectSummaryStatus},
+			{Usage: keyCommand + commandProject + " summary <text>", Description: TextHelpProjectSummary},
+			{Usage: keyCommand + commandProject + " comment <text>", Description: TextHelpProjectComment},
+			{Usage: keyCommand + commandProject + " delete <id>", Description: TextHelpProjectDelete},
+		},
+	},
+	{
+		Title: "Prosecution & Invoices",
+		Entries: []HelpEntry{
+			{Usage: keyCommand + commandProject + " event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]", Description: TextHelpProjectEvent},
+			{Usage: keyCommand + commandProject + " events", Description: TextHelpProjectEvents},
+			{Usage: keyCommand + commandProject + " invoice <amount> [currency USD] [direction to-firm|from-firm] [date YYYY-MM-DD] [due YYYY-MM-DD] [firm <name>] [ref <n>] [note <text>]", Description: TextHelpProjectInvoice},
+			{Usage: keyCommand + commandProject + " invoices", Description: TextHelpProjectInvoices},
+			{Usage: keyProjectInfo + " (from any patent view)", Description: TextHelpProjectInfo},
+		},
+	},
+	{
+		Title: "General",
+		Entries: []HelpEntry{
+			{Usage: keyCommand + commandHelp, Description: TextHelpShowHelp},
+		},
+	},
 }
 
 var shortcutHelp = []HelpEntry{
@@ -48,6 +86,7 @@ var shortcutHelp = []HelpEntry{
 	{Usage: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 	{Usage: keyDelete, Description: TextHelpDeletePatent},
 	{Usage: keyProject, Description: TextHelpJumpProject},
+	{Usage: keyProjectInfo, Description: TextHelpProjectInfo},
 	{Usage: keyCites, Description: TextHelpJumpCitations},
 	{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
 	{Usage: keyClassification, Description: TextHelpJumpClassification},
@@ -64,13 +103,18 @@ var helpExamples = []string{
 	":add US11611785B2",
 	":refresh citedby",
 	":import https://patents.google.com/patent/US11611785B2/en",
+	":project event provisional-filed date 2024-03-01",
+	":project invoice 5000 firm ACME date 2024-04-01 due 2024-05-01",
 }
 
 func RenderHelp(text TextCatalog) string {
 	var b strings.Builder
-	b.WriteString(text.T(TextHelpCommands) + "\n\n")
-	writeHelpEntries(&b, commandHelpEntries, text)
-	b.WriteString("\n" + text.T(TextHelpShortcuts) + "\n\n")
+	for _, section := range commandHelpSections {
+		b.WriteString(section.Title + "\n\n")
+		writeHelpEntries(&b, section.Entries, text)
+		b.WriteString("\n")
+	}
+	b.WriteString(text.T(TextHelpShortcuts) + "\n\n")
 	writeHelpEntries(&b, shortcutHelp, text)
 	b.WriteString("\n" + text.T(TextHelpExamples) + "\n\n")
 	for _, example := range helpExamples {
@@ -99,6 +143,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Usage: keyCites, Description: TextHelpJumpCitations},
 			{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
 			{Usage: keyClassification, Description: TextHelpJumpClassification},
+			{Usage: keyProjectInfo, Description: TextHelpProjectInfo},
 			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
 			{Usage: keyQuit, Description: TextHelpBackOrQuit},
 		}
@@ -109,6 +154,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Usage: keyCites, Description: TextHelpJumpCitations},
 			{Usage: keyCitedBy, Description: TextHelpJumpCitedBy},
 			{Usage: keyClassification, Description: TextHelpJumpClassification},
+			{Usage: keyProjectInfo, Description: TextHelpProjectInfo},
 			{Usage: keyHelp, Description: TextHelpShortcutShowHelp},
 			{Usage: keyQuit, Description: TextHelpBackOrQuit},
 		}
@@ -182,7 +228,7 @@ func globalHelpEntries() []HelpEntry {
 		{Usage: keyCommand + commandHelp, Description: TextHelpShowHelp},
 		{Usage: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
 		{Usage: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
-		{Usage: keyCommand + commandRefreshDetails, Description: TextHelpRefreshDetails},
+		{Usage: keyCommand + commandRefreshRefsDetails, Description: TextHelpRefreshDetails},
 		{Usage: keyCommand + commandBrowser, Description: TextHelpOpenBrowser},
 	}
 }

@@ -38,6 +38,80 @@ const (
 	ProjectStatusArchived = "archived"
 )
 
+const (
+	ProjectSummaryStatusWorkInProgress   = "work-in-progress"
+	ProjectSummaryStatusProvisionalFiled = "provisional-filed"
+	ProjectSummaryStatusApplicationFiled = "application-filed"
+	ProjectSummaryStatusPublished        = "published"
+	ProjectSummaryStatusGranted          = "granted"
+)
+
+const (
+	InvoiceDirectionToFirm   = "to-firm"
+	InvoiceDirectionFromFirm = "from-firm"
+)
+
+const (
+	InvoiceStatusOutstanding = "outstanding"
+	InvoiceStatusPaid        = "paid"
+	InvoiceStatusOverdue     = "overdue"
+	InvoiceStatusDisputed    = "disputed"
+)
+
+type ProjectInvoice struct {
+	ID            int64
+	ProjectID     string
+	Direction     string
+	FirmName      string
+	InvoiceNumber string
+	Amount        string
+	Currency      string
+	InvoiceDate   string
+	DueDate       string
+	PaidDate      string
+	Status        string
+	Description   string
+	Notes         string
+	CreatedAt     time.Time
+}
+
+const (
+	EventTypeProvisionalFiled    = "provisional-filed"
+	EventTypeApplicationFiled    = "application-filed"
+	EventTypePublication         = "publication"
+	EventTypeOANonFinal          = "office-action-non-final"
+	EventTypeOAFinal             = "office-action-final"
+	EventTypeResponseFiled       = "response-filed"
+	EventTypeRCEFiled            = "rce-filed"
+	EventTypeNoticeOfAllowance   = "notice-of-allowance"
+	EventTypeIssueFee            = "issue-fee-paid"
+	EventTypeGranted             = "patent-granted"
+	EventTypeMaintenance3        = "maintenance-due-3y"
+	EventTypeMaintenance7        = "maintenance-due-7y"
+	EventTypeMaintenance11       = "maintenance-due-11y"
+	EventTypeContinuationFiled   = "continuation-filed"
+	EventTypeDivisionalFiled     = "divisional-filed"
+	EventTypeCIPFiled            = "cip-filed"
+	EventTypeAppealFiled         = "appeal-filed"
+	EventTypePTABDecision        = "ptab-decision"
+	EventTypeIPRFiled            = "ipr-filed"
+	EventTypeReexamRequested     = "reexam-requested"
+	EventTypeExtensionFiled      = "extension-filed"
+	EventTypeAbandonment         = "abandonment"
+	EventTypeRevivalFiled        = "revival-filed"
+)
+
+type ProjectEvent struct {
+	ID        int64
+	ProjectID string
+	EventType string
+	EventDate string
+	DueDate   string
+	Reference string
+	Notes     string
+	CreatedAt time.Time
+}
+
 type Patent struct {
 	Number              string
 	Title               string
@@ -102,12 +176,14 @@ type ReferenceEntry struct {
 }
 
 type Project struct {
-	ID        string
-	Name      string
-	Status    string
-	Comments  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            string
+	Name          string
+	Status        string
+	SummaryStatus string
+	Summary       string
+	Comments      string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type AIAnalysis struct {

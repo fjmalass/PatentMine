@@ -43,23 +43,28 @@ const (
 	viewClassificationDetail viewMode = "classification-detail"
 	viewInventors            viewMode = "inventors"
 	viewSplash               viewMode = "splash"
+	viewProjectEvents        viewMode = "project-events"
+	viewProjectInvoices      viewMode = "project-invoices"
+	viewProjectInfo          viewMode = "project-info"
 )
 
 type Model struct {
-	ctx                    context.Context
-	repo                   storage.Repository
-	input                  textinput.Model
-	spinner                spinner.Model
-	loading                bool
-	loadingMsg             string
-	cancel                 context.CancelFunc
-	ProjectID              string
-	mode                   viewMode
-	patents                []domain.Patent
-	projects               []domain.Project
-	selected               int
-	projectSelected        int
-	detailSelected         int
+	ctx                     context.Context
+	repo                    storage.Repository
+	input                   textinput.Model
+	spinner                 spinner.Model
+	loading                 bool
+	loadingMsg              string
+	cancel                  context.CancelFunc
+	ProjectID               string
+	mode                    viewMode
+	patents                 []domain.Patent
+	projects                []domain.Project
+	selected                int
+	projectSelected         int
+	projectEventsSelected   int
+	projectInvoicesSelected int
+	detailSelected          int
 	citesSelected          int
 	citedBySelected        int
 	reviewSelected         int
@@ -82,15 +87,18 @@ type Model struct {
 	sortColumn             string
 	sortOrder              string
 	classFilter            string
+	unpaidCounts           map[string]int
 }
 
 type navSnapshot struct {
-	mode                   viewMode
-	patents                []domain.Patent
-	projects               []domain.Project
-	selected               int
-	projectSelected        int
-	detailSelected         int
+	mode                    viewMode
+	patents                 []domain.Patent
+	projects                []domain.Project
+	selected                int
+	projectSelected         int
+	projectEventsSelected   int
+	projectInvoicesSelected int
+	detailSelected          int
 	citesSelected          int
 	citedBySelected        int
 	reviewSelected         int
@@ -112,15 +120,18 @@ type navSnapshot struct {
 func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Model {
 	input := textinput.New()
 	input.Placeholder = ":add US11611785B2, :open US11611785B2, /machine learning"
-	input.Prompt = ""
+	input.Prompt = EmptyPrompt
 	input.CharLimit = 512
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAccent))
 
-	projectID := "default"
-	projects, _ := repo.ListProjects(ctx)
+	projectID := DefaultProjectID
+	if last, err := repo.GetSetting(ctx, SettingLastProjectID); err == nil && last != "" {
+		projectID = last
+	}
+
 	patents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
 		Filter:      EmptyFilter,
 		ClassFilter: EmptyFilter,
@@ -138,13 +149,12 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 		ProjectID:       projectID,
 		mode:            viewSplash,
 		patents:         patents,
-		projects:        projects,
-		projectSelected: 0, // Default to first project
+		projectSelected: 0,
 		logger:          logger,
 		text:            EnglishText(),
 	}
-	// Try to select the default project in the list
-	for i, p := range projects {
+	model = model.reloadProjects()
+	for i, p := range model.projects {
 		if p.ID == projectID {
 			model.projectSelected = i
 			break
@@ -156,16 +166,26 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 	return model
 }
 
+func (m Model) reloadProjects() Model {
+	m.projects, _ = m.repo.ListProjects(m.ctx)
+	m.unpaidCounts, _ = m.repo.CountUnpaidInvoicesByProject(m.ctx)
+	return m
+}
+
+func (m Model) saveLastProject() {
+	_ = m.repo.SetSetting(m.ctx, SettingLastProjectID, m.ProjectID)
+}
+
 type classificationEnrichedMsg struct {
 	Number string
 }
 
 type refreshResultMsg struct {
-	err            error
-	message        string
-	patent         domain.Patent
-	mode           viewMode
-	citesSelected  int
+	err             error
+	message         string
+	patent          domain.Patent
+	mode            viewMode
+	citesSelected   int
 	citedBySelected int
 }
 
@@ -239,7 +259,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.citesSelected = msg.citesSelected
 		m.citedBySelected = msg.citedBySelected
 		m.message = msg.message
-		return m, nil
+		return m.refreshList()
 	case refreshDetailsResultMsg:
 		m.loading = false
 		m.cancel = nil
@@ -257,12 +277,99 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = ""
 	case classificationEnrichedMsg:
 		if m.current.Number == msg.Number {
-			// Refresh current patent to pick up new descriptions
-			p, _ := m.repo.GetPatent(m.ctx, m.ProjectID, msg.Number)
-			m.current = p
+			if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, msg.Number); err == nil {
+				m.current = p
+			}
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.input.Focused() {
+			switch msg.String() {
+			case keyEnter:
+				command := m.input.Value()
+				m.input.Blur()
+				m.input.SetValue("")
+				return m.runCommand(ParseCommand(command))
+			case keyEsc:
+				m.input.Blur()
+				m.input.SetValue("")
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+		if m.mode == viewProjectInfo {
+			switch msg.String() {
+			case keyEsc, keyQuit, keyProjectInfo:
+				return m.goBack()
+			case keyEditAppStatus:
+				m.input.Focus()
+				m.input.SetValue(":project summary-status ")
+				return m, nil
+			case keyEditSummary:
+				m.input.Focus()
+				m.input.SetValue(":project summary ")
+				return m, nil
+			case keyEditComment:
+				m.input.Focus()
+				m.input.SetValue(":project comment ")
+				return m, nil
+			case keyEditProjectStatus:
+				m.input.Focus()
+				m.input.SetValue(":project status ")
+				return m, nil
+			}
+			return m, nil
+		}
+		if m.mode == viewProjectEvents {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+				m.projectEventsSelected = clamp(m.projectEventsSelected+1, 0, len(events)-1)
+			case keyVimUp, keyArrowUp:
+				m.projectEventsSelected = clamp(m.projectEventsSelected-1, 0, 0)
+			case keyDelete:
+				events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+				if m.projectEventsSelected >= 0 && m.projectEventsSelected < len(events) {
+					_ = m.repo.DeleteProjectEvent(m.ctx, events[m.projectEventsSelected].ID)
+					m.projectEventsSelected = 0
+					m.message = "event deleted"
+				}
+			case keyEsc, keyQuit:
+				m.mode = viewSplash
+			}
+			return m, nil
+		}
+		if m.mode == viewProjectInvoices {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+				m.projectInvoicesSelected = clamp(m.projectInvoicesSelected+1, 0, len(invoices)-1)
+			case keyVimUp, keyArrowUp:
+				m.projectInvoicesSelected = clamp(m.projectInvoicesSelected-1, 0, 0)
+			case keyDelete:
+				invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+				if m.projectInvoicesSelected >= 0 && m.projectInvoicesSelected < len(invoices) {
+					_ = m.repo.DeleteProjectInvoice(m.ctx, invoices[m.projectInvoicesSelected].ID)
+					m.projectInvoicesSelected = 0
+					m.message = "invoice deleted"
+					m = m.reloadProjects()
+				}
+			case keyMarkPaid:
+				invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+				if m.projectInvoicesSelected >= 0 && m.projectInvoicesSelected < len(invoices) {
+					inv := invoices[m.projectInvoicesSelected]
+					inv.Status = domain.InvoiceStatusPaid
+					_ = m.repo.UpdateProjectInvoice(m.ctx, inv)
+					m.message = "marked as paid"
+					m = m.reloadProjects()
+				}
+			case keyEsc, keyQuit:
+				m.mode = viewSplash
+			}
+			return m, nil
+		}
 		if m.mode == viewSplash {
 			switch msg.String() {
 			case keyVimDown, keyArrowDown:
@@ -272,9 +379,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case keyEnter:
 				if len(m.projects) > 0 {
 					m.ProjectID = m.projects[m.projectSelected].ID
+					m.saveLastProject()
 					m.mode = viewList
 					return m.refreshList()
 				}
+			case keyEvents:
+				if len(m.projects) > 0 {
+					m.ProjectID = m.projects[m.projectSelected].ID
+				}
+				m.projectEventsSelected = 0
+				m.mode = viewProjectEvents
+				return m, nil
+			case keyInvoices:
+				if len(m.projects) > 0 {
+					m.ProjectID = m.projects[m.projectSelected].ID
+				}
+				m.projectInvoicesSelected = 0
+				m.mode = viewProjectInvoices
+				return m, nil
 			case keyNew:
 				m.input.Focus()
 				m.input.SetValue(":project create ")
@@ -306,22 +428,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.applyJump(msg.String()), nil
 		}
-		if m.input.Focused() {
-			switch msg.String() {
-			case keyEnter:
-				command := m.input.Value()
-				m.input.Blur()
-				m.input.SetValue("")
-				return m.runCommand(ParseCommand(command))
-			case keyEsc:
-				m.input.Blur()
-				m.input.SetValue("")
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
-		}
 		if isCountKey(msg.String()) {
 			m.countBuffer += msg.String()
 			return m, nil
@@ -330,17 +436,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyCtrlC:
 			return m, tea.Quit
 		case keyEsc:
-			m.countBuffer = ""
+			m.countBuffer = EmptyCount
 			return m.goBack()
 		case keyQuit:
 			if m.mode == viewList {
 				return m, tea.Quit
 			}
 			return m.goBack()
+		case keyProjectInfo:
+			m.backStack = append(m.backStack, m.snapshot())
+			m.mode = viewProjectInfo
+			return m, nil
 		case keyProject:
 			m.mode = viewSplash
-			m.projects, _ = m.repo.ListProjects(m.ctx)
-			// Set selection to current project
+			m = m.reloadProjects()
 			for i, p := range m.projects {
 				if p.ID == m.ProjectID {
 					m.projectSelected = i
@@ -349,12 +458,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case keyCommand, keySearch:
-			m.countBuffer = ""
+			m.countBuffer = EmptyCount
 			m.input.Focus()
 			m.input.SetValue(msg.String())
 			return m, nil
 		case keyEnter, keyOpen:
-			m.countBuffer = ""
+			m.countBuffer = EmptyCount
 			if m.mode == viewPreview {
 				return m.storePendingPatent()
 			}
@@ -372,6 +481,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.filterBySelectedInventor()
 			}
 			if m.mode == viewClassifications {
+				cls, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
+				if len(cls) > 0 {
+					m = m.navigateTo(viewClassificationDetail)
+				}
 				return m, nil
 			}
 			if m.isCitationView() {
@@ -432,7 +545,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = clamp(m.selected-count, 0, len(m.patents)-1)
 			}
 		case keyCtrlF:
-			m.countBuffer = ""
+			m.countBuffer = EmptyCount
 			if m.isCitationView() {
 				return m.moveCitationSelection(m.pageSize()), nil
 			}
@@ -443,7 +556,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.moveReviewSelection(m.pageSize()), nil
 			}
 		case keyCtrlD:
-			m.countBuffer = ""
+			m.countBuffer = EmptyCount
 			if m.isCitationView() {
 				return m.moveCitationSelection(-m.pageSize()), nil
 			}
@@ -459,7 +572,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.goToRow(count), nil
 			}
 		case keyJump:
-			m.countBuffer = ""
+			m.countBuffer = EmptyCount
 			if m.hasJumpTargets() {
 				m.jumpMode = true
 			}
@@ -468,6 +581,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyCitedBy:
 			m = m.navigateTo(viewCitedBy)
 		case keyClassification:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.selected]
+			}
 			m = m.navigateTo(viewClassifications)
 		case keyText:
 			m = m.navigateTo(viewText)
@@ -535,8 +651,9 @@ func (m Model) navigateTo(mode viewMode) Model {
 	}
 	m.backStack = append(m.backStack, m.snapshot())
 	m.mode = mode
-	m.err = ""
-	m.message = ""
+	m.err = EmptyError
+	m.message = EmptyMessage
+
 	return m
 }
 
@@ -550,8 +667,10 @@ func (m Model) snapshot() navSnapshot {
 		patents:                patents,
 		projects:               projects,
 		selected:               m.selected,
-		projectSelected:        m.projectSelected,
-		detailSelected:         m.detailSelected,
+		projectSelected:         m.projectSelected,
+		projectEventsSelected:   m.projectEventsSelected,
+		projectInvoicesSelected: m.projectInvoicesSelected,
+		detailSelected:          m.detailSelected,
 		citesSelected:          m.citesSelected,
 		citedBySelected:        m.citedBySelected,
 		reviewSelected:         m.reviewSelected,
@@ -577,6 +696,8 @@ func (m Model) restore(snapshot navSnapshot) Model {
 	m.projects = snapshot.projects
 	m.selected = snapshot.selected
 	m.projectSelected = snapshot.projectSelected
+	m.projectEventsSelected = snapshot.projectEventsSelected
+	m.projectInvoicesSelected = snapshot.projectInvoicesSelected
 	m.detailSelected = snapshot.detailSelected
 	m.citesSelected = snapshot.citesSelected
 	m.citedBySelected = snapshot.citedBySelected
@@ -601,7 +722,11 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 	if len(m.backStack) > 0 {
 		last := m.backStack[len(m.backStack)-1]
 		m.backStack = m.backStack[:len(m.backStack)-1]
-		return m.restore(last), nil
+		m = m.restore(last)
+		if m.mode == viewList {
+			return m.refreshList()
+		}
+		return m, nil
 	}
 	if m.mode == viewList && m.filter != EmptyFilter {
 		m.filter = EmptyFilter
@@ -615,8 +740,9 @@ func (m Model) goBack() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
-	m.err = ""
-	m.message = ""
+	m.err = EmptyError
+	m.message = EmptyMessage
+
 	m.logger.Info("tui command", "name", command.Name, "args", command.Args)
 	switch command.Name {
 	case commandSearch:
@@ -651,7 +777,7 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.importGooglePatent(command.Args[0], importActionImported)
 	case commandRefresh:
 		return m.refreshCommand(command.Args)
-	case commandRefreshDetails:
+	case commandRefreshRefsDetails:
 		return m.refreshVisibleCitationDetails()
 	case commandClass:
 		return m.classCommand(command.Args)
@@ -937,6 +1063,9 @@ func (m Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
 }
 
 func (m Model) refreshList() (tea.Model, tea.Cmd) {
+	if m.repo == nil {
+		return m, nil
+	}
 	opts := storage.ListPatentsOptions{
 		Filter:      m.filter,
 		ClassFilter: m.classFilter,
@@ -946,7 +1075,9 @@ func (m Model) refreshList() (tea.Model, tea.Cmd) {
 	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, opts)
 	if err != nil {
 		m.err = err.Error()
-		m.logger.Error("list patents failed", "filter", m.filter, "error", err)
+		if m.logger != nil {
+			m.logger.Error("list patents failed", "filter", m.filter, "error", err)
+		}
 		return m, nil
 	}
 	m.patents = patents
@@ -980,8 +1111,9 @@ func (m Model) openReviewQueue(status string) (tea.Model, tea.Cmd) {
 	m.mode = viewReview
 	m.reviewStatus = status
 	m.reviewSelected = 0
-	m.err = ""
-	m.message = ""
+	m.err = EmptyError
+	m.message = EmptyMessage
+
 	return m, nil
 }
 
@@ -991,8 +1123,9 @@ func (m Model) openBrowser(args []string) (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.message = ""
-	m.err = ""
+	m.message = EmptyMessage
+	m.err = EmptyError
+
 	m.logger.Info("open browser", "url", rawURL)
 	return m, openBrowserCommand(rawURL)
 }
@@ -1199,7 +1332,7 @@ func (m Model) storePendingPatent() (tea.Model, tea.Cmd) {
 	m.current = p
 	m.mode = viewDetail
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), number)
-	return m, nil
+	return m.refreshList()
 }
 
 func (m Model) skipPendingPatent() (tea.Model, tea.Cmd) {
@@ -1446,7 +1579,7 @@ func (m Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
 func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.mode = viewSplash
-		m.projects, _ = m.repo.ListProjects(m.ctx)
+		m = m.reloadProjects()
 		// Set selection to current project
 		for i, p := range m.projects {
 			if p.ID == m.ProjectID {
@@ -1461,7 +1594,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 	switch sub {
 	case "list":
 		m.mode = viewSplash
-		m.projects, _ = m.repo.ListProjects(m.ctx)
+		m = m.reloadProjects()
 		// Set selection to current project
 		for i, p := range m.projects {
 			if p.ID == m.ProjectID {
@@ -1486,8 +1619,17 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = "project created: " + id
-		m.projects, _ = m.repo.ListProjects(m.ctx)
-		return m, nil
+		m = m.reloadProjects()
+		m.ProjectID = id
+		m.saveLastProject()
+		for i, proj := range m.projects {
+			if proj.ID == id {
+				m.projectSelected = i
+				break
+			}
+		}
+		m.mode = viewList
+		return m.refreshList()
 	case "add":
 		if len(args) != 2 {
 			m.err = "usage: :project add <project_id>"
@@ -1516,6 +1658,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.ProjectID = p.ID
+		m.saveLastProject()
 		m.mode = viewList
 		m.message = "switched to project: " + p.Name
 		return m.refreshList()
@@ -1536,6 +1679,175 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = "project status updated"
+		m = m.reloadProjects()
+		return m, nil
+	case "summary-status":
+		if len(args) < 2 {
+			m.err = "usage: :project summary-status <work-in-progress|provisional-filed|application-filed|published|granted>"
+			return m, nil
+		}
+		summaryStatus := strings.Join(args[1:], " ")
+		validSummaryStatuses := map[string]bool{
+			domain.ProjectSummaryStatusWorkInProgress:   true,
+			domain.ProjectSummaryStatusProvisionalFiled: true,
+			domain.ProjectSummaryStatusApplicationFiled: true,
+			domain.ProjectSummaryStatusPublished:        true,
+			domain.ProjectSummaryStatusGranted:          true,
+		}
+		if !validSummaryStatuses[summaryStatus] {
+			m.err = "invalid summary status: " + summaryStatus
+			return m, nil
+		}
+		p, err := m.repo.GetProject(m.ctx, m.ProjectID)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		p.SummaryStatus = summaryStatus
+		if err := m.repo.UpdateProject(m.ctx, p); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "project summary status updated: " + summaryStatus
+		// Refresh project list to reflect change
+		m = m.reloadProjects()
+		return m, nil
+	case "event":
+		// :project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]
+		if len(args) < 2 {
+			m.err = "usage: :project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]"
+			return m, nil
+		}
+		eventType := args[1]
+		e := domain.ProjectEvent{ProjectID: m.ProjectID, EventType: eventType}
+		rest := args[2:]
+		for i := 0; i < len(rest); i++ {
+			switch rest[i] {
+			case "date":
+				if i+1 < len(rest) {
+					i++
+					e.EventDate = rest[i]
+				}
+			case "due":
+				if i+1 < len(rest) {
+					i++
+					e.DueDate = rest[i]
+				}
+			case "ref":
+				if i+1 < len(rest) {
+					i++
+					e.Reference = rest[i]
+				}
+			case "note":
+				if i+1 < len(rest) {
+					e.Notes = strings.Join(rest[i+1:], " ")
+					i = len(rest)
+				}
+			}
+		}
+		if _, err := m.repo.AddProjectEvent(m.ctx, e); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "event added: " + eventType
+		return m, nil
+	case "events":
+		if len(m.projects) > 0 {
+			m.ProjectID = m.projects[m.projectSelected].ID
+		}
+		m.projectEventsSelected = 0
+		m.mode = viewProjectEvents
+		return m, nil
+	case "invoices":
+		if len(m.projects) > 0 {
+			m.ProjectID = m.projects[m.projectSelected].ID
+		}
+		m.projectInvoicesSelected = 0
+		m.mode = viewProjectInvoices
+		return m, nil
+	case "invoice":
+		// :project invoice <amount> [currency USD] [direction to-firm|from-firm] [date YYYY-MM-DD] [due YYYY-MM-DD] [firm <name>] [ref <number>] [note <text>] [status outstanding|paid|overdue|disputed]
+		if len(args) < 2 {
+			m.err = "usage: :project invoice <amount> [currency USD] [direction to-firm|from-firm] [date YYYY-MM-DD] [due YYYY-MM-DD] [firm <name>] [ref <number>] [note <text>]"
+			return m, nil
+		}
+		inv := domain.ProjectInvoice{
+			ProjectID: m.ProjectID,
+			Amount:    args[1],
+			Currency:  "USD",
+			Direction: domain.InvoiceDirectionToFirm,
+			Status:    domain.InvoiceStatusOutstanding,
+		}
+		rest := args[2:]
+		for i := 0; i < len(rest); i++ {
+			switch rest[i] {
+			case "currency":
+				if i+1 < len(rest) {
+					i++
+					inv.Currency = rest[i]
+				}
+			case "direction":
+				if i+1 < len(rest) {
+					i++
+					inv.Direction = rest[i]
+				}
+			case "date":
+				if i+1 < len(rest) {
+					i++
+					inv.InvoiceDate = rest[i]
+				}
+			case "due":
+				if i+1 < len(rest) {
+					i++
+					inv.DueDate = rest[i]
+				}
+			case "firm":
+				if i+1 < len(rest) {
+					i++
+					inv.FirmName = rest[i]
+				}
+			case "ref":
+				if i+1 < len(rest) {
+					i++
+					inv.InvoiceNumber = rest[i]
+				}
+			case "status":
+				if i+1 < len(rest) {
+					i++
+					inv.Status = rest[i]
+				}
+			case "note":
+				if i+1 < len(rest) {
+					inv.Notes = strings.Join(rest[i+1:], " ")
+					i = len(rest)
+				}
+			}
+		}
+		if _, err := m.repo.AddProjectInvoice(m.ctx, inv); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "invoice added: " + inv.Amount + " " + inv.Currency
+		m = m.reloadProjects()
+		return m, nil
+	case "summary":
+		if len(args) < 2 {
+			m.err = "usage: :project summary <text>"
+			return m, nil
+		}
+		summary := strings.Join(args[1:], " ")
+		p, err := m.repo.GetProject(m.ctx, m.ProjectID)
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		p.Summary = summary
+		if err := m.repo.UpdateProject(m.ctx, p); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "project summary updated"
+		m = m.reloadProjects()
 		return m, nil
 	case "comment":
 		if len(args) < 2 {
@@ -1554,6 +1866,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = "project comment updated"
+		m = m.reloadProjects()
 		return m, nil
 	default:
 		m.err = "unknown project subcommand: " + sub
@@ -1631,28 +1944,29 @@ func (m Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) styleRow(index int, selected int, content string) string {
+	return m.styleRowW(index, selected, content, m.width)
+}
+
+func (m Model) styleRowW(index int, selected int, content string, targetWidth int) string {
 	style := lipgloss.NewStyle()
 	if index == selected {
-		style = style.Background(lipgloss.Color(ColorHighlight)) // Selection highlight
+		style = style.Background(lipgloss.Color(ColorHighlight))
 	} else if index%2 != 0 {
-		style = style.Background(lipgloss.Color(ColorAltRow)) // Alternating row
+		style = style.Background(lipgloss.Color(ColorAltRow))
 	}
-
-	// Ensure the background spans the full width
-	if m.width > 0 {
-		contentWidth := lipgloss.Width(content)
-		if contentWidth < m.width {
-			content += strings.Repeat(" ", m.width-contentWidth)
+	if targetWidth > 0 {
+		cw := lipgloss.Width(content)
+		if cw < targetWidth {
+			content += strings.Repeat(" ", targetWidth-cw)
 		}
 	}
-
 	return style.Render(content)
 }
 
 func (m Model) View() string {
 	bg := m.renderView()
 
-	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewHelpPopup {
+	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectInfo {
 		var content string
 		if m.mode == viewPreview {
 			content = m.viewPreview()
@@ -1664,13 +1978,18 @@ func (m Model) View() string {
 			content = m.viewClassifications()
 		} else if m.mode == viewHelpPopup {
 			content = m.viewHelpPopup()
+		} else if m.mode == viewProjectEvents {
+			content = m.viewProjectEvents()
+		} else if m.mode == viewProjectInvoices {
+			content = m.viewProjectInvoices()
+		} else if m.mode == viewProjectInfo {
+			content = m.viewProjectInfo()
 		} else {
 			content = m.viewInventors()
 		}
 		overlay := m.previewOverlay(content)
 
-		// Dim the background to simulate transparency
-		dimmedBg := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Render(bg)
+		dimmedBg := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAltRow)).Faint(true).Render(bg)
 		return m.composite(dimmedBg, overlay)
 	}
 
@@ -1679,6 +1998,9 @@ func (m Model) View() string {
 
 func (m Model) renderView() string {
 	if m.mode == viewSplash {
+		return m.viewSplash()
+	}
+	if m.mode == viewProjectEvents || m.mode == viewProjectInvoices {
 		return m.viewSplash()
 	}
 
@@ -2532,7 +2854,7 @@ func (m *Model) consumeCount(defaultValue int) int {
 		return defaultValue
 	}
 	count, err := strconv.Atoi(m.countBuffer)
-	m.countBuffer = ""
+	m.countBuffer = EmptyCount
 	if err != nil || count <= 0 {
 		return defaultValue
 	}
@@ -2571,12 +2893,16 @@ func (m Model) goToRow(index int) Model {
 }
 
 func (m Model) viewClassifications() string {
+	if m.current.Number == "" {
+		return "No patent open. Open a patent first.\n"
+	}
 	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
 	if len(classifications) == 0 {
-		return m.text.T(TextValueEmpty) + "\n"
+		return "No CPC/USPC classification codes stored for " + m.current.Number + ".\n" +
+			"Re-import the patent or run :" + commandRefreshRefsDetails + " to fetch row details.\n"
 	}
 
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
@@ -2589,9 +2915,10 @@ func (m Model) viewClassifications() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.classificationOpenHint()))
 	b.WriteString("\n\n")
 
+	rowWidth := max(44, m.overlayWidth()-6)
 	indexWidth := 4
 	codeWidth := 18
-	descriptionWidth := max(20, m.width-indexWidth-codeWidth-8)
+	descriptionWidth := max(20, rowWidth-indexWidth-codeWidth-2)
 
 	header := m.pad("  ", 2) +
 		m.pad("#", indexWidth) +
@@ -2611,15 +2938,18 @@ func (m Model) viewClassifications() string {
 			m.pad(rowIndexLabel(i), indexWidth) +
 			m.pad(cls.Code, codeWidth) +
 			m.pad(m.truncate(cls.Description, descriptionWidth), descriptionWidth)
-		b.WriteString(m.styleRow(i, selected, row) + "\n")
+		b.WriteString(m.styleRowW(i, selected, row, rowWidth) + "\n")
 	}
 	return b.String()
 }
 
 func (m Model) viewClassificationDetail() string {
 	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
-	if err != nil || len(classifications) == 0 {
-		return ""
+	if err != nil {
+		return "Error loading classifications: " + err.Error()
+	}
+	if len(classifications) == 0 {
+		return "No classification data stored for " + m.current.Number + ".\nRun :refresh-refs-details or re-import the patent."
 	}
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	cls := classifications[selected]
@@ -2649,7 +2979,7 @@ func (m Model) viewClassificationDetail() string {
 func (m Model) moveClassificationSelection(delta int) Model {
 	classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if len(classifications) == 0 {
-		m.countBuffer = ""
+		m.countBuffer = EmptyCount
 		return m
 	}
 	m.classificationSelected = clamp(m.classificationSelected+delta, 0, len(classifications)-1)
@@ -2674,6 +3004,10 @@ func (m Model) viewInventors() string {
 	selected := clamp(m.inventorSelected, 0, len(inventors)-1)
 	m.inventorSelected = selected
 
+	// inner content width: overlay minus borders (2) and padding (4)
+	rowWidth := max(40, m.overlayWidth()-6)
+	indexWidth := 4
+
 	var b strings.Builder
 	b.WriteString("Select an inventor to filter:\n\n")
 	for i, inventor := range inventors {
@@ -2681,8 +3015,9 @@ func (m Model) viewInventors() string {
 		if i == selected {
 			prefix = "> "
 		}
-		row := fmt.Sprintf("%s%s", prefix, inventor)
-		b.WriteString(m.styleRow(i, selected, row) + "\n")
+		nameWidth := max(10, rowWidth-len(prefix)-indexWidth)
+		row := prefix + m.pad(rowIndexLabel(i), indexWidth) + m.truncate(inventor, nameWidth)
+		b.WriteString(m.styleRowW(i, selected, row, rowWidth) + "\n")
 	}
 	return b.String()
 }
@@ -2778,7 +3113,8 @@ func (m Model) viewSplash() string {
 	b.WriteString("\n\n" + m.rule() + "\n\n")
 
 	if m.input.Focused() {
-		b.WriteString(m.center(m.input.View()))
+		promptStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
+		b.WriteString(m.center(promptStyle.Render("COMMAND: ") + m.input.View()))
 		b.WriteString("\n\n")
 	}
 
@@ -2788,8 +3124,7 @@ func (m Model) viewSplash() string {
 	if len(m.projects) == 0 {
 		b.WriteString(m.center("No projects found. Create one with 'n'"))
 	} else {
-		// Header for project list
-		pHeader := fmt.Sprintf("   %-20s %-10s %-10s %s", "Name", "ID", "Status", "Updated")
+		pHeader := fmt.Sprintf("   %-20s %-12s %-10s %-13s %-10s %s", "Name", "ID", "Status", "Summary", "Unpaid", "Updated")
 		b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(pHeader)))
 		b.WriteString("\n")
 
@@ -2799,25 +3134,55 @@ func (m Model) viewSplash() string {
 				prefix = "→ "
 			}
 
-			// Format row
 			updated := p.UpdatedAt.Format("2006-01-02")
-			row := fmt.Sprintf("%-20s %-10s %-10s %s", p.Name, "["+p.ID+"]", p.Status, updated)
 
-			// Highlight selection
+			summaryLabel := p.SummaryStatus
+			if label, ok := SummaryStatusLabels[p.SummaryStatus]; ok {
+				summaryLabel = label
+			}
+			summaryColor := ColorSubtle
+			if c, ok := SummaryStatusColors[p.SummaryStatus]; ok {
+				summaryColor = c
+			}
+
+			unpaidCount := m.unpaidCounts[p.ID]
+			unpaidLabel := "—"
+			unpaidColor := ColorSubtle
+			if unpaidCount > 0 {
+				unpaidLabel = fmt.Sprintf("%d unpaid", unpaidCount)
+				unpaidColor = ColorWarning
+			}
+
+			rowBase := fmt.Sprintf("%-20s %-12s %-10s ", p.Name, "["+p.ID+"]", p.Status)
+			summaryPart := fmt.Sprintf("%-13s", summaryLabel)
+			unpaidPart := fmt.Sprintf("%-10s", unpaidLabel)
+			datePart := updated
+
 			rowStyle := lipgloss.NewStyle()
 			if i == m.projectSelected {
 				rowStyle = rowStyle.Foreground(lipgloss.Color(ColorTheme)).Bold(true)
 			} else {
 				rowStyle = rowStyle.Foreground(lipgloss.Color(ColorSubtle))
 			}
+			summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(summaryColor))
+			unpaidStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(unpaidColor))
+			if i == m.projectSelected {
+				summaryStyle = summaryStyle.Bold(true)
+				unpaidStyle = unpaidStyle.Bold(true)
+			}
 
-			b.WriteString(m.center(prefix + rowStyle.Render(row)))
+			b.WriteString(m.center(prefix + rowStyle.Render(rowBase) + summaryStyle.Render(summaryPart) + unpaidStyle.Render(unpaidPart) + rowStyle.Render(datePart)))
 			b.WriteString("\n")
+			if p.Summary != "" {
+				summaryTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
+				b.WriteString(m.center("    " + summaryTextStyle.Render(p.Summary)))
+				b.WriteString("\n")
+			}
 		}
 	}
 
 	b.WriteString("\n\n" + m.rule() + "\n")
-	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("j/k: move · enter: select · n: new · q: quit")))
+	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("j/k: move · enter: select · e: events · i: invoices · n: new · q: quit")))
 
 	// Center vertically
 	content := b.String()
@@ -2828,6 +3193,282 @@ func (m Model) viewSplash() string {
 	}
 
 	return content
+}
+
+func (m Model) viewProjectEvents() string {
+	events, err := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+	if err != nil {
+		return "error loading events: " + err.Error()
+	}
+
+	surf := lipgloss.Color(ColorSurface)
+	base := lipgloss.NewStyle().Background(surf)
+	titleStyle := base.Bold(true).Underline(true)
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(fmt.Sprintf("Prosecution History · %s", m.ProjectID)))
+	b.WriteString("\n\n")
+
+	if len(events) == 0 {
+		b.WriteString(dimStyle.Render("No events. Add with :project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [note <text>]"))
+		b.WriteString("\n\n")
+		b.WriteString(subtleStyle.Render("Event types: provisional-filed · application-filed · publication · office-action-non-final\n"))
+		b.WriteString(subtleStyle.Render("             office-action-final · response-filed · rce-filed · notice-of-allowance\n"))
+		b.WriteString(subtleStyle.Render("             issue-fee-paid · patent-granted · maintenance-due-3y/7y/11y\n"))
+		b.WriteString(subtleStyle.Render("             continuation-filed · divisional-filed · cip-filed · appeal-filed\n"))
+		b.WriteString(subtleStyle.Render("             ptab-decision · ipr-filed · reexam-requested · extension-filed\n"))
+		b.WriteString(subtleStyle.Render("             abandonment · revival-filed"))
+	} else {
+		headerStyle := base.Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-26s %-12s %-12s %-14s %s", "Event", "Date", "Due", "Reference", "Notes")))
+		b.WriteString("\n")
+		for i, e := range events {
+			label := e.EventType
+			if l, ok := EventTypeLabels[e.EventType]; ok {
+				label = l
+			}
+			color := ColorSubtle
+			if c, ok := EventTypeColors[e.EventType]; ok {
+				color = c
+			}
+			eventStyle := base.Foreground(lipgloss.Color(color))
+			rowStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+			if i == m.projectEventsSelected {
+				eventStyle = eventStyle.Bold(true).Reverse(true)
+				rowStyle = rowStyle.Bold(true)
+			}
+
+			prefix := "  "
+			if i == m.projectEventsSelected {
+				prefix = "→ "
+			}
+
+			due := e.DueDate
+			if due == "" {
+				due = "—"
+			}
+			date := e.EventDate
+			if date == "" {
+				date = "—"
+			}
+			ref := e.Reference
+			if ref == "" {
+				ref = "—"
+			}
+			notes := e.Notes
+			if len(notes) > 30 {
+				notes = notes[:27] + "..."
+			}
+			if notes == "" {
+				notes = "—"
+			}
+
+			b.WriteString(prefix + eventStyle.Render(fmt.Sprintf("%-26s", label)) + rowStyle.Render(fmt.Sprintf("%-12s %-12s %-14s %s", date, due, ref, notes)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render("j/k: move · D: delete · esc: back"))
+	return b.String()
+}
+
+func (m Model) viewProjectInvoices() string {
+	invoices, err := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+	if err != nil {
+		return "error loading invoices: " + err.Error()
+	}
+
+	surf := lipgloss.Color(ColorSurface)
+	base := lipgloss.NewStyle().Background(surf)
+	titleStyle := base.Bold(true).Underline(true)
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(fmt.Sprintf("Invoices · %s", m.ProjectID)))
+	b.WriteString("\n\n")
+
+	if len(invoices) == 0 {
+		b.WriteString(dimStyle.Render("No invoices. Add with :project invoice <amount> [currency USD] [direction to-firm|from-firm] [date YYYY-MM-DD] [due YYYY-MM-DD] [firm <name>] [ref <number>] [note <text>]"))
+	} else {
+		headerStyle := base.Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-12s %-10s %-10s %-14s %-16s %-12s %s", "Amount", "Currency", "Direction", "Status", "Firm", "Date", "Notes")))
+		b.WriteString("\n")
+		for i, inv := range invoices {
+			statusColor := ColorSubtle
+			if c, ok := InvoiceStatusColors[inv.Status]; ok {
+				statusColor = c
+			}
+			statusLabel := inv.Status
+			if l, ok := InvoiceStatusLabels[inv.Status]; ok {
+				statusLabel = l
+			}
+			dirLabel := inv.Direction
+			if l, ok := InvoiceDirectionLabels[inv.Direction]; ok {
+				dirLabel = l
+			}
+
+			amtStyle := base.Foreground(lipgloss.Color(statusColor))
+			rowStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+			if i == m.projectInvoicesSelected {
+				amtStyle = amtStyle.Bold(true).Reverse(true)
+				rowStyle = rowStyle.Bold(true)
+			}
+
+			prefix := "  "
+			if i == m.projectInvoicesSelected {
+				prefix = "→ "
+			}
+
+			notes := inv.Notes
+			if len(notes) > 20 {
+				notes = notes[:17] + "..."
+			}
+			if notes == "" {
+				notes = "—"
+			}
+			date := inv.InvoiceDate
+			if date == "" {
+				date = "—"
+			}
+			firm := inv.FirmName
+			if firm == "" {
+				firm = "—"
+			}
+			if len(firm) > 14 {
+				firm = firm[:12] + ".."
+			}
+
+			b.WriteString(prefix + amtStyle.Render(fmt.Sprintf("%-12s", inv.Amount+" "+inv.Currency)) + rowStyle.Render(fmt.Sprintf("%-10s %-14s %-16s %-12s %s", dirLabel, statusLabel, firm, date, notes)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render("j/k: move · p: mark paid · D: delete · esc: back"))
+	return b.String()
+}
+
+func (m Model) viewProjectInfo() string {
+	var proj domain.Project
+	for _, p := range m.projects {
+		if p.ID == m.ProjectID {
+			proj = p
+			break
+		}
+	}
+
+	events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+	invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+
+	surf := lipgloss.Color(ColorSurface)
+	base := lipgloss.NewStyle().Background(surf)
+	titleStyle := base.Bold(true).Underline(true)
+	labelStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	valueStyle := base.Foreground(lipgloss.Color(ColorTheme))
+	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
+	hintStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Project Info"))
+	b.WriteString("\n\n")
+
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Name:")) + valueStyle.Render(proj.Name) + "\n")
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "ID:")) + valueStyle.Render(proj.ID) + "\n")
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Status:")) + valueStyle.Render(proj.Status) + "\n")
+
+	if proj.SummaryStatus != "" {
+		label := proj.SummaryStatus
+		if l, ok := SummaryStatusLabels[proj.SummaryStatus]; ok {
+			label = l
+		}
+		color := ColorSubtle
+		if c, ok := SummaryStatusColors[proj.SummaryStatus]; ok {
+			color = c
+		}
+		b.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "App Status:")) +
+			base.Foreground(lipgloss.Color(color)).Bold(true).Render(label) + "\n")
+	}
+
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Updated:")) + valueStyle.Render(proj.UpdatedAt.Format("2006-01-02")) + "\n")
+
+	if proj.Summary != "" {
+		b.WriteString("\n" + dimStyle.Render(proj.Summary) + "\n")
+	}
+	if proj.Comments != "" {
+		b.WriteString(dimStyle.Render(proj.Comments) + "\n")
+	}
+
+	// Invoice summary
+	b.WriteString("\n" + titleStyle.Render("Invoices") + "\n\n")
+	if len(invoices) == 0 {
+		b.WriteString(dimStyle.Render("No invoices.") + "\n")
+	} else {
+		counts := map[string]int{}
+		for _, inv := range invoices {
+			counts[inv.Status]++
+		}
+		for _, status := range []string{
+			domain.InvoiceStatusOutstanding,
+			domain.InvoiceStatusOverdue,
+			domain.InvoiceStatusDisputed,
+			domain.InvoiceStatusPaid,
+		} {
+			if n := counts[status]; n > 0 {
+				label := status
+				if l, ok := InvoiceStatusLabels[status]; ok {
+					label = l
+				}
+				color := ColorSubtle
+				if c, ok := InvoiceStatusColors[status]; ok {
+					color = c
+				}
+				b.WriteString(labelStyle.Render(fmt.Sprintf("  %-14s", label+":")) +
+					base.Foreground(lipgloss.Color(color)).Render(fmt.Sprintf("%d", n)) + "\n")
+			}
+		}
+	}
+
+	// Recent events
+	b.WriteString("\n" + titleStyle.Render("Recent Events") + "\n\n")
+	if len(events) == 0 {
+		b.WriteString(dimStyle.Render("No events.") + "\n")
+	} else {
+		limit := 5
+		if len(events) < limit {
+			limit = len(events)
+		}
+		for _, e := range events[:limit] {
+			label := e.EventType
+			if l, ok := EventTypeLabels[e.EventType]; ok {
+				label = l
+			}
+			color := ColorSubtle
+			if c, ok := EventTypeColors[e.EventType]; ok {
+				color = c
+			}
+			date := e.EventDate
+			if date == "" {
+				date = "—"
+			}
+			b.WriteString(base.Foreground(lipgloss.Color(color)).Render(fmt.Sprintf("  %-26s", label)) +
+				labelStyle.Render(date) + "\n")
+		}
+		if len(events) > 5 {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("  … and %d more", len(events)-5)) + "\n")
+		}
+	}
+
+	b.WriteString("\n")
+	if m.input.Focused() {
+		b.WriteString(base.Foreground(lipgloss.Color(ColorTheme)).Bold(true).Render("COMMAND: ") + m.input.View() + "\n")
+	} else {
+		b.WriteString(hintStyle.Render("s: app status · m: summary · c: comment · S: status · I/esc: back"))
+	}
+	return b.String()
 }
 
 func (m Model) center(s string) string {

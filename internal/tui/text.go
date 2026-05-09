@@ -85,6 +85,14 @@ const (
 	TextHelpProjectAdd           TextKey = "help.project.add"
 	TextHelpProjectStatus        TextKey = "help.project.status"
 	TextHelpProjectComment       TextKey = "help.project.comment"
+	TextHelpProjectSummaryStatus TextKey = "help.project.summary_status"
+	TextHelpProjectSummary       TextKey = "help.project.summary"
+	TextHelpProjectDelete        TextKey = "help.project.delete"
+	TextHelpProjectEvent         TextKey = "help.project.event"
+	TextHelpProjectEvents        TextKey = "help.project.events"
+	TextHelpProjectInvoice       TextKey = "help.project.invoice"
+	TextHelpProjectInvoices      TextKey = "help.project.invoices"
+	TextHelpProjectInfo          TextKey = "help.project.info"
 	TextHelpSort                 TextKey = "help.sort"
 	TextHelpClass                TextKey = "help.class"
 	TextCitationsEmpty           TextKey = "citations.empty"
@@ -161,7 +169,7 @@ func EnglishText() TextCatalog {
 		TextHelpImportPatent:         "Import a specific Google Patents URL.",
 		TextHelpRefreshCitedBy:       "Re-fetch the current patent page and refresh cited-by records.",
 		TextHelpRefreshCitations:     "Re-fetch the current patent page and refresh cited references.",
-		TextHelpRefreshDetails:       "Refresh details for visible citation rows so title, inventors, and expiration are shown.",
+		TextHelpRefreshDetails:       "Refresh details for visible citation rows (citations, cited-by, or review queue) so title, inventors, and expiration are shown.",
 		TextHelpOpenPatent:           "Open a patent already stored in the database.",
 		TextHelpShowCites:            "Show patents cited by the current patent.",
 		TextHelpShowCitedBy:          "Show patents citing the current patent.",
@@ -196,8 +204,16 @@ func EnglishText() TextCatalog {
 		TextHelpProjectCreate:        "Create a new project.",
 		TextHelpProjectSwitch:        "Switch to a different project.",
 		TextHelpProjectAdd:           "Add current patent to a project.",
-		TextHelpProjectStatus:        "Update current project status.",
-		TextHelpProjectComment:       "Update current project comment.",
+		TextHelpProjectStatus:        "Set project lifecycle status (active/archived).",
+		TextHelpProjectComment:       "Update internal comment on current project.",
+		TextHelpProjectSummaryStatus: "Set application stage (work-in-progress/provisional-filed/application-filed/published/granted).",
+		TextHelpProjectSummary:       "Set free-text summary shown on splash and in project info.",
+		TextHelpProjectDelete:        "Delete project and all associated data.",
+		TextHelpProjectEvent:         "Add a prosecution event (type, date, due, ref, note).",
+		TextHelpProjectEvents:        "Open prosecution history overlay for current project.",
+		TextHelpProjectInvoice:       "Add invoice to/from law firm (amount, currency, direction, date, due, firm, ref, note).",
+		TextHelpProjectInvoices:      "Open invoice list overlay for current project.",
+		TextHelpProjectInfo:          "Open project info popup (editable: s=app status, m=summary, c=comment, S=status).",
 		TextHelpSort:                 "Sort the list by column (number, title, date, status, assignee, inventor, class).",
 		TextHelpClass:                "Filter the list by classification prefix.",
 		TextCitationsEmpty:           "No citation records.",

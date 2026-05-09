@@ -8,7 +8,7 @@ const (
 	commandAdd             = "add"
 	commandImport          = "import"
 	commandRefresh         = "refresh"
-	commandRefreshDetails  = "refresh-details"
+	commandRefreshRefsDetails = "refresh-refs-details"
 	commandCitedBy         = "citedby"
 	commandClassification  = "cpc"
 	commandText            = "text"
@@ -57,7 +57,7 @@ const (
 	keyGoto           = "g"
 	keyCites          = "c"
 	keyCitedBy        = "b"
-	keyClassification = "p"
+	keyClassification = "l"
 	keyText           = "t"
 	keyNotes          = "n"
 	keyRefs           = "r"
@@ -71,6 +71,14 @@ const (
 	keyNew            = "n"
 	keyIgnore         = "i"
 	keyUnreview       = "u"
+	keyEvents         = "e"
+	keyInvoices       = "i"
+	keyMarkPaid            = "p"
+	keyProjectInfo         = "I"
+	keyEditAppStatus       = "s"
+	keyEditSummary         = "m"
+	keyEditComment         = "c"
+	keyEditProjectStatus   = "S"
 
 	defaultPDFDir = "pdfs"
 
@@ -94,6 +102,10 @@ const (
 	EmptyFilter = ""
 	EmptySortColumn = ""
 	EmptySortOrder = ""
+	EmptyPrompt = ""
+	EmptyMessage = ""
+	EmptyError = ""
+	EmptyCount = ""
 
 	ColorTheme     = "39"  // Blue
 	ColorAccent    = "205" // Pink/Magenta
@@ -114,10 +126,100 @@ const (
 	DefaultLogPath = "logs/patentmine.log"
 	DefaultDBDir   = "db"
 	DefaultLogDir  = "logs"
+
+	DefaultProjectID       = "default"
+	SettingLastProjectID   = "last_project_id"
 )
 
 var StatusColors = map[string]string{
 	domain.CitationStatusIgnored:     ColorSubtle,
 	domain.CitationStatusUnderReview: "222", // Keep yellow for review
 	domain.CitationStatusStored:      ColorTheme,
+}
+
+var SummaryStatusColors = map[string]string{
+	domain.ProjectSummaryStatusWorkInProgress:   ColorWarning,
+	domain.ProjectSummaryStatusProvisionalFiled: "81",  // Cyan-ish
+	domain.ProjectSummaryStatusApplicationFiled: "147", // Lavender
+	domain.ProjectSummaryStatusPublished:        ColorTheme,
+	domain.ProjectSummaryStatusGranted:          ColorSuccess,
+}
+
+var SummaryStatusLabels = map[string]string{
+	domain.ProjectSummaryStatusWorkInProgress:   "WIP",
+	domain.ProjectSummaryStatusProvisionalFiled: "Provisional",
+	domain.ProjectSummaryStatusApplicationFiled: "Filed",
+	domain.ProjectSummaryStatusPublished:        "Published",
+	domain.ProjectSummaryStatusGranted:          "Granted",
+}
+
+var EventTypeLabels = map[string]string{
+	domain.EventTypeProvisionalFiled:  "Provisional Filed",
+	domain.EventTypeApplicationFiled:  "Application Filed",
+	domain.EventTypePublication:       "Publication",
+	domain.EventTypeOANonFinal:        "OA Non-Final",
+	domain.EventTypeOAFinal:           "OA Final",
+	domain.EventTypeResponseFiled:     "Response Filed",
+	domain.EventTypeRCEFiled:          "RCE Filed",
+	domain.EventTypeNoticeOfAllowance: "Notice of Allowance",
+	domain.EventTypeIssueFee:          "Issue Fee Paid",
+	domain.EventTypeGranted:           "Patent Granted",
+	domain.EventTypeMaintenance3:      "Maintenance Due (3.5yr)",
+	domain.EventTypeMaintenance7:      "Maintenance Due (7.5yr)",
+	domain.EventTypeMaintenance11:     "Maintenance Due (11.5yr)",
+	domain.EventTypeContinuationFiled: "Continuation Filed",
+	domain.EventTypeDivisionalFiled:   "Divisional Filed",
+	domain.EventTypeCIPFiled:          "CIP Filed",
+	domain.EventTypeAppealFiled:       "Appeal Filed",
+	domain.EventTypePTABDecision:      "PTAB Decision",
+	domain.EventTypeIPRFiled:          "IPR Filed",
+	domain.EventTypeReexamRequested:   "Reexam Requested",
+	domain.EventTypeExtensionFiled:    "Extension Filed",
+	domain.EventTypeAbandonment:       "Abandonment",
+	domain.EventTypeRevivalFiled:      "Revival Filed",
+}
+
+var InvoiceStatusColors = map[string]string{
+	domain.InvoiceStatusOutstanding: ColorWarning,
+	domain.InvoiceStatusPaid:        ColorSuccess,
+	domain.InvoiceStatusOverdue:     ColorError,
+	domain.InvoiceStatusDisputed:    "208", // Orange
+}
+
+var InvoiceStatusLabels = map[string]string{
+	domain.InvoiceStatusOutstanding: "Outstanding",
+	domain.InvoiceStatusPaid:        "Paid",
+	domain.InvoiceStatusOverdue:     "Overdue",
+	domain.InvoiceStatusDisputed:    "Disputed",
+}
+
+var InvoiceDirectionLabels = map[string]string{
+	domain.InvoiceDirectionToFirm:   "→ Firm",
+	domain.InvoiceDirectionFromFirm: "← Firm",
+}
+
+var EventTypeColors = map[string]string{
+	domain.EventTypeProvisionalFiled:  "81",         // Cyan
+	domain.EventTypeApplicationFiled:  "147",        // Lavender
+	domain.EventTypePublication:       ColorTheme,   // Blue
+	domain.EventTypeOANonFinal:        ColorWarning, // Yellow
+	domain.EventTypeOAFinal:           "208",        // Orange
+	domain.EventTypeResponseFiled:     "118",        // Green
+	domain.EventTypeRCEFiled:          "214",        // Gold
+	domain.EventTypeNoticeOfAllowance: ColorSuccess, // Green
+	domain.EventTypeIssueFee:          ColorSuccess,
+	domain.EventTypeGranted:           ColorSuccess,
+	domain.EventTypeMaintenance3:      ColorWarning,
+	domain.EventTypeMaintenance7:      ColorWarning,
+	domain.EventTypeMaintenance11:     ColorWarning,
+	domain.EventTypeContinuationFiled: "81",
+	domain.EventTypeDivisionalFiled:   "81",
+	domain.EventTypeCIPFiled:          "81",
+	domain.EventTypeAppealFiled:       "208",
+	domain.EventTypePTABDecision:      "147",
+	domain.EventTypeIPRFiled:          ColorError,
+	domain.EventTypeReexamRequested:   ColorError,
+	domain.EventTypeExtensionFiled:    ColorSubtle,
+	domain.EventTypeAbandonment:       ColorError,
+	domain.EventTypeRevivalFiled:      ColorWarning,
 }

@@ -204,8 +204,9 @@ func TestViewClassificationsShowsEmptyState(t *testing.T) {
 		repo:    emptyClassificationRepo{},
 		current: domain.Patent{Number: "US10218760B2"},
 	}
-	if got := model.viewClassifications(); got != "Empty\n" {
-		t.Fatalf("expected empty classification view, got %q", got)
+	got := model.viewClassifications()
+	if !strings.Contains(got, "No CPC/USPC") {
+		t.Fatalf("expected empty classification message, got %q", got)
 	}
 }
 
@@ -274,7 +275,7 @@ func TestOpenKeyOnDetailClassificationOpensClassificationList(t *testing.T) {
 	}
 }
 
-func TestEnterOnClassificationListKeepsListOpen(t *testing.T) {
+func TestEnterOnClassificationListOpensDetail(t *testing.T) {
 	model := Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
@@ -286,11 +287,69 @@ func TestEnterOnClassificationListKeepsListOpen(t *testing.T) {
 	}
 	updated, _ := model.Update(teaKey(keyEnter))
 	got := updated.(Model)
-	if got.mode != viewClassifications {
-		t.Fatalf("expected mode %q, got %q", viewClassifications, got.mode)
+	if got.mode != viewClassificationDetail {
+		t.Fatalf("expected mode %q, got %q", viewClassificationDetail, got.mode)
 	}
-	if view := got.viewClassifications(); !strings.Contains(view, "Page 1/1") || !strings.Contains(view, "H04N21/430") {
-		t.Fatalf("expected classification list to remain visible, got %q", view)
+}
+
+func TestClassificationListViewRendersPopup(t *testing.T) {
+	model := Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    classificationRepo{classifications: sampleClassifications(3)},
+		mode:    viewClassifications,
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   120,
+		height:  40,
+	}
+	view := model.View()
+	if !strings.Contains(view, "┌") {
+		t.Fatalf("expected popup border in View(), got:\n%s", view)
+	}
+	if !strings.Contains(view, "H04N21/430") {
+		t.Fatalf("expected classification code in View(), got:\n%s", view)
+	}
+}
+
+func TestClassificationDetailViewRendersPopup(t *testing.T) {
+	model := Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    classificationRepo{classifications: sampleClassifications(3)},
+		mode:    viewClassificationDetail,
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   120,
+		height:  40,
+	}
+	view := model.View()
+	if !strings.Contains(view, "┌") {
+		t.Fatalf("expected popup border in View(), got:\n%s", view)
+	}
+	if !strings.Contains(view, "H04N21/430") {
+		t.Fatalf("expected classification code in View(), got:\n%s", view)
+	}
+}
+
+func TestPressLFromListOpensClassificationPopup(t *testing.T) {
+	patents := []domain.Patent{{Number: "US10218760B2", Title: "Test Patent"}}
+	model := Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    classificationRepo{classifications: sampleClassifications(3)},
+		mode:    viewList,
+		patents: patents,
+		current: domain.Patent{},
+		width:   120,
+		height:  40,
+	}
+	updated, _ := model.Update(teaKey(keyClassification))
+	got := updated.(Model)
+	if got.mode != viewClassifications {
+		t.Fatalf("expected mode %q after pressing %q, got %q", viewClassifications, keyClassification, got.mode)
+	}
+	view := got.View()
+	if !strings.Contains(view, "┌") {
+		t.Fatalf("expected popup border in View() after pressing %q, got:\n%s", keyClassification, view)
 	}
 }
 
@@ -630,3 +689,23 @@ func (stubRepo) AddAIAnalysis(context.Context, string, domain.AIAnalysis) (domai
 func (stubRepo) ListAIAnalyses(context.Context, string, string) ([]domain.AIAnalysis, error) {
 	return nil, nil
 }
+func (stubRepo) AddProjectEvent(context.Context, domain.ProjectEvent) (domain.ProjectEvent, error) {
+	return domain.ProjectEvent{}, nil
+}
+func (stubRepo) ListProjectEvents(context.Context, string) ([]domain.ProjectEvent, error) {
+	return nil, nil
+}
+func (stubRepo) DeleteProjectEvent(context.Context, int64) error { return nil }
+func (stubRepo) AddProjectInvoice(context.Context, domain.ProjectInvoice) (domain.ProjectInvoice, error) {
+	return domain.ProjectInvoice{}, nil
+}
+func (stubRepo) ListProjectInvoices(context.Context, string) ([]domain.ProjectInvoice, error) {
+	return nil, nil
+}
+func (stubRepo) UpdateProjectInvoice(context.Context, domain.ProjectInvoice) error { return nil }
+func (stubRepo) DeleteProjectInvoice(context.Context, int64) error                { return nil }
+func (stubRepo) CountUnpaidInvoicesByProject(context.Context) (map[string]int, error) {
+	return nil, nil
+}
+func (stubRepo) GetSetting(context.Context, string) (string, error)        { return "", nil }
+func (stubRepo) SetSetting(context.Context, string, string) error          { return nil }
