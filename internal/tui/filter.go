@@ -178,6 +178,8 @@ func (m Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		return m.navigateTo(viewClassifications), nil
 	case detailActionFamily:
 		return m.navigateTo(viewFamily), nil
+	case detailActionNotes:
+		return m.navigateTo(viewNotes), nil
 	case detailActionInventors:
 		if len(m.current.Inventors) <= 1 {
 			field.value = m.current.Inventors[0]

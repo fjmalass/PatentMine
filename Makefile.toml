@@ -22,13 +22,32 @@ private = true
 private = true
 
 [tasks.launch]
-description = "Launch the PatentMine TUI."
+alias = "run-uspto"
+
+[tasks.run-uspto]
+description = "Launch PatentMine using USPTO ODP as the import source."
 category = "Application"
 command = "go"
 args = [
   "run",
   "-buildvcs=false",
   "./cmd/patentmine",
+  "--import-source", "uspto",
+  "--log-file",
+  "${PATENTMINE_LOG_FILE}",
+  "--max-logs",
+  "${PATENTMINE_MAX_LOGS}",
+]
+
+[tasks.run-google]
+description = "Launch PatentMine using Google Patents as the import source."
+category = "Application"
+command = "go"
+args = [
+  "run",
+  "-buildvcs=false",
+  "./cmd/patentmine",
+  "--import-source", "google",
   "--log-file",
   "${PATENTMINE_LOG_FILE}",
   "--max-logs",
@@ -36,7 +55,7 @@ args = [
 ]
 
 [tasks.run]
-alias = "launch"
+alias = "run-uspto"
 
 [tasks.cli-help]
 description = "Show PatentMine CLI flags."

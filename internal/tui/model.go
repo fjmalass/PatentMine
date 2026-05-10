@@ -108,7 +108,7 @@ type Model struct {
 	helpSearchActive        bool
 	helpScroll              int
 	activityLog             *slog.Logger
-	importCfg config.Config
+	importCfg               config.Config
 }
 
 type navSnapshot struct {
@@ -217,14 +217,25 @@ func (m Model) reloadProjects() Model {
 
 // importPatent fetches a patent bundle using the configured import source.
 func (m Model) importPatent(number string) (domain.PatentBundle, error) {
-	if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTOAPIKey != "" {
-		return importer.ImportUSPTO(number, m.importCfg.USPTOAPIKey)
+	if m.importCfg.ImportSource == config.ImportSourceUSPTO {
+		if m.importCfg.USPTO.APIKey == "" {
+			return domain.PatentBundle{}, fmt.Errorf("USPTO import source configured but no API key set (see --uspto-api-key or config.toml)")
+		}
+		bundle, err := importer.ImportUSPTO(number, m.importCfg.USPTO.APIKey, m.logger)
+		if err == nil {
+			bundle.Patent.ImportSource = "uspto"
+		}
+		return bundle, err
 	}
 	rawURL, err := importer.GooglePatentsURL(number)
 	if err != nil {
 		return domain.PatentBundle{}, err
 	}
-	return importer.ImportGooglePatents(rawURL)
+	bundle, err := importer.ImportGooglePatents(rawURL, m.logger)
+	if err == nil {
+		bundle.Patent.ImportSource = "google"
+	}
+	return bundle, err
 }
 
 // importByNumber adds or refreshes a patent identified by number using the configured source.
@@ -240,16 +251,18 @@ func (m Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
 
 	repo := m.repo
 	projectID := m.ProjectID
-	apiKey := m.importCfg.USPTOAPIKey
+	logger := m.logger
+	apiKey := m.importCfg.USPTO.APIKey
 	currentStatus := m.current.Status
 
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			bundle, err := importer.ImportUSPTO(number, apiKey)
+			bundle, err := importer.ImportUSPTO(number, apiKey, logger)
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
 			}
+			bundle.Patent.ImportSource = "uspto"
 			if verb == importActionRefreshed {
 				bundle.Patent.Status = currentStatus
 			} else {
@@ -266,6 +279,8 @@ func (m Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
 				patent:  p,
 				mode:    viewDetail,
 				message: fmt.Sprintf("%s %s via USPTO ODP", verb, bundle.Patent.Number),
+				action:  "patent.import",
+				source:  "uspto",
 			}
 		},
 	)
@@ -287,6 +302,8 @@ type refreshResultMsg struct {
 	citesSelected   int
 	citedBySelected int
 	withDetails     bool
+	action          string
+	source          string
 }
 
 type refreshDetailsResultMsg struct {
@@ -319,7 +336,7 @@ func (m Model) enrichClassificationDescriptionsCommand(number string) tea.Cmd {
 			return nil
 		}
 
-		bundle, err := importer.ImportGooglePatents(rawURL)
+		bundle, err := importer.ImportGooglePatents(rawURL, m.logger)
 		if err != nil {
 			return nil
 		}
@@ -358,6 +375,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err.Error()
 			return m, nil
+		}
+		if msg.action != "" && msg.patent.Number != "" {
+			m.logActivity(msg.action, msg.patent.Number, msg.source)
 		}
 		m.current = msg.patent
 		m.mode = msg.mode
@@ -1098,7 +1118,7 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			m.err = "usage: :add US11611785B2"
 			return m, nil
 		}
-		if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTOAPIKey != "" {
+		if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTO.APIKey != "" {
 			return m.importByNumber(command.Args[0], importActionAdded)
 		}
 		rawURL, err := importer.GooglePatentsURL(command.Args[0])
@@ -1173,6 +1193,8 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		text := strings.Join(command.Args, " ")
 		m.logActivity("note", m.current.Number, text)
 		m.message = "noted"
+	case commandExit:
+		return m, tea.Quit
 	default:
 		m.err = "unknown command: " + command.Name
 	}
@@ -1197,10 +1219,11 @@ func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			bundle, err := importer.ImportGooglePatents(rawURL)
+			bundle, err := importer.ImportGooglePatents(rawURL, logger)
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
 			}
+			bundle.Patent.ImportSource = "google"
 			if verb == importActionRefreshed {
 				bundle.Patent.Status = currentStatus
 			} else {
@@ -1216,13 +1239,15 @@ func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 
 			msg := fmt.Sprintf("%s %s from %s", verb, bundle.Patent.Number, rawURL)
 			if n := len(bundle.FamilyEdges); n > 0 {
-				msg += fmt.Sprintf(" · %d family edge(s) on Google Patents — :family pull to import", n)
+				msg += fmt.Sprintf(" · %d family edge(s) — :refresh family to import", n)
 			}
 			logger.Info("google patent imported", "url", rawURL, "patent", bundle.Patent.Number)
 			return refreshResultMsg{
 				patent:  p,
 				mode:    viewDetail,
 				message: msg,
+				action:  "patent.import",
+				source:  "google",
 			}
 		},
 	)
@@ -1250,6 +1275,9 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if target == "family" {
+		return m.pullFamilyCommand()
+	}
 	if target != refreshTargetAll && target != refreshTargetCitations && target != domain.RelationCites && target != refreshTargetCitedBy && target != domain.RelationCitedBy {
 		m.err = refreshUsage
 		return m, nil
@@ -1260,11 +1288,11 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 
 	importSource := m.importCfg.ImportSource
-	apiKey := m.importCfg.USPTOAPIKey
+	apiKey := m.importCfg.USPTO.APIKey
 
 	var rawURL string
 	if importSource != config.ImportSourceUSPTO || apiKey == "" {
-		rawURL = m.current.SourceURL
+		rawURL = m.current.SourceGoogleURL
 		if rawURL == "" {
 			var err error
 			rawURL, err = importer.GooglePatentsURL(m.current.Number)
@@ -1273,6 +1301,11 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	}
+
+	sourceLabel := "google"
+	if importSource == config.ImportSourceUSPTO && apiKey != "" {
+		sourceLabel = "uspto"
 	}
 
 	ctx, cancel := context.WithCancel(m.ctx)
@@ -1300,14 +1333,15 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle, err = importer.ImportUSPTO(currentNumber, apiKey)
+				bundle, err = importer.ImportUSPTO(currentNumber, apiKey, logger)
 			} else {
-				bundle, err = importer.ImportGooglePatents(rawURL)
+				bundle, err = importer.ImportGooglePatents(rawURL, logger)
 			}
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
 			}
 
+			bundle.Patent.ImportSource = sourceLabel
 			bundle.Patent.Status = currentStatus
 			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
@@ -1323,13 +1357,15 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 
 			familySuffix := ""
 			if n := len(bundle.FamilyEdges); n > 0 {
-				familySuffix = fmt.Sprintf(" · %d family edge(s) on Google Patents — :family pull to import", n)
+				familySuffix = fmt.Sprintf(" · %d family edge(s) — :refresh family to import", n)
 			}
 
 			msg := refreshResultMsg{
 				patent:      p,
 				mode:        currentMode,
 				withDetails: withDetails,
+				action:      "patent.refresh",
+				source:      sourceLabel,
 			}
 
 			switch target {
@@ -1373,7 +1409,7 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 	projectID := m.ProjectID
 	logger := m.logger
 	importSource := m.importCfg.ImportSource
-	apiKey := m.importCfg.USPTOAPIKey
+	apiKey := m.importCfg.USPTO.APIKey
 
 	return m, tea.Batch(
 		m.spinner.Tick,
@@ -1398,12 +1434,12 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 
 				var bundle domain.PatentBundle
 				if importSource == config.ImportSourceUSPTO && apiKey != "" {
-					bundle, err = importer.ImportUSPTO(edge.TargetPatent, apiKey)
+					bundle, err = importer.ImportUSPTO(edge.TargetPatent, apiKey, logger)
 				} else {
 					var rawURL string
 					rawURL, err = importer.GooglePatentsURL(edge.TargetPatent)
 					if err == nil {
-						bundle, err = importer.ImportGooglePatents(rawURL)
+						bundle, err = importer.ImportGooglePatents(rawURL, logger)
 					}
 				}
 				if err != nil {
@@ -1412,6 +1448,11 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 					continue
 				}
 
+				if importSource == config.ImportSourceUSPTO && apiKey != "" {
+					bundle.Patent.ImportSource = "uspto"
+				} else {
+					bundle.Patent.ImportSource = "google"
+				}
 				bundle.Patent.Status = domain.CitationStatusCached
 				if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 					logger.Error("citation details storage failed", "patent", edge.TargetPatent, "error", err)
@@ -1516,6 +1557,30 @@ func (m Model) idsEntryForPatent(number string) *domain.IDSEntry {
 	return nil
 }
 
+// markdownHeadingSummary extracts # and ## heading lines from body as a compact
+// summary. Falls back to the first non-empty line when no headings are present.
+func markdownHeadingSummary(body string) string {
+	var headings []string
+	for _, line := range strings.SplitAfter(body, "\n") {
+		line = strings.TrimRight(line, "\r\n")
+		if strings.HasPrefix(line, "## ") {
+			headings = append(headings, strings.TrimPrefix(line, "## "))
+		} else if strings.HasPrefix(line, "# ") {
+			headings = append(headings, strings.TrimPrefix(line, "# "))
+		}
+	}
+	if len(headings) > 0 {
+		return strings.Join(headings, " · ")
+	}
+	for _, line := range strings.SplitAfter(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
 func (m Model) recentNotesSnippet(number string) string {
 	notes, err := m.repo.ListNotes(m.ctx, m.ProjectID, number)
 	if err != nil || len(notes) == 0 {
@@ -1590,7 +1655,7 @@ func (m Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	projectID := m.ProjectID
 	logger := m.logger
 	importSource := m.importCfg.ImportSource
-	apiKey := m.importCfg.USPTOAPIKey
+	apiKey := m.importCfg.USPTO.APIKey
 	targetPatent := edge.TargetPatent
 
 	return m, tea.Batch(
@@ -1599,16 +1664,21 @@ func (m Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle, err = importer.ImportUSPTO(targetPatent, apiKey)
+				bundle, err = importer.ImportUSPTO(targetPatent, apiKey, logger)
 			} else {
 				var rawURL string
 				rawURL, err = importer.GooglePatentsURL(targetPatent)
 				if err == nil {
-					bundle, err = importer.ImportGooglePatents(rawURL)
+					bundle, err = importer.ImportGooglePatents(rawURL, logger)
 				}
 			}
 			if err != nil {
 				return refreshDetailsResultMsg{err: err}
+			}
+			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				bundle.Patent.ImportSource = "uspto"
+			} else {
+				bundle.Patent.ImportSource = "google"
 			}
 			bundle.Patent.Status = domain.CitationStatusCached
 			_, existsErr := repo.GetPatent(ctx, projectID, edge.TargetPatent)
@@ -1778,8 +1848,8 @@ func (m Model) browserURL(args []string) (string, error) {
 }
 
 func (m Model) patentURL(p domain.Patent) (string, error) {
-	if strings.TrimSpace(p.SourceURL) != "" {
-		return p.SourceURL, nil
+	if strings.TrimSpace(p.SourceGoogleURL) != "" {
+		return p.SourceGoogleURL, nil
 	}
 	return m.patentBrowserURL(p.Number)
 }
@@ -1890,7 +1960,7 @@ func (m Model) storePendingPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	number := m.pendingBundle.Patent.Number
-	m.logActivity("patent.add", number, "")
+	m.logActivity("patent.add", number, string(m.importCfg.ImportSource))
 	if m.pendingCitation.TargetPatent != "" {
 		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, m.pendingCitation, domain.CitationStatusStored); err != nil {
 			m.err = err.Error()
@@ -2842,6 +2912,11 @@ func (m Model) viewDetail() string {
 	}
 	b.WriteString("\n")
 
+	// Status row
+	if color, ok := StatusColors[p.Status]; ok {
+		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("Status: "+p.Status) + "\n")
+	}
+
 	// IDS row
 	idsEntry := m.idsEntryForPatent(p.Number)
 	if idsEntry != nil {
@@ -2853,11 +2928,6 @@ func (m Model) viewDetail() string {
 		b.WriteString("  " + idsStr + "\n")
 	} else {
 		b.WriteString("  " + dimStyle.Render("Not in IDS") + "\n")
-	}
-
-	// Status row
-	if color, ok := StatusColors[p.Status]; ok {
-		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("Status: "+p.Status) + "\n")
 	}
 
 	b.WriteString("\n")
@@ -2890,6 +2960,7 @@ const (
 	detailActionClassification
 	detailActionInventors
 	detailActionFamily
+	detailActionNotes
 )
 
 func (m Model) detailFields() []detailField {
@@ -2940,12 +3011,15 @@ func (m Model) detailFields() []detailField {
 		action:       detailActionClassification,
 	})
 
+	importSourceValue := p.ImportSource
+	if importSourceValue == "" {
+		importSourceValue = m.text.T(TextValueUnknown)
+	}
 	fields = append(fields,
 		detailField{label: TextDetailExpiration, value: m.formatExpiration(p), jumpLabel: jumpLabelExpiration},
-		detailField{label: TextDetailStoredLocal, value: formatStoredTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
 		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(citationCount, citationRefreshedAt), jumpLabel: jumpLabelCitationCount, action: detailActionCitations},
 		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(citedByCount, citedByRefreshedAt), jumpLabel: jumpLabelCitedByCount, action: detailActionCitedBy},
-		detailField{label: TextDetailSource, value: p.SourceURL, jumpLabel: jumpLabelSource},
+		detailField{label: TextDetailSource, value: p.SourceGoogleURL, jumpLabel: jumpLabelSource},
 	)
 
 	if m.repo != nil && p.Number != "" {
@@ -2964,6 +3038,7 @@ func (m Model) detailFields() []detailField {
 			label:        TextDetailFamilyParents,
 			value:        parentValue,
 			displayValue: parentDisplay,
+			jumpLabel:    jumpLabelFamilyParents,
 			action:       detailActionFamily,
 		})
 
@@ -2980,9 +3055,33 @@ func (m Model) detailFields() []detailField {
 			label:        TextDetailFamilyChildren,
 			value:        childValue,
 			displayValue: childDisplay,
+			jumpLabel:    jumpLabelFamilyChildren,
 			action:       detailActionFamily,
 		})
 	}
+
+	if m.repo != nil && p.Number != "" {
+		notes, _ := m.repo.ListNotes(m.ctx, m.ProjectID, p.Number)
+		notesValue := m.text.T(TextValueEmpty)
+		notesDisplay := notesValue
+		if len(notes) > 0 {
+			notesValue = fmt.Sprintf("(%d)", len(notes))
+			notesDisplay = fmt.Sprintf("(%d) %s", len(notes), markdownHeadingSummary(notes[0].Body))
+		}
+		fields = append(fields, detailField{
+			label:        TextDetailNotes,
+			value:        notesValue,
+			displayValue: notesDisplay,
+			jumpLabel:    jumpLabelNotes,
+			action:       detailActionNotes,
+		})
+	}
+
+	fields = append(fields,
+		detailField{label: TextDetailImportSource, value: importSourceValue},
+		detailField{label: TextDetailStoredLocal, value: formatStoredTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
+		detailField{label: TextDetailUpdated, value: formatStoredTime(p.UpdatedAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelUpdated},
+	)
 
 	return fields
 }
@@ -3026,6 +3125,7 @@ func jumpLabelForInventor(index int) string {
 		jumpLabelGrant,
 		jumpLabelExpiration,
 		jumpLabelStoredLocal,
+		jumpLabelUpdated,
 		jumpLabelSource,
 	})[index]
 }
@@ -3118,11 +3218,17 @@ func (m Model) viewCitations(relation string) string {
 		if expDate == "" {
 			expDate = "-"
 		}
+		numCell := edges[i].TargetPatent
+		if src := edges[i].TargetImportSource; src == "uspto" {
+			numCell += " [u]"
+		} else if src == "google" {
+			numCell += " [g]"
+		}
 
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
 			m.pad(rowIndexLabel(i), indexWidth) +
-			m.pad(edges[i].TargetPatent, numWidth+2) +
+			m.pad(numCell, numWidth+2) +
 			m.pad(title, titleWidth+2) +
 			m.pad(inventors, invWidth+2) +
 			m.pad(expDate, expWidth+2) +
@@ -3748,7 +3854,22 @@ func (m Model) viewNoteEdit() string {
 	titleStyle := base.Bold(true).Underline(true)
 	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(fmt.Sprintf("Note · %s", m.current.Number)))
+	p := m.current
+	year := ""
+	switch {
+	case len(p.GrantDate) >= 4:
+		year = p.GrantDate[:4]
+	case len(p.PublicationDate) >= 4:
+		year = p.PublicationDate[:4]
+	}
+	title := "Note · " + p.Number
+	if inv := formatInventorsShort(p.Inventors); inv != "-" {
+		title += " · " + inv
+	}
+	if year != "" {
+		title += " · " + year
+	}
+	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n\n")
 	b.WriteString(m.noteTA.View())
 	b.WriteString("\n\n")
@@ -3773,7 +3894,16 @@ func (m Model) viewNotes() string {
 		b.WriteString("\n")
 	} else {
 		for _, note := range notes {
-			b.WriteString(subtleStyle.Render(note.CreatedAt.Format("2006-01-02 15:04")))
+			year := note.CreatedAt.Format("2006")
+			name := markdownHeadingSummary(note.Body)
+			if len(name) > 48 {
+				name = name[:48] + "…"
+			}
+			header := year
+			if name != "" {
+				header += " · " + name
+			}
+			b.WriteString(subtleStyle.Render(header))
 			b.WriteString("\n")
 			b.WriteString(note.Body)
 			b.WriteString("\n\n")

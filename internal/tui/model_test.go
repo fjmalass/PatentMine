@@ -596,7 +596,7 @@ func (r storedCitationRepo) GetPatent(_ context.Context, _ string, number string
 		GrantDate:           "2020-01-01",
 		ExpirationDate:      "2040-01-01",
 		ExpirationEstimated: true,
-		SourceURL:           "https://patents.google.com/patent/" + number + "/en",
+		SourceGoogleURL:     "https://patents.google.com/patent/" + number + "/en",
 	}, nil
 }
 

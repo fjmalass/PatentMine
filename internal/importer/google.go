@@ -2,6 +2,7 @@ package importer
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -33,7 +34,10 @@ func GooglePatentsURL(patentNumber string) (string, error) {
 	return fmt.Sprintf("https://patents.google.com/patent/%s/en?oq=%s+", escaped, url.QueryEscape(number)), nil
 }
 
-func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
+func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundle, error) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return domain.PatentBundle{}, fmt.Errorf("invalid URL: %w", err)
@@ -46,6 +50,7 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 		return domain.PatentBundle{}, fmt.Errorf("could not determine patent number from URL")
 	}
 
+	logger.Info("google.import", "number", number, "url", rawURL)
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -54,9 +59,11 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 	req.Header.Set("User-Agent", "PatentMine sample importer")
 	resp, err := client.Do(req)
 	if err != nil {
+		logger.Error("google.import fetch failed", "number", number, "error", err)
 		return domain.PatentBundle{}, fmt.Errorf("fetch failed: %w", err)
 	}
 	defer resp.Body.Close()
+	logger.Debug("google.import response", "number", number, "status", resp.StatusCode)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return domain.PatentBundle{}, fmt.Errorf("fetch failed: HTTP %d", resp.StatusCode)
 	}
@@ -73,7 +80,7 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 		Inventors:       texts(doc.Selection, "dd[itemprop='inventor']", "span[itemprop='inventor']"),
 		PublicationDate: attr(doc.Selection, "time[itemprop='publicationDate']", "datetime"),
 		GrantDate:       attr(doc.Selection, "time[itemprop='grantDate']", "datetime"),
-		SourceURL:       rawURL,
+		SourceGoogleURL: rawURL,
 	}
 	if expirationDate := adjustedExpirationDate(doc); expirationDate != "" {
 		patent.ExpirationDate = expirationDate
@@ -91,14 +98,16 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 	}
 	addSection(doc.Selection, &bundle, number, "claims", "section[itemprop='claims'] .claim, .claims .claim")
 	addSection(doc.Selection, &bundle, number, "description", "section[itemprop='description'] p, .description p")
-	extractClassifications(doc, &bundle, number)
-	bundle.Citations = extractCitationEdges(doc, number)
-	bundle.FamilyEdges = extractFamilyEdges(doc, number)
+	extractClassifications(doc, &bundle, number, logger)
+	bundle.Citations = extractCitationEdges(doc, number, logger)
+	bundle.FamilyEdges = extractFamilyEdges(doc, number, logger)
 	bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: number, CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title)})
+	logger.Info("google.import ok", "number", number, "citations", len(bundle.Citations), "family_edges", len(bundle.FamilyEdges), "sections", len(bundle.Sections), "classifications", len(bundle.Classifications))
 	return bundle, nil
 }
 
-func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, number string) {
+func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, number string, logger *slog.Logger) {
+	before := len(bundle.Classifications)
 	doc.Find("[itemprop='classifications'], [itemprop='classification'], classification-cpc, .classification-cpc, classification-item, .classification-item").Each(func(_ int, row *goquery.Selection) {
 		code := clean(classificationField(row, "[itemprop='code']", "[itemprop='Code']", ".code"))
 		description := clean(classificationField(row, "[itemprop='description']", "[itemprop='Description']", ".description"))
@@ -108,6 +117,7 @@ func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, 
 		}
 		addClassification(bundle, number, code, description)
 	})
+	logger.Debug("google.classifications", "number", number, "count", len(bundle.Classifications)-before)
 }
 
 func classificationField(row *goquery.Selection, selectors ...string) string {
@@ -223,7 +233,8 @@ func addSection(s *goquery.Selection, bundle *domain.PatentBundle, number, secti
 // parentApps rows → source is a child of the listed patent.
 // priorityApps rows → source is a parent of the listed patent.
 // Falls back to the legacy backwardReferencesFamily/forwardReferencesFamily itemprop selectors.
-func extractFamilyEdges(doc *goquery.Document, source string) []domain.FamilyEdge {
+func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logger) []domain.FamilyEdge {
+	logger.Debug("google.extract_family", "source", source)
 	seen := map[string]bool{}
 	var edges []domain.FamilyEdge
 
@@ -343,10 +354,12 @@ func extractFamilyEdges(doc *goquery.Document, source string) []domain.FamilyEdg
 		}
 	}
 
+	logger.Debug("google.extract_family done", "source", source, "count", len(edges))
 	return edges
 }
 
-func extractCitationEdges(doc *goquery.Document, source string) []domain.CitationEdge {
+func extractCitationEdges(doc *goquery.Document, source string, logger *slog.Logger) []domain.CitationEdge {
+	logger.Debug("google.extract_citations", "source", source)
 	seen := map[string]bool{}
 	var edges []domain.CitationEdge
 	add := func(target, relation string) {
@@ -374,6 +387,7 @@ func extractCitationEdges(doc *goquery.Document, source string) []domain.Citatio
 	}
 	extractRows("[itemprop='backwardReferences']", domain.RelationCites)
 	extractRows("[itemprop='forwardReferences']", domain.RelationCitedBy)
+	logger.Debug("google.extract_citations done", "source", source, "count", len(edges))
 	return edges
 }
 

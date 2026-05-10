@@ -27,10 +27,11 @@ type familyNode struct {
 	depth     int    // negative = ancestor, 0 = current, positive = descendant
 	relType   string // relation type from parent to this node (empty for roots)
 	parentIdx int    // index in the flat slice of this node's parent (-1 for roots)
-	prefix    string // indentation prefix inherited from ancestor connectors
-	connector string // "├─ ", "└─ ", or "" for tree roots
-	title     string
-	grantYear string
+	prefix       string // indentation prefix inherited from ancestor connectors
+	connector    string // "├─ ", "└─ ", or "" for tree roots
+	title        string
+	grantYear    string
+	importSource string
 }
 
 // buildFamilyTree returns an ordered flat list of all family tree nodes
@@ -162,6 +163,7 @@ func (m Model) buildFamilyTreeFresh() []familyNode {
 			case len(p.PublicationDate) >= 4:
 				nodes[i].grantYear = p.PublicationDate[:4]
 			}
+			nodes[i].importSource = p.ImportSource
 		}
 	}
 
@@ -198,6 +200,17 @@ func familyLevelLabel(depth int) string {
 		return fmt.Sprintf("Ancestor (%d)", -depth)
 	}
 	return fmt.Sprintf("Descendant (%d)", depth)
+}
+
+// importSourceBadge renders a compact source indicator: [g] or [u].
+func importSourceBadge(base lipgloss.Style, source string) string {
+	switch source {
+	case "uspto":
+		return base.Foreground(lipgloss.Color(ColorDepth)).Render("[u]")
+	case "google":
+		return base.Foreground(lipgloss.Color(ColorDim)).Render("[g]")
+	}
+	return ""
 }
 
 // familyRelationColor returns the terminal color for a family relation type.
@@ -259,7 +272,7 @@ func (m Model) viewFamilyOverlay() string {
 		if isSelected {
 			line.WriteString(cursorStyle.Render("▶ "))
 		} else {
-			line.WriteString("  ")
+			line.WriteString(base.Render("  "))
 		}
 
 		// Tree prefix + connector.
@@ -282,13 +295,19 @@ func (m Model) viewFamilyOverlay() string {
 			line.WriteString(subtle.Render(" (" + node.grantYear + ")"))
 		}
 
+		// Import source badge.
+		if node.importSource != "" {
+			line.WriteString(base.Render(" "))
+			line.WriteString(importSourceBadge(base, node.importSource))
+		}
+
 		// Title (truncated).
 		if node.title != "" {
 			titleStyle := subtle
 			if isCurrent {
 				titleStyle = currentStyle.Bold(true).Underline(true)
 			}
-			line.WriteString(" ")
+			line.WriteString(base.Render(" "))
 			line.WriteString(titleStyle.Render(m.truncate(node.title, 45)))
 		}
 
@@ -301,7 +320,7 @@ func (m Model) viewFamilyOverlay() string {
 
 		// Depth label (omitted for the current patent).
 		if !isCurrent {
-			line.WriteString(" ")
+			line.WriteString(base.Render(" "))
 			line.WriteString(levelStyle.Render(familyLevelLabel(node.depth)))
 		}
 
@@ -309,7 +328,7 @@ func (m Model) viewFamilyOverlay() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(subtle.Render("j/k ↕  h parent  l child  enter opens  D removes edge  :family parent/child <num>  r pull  esc back"))
+	b.WriteString(subtle.Render("j/k ↕  h parent  l child  enter opens  D removes edge  :family parent/child <num>  r :refresh family  esc back"))
 	return b.String()
 }
 
@@ -392,17 +411,13 @@ func (m Model) familyItems() (parents []domain.FamilyEdge, children []domain.Fam
 	return
 }
 
-// familyCommand handles :family parent|child|remove|pull sub-commands.
+// familyCommand handles :family parent|child|remove sub-commands.
 func (m Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.err = "usage: :family parent|child <number> [type]  ·  :family remove <number>  ·  :family pull"
+		m.err = "usage: :family parent|child <number> [type]  ·  :family remove <number>"
 		return m, nil
 	}
 	action := strings.ToLower(args[0])
-
-	if action == "pull" {
-		return m.pullFamilyCommand()
-	}
 
 	if len(args) < 2 {
 		m.err = "usage: :family parent|child <number> [continuation|divisional|cip|pct] or :family remove <number>"
@@ -508,11 +523,11 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 	}
 
 	importSource := m.importCfg.ImportSource
-	apiKey := m.importCfg.USPTOAPIKey
+	apiKey := m.importCfg.USPTO.APIKey
 
 	var rawURL string
 	if importSource != config.ImportSourceUSPTO || apiKey == "" {
-		rawURL = m.current.SourceURL
+		rawURL = m.current.SourceGoogleURL
 		if rawURL == "" {
 			var err error
 			rawURL, err = importer.GooglePatentsURL(m.current.Number)
@@ -540,21 +555,32 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle, err = importer.ImportUSPTO(currentNumber, apiKey)
+				bundle, err = importer.ImportUSPTO(currentNumber, apiKey, logger)
 			} else {
-				bundle, err = importer.ImportGooglePatents(rawURL)
+				bundle, err = importer.ImportGooglePatents(rawURL, logger)
 			}
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
+			}
+			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				bundle.Patent.ImportSource = "uspto"
+			} else {
+				bundle.Patent.ImportSource = "google"
 			}
 			bundle.Patent.Status = currentStatus
 
 			if len(bundle.FamilyEdges) == 0 {
 				p, _ := repo.GetPatent(ctx, projectID, currentNumber)
+				source := "google"
+				if importSource == config.ImportSourceUSPTO && apiKey != "" {
+					source = "uspto"
+				}
 				return refreshResultMsg{
 					patent:  p,
 					mode:    viewFamily,
-					message: "no family edges found on Google Patents for " + currentNumber,
+					message: "no family edges found for " + currentNumber,
+					action:  "family.refresh",
+					source:  source,
 				}
 			}
 
@@ -574,18 +600,23 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				var memberBundle domain.PatentBundle
 				var err error
 				if importSource == config.ImportSourceUSPTO && apiKey != "" {
-					memberBundle, err = importer.ImportUSPTO(num, apiKey)
+					memberBundle, err = importer.ImportUSPTO(num, apiKey, logger)
 				} else {
 					var memberURL string
 					memberURL, err = importer.GooglePatentsURL(num)
 					if err == nil {
-						memberBundle, err = importer.ImportGooglePatents(memberURL)
+						memberBundle, err = importer.ImportGooglePatents(memberURL, logger)
 					}
 				}
 				if err != nil {
 					logger.Warn("family member fetch failed", "patent", num, "error", err)
 					failed++
 					continue
+				}
+				if importSource == config.ImportSourceUSPTO && apiKey != "" {
+					memberBundle.Patent.ImportSource = "uspto"
+				} else {
+					memberBundle.Patent.ImportSource = "google"
 				}
 				memberBundle.Patent.Status = domain.CitationStatusIgnored
 				if err := repo.UpsertPatentBundle(ctx, projectID, memberBundle); err != nil {
@@ -604,11 +635,15 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				return refreshResultMsg{err: err}
 			}
 
-			msg := fmt.Sprintf("family pull: %d/%d members imported", imported, len(members))
+			source := "google"
+			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				source = "uspto"
+			}
+			msg := fmt.Sprintf("family refresh: %d/%d members imported", imported, len(members))
 			if failed > 0 {
 				msg += fmt.Sprintf(" (%d failed)", failed)
 			}
-			return refreshResultMsg{patent: p, mode: viewFamily, message: msg}
+			return refreshResultMsg{patent: p, mode: viewFamily, message: msg, action: "family.refresh", source: source}
 		},
 	)
 }

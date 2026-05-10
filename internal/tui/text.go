@@ -20,11 +20,14 @@ const (
 	TextDetailStatus            TextKey = "detail.status"
 	TextDetailLatestAssignment  TextKey = "detail.latest_assignment"
 	TextDetailStoredLocal       TextKey = "detail.stored_local"
+	TextDetailUpdated           TextKey = "detail.updated"
 	TextDetailSource            TextKey = "detail.source"
 	TextDetailCitationCount     TextKey = "detail.citation_count"
 	TextDetailCitedByCount      TextKey = "detail.cited_by_count"
 	TextDetailFamilyParents     TextKey = "detail.family_parents"
 	TextDetailFamilyChildren    TextKey = "detail.family_children"
+	TextDetailNotes             TextKey = "detail.notes"
+	TextDetailImportSource      TextKey = "detail.import_source"
 	TextValueUnknown            TextKey = "value.unknown"
 	TextValueEmpty              TextKey = "value.empty"
 	TextValuePageStatus         TextKey = "value.page_status"
@@ -188,12 +191,15 @@ func EnglishText() TextCatalog {
 		TextDetailExpiration:        "Expiration",
 		TextDetailStatus:            "Status",
 		TextDetailLatestAssignment:  "Latest Assignment",
-		TextDetailStoredLocal:       "Stored",
+		TextDetailStoredLocal:       "Imported",
+		TextDetailUpdated:           "Updated",
 		TextDetailSource:            "Source",
 		TextDetailCitationCount:     "Citations",
 		TextDetailCitedByCount:      "Cited by",
 		TextDetailFamilyParents:     "Parents",
 		TextDetailFamilyChildren:    "Children",
+		TextDetailNotes:             "Notes",
+		TextDetailImportSource:      "Via",
 		TextValueUnknown:            "unknown",
 		TextValueEmpty:              "Empty",
 		TextValuePageStatus:         "Page %d/%d - items %d-%d of %d",

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -41,6 +42,7 @@ func main() {
 		exit(err)
 	}
 	defer closeLog()
+	slog.SetDefault(logger)
 	logger.Info("starting patentmine", "log_file", logPath, "max_logs", config.MaxLogs)
 
 	activityLog, closeActivity, err := logging.OpenActivity(tui.DefaultActivityPath)
@@ -66,19 +68,7 @@ func main() {
 		exit(err)
 	}
 	cfg := appconfig.Load()
-	if config.ImportSource != "" {
-		cfg.ImportSource = appconfig.ImportSource(config.ImportSource)
-	}
-	if config.USPTOAPIKey != "" {
-		cfg.USPTOAPIKey = config.USPTOAPIKey
-	}
-	if config.USPTOAPIKeyFile != "" {
-		if data, err := os.ReadFile(config.USPTOAPIKeyFile); err == nil {
-			if key := strings.TrimSpace(string(data)); key != "" {
-				cfg.USPTOAPIKey = key
-			}
-		}
-	}
+	appconfig.ApplyCLI(&cfg, config.ImportSource, config.USPTOAPIKey, config.USPTOAPIKeyFile)
 	model := tui.New(ctx, repo, logger, activityLog, cfg)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

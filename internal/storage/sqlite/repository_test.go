@@ -132,7 +132,7 @@ func TestRepositoryOperations(t *testing.T) {
 			GrantDate:           "2024-02-01",
 			ExpirationDate:      "2044-01-01",
 			ExpirationEstimated: true,
-			SourceURL:           "https://example.test",
+			SourceGoogleURL:     "https://example.test",
 		},
 		Sections:        []domain.PatentTextSection{{SectionType: "claims", Ordinal: 1, Text: "A widget analyzer."}},
 		Citations:       []domain.CitationEdge{{TargetPatent: "US2", RelationType: domain.RelationCites}},

@@ -3,6 +3,7 @@ package importer
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,7 +17,10 @@ const usptoBaseURL = "https://api.uspto.gov"
 // ImportUSPTO fetches patent data from the USPTO Open Data Portal API.
 // patentNumber may be in any common format: US12000000B2, US12000000, 12000000.
 // Requires a valid ODP API key (register at developer.uspto.gov).
-func ImportUSPTO(patentNumber, apiKey string) (domain.PatentBundle, error) {
+func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.PatentBundle, error) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	if strings.TrimSpace(apiKey) == "" {
 		return domain.PatentBundle{}, fmt.Errorf("USPTO API key is required")
 	}
@@ -30,15 +34,20 @@ func ImportUSPTO(patentNumber, apiKey string) (domain.PatentBundle, error) {
 		return domain.PatentBundle{}, fmt.Errorf("could not parse patent number: %s", patentNumber)
 	}
 
+	logger.Info("uspto.import", "patent", patentNumber, "search_num", searchNum)
 	client := &http.Client{Timeout: 20 * time.Second}
 
-	appNum, appData, err := usptoFetchByPatentNumber(client, apiKey, searchNum)
+	appNum, appData, err := usptoFetchByPatentNumber(client, apiKey, searchNum, logger)
 	if err != nil {
+		logger.Error("uspto.import failed", "patent", patentNumber, "error", err)
 		return domain.PatentBundle{}, err
 	}
 
-	continuity, _ := usptoFetchContinuity(client, apiKey, appNum)
-	return buildUSPTOBundle(number, appData, continuity), nil
+	continuity, _ := usptoFetchContinuity(client, apiKey, appNum, logger)
+	forwardNums := usptoFetchForwardCitations(client, apiKey, searchNum, logger)
+	bundle := buildUSPTOBundle(number, appData, continuity, forwardNums, logger)
+	logger.Info("uspto.import ok", "patent", bundle.Patent.Number, "citations", len(bundle.Citations), "family_edges", len(bundle.FamilyEdges), "classifications", len(bundle.Classifications))
+	return bundle, nil
 }
 
 // --- JSON response types ---
@@ -57,14 +66,21 @@ type usptoApplicationData struct {
 }
 
 type usptoMetaData struct {
-	PatentNumber                     string          `json:"patentNumber"`
-	InventionTitle                   string          `json:"inventionTitle"`
-	InventorBag                      []usptoInventor `json:"inventorBag"`
-	CPCClassificationBag             []string        `json:"cpcClassificationBag"`
-	GrantDate                        string          `json:"grantDate"`
-	FilingDate                       string          `json:"filingDate"`
-	EarliestPublicationDate          string          `json:"earliestPublicationDate"`
-	ApplicationStatusDescriptionText string          `json:"applicationStatusDescriptionText"`
+	PatentNumber                     string                `json:"patentNumber"`
+	InventionTitle                   string                `json:"inventionTitle"`
+	InventorBag                      []usptoInventor       `json:"inventorBag"`
+	CPCClassificationBag             []string              `json:"cpcClassificationBag"`
+	GrantDate                        string                `json:"grantDate"`
+	FilingDate                       string                `json:"filingDate"`
+	EarliestPublicationDate          string                `json:"earliestPublicationDate"`
+	ApplicationStatusDescriptionText string                `json:"applicationStatusDescriptionText"`
+	ReferenceCitedBag                []usptoReferenceCited `json:"referenceCitedBag"`
+}
+
+type usptoReferenceCited struct {
+	PatentNumber    string `json:"patentNumber"`
+	PatentKindCode  string `json:"patentKindCode"`
+	PublicationDate string `json:"publicationDate"`
 }
 
 type usptoInventor struct {
@@ -100,34 +116,81 @@ type usptoContinuityResponse struct {
 
 // --- API calls ---
 
-func usptoFetchByPatentNumber(client *http.Client, apiKey, searchNum string) (string, usptoApplicationData, error) {
+func usptoFetchByPatentNumber(client *http.Client, apiKey, searchNum string, logger *slog.Logger) (string, usptoApplicationData, error) {
 	searchURL := fmt.Sprintf("%s/api/v1/patent/applications/search?q=patentNumber:(%s)", usptoBaseURL, searchNum)
+	logger.Debug("uspto.search", "url", searchURL)
 	var searchResp usptoSearchResponse
-	if err := usptoGET(client, apiKey, searchURL, &searchResp); err != nil {
+	if err := usptoGET(client, apiKey, searchURL, &searchResp, logger); err != nil {
 		return "", usptoApplicationData{}, fmt.Errorf("USPTO search failed: %w", err)
 	}
 	if searchResp.Count == 0 || len(searchResp.PatentFileWrapperDataBag) == 0 {
 		return "", usptoApplicationData{}, fmt.Errorf("patent not found in USPTO ODP: %s", searchNum)
 	}
 	appNum := searchResp.PatentFileWrapperDataBag[0].ApplicationNumberText
+	logger.Info("uspto.app_found", "search_num", searchNum, "app_num", appNum)
 
 	// Fetch full application data by application number
 	fullURL := fmt.Sprintf("%s/api/v1/patent/applications/%s", usptoBaseURL, appNum)
+	logger.Debug("uspto.app_fetch", "url", fullURL)
 	var fullResp usptoSearchResponse
-	if err := usptoGET(client, apiKey, fullURL, &fullResp); err == nil && len(fullResp.PatentFileWrapperDataBag) > 0 {
+	if err := usptoGET(client, apiKey, fullURL, &fullResp, logger); err == nil && len(fullResp.PatentFileWrapperDataBag) > 0 {
 		return appNum, fullResp.PatentFileWrapperDataBag[0], nil
 	}
 	return appNum, searchResp.PatentFileWrapperDataBag[0], nil
 }
 
-func usptoFetchContinuity(client *http.Client, apiKey, appNum string) (usptoContinuityResponse, error) {
+func usptoFetchContinuity(client *http.Client, apiKey, appNum string, logger *slog.Logger) (usptoContinuityResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/patent/applications/%s/continuity", usptoBaseURL, appNum)
+	logger.Debug("uspto.continuity", "app_num", appNum, "url", url)
 	var resp usptoContinuityResponse
-	err := usptoGET(client, apiKey, url, &resp)
+	err := usptoGET(client, apiKey, url, &resp, logger)
+	if err != nil {
+		logger.Warn("uspto.continuity failed", "app_num", appNum, "error", err)
+	} else {
+		var parents, children int
+		if len(resp.PatentFileWrapperDataBag) > 0 {
+			parents = len(resp.PatentFileWrapperDataBag[0].ParentContinuityBag)
+			children = len(resp.PatentFileWrapperDataBag[0].ChildContinuityBag)
+		}
+		logger.Info("uspto.continuity ok", "app_num", appNum, "parents", parents, "children", children)
+	}
 	return resp, err
 }
 
-func usptoGET(client *http.Client, apiKey, url string, dest interface{}) error {
+// usptoFetchForwardCitations searches for all patents that cite patentNum using
+// the forwardReferencedPatentNumber query field. Results are paginated (25/page).
+func usptoFetchForwardCitations(client *http.Client, apiKey, searchNum string, logger *slog.Logger) []string {
+	const pageSize = 25
+	const maxPages = 40 // cap at 1000 forward citations
+	var nums []string
+	seen := map[string]bool{}
+	logger.Info("uspto.fwd_citations", "search_num", searchNum)
+	for page := 0; page < maxPages; page++ {
+		url := fmt.Sprintf("%s/api/v1/patent/applications/search?q=forwardReferencedPatentNumber:(%s)&fields=applicationMetaData.patentNumber&rows=%d&start=%d",
+			usptoBaseURL, searchNum, pageSize, page*pageSize)
+		var resp usptoSearchResponse
+		if err := usptoGET(client, apiKey, url, &resp, logger); err != nil {
+			logger.Warn("uspto.fwd_citations page failed", "search_num", searchNum, "page", page, "error", err)
+			break
+		}
+		count := len(resp.PatentFileWrapperDataBag)
+		logger.Debug("uspto.fwd_citations page", "search_num", searchNum, "page", page, "count", count)
+		for _, app := range resp.PatentFileWrapperDataBag {
+			if num := usptoNormalizePatentNumber(app.ApplicationMetaData.PatentNumber); num != "" && !seen[num] {
+				seen[num] = true
+				nums = append(nums, num)
+			}
+		}
+		if count < pageSize {
+			break
+		}
+	}
+	logger.Info("uspto.fwd_citations done", "search_num", searchNum, "total", len(nums))
+	return nums
+}
+
+func usptoGET(client *http.Client, apiKey, url string, dest any, logger *slog.Logger) error {
+	logger.Debug("uspto.get", "url", url)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -136,9 +199,11 @@ func usptoGET(client *http.Client, apiKey, url string, dest interface{}) error {
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		logger.Error("uspto.get request failed", "url", url, "error", err)
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	logger.Debug("uspto.get response", "url", url, "status", resp.StatusCode)
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		return fmt.Errorf("USPTO API key invalid or unauthorized (HTTP %d)", resp.StatusCode)
 	}
@@ -150,7 +215,7 @@ func usptoGET(client *http.Client, apiKey, url string, dest interface{}) error {
 
 // --- Bundle builder ---
 
-func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continuity usptoContinuityResponse) domain.PatentBundle {
+func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continuity usptoContinuityResponse, forwardNums []string, logger *slog.Logger) domain.PatentBundle {
 	meta := data.ApplicationMetaData
 
 	// Canonical number: use ODP patentNumber with US prefix, else fall back to original
@@ -200,7 +265,6 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 		}
 	}
 
-	// Google Patents URL as SourceURL for browser convenience
 	sourceURL, _ := GooglePatentsURL(number)
 
 	patent := domain.Patent{
@@ -210,7 +274,7 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 		Inventors:       inventors,
 		PublicationDate: meta.EarliestPublicationDate,
 		GrantDate:       meta.GrantDate,
-		SourceURL:       sourceURL,
+		SourceGoogleURL: sourceURL,
 	}
 	if exp := estimatedExpirationDate(meta.EarliestPublicationDate, meta.GrantDate); exp != "" {
 		patent.ExpirationDate = exp
@@ -271,11 +335,39 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 		}
 	}
 
+	// Backward citations: references cited by this patent
+	citeSeen := map[string]bool{}
+	for _, ref := range meta.ReferenceCitedBag {
+		num := usptoNormalizePatentNumber(ref.PatentNumber)
+		if num == "" || strings.EqualFold(num, number) || citeSeen[num] {
+			continue
+		}
+		citeSeen[num] = true
+		bundle.Citations = append(bundle.Citations, domain.CitationEdge{
+			SourcePatent: number,
+			TargetPatent: num,
+			RelationType: domain.RelationCites,
+		})
+	}
+
+	// Forward citations: patents that cite this patent
+	for _, num := range forwardNums {
+		if strings.EqualFold(num, number) {
+			continue
+		}
+		bundle.Citations = append(bundle.Citations, domain.CitationEdge{
+			SourcePatent: number,
+			TargetPatent: num,
+			RelationType: domain.RelationCitedBy,
+		})
+	}
+
 	bundle.References = append(bundle.References, domain.ReferenceEntry{
 		PatentNumber:  number,
 		CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title),
 	})
 
+	logger.Debug("uspto.build_bundle", "number", number, "citations", len(bundle.Citations), "family_edges", len(bundle.FamilyEdges), "classifications", len(bundle.Classifications), "sections", len(bundle.Sections))
 	return bundle
 }
 

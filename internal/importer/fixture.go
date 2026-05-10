@@ -18,7 +18,7 @@ type fixtureBundle struct {
 		GrantDate           string   `json:"grant_date"`
 		ExpirationDate      string   `json:"expiration_date"`
 		ExpirationEstimated bool     `json:"expiration_estimated"`
-		SourceURL           string   `json:"source_url"`
+		SourceGoogleURL     string   `json:"source_google_url"`
 	} `json:"patent"`
 	Sections []struct {
 		SectionType string `json:"section_type"`
@@ -63,7 +63,7 @@ func LoadFixture(path string) (domain.PatentBundle, error) {
 		GrantDate:           fixture.Patent.GrantDate,
 		ExpirationDate:      fixture.Patent.ExpirationDate,
 		ExpirationEstimated: fixture.Patent.ExpirationEstimated,
-		SourceURL:           fixture.Patent.SourceURL,
+		SourceGoogleURL:     fixture.Patent.SourceGoogleURL,
 	}
 	bundle := domain.PatentBundle{Patent: p}
 	for _, section := range fixture.Sections {

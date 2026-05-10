@@ -144,8 +144,10 @@ type Patent struct {
 	GrantDate           string
 	ExpirationDate      string
 	ExpirationEstimated bool
-	SourceURL           string
+	SourceGoogleURL     string
+	ImportSource        string
 	StoredAt            time.Time
+	UpdatedAt           time.Time
 	StatusChangedAt     time.Time
 	Status              string
 	ClassificationLabel string
@@ -170,6 +172,7 @@ type CitationEdge struct {
 	TargetTitle          string
 	TargetInventors      []string
 	TargetExpirationDate string
+	TargetImportSource   string
 }
 
 type Classification struct {

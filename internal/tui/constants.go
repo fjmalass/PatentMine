@@ -34,6 +34,7 @@ const (
 	commandPurge           = "purge"
 	commandCompact         = "compact"
 	commandNote            = "note"
+	commandExit            = "exit"
 
 	// :project subcommands
 	projectSubID            = "id"
@@ -146,11 +147,15 @@ const (
 	jumpLabelClassification = "k"
 	jumpLabelExpiration     = "x"
 	jumpLabelStoredLocal    = "l"
+	jumpLabelUpdated        = "u"
 	jumpLabelSource         = "h"
 	jumpLabelCitation       = "c"
 	jumpLabelCitedBy        = "b"
 	jumpLabelCitationCount  = "c"
 	jumpLabelCitedByCount   = "b"
+	jumpLabelFamilyParents  = "P"
+	jumpLabelFamilyChildren = "C"
+	jumpLabelNotes          = "n"
 
 	inventorJumpNumberLabels = "123456789"
 

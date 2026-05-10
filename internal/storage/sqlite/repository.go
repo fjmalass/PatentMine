@@ -52,6 +52,8 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	migrations := []string{
 		`alter table project_patents add column status_changed_at text not null default ''`,
 		`alter table project_ids add column status text not null default 'pending'`,
+		`alter table patents add column updated_at text not null default ''`,
+		`alter table patents add column import_source text not null default ''`,
 	}
 	for _, m := range migrations {
 		if _, err := r.db.ExecContext(ctx, m); err != nil {
@@ -85,9 +87,11 @@ func (r *Repository) createTables(ctx context.Context) error {
 			grant_date text not null,
 			expiration_date text not null default '',
 			expiration_estimated integer not null default 0,
-			source_url text not null,
+			source_google_url text not null,
+			import_source text not null default '',
 			created_at text not null default '',
-			latest_assignment text not null default ''
+			latest_assignment text not null default '',
+			updated_at text not null default ''
 		)`,
 		fmt.Sprintf(`create table if not exists project_patents (
 			project_id text not null,
@@ -392,8 +396,8 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent) error {
 		createdAt = time.Now().UTC()
 	}
 	_, err = tx.ExecContext(ctx, `insert into patents
-		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_estimated, source_url, created_at, latest_assignment)
-		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_estimated, source_google_url, import_source, created_at, latest_assignment, updated_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		on conflict(number) do update set
 			title = excluded.title,
 			abstract = excluded.abstract,
@@ -403,9 +407,11 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent) error {
 			grant_date = excluded.grant_date,
 			expiration_date = excluded.expiration_date,
 			expiration_estimated = excluded.expiration_estimated,
-			source_url = excluded.source_url,
-			latest_assignment = case when excluded.latest_assignment != '' then excluded.latest_assignment else patents.latest_assignment end`,
-		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, boolInt(p.ExpirationEstimated), p.SourceURL, createdAt.Format(time.RFC3339), p.LatestAssignment)
+			source_google_url = excluded.source_google_url,
+			import_source = case when excluded.import_source != '' then excluded.import_source else patents.import_source end,
+			latest_assignment = case when excluded.latest_assignment != '' then excluded.latest_assignment else patents.latest_assignment end,
+			updated_at = excluded.updated_at`,
+		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, boolInt(p.ExpirationEstimated), p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString())
 	return err
 }
 
@@ -423,11 +429,11 @@ func replaceTexts(ctx context.Context, tx *sql.Tx, number string, sections []dom
 }
 
 func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number string, edges []domain.CitationEdge) error {
-	refreshedAt := nowString()
-	refreshedRelations := map[string]bool{
-		domain.RelationCites:   true,
-		domain.RelationCitedBy: true,
+	if len(edges) == 0 {
+		return nil
 	}
+	refreshedAt := nowString()
+	refreshedRelations := map[string]bool{}
 	for _, edge := range edges {
 		source := firstNonEmpty(edge.SourcePatent, number)
 		status := firstNonEmpty(edge.Status, domain.CitationStatusIgnored)
@@ -496,8 +502,8 @@ func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, clas
 func (r *Repository) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
 	row := r.db.QueryRowContext(ctx, `
 		select
-			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_url, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label, pp.status_changed_at
+			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
+			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at
 		from patents p
 		left join project_patents pp on p.number = pp.patent_number and pp.project_id = ?
 		left join patent_classifications c on p.number = c.patent_number
@@ -551,15 +557,15 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	}
 	query := `
 		select
-			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_url, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label, pp.status_changed_at
+			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
+			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
 		left join patent_classifications c on p.number = c.patent_number
 		where pp.project_id = ? and ` + statusClause
 
 	if strings.TrimSpace(opts.Filter) != "" {
-		query += ` and lower(p.number || ' ' || p.title || ' ' || p.abstract || ' ' || p.assignee || ' ' || p.inventors_json || ' ' || p.publication_date || ' ' || p.grant_date || ' ' || p.expiration_date || ' ' || p.source_url || ' ' || p.latest_assignment) like ?`
+		query += ` and lower(p.number || ' ' || p.title || ' ' || p.abstract || ' ' || p.assignee || ' ' || p.inventors_json || ' ' || p.publication_date || ' ' || p.grant_date || ' ' || p.expiration_date || ' ' || p.source_google_url || ' ' || p.latest_assignment) like ?`
 		args = append(args, "%"+strings.ToLower(strings.TrimSpace(opts.Filter))+"%")
 	}
 
@@ -612,7 +618,7 @@ func (r *Repository) ListCitations(ctx context.Context, projectID string, number
 	query := `
 		select 
 			ce.source_patent, ce.target_patent, ce.relation_type, ce.status, ce.created_at, ce.refreshed_at, ce.labeled_at,
-			p.title, p.inventors_json, p.expiration_date
+			p.title, p.inventors_json, p.expiration_date, p.import_source
 		from citation_edges ce
 		left join patents p on ce.target_patent = p.number
 		where ce.project_id = ? and ce.source_patent = ? and ce.relation_type = ?`
@@ -653,7 +659,7 @@ func (r *Repository) ListCitationsByStatus(ctx context.Context, projectID string
 	query := `
 		select 
 			ce.source_patent, ce.target_patent, ce.relation_type, ce.status, ce.created_at, ce.refreshed_at, ce.labeled_at,
-			p.title, p.inventors_json, p.expiration_date
+			p.title, p.inventors_json, p.expiration_date, p.import_source
 		from citation_edges ce
 		left join patents p on ce.target_patent = p.number
 		where ce.project_id = ? and ce.status = ?`
@@ -689,8 +695,8 @@ func scanCitationEdges(rows *sql.Rows) ([]domain.CitationEdge, error) {
 	for rows.Next() {
 		var edge domain.CitationEdge
 		var createdAt, refreshedAt, labeledAt string
-		var title, inventorsJson, expirationDate sql.NullString
-		if err := rows.Scan(&edge.SourcePatent, &edge.TargetPatent, &edge.RelationType, &edge.Status, &createdAt, &refreshedAt, &labeledAt, &title, &inventorsJson, &expirationDate); err != nil {
+		var title, inventorsJson, expirationDate, importSource sql.NullString
+		if err := rows.Scan(&edge.SourcePatent, &edge.TargetPatent, &edge.RelationType, &edge.Status, &createdAt, &refreshedAt, &labeledAt, &title, &inventorsJson, &expirationDate, &importSource); err != nil {
 			return nil, err
 		}
 		if edge.Status == "" {
@@ -704,6 +710,7 @@ func scanCitationEdges(rows *sql.Rows) ([]domain.CitationEdge, error) {
 			_ = json.Unmarshal([]byte(inventorsJson.String), &edge.TargetInventors)
 		}
 		edge.TargetExpirationDate = expirationDate.String
+		edge.TargetImportSource = importSource.String
 		out = append(out, edge)
 	}
 	return out, rows.Err()
@@ -876,7 +883,9 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var latestAssignment sql.NullString
 	var classificationLabel sql.NullString
 	var statusChangedAt sql.NullString
-	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceURL, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt); err != nil {
+	var updatedAt sql.NullString
+	var importSource sql.NullString
+	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}
@@ -896,8 +905,12 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	if statusChangedAt.Valid && statusChangedAt.String != "" {
 		p.StatusChangedAt = parseTime(statusChangedAt.String)
 	}
+	if updatedAt.Valid && updatedAt.String != "" {
+		p.UpdatedAt = parseTime(updatedAt.String)
+	}
 	p.LatestAssignment = latestAssignment.String
 	p.ClassificationLabel = classificationLabel.String
+	p.ImportSource = importSource.String
 	return p, nil
 }
 
