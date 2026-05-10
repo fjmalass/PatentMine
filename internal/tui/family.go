@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/importer"
 )
@@ -506,13 +507,19 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	rawURL := m.current.SourceURL
-	if rawURL == "" {
-		var err error
-		rawURL, err = importer.GooglePatentsURL(m.current.Number)
-		if err != nil {
-			m.err = err.Error()
-			return m, nil
+	importSource := m.importCfg.ImportSource
+	apiKey := m.importCfg.USPTOAPIKey
+
+	var rawURL string
+	if importSource != config.ImportSourceUSPTO || apiKey == "" {
+		rawURL = m.current.SourceURL
+		if rawURL == "" {
+			var err error
+			rawURL, err = importer.GooglePatentsURL(m.current.Number)
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
 		}
 	}
 
@@ -530,7 +537,13 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			bundle, err := importer.ImportGooglePatents(rawURL)
+			var bundle domain.PatentBundle
+			var err error
+			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				bundle, err = importer.ImportUSPTO(currentNumber, apiKey)
+			} else {
+				bundle, err = importer.ImportGooglePatents(rawURL)
+			}
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
 			}
@@ -558,12 +571,17 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 
 			imported, failed := 0, 0
 			for _, num := range members {
-				memberURL, err := importer.GooglePatentsURL(num)
-				if err != nil {
-					failed++
-					continue
+				var memberBundle domain.PatentBundle
+				var err error
+				if importSource == config.ImportSourceUSPTO && apiKey != "" {
+					memberBundle, err = importer.ImportUSPTO(num, apiKey)
+				} else {
+					var memberURL string
+					memberURL, err = importer.GooglePatentsURL(num)
+					if err == nil {
+						memberBundle, err = importer.ImportGooglePatents(memberURL)
+					}
 				}
-				memberBundle, err := importer.ImportGooglePatents(memberURL)
 				if err != nil {
 					logger.Warn("family member fetch failed", "patent", num, "error", err)
 					failed++

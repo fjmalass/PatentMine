@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/ai"
+	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/importer"
 	"patentmine/internal/storage"
@@ -107,6 +108,7 @@ type Model struct {
 	helpSearchActive        bool
 	helpScroll              int
 	activityLog             *slog.Logger
+	importCfg config.Config
 }
 
 type navSnapshot struct {
@@ -145,7 +147,7 @@ type navSnapshot struct {
 	citesStatusFilter       string
 }
 
-func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger) Model {
+func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger, cfg config.Config) Model {
 	input := textinput.New()
 	input.Placeholder = ":add US11611785B2, :open US11611785B2, /machine learning"
 	input.Prompt = EmptyPrompt
@@ -192,6 +194,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		activityLog:     activityLog,
 		text:            EnglishText(),
 		statusFilter:    domain.CitationStatusStored,
+		importCfg:       cfg,
 	}
 	model = model.reloadProjects()
 	for i, p := range model.projects {
@@ -210,6 +213,62 @@ func (m Model) reloadProjects() Model {
 	m.projects, _ = m.repo.ListProjects(m.ctx)
 	m.unpaidCounts, _ = m.repo.CountUnpaidInvoicesByProject(m.ctx)
 	return m
+}
+
+// importPatent fetches a patent bundle using the configured import source.
+func (m Model) importPatent(number string) (domain.PatentBundle, error) {
+	if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTOAPIKey != "" {
+		return importer.ImportUSPTO(number, m.importCfg.USPTOAPIKey)
+	}
+	rawURL, err := importer.GooglePatentsURL(number)
+	if err != nil {
+		return domain.PatentBundle{}, err
+	}
+	return importer.ImportGooglePatents(rawURL)
+}
+
+// importByNumber adds or refreshes a patent identified by number using the configured source.
+// Used by :add command in USPTO mode.
+func (m Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
+	if verb != importActionRefreshed {
+		m.backStack = append(m.backStack, m.snapshot())
+	}
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.loading = true
+	m.loadingMsg = fmt.Sprintf("%s%s %s via USPTO ODP...", strings.ToUpper(verb[:1]), verb[1:], number)
+	m.cancel = cancel
+
+	repo := m.repo
+	projectID := m.ProjectID
+	apiKey := m.importCfg.USPTOAPIKey
+	currentStatus := m.current.Status
+
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			bundle, err := importer.ImportUSPTO(number, apiKey)
+			if err != nil {
+				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
+			}
+			if verb == importActionRefreshed {
+				bundle.Patent.Status = currentStatus
+			} else {
+				bundle.Patent.Status = domain.CitationStatusStored
+			}
+			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
+				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
+			}
+			p, err := repo.GetPatent(ctx, projectID, bundle.Patent.Number)
+			if err != nil {
+				return refreshResultMsg{err: err}
+			}
+			return refreshResultMsg{
+				patent:  p,
+				mode:    viewDetail,
+				message: fmt.Sprintf("%s %s via USPTO ODP", verb, bundle.Patent.Number),
+			}
+		},
+	)
 }
 
 func (m Model) saveLastProject() {
@@ -1039,6 +1098,9 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			m.err = "usage: :add US11611785B2"
 			return m, nil
 		}
+		if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTOAPIKey != "" {
+			return m.importByNumber(command.Args[0], importActionAdded)
+		}
 		rawURL, err := importer.GooglePatentsURL(command.Args[0])
 		if err != nil {
 			m.err = err.Error()
@@ -1197,13 +1259,19 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	rawURL := m.current.SourceURL
-	if rawURL == "" {
-		var err error
-		rawURL, err = importer.GooglePatentsURL(m.current.Number)
-		if err != nil {
-			m.err = err.Error()
-			return m, nil
+	importSource := m.importCfg.ImportSource
+	apiKey := m.importCfg.USPTOAPIKey
+
+	var rawURL string
+	if importSource != config.ImportSourceUSPTO || apiKey == "" {
+		rawURL = m.current.SourceURL
+		if rawURL == "" {
+			var err error
+			rawURL, err = importer.GooglePatentsURL(m.current.Number)
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
 		}
 	}
 
@@ -1229,7 +1297,13 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			beforeCites, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCites, storage.ListCitationsOptions{})
 			beforeCitedBy, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCitedBy, storage.ListCitationsOptions{})
 
-			bundle, err := importer.ImportGooglePatents(rawURL)
+			var bundle domain.PatentBundle
+			var err error
+			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				bundle, err = importer.ImportUSPTO(currentNumber, apiKey)
+			} else {
+				bundle, err = importer.ImportGooglePatents(rawURL)
+			}
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
 			}
@@ -1298,6 +1372,8 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 	repo := m.repo
 	projectID := m.ProjectID
 	logger := m.logger
+	importSource := m.importCfg.ImportSource
+	apiKey := m.importCfg.USPTOAPIKey
 
 	return m, tea.Batch(
 		m.spinner.Tick,
@@ -1320,13 +1396,16 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				_, err := repo.GetPatent(ctx, projectID, edge.TargetPatent)
 				exists := err == nil
 
-				rawURL, err := importer.GooglePatentsURL(edge.TargetPatent)
-				if err != nil {
-					logger.Error("citation details url failed", "patent", edge.TargetPatent, "error", err)
-					skippedCount++
-					continue
+				var bundle domain.PatentBundle
+				if importSource == config.ImportSourceUSPTO && apiKey != "" {
+					bundle, err = importer.ImportUSPTO(edge.TargetPatent, apiKey)
+				} else {
+					var rawURL string
+					rawURL, err = importer.GooglePatentsURL(edge.TargetPatent)
+					if err == nil {
+						bundle, err = importer.ImportGooglePatents(rawURL)
+					}
 				}
-				bundle, err := importer.ImportGooglePatents(rawURL)
 				if err != nil {
 					logger.Error("citation details import failed", "patent", edge.TargetPatent, "error", err)
 					skippedCount++
@@ -1510,15 +1589,24 @@ func (m Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	repo := m.repo
 	projectID := m.ProjectID
 	logger := m.logger
+	importSource := m.importCfg.ImportSource
+	apiKey := m.importCfg.USPTOAPIKey
+	targetPatent := edge.TargetPatent
 
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			rawURL, err := importer.GooglePatentsURL(edge.TargetPatent)
-			if err != nil {
-				return refreshDetailsResultMsg{err: err}
+			var bundle domain.PatentBundle
+			var err error
+			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				bundle, err = importer.ImportUSPTO(targetPatent, apiKey)
+			} else {
+				var rawURL string
+				rawURL, err = importer.GooglePatentsURL(targetPatent)
+				if err == nil {
+					bundle, err = importer.ImportGooglePatents(rawURL)
+				}
 			}
-			bundle, err := importer.ImportGooglePatents(rawURL)
 			if err != nil {
 				return refreshDetailsResultMsg{err: err}
 			}
@@ -1745,12 +1833,7 @@ func (m Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, target); err == nil {
 		bundle.Patent = p
 	} else {
-		rawURL, err := importer.GooglePatentsURL(target)
-		if err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		bundle, err = importer.ImportGooglePatents(rawURL)
+		bundle, err = m.importPatent(target)
 		if err != nil {
 			m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
 			return m, nil
@@ -1921,12 +2004,7 @@ func (m Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, target); err == nil {
 		bundle.Patent = p
 	} else {
-		rawURL, err := importer.GooglePatentsURL(target)
-		if err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		bundle, err = importer.ImportGooglePatents(rawURL)
+		bundle, err = m.importPatent(target)
 		if err != nil {
 			m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
 			return m, nil
@@ -2864,7 +2942,7 @@ func (m Model) detailFields() []detailField {
 
 	fields = append(fields,
 		detailField{label: TextDetailExpiration, value: m.formatExpiration(p), jumpLabel: jumpLabelExpiration},
-		detailField{label: TextDetailStoredLocal, value: formatCitationTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
+		detailField{label: TextDetailStoredLocal, value: formatStoredTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
 		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(citationCount, citationRefreshedAt), jumpLabel: jumpLabelCitationCount, action: detailActionCitations},
 		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(citedByCount, citedByRefreshedAt), jumpLabel: jumpLabelCitedByCount, action: detailActionCitedBy},
 		detailField{label: TextDetailSource, value: p.SourceURL, jumpLabel: jumpLabelSource},
@@ -3167,6 +3245,19 @@ func formatCitationTime(value time.Time, fallback string) string {
 		return fallback
 	}
 	return value.Local().Format("2006-01-02 15:04")
+}
+
+const storedTimeThreshold = 48 * time.Hour
+
+func formatStoredTime(value time.Time, fallback string) string {
+	if value.IsZero() {
+		return fallback
+	}
+	local := value.Local()
+	if time.Since(value) < storedTimeThreshold {
+		return local.Format("2006-01-02 15:04")
+	}
+	return local.Format("2006-01-02")
 }
 
 func (m Model) viewPreview() string {

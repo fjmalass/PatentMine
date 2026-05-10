@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	appconfig "patentmine/internal/config"
 	"patentmine/internal/importer"
 	"patentmine/internal/logging"
 	sqliterepo "patentmine/internal/storage/sqlite"
@@ -64,7 +65,21 @@ func main() {
 		logger.Error("fixture seed failed", "error", err)
 		exit(err)
 	}
-	model := tui.New(ctx, repo, logger, activityLog)
+	cfg := appconfig.Load()
+	if config.ImportSource != "" {
+		cfg.ImportSource = appconfig.ImportSource(config.ImportSource)
+	}
+	if config.USPTOAPIKey != "" {
+		cfg.USPTOAPIKey = config.USPTOAPIKey
+	}
+	if config.USPTOAPIKeyFile != "" {
+		if data, err := os.ReadFile(config.USPTOAPIKeyFile); err == nil {
+			if key := strings.TrimSpace(string(data)); key != "" {
+				cfg.USPTOAPIKey = key
+			}
+		}
+	}
+	model := tui.New(ctx, repo, logger, activityLog, cfg)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		logger.Error("tui failed", "error", err)
@@ -74,9 +89,12 @@ func main() {
 }
 
 type cliConfig struct {
-	LogFile string
-	MaxLogs int
-	Help    bool
+	LogFile        string
+	MaxLogs        int
+	Help           bool
+	ImportSource   string
+	USPTOAPIKey    string
+	USPTOAPIKeyFile string
 }
 
 func parseCLI(args []string) (cliConfig, error) {
@@ -90,6 +108,9 @@ func parseCLI(args []string) (cliConfig, error) {
 	flags.IntVar(&config.MaxLogs, "max-logs", 5, "maximum dated log files to keep; set to 0 to disable pruning")
 	flags.BoolVar(&config.Help, "help", false, "show CLI help")
 	flags.BoolVar(&config.Help, "h", false, "show CLI help")
+	flags.StringVar(&config.ImportSource, "import-source", "", "patent data source: google (default) or uspto")
+	flags.StringVar(&config.USPTOAPIKey, "uspto-api-key", "", "USPTO Open Data Portal API key")
+	flags.StringVar(&config.USPTOAPIKeyFile, "uspto-api-key-file", "", "path to file containing USPTO ODP API key (e.g. ~/.ssh/uspto_key)")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			config.Help = true
@@ -150,6 +171,9 @@ func cliHelpText() string {
 	b.WriteString("  --log-file PATH   Base log path. The app writes to PATH with YYYY-MM-DD before the extension.\n")
 	b.WriteString("                    Default: logs/patentmine.log -> logs/patentmine-2026-05-08.log\n")
 	b.WriteString("  --max-logs N      Maximum dated log files to keep. Use 0 to disable pruning. Default: 5\n")
+	b.WriteString("  --import-source SOURCE  Patent data source: \"google\" (default) or \"uspto\".\n")
+	b.WriteString("  --uspto-api-key KEY     USPTO Open Data Portal API key.\n")
+	b.WriteString("  --uspto-api-key-file PATH  Path to file containing USPTO ODP API key (e.g. ~/.ssh/uspto_key).\n")
 	b.WriteString("  --help, -h        Show this help.\n")
 	return b.String()
 }
