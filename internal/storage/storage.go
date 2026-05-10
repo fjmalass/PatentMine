@@ -7,15 +7,20 @@ import (
 )
 
 type ListPatentsOptions struct {
-	Filter      string
-	ClassFilter string
-	SortColumn  string
-	SortOrder   string
+	Filter        string
+	StatusFilter  string   // "stored" (default), "ignored", "under_review", "all"
+	ClassFilters  []string // CPC prefix filters
+	ClassFilterOp string   // "and" (default) or "or"
+	SortColumn    string
+	SortOrder     string
+	SortColumn2   string
+	SortOrder2    string
 }
 
 type ListCitationsOptions struct {
-	SortColumn string
-	SortOrder  string
+	StatusFilter string // "stored", "ignored", "under_review", or "" for all
+	SortColumn   string
+	SortOrder    string
 }
 
 type Repository interface {
@@ -54,6 +59,12 @@ type Repository interface {
 	ListProjectEvents(ctx context.Context, projectID string) ([]domain.ProjectEvent, error)
 	DeleteProjectEvent(ctx context.Context, id int64) error
 
+	// Patent family relationships
+	AddFamilyEdge(ctx context.Context, edge domain.FamilyEdge) error
+	ListFamilyEdges(ctx context.Context, projectID, number string) (parents []domain.FamilyEdge, children []domain.FamilyEdge, err error)
+	ListAllFamilyEdges(ctx context.Context, projectID string) ([]domain.FamilyEdge, error)
+	RemoveFamilyEdge(ctx context.Context, projectID, parentNumber, childNumber string) error
+
 	// Settings
 	GetSetting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
@@ -64,4 +75,13 @@ type Repository interface {
 	UpdateProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) error
 	DeleteProjectInvoice(ctx context.Context, id int64) error
 	CountUnpaidInvoicesByProject(ctx context.Context) (map[string]int, error)
+
+	// IDS (Information Disclosure Statement)
+	AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)
+	ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error)
+	DeleteIDSEntry(ctx context.Context, id int64) error
+
+	// Maintenance
+	PurgeIgnored(ctx context.Context, projectID string) (int, error)
+	Compact(ctx context.Context) error
 }

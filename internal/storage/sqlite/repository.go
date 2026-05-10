@@ -100,7 +100,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			primary key (project_id, source_patent, target_patent, relation_type),
 			foreign key (project_id) references projects(id),
 			foreign key (source_patent) references patents(number)
-		)`, domain.CitationStatusUnderReview),
+		)`, domain.CitationStatusIgnored),
 		`create table if not exists patent_classifications (
 			patent_number text not null,
 			system text not null,
@@ -182,6 +182,24 @@ func (r *Repository) createTables(ctx context.Context) error {
 			created_at text not null,
 			foreign key (project_id) references projects(id)
 		)`, domain.InvoiceDirectionToFirm, domain.InvoiceStatusOutstanding),
+		fmt.Sprintf(`create table if not exists patent_family (
+			project_id    text not null,
+			parent_number text not null,
+			child_number  text not null,
+			relation_type text not null default '%s',
+			created_at    text not null,
+			primary key (project_id, parent_number, child_number),
+			foreign key (project_id) references projects(id)
+		)`, domain.FamilyRelationContinuation),
+		`create table if not exists project_ids (
+			id            integer primary key autoincrement,
+			project_id    text not null,
+			patent_number text not null,
+			notes         text not null default '',
+			added_at      text not null,
+			unique(project_id, patent_number),
+			foreign key (project_id) references projects(id)
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
@@ -311,6 +329,26 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 	if err := replaceClassifications(ctx, tx, bundle.Patent.Number, bundle.Classifications); err != nil {
 		return err
 	}
+	// Store family edges only when both sides exist in project_patents
+	for _, edge := range bundle.FamilyEdges {
+		edge.ProjectID = projectID
+		var exists int
+		other := edge.ChildNumber
+		if other == bundle.Patent.Number {
+			other = edge.ParentNumber
+		}
+		if err := tx.QueryRowContext(ctx, `select count(*) from project_patents where project_id = ? and patent_number = ? and status = 'stored'`,
+			projectID, other).Scan(&exists); err != nil || exists == 0 {
+			continue // other side not stored yet — skip silently
+		}
+		if _, err := tx.ExecContext(ctx,
+			`insert into patent_family (project_id, parent_number, child_number, relation_type, created_at)
+			 values (?, ?, ?, ?, ?)
+			 on conflict(project_id, parent_number, child_number) do nothing`,
+			projectID, edge.ParentNumber, edge.ChildNumber, edge.RelationType, nowString()); err != nil {
+			return err
+		}
+	}
 	for _, ref := range bundle.References {
 		label := ref.CitationLabel
 		if label == "" {
@@ -374,7 +412,7 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number 
 	}
 	for _, edge := range edges {
 		source := firstNonEmpty(edge.SourcePatent, number)
-		status := firstNonEmpty(edge.Status, domain.CitationStatusUnderReview)
+		status := firstNonEmpty(edge.Status, domain.CitationStatusIgnored)
 		refreshedRelations[edge.RelationType] = true
 		if _, err := tx.ExecContext(ctx, `insert into citation_edges (project_id, source_patent, target_patent, relation_type, status, created_at, refreshed_at, labeled_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?)
@@ -450,26 +488,77 @@ func (r *Repository) GetPatent(ctx context.Context, projectID string, number str
 	return scanPatent(row)
 }
 
+func sortExpr(col, direction string) string {
+	switch strings.ToLower(col) {
+	case domain.SortColumnNumber:
+		return "p.number " + direction
+	case domain.SortColumnTitle:
+		return "p.title " + direction
+	case domain.SortColumnDate:
+		return "p.publication_date " + direction
+	case domain.SortColumnStatus:
+		return "pp.status " + direction
+	case domain.SortColumnAssignee:
+		return "p.assignee " + direction
+	case domain.SortColumnInventor:
+		return "p.inventors_json " + direction
+	case domain.SortColumnClass, domain.SortColumnCPC:
+		return "classification_label " + direction
+	case domain.SortColumnExpiration:
+		return "case when p.expiration_date = '' then 1 else 0 end " + direction + ", p.expiration_date " + direction
+	}
+	return ""
+}
+
 func (r *Repository) ListPatents(ctx context.Context, projectID string, opts storage.ListPatentsOptions) ([]domain.Patent, error) {
 	args := []any{projectID}
-	query := fmt.Sprintf(`
-		select 
+	// statusClause is appended after the base WHERE; subqueries that reference project_id
+	// need an extra projectID arg inserted immediately after the base projectID arg.
+	var statusClause string
+	switch strings.ToLower(opts.StatusFilter) {
+	case domain.CitationStatusIgnored:
+		// deleted project patents + citation references marked ignored
+		statusClause = `(pp.status = 'ignored' or p.number in (select target_patent from citation_edges where project_id = ? and status = 'ignored'))`
+		args = append(args, projectID)
+	case domain.CitationStatusUnderReview:
+		// citation references marked under review
+		statusClause = `p.number in (select target_patent from citation_edges where project_id = ? and status = 'under_review')`
+		args = append(args, projectID)
+	case "none":
+		// all non-cached project patents + all citation-reviewed references
+		statusClause = `(pp.status != 'cached' or p.number in (select target_patent from citation_edges where project_id = ? and status in ('ignored', 'under_review')))`
+		args = append(args, projectID)
+	default: // "" or "stored"
+		statusClause = fmt.Sprintf("pp.status = '%s'", domain.CitationStatusStored)
+	}
+	query := `
+		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_url, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
 		left join patent_classifications c on p.number = c.patent_number
-		where pp.project_id = ? and pp.status != '%s'`, domain.CitationStatusCached)
+		where pp.project_id = ? and ` + statusClause
 
 	if strings.TrimSpace(opts.Filter) != "" {
 		query += ` and lower(p.number || ' ' || p.title || ' ' || p.abstract || ' ' || p.assignee || ' ' || p.inventors_json || ' ' || p.publication_date || ' ' || p.grant_date || ' ' || p.expiration_date || ' ' || p.source_url || ' ' || p.latest_assignment) like ?`
 		args = append(args, "%"+strings.ToLower(strings.TrimSpace(opts.Filter))+"%")
 	}
 
-	if strings.TrimSpace(opts.ClassFilter) != "" {
-		// We use a subquery to find patents that have the specific class to avoid double-counting in group_concat
-		query += ` and p.number in (select patent_number from patent_classifications where code like ?)`
-		args = append(args, opts.ClassFilter+"%")
+	if len(opts.ClassFilters) > 0 {
+		if strings.EqualFold(opts.ClassFilterOp, "or") {
+			conds := make([]string, len(opts.ClassFilters))
+			for i, f := range opts.ClassFilters {
+				conds[i] = "code like ?"
+				args = append(args, strings.ToUpper(strings.TrimSpace(f))+"%")
+			}
+			query += ` and p.number in (select patent_number from patent_classifications where ` + strings.Join(conds, " or ") + `)`
+		} else {
+			for _, f := range opts.ClassFilters {
+				query += ` and p.number in (select patent_number from patent_classifications where code like ?)`
+				args = append(args, strings.ToUpper(strings.TrimSpace(f))+"%")
+			}
+		}
 	}
 
 	query += ` group by p.number`
@@ -480,22 +569,15 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		if strings.EqualFold(opts.SortOrder, domain.SortOrderDesc) {
 			direction = "desc"
 		}
-
-		switch strings.ToLower(opts.SortColumn) {
-		case domain.SortColumnNumber:
-			orderBy = "p.number " + direction
-		case domain.SortColumnTitle:
-			orderBy = "p.title " + direction
-		case domain.SortColumnDate:
-			orderBy = "p.publication_date " + direction
-		case domain.SortColumnStatus:
-			orderBy = "pp.status " + direction
-		case domain.SortColumnAssignee:
-			orderBy = "p.assignee " + direction
-		case domain.SortColumnInventor:
-			orderBy = "p.inventors_json " + direction
-		case domain.SortColumnClass, domain.SortColumnCPC:
-			orderBy = "classification_label " + direction
+		orderBy = sortExpr(opts.SortColumn, direction)
+		if opts.SortColumn2 != "" {
+			dir2 := "asc"
+			if strings.EqualFold(opts.SortOrder2, domain.SortOrderDesc) {
+				dir2 = "desc"
+			}
+			if expr2 := sortExpr(opts.SortColumn2, dir2); expr2 != "" {
+				orderBy += ", " + expr2
+			}
 		}
 	}
 
@@ -517,6 +599,12 @@ func (r *Repository) ListCitations(ctx context.Context, projectID string, number
 		left join patents p on ce.target_patent = p.number
 		where ce.project_id = ? and ce.source_patent = ? and ce.relation_type = ?`
 
+	args := []any{projectID, number, relationType}
+	if opts.StatusFilter != "" {
+		query += ` and ce.status = ?`
+		args = append(args, opts.StatusFilter)
+	}
+
 	orderBy := "ce.target_patent"
 	if opts.SortColumn != "" {
 		direction := "asc"
@@ -535,7 +623,7 @@ func (r *Repository) ListCitations(ctx context.Context, projectID string, number
 		}
 	}
 
-	rows, err := r.db.QueryContext(ctx, query+" order by "+orderBy, projectID, number, relationType)
+	rows, err := r.db.QueryContext(ctx, query+" order by "+orderBy, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -965,4 +1053,143 @@ func (r *Repository) CountUnpaidInvoicesByProject(ctx context.Context) (map[stri
 		out[projectID] = count
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) AddFamilyEdge(ctx context.Context, edge domain.FamilyEdge) error {
+	_, err := r.db.ExecContext(ctx,
+		`insert into patent_family (project_id, parent_number, child_number, relation_type, created_at)
+		 values (?, ?, ?, ?, ?)
+		 on conflict(project_id, parent_number, child_number) do update set relation_type = excluded.relation_type`,
+		edge.ProjectID, edge.ParentNumber, edge.ChildNumber, edge.RelationType, nowString())
+	return err
+}
+
+func (r *Repository) ListFamilyEdges(ctx context.Context, projectID, number string) (parents []domain.FamilyEdge, children []domain.FamilyEdge, err error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select project_id, parent_number, child_number, relation_type, created_at
+		 from patent_family
+		 where project_id = ? and (parent_number = ? or child_number = ?)
+		 order by created_at`,
+		projectID, number, number)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e domain.FamilyEdge
+		var createdAt string
+		if err := rows.Scan(&e.ProjectID, &e.ParentNumber, &e.ChildNumber, &e.RelationType, &createdAt); err != nil {
+			return nil, nil, err
+		}
+		e.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		if e.ChildNumber == number {
+			parents = append(parents, e)
+		} else {
+			children = append(children, e)
+		}
+	}
+	return parents, children, rows.Err()
+}
+
+func (r *Repository) RemoveFamilyEdge(ctx context.Context, projectID, parentNumber, childNumber string) error {
+	_, err := r.db.ExecContext(ctx,
+		`delete from patent_family where project_id = ? and parent_number = ? and child_number = ?`,
+		projectID, parentNumber, childNumber)
+	return err
+}
+
+func (r *Repository) ListAllFamilyEdges(ctx context.Context, projectID string) ([]domain.FamilyEdge, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select project_id, parent_number, child_number, relation_type, created_at from patent_family where project_id = ? order by created_at asc`,
+		projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.FamilyEdge
+	for rows.Next() {
+		var e domain.FamilyEdge
+		var createdAt string
+		if err := rows.Scan(&e.ProjectID, &e.ParentNumber, &e.ChildNumber, &e.RelationType, &createdAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) PurgeIgnored(ctx context.Context, projectID string) (int, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res1, err := tx.ExecContext(ctx, `delete from citation_edges where project_id = ? and status = 'ignored'`, projectID)
+	if err != nil {
+		return 0, err
+	}
+	n1, _ := res1.RowsAffected()
+
+	res2, err := tx.ExecContext(ctx, `delete from project_patents where project_id = ? and status = 'ignored'`, projectID)
+	if err != nil {
+		return 0, err
+	}
+	n2, _ := res2.RowsAffected()
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	_, _ = r.db.ExecContext(ctx, `VACUUM`)
+	return int(n1 + n2), nil
+}
+
+func (r *Repository) Compact(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `VACUUM`)
+	return err
+}
+
+// IDS
+
+func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	now := nowString()
+	res, err := r.db.ExecContext(ctx,
+		`insert or ignore into project_ids (project_id, patent_number, notes, added_at) values (?, ?, ?, ?)`,
+		entry.ProjectID, entry.PatentNumber, entry.Notes, now)
+	if err != nil {
+		return domain.IDSEntry{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return domain.IDSEntry{}, err
+	}
+	entry.ID = id
+	entry.AddedAt = parseTime(now)
+	return entry, nil
+}
+
+func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select id, project_id, patent_number, notes, added_at from project_ids where project_id = ? order by added_at desc`,
+		projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.IDSEntry
+	for rows.Next() {
+		var e domain.IDSEntry
+		var addedAt string
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.Notes, &addedAt); err != nil {
+			return nil, err
+		}
+		e.AddedAt = parseTime(addedAt)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) DeleteIDSEntry(ctx context.Context, id int64) error {
+	_, err := r.db.ExecContext(ctx, `delete from project_ids where id = ?`, id)
+	return err
 }

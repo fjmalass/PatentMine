@@ -160,6 +160,116 @@ func TestExtractCitationEdgesIgnoresFamilyAndUnstructuredPatentLinks(t *testing.
 	}
 }
 
+func TestExtractFamilyEdgesParentAndPriorityApps(t *testing.T) {
+	html := `
+		<table>
+		  <tbody>
+			<tr itemprop="parentApps" itemscope>
+			  <td>
+				<span itemprop="applicationNumber">US16/206,188</span>
+				<span itemprop="relationType">Continuation</span>
+				<a href="/patent/US11346835B2/en">
+				  <span itemprop="representativePublication">US11346835B2</span>
+				</a>
+			  </td>
+			</tr>
+			<tr itemprop="priorityApps" itemscope>
+			  <td>
+				<span itemprop="applicationNumber">US17/730,671</span>
+				<a href="/patent/US12241885B2/en">
+				  <span itemprop="representativePublication">US12241885B2</span>
+				</a>
+			  </td>
+			</tr>
+		  </tbody>
+		</table>`
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatal(err)
+	}
+	edges := extractFamilyEdges(doc, "US20220252571A1")
+	if len(edges) != 2 {
+		t.Fatalf("expected 2 family edges, got %+v", edges)
+	}
+	var foundParent, foundChild bool
+	for _, e := range edges {
+		if e.ParentNumber == "US11346835B2" && e.ChildNumber == "US20220252571A1" && e.RelationType == domain.FamilyRelationContinuation {
+			foundParent = true
+		}
+		if e.ParentNumber == "US20220252571A1" && e.ChildNumber == "US12241885B2" {
+			foundChild = true
+		}
+	}
+	if !foundParent {
+		t.Errorf("parent edge not found in %+v", edges)
+	}
+	if !foundChild {
+		t.Errorf("child edge not found in %+v", edges)
+	}
+}
+
+func TestExtractFamilyEdgesRelationTypeDivisional(t *testing.T) {
+	html := `
+		<table><tbody>
+		  <tr itemprop="parentApps" itemscope>
+			<td>
+			  <span itemprop="relationType">Divisional</span>
+			  <a href="/patent/US9999999B2/en">
+				<span itemprop="representativePublication">US9999999B2</span>
+			  </a>
+			</td>
+		  </tr>
+		</tbody></table>`
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	edges := extractFamilyEdges(doc, "US1111111A")
+	if len(edges) != 1 || edges[0].RelationType != domain.FamilyRelationDivisional {
+		t.Fatalf("expected divisional edge, got %+v", edges)
+	}
+}
+
+func TestExtractFamilyEdgesLegacyFallback(t *testing.T) {
+	html := `
+		<div>
+		  <div itemprop="backwardReferencesFamily">
+			<a href="/patent/US8888888B2/en">US8888888B2</a>
+		  </div>
+		  <div itemprop="forwardReferencesFamily">
+			<a href="/patent/US7777777B2/en">US7777777B2</a>
+		  </div>
+		</div>`
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	edges := extractFamilyEdges(doc, "US5555555B2")
+	if len(edges) != 2 {
+		t.Fatalf("expected 2 legacy edges, got %+v", edges)
+	}
+}
+
+func TestExtractFamilyEdgesContinuationApps(t *testing.T) {
+	html := `
+		<table><tbody>
+		  <tr itemprop="continuationApps" itemscope>
+			<td>
+			  <span itemprop="relationType">Continuation</span>
+			  <a href="/patent/US20240012345A1/en">
+				<span itemprop="representativePublication">US20240012345A1</span>
+			  </a>
+			</td>
+		  </tr>
+		</tbody></table>`
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	edges := extractFamilyEdges(doc, "US11740187B2")
+	if len(edges) != 1 {
+		t.Fatalf("expected 1 continuationApps edge, got %+v", edges)
+	}
+	e := edges[0]
+	if e.ParentNumber != "US11740187B2" || e.ChildNumber != "US20240012345A1" {
+		t.Fatalf("wrong edge direction: %+v", e)
+	}
+	if e.RelationType != domain.FamilyRelationContinuation {
+		t.Fatalf("expected continuation, got %q", e.RelationType)
+	}
+}
+
 func testBundle() domain.PatentBundle {
 	return domain.PatentBundle{}
 }

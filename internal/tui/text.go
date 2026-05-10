@@ -23,6 +23,8 @@ const (
 	TextDetailSource            TextKey = "detail.source"
 	TextDetailCitationCount     TextKey = "detail.citation_count"
 	TextDetailCitedByCount      TextKey = "detail.cited_by_count"
+	TextDetailFamilyParents     TextKey = "detail.family_parents"
+	TextDetailFamilyChildren    TextKey = "detail.family_children"
 	TextValueUnknown            TextKey = "value.unknown"
 	TextValueEmpty              TextKey = "value.empty"
 	TextValuePageStatus         TextKey = "value.page_status"
@@ -79,6 +81,7 @@ const (
 	TextHelpJumpAI               TextKey = "help.jump.ai"
 	TextHelpJumpWeb              TextKey = "help.jump.web"
 	TextHelpJumpProject          TextKey = "help.jump.project"
+	TextHelpProjectID            TextKey = "help.project.id"
 	TextHelpProjectList          TextKey = "help.project.list"
 	TextHelpProjectCreate        TextKey = "help.project.create"
 	TextHelpProjectSwitch        TextKey = "help.project.switch"
@@ -92,9 +95,20 @@ const (
 	TextHelpProjectEvents        TextKey = "help.project.events"
 	TextHelpProjectInvoice       TextKey = "help.project.invoice"
 	TextHelpProjectInvoices      TextKey = "help.project.invoices"
+	TextHelpProjectIDSAdd        TextKey = "help.project.ids_add"
+	TextHelpProjectIDS           TextKey = "help.project.ids"
+	TextHelpExportIDS            TextKey = "help.export_ids"
+	TextHelpExportStatus         TextKey = "help.export_status"
+	TextHelpExportState          TextKey = "help.export_state"
 	TextHelpProjectInfo          TextKey = "help.project.info"
 	TextHelpSort                 TextKey = "help.sort"
 	TextHelpClass                TextKey = "help.class"
+	TextHelpInventorFilter       TextKey = "help.inventorfilter"
+	TextHelpStatusFilter         TextKey = "help.filterstatus"
+	TextHelpFamilyAdd            TextKey = "help.family.add"
+	TextHelpFamilyRemove         TextKey = "help.family.remove"
+	TextHelpFamilyView           TextKey = "help.family.view"
+	TextHelpJumpFamily           TextKey = "help.jump.family"
 	TextCitationsEmpty           TextKey = "citations.empty"
 	TextCitationsOpenFailed      TextKey = "citations.open_failed"
 	TextPreviewTitle             TextKey = "preview.title"
@@ -143,6 +157,8 @@ func EnglishText() TextCatalog {
 		TextDetailSource:            "Source",
 		TextDetailCitationCount:     "Citations",
 		TextDetailCitedByCount:      "Cited by",
+		TextDetailFamilyParents:     "Parents",
+		TextDetailFamilyChildren:    "Children",
 		TextValueUnknown:            "unknown",
 		TextValueEmpty:              "Empty",
 		TextValuePageStatus:         "Page %d/%d - items %d-%d of %d",
@@ -200,6 +216,7 @@ func EnglishText() TextCatalog {
 		TextHelpJumpAI:               "Jump to AI artifacts",
 		TextHelpJumpWeb:              "Open in system browser",
 		TextHelpJumpProject:          "Jump to project selection",
+		TextHelpProjectID:            "Print the current project ID and name as a status message.",
 		TextHelpProjectList:          "List all projects.",
 		TextHelpProjectCreate:        "Create a new project.",
 		TextHelpProjectSwitch:        "Switch to a different project.",
@@ -213,9 +230,20 @@ func EnglishText() TextCatalog {
 		TextHelpProjectEvents:        "Open prosecution history overlay for current project.",
 		TextHelpProjectInvoice:       "Add invoice to/from law firm (amount, currency, direction, date, due, firm, ref, note).",
 		TextHelpProjectInvoices:      "Open invoice list overlay for current project.",
+		TextHelpProjectIDSAdd:        "Add a patent to the IDS (Information Disclosure Statement) for this project.",
+		TextHelpProjectIDS:           "Open the IDS overlay to view/manage prior art references.",
+		TextHelpExportIDS:            "Export the IDS as a Markdown file (default: <project>_IDS_<date>.md).",
+		TextHelpExportStatus:         "Export project status: stage, events, invoices, and patent counts as Markdown.",
+		TextHelpExportState:          "Export patent list filtered by state (stored/ignored/under-review/all/none). Default: current filter.",
 		TextHelpProjectInfo:          "Open project info popup (editable: s=app status, m=summary, c=comment, S=status).",
-		TextHelpSort:                 "Sort the list by column (number, title, date, status, assignee, inventor, class).",
-		TextHelpClass:                "Filter the list by classification prefix.",
+		TextHelpSort:                 "Sort the list by column (number, title, date, status, assignee, inventor, class, expiration). Comma-separate for secondary sort: status,expiration.",
+		TextHelpClass:                "Filter by classification prefix. Supports && (AND) and || (OR): H04N && G06F or H04N || G06F. Clear with :classfilter clear.",
+		TextHelpInventorFilter:       "Filter the patent list by inventor name. Clear with :inventorfilter clear.",
+		TextHelpStatusFilter:         "Filter by patent status: stored (default), ignored, under-review, all.",
+		TextHelpFamilyAdd:            "Declare a parent or child relationship. Types: continuation, divisional, cip, pct.",
+		TextHelpFamilyRemove:         "Remove a family relationship with the specified patent.",
+		TextHelpFamilyView:           "Open the patent family overlay (parents and children).",
+		TextHelpJumpFamily:           "Jump to patent family view",
 		TextCitationsEmpty:           "No citation records.",
 		TextCitationsOpenFailed:      "patent is not stored and could not be imported",
 		TextPreviewTitle:             "Reference preview",

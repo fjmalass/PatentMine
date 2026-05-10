@@ -167,8 +167,8 @@ func TestRepositoryOperations(t *testing.T) {
 	if len(citations) != 1 {
 		t.Fatalf("expected citation, got %d", len(citations))
 	}
-	if citations[0].Status != domain.CitationStatusUnderReview {
-		t.Fatalf("expected unreviewed citation status, got %q", citations[0].Status)
+	if citations[0].Status != domain.CitationStatusIgnored {
+		t.Fatalf("expected ignored citation status (new default), got %q", citations[0].Status)
 	}
 	if citations[0].CreatedAt.IsZero() || citations[0].RefreshedAt.IsZero() || citations[0].LabeledAt.IsZero() {
 		t.Fatalf("expected citation timestamps, got created=%v refreshed=%v labeled=%v", citations[0].CreatedAt, citations[0].RefreshedAt, citations[0].LabeledAt)
@@ -236,19 +236,30 @@ func TestRepositoryOperations(t *testing.T) {
 	if patent.Status != domain.CitationStatusIgnored {
 		t.Fatalf("expected patent status to be ignored, got %q", patent.Status)
 	}
-	patents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{})
+	// Default (stored) should not show deleted patent
+	storedPatents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range storedPatents {
+		if p.Number == "US1" {
+			t.Fatal("deleted patent should not appear in default (stored) list")
+		}
+	}
+	// StatusFilter ignored should surface deleted project patent
+	ignoredPatents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{StatusFilter: "ignored"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
-	for _, p := range patents {
+	for _, p := range ignoredPatents {
 		if p.Number == "US1" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("expected ignored patent to be present in ListPatents")
+		t.Fatal("expected deleted patent to appear under statusfilter ignored")
 	}
 }
 

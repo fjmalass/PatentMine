@@ -93,6 +93,7 @@ func ImportGooglePatents(rawURL string) (domain.PatentBundle, error) {
 	addSection(doc.Selection, &bundle, number, "description", "section[itemprop='description'] p, .description p")
 	extractClassifications(doc, &bundle, number)
 	bundle.Citations = extractCitationEdges(doc, number)
+	bundle.FamilyEdges = extractFamilyEdges(doc, number)
 	bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: number, CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title)})
 	return bundle, nil
 }
@@ -216,6 +217,133 @@ func addSection(s *goquery.Selection, bundle *domain.PatentBundle, number, secti
 		bundle.Sections = append(bundle.Sections, domain.PatentTextSection{PatentNumber: number, SectionType: sectionType, Ordinal: ordinal, Text: text})
 		ordinal++
 	})
+}
+
+// extractFamilyEdges parses the "Priority And Related Applications" tables from Google Patents HTML.
+// parentApps rows → source is a child of the listed patent.
+// priorityApps rows → source is a parent of the listed patent.
+// Falls back to the legacy backwardReferencesFamily/forwardReferencesFamily itemprop selectors.
+func extractFamilyEdges(doc *goquery.Document, source string) []domain.FamilyEdge {
+	seen := map[string]bool{}
+	var edges []domain.FamilyEdge
+
+	// representativePublication is the publication number within a parentApps/priorityApps row.
+	// Falls back to the first patent href in the row if absent.
+	extractRowNumber := func(row *goquery.Selection) string {
+		if n := normalizePatentID(row.Find("[itemprop='representativePublication']").First().Text()); n != "" {
+			return n
+		}
+		var n string
+		row.Find("a[href*='/patent/']").EachWithBreak(func(_ int, a *goquery.Selection) bool {
+			if href, ok := a.Attr("href"); ok {
+				if candidate := normalizePatentID(patentNumberFromURL(href)); candidate != "" {
+					n = candidate
+					return false
+				}
+			}
+			return true
+		})
+		return n
+	}
+
+	mapRelationType := func(raw string) string {
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "divisional":
+			return domain.FamilyRelationDivisional
+		case "continuation-in-part", "cip":
+			return domain.FamilyRelationCIP
+		case "pct":
+			return domain.FamilyRelationPCT
+		default:
+			return domain.FamilyRelationContinuation
+		}
+	}
+
+	addEdge := func(e domain.FamilyEdge) {
+		key := e.ParentNumber + "\x00" + e.ChildNumber
+		if seen[key] || strings.EqualFold(e.ParentNumber, e.ChildNumber) {
+			return
+		}
+		if e.ParentNumber == "" || e.ChildNumber == "" {
+			return
+		}
+		seen[key] = true
+		edges = append(edges, e)
+	}
+
+	// parentApps: source continues from parent (source is child).
+	doc.Find("[itemprop='parentApps']").Each(func(_ int, row *goquery.Selection) {
+		parentNum := extractRowNumber(row)
+		if parentNum == "" || strings.EqualFold(parentNum, source) {
+			return
+		}
+		relRaw := row.Find("[itemprop='relationType']").First().Text()
+		addEdge(domain.FamilyEdge{
+			ParentNumber: parentNum,
+			ChildNumber:  source,
+			RelationType: mapRelationType(relRaw),
+		})
+	})
+
+	// priorityApps: source is the priority parent; these apps continue from source (source is parent).
+	doc.Find("[itemprop='priorityApps']").Each(func(_ int, row *goquery.Selection) {
+		childNum := extractRowNumber(row)
+		if childNum == "" || strings.EqualFold(childNum, source) {
+			return
+		}
+		relRaw := row.Find("[itemprop='relationType']").First().Text()
+		addEdge(domain.FamilyEdge{
+			ParentNumber: source,
+			ChildNumber:  childNum,
+			RelationType: mapRelationType(relRaw),
+		})
+	})
+
+	// continuationApps: source is the parent; these are continuation/related apps filed after source.
+	doc.Find("[itemprop='continuationApps']").Each(func(_ int, row *goquery.Selection) {
+		childNum := extractRowNumber(row)
+		if childNum == "" || strings.EqualFold(childNum, source) {
+			return
+		}
+		relRaw := row.Find("[itemprop='relationType']").First().Text()
+		addEdge(domain.FamilyEdge{
+			ParentNumber: source,
+			ChildNumber:  childNum,
+			RelationType: mapRelationType(relRaw),
+		})
+	})
+
+	// Legacy fallback: older Google Patents pages use these itemprop values.
+	if len(edges) == 0 {
+		legacySeen := map[string]bool{}
+		collectLegacy := func(selector string) []string {
+			var numbers []string
+			doc.Find(selector).Each(func(_ int, row *goquery.Selection) {
+				row.Find("[itemprop='publicationNumber'], a[href*='/patent/']").Each(func(_ int, s *goquery.Selection) {
+					var n string
+					if href, ok := s.Attr("href"); ok {
+						n = normalizePatentID(patentNumberFromURL(href))
+					}
+					if n == "" {
+						n = normalizePatentID(s.Text())
+					}
+					if n != "" && !strings.EqualFold(n, source) && !legacySeen[n] {
+						legacySeen[n] = true
+						numbers = append(numbers, n)
+					}
+				})
+			})
+			return numbers
+		}
+		for _, child := range collectLegacy("[itemprop='forwardReferencesFamily']") {
+			addEdge(domain.FamilyEdge{ParentNumber: source, ChildNumber: child, RelationType: domain.FamilyRelationContinuation})
+		}
+		for _, parent := range collectLegacy("[itemprop='backwardReferencesFamily']") {
+			addEdge(domain.FamilyEdge{ParentNumber: parent, ChildNumber: source, RelationType: domain.FamilyRelationContinuation})
+		}
+	}
+
+	return edges
 }
 
 func extractCitationEdges(doc *goquery.Document, source string) []domain.CitationEdge {

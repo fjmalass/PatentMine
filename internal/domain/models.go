@@ -8,6 +8,21 @@ const (
 )
 
 const (
+	FamilyRelationContinuation = "continuation"
+	FamilyRelationDivisional   = "divisional"
+	FamilyRelationCIP          = "cip"
+	FamilyRelationPCT          = "pct"
+)
+
+type FamilyEdge struct {
+	ProjectID    string
+	ParentNumber string
+	ChildNumber  string
+	RelationType string
+	CreatedAt    time.Time
+}
+
+const (
 	CitationStatusUnderReview = "under_review"
 	CitationStatusStored      = "stored"
 	CitationStatusIgnored     = "ignored"
@@ -15,14 +30,15 @@ const (
 )
 
 const (
-	SortColumnNumber   = "number"
-	SortColumnTitle    = "title"
-	SortColumnDate     = "date"
-	SortColumnStatus   = "status"
-	SortColumnAssignee = "assignee"
-	SortColumnInventor = "inventor"
-	SortColumnClass    = "class"
-	SortColumnCPC      = "cpc"
+	SortColumnNumber     = "number"
+	SortColumnTitle      = "title"
+	SortColumnDate       = "date"
+	SortColumnStatus     = "status"
+	SortColumnAssignee   = "assignee"
+	SortColumnInventor   = "inventor"
+	SortColumnClass      = "class"
+	SortColumnCPC        = "cpc"
+	SortColumnExpiration = "expiration"
 
 	SortOrderAsc  = "asc"
 	SortOrderDesc = "desc"
@@ -196,10 +212,19 @@ type AIAnalysis struct {
 	CreatedAt            time.Time
 }
 
+type IDSEntry struct {
+	ID           int64
+	ProjectID    string
+	PatentNumber string
+	Notes        string
+	AddedAt      time.Time
+}
+
 type PatentBundle struct {
 	Patent          Patent
 	Sections        []PatentTextSection
 	Citations       []CitationEdge
+	FamilyEdges     []FamilyEdge
 	Classifications []Classification
 	References      []ReferenceEntry
 }

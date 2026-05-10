@@ -709,3 +709,20 @@ func (stubRepo) CountUnpaidInvoicesByProject(context.Context) (map[string]int, e
 }
 func (stubRepo) GetSetting(context.Context, string) (string, error)        { return "", nil }
 func (stubRepo) SetSetting(context.Context, string, string) error          { return nil }
+func (stubRepo) AddFamilyEdge(context.Context, domain.FamilyEdge) error    { return nil }
+func (stubRepo) ListFamilyEdges(context.Context, string, string) ([]domain.FamilyEdge, []domain.FamilyEdge, error) {
+	return nil, nil, nil
+}
+func (stubRepo) ListAllFamilyEdges(context.Context, string) ([]domain.FamilyEdge, error) {
+	return nil, nil
+}
+func (stubRepo) RemoveFamilyEdge(context.Context, string, string, string) error { return nil }
+func (stubRepo) PurgeIgnored(context.Context, string) (int, error)              { return 0, nil }
+func (stubRepo) Compact(context.Context) error                                  { return nil }
+func (stubRepo) AddIDSEntry(context.Context, domain.IDSEntry) (domain.IDSEntry, error) {
+	return domain.IDSEntry{}, nil
+}
+func (stubRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
+	return nil, nil
+}
+func (stubRepo) DeleteIDSEntry(context.Context, int64) error { return nil }

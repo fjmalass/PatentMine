@@ -88,6 +88,113 @@ Log backups are stored under `backups/logs` by default. Keep at most five log ba
 PATENTMINE_MAX_LOG_BACKUPS=10 makers backup-log
 ```
 
+## Header Bar
+
+Every screen shows a persistent header line:
+
+```
+PatentMine  PROJECT: My Invention (myproject) · WIP  Patent List · filter:Smith, sort:status asc  · class:H04N
+```
+
+| Segment | Description |
+|---------|-------------|
+| `PatentMine` | App name (blue) |
+| `PROJECT: <name> (<id>)` | Active project name and ID |
+| `· WIP` / `· Provisional` / … | Application stage badge — color-coded (yellow = WIP, cyan = provisional, lavender = filed, blue = published, green = granted) |
+| `· N unpaid` | Appears in yellow when the project has outstanding invoices |
+| Screen title | Current view name, colored per screen (e.g. blue for list, cyan for detail, orange for citations) |
+| `filter:<term>` | Active text or inventor filter |
+| `sort:<col> <order>[,<col2>]` | Active sort (e.g. `sort:status asc,expiration`) |
+| `class:<expr>` | Active classification filter, shown in light blue |
+
+## Filtering
+
+### Text / Inventor Filter
+
+Type `/` followed by a term to filter the patent list by any text field (title, number, assignee, inventor):
+
+```
+/Smith
+```
+
+Filter by a specific inventor from the command line:
+
+```
+:inventorfilter John Smith
+```
+
+Clear the inventor filter:
+
+```
+:inventorfilter clear
+```
+
+You can also select an inventor in the **Inventors** popup (`l` from detail view) and press `Enter` — this sets the inventor filter directly.
+
+### Classification Filter
+
+Filter by CPC/USPC classification prefix:
+
+```
+:classfilter H04N
+```
+
+AND filter — patent must match both prefixes:
+
+```
+:classfilter H04N && G06F
+```
+
+OR filter — patent must match at least one prefix:
+
+```
+:classfilter H04N || G06F
+```
+
+Clear the classification filter (also clears the text/inventor filter):
+
+```
+:classfilter clear
+```
+
+You can also expand a classification entry from the **Classifications** popup (`l` from any patent view) and press `Enter` to filter the list to that code directly.
+
+The active class filter is shown in **light blue** in the header, separate from the text filter.
+
+### Status Filter
+
+The patent list defaults to showing only **stored** patents. The active status is always visible in the header (`status:stored`).
+
+Show patents by status:
+
+```
+:statusfilter stored      ← default
+:statusfilter ignored
+:statusfilter under-review
+:statusfilter all         ← show everything except cached imports
+```
+
+Invalid status values produce an error.
+
+### Sort
+
+Sort by a single column:
+
+```
+:sort status
+:sort date desc
+:sort expiration asc
+```
+
+Sort by two columns (primary, then secondary):
+
+```
+:sort status,expiration
+:sort status desc,expiration asc
+```
+
+Supported columns: `number`, `title`, `date`, `status`, `assignee`, `inventor`, `class`, `expiration`. Patents with no expiration date sort last.
+
 ## Task Reference
 
 - `makers run`: launch the PatentMine TUI

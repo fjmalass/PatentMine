@@ -42,9 +42,11 @@ const (
 	viewConfirmDelete        viewMode = "confirm-delete"
 	viewClassificationDetail viewMode = "classification-detail"
 	viewInventors            viewMode = "inventors"
+	viewFamily               viewMode = "family"
 	viewSplash               viewMode = "splash"
 	viewProjectEvents        viewMode = "project-events"
 	viewProjectInvoices      viewMode = "project-invoices"
+	viewProjectIDS           viewMode = "project-ids"
 	viewProjectInfo          viewMode = "project-info"
 )
 
@@ -64,30 +66,38 @@ type Model struct {
 	projectSelected         int
 	projectEventsSelected   int
 	projectInvoicesSelected int
+	projectIDSSelected      int
 	detailSelected          int
-	citesSelected          int
-	citedBySelected        int
-	reviewSelected         int
-	classificationSelected int
-	inventorSelected       int
-	current                domain.Patent
-	pendingBundle          domain.PatentBundle
-	pendingCitation        domain.CitationEdge
-	reviewStatus           string
-	filter                 string
-	message                string
-	err                    string
-	logger                 *slog.Logger
-	text                   TextCatalog
-	width                  int
-	height                 int
-	backStack              []navSnapshot
-	jumpMode               bool
-	countBuffer            string
-	sortColumn             string
-	sortOrder              string
-	classFilter            string
-	unpaidCounts           map[string]int
+	citesSelected           int
+	citedBySelected         int
+	reviewSelected          int
+	classificationSelected  int
+	inventorSelected        int
+	familySelected          int
+	current                 domain.Patent
+	pendingBundle           domain.PatentBundle
+	pendingCitation         domain.CitationEdge
+	reviewStatus            string
+	filter                  string
+	message                 string
+	err                     string
+	logger                  *slog.Logger
+	text                    TextCatalog
+	width                   int
+	height                  int
+	backStack               []navSnapshot
+	jumpMode                bool
+	countBuffer             string
+	sortColumn              string
+	sortOrder               string
+	sortColumn2             string
+	sortOrder2              string
+	classFilters            []string
+	classFilterOp           string
+	classFilter             string // display label derived from classFilters
+	statusFilter            string // domain.CitationStatusStored (default), "ignored", "under_review", statusFilterNone
+	citesStatusFilter       string // "" (all), "stored", "ignored", "under_review"
+	unpaidCounts            map[string]int
 }
 
 type navSnapshot struct {
@@ -98,23 +108,32 @@ type navSnapshot struct {
 	projectSelected         int
 	projectEventsSelected   int
 	projectInvoicesSelected int
+	projectIDSSelected      int
 	detailSelected          int
-	citesSelected          int
-	citedBySelected        int
-	reviewSelected         int
-	classificationSelected int
-	current                domain.Patent
-	pendingBundle          domain.PatentBundle
-	pendingCitation        domain.CitationEdge
-	reviewStatus           string
-	filter                 string
-	message                string
-	err                    string
-	countBuffer            string
-	ProjectID              string
-	sortColumn             string
-	sortOrder              string
-	classFilter            string
+	citesSelected           int
+	citedBySelected         int
+	reviewSelected          int
+	classificationSelected  int
+	inventorSelected        int
+	familySelected          int
+	current                 domain.Patent
+	pendingBundle           domain.PatentBundle
+	pendingCitation         domain.CitationEdge
+	reviewStatus            string
+	filter                  string
+	message                 string
+	err                     string
+	countBuffer             string
+	ProjectID               string
+	sortColumn              string
+	sortOrder               string
+	sortColumn2             string
+	sortOrder2              string
+	classFilters            []string
+	classFilterOp           string
+	classFilter             string
+	statusFilter            string
+	citesStatusFilter       string
 }
 
 func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Model {
@@ -133,10 +152,9 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 	}
 
 	patents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
-		Filter:      EmptyFilter,
-		ClassFilter: EmptyFilter,
-		SortColumn:  EmptySortColumn,
-		SortOrder:   EmptySortOrder,
+		StatusFilter: domain.CitationStatusStored,
+		SortColumn:   EmptySortColumn,
+		SortOrder:    EmptySortOrder,
 	})
 	if logger == nil {
 		logger = slog.Default()
@@ -152,6 +170,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 		projectSelected: 0,
 		logger:          logger,
 		text:            EnglishText(),
+		statusFilter:    domain.CitationStatusStored,
 	}
 	model = model.reloadProjects()
 	for i, p := range model.projects {
@@ -370,6 +389,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.mode == viewProjectIDS {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+				m.projectIDSSelected = clamp(m.projectIDSSelected+1, 0, len(ids)-1)
+			case keyVimUp, keyArrowUp:
+				m.projectIDSSelected = clamp(m.projectIDSSelected-1, 0, 0)
+			case keyDelete:
+				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
+					_ = m.repo.DeleteIDSEntry(m.ctx, ids[m.projectIDSSelected].ID)
+					m.projectIDSSelected = 0
+					m.message = "IDS entry removed"
+				}
+			case keyEsc, keyQuit:
+				m.mode = viewSplash
+			}
+			return m, nil
+		}
 		if m.mode == viewSplash {
 			switch msg.String() {
 			case keyVimDown, keyArrowDown:
@@ -396,6 +434,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.projectInvoicesSelected = 0
 				m.mode = viewProjectInvoices
+				return m, nil
+			case keyIDS:
+				if len(m.projects) > 0 {
+					m.ProjectID = m.projects[m.projectSelected].ID
+				}
+				m.projectIDSSelected = 0
+				m.mode = viewProjectIDS
 				return m, nil
 			case keyNew:
 				m.input.Focus()
@@ -474,11 +519,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.deleteSelectedPatent()
 			}
 			if m.mode == viewClassificationDetail {
-				m.mode = viewClassifications
-				return m, nil
+				classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
+				if len(classifications) > 0 {
+					sel := clamp(m.classificationSelected, 0, len(classifications)-1)
+					code := classifications[sel].Code
+					m.classFilters = []string{code}
+					m.classFilterOp = "and"
+					m.classFilter = code
+					m.mode = viewList
+					return m.refreshList()
+				}
+				return m.goBack()
 			}
 			if m.mode == viewInventors {
 				return m.filterBySelectedInventor()
+			}
+			if m.mode == viewFamily {
+				return m.openSelectedFamilyMember()
 			}
 			if m.mode == viewClassifications {
 				cls, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
@@ -500,6 +557,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.openPatent(m.patents[m.selected].Number)
 			}
 		case keyDelete:
+			if m.mode == viewFamily {
+				return m.removeSelectedFamilyEdge()
+			}
 			if m.mode == viewList && len(m.patents) > 0 {
 				m.mode = viewConfirmDelete
 				return m, nil
@@ -514,6 +574,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.mode == viewInventors {
 				return m.moveInventorSelection(count), nil
+			}
+			if m.mode == viewFamily {
+				return m.moveFamilySelection(count), nil
 			}
 			if m.mode == viewReview {
 				return m.moveReviewSelection(count), nil
@@ -534,6 +597,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.mode == viewInventors {
 				return m.moveInventorSelection(-count), nil
+			}
+			if m.mode == viewFamily {
+				return m.moveFamilySelection(-count), nil
 			}
 			if m.mode == viewReview {
 				return m.moveReviewSelection(-count), nil
@@ -585,6 +651,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.current = m.patents[m.selected]
 			}
 			m = m.navigateTo(viewClassifications)
+		case keyFamily:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.selected]
+			}
+			m = m.navigateTo(viewFamily)
 		case keyText:
 			m = m.navigateTo(viewText)
 		case keyNotes:
@@ -597,6 +668,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m = m.navigateTo(viewNotes)
 		case keyRefs:
+			if m.mode == viewFamily {
+				return m.pullFamilyCommand()
+			}
 			m = m.navigateTo(viewRefs)
 		case keyAI:
 			m = m.navigateTo(viewAI)
@@ -607,6 +681,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.goBack()
 			}
 			m = m.navigateTo(viewHelpPopup)
+		case "s":
+			if m.isCitationView() {
+				m.citesStatusFilter = nextCitesStatusFilter(m.citesStatusFilter)
+				return m, nil
+			}
+		case "+":
+			if m.mode == viewFamily {
+				m.input.Focus()
+				m.input.SetValue(":family child ")
+				return m, nil
+			}
 		case keyYes:
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
@@ -663,30 +748,39 @@ func (m Model) snapshot() navSnapshot {
 	projects := make([]domain.Project, len(m.projects))
 	copy(projects, m.projects)
 	return navSnapshot{
-		mode:                   m.mode,
-		patents:                patents,
-		projects:               projects,
-		selected:               m.selected,
+		mode:                    m.mode,
+		patents:                 patents,
+		projects:                projects,
+		selected:                m.selected,
 		projectSelected:         m.projectSelected,
 		projectEventsSelected:   m.projectEventsSelected,
 		projectInvoicesSelected: m.projectInvoicesSelected,
+		projectIDSSelected:      m.projectIDSSelected,
 		detailSelected:          m.detailSelected,
-		citesSelected:          m.citesSelected,
-		citedBySelected:        m.citedBySelected,
-		reviewSelected:         m.reviewSelected,
-		classificationSelected: m.classificationSelected,
-		current:                m.current,
-		pendingBundle:          m.pendingBundle,
-		pendingCitation:        m.pendingCitation,
-		reviewStatus:           m.reviewStatus,
-		filter:                 m.filter,
-		message:                m.message,
-		err:                    m.err,
-		countBuffer:            m.countBuffer,
-		ProjectID:              m.ProjectID,
-		sortColumn:             m.sortColumn,
-		sortOrder:              m.sortOrder,
-		classFilter:            m.classFilter,
+		citesSelected:           m.citesSelected,
+		citedBySelected:         m.citedBySelected,
+		reviewSelected:          m.reviewSelected,
+		classificationSelected:  m.classificationSelected,
+		inventorSelected:        m.inventorSelected,
+		familySelected:          m.familySelected,
+		current:                 m.current,
+		pendingBundle:           m.pendingBundle,
+		pendingCitation:         m.pendingCitation,
+		reviewStatus:            m.reviewStatus,
+		filter:                  m.filter,
+		message:                 m.message,
+		err:                     m.err,
+		countBuffer:             m.countBuffer,
+		ProjectID:               m.ProjectID,
+		sortColumn:              m.sortColumn,
+		sortOrder:               m.sortOrder,
+		sortColumn2:             m.sortColumn2,
+		sortOrder2:              m.sortOrder2,
+		classFilters:            append([]string(nil), m.classFilters...),
+		classFilterOp:           m.classFilterOp,
+		classFilter:             m.classFilter,
+		statusFilter:            m.statusFilter,
+		citesStatusFilter:       m.citesStatusFilter,
 	}
 }
 
@@ -698,11 +792,14 @@ func (m Model) restore(snapshot navSnapshot) Model {
 	m.projectSelected = snapshot.projectSelected
 	m.projectEventsSelected = snapshot.projectEventsSelected
 	m.projectInvoicesSelected = snapshot.projectInvoicesSelected
+	m.projectIDSSelected = snapshot.projectIDSSelected
 	m.detailSelected = snapshot.detailSelected
 	m.citesSelected = snapshot.citesSelected
 	m.citedBySelected = snapshot.citedBySelected
 	m.reviewSelected = snapshot.reviewSelected
 	m.classificationSelected = snapshot.classificationSelected
+	m.inventorSelected = snapshot.inventorSelected
+	m.familySelected = snapshot.familySelected
 	m.current = snapshot.current
 	m.pendingBundle = snapshot.pendingBundle
 	m.pendingCitation = snapshot.pendingCitation
@@ -714,7 +811,13 @@ func (m Model) restore(snapshot navSnapshot) Model {
 	m.ProjectID = snapshot.ProjectID
 	m.sortColumn = snapshot.sortColumn
 	m.sortOrder = snapshot.sortOrder
+	m.sortColumn2 = snapshot.sortColumn2
+	m.sortOrder2 = snapshot.sortOrder2
+	m.classFilters = snapshot.classFilters
+	m.classFilterOp = snapshot.classFilterOp
 	m.classFilter = snapshot.classFilter
+	m.statusFilter = snapshot.statusFilter
+	m.citesStatusFilter = snapshot.citesStatusFilter
 	return m
 }
 
@@ -746,9 +849,11 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 	m.logger.Info("tui command", "name", command.Name, "args", command.Args)
 	switch command.Name {
 	case commandSearch:
-		if len(command.Args) > 0 {
+		if len(command.Args) > 0 && command.Args[0] != "clear" {
 			m.backStack = append(m.backStack, m.snapshot())
 			m.filter = command.Args[0]
+		} else {
+			m.filter = EmptyFilter
 		}
 		m.mode = viewList
 		return m.refreshList()
@@ -779,8 +884,14 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.refreshCommand(command.Args)
 	case commandRefreshRefsDetails:
 		return m.refreshVisibleCitationDetails()
-	case commandClass:
+	case commandClassFilter:
 		return m.classCommand(command.Args)
+	case commandInventorFilter:
+		return m.inventorFilterCommand(command.Args)
+	case commandStatusFilter:
+		return m.statusFilterCommand(command.Args)
+	case commandFamily:
+		return m.familyCommand(command.Args)
 	case commandSort:
 		return m.sortCommand(command.Args)
 	case domain.RelationCites:
@@ -817,6 +928,14 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		m = m.navigateTo(viewHelp)
 	case commandProject:
 		return m.projectCommand(command.Args)
+	case commandPurge:
+		return m.purgeCommand(command.Args)
+	case commandCompact:
+		if err := m.repo.Compact(m.ctx); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "database compacted"
 	default:
 		m.err = "unknown command: " + command.Name
 	}
@@ -858,11 +977,15 @@ func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 				return refreshResultMsg{err: err}
 			}
 
+			msg := fmt.Sprintf("%s %s from %s", verb, bundle.Patent.Number, rawURL)
+			if n := len(bundle.FamilyEdges); n > 0 {
+				msg += fmt.Sprintf(" · %d family edge(s) on Google Patents — :family pull to import", n)
+			}
 			logger.Info("google patent imported", "url", rawURL, "patent", bundle.Patent.Number)
 			return refreshResultMsg{
 				patent:  p,
 				mode:    viewDetail,
-				message: fmt.Sprintf("%s %s from %s", verb, bundle.Patent.Number, rawURL),
+				message: msg,
 			}
 		},
 	)
@@ -936,6 +1059,11 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			afterCites, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCites, storage.ListCitationsOptions{})
 			afterCitedBy, _ := repo.ListCitations(ctx, projectID, currentNumber, domain.RelationCitedBy, storage.ListCitationsOptions{})
 
+			familySuffix := ""
+			if n := len(bundle.FamilyEdges); n > 0 {
+				familySuffix = fmt.Sprintf(" · %d family edge(s) on Google Patents — :family pull to import", n)
+			}
+
 			msg := refreshResultMsg{
 				patent: p,
 				mode:   currentMode,
@@ -945,15 +1073,15 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			case refreshTargetCitedBy, domain.RelationCitedBy:
 				msg.mode = viewCitedBy
 				msg.citedBySelected = 0
-				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitedBy), len(afterCitedBy), len(beforeCitedBy))
+				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitedBy), len(afterCitedBy), len(beforeCitedBy)) + familySuffix
 			case refreshTargetCitations, domain.RelationCites:
 				msg.mode = viewCites
 				msg.citesSelected = 0
-				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitations), len(afterCites), len(beforeCites))
+				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitations), len(afterCites), len(beforeCites)) + familySuffix
 			default:
 				msg.citedBySelected = clamp(citedBySelected, 0, max(0, len(afterCitedBy)-1))
 				msg.citesSelected = clamp(citesSelected, 0, max(0, len(afterCites)-1))
-				msg.message = fmt.Sprintf(text.T(TextMessageRefreshAll), len(afterCites), len(beforeCites), len(afterCitedBy), len(beforeCitedBy))
+				msg.message = fmt.Sprintf(text.T(TextMessageRefreshAll), len(afterCites), len(beforeCites), len(afterCitedBy), len(beforeCitedBy)) + familySuffix
 			}
 
 			logger.Info("citations refreshed", "url", rawURL, "patent", currentNumber, domain.RelationCites, len(afterCites), domain.RelationCitedBy, len(afterCitedBy))
@@ -1049,6 +1177,23 @@ func (m Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
 	case m.mode == viewReview:
 		edges, err = m.currentReviewCitationEdges()
 		selected = m.reviewSelected
+	case m.mode == viewDetail || m.mode == viewList:
+		if m.current.Number == "" {
+			return nil, nil
+		}
+		cites, e1 := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, domain.RelationCites, storage.ListCitationsOptions{})
+		citedBy, e2 := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, domain.RelationCitedBy, storage.ListCitationsOptions{})
+		if e1 != nil {
+			return nil, e1
+		}
+		if e2 != nil {
+			return nil, e2
+		}
+		edges = append(cites, citedBy...)
+		if len(edges) == 0 {
+			return nil, nil
+		}
+		return edges, nil
 	default:
 		return nil, nil
 	}
@@ -1067,10 +1212,14 @@ func (m Model) refreshList() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	opts := storage.ListPatentsOptions{
-		Filter:      m.filter,
-		ClassFilter: m.classFilter,
-		SortColumn:  m.sortColumn,
-		SortOrder:   m.sortOrder,
+		Filter:        m.filter,
+		StatusFilter:  m.statusFilter,
+		ClassFilters:  m.classFilters,
+		ClassFilterOp: m.classFilterOp,
+		SortColumn:    m.sortColumn,
+		SortOrder:     m.sortOrder,
+		SortColumn2:   m.sortColumn2,
+		SortOrder2:    m.sortOrder2,
 	}
 	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, opts)
 	if err != nil {
@@ -1181,40 +1330,6 @@ func (m Model) patentBrowserURL(value string) (string, error) {
 		return value, nil
 	}
 	return importer.GooglePatentsURL(value)
-}
-
-func (m Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
-	fields := m.detailFields()
-	if len(fields) == 0 {
-		return m, nil
-	}
-	selected := clamp(m.detailSelected, 0, len(fields)-1)
-	field := fields[selected]
-	switch field.action {
-	case detailActionCitations:
-		return m.navigateTo(viewCites), nil
-	case detailActionCitedBy:
-		return m.navigateTo(viewCitedBy), nil
-	case detailActionClassification:
-		return m.navigateTo(viewClassifications), nil
-	case detailActionInventors:
-		if len(m.current.Inventors) <= 1 {
-			// If only one inventor, filter directly
-			field.value = m.current.Inventors[0]
-		} else {
-			return m.navigateTo(viewInventors), nil
-		}
-	}
-	if strings.TrimSpace(field.value) == "" || field.value == m.text.T(TextValueUnknown) {
-		return m, nil
-	}
-	m.backStack = append(m.backStack, m.snapshot())
-	m.filter = field.value
-	m.mode = viewList
-	model, cmd := m.refreshList()
-	updated := model.(Model)
-	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(field.label), field.value)
-	return updated, cmd
 }
 
 func (m Model) moveDetailSelection(delta int) Model {
@@ -1526,54 +1641,11 @@ func (m Model) currentCitationEdges() ([]domain.CitationEdge, error) {
 		relation = domain.RelationCitedBy
 	}
 	opts := storage.ListCitationsOptions{
-		SortColumn: m.sortColumn,
-		SortOrder:  m.sortOrder,
+		SortColumn:   m.sortColumn,
+		SortOrder:    m.sortOrder,
+		StatusFilter: m.citesStatusFilter,
 	}
 	return m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
-}
-
-func (m Model) classCommand(args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 || args[0] == "clear" {
-		m.classFilter = EmptyFilter
-		m.message = "classification filter cleared"
-	} else {
-		m.classFilter = strings.ToUpper(args[0])
-		m.message = "filtering by classification: " + m.classFilter
-	}
-	m.mode = viewList
-	return m.refreshList()
-}
-
-func (m Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 {
-		m.err = "usage: :sort <column> [asc|desc]"
-		return m, nil
-	}
-
-	col := strings.ToLower(args[0])
-	order := domain.SortOrderAsc
-	if len(args) > 1 {
-		order = strings.ToLower(args[1])
-	}
-
-	if order != domain.SortOrderAsc && order != domain.SortOrderDesc {
-		m.err = "invalid order: " + order
-		return m, nil
-	}
-
-	switch col {
-	case domain.SortColumnNumber, domain.SortColumnTitle, domain.SortColumnDate, domain.SortColumnStatus, domain.SortColumnAssignee, domain.SortColumnInventor, domain.SortColumnClass, "cpc":
-		m.sortColumn = col
-		if col == "cpc" {
-			m.sortColumn = domain.SortColumnClass
-		}
-		m.sortOrder = order
-		m.message = fmt.Sprintf("sorting by %s %s", m.sortColumn, order)
-		return m.refreshList()
-	default:
-		m.err = "invalid sort column: " + col
-		return m, nil
-	}
 }
 
 func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
@@ -1592,10 +1664,9 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 
 	sub := args[0]
 	switch sub {
-	case "list":
+	case projectSubList:
 		m.mode = viewSplash
 		m = m.reloadProjects()
-		// Set selection to current project
 		for i, p := range m.projects {
 			if p.ID == m.ProjectID {
 				m.projectSelected = i
@@ -1603,7 +1674,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "create":
+	case projectSubCreate:
 		if len(args) < 2 {
 			m.err = "usage: :project create <id> [name]"
 			return m, nil
@@ -1630,7 +1701,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		m.mode = viewList
 		return m.refreshList()
-	case "add":
+	case projectSubAdd:
 		if len(args) != 2 {
 			m.err = "usage: :project add <project_id>"
 			return m, nil
@@ -1646,7 +1717,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("added %s to project %s", m.current.Number, targetID)
 		return m, nil
-	case "switch":
+	case projectSubSwitch:
 		if len(args) != 2 {
 			m.err = "usage: :project switch <id>"
 			return m, nil
@@ -1662,7 +1733,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		m.mode = viewList
 		m.message = "switched to project: " + p.Name
 		return m.refreshList()
-	case "status":
+	case projectSubStatus:
 		if len(args) < 2 {
 			m.err = "usage: :project status <status>"
 			return m, nil
@@ -1681,7 +1752,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		m.message = "project status updated"
 		m = m.reloadProjects()
 		return m, nil
-	case "summary-status":
+	case projectSubSummaryStatus:
 		if len(args) < 2 {
 			m.err = "usage: :project summary-status <work-in-progress|provisional-filed|application-filed|published|granted>"
 			return m, nil
@@ -1709,11 +1780,9 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = "project summary status updated: " + summaryStatus
-		// Refresh project list to reflect change
 		m = m.reloadProjects()
 		return m, nil
-	case "event":
-		// :project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]
+	case projectSubEvent:
 		if len(args) < 2 {
 			m.err = "usage: :project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]"
 			return m, nil
@@ -1723,22 +1792,22 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		rest := args[2:]
 		for i := 0; i < len(rest); i++ {
 			switch rest[i] {
-			case "date":
+			case argDate:
 				if i+1 < len(rest) {
 					i++
 					e.EventDate = rest[i]
 				}
-			case "due":
+			case argDue:
 				if i+1 < len(rest) {
 					i++
 					e.DueDate = rest[i]
 				}
-			case "ref":
+			case argRef:
 				if i+1 < len(rest) {
 					i++
 					e.Reference = rest[i]
 				}
-			case "note":
+			case argNote:
 				if i+1 < len(rest) {
 					e.Notes = strings.Join(rest[i+1:], " ")
 					i = len(rest)
@@ -1751,22 +1820,21 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		m.message = "event added: " + eventType
 		return m, nil
-	case "events":
+	case projectSubEvents:
 		if len(m.projects) > 0 {
 			m.ProjectID = m.projects[m.projectSelected].ID
 		}
 		m.projectEventsSelected = 0
 		m.mode = viewProjectEvents
 		return m, nil
-	case "invoices":
+	case projectSubInvoices:
 		if len(m.projects) > 0 {
 			m.ProjectID = m.projects[m.projectSelected].ID
 		}
 		m.projectInvoicesSelected = 0
 		m.mode = viewProjectInvoices
 		return m, nil
-	case "invoice":
-		// :project invoice <amount> [currency USD] [direction to-firm|from-firm] [date YYYY-MM-DD] [due YYYY-MM-DD] [firm <name>] [ref <number>] [note <text>] [status outstanding|paid|overdue|disputed]
+	case projectSubInvoice:
 		if len(args) < 2 {
 			m.err = "usage: :project invoice <amount> [currency USD] [direction to-firm|from-firm] [date YYYY-MM-DD] [due YYYY-MM-DD] [firm <name>] [ref <number>] [note <text>]"
 			return m, nil
@@ -1781,42 +1849,42 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		rest := args[2:]
 		for i := 0; i < len(rest); i++ {
 			switch rest[i] {
-			case "currency":
+			case argCurrency:
 				if i+1 < len(rest) {
 					i++
 					inv.Currency = rest[i]
 				}
-			case "direction":
+			case argDirection:
 				if i+1 < len(rest) {
 					i++
 					inv.Direction = rest[i]
 				}
-			case "date":
+			case argDate:
 				if i+1 < len(rest) {
 					i++
 					inv.InvoiceDate = rest[i]
 				}
-			case "due":
+			case argDue:
 				if i+1 < len(rest) {
 					i++
 					inv.DueDate = rest[i]
 				}
-			case "firm":
+			case argFirm:
 				if i+1 < len(rest) {
 					i++
 					inv.FirmName = rest[i]
 				}
-			case "ref":
+			case argRef:
 				if i+1 < len(rest) {
 					i++
 					inv.InvoiceNumber = rest[i]
 				}
-			case "status":
+			case argStatus:
 				if i+1 < len(rest) {
 					i++
 					inv.Status = rest[i]
 				}
-			case "note":
+			case argNote:
 				if i+1 < len(rest) {
 					inv.Notes = strings.Join(rest[i+1:], " ")
 					i = len(rest)
@@ -1830,7 +1898,14 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		m.message = "invoice added: " + inv.Amount + " " + inv.Currency
 		m = m.reloadProjects()
 		return m, nil
-	case "summary":
+	case projectSubID:
+		m.message = fmt.Sprintf("project: %s (%s)", m.projectNameForExport(), m.ProjectID)
+		return m, nil
+	case projectSubIDS:
+		return m.idsCommand(args[1:])
+	case projectSubExport:
+		return m.exportCommand(args[1:])
+	case projectSubSummary:
 		if len(args) < 2 {
 			m.err = "usage: :project summary <text>"
 			return m, nil
@@ -1849,7 +1924,7 @@ func (m Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		m.message = "project summary updated"
 		m = m.reloadProjects()
 		return m, nil
-	case "comment":
+	case projectSubComment:
 		if len(args) < 2 {
 			m.err = "usage: :project comment <text>"
 			return m, nil
@@ -1963,10 +2038,28 @@ func (m Model) styleRowW(index int, selected int, content string, targetWidth in
 	return style.Render(content)
 }
 
+// styleRowOverlay is like styleRowW but uses ColorSurface as the even-row base
+// so that all rows inside overlay popups have a consistent background.
+func (m Model) styleRowOverlay(index int, selected int, content string, targetWidth int) string {
+	style := overlayBase()
+	if index == selected {
+		style = style.Background(lipgloss.Color(ColorHighlight))
+	} else if index%2 != 0 {
+		style = style.Background(lipgloss.Color(ColorAltRow))
+	}
+	if targetWidth > 0 {
+		cw := lipgloss.Width(content)
+		if cw < targetWidth {
+			content += strings.Repeat(" ", targetWidth-cw)
+		}
+	}
+	return style.Render(content)
+}
+
 func (m Model) View() string {
 	bg := m.renderView()
 
-	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectInfo {
+	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo {
 		var content string
 		if m.mode == viewPreview {
 			content = m.viewPreview()
@@ -1976,12 +2069,16 @@ func (m Model) View() string {
 			content = m.viewClassificationDetail()
 		} else if m.mode == viewClassifications {
 			content = m.viewClassifications()
+		} else if m.mode == viewFamily {
+			content = m.viewFamilyOverlay()
 		} else if m.mode == viewHelpPopup {
 			content = m.viewHelpPopup()
 		} else if m.mode == viewProjectEvents {
 			content = m.viewProjectEvents()
 		} else if m.mode == viewProjectInvoices {
 			content = m.viewProjectInvoices()
+		} else if m.mode == viewProjectIDS {
+			content = m.viewProjectIDS()
 		} else if m.mode == viewProjectInfo {
 			content = m.viewProjectInfo()
 		} else {
@@ -2000,7 +2097,7 @@ func (m Model) renderView() string {
 	if m.mode == viewSplash {
 		return m.viewSplash()
 	}
-	if m.mode == viewProjectEvents || m.mode == viewProjectInvoices {
+	if m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS {
 		return m.viewSplash()
 	}
 
@@ -2130,10 +2227,21 @@ func (m Model) viewList() string {
 		return m.text.T(TextListEmpty) + "\n"
 	}
 	var b strings.Builder
+	var activeFilters []string
 	if m.filter != EmptyFilter {
-		b.WriteString(m.text.T(TextListFilter) + ": " + m.filter + "\n\n")
+		activeFilters = append(activeFilters, m.filter)
+	}
+	if m.classFilter != EmptyFilter {
+		activeFilters = append(activeFilters, "class:"+m.classFilter)
+	}
+	if len(activeFilters) > 0 {
+		b.WriteString(m.text.T(TextListFilter) + ": " + strings.Join(activeFilters, " · ") + "\n\n")
 	}
 
+	idxWidth := len(fmt.Sprintf("%d", len(m.patents)))
+	if idxWidth < 2 {
+		idxWidth = 2
+	}
 	numWidth := max(m.listNumberWidth(), 6)
 	titleWidth := 40
 	invWidth := 20
@@ -2149,6 +2257,7 @@ func (m Model) viewList() string {
 
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
+		m.pad("#", idxWidth+2) +
 		m.pad("Number", numWidth+2) +
 		m.pad("Title", titleWidth+2) +
 		m.pad("Inventor", invWidth+2) +
@@ -2182,8 +2291,10 @@ func (m Model) viewList() string {
 		}
 		status := p.Status
 
+		idxLabel := fmt.Sprintf("%*d", idxWidth, i+1)
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
+			m.pad(idxLabel, idxWidth+2) +
 			m.pad(p.Number, numWidth+2) +
 			m.pad(title, titleWidth+2) +
 			m.pad(inventors, invWidth+2) +
@@ -2291,6 +2402,7 @@ const (
 	detailActionCitedBy
 	detailActionClassification
 	detailActionInventors
+	detailActionFamily
 )
 
 func (m Model) detailFields() []detailField {
@@ -2348,6 +2460,43 @@ func (m Model) detailFields() []detailField {
 		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(citedByCount, citedByRefreshedAt), jumpLabel: jumpLabelCitedByCount, action: detailActionCitedBy},
 		detailField{label: TextDetailSource, value: p.SourceURL, jumpLabel: jumpLabelSource},
 	)
+
+	if m.repo != nil && p.Number != "" {
+		parents, children, _ := m.repo.ListFamilyEdges(m.ctx, m.ProjectID, p.Number)
+
+		parentValue, parentDisplay := "-", "-"
+		if len(parents) > 0 {
+			nums := make([]string, len(parents))
+			for i, e := range parents {
+				nums[i] = e.ParentNumber
+			}
+			parentValue = strings.Join(nums, ", ")
+			parentDisplay = fmt.Sprintf("(%d) %s", len(parents), parentValue)
+		}
+		fields = append(fields, detailField{
+			label:        TextDetailFamilyParents,
+			value:        parentValue,
+			displayValue: parentDisplay,
+			action:       detailActionFamily,
+		})
+
+		childValue, childDisplay := "-", "-"
+		if len(children) > 0 {
+			nums := make([]string, len(children))
+			for i, e := range children {
+				nums[i] = e.ChildNumber
+			}
+			childValue = strings.Join(nums, ", ")
+			childDisplay = fmt.Sprintf("(%d) %s", len(children), childValue)
+		}
+		fields = append(fields, detailField{
+			label:        TextDetailFamilyChildren,
+			value:        childValue,
+			displayValue: childDisplay,
+			action:       detailActionFamily,
+		})
+	}
+
 	return fields
 }
 
@@ -2421,8 +2570,9 @@ func (m Model) viewCitations(relation string) string {
 		return "Open a patent first.\n"
 	}
 	opts := storage.ListCitationsOptions{
-		SortColumn: m.sortColumn,
-		SortOrder:  m.sortOrder,
+		SortColumn:   m.sortColumn,
+		SortOrder:    m.sortOrder,
+		StatusFilter: m.citesStatusFilter,
 	}
 	edges, err := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 	if err != nil {
@@ -2611,15 +2761,17 @@ func formatCitationTime(value time.Time, fallback string) string {
 }
 
 func (m Model) viewPreview() string {
+	base := overlayBase()
+
 	p := m.pendingBundle.Patent
 	if p.Number == "" {
-		return m.text.T(TextValueUnknown) + "\n"
+		return base.Render(m.text.T(TextValueUnknown)) + "\n"
 	}
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render(m.text.T(TextPreviewTitle)))
+	b.WriteString(base.Bold(true).Render(m.text.T(TextPreviewTitle)))
 	b.WriteString("\n\n")
-	b.WriteString(p.Number + "\n")
-	b.WriteString(p.Title + "\n\n")
+	b.WriteString(base.Bold(true).Render(p.Number) + "\n")
+	b.WriteString(base.Render(p.Title) + "\n\n")
 	b.WriteString(m.detailRow(TextDetailAssignee, p.Assignee))
 	if len(p.Inventors) == 0 {
 		b.WriteString(m.detailRow(TextDetailInventors, ""))
@@ -2632,14 +2784,20 @@ func (m Model) viewPreview() string {
 	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate))
 	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render(m.previewStorePrompt()))
+	b.WriteString(base.Bold(true).Render(m.previewStorePrompt()))
 	b.WriteString("\n\n")
 	if strings.TrimSpace(p.Abstract) == "" {
-		b.WriteString(m.text.T(TextPreviewNoAbstract) + "\n")
+		b.WriteString(base.Render(m.text.T(TextPreviewNoAbstract)) + "\n")
 	} else {
-		b.WriteString(p.Abstract + "\n")
+		b.WriteString(base.Render(p.Abstract) + "\n")
 	}
 	return b.String()
+}
+
+// overlayBase returns a base lipgloss style with ColorSurface background
+// used by all overlay popup view functions for consistent text rendering.
+func overlayBase() lipgloss.Style {
+	return lipgloss.NewStyle().Background(lipgloss.Color(ColorSurface))
 }
 
 func (m Model) previewOverlay(content string) string {
@@ -2649,7 +2807,7 @@ func (m Model) previewOverlay(content string) string {
 		BorderForeground(lipgloss.Color(ColorSubtle)).
 		Padding(1, 2).
 		Width(width).
-		Background(lipgloss.Color(ColorSurface)) // Slightly lighter background for the box
+		Background(lipgloss.Color(ColorSurface))
 	return style.Render(content)
 }
 
@@ -2671,7 +2829,7 @@ func (m Model) viewConfirmDelete() string {
 		return ""
 	}
 	p := m.patents[m.selected]
-	return fmt.Sprintf(m.text.T(TextDeleteConfirmPrompt), p.Number)
+	return overlayBase().Render(fmt.Sprintf(m.text.T(TextDeleteConfirmPrompt), p.Number))
 }
 
 func (m Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
@@ -2893,16 +3051,19 @@ func (m Model) goToRow(index int) Model {
 }
 
 func (m Model) viewClassifications() string {
+	base := overlayBase()
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+
 	if m.current.Number == "" {
-		return "No patent open. Open a patent first.\n"
+		return base.Render("No patent open. Open a patent first.") + "\n"
 	}
 	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
-		return err.Error() + "\n"
+		return base.Render(err.Error()) + "\n"
 	}
 	if len(classifications) == 0 {
-		return "No CPC/USPC classification codes stored for " + m.current.Number + ".\n" +
-			"Re-import the patent or run :" + commandRefreshRefsDetails + " to fetch row details.\n"
+		return base.Render("No CPC/USPC classification codes stored for "+m.current.Number+".\n"+
+			"Re-import the patent or run :"+commandRefreshRefsDetails+" to fetch row details.") + "\n"
 	}
 
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
@@ -2910,9 +3071,9 @@ func (m Model) viewClassifications() string {
 	window := pageWindow(selected, len(classifications), m.pageSize())
 
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	b.WriteString(subtleStyle.Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.classificationOpenHint()))
+	b.WriteString(subtleStyle.Render(m.classificationOpenHint()))
 	b.WriteString("\n\n")
 
 	rowWidth := max(44, m.overlayWidth()-6)
@@ -2925,7 +3086,7 @@ func (m Model) viewClassifications() string {
 		m.pad("Code", codeWidth) +
 		m.pad("Description", descriptionWidth)
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
+	b.WriteString(base.Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
 
 	for i := window.Start; i < window.End; i++ {
@@ -2938,41 +3099,54 @@ func (m Model) viewClassifications() string {
 			m.pad(rowIndexLabel(i), indexWidth) +
 			m.pad(cls.Code, codeWidth) +
 			m.pad(m.truncate(cls.Description, descriptionWidth), descriptionWidth)
-		b.WriteString(m.styleRowW(i, selected, row, rowWidth) + "\n")
+		b.WriteString(m.styleRowOverlay(i, selected, row, rowWidth) + "\n")
 	}
 	return b.String()
 }
 
 func (m Model) viewClassificationDetail() string {
+	base := overlayBase()
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	boldStyle := base.Bold(true)
+
 	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
-		return "Error loading classifications: " + err.Error()
+		return base.Render("Error loading classifications: "+err.Error()) + "\n"
 	}
 	if len(classifications) == 0 {
-		return "No classification data stored for " + m.current.Number + ".\nRun :refresh-refs-details or re-import the patent."
+		return base.Render("No classification data stored for "+m.current.Number+".\nRun :refresh-refs-details or re-import the patent.") + "\n"
 	}
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	cls := classifications[selected]
 
+	// count patents in project with this classification code (prefix match)
+	projectPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
+		ClassFilters:  []string{cls.Code},
+		ClassFilterOp: "and",
+	})
+	count := len(projectPatents)
+
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("System: %s\n", cls.System))
-	b.WriteString(fmt.Sprintf("Code: %s\n\n", cls.Code))
+	b.WriteString(base.Render(fmt.Sprintf("System: %s", cls.System)) + "\n")
+	b.WriteString(base.Render(fmt.Sprintf("Code:   %s", cls.Code)) + "\n\n")
 
 	if cls.System == "CPC" {
-		b.WriteString("Hierarchy:\n")
-		b.WriteString(fmt.Sprintf("  Section: %s\n", cls.Section))
-		b.WriteString(fmt.Sprintf("  Class: %s\n", cls.Class))
-		b.WriteString(fmt.Sprintf("  Subclass: %s\n", cls.Subclass))
-		b.WriteString(fmt.Sprintf("  Group: %s\n", cls.MainGroup))
-		b.WriteString(fmt.Sprintf("  Subgroup: %s\n\n", cls.Subgroup))
+		b.WriteString(boldStyle.Render("Hierarchy:") + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Section:  %s", cls.Section)) + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Class:    %s", cls.Class)) + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Subclass: %s", cls.Subclass)) + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Group:    %s", cls.MainGroup)) + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Subgroup: %s", cls.Subgroup)) + "\n\n")
 	} else if cls.System == "USPC" {
-		b.WriteString("Hierarchy:\n")
-		b.WriteString(fmt.Sprintf("  Class: %s\n", cls.Class))
-		b.WriteString(fmt.Sprintf("  Subclass: %s\n\n", cls.Subclass))
+		b.WriteString(boldStyle.Render("Hierarchy:") + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Class:    %s", cls.Class)) + "\n")
+		b.WriteString(base.Render(fmt.Sprintf("  Subclass: %s", cls.Subclass)) + "\n\n")
 	}
 
-	b.WriteString("Description:\n")
-	b.WriteString(cls.Description)
+	b.WriteString(boldStyle.Render("Description:") + "\n")
+	b.WriteString(base.Render(cls.Description) + "\n\n")
+	b.WriteString(base.Render(fmt.Sprintf("%d patent(s) in this project share this classification.", count)) + "\n")
+	b.WriteString(subtleStyle.Render(keyEnter + " filters project list · " + keyEsc + " back to list"))
 	return b.String()
 }
 
@@ -2996,29 +3170,51 @@ func (m Model) goToClassification(index int) Model {
 }
 
 func (m Model) viewInventors() string {
+	base := overlayBase()
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+
 	inventors := m.current.Inventors
 	if len(inventors) == 0 {
-		return "No inventors listed.\n"
+		return base.Render("No inventors listed.") + "\n"
 	}
 
 	selected := clamp(m.inventorSelected, 0, len(inventors)-1)
 	m.inventorSelected = selected
 
-	// inner content width: overlay minus borders (2) and padding (4)
+	// count patents per inventor across all project patents (no filter)
+	allPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{})
+	countFor := func(name string) int {
+		n := 0
+		for _, p := range allPatents {
+			for _, inv := range p.Inventors {
+				if strings.EqualFold(inv, name) {
+					n++
+					break
+				}
+			}
+		}
+		return n
+	}
+
 	rowWidth := max(40, m.overlayWidth()-6)
 	indexWidth := 4
+	countWidth := 6 // "(NNN)"
 
 	var b strings.Builder
-	b.WriteString("Select an inventor to filter:\n\n")
+	b.WriteString(base.Render("Select an inventor to filter — Enter expands:") + "\n\n")
 	for i, inventor := range inventors {
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
 		}
-		nameWidth := max(10, rowWidth-len(prefix)-indexWidth)
-		row := prefix + m.pad(rowIndexLabel(i), indexWidth) + m.truncate(inventor, nameWidth)
-		b.WriteString(m.styleRowW(i, selected, row, rowWidth) + "\n")
+		cnt := countFor(inventor)
+		countCol := fmt.Sprintf("(%d)", cnt)
+		nameWidth := max(10, rowWidth-len(prefix)-indexWidth-countWidth-1)
+		row := prefix + m.pad(rowIndexLabel(i), indexWidth) + m.pad(m.truncate(inventor, nameWidth), nameWidth) + " " + m.pad(countCol, countWidth)
+		b.WriteString(m.styleRowOverlay(i, selected, row, rowWidth) + "\n")
 	}
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render(keyEnter + " filters list · " + keyEsc + " back"))
 	return b.String()
 }
 
@@ -3029,24 +3225,6 @@ func (m Model) moveInventorSelection(delta int) Model {
 	}
 	m.inventorSelected = clamp(m.inventorSelected+delta, 0, len(inventors)-1)
 	return m
-}
-
-func (m Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
-	inventors := m.current.Inventors
-	if len(inventors) == 0 {
-		m.mode = viewDetail
-		return m, nil
-	}
-	selected := clamp(m.inventorSelected, 0, len(inventors)-1)
-	inventor := inventors[selected]
-
-	m.backStack = append(m.backStack, m.snapshot())
-	m.filter = inventor
-	m.mode = viewList
-	model, cmd := m.refreshList()
-	updated := model.(Model)
-	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(TextDetailInventor), inventor)
-	return updated, cmd
 }
 
 func (m Model) viewText() string {
@@ -3095,12 +3273,12 @@ func (m Model) viewRefs() string {
 
 func (m Model) viewSplash() string {
 	logo := `
-  ██████╗  █████╗ ████████╗███████╗███╗   ██╗████████╗███╗   ███╗██╗███╗   ██╗███████╗
-  ██╔══██╗██╔══██╗╚══██╔══╝██╔════╝████╗  ██║╚══██╔══╝████╗ ████║██║████╗  ██║██╔════╝
-  ██████╔╝███████║   ██║   █████╗  ██╔██╗ ██║   ██║   ██╔████╔██║██║██╔██╗ ██║█████╗  
-  ██╔═══╝ ██╔══██║   ██║   ██╔══╝  ██║╚██╗██║   ██║   ██║╚██╔╝██║██║██║╚██╗██║██╔══╝  
-  ██║     ██║  ██║   ██║   ███████╗██║ ╚████║   ██║   ██║ ╚═╝ ██║██║██║ ╚████║███████╗
-  ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝
+  ██████╗  █████╗ ████████╗███████╗███╗   ██╗████████╗    ███╗   ███╗██╗███╗   ██╗███████╗
+  ██╔══██╗██╔══██╗╚══██╔══╝██╔════╝████╗  ██║╚══██╔══╝    ████╗ ████║██║████╗  ██║██╔════╝
+  ██████╔╝███████║   ██║   █████╗  ██╔██╗ ██║   ██║       ██╔████╔██║██║██╔██╗ ██║█████╗  
+  ██╔═══╝ ██╔══██║   ██║   ██╔══╝  ██║╚██╗██║   ██║       ██║╚██╔╝██║██║██║╚██╗██║██╔══╝  
+  ██║     ██║  ██║   ██║   ███████╗██║ ╚████║   ██║       ██║ ╚═╝ ██║██║██║ ╚████║███████╗
+  ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝   ╚═╝       ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝
 	`
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
 	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Italic(true)
@@ -3182,7 +3360,7 @@ func (m Model) viewSplash() string {
 	}
 
 	b.WriteString("\n\n" + m.rule() + "\n")
-	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("j/k: move · enter: select · e: events · i: invoices · n: new · q: quit")))
+	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("j/k: move · enter: select · e: events · i: invoices · d: IDS · n: new · q: quit")))
 
 	// Center vertically
 	content := b.String()
@@ -3201,8 +3379,7 @@ func (m Model) viewProjectEvents() string {
 		return "error loading events: " + err.Error()
 	}
 
-	surf := lipgloss.Color(ColorSurface)
-	base := lipgloss.NewStyle().Background(surf)
+	base := overlayBase()
 	titleStyle := base.Bold(true).Underline(true)
 	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
@@ -3281,8 +3458,7 @@ func (m Model) viewProjectInvoices() string {
 		return "error loading invoices: " + err.Error()
 	}
 
-	surf := lipgloss.Color(ColorSurface)
-	base := lipgloss.NewStyle().Background(surf)
+	base := overlayBase()
 	titleStyle := base.Bold(true).Underline(true)
 	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
@@ -3352,6 +3528,350 @@ func (m Model) viewProjectInvoices() string {
 	return b.String()
 }
 
+func (m Model) viewProjectIDS() string {
+	ids, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+	if err != nil {
+		return "error loading IDS: " + err.Error()
+	}
+
+	base := overlayBase()
+	titleStyle := base.Bold(true).Underline(true)
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(fmt.Sprintf("IDS · %s", m.ProjectID)))
+	b.WriteString("\n\n")
+
+	if len(ids) == 0 {
+		b.WriteString(dimStyle.Render("No IDS entries. Add with :project ids add <patent-number> [note <text>]"))
+		b.WriteString("\n\n")
+		b.WriteString(subtleStyle.Render("IDS entries are prior art references to disclose to the patent office."))
+	} else {
+		headerStyle := base.Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-3s %-16s %-14s %s", "#", "Patent", "Added", "Notes")))
+		b.WriteString("\n")
+		for i, e := range ids {
+			rowStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+			numStyle := base.Foreground(lipgloss.Color(ColorTheme))
+			if i == m.projectIDSSelected {
+				rowStyle = rowStyle.Bold(true).Reverse(true)
+				numStyle = numStyle.Bold(true)
+			}
+			prefix := "  "
+			if i == m.projectIDSSelected {
+				prefix = "→ "
+			}
+			notes := e.Notes
+			if len(notes) > 30 {
+				notes = notes[:27] + "..."
+			}
+			if notes == "" {
+				notes = "—"
+			}
+			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s %-14s %s", e.PatentNumber, e.AddedAt.Format("2006-01-02"), notes)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render("j/k: move · D: remove · :project export ids [file] to export · esc: back"))
+	return b.String()
+}
+
+func (m Model) idsCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.projectIDSSelected = 0
+		m.mode = viewProjectIDS
+		return m, nil
+	}
+	switch args[0] {
+	case idsSubAdd:
+		if len(args) < 2 {
+			m.err = "usage: :project ids add <patent-number> [note <text>]"
+			return m, nil
+		}
+		entry := domain.IDSEntry{
+			ProjectID:    m.ProjectID,
+			PatentNumber: strings.ToUpper(strings.TrimSpace(args[1])),
+		}
+		rest := args[2:]
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == argNote && i+1 < len(rest) {
+				entry.Notes = strings.Join(rest[i+1:], " ")
+				break
+			}
+		}
+		if _, err := m.repo.AddIDSEntry(m.ctx, entry); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.message = "IDS entry added: " + entry.PatentNumber
+	default:
+		m.err = "unknown ids subcommand: " + args[0]
+	}
+	return m, nil
+}
+
+func (m Model) exportCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.err = "usage: :project export ids|status|state [<state>] [filename]"
+		return m, nil
+	}
+	switch args[0] {
+	case exportSubIDS:
+		return m.idsExportCommand(args[1:])
+	case exportSubStatus:
+		return m.statusExportCommand(args[1:])
+	case exportSubState:
+		return m.stateExportCommand(args[1:])
+	default:
+		m.err = "unknown export type: " + args[0] + " — use ids, status, or state"
+	}
+	return m, nil
+}
+
+func (m Model) projectNameForExport() string {
+	for _, p := range m.projects {
+		if p.ID == m.ProjectID {
+			return p.Name
+		}
+	}
+	return m.ProjectID
+}
+
+func (m Model) statusExportCommand(args []string) (tea.Model, tea.Cmd) {
+	projectName := m.projectNameForExport()
+	filename := fmt.Sprintf("%s_status_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format("2006-01-02"))
+	if len(args) > 0 {
+		filename = args[0]
+	}
+
+	var proj domain.Project
+	for _, p := range m.projects {
+		if p.ID == m.ProjectID {
+			proj = p
+			break
+		}
+	}
+
+	events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+	invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+	ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+	allPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{StatusFilter: statusFilterNone})
+
+	statusCounts := map[string]int{}
+	for _, p := range allPatents {
+		statusCounts[p.Status]++
+	}
+
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf("# Project Status: %s\n\n", projectName))
+	buf.WriteString(fmt.Sprintf("**ID:** %s  \n", proj.ID))
+	buf.WriteString(fmt.Sprintf("**Status:** %s  \n", proj.Status))
+	if proj.SummaryStatus != "" {
+		label := proj.SummaryStatus
+		if l, ok := SummaryStatusLabels[proj.SummaryStatus]; ok {
+			label = l
+		}
+		buf.WriteString(fmt.Sprintf("**Stage:** %s  \n", label))
+	}
+	buf.WriteString(fmt.Sprintf("**Updated:** %s  \n", proj.UpdatedAt.Format("2006-01-02")))
+	if proj.Summary != "" {
+		buf.WriteString(fmt.Sprintf("\n> %s\n", proj.Summary))
+	}
+	if proj.Comments != "" {
+		buf.WriteString(fmt.Sprintf("\n*%s*\n", proj.Comments))
+	}
+
+	buf.WriteString("\n## Patents\n\n")
+	buf.WriteString(fmt.Sprintf("| Status | Count |\n|--------|-------|\n"))
+	for _, s := range []string{domain.CitationStatusStored, domain.CitationStatusUnderReview, domain.CitationStatusIgnored, domain.CitationStatusCached} {
+		if n := statusCounts[s]; n > 0 {
+			buf.WriteString(fmt.Sprintf("| %s | %d |\n", s, n))
+		}
+	}
+	buf.WriteString(fmt.Sprintf("\n**IDS entries:** %d\n", len(ids)))
+
+	if len(events) > 0 {
+		buf.WriteString("\n## Prosecution History\n\n")
+		buf.WriteString("| Event | Date | Due | Reference | Notes |\n")
+		buf.WriteString("|-------|------|-----|-----------|-------|\n")
+		for _, e := range events {
+			label := e.EventType
+			if l, ok := EventTypeLabels[e.EventType]; ok {
+				label = l
+			}
+			due, date, ref, notes := e.DueDate, e.EventDate, e.Reference, e.Notes
+			if due == "" {
+				due = "—"
+			}
+			if date == "" {
+				date = "—"
+			}
+			if ref == "" {
+				ref = "—"
+			}
+			if notes == "" {
+				notes = "—"
+			}
+			buf.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n", label, date, due, ref, notes))
+		}
+	}
+
+	if len(invoices) > 0 {
+		buf.WriteString("\n## Invoices\n\n")
+		buf.WriteString("| Amount | Currency | Direction | Status | Firm | Date | Notes |\n")
+		buf.WriteString("|--------|----------|-----------|--------|------|------|-------|\n")
+		for _, inv := range invoices {
+			dir := inv.Direction
+			if l, ok := InvoiceDirectionLabels[inv.Direction]; ok {
+				dir = l
+			}
+			firm, date, notes := inv.FirmName, inv.InvoiceDate, inv.Notes
+			if firm == "" {
+				firm = "—"
+			}
+			if date == "" {
+				date = "—"
+			}
+			if notes == "" {
+				notes = "—"
+			}
+			buf.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+				inv.Amount, inv.Currency, dir, inv.Status, firm, date, notes))
+		}
+	}
+
+	if err := os.WriteFile(filename, []byte(buf.String()), 0644); err != nil {
+		m.err = "export failed: " + err.Error()
+		return m, nil
+	}
+	m.message = fmt.Sprintf("status exported to %s", filename)
+	return m, nil
+}
+
+var exportStateAliases = map[string]string{
+	exportStateStored:      domain.CitationStatusStored,
+	exportStateIgnored:     domain.CitationStatusIgnored,
+	exportStateUnderReview: domain.CitationStatusUnderReview,
+	"under_review":         domain.CitationStatusUnderReview,
+	exportStateAll:         statusFilterNone,
+	exportStateNone:        statusFilterNone,
+}
+
+func (m Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
+	statusFilter := m.statusFilter
+	filenameArgs := args
+
+	if len(args) > 0 {
+		if canonical, ok := exportStateAliases[strings.ToLower(args[0])]; ok {
+			statusFilter = canonical
+			filenameArgs = args[1:]
+		}
+	}
+
+	if statusFilter == "" {
+		statusFilter = statusFilterNone
+	}
+
+	projectName := m.projectNameForExport()
+	stateLabel := statusFilter
+	filename := fmt.Sprintf("%s_state_%s_%s.md", strings.ReplaceAll(projectName, " ", "_"), stateLabel, time.Now().Format("2006-01-02"))
+	if len(filenameArgs) > 0 {
+		filename = filenameArgs[0]
+	}
+
+	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{StatusFilter: statusFilter})
+	if err != nil {
+		m.err = "export failed: " + err.Error()
+		return m, nil
+	}
+
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf("# Patent List: %s\n\n", projectName))
+	buf.WriteString(fmt.Sprintf("**State filter:** %s  \n", stateLabel))
+	buf.WriteString(fmt.Sprintf("**Date:** %s  \n", time.Now().Format("2006-01-02")))
+	buf.WriteString(fmt.Sprintf("**Count:** %d  \n\n", len(patents)))
+
+	if len(patents) == 0 {
+		buf.WriteString("*No patents found.*\n")
+	} else {
+		buf.WriteString("| # | Number | Title | Assignee | Publication | Expiration | Status |\n")
+		buf.WriteString("|---|--------|-------|----------|-------------|------------|--------|\n")
+		for i, p := range patents {
+			title := p.Title
+			if len(title) > 50 {
+				title = title[:47] + "..."
+			}
+			assignee := p.Assignee
+			if assignee == "" {
+				assignee = "—"
+			}
+			pub := p.PublicationDate
+			if pub == "" {
+				pub = "—"
+			}
+			exp := p.ExpirationDate
+			if exp == "" {
+				exp = "—"
+			}
+			buf.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %s | %s | %s |\n",
+				i+1, p.Number, title, assignee, pub, exp, p.Status))
+		}
+	}
+
+	if err := os.WriteFile(filename, []byte(buf.String()), 0644); err != nil {
+		m.err = "export failed: " + err.Error()
+		return m, nil
+	}
+	m.message = fmt.Sprintf("state exported to %s (%d patents)", filename, len(patents))
+	return m, nil
+}
+
+func (m Model) idsExportCommand(args []string) (tea.Model, tea.Cmd) {
+	ids, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+	if err != nil {
+		m.err = "error loading IDS: " + err.Error()
+		return m, nil
+	}
+
+	projectName := m.ProjectID
+	for _, p := range m.projects {
+		if p.ID == m.ProjectID {
+			projectName = p.Name
+			break
+		}
+	}
+
+	filename := fmt.Sprintf("%s_IDS_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format("2006-01-02"))
+	if len(args) > 0 {
+		filename = args[0]
+	}
+
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf("# Information Disclosure Statement\n\n"))
+	buf.WriteString(fmt.Sprintf("**Project:** %s (%s)  \n", projectName, m.ProjectID))
+	buf.WriteString(fmt.Sprintf("**Date:** %s  \n\n", time.Now().Format("2006-01-02")))
+	buf.WriteString("## Prior Art References\n\n")
+	buf.WriteString("| # | Patent Number | Notes | Added |\n")
+	buf.WriteString("|---|---------------|-------|-------|\n")
+	for i, e := range ids {
+		notes := e.Notes
+		if notes == "" {
+			notes = "—"
+		}
+		buf.WriteString(fmt.Sprintf("| %d | %s | %s | %s |\n", i+1, e.PatentNumber, notes, e.AddedAt.Format("2006-01-02")))
+	}
+
+	if err := os.WriteFile(filename, []byte(buf.String()), 0644); err != nil {
+		m.err = "export failed: " + err.Error()
+		return m, nil
+	}
+	m.message = fmt.Sprintf("IDS exported to %s (%d entries)", filename, len(ids))
+	return m, nil
+}
+
 func (m Model) viewProjectInfo() string {
 	var proj domain.Project
 	for _, p := range m.projects {
@@ -3364,8 +3884,7 @@ func (m Model) viewProjectInfo() string {
 	events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
 	invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
 
-	surf := lipgloss.Color(ColorSurface)
-	base := lipgloss.NewStyle().Background(surf)
+	base := overlayBase()
 	titleStyle := base.Bold(true).Underline(true)
 	labelStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	valueStyle := base.Foreground(lipgloss.Color(ColorTheme))

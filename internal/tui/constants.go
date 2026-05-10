@@ -26,7 +26,55 @@ const (
 	commandWeb             = "web"
 	commandProject         = "project"
 	commandSort            = "sort"
-	commandClass           = "class"
+	commandClassFilter     = "classfilter"
+	commandInventorFilter  = "inventorfilter"
+	commandStatusFilter    = "statusfilter"
+	commandFamily          = "family"
+	commandPurge           = "purge"
+	commandCompact         = "compact"
+
+	// :project subcommands
+	projectSubID            = "id"
+	projectSubList          = "list"
+	projectSubCreate        = "create"
+	projectSubAdd           = "add"
+	projectSubSwitch        = "switch"
+	projectSubStatus        = "status"
+	projectSubSummaryStatus = "summary-status"
+	projectSubSummary       = "summary"
+	projectSubComment       = "comment"
+	projectSubDelete        = "delete"
+	projectSubEvent         = "event"
+	projectSubEvents        = "events"
+	projectSubInvoice       = "invoice"
+	projectSubInvoices      = "invoices"
+	projectSubIDS           = "ids"
+	projectSubExport        = "export"
+
+	// :project ids subcommands
+	idsSubAdd = "add"
+
+	// :project export subcommands
+	exportSubIDS    = "ids"
+	exportSubStatus = "status"
+	exportSubState  = "state"
+
+	// export state aliases
+	exportStateAll         = "all"
+	exportStateNone        = "none"
+	exportStateStored      = "stored"
+	exportStateIgnored     = "ignored"
+	exportStateUnderReview = "under-review"
+
+	// invoice/event argument keywords
+	argDate      = "date"
+	argDue       = "due"
+	argRef       = "ref"
+	argNote      = "note"
+	argCurrency  = "currency"
+	argDirection = "direction"
+	argFirm      = "firm"
+	argStatus    = "status"
 
 	refActionAdd    = "add"
 	refActionExport = "export"
@@ -64,6 +112,7 @@ const (
 	keyAI             = "a"
 	keyWeb            = "w"
 	keyJump           = "f"
+	keyFamily         = "F"
 	keyProject        = "P"
 	keyHelp           = "?"
 	keyYes            = "y"
@@ -73,6 +122,7 @@ const (
 	keyUnreview       = "u"
 	keyEvents         = "e"
 	keyInvoices       = "i"
+	keyIDS            = "d"
 	keyMarkPaid            = "p"
 	keyProjectInfo         = "I"
 	keyEditAppStatus       = "s"
@@ -99,6 +149,8 @@ const (
 
 	inventorJumpNumberLabels = "123456789"
 
+	statusFilterNone = "none" // no status restriction — passes "none" to storage layer
+
 	EmptyFilter = ""
 	EmptySortColumn = ""
 	EmptySortOrder = ""
@@ -107,18 +159,25 @@ const (
 	EmptyError = ""
 	EmptyCount = ""
 
-	ColorTheme     = "39"  // Blue
-	ColorAccent    = "205" // Pink/Magenta
-	ColorSubtle    = "245" // Light Gray
-	ColorHighlight = "236" // Dark Gray (Selection)
-	ColorAltRow    = "233" // Near Black (Alternating)
-	ColorSurface   = "235" // Very Dark Gray (Surface)
-	ColorError     = "9"   // Red
-	ColorSuccess   = "10"  // Green
-	ColorWarning   = "222" // Warm Yellow
-	ColorYellow    = "11"  // Bright Yellow
-	ColorDisabled  = "244" // Gray
-	ColorDim       = "240" // Muted Gray
+	ColorTheme        = "39"  // Blue
+	ColorAccent       = "205" // Pink/Magenta
+	ColorAccentFamily = "213" // Bright Pink (family tree root)
+	ColorSubtle       = "245" // Light Gray
+	ColorHighlight    = "236" // Dark Gray (Selection)
+	ColorAltRow       = "233" // Near Black (Alternating)
+	ColorSurface      = "235" // Very Dark Gray (Surface)
+	ColorError        = "9"   // Red
+	ColorSuccess      = "10"  // Green
+	ColorWarning      = "222" // Warm Yellow
+	ColorYellow       = "11"  // Bright Yellow
+	ColorDisabled     = "244" // Gray
+	ColorDim          = "240" // Muted Gray
+	ColorDepth        = "75"  // Cyan-blue (family tree depth labels)
+
+	ColorFamilyContinuation = "33"  // Dodger Blue
+	ColorFamilyCIP          = "171" // Medium Orchid
+	ColorFamilyDivisional   = "214" // Orange
+	ColorFamilyPCT          = "81"  // SteelBlue/Cyan
 )
 
 const (

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"patentmine/internal/domain"
 )
 
 func (m Model) activeMode() viewMode {
@@ -50,6 +51,10 @@ func screenTitleForMode(mode viewMode) string {
 		return "Classification Detail"
 	case viewInventors:
 		return "Inventors"
+	case viewFamily:
+		return "Patent Family"
+	case viewProjectIDS:
+		return "IDS"
 	case viewHelpPopup:
 		return "Help"
 	default:
@@ -112,6 +117,10 @@ func screenAccentForMode(mode viewMode) string {
 		return "170"
 	case viewInventors:
 		return "51"
+	case viewFamily:
+		return "213"
+	case viewProjectIDS:
+		return "75"
 	default:
 		return "39"
 	}
@@ -184,19 +193,40 @@ func (m Model) renderScreenHeader() string {
 	b.WriteString(accent.Render(m.screenTitle()))
 
 	var filters []string
+	statusLabel := m.statusFilter
+	if statusLabel == "" {
+		statusLabel = domain.CitationStatusStored
+	}
+	filters = append(filters, "status:"+statusLabel)
 	if m.filter != EmptyFilter {
 		filters = append(filters, fmt.Sprintf("filter:%s", m.filter))
 	}
-	if m.classFilter != EmptyFilter {
-		filters = append(filters, fmt.Sprintf("class:%s", m.classFilter))
-	}
 	if m.sortColumn != "" {
-		filters = append(filters, fmt.Sprintf("sort:%s %s", m.sortColumn, m.sortOrder))
+		sort := fmt.Sprintf("sort:%s %s", m.sortColumn, m.sortOrder)
+		if m.sortColumn2 != "" {
+			sort += "," + m.sortColumn2
+		}
+		filters = append(filters, sort)
 	}
 
 	if len(filters) > 0 {
 		b.WriteString(" ")
 		b.WriteString(subtle.Render("· " + strings.Join(filters, ", ")))
+	}
+
+	if m.isCitationView() && m.citesStatusFilter != "" {
+		label := m.citesStatusFilter
+		if label == domain.CitationStatusUnderReview {
+			label = "under-review"
+		}
+		filters = append(filters, "refs:"+label)
+	}
+	if m.classFilter != EmptyFilter {
+		classStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+		b.WriteString(" ")
+		b.WriteString(subtle.Render("·"))
+		b.WriteString(" ")
+		b.WriteString(classStyle.Render("class:" + m.classFilter))
 	}
 
 	if subtitle := strings.TrimSpace(m.screenSubtitle()); subtitle != "" {
