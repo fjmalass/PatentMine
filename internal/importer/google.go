@@ -107,6 +107,9 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 }
 
 func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, number string, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	before := len(bundle.Classifications)
 	doc.Find("[itemprop='classifications'], [itemprop='classification'], classification-cpc, .classification-cpc, classification-item, .classification-item").Each(func(_ int, row *goquery.Selection) {
 		code := clean(classificationField(row, "[itemprop='code']", "[itemprop='Code']", ".code"))
@@ -234,6 +237,9 @@ func addSection(s *goquery.Selection, bundle *domain.PatentBundle, number, secti
 // priorityApps rows → source is a parent of the listed patent.
 // Falls back to the legacy backwardReferencesFamily/forwardReferencesFamily itemprop selectors.
 func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logger) []domain.FamilyEdge {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	logger.Debug("google.extract_family", "source", source)
 	seen := map[string]bool{}
 	var edges []domain.FamilyEdge
@@ -359,6 +365,9 @@ func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logge
 }
 
 func extractCitationEdges(doc *goquery.Document, source string, logger *slog.Logger) []domain.CitationEdge {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	logger.Debug("google.extract_citations", "source", source)
 	seen := map[string]bool{}
 	var edges []domain.CitationEdge

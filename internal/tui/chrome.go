@@ -268,6 +268,16 @@ func (m Model) renderScreenHeader() string {
 		b.WriteString(subtle.Render(m.loadingMsg))
 	}
 
+	// Project Summary
+	for _, p := range m.projects {
+		if p.ID == m.ProjectID && p.Summary != "" {
+			b.WriteString("\n")
+			summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
+			b.WriteString(summaryStyle.Render("> " + p.Summary))
+			break
+		}
+	}
+
 	return b.String()
 }
 

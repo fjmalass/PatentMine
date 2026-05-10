@@ -34,7 +34,7 @@ func TestFormatExpirationKeepsExpiredLabelText(t *testing.T) {
 
 func TestDetailRowAlignsValues(t *testing.T) {
 	model := Model{text: EnglishText()}
-	got := model.detailRow(TextDetailGrant, "2023-03-21") + model.detailRow(TextDetailExpiration, "2043-03-21 (est.)")
+	got := model.detailRow(TextDetailGrant, "2023-03-21", 12) + model.detailRow(TextDetailExpiration, "2043-03-21 (est.)", 12)
 	want := "Grant:       2023-03-21\nExpiration:  2043-03-21 (est.)\n"
 	if got != want {
 		t.Fatalf("expected aligned detail rows:\n%q\ngot:\n%q", want, got)
@@ -46,7 +46,7 @@ func TestDetailRowUsesTextCatalog(t *testing.T) {
 		TextDetailAssignee: "Titulaire",
 		TextValueUnknown:   "inconnu",
 	}}
-	got := model.detailRow(TextDetailAssignee, "")
+	got := model.detailRow(TextDetailAssignee, "", 12)
 	want := "Titulaire:   inconnu\n"
 	if got != want {
 		t.Fatalf("expected localized detail row %q, got %q", want, got)
@@ -159,17 +159,24 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		jumpLabelGrant,
 		jumpLabelClassification,
 		jumpLabelExpiration,
-		jumpLabelStoredLocal,
 		jumpLabelCitationCount,
 		jumpLabelCitedByCount,
+		// Family/Status/IDS rows do not have jump labels in the current implementation
+		"", // separator
+		"", // Summary
+		jumpLabelNotes,
+		"", // separator
+		"", // Via
 		jumpLabelSource,
+		jumpLabelStoredLocal,
+		jumpLabelUpdated,
 	}
 	if len(got) != len(want) {
-		t.Fatalf("expected labels %v, got %v", want, got)
+		t.Fatalf("expected %d labels, got %d: %v vs %v", len(want), len(got), want, got)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Fatalf("expected labels %v, got %v", want, got)
+			t.Fatalf("at index %d: expected label %q, got %q", i, want[i], got[i])
 		}
 	}
 }
@@ -725,4 +732,5 @@ func (stubRepo) AddIDSEntry(context.Context, domain.IDSEntry) (domain.IDSEntry, 
 func (stubRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
 	return nil, nil
 }
-func (stubRepo) DeleteIDSEntry(context.Context, int64) error { return nil }
+func (stubRepo) UpdateIDSEntryStatus(context.Context, int64, string) error { return nil }
+func (stubRepo) DeleteIDSEntry(context.Context, int64) error               { return nil }

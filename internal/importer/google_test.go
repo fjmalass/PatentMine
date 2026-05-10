@@ -79,7 +79,7 @@ func TestExtractClassificationsReadsGooglePluralItemprop(t *testing.T) {
 		t.Fatal(err)
 	}
 	bundle := testBundle()
-	extractClassifications(doc, &bundle, "US10218760B2")
+	extractClassifications(doc, &bundle, "US10218760B2", nil)
 	if len(bundle.Classifications) != 2 {
 		t.Fatalf("expected two classifications, got %+v", bundle.Classifications)
 	}
@@ -107,7 +107,7 @@ func TestExtractCitationEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edges := extractCitationEdges(doc, "US11611785B2")
+	edges := extractCitationEdges(doc, "US11611785B2", nil)
 	// The improved scraper might find 2 or more if it catches both the itemprop and the general link pass.
 	// But they should be correctly categorized.
 	if len(edges) < 2 {
@@ -151,7 +151,7 @@ func TestExtractCitationEdgesIgnoresFamilyAndUnstructuredPatentLinks(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	edges := extractCitationEdges(doc, "US11611785B2")
+	edges := extractCitationEdges(doc, "US11611785B2", nil)
 	if len(edges) != 1 {
 		t.Fatalf("expected only one structured cited-by edge, got %+v", edges)
 	}
@@ -187,7 +187,7 @@ func TestExtractFamilyEdgesParentAndPriorityApps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	edges := extractFamilyEdges(doc, "US20220252571A1")
+	edges := extractFamilyEdges(doc, "US20220252571A1", nil)
 	if len(edges) != 2 {
 		t.Fatalf("expected 2 family edges, got %+v", edges)
 	}
@@ -221,7 +221,7 @@ func TestExtractFamilyEdgesRelationTypeDivisional(t *testing.T) {
 		  </tr>
 		</tbody></table>`
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	edges := extractFamilyEdges(doc, "US1111111A")
+	edges := extractFamilyEdges(doc, "US1111111A", nil)
 	if len(edges) != 1 || edges[0].RelationType != domain.FamilyRelationDivisional {
 		t.Fatalf("expected divisional edge, got %+v", edges)
 	}
@@ -238,7 +238,7 @@ func TestExtractFamilyEdgesLegacyFallback(t *testing.T) {
 		  </div>
 		</div>`
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	edges := extractFamilyEdges(doc, "US5555555B2")
+	edges := extractFamilyEdges(doc, "US5555555B2", nil)
 	if len(edges) != 2 {
 		t.Fatalf("expected 2 legacy edges, got %+v", edges)
 	}
@@ -257,7 +257,7 @@ func TestExtractFamilyEdgesContinuationApps(t *testing.T) {
 		  </tr>
 		</tbody></table>`
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	edges := extractFamilyEdges(doc, "US11740187B2")
+	edges := extractFamilyEdges(doc, "US11740187B2", nil)
 	if len(edges) != 1 {
 		t.Fatalf("expected 1 continuationApps edge, got %+v", edges)
 	}

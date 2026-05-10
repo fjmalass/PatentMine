@@ -1118,7 +1118,11 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			m.err = "usage: :add US11611785B2"
 			return m, nil
 		}
-		if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTO.APIKey != "" {
+		if m.importCfg.ImportSource == config.ImportSourceUSPTO {
+			if m.importCfg.USPTO.APIKey == "" {
+				m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+				return m, nil
+			}
 			return m.importByNumber(command.Args[0], importActionAdded)
 		}
 		rawURL, err := importer.GooglePatentsURL(command.Args[0])
@@ -1290,8 +1294,13 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	importSource := m.importCfg.ImportSource
 	apiKey := m.importCfg.USPTO.APIKey
 
+	if importSource == config.ImportSourceUSPTO && apiKey == "" {
+		m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+		return m, nil
+	}
+
 	var rawURL string
-	if importSource != config.ImportSourceUSPTO || apiKey == "" {
+	if importSource != config.ImportSourceUSPTO {
 		rawURL = m.current.SourceGoogleURL
 		if rawURL == "" {
 			var err error
@@ -1303,11 +1312,7 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	sourceLabel := "google"
-	if importSource == config.ImportSourceUSPTO && apiKey != "" {
-		sourceLabel = "uspto"
-	}
-
+	sourceLabel := string(importSource)
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.loading = true
 	m.loadingMsg = fmt.Sprintf("Refreshing %s...", m.current.Number)
@@ -1411,6 +1416,11 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 	importSource := m.importCfg.ImportSource
 	apiKey := m.importCfg.USPTO.APIKey
 
+	if importSource == config.ImportSourceUSPTO && apiKey == "" {
+		m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+		return m, nil
+	}
+
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
@@ -1433,7 +1443,7 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				exists := err == nil
 
 				var bundle domain.PatentBundle
-				if importSource == config.ImportSourceUSPTO && apiKey != "" {
+				if importSource == config.ImportSourceUSPTO {
 					bundle, err = importer.ImportUSPTO(edge.TargetPatent, apiKey, logger)
 				} else {
 					var rawURL string
@@ -1587,10 +1597,7 @@ func (m Model) recentNotesSnippet(number string) string {
 		return ""
 	}
 	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
 	var b strings.Builder
-	b.WriteString(dimStyle.Render("── notes ──"))
-	b.WriteString("\n")
 	limit := noteDetailSnippetCount
 	if len(notes) < limit {
 		limit = len(notes)
@@ -1658,12 +1665,17 @@ func (m Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	apiKey := m.importCfg.USPTO.APIKey
 	targetPatent := edge.TargetPatent
 
+	if importSource == config.ImportSourceUSPTO && apiKey == "" {
+		m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+		return m, nil
+	}
+
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
 			var bundle domain.PatentBundle
 			var err error
-			if importSource == config.ImportSourceUSPTO && apiKey != "" {
+			if importSource == config.ImportSourceUSPTO {
 				bundle, err = importer.ImportUSPTO(targetPatent, apiKey, logger)
 			} else {
 				var rawURL string
@@ -1675,11 +1687,7 @@ func (m Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 			if err != nil {
 				return refreshDetailsResultMsg{err: err}
 			}
-			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle.Patent.ImportSource = "uspto"
-			} else {
-				bundle.Patent.ImportSource = "google"
-			}
+			bundle.Patent.ImportSource = string(importSource)
 			bundle.Patent.Status = domain.CitationStatusCached
 			_, existsErr := repo.GetPatent(ctx, projectID, edge.TargetPatent)
 			exists := existsErr == nil
@@ -1870,7 +1878,11 @@ func (m Model) moveDetailSelection(delta int) Model {
 	if len(fields) == 0 {
 		return m
 	}
-	m.detailSelected = clamp(m.detailSelected+delta, 0, len(fields)-1)
+	next := clamp(m.detailSelected+delta, 0, len(fields)-1)
+	for next > 0 && next < len(fields)-1 && fields[next].separator {
+		next += delta
+	}
+	m.detailSelected = clamp(next, 0, len(fields)-1)
 	return m
 }
 
@@ -2898,8 +2910,31 @@ func (m Model) viewDetail() string {
 	b.WriteString(p.Number + "\n")
 	b.WriteString(p.Title + "\n\n")
 	fields := m.detailFields()
+
+	// Calculate max label width per group for alignment
+	groupWidths := []int{}
+	currentMax := 0
+	for _, f := range fields {
+		if f.separator {
+			groupWidths = append(groupWidths, currentMax)
+			currentMax = 0
+		} else {
+			w := lipgloss.Width(m.text.T(f.label) + ":")
+			if w > currentMax {
+				currentMax = w
+			}
+		}
+	}
+	groupWidths = append(groupWidths, currentMax)
+
 	selected := clamp(m.detailSelected, 0, max(0, len(fields)-1))
+	groupIndex := 0
 	for i, field := range fields {
+		if field.separator {
+			b.WriteString(dimStyle.Render(m.rule()) + "\n")
+			groupIndex++
+			continue
+		}
 		prefix := "  "
 		if i == selected {
 			prefix = "> "
@@ -2908,38 +2943,14 @@ func (m Model) viewDetail() string {
 		if field.displayValue != "" {
 			value = field.displayValue
 		}
-		b.WriteString(prefix + m.jumpPrefix(i) + m.detailRow(field.label, value))
+		b.WriteString(prefix + m.jumpPrefix(i) + m.detailRow(field.label, value, groupWidths[groupIndex]))
 	}
-	b.WriteString("\n")
-
-	// Status row
-	if color, ok := StatusColors[p.Status]; ok {
-		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("Status: "+p.Status) + "\n")
-	}
-
-	// IDS row
-	idsEntry := m.idsEntryForPatent(p.Number)
-	if idsEntry != nil {
-		statusColor := idsStatusColor(idsEntry.Status)
-		idsStr := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render("IDS: " + idsEntry.Status)
-		if idsEntry.Notes != "" {
-			idsStr += dimStyle.Render("  " + idsEntry.Notes)
-		}
-		b.WriteString("  " + idsStr + "\n")
-	} else {
-		b.WriteString("  " + dimStyle.Render("Not in IDS") + "\n")
-	}
-
-	b.WriteString("\n")
+	b.WriteString(dimStyle.Render(m.rule()) + "\n")
 	b.WriteString(subtleStyle.Render(m.text.T(TextDetailOpenHint)))
 	b.WriteString("  ")
 	b.WriteString(subtleStyle.Render("s: cycle status · A: add to IDS · N: note"))
 	b.WriteString("\n")
-	b.WriteString(p.Abstract + "\n")
-	if snippet := m.recentNotesSnippet(p.Number); snippet != "" {
-		b.WriteString("\n")
-		b.WriteString(snippet)
-	}
+
 	return b.String()
 }
 
@@ -2949,6 +2960,7 @@ type detailField struct {
 	displayValue string
 	jumpLabel    string
 	action       detailAction
+	separator    bool
 }
 
 type detailAction int
@@ -3011,16 +3023,18 @@ func (m Model) detailFields() []detailField {
 		action:       detailActionClassification,
 	})
 
-	importSourceValue := p.ImportSource
-	if importSourceValue == "" {
-		importSourceValue = m.text.T(TextValueUnknown)
-	}
 	fields = append(fields,
 		detailField{label: TextDetailExpiration, value: m.formatExpiration(p), jumpLabel: jumpLabelExpiration},
 		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(citationCount, citationRefreshedAt), jumpLabel: jumpLabelCitationCount, action: detailActionCitations},
 		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(citedByCount, citedByRefreshedAt), jumpLabel: jumpLabelCitedByCount, action: detailActionCitedBy},
-		detailField{label: TextDetailSource, value: p.SourceGoogleURL, jumpLabel: jumpLabelSource},
 	)
+
+	notesValue := m.text.T(TextValueEmpty)
+	notesDisplay := notesValue
+	summaryValue := m.text.T(TextValueEmpty)
+	if p.Abstract != "" {
+		summaryValue = m.truncate(p.Abstract, 60)
+	}
 
 	if m.repo != nil && p.Number != "" {
 		parents, children, _ := m.repo.ListFamilyEdges(m.ctx, m.ProjectID, p.Number)
@@ -3058,27 +3072,63 @@ func (m Model) detailFields() []detailField {
 			jumpLabel:    jumpLabelFamilyChildren,
 			action:       detailActionFamily,
 		})
-	}
 
-	if m.repo != nil && p.Number != "" {
+		// Add Status and IDS to the first block
+		if color, ok := StatusColors[p.Status]; ok {
+			fields = append(fields, detailField{
+				label:        TextDetailStatus,
+				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(p.Status),
+			})
+		}
+		idsEntry := m.idsEntryForPatent(p.Number)
+		if idsEntry != nil {
+			statusColor := idsStatusColor(idsEntry.Status)
+			value := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(idsEntry.Status)
+			if idsEntry.Notes != "" {
+				value += lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true).Render("  " + idsEntry.Notes)
+			}
+			fields = append(fields, detailField{
+				label:        TextDetailIDS,
+				displayValue: value,
+			})
+		} else {
+			fields = append(fields, detailField{
+				label:        TextDetailIDS,
+				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true).Render("Not in IDS"),
+			})
+		}
+
 		notes, _ := m.repo.ListNotes(m.ctx, m.ProjectID, p.Number)
-		notesValue := m.text.T(TextValueEmpty)
-		notesDisplay := notesValue
 		if len(notes) > 0 {
 			notesValue = fmt.Sprintf("(%d)", len(notes))
 			notesDisplay = fmt.Sprintf("(%d) %s", len(notes), markdownHeadingSummary(notes[0].Body))
 		}
-		fields = append(fields, detailField{
+	}
+
+	fields = append(fields,
+		detailField{separator: true},
+		detailField{
+			label:        TextDetailSummary,
+			value:        p.Abstract,
+			displayValue: summaryValue,
+		},
+		detailField{
 			label:        TextDetailNotes,
 			value:        notesValue,
 			displayValue: notesDisplay,
 			jumpLabel:    jumpLabelNotes,
 			action:       detailActionNotes,
-		})
-	}
+		},
+	)
 
+	importSourceValue := p.ImportSource
+	if importSourceValue == "" {
+		importSourceValue = m.text.T(TextValueUnknown)
+	}
 	fields = append(fields,
+		detailField{separator: true},
 		detailField{label: TextDetailImportSource, value: importSourceValue},
+		detailField{label: TextDetailSource, value: p.SourceGoogleURL, jumpLabel: jumpLabelSource},
 		detailField{label: TextDetailStoredLocal, value: formatStoredTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
 		detailField{label: TextDetailUpdated, value: formatStoredTime(p.UpdatedAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelUpdated},
 	)
@@ -3097,7 +3147,7 @@ func (m Model) citationStats(number string) (int, time.Time, int, time.Time) {
 
 func (m Model) formatCitationSummary(count int, refreshedAt time.Time) string {
 	refreshed := formatCitationTime(refreshedAt, m.text.T(TextCitationNeverRefreshed))
-	return fmt.Sprintf("%d  %s: %s", count, m.text.T(TextCitationRefreshed), refreshed)
+	return fmt.Sprintf("%3d  %s: %s", count, m.text.T(TextCitationRefreshed), refreshed)
 }
 
 func latestCitationRefresh(edges []domain.CitationEdge) time.Time {
@@ -3130,12 +3180,17 @@ func jumpLabelForInventor(index int) string {
 	})[index]
 }
 
-func (m Model) detailRow(label TextKey, value string) string {
+func (m Model) detailRow(label TextKey, value string, width int) string {
 	if strings.TrimSpace(value) == "" {
 		value = m.text.T(TextValueUnknown)
 	}
+	l := m.text.T(label) + ":"
+	padding := ""
+	if w := lipgloss.Width(l); w < width {
+		padding = strings.Repeat(" ", width-w)
+	}
 	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
-	return fmt.Sprintf("%-12s %s\n", labelStyle.Render(m.text.T(label)+":"), value)
+	return fmt.Sprintf("%s%s %s\n", labelStyle.Render(l), padding, value)
 }
 
 func (m Model) formatExpiration(p domain.Patent) string {
@@ -3378,17 +3433,33 @@ func (m Model) viewPreview() string {
 	b.WriteString("\n\n")
 	b.WriteString(base.Bold(true).Render(p.Number) + "\n")
 	b.WriteString(base.Render(p.Title) + "\n\n")
-	b.WriteString(m.detailRow(TextDetailAssignee, p.Assignee))
+
+	// Calculate max label width for alignment
+	previewLabels := []TextKey{TextDetailAssignee, TextDetailPublication, TextDetailGrant, TextDetailExpiration}
 	if len(p.Inventors) == 0 {
-		b.WriteString(m.detailRow(TextDetailInventors, ""))
+		previewLabels = append(previewLabels, TextDetailInventors)
 	} else {
-		for i, inventor := range p.Inventors {
-			b.WriteString(m.detailRow(TextDetailInventor, fmt.Sprintf("%d. %s", i+1, inventor)))
+		previewLabels = append(previewLabels, TextDetailInventor)
+	}
+	maxW := 0
+	for _, l := range previewLabels {
+		w := lipgloss.Width(m.text.T(l) + ":")
+		if w > maxW {
+			maxW = w
 		}
 	}
-	b.WriteString(m.detailRow(TextDetailPublication, p.PublicationDate))
-	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate))
-	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p)))
+
+	b.WriteString(m.detailRow(TextDetailAssignee, p.Assignee, maxW))
+	if len(p.Inventors) == 0 {
+		b.WriteString(m.detailRow(TextDetailInventors, "", maxW))
+	} else {
+		for i, inventor := range p.Inventors {
+			b.WriteString(m.detailRow(TextDetailInventor, fmt.Sprintf("%d. %s", i+1, inventor), maxW))
+		}
+	}
+	b.WriteString(m.detailRow(TextDetailPublication, p.PublicationDate, maxW))
+	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate, maxW))
+	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p), maxW))
 	b.WriteString("\n")
 	b.WriteString(base.Bold(true).Render(m.previewStorePrompt()))
 	b.WriteString("\n\n")

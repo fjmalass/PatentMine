@@ -191,7 +191,7 @@ const (
 )
 
 const (
-	noteDetailSnippetCount = 5
+	noteDetailSnippetCount = 10
 	noteTextareaHeight     = 8
 	noteTextareaCharLimit  = 4000
 	noteTextareaMinWidth   = 20

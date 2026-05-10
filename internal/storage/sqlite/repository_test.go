@@ -266,7 +266,7 @@ func TestRepositoryOperations(t *testing.T) {
 func newTestRepo(t *testing.T) *Repository {
 
 	t.Helper()
-	repo, err := Open(":memory:")
+	repo, err := Open(":memory:", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

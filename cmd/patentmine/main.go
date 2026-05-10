@@ -53,7 +53,7 @@ func main() {
 	if closeActivity != nil {
 		defer closeActivity()
 	}
-	repo, err := sqliterepo.Open(tui.DefaultDBPath)
+	repo, err := sqliterepo.Open(tui.DefaultDBPath, logger)
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
 		exit(err)
@@ -173,6 +173,7 @@ func seedFixture(ctx context.Context, repo *sqliterepo.Repository) error {
 	if err != nil {
 		return err
 	}
+	bundle.Patent.ImportSource = "google"
 	// Note: We use a placeholder project ID for seeding
 	existing, err := repo.GetPatent(ctx, "default", "US11611785B2")
 	if err == nil && existing.ExpirationDate != "" && existing.ExpirationEstimated == bundle.Patent.ExpirationEstimated {

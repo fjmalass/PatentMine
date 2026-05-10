@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,16 +17,20 @@ import (
 )
 
 type Repository struct {
-	db *sql.DB
+	db     *sql.DB
+	logger *slog.Logger
 }
 
-func Open(path string) (*Repository, error) {
+func Open(path string, logger *slog.Logger) (*Repository, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	return &Repository{db: db}, nil
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Repository{db: db, logger: logger}, nil
 }
 
 func (r *Repository) Close() error {
@@ -314,13 +319,15 @@ func (r *Repository) RemovePatentFromProject(ctx context.Context, projectID, pat
 }
 
 func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, bundle domain.PatentBundle) error {
+	r.logger.Info("repository.upsert_bundle", "project", projectID, "patent", bundle.Patent.Number)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if err := upsertPatent(ctx, tx, bundle.Patent); err != nil {
+	if err := upsertPatent(ctx, tx, bundle.Patent, r.logger); err != nil {
+		r.logger.Error("repository.upsert_patent failed", "patent", bundle.Patent.Number, "error", err)
 		return err
 	}
 
@@ -335,6 +342,7 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 		on conflict(project_id, patent_number) do update set
 			status = case when excluded.status = 'stored' then 'stored' else project_patents.status end`,
 		projectID, bundle.Patent.Number, status, now); err != nil {
+		r.logger.Error("repository.project_patent_association failed", "project", projectID, "patent", bundle.Patent.Number, "error", err)
 		return err
 	}
 
@@ -342,13 +350,13 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 		return err
 	}
 
-	if err := replaceTexts(ctx, tx, bundle.Patent.Number, bundle.Sections); err != nil {
+	if err := replaceTexts(ctx, tx, bundle.Patent.Number, bundle.Sections, r.logger); err != nil {
 		return err
 	}
-	if err := replaceCitations(ctx, tx, projectID, bundle.Patent.Number, bundle.Citations); err != nil {
+	if err := replaceCitations(ctx, tx, projectID, bundle.Patent.Number, bundle.Citations, r.logger); err != nil {
 		return err
 	}
-	if err := replaceClassifications(ctx, tx, bundle.Patent.Number, bundle.Classifications); err != nil {
+	if err := replaceClassifications(ctx, tx, bundle.Patent.Number, bundle.Classifications, r.logger); err != nil {
 		return err
 	}
 	// Store family edges only when both sides exist in project_patents
@@ -383,10 +391,14 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	r.logger.Info("repository.upsert_bundle ok", "project", projectID, "patent", bundle.Patent.Number, "citations", len(bundle.Citations), "sections", len(bundle.Sections), "classifications", len(bundle.Classifications))
+	return nil
 }
 
-func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent) error {
+func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog.Logger) error {
 	inventors, err := json.Marshal(p.Inventors)
 	if err != nil {
 		return err
@@ -415,7 +427,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent) error {
 	return err
 }
 
-func replaceTexts(ctx context.Context, tx *sql.Tx, number string, sections []domain.PatentTextSection) error {
+func replaceTexts(ctx context.Context, tx *sql.Tx, number string, sections []domain.PatentTextSection, logger *slog.Logger) error {
 	if _, err := tx.ExecContext(ctx, `delete from patent_text_sections where patent_number = ?`, number); err != nil {
 		return err
 	}
@@ -428,7 +440,7 @@ func replaceTexts(ctx context.Context, tx *sql.Tx, number string, sections []dom
 	return nil
 }
 
-func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number string, edges []domain.CitationEdge) error {
+func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number string, edges []domain.CitationEdge, logger *slog.Logger) error {
 	if len(edges) == 0 {
 		return nil
 	}
@@ -455,7 +467,7 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number 
 	return nil
 }
 
-func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, classifications []domain.Classification) error {
+func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, classifications []domain.Classification, logger *slog.Logger) error {
 	if _, err := tx.ExecContext(ctx, `delete from patent_classifications where patent_number = ?`, number); err != nil {
 		return err
 	}
@@ -717,17 +729,20 @@ func scanCitationEdges(rows *sql.Rows) ([]domain.CitationEdge, error) {
 }
 
 func (r *Repository) UpdateCitationStatus(ctx context.Context, projectID string, edge domain.CitationEdge, status string) error {
+	r.logger.Info("repository.update_citation_status", "project", projectID, "source", edge.SourcePatent, "target", edge.TargetPatent, "status", status)
 	_, err := r.db.ExecContext(ctx, `update citation_edges set status = ?, labeled_at = ? where project_id = ? and source_patent = ? and target_patent = ? and relation_type = ?`,
 		status, nowString(), projectID, edge.SourcePatent, edge.TargetPatent, edge.RelationType)
 	return err
 }
 
 func (r *Repository) UpdatePatentStatus(ctx context.Context, projectID string, number string, status string) error {
+	r.logger.Info("repository.update_patent_status", "project", projectID, "patent", number, "status", status)
 	_, err := r.db.ExecContext(ctx, `update project_patents set status = ?, status_changed_at = ? where project_id = ? and patent_number = ?`, status, nowString(), projectID, number)
 	return err
 }
 
 func (r *Repository) UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error {
+	r.logger.Debug("repository.update_classification_description", "system", system, "code", code)
 	cls := domain.ParseClassification(code)
 	if cls.System != "" {
 		system = cls.System
@@ -741,6 +756,7 @@ func (r *Repository) UpdateClassificationDescription(ctx context.Context, projec
 }
 
 func (r *Repository) DeletePatent(ctx context.Context, projectID string, number string) error {
+	r.logger.Info("repository.delete_patent", "project", projectID, "patent", number)
 	return r.UpdatePatentStatus(ctx, projectID, number, domain.CitationStatusIgnored)
 }
 
@@ -786,9 +802,11 @@ func (r *Repository) ListTextSections(ctx context.Context, projectID string, num
 }
 
 func (r *Repository) AddNote(ctx context.Context, projectID string, number, body string) (domain.ResearchNote, error) {
+	r.logger.Info("repository.add_note", "project", projectID, "patent", number)
 	created := nowString()
 	res, err := r.db.ExecContext(ctx, `insert into research_notes (project_id, patent_number, body, created_at) values (?, ?, ?, ?)`, projectID, number, body, created)
 	if err != nil {
+		r.logger.Error("repository.add_note failed", "project", projectID, "patent", number, "error", err)
 		return domain.ResearchNote{}, err
 	}
 	id, _ := res.LastInsertId()
@@ -815,11 +833,13 @@ func (r *Repository) ListNotes(ctx context.Context, projectID string, number str
 }
 
 func (r *Repository) AddReference(ctx context.Context, projectID string, number, label string) (domain.ReferenceEntry, error) {
+	r.logger.Info("repository.add_reference", "project", projectID, "patent", number, "label", label)
 	created := nowString()
 	_, err := r.db.ExecContext(ctx, `insert into reference_entries (project_id, patent_number, citation_label, created_at)
 		values (?, ?, ?, ?)
 		on conflict(project_id, patent_number) do update set citation_label = excluded.citation_label`, projectID, number, label, created)
 	if err != nil {
+		r.logger.Error("repository.add_reference failed", "project", projectID, "patent", number, "error", err)
 		return domain.ReferenceEntry{}, err
 	}
 	return domain.ReferenceEntry{PatentNumber: number, CitationLabel: label, CreatedAt: parseTime(created)}, nil
@@ -845,10 +865,12 @@ func (r *Repository) ListReferences(ctx context.Context, projectID string) ([]do
 }
 
 func (r *Repository) AddAIAnalysis(ctx context.Context, projectID string, analysis domain.AIAnalysis) (domain.AIAnalysis, error) {
+	r.logger.Info("repository.add_ai_analysis", "project", projectID, "patent", analysis.PatentNumber, "type", analysis.AnalysisType)
 	analysis.CreatedAt = time.Now().UTC()
 	res, err := r.db.ExecContext(ctx, `insert into ai_analyses (project_id, patent_number, analysis_type, compared_patent_number, provider, body, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
 		projectID, analysis.PatentNumber, analysis.AnalysisType, analysis.ComparedPatentNumber, analysis.Provider, analysis.Body, analysis.CreatedAt.Format(time.RFC3339))
 	if err != nil {
+		r.logger.Error("repository.add_ai_analysis failed", "project", projectID, "patent", analysis.PatentNumber, "error", err)
 		return domain.AIAnalysis{}, err
 	}
 	analysis.ID, _ = res.LastInsertId()
@@ -977,11 +999,13 @@ func (r *Repository) SetSetting(ctx context.Context, key, value string) error {
 // Project lifecycle events
 
 func (r *Repository) AddProjectEvent(ctx context.Context, e domain.ProjectEvent) (domain.ProjectEvent, error) {
+	r.logger.Info("repository.add_project_event", "project", e.ProjectID, "type", e.EventType)
 	now := nowString()
 	res, err := r.db.ExecContext(ctx,
 		`insert into project_events (project_id, event_type, event_date, due_date, reference, notes, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
 		e.ProjectID, e.EventType, e.EventDate, e.DueDate, e.Reference, e.Notes, now)
 	if err != nil {
+		r.logger.Error("repository.add_project_event failed", "project", e.ProjectID, "error", err)
 		return domain.ProjectEvent{}, err
 	}
 	id, err := res.LastInsertId()
@@ -1015,6 +1039,7 @@ func (r *Repository) ListProjectEvents(ctx context.Context, projectID string) ([
 }
 
 func (r *Repository) DeleteProjectEvent(ctx context.Context, id int64) error {
+	r.logger.Info("repository.delete_project_event", "id", id)
 	_, err := r.db.ExecContext(ctx, `delete from project_events where id = ?`, id)
 	return err
 }
@@ -1022,11 +1047,13 @@ func (r *Repository) DeleteProjectEvent(ctx context.Context, id int64) error {
 // Project invoices
 
 func (r *Repository) AddProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) (domain.ProjectInvoice, error) {
+	r.logger.Info("repository.add_project_invoice", "project", inv.ProjectID, "firm", inv.FirmName, "amount", inv.Amount)
 	now := nowString()
 	res, err := r.db.ExecContext(ctx,
 		`insert into project_invoices (project_id, direction, firm_name, invoice_number, amount, currency, invoice_date, due_date, paid_date, status, description, notes, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		inv.ProjectID, inv.Direction, inv.FirmName, inv.InvoiceNumber, inv.Amount, inv.Currency, inv.InvoiceDate, inv.DueDate, inv.PaidDate, inv.Status, inv.Description, inv.Notes, now)
 	if err != nil {
+		r.logger.Error("repository.add_project_invoice failed", "project", inv.ProjectID, "error", err)
 		return domain.ProjectInvoice{}, err
 	}
 	id, err := res.LastInsertId()
@@ -1060,6 +1087,7 @@ func (r *Repository) ListProjectInvoices(ctx context.Context, projectID string) 
 }
 
 func (r *Repository) UpdateProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) error {
+	r.logger.Info("repository.update_project_invoice", "id", inv.ID, "status", inv.Status)
 	_, err := r.db.ExecContext(ctx,
 		`update project_invoices set direction=?, firm_name=?, invoice_number=?, amount=?, currency=?, invoice_date=?, due_date=?, paid_date=?, status=?, description=?, notes=? where id=?`,
 		inv.Direction, inv.FirmName, inv.InvoiceNumber, inv.Amount, inv.Currency, inv.InvoiceDate, inv.DueDate, inv.PaidDate, inv.Status, inv.Description, inv.Notes, inv.ID)
@@ -1067,6 +1095,7 @@ func (r *Repository) UpdateProjectInvoice(ctx context.Context, inv domain.Projec
 }
 
 func (r *Repository) DeleteProjectInvoice(ctx context.Context, id int64) error {
+	r.logger.Info("repository.delete_project_invoice", "id", id)
 	_, err := r.db.ExecContext(ctx, `delete from project_invoices where id = ?`, id)
 	return err
 }
@@ -1091,6 +1120,7 @@ func (r *Repository) CountUnpaidInvoicesByProject(ctx context.Context) (map[stri
 }
 
 func (r *Repository) AddFamilyEdge(ctx context.Context, edge domain.FamilyEdge) error {
+	r.logger.Info("repository.add_family_edge", "project", edge.ProjectID, "parent", edge.ParentNumber, "child", edge.ChildNumber)
 	_, err := r.db.ExecContext(ctx,
 		`insert into patent_family (project_id, parent_number, child_number, relation_type, created_at)
 		 values (?, ?, ?, ?, ?)
@@ -1127,6 +1157,7 @@ func (r *Repository) ListFamilyEdges(ctx context.Context, projectID, number stri
 }
 
 func (r *Repository) RemoveFamilyEdge(ctx context.Context, projectID, parentNumber, childNumber string) error {
+	r.logger.Info("repository.remove_family_edge", "project", projectID, "parent", parentNumber, "child", childNumber)
 	_, err := r.db.ExecContext(ctx,
 		`delete from patent_family where project_id = ? and parent_number = ? and child_number = ?`,
 		projectID, parentNumber, childNumber)
@@ -1154,6 +1185,7 @@ func (r *Repository) ListAllFamilyEdges(ctx context.Context, projectID string) (
 }
 
 func (r *Repository) PurgeIgnored(ctx context.Context, projectID string) (int, error) {
+	r.logger.Info("repository.purge_ignored", "project", projectID)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -1176,10 +1208,12 @@ func (r *Repository) PurgeIgnored(ctx context.Context, projectID string) (int, e
 		return 0, err
 	}
 	_, _ = r.db.ExecContext(ctx, `VACUUM`)
+	r.logger.Info("repository.purge_ignored ok", "project", projectID, "deleted", n1+n2)
 	return int(n1 + n2), nil
 }
 
 func (r *Repository) Compact(ctx context.Context) error {
+	r.logger.Info("repository.compact")
 	_, err := r.db.ExecContext(ctx, `VACUUM`)
 	return err
 }
@@ -1187,6 +1221,7 @@ func (r *Repository) Compact(ctx context.Context) error {
 // IDS
 
 func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	r.logger.Info("repository.add_ids_entry", "project", entry.ProjectID, "patent", entry.PatentNumber)
 	now := nowString()
 	if entry.Status == "" {
 		entry.Status = domain.IDSStatusPending
@@ -1195,6 +1230,7 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 		`insert or ignore into project_ids (project_id, patent_number, notes, status, added_at) values (?, ?, ?, ?, ?)`,
 		entry.ProjectID, entry.PatentNumber, entry.Notes, entry.Status, now)
 	if err != nil {
+		r.logger.Error("repository.add_ids_entry failed", "project", entry.ProjectID, "patent", entry.PatentNumber, "error", err)
 		return domain.IDSEntry{}, err
 	}
 	id, err := res.LastInsertId()
@@ -1228,11 +1264,13 @@ func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]do
 }
 
 func (r *Repository) UpdateIDSEntryStatus(ctx context.Context, id int64, status string) error {
+	r.logger.Info("repository.update_ids_status", "id", id, "status", status)
 	_, err := r.db.ExecContext(ctx, `update project_ids set status = ? where id = ?`, status, id)
 	return err
 }
 
 func (r *Repository) DeleteIDSEntry(ctx context.Context, id int64) error {
+	r.logger.Info("repository.delete_ids_entry", "id", id)
 	_, err := r.db.ExecContext(ctx, `delete from project_ids where id = ?`, id)
 	return err
 }

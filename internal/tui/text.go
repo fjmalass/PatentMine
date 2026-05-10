@@ -18,6 +18,7 @@ const (
 	TextDetailClassification    TextKey = "detail.classification"
 	TextDetailExpiration        TextKey = "detail.expiration"
 	TextDetailStatus            TextKey = "detail.status"
+	TextDetailIDS               TextKey = "detail.ids"
 	TextDetailLatestAssignment  TextKey = "detail.latest_assignment"
 	TextDetailStoredLocal       TextKey = "detail.stored_local"
 	TextDetailUpdated           TextKey = "detail.updated"
@@ -27,6 +28,7 @@ const (
 	TextDetailFamilyParents     TextKey = "detail.family_parents"
 	TextDetailFamilyChildren    TextKey = "detail.family_children"
 	TextDetailNotes             TextKey = "detail.notes"
+	TextDetailSummary           TextKey = "detail.summary"
 	TextDetailImportSource      TextKey = "detail.import_source"
 	TextValueUnknown            TextKey = "value.unknown"
 	TextValueEmpty              TextKey = "value.empty"
@@ -190,6 +192,7 @@ func EnglishText() TextCatalog {
 		TextDetailClassification:    "Classification",
 		TextDetailExpiration:        "Expiration",
 		TextDetailStatus:            "Status",
+		TextDetailIDS:               "IDS",
 		TextDetailLatestAssignment:  "Latest Assignment",
 		TextDetailStoredLocal:       "Imported",
 		TextDetailUpdated:           "Updated",
@@ -199,6 +202,7 @@ func EnglishText() TextCatalog {
 		TextDetailFamilyParents:     "Parents",
 		TextDetailFamilyChildren:    "Children",
 		TextDetailNotes:             "Notes",
+		TextDetailSummary:           "Summary",
 		TextDetailImportSource:      "Via",
 		TextValueUnknown:            "unknown",
 		TextValueEmpty:              "Empty",

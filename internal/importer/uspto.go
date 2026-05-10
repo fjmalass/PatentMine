@@ -117,6 +117,9 @@ type usptoContinuityResponse struct {
 // --- API calls ---
 
 func usptoFetchByPatentNumber(client *http.Client, apiKey, searchNum string, logger *slog.Logger) (string, usptoApplicationData, error) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	searchURL := fmt.Sprintf("%s/api/v1/patent/applications/search?q=patentNumber:(%s)", usptoBaseURL, searchNum)
 	logger.Debug("uspto.search", "url", searchURL)
 	var searchResp usptoSearchResponse
@@ -140,6 +143,9 @@ func usptoFetchByPatentNumber(client *http.Client, apiKey, searchNum string, log
 }
 
 func usptoFetchContinuity(client *http.Client, apiKey, appNum string, logger *slog.Logger) (usptoContinuityResponse, error) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	url := fmt.Sprintf("%s/api/v1/patent/applications/%s/continuity", usptoBaseURL, appNum)
 	logger.Debug("uspto.continuity", "app_num", appNum, "url", url)
 	var resp usptoContinuityResponse
@@ -160,6 +166,9 @@ func usptoFetchContinuity(client *http.Client, apiKey, appNum string, logger *sl
 // usptoFetchForwardCitations searches for all patents that cite patentNum using
 // the forwardReferencedPatentNumber query field. Results are paginated (25/page).
 func usptoFetchForwardCitations(client *http.Client, apiKey, searchNum string, logger *slog.Logger) []string {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	const pageSize = 25
 	const maxPages = 40 // cap at 1000 forward citations
 	var nums []string
@@ -190,6 +199,9 @@ func usptoFetchForwardCitations(client *http.Client, apiKey, searchNum string, l
 }
 
 func usptoGET(client *http.Client, apiKey, url string, dest any, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	logger.Debug("uspto.get", "url", url)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
