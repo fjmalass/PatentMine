@@ -41,6 +41,15 @@ func main() {
 	}
 	defer closeLog()
 	logger.Info("starting patentmine", "log_file", logPath, "max_logs", config.MaxLogs)
+
+	activityLog, closeActivity, err := logging.OpenActivity(tui.DefaultActivityPath)
+	if err != nil {
+		logger.Error("activity log open failed", "error", err)
+		activityLog = nil
+	}
+	if closeActivity != nil {
+		defer closeActivity()
+	}
 	repo, err := sqliterepo.Open(tui.DefaultDBPath)
 	if err != nil {
 		logger.Error("open sqlite failed", "error", err)
@@ -55,7 +64,7 @@ func main() {
 		logger.Error("fixture seed failed", "error", err)
 		exit(err)
 	}
-	model := tui.New(ctx, repo, logger)
+	model := tui.New(ctx, repo, logger, activityLog)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		logger.Error("tui failed", "error", err)

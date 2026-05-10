@@ -80,6 +80,7 @@ type Repository interface {
 	AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)
 	ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error)
 	DeleteIDSEntry(ctx context.Context, id int64) error
+	UpdateIDSEntryStatus(ctx context.Context, id int64, status string) error
 
 	// Maintenance
 	PurgeIgnored(ctx context.Context, projectID string) (int, error)

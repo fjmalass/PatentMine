@@ -12,8 +12,41 @@ var validStatusFilters = map[string]string{
 	domain.CitationStatusStored:      domain.CitationStatusStored,
 	domain.CitationStatusIgnored:     domain.CitationStatusIgnored,
 	domain.CitationStatusUnderReview: domain.CitationStatusUnderReview,
-	"under-review":                   domain.CitationStatusUnderReview, // user-friendly alias
-	statusFilterNone:                 statusFilterNone,                 // no restriction = show all statuses
+	domain.CitationStatusCached:      domain.CitationStatusCached,
+	"under-review":                   domain.CitationStatusUnderReview,
+	statusFilterNone:                 statusFilterNone,
+}
+
+// filterCommand is the unified :filter gateway.
+// :filter status <stored|ignored|under-review|none>
+// :filter class <cpc> [&& <cpc2> | || <cpc2>]
+// :filter inventor <name>
+// :filter clear  — resets all filters to defaults
+func (m Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.err = "usage: :filter status <stored|ignored|under-review|none>  · :filter class <cpc>  · :filter inventor <name>  · :filter clear"
+		return m, nil
+	}
+	switch strings.ToLower(args[0]) {
+	case "status":
+		return m.statusFilterCommand(args[1:])
+	case "class", "cpc", "classification":
+		return m.classCommand(args[1:])
+	case "inventor":
+		return m.inventorFilterCommand(args[1:])
+	case "clear":
+		m.statusFilter = domain.CitationStatusStored
+		m.classFilters = nil
+		m.classFilterOp = EmptyFilter
+		m.classFilter = EmptyFilter
+		m.filter = EmptyFilter
+		m.message = "all filters cleared"
+		m.mode = viewList
+		return m.refreshList()
+	default:
+		m.err = fmt.Sprintf("unknown filter type %q — valid: status, class, inventor, clear", args[0])
+		return m, nil
+	}
 }
 
 // statusFilterCommand handles :statusfilter <stored|ignored|under-review|none>.

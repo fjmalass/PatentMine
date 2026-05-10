@@ -74,6 +74,12 @@ const (
 	InvoiceStatusDisputed    = "disputed"
 )
 
+const (
+	IDSStatusPending   = "pending"
+	IDSStatusSubmitted = "submitted"
+	IDSStatusAccepted  = "accepted"
+)
+
 type ProjectInvoice struct {
 	ID            int64
 	ProjectID     string
@@ -140,6 +146,7 @@ type Patent struct {
 	ExpirationEstimated bool
 	SourceURL           string
 	StoredAt            time.Time
+	StatusChangedAt     time.Time
 	Status              string
 	ClassificationLabel string
 	LatestAssignment    string
@@ -217,6 +224,7 @@ type IDSEntry struct {
 	ProjectID    string
 	PatentNumber string
 	Notes        string
+	Status       string
 	AddedAt      time.Time
 }
 

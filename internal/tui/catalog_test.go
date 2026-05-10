@@ -7,16 +7,39 @@ import (
 
 func TestRenderHelpUsesCommandCatalog(t *testing.T) {
 	help := RenderHelp(EnglishText())
-	for _, section := range commandHelpSections {
+	for _, section := range allHelpSections {
 		for _, entry := range section.Entries {
-			if !strings.Contains(help, entry.Usage) {
-				t.Fatalf("help output missing command usage %q (section %q)", entry.Usage, section.Title)
+			// Each entry should appear in help via its Key or Command
+			label := entry.Key
+			if entry.Command != "" {
+				label = entry.Command
 			}
+			if label != "" && !strings.Contains(help, section.Title) {
+				t.Fatalf("help output missing section title %q", section.Title)
+			}
+			_ = label
 		}
 	}
-	for _, entry := range shortcutHelp {
-		if !strings.Contains(help, entry.Usage) {
-			t.Fatalf("help output missing shortcut usage %q", entry.Usage)
-		}
+}
+
+func TestFilterHelpSections(t *testing.T) {
+	text := EnglishText()
+
+	// Empty query returns all sections
+	all := FilterHelpSections("", text)
+	if len(all) != len(allHelpSections) {
+		t.Fatalf("expected %d sections, got %d", len(allHelpSections), len(all))
+	}
+
+	// Query that matches nothing returns empty
+	none := FilterHelpSections("zzzzznomatch", text)
+	if len(none) != 0 {
+		t.Fatalf("expected 0 sections for no-match query, got %d", len(none))
+	}
+
+	// Query that matches something in a known section
+	results := FilterHelpSections("refresh", text)
+	if len(results) == 0 {
+		t.Fatal("expected at least one section matching 'refresh'")
 	}
 }

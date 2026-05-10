@@ -101,6 +101,7 @@ const (
 	TextHelpExportStatus         TextKey = "help.export_status"
 	TextHelpExportState          TextKey = "help.export_state"
 	TextHelpProjectInfo          TextKey = "help.project.info"
+	TextHelpFilterClear          TextKey = "help.filter.clear"
 	TextHelpSort                 TextKey = "help.sort"
 	TextHelpClass                TextKey = "help.class"
 	TextHelpInventorFilter       TextKey = "help.inventorfilter"
@@ -131,6 +132,40 @@ const (
 
 	TextDeleteConfirmPrompt TextKey = "delete.confirm_prompt"
 	TextHelpDeletePatent    TextKey = "help.shortcut.delete_patent"
+
+	// Family view keys
+	TextHelpFamilyParent     TextKey = "help.family.parent"
+	TextHelpFamilyChild      TextKey = "help.family.child"
+	TextHelpFamilyRemoveEdge TextKey = "help.family.remove_edge"
+	TextHelpFamilyPull       TextKey = "help.family.pull"
+	TextHelpFamilyAddChild   TextKey = "help.family.add_child"
+
+	// List view
+	TextHelpCyclePatentStatus TextKey = "help.cycle_patent_status"
+
+	// Citation/review view
+	TextHelpStatusCycle TextKey = "help.status_cycle"
+	TextHelpCitationRefreshSelected  TextKey = "help.citation.refresh_selected"
+	TextHelpCitationRefreshAll       TextKey = "help.citation.refresh_all"
+
+	// Project info overlay
+	TextHelpProjectInfoKeys TextKey = "help.project_info.keys"
+
+	// Project events/invoices/IDS overlays
+	TextHelpDeleteSelected TextKey = "help.shortcut.delete_selected"
+	TextHelpMarkPaid       TextKey = "help.invoice.mark_paid"
+
+	// Splash / project selector
+	TextHelpSplashSelect   TextKey = "help.splash.select"
+	TextHelpSplashNew      TextKey = "help.splash.new"
+	TextHelpSplashEvents   TextKey = "help.splash.events"
+	TextHelpSplashInvoices TextKey = "help.splash.invoices"
+	TextHelpSplashIDS      TextKey = "help.splash.ids"
+
+	// General commands
+	TextHelpPurge      TextKey = "help.purge"
+	TextHelpCompact    TextKey = "help.compact"
+	TextHelpSearchHint TextKey = "help.search_hint"
 )
 
 type TextCatalog map[TextKey]string
@@ -236,6 +271,7 @@ func EnglishText() TextCatalog {
 		TextHelpExportStatus:         "Export project status: stage, events, invoices, and patent counts as Markdown.",
 		TextHelpExportState:          "Export patent list filtered by state (stored/ignored/under-review/all/none). Default: current filter.",
 		TextHelpProjectInfo:          "Open project info popup (editable: s=app status, m=summary, c=comment, S=status).",
+		TextHelpFilterClear:          "Reset all filters (status, class, inventor) back to defaults.",
 		TextHelpSort:                 "Sort the list by column (number, title, date, status, assignee, inventor, class, expiration). Comma-separate for secondary sort: status,expiration.",
 		TextHelpClass:                "Filter by classification prefix. Supports && (AND) and || (OR): H04N && G06F or H04N || G06F. Clear with :classfilter clear.",
 		TextHelpInventorFilter:       "Filter the patent list by inventor name. Clear with :inventorfilter clear.",
@@ -243,7 +279,24 @@ func EnglishText() TextCatalog {
 		TextHelpFamilyAdd:            "Declare a parent or child relationship. Types: continuation, divisional, cip, pct.",
 		TextHelpFamilyRemove:         "Remove a family relationship with the specified patent.",
 		TextHelpFamilyView:           "Open the patent family overlay (parents and children).",
-		TextHelpJumpFamily:           "Jump to patent family view",
+		TextHelpJumpFamily:           "Jump to patent family view.",
+		TextHelpFamilyParent:         "Move selection to the parent node.",
+		TextHelpFamilyChild:          "Move selection to the first child node.",
+		TextHelpFamilyRemoveEdge:     "Remove the edge between the selected node and its tree-parent.",
+		TextHelpFamilyPull:           "Pull all family members from Google Patents and store them.",
+		TextHelpFamilyAddChild:       "Pre-fill :family child command in the input bar.",
+		TextHelpCyclePatentStatus:       "Cycle the selected patent's status: stored → under-review → ignored.",
+		TextHelpStatusCycle:             "Cycle the status filter: stored → ignored → under-review → all.",
+		TextHelpCitationRefreshSelected: "Re-fetch the selected citation from Google Patents (title, inventors, expiration).",
+		TextHelpCitationRefreshAll:      "Re-fetch all citations for the current patent from Google Patents.",
+		TextHelpProjectInfoKeys:      "Edit project fields inline: s=app status, m=summary, c=comment, S=project status.",
+		TextHelpDeleteSelected:       "Delete or remove the selected item.",
+		TextHelpMarkPaid:             "Mark the selected invoice as paid.",
+		TextHelpSplashSelect:         "Open the selected project.",
+		TextHelpSplashNew:            "Create a new project.",
+		TextHelpSplashEvents:         "Open prosecution events for the selected project.",
+		TextHelpSplashInvoices:       "Open invoice list for the selected project.",
+		TextHelpSplashIDS:            "Open IDS for the selected project.",
 		TextCitationsEmpty:           "No citation records.",
 		TextCitationsOpenFailed:      "patent is not stored and could not be imported",
 		TextPreviewTitle:             "Reference preview",
@@ -265,6 +318,10 @@ func EnglishText() TextCatalog {
 		TextMessageDeletedPatent:     "deleted patent: %s",
 
 		TextDeleteConfirmPrompt: "Are you sure you want to delete patent %s and its PDF? (y/n)",
+
+		TextHelpPurge:      "Purge all ignored patents from the project and vacuum the database.",
+		TextHelpCompact:    "Compact (vacuum) the SQLite database to reclaim space.",
+		TextHelpSearchHint: "/ to search · q/esc to close",
 	}
 }
 

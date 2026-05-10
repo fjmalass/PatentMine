@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -48,12 +49,14 @@ const (
 	viewProjectInvoices      viewMode = "project-invoices"
 	viewProjectIDS           viewMode = "project-ids"
 	viewProjectInfo          viewMode = "project-info"
+	viewNoteEdit             viewMode = "note-edit"
 )
 
 type Model struct {
 	ctx                     context.Context
 	repo                    storage.Repository
 	input                   textinput.Model
+	noteTA                  textarea.Model
 	spinner                 spinner.Model
 	loading                 bool
 	loadingMsg              string
@@ -98,6 +101,12 @@ type Model struct {
 	statusFilter            string // domain.CitationStatusStored (default), "ignored", "under_review", statusFilterNone
 	citesStatusFilter       string // "" (all), "stored", "ignored", "under_review"
 	unpaidCounts            map[string]int
+	familyTreeCache         []familyNode
+	familyTreeCacheFor      string
+	helpQuery               string
+	helpSearchActive        bool
+	helpScroll              int
+	activityLog             *slog.Logger
 }
 
 type navSnapshot struct {
@@ -136,11 +145,18 @@ type navSnapshot struct {
 	citesStatusFilter       string
 }
 
-func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Model {
+func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger) Model {
 	input := textinput.New()
 	input.Placeholder = ":add US11611785B2, :open US11611785B2, /machine learning"
 	input.Prompt = EmptyPrompt
 	input.CharLimit = 512
+
+	ta := textarea.New()
+	ta.Placeholder = "Write your research note..."
+	ta.SetWidth(noteTextareaMinWidth)
+	ta.SetHeight(noteTextareaHeight)
+	ta.CharLimit = noteTextareaCharLimit
+	ta.ShowLineNumbers = false
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -159,16 +175,21 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger) Mode
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if activityLog == nil {
+		activityLog = slog.Default()
+	}
 	model := Model{
 		ctx:             ctx,
 		repo:            repo,
 		input:           input,
+		noteTA:          ta,
 		spinner:         s,
 		ProjectID:       projectID,
 		mode:            viewSplash,
 		patents:         patents,
 		projectSelected: 0,
 		logger:          logger,
+		activityLog:     activityLog,
 		text:            EnglishText(),
 		statusFilter:    domain.CitationStatusStored,
 	}
@@ -206,6 +227,7 @@ type refreshResultMsg struct {
 	mode            viewMode
 	citesSelected   int
 	citedBySelected int
+	withDetails     bool
 }
 
 type refreshDetailsResultMsg struct {
@@ -262,6 +284,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		taWidth := m.overlayWidth() - 4
+		if taWidth < noteTextareaMinWidth {
+			taWidth = noteTextareaMinWidth
+		}
+		m.noteTA.SetWidth(taWidth)
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -278,7 +305,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.citesSelected = msg.citesSelected
 		m.citedBySelected = msg.citedBySelected
 		m.message = msg.message
-		return m.refreshList()
+		updated, listCmd := m.refreshList()
+		if msg.withDetails {
+			detailsModel, detailsCmd := updated.(Model).refreshVisibleCitationDetails()
+			return detailsModel, tea.Batch(listCmd, detailsCmd)
+		}
+		return updated, listCmd
 	case refreshDetailsResultMsg:
 		m.loading = false
 		m.cancel = nil
@@ -396,6 +428,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.projectIDSSelected = clamp(m.projectIDSSelected+1, 0, len(ids)-1)
 			case keyVimUp, keyArrowUp:
 				m.projectIDSSelected = clamp(m.projectIDSSelected-1, 0, 0)
+			case "s":
+				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
+					entry := ids[m.projectIDSSelected]
+					next := nextIDSStatus(entry.Status)
+					if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
+						m.err = err.Error()
+					} else {
+						m.logActivity("ids.status", entry.PatentNumber, next)
+						m.message = "IDS status: " + next
+					}
+				}
 			case keyDelete:
 				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
 				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
@@ -407,6 +451,76 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = viewSplash
 			}
 			return m, nil
+		}
+		if m.mode == viewNoteEdit {
+			switch msg.String() {
+			case "ctrl+s":
+				body := strings.TrimSpace(m.noteTA.Value())
+				if body != "" {
+					if _, err := m.repo.AddNote(m.ctx, m.ProjectID, m.current.Number, body); err != nil {
+						m.err = err.Error()
+					} else {
+						m.logActivity("note.add", m.current.Number, "")
+						m.message = "note saved"
+					}
+				}
+				m.noteTA.Reset()
+				m.noteTA.Blur()
+				return m.goBack()
+			case keyEsc:
+				m.noteTA.Reset()
+				m.noteTA.Blur()
+				return m.goBack()
+			default:
+				var cmd tea.Cmd
+				m.noteTA, cmd = m.noteTA.Update(msg)
+				return m, cmd
+			}
+		}
+		if m.mode == viewHelp {
+			if m.helpSearchActive {
+				switch msg.String() {
+				case "esc":
+					m.helpSearchActive = false
+					m.helpQuery = ""
+					m.helpScroll = 0
+					return m, nil
+				case "backspace", "ctrl+h":
+					if len(m.helpQuery) > 0 {
+						m.helpQuery = m.helpQuery[:len(m.helpQuery)-1]
+						m.helpScroll = 0
+					}
+					return m, nil
+				case "enter":
+					m.helpSearchActive = false
+					return m, nil
+				default:
+					if len(msg.String()) == 1 {
+						m.helpQuery += msg.String()
+						m.helpScroll = 0
+					}
+					return m, nil
+				}
+			}
+			switch msg.String() {
+			case "/":
+				m.helpSearchActive = true
+				m.helpQuery = ""
+				return m, nil
+			case "j", "down":
+				m.helpScroll++
+				return m, nil
+			case "k", "up":
+				if m.helpScroll > 0 {
+					m.helpScroll--
+				}
+				return m, nil
+			case "esc", "q":
+				m.helpQuery = ""
+				m.helpSearchActive = false
+				m.helpScroll = 0
+				return m.goBack()
+			}
 		}
 		if m.mode == viewSplash {
 			switch msg.String() {
@@ -646,7 +760,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.navigateTo(viewCites)
 		case keyCitedBy:
 			m = m.navigateTo(viewCitedBy)
+		case "h":
+			if m.mode == viewFamily {
+				return m.moveFamilyToParent(), nil
+			}
 		case keyClassification:
+			if m.mode == viewFamily {
+				return m.moveFamilyToFirstChild(), nil
+			}
 			if m.mode == viewList && len(m.patents) > 0 {
 				m.current = m.patents[m.selected]
 			}
@@ -656,6 +777,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.current = m.patents[m.selected]
 			}
 			m = m.navigateTo(viewFamily)
+			m.familySelected = familyCurrentIdx(m.buildFamilyTree())
 		case keyText:
 			m = m.navigateTo(viewText)
 		case keyNotes:
@@ -668,10 +790,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m = m.navigateTo(viewNotes)
 		case keyRefs:
+			if m.isCitationView() {
+				return m.refreshSelectedCitationDetail()
+			}
 			if m.mode == viewFamily {
 				return m.pullFamilyCommand()
 			}
 			m = m.navigateTo(viewRefs)
+		case "R":
+			if m.mode == viewCites {
+				return m.refreshCommand([]string{refreshTargetCitations})
+			}
+			if m.mode == viewCitedBy {
+				return m.refreshCommand([]string{refreshTargetCitedBy})
+			}
 		case keyAI:
 			m = m.navigateTo(viewAI)
 		case keyWeb:
@@ -681,10 +813,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.goBack()
 			}
 			m = m.navigateTo(viewHelpPopup)
+		case keyNoteEdit:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[clamp(m.selected, 0, len(m.patents)-1)]
+			}
+			if m.current.Number != "" {
+				m.noteTA.Reset()
+				m.noteTA.Focus()
+				m = m.navigateTo(viewNoteEdit)
+				var cmd tea.Cmd
+				m.noteTA, cmd = m.noteTA.Update(nil)
+				return m, cmd
+			}
+		case keyAddToIDS:
+			var targetNumber string
+			if m.mode == viewList && len(m.patents) > 0 {
+				targetNumber = m.patents[clamp(m.selected, 0, len(m.patents)-1)].Number
+			} else if m.mode == viewDetail && m.current.Number != "" {
+				targetNumber = m.current.Number
+			}
+			if targetNumber != "" {
+				entry := domain.IDSEntry{
+					ProjectID:    m.ProjectID,
+					PatentNumber: targetNumber,
+					Status:       domain.IDSStatusPending,
+				}
+				if _, err := m.repo.AddIDSEntry(m.ctx, entry); err != nil {
+					m.err = err.Error()
+				} else {
+					m.logActivity("ids.add", targetNumber, "")
+					m.message = "Added to IDS: " + targetNumber
+				}
+				return m, nil
+			}
 		case "s":
 			if m.isCitationView() {
 				m.citesStatusFilter = nextCitesStatusFilter(m.citesStatusFilter)
 				return m, nil
+			}
+			if m.mode == viewList {
+				return m.cycleSelectedPatentStatus()
+			}
+			if m.mode == viewDetail {
+				return m.cycleCurrentPatentStatus()
 			}
 		case "+":
 			if m.mode == viewFamily {
@@ -884,12 +1055,8 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.refreshCommand(command.Args)
 	case commandRefreshRefsDetails:
 		return m.refreshVisibleCitationDetails()
-	case commandClassFilter:
-		return m.classCommand(command.Args)
-	case commandInventorFilter:
-		return m.inventorFilterCommand(command.Args)
-	case commandStatusFilter:
-		return m.statusFilterCommand(command.Args)
+	case commandFilter:
+		return m.filterCommand(command.Args)
 	case commandFamily:
 		return m.familyCommand(command.Args)
 	case commandSort:
@@ -936,6 +1103,14 @@ func (m Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = "database compacted"
+	case commandNote:
+		if len(command.Args) == 0 {
+			m.err = fmt.Sprintf("usage: :%s <text>", commandNote)
+			return m, nil
+		}
+		text := strings.Join(command.Args, " ")
+		m.logActivity("note", m.current.Number, text)
+		m.message = "noted"
 	default:
 		m.err = "unknown command: " + command.Name
 	}
@@ -993,15 +1168,28 @@ func (m Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 
 func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	target := refreshTargetAll
-	if len(args) > 1 {
-		m.err = "usage: :refresh, :refresh citations, or :refresh citedby"
+	withDetails := false
+
+	refreshUsage := fmt.Sprintf("usage: :%s [%s|%s] [%s]", commandRefresh, refreshTargetCitations, refreshTargetCitedBy, refreshArgDetails)
+	switch len(args) {
+	case 0:
+		// :refresh — all
+	case 1:
+		target = strings.ToLower(args[0])
+	case 2:
+		target = strings.ToLower(args[0])
+		if strings.ToLower(args[1]) != refreshArgDetails {
+			m.err = refreshUsage
+			return m, nil
+		}
+		withDetails = true
+	default:
+		m.err = refreshUsage
 		return m, nil
 	}
-	if len(args) == 1 {
-		target = strings.ToLower(args[0])
-	}
+
 	if target != refreshTargetAll && target != refreshTargetCitations && target != domain.RelationCites && target != refreshTargetCitedBy && target != domain.RelationCitedBy {
-		m.err = "usage: :refresh, :refresh citations, or :refresh citedby"
+		m.err = refreshUsage
 		return m, nil
 	}
 	if m.current.Number == EmptyFilter {
@@ -1065,8 +1253,9 @@ func (m Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			}
 
 			msg := refreshResultMsg{
-				patent: p,
-				mode:   currentMode,
+				patent:      p,
+				mode:        currentMode,
+				withDetails: withDetails,
 			}
 
 			switch target {
@@ -1162,6 +1351,192 @@ func (m Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 			return refreshDetailsResultMsg{
 				message: fmt.Sprintf("citation details refreshed: %d updated, %d skipped", updatedCount, skippedCount),
 			}
+		},
+	)
+}
+
+// logActivity writes one structured line to the monthly activity log.
+// action uses dot notation: "patent.add", "citation.store", "note", etc.
+// subject is the primary identifier (patent number, invoice id, etc.) or "".
+// note is optional free-text annotation.
+func (m Model) logActivity(action, subject, note string) {
+	if m.activityLog == nil {
+		return
+	}
+	args := []any{"project", m.ProjectID, "action", action}
+	if subject != "" {
+		args = append(args, "subject", subject)
+	}
+	if note != "" {
+		args = append(args, "note", note)
+	}
+	m.activityLog.Info("activity", args...)
+}
+
+// cycleSelectedPatentStatus cycles the selected list patent through stored → under_review → ignored → stored.
+func (m Model) cycleSelectedPatentStatus() (tea.Model, tea.Cmd) {
+	if len(m.patents) == 0 {
+		return m, nil
+	}
+	sel := clamp(m.selected, 0, len(m.patents)-1)
+	p := m.patents[sel]
+	next := nextPatentStatus(p.Status)
+	if err := m.repo.UpdatePatentStatus(m.ctx, m.ProjectID, p.Number, next); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.patents[sel].Status = next
+	m.message = fmt.Sprintf("%s → %s", p.Number, next)
+	m.logActivity("patent.status", p.Number, next)
+	return m, nil
+}
+
+// cycleCurrentPatentStatus cycles m.current patent status, keeping m.patents in sync.
+func (m Model) cycleCurrentPatentStatus() (tea.Model, tea.Cmd) {
+	if m.current.Number == "" {
+		return m, nil
+	}
+	next := nextPatentStatus(m.current.Status)
+	if err := m.repo.UpdatePatentStatus(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.current.Status = next
+	for i, p := range m.patents {
+		if p.Number == m.current.Number {
+			m.patents[i].Status = next
+			break
+		}
+	}
+	m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
+	m.logActivity("patent.status", m.current.Number, next)
+	return m, nil
+}
+
+func nextPatentStatus(current string) string {
+	switch current {
+	case domain.CitationStatusStored:
+		return domain.CitationStatusUnderReview
+	case domain.CitationStatusUnderReview:
+		return domain.CitationStatusIgnored
+	default:
+		return domain.CitationStatusStored
+	}
+}
+
+func (m Model) idsEntryForPatent(number string) *domain.IDSEntry {
+	entries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+	if err != nil {
+		return nil
+	}
+	for i, e := range entries {
+		if e.PatentNumber == number {
+			return &entries[i]
+		}
+	}
+	return nil
+}
+
+func (m Model) recentNotesSnippet(number string) string {
+	notes, err := m.repo.ListNotes(m.ctx, m.ProjectID, number)
+	if err != nil || len(notes) == 0 {
+		return ""
+	}
+	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
+	var b strings.Builder
+	b.WriteString(dimStyle.Render("── notes ──"))
+	b.WriteString("\n")
+	limit := noteDetailSnippetCount
+	if len(notes) < limit {
+		limit = len(notes)
+	}
+	for i := 0; i < limit; i++ {
+		note := notes[i]
+		b.WriteString(subtleStyle.Render(note.CreatedAt.Format("2006-01-02 15:04")))
+		b.WriteString("  ")
+		body := note.Body
+		if idx := strings.Index(body, "\n"); idx >= 0 {
+			body = body[:idx]
+		}
+		b.WriteString(body)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func nextIDSStatus(current string) string {
+	switch current {
+	case domain.IDSStatusPending:
+		return domain.IDSStatusSubmitted
+	case domain.IDSStatusSubmitted:
+		return domain.IDSStatusAccepted
+	default:
+		return domain.IDSStatusPending
+	}
+}
+
+func idsStatusColor(status string) string {
+	switch status {
+	case domain.IDSStatusSubmitted:
+		return ColorTheme
+	case domain.IDSStatusAccepted:
+		return ColorSuccess
+	default:
+		return ColorSubtle
+	}
+}
+
+// refreshSelectedCitationDetail re-fetches Google Patents for the single
+// selected citation row and updates its title, inventors, and expiration.
+func (m Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
+	edges, err := m.currentCitationEdges()
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	if len(edges) == 0 {
+		m.err = "no citations visible"
+		return m, nil
+	}
+	sel := clamp(m.citationSelection(), 0, len(edges)-1)
+	edge := edges[sel]
+
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.loading = true
+	m.loadingMsg = fmt.Sprintf("Refreshing %s...", edge.TargetPatent)
+	m.cancel = cancel
+
+	repo := m.repo
+	projectID := m.ProjectID
+	logger := m.logger
+
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			rawURL, err := importer.GooglePatentsURL(edge.TargetPatent)
+			if err != nil {
+				return refreshDetailsResultMsg{err: err}
+			}
+			bundle, err := importer.ImportGooglePatents(rawURL)
+			if err != nil {
+				return refreshDetailsResultMsg{err: err}
+			}
+			bundle.Patent.Status = domain.CitationStatusCached
+			_, existsErr := repo.GetPatent(ctx, projectID, edge.TargetPatent)
+			exists := existsErr == nil
+			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
+				logger.Error("citation refresh failed", "patent", edge.TargetPatent, "error", err)
+				return refreshDetailsResultMsg{err: err}
+			}
+			status := edge.Status
+			if !exists {
+				status = domain.CitationStatusIgnored
+			}
+			if err := repo.UpdateCitationStatus(ctx, projectID, edge, status); err != nil {
+				return refreshDetailsResultMsg{err: err}
+			}
+			return refreshDetailsResultMsg{message: fmt.Sprintf("refreshed %s", edge.TargetPatent)}
 		},
 	)
 }
@@ -1417,6 +1792,7 @@ func (m Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
+	m.logActivity("citation.store", edge.TargetPatent, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
 	return m, nil
 }
@@ -1431,6 +1807,7 @@ func (m Model) storePendingPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	number := m.pendingBundle.Patent.Number
+	m.logActivity("patent.add", number, "")
 	if m.pendingCitation.TargetPatent != "" {
 		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, m.pendingCitation, domain.CitationStatusStored); err != nil {
 			m.err = err.Error()
@@ -1493,6 +1870,7 @@ func (m Model) updateSelectedCitationStatus(status string, messageKey TextKey) (
 		m.err = err.Error()
 		return m, nil
 	}
+	m.logActivity("citation.status", edge.TargetPatent, status)
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
 	return m, nil
 }
@@ -2008,6 +2386,7 @@ func (m Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 			m.logger.Error("reference insert failed", "patent", m.current.Number, "error", err)
 			return m, nil
 		}
+		m.logActivity("ref.add", m.current.Number, "")
 		m.message = "reference added"
 	case refActionExport:
 		m.mode = viewRefs
@@ -2059,7 +2438,7 @@ func (m Model) styleRowOverlay(index int, selected int, content string, targetWi
 func (m Model) View() string {
 	bg := m.renderView()
 
-	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo {
+	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo || m.mode == viewNoteEdit {
 		var content string
 		if m.mode == viewPreview {
 			content = m.viewPreview()
@@ -2081,6 +2460,8 @@ func (m Model) View() string {
 			content = m.viewProjectIDS()
 		} else if m.mode == viewProjectInfo {
 			content = m.viewProjectInfo()
+		} else if m.mode == viewNoteEdit {
+			content = m.viewNoteEdit()
 		} else {
 			content = m.viewInventors()
 		}
@@ -2363,6 +2744,8 @@ func (m Model) listNumberWidth() int {
 
 func (m Model) viewDetail() string {
 	p := m.current
+	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
 	var b strings.Builder
 	b.WriteString(p.Number + "\n")
 	b.WriteString(p.Title + "\n\n")
@@ -2380,9 +2763,35 @@ func (m Model) viewDetail() string {
 		b.WriteString(prefix + m.jumpPrefix(i) + m.detailRow(field.label, value))
 	}
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(m.text.T(TextDetailOpenHint)))
+
+	// IDS row
+	idsEntry := m.idsEntryForPatent(p.Number)
+	if idsEntry != nil {
+		statusColor := idsStatusColor(idsEntry.Status)
+		idsStr := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render("IDS: " + idsEntry.Status)
+		if idsEntry.Notes != "" {
+			idsStr += dimStyle.Render("  " + idsEntry.Notes)
+		}
+		b.WriteString("  " + idsStr + "\n")
+	} else {
+		b.WriteString("  " + dimStyle.Render("Not in IDS") + "\n")
+	}
+
+	// Status row
+	if color, ok := StatusColors[p.Status]; ok {
+		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("Status: "+p.Status) + "\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(subtleStyle.Render(m.text.T(TextDetailOpenHint)))
+	b.WriteString("  ")
+	b.WriteString(subtleStyle.Render("s: cycle status · A: add to IDS · N: note"))
 	b.WriteString("\n")
 	b.WriteString(p.Abstract + "\n")
+	if snippet := m.recentNotesSnippet(p.Number); snippet != "" {
+		b.WriteString("\n")
+		b.WriteString(snippet)
+	}
 	return b.String()
 }
 
@@ -2854,6 +3263,7 @@ func (m Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	m.logActivity("patent.delete", p.Number, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageDeletedPatent), p.Number)
 	m.mode = viewList
 	return m.refreshList()
@@ -3242,16 +3652,43 @@ func (m Model) viewText() string {
 	return b.String()
 }
 
+func (m Model) viewNoteEdit() string {
+	base := overlayBase()
+	titleStyle := base.Bold(true).Underline(true)
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	var b strings.Builder
+	b.WriteString(titleStyle.Render(fmt.Sprintf("Note · %s", m.current.Number)))
+	b.WriteString("\n\n")
+	b.WriteString(m.noteTA.View())
+	b.WriteString("\n\n")
+	b.WriteString(subtleStyle.Render("ctrl+s: save · esc: cancel"))
+	return b.String()
+}
+
 func (m Model) viewNotes() string {
 	notes, err := m.repo.ListNotes(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return err.Error() + "\n"
 	}
+	base := overlayBase()
+	titleStyle := base.Bold(true)
+	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
+	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	var b strings.Builder
-	b.WriteString("Use :notes to view notes. This prototype stores notes through repository tests; note entry can be wired to an editor later.\n\n")
-	for _, note := range notes {
-		b.WriteString(fmt.Sprintf("- %s %s\n", note.CreatedAt.Format("2006-01-02"), note.Body))
+	b.WriteString(titleStyle.Render(fmt.Sprintf("Notes · %s", m.current.Number)))
+	b.WriteString("\n\n")
+	if len(notes) == 0 {
+		b.WriteString(dimStyle.Render("No notes. Press N to add one."))
+		b.WriteString("\n")
+	} else {
+		for _, note := range notes {
+			b.WriteString(subtleStyle.Render(note.CreatedAt.Format("2006-01-02 15:04")))
+			b.WriteString("\n")
+			b.WriteString(note.Body)
+			b.WriteString("\n\n")
+		}
 	}
+	b.WriteString(subtleStyle.Render("N: add note · esc: back"))
 	return b.String()
 }
 
@@ -3549,11 +3986,12 @@ func (m Model) viewProjectIDS() string {
 		b.WriteString(subtleStyle.Render("IDS entries are prior art references to disclose to the patent office."))
 	} else {
 		headerStyle := base.Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
-		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-3s %-16s %-14s %s", "#", "Patent", "Added", "Notes")))
+		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-3s %-16s %-11s %-14s %s", "#", "Patent", "Status", "Added", "Notes")))
 		b.WriteString("\n")
 		for i, e := range ids {
 			rowStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 			numStyle := base.Foreground(lipgloss.Color(ColorTheme))
+			statusColor := idsStatusColor(e.Status)
 			if i == m.projectIDSSelected {
 				rowStyle = rowStyle.Bold(true).Reverse(true)
 				numStyle = numStyle.Bold(true)
@@ -3563,19 +4001,24 @@ func (m Model) viewProjectIDS() string {
 				prefix = "→ "
 			}
 			notes := e.Notes
-			if len(notes) > 30 {
-				notes = notes[:27] + "..."
+			if len(notes) > idsNoteMaxLen {
+				notes = notes[:idsNoteTruncLen] + "..."
 			}
 			if notes == "" {
 				notes = "—"
 			}
-			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s %-14s %s", e.PatentNumber, e.AddedAt.Format("2006-01-02"), notes)))
+			statusStr := e.Status
+			if statusStr == "" {
+				statusStr = domain.IDSStatusPending
+			}
+			statusRendered := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(fmt.Sprintf("%-11s", statusStr))
+			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s", e.PatentNumber)) + " " + statusRendered + " " + rowStyle.Render(fmt.Sprintf("%-14s %s", e.AddedAt.Format("2006-01-02"), notes)))
 			b.WriteString("\n")
 		}
 	}
 
 	b.WriteString("\n")
-	b.WriteString(subtleStyle.Render("j/k: move · D: remove · :project export ids [file] to export · esc: back"))
+	b.WriteString(subtleStyle.Render("j/k: move · s: cycle status · D: remove · :project export ids [file] · esc: back"))
 	return b.String()
 }
 
@@ -4017,7 +4460,86 @@ func (m Model) viewAI() string {
 }
 
 func (m Model) viewHelp() string {
-	return RenderHelp(m.text)
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
+	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
+	cmdStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAccent))
+	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorWarning))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim))
+
+	// Build filtered sections
+	sections := FilterHelpSections(m.helpQuery, m.text)
+
+	// Build flat line list
+	type helpLine struct {
+		text     string
+		isHeader bool
+	}
+	var lines []helpLine
+
+	const keyWidth = 22
+	const cmdWidth = 42
+
+	for _, section := range sections {
+		lines = append(lines, helpLine{
+			text:     sectionStyle.Render("▸ " + section.Title),
+			isHeader: true,
+		})
+		for _, e := range section.Entries {
+			keyPart := fmt.Sprintf("%-*s", keyWidth, e.Key)
+			cmdPart := ""
+			if e.Command != "" {
+				cmd := e.Command
+				if len(cmd) > cmdWidth {
+					cmd = cmd[:cmdWidth-1] + "…"
+				}
+				cmdPart = fmt.Sprintf("%-*s", cmdWidth, cmd)
+			} else {
+				cmdPart = fmt.Sprintf("%-*s", cmdWidth, "")
+			}
+			desc := m.text.T(e.Description)
+			line := "  " + keyStyle.Render(keyPart) + " " + cmdStyle.Render(cmdPart) + " " + dimStyle.Render(desc)
+			lines = append(lines, helpLine{text: line})
+		}
+		lines = append(lines, helpLine{text: ""})
+	}
+
+	// Clamp scroll
+	pageH := m.pageSize() - 4 // leave room for header + search bar + hint
+	if pageH < 1 {
+		pageH = 1
+	}
+	maxScroll := len(lines) - pageH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.helpScroll > maxScroll {
+		m.helpScroll = maxScroll
+	}
+
+	var b strings.Builder
+
+	// Search bar
+	searchBar := ""
+	if m.helpSearchActive {
+		searchBar = accent.Render("/") + " " + m.helpQuery + "█"
+	} else if m.helpQuery != "" {
+		searchBar = accent.Render("/") + " " + m.helpQuery + subtle.Render(" (esc to clear)")
+	} else {
+		searchBar = subtle.Render(m.text.T(TextHelpSearchHint))
+	}
+	b.WriteString(searchBar + "\n\n")
+
+	// Content with scroll window
+	end := m.helpScroll + pageH
+	if end > len(lines) {
+		end = len(lines)
+	}
+	for _, line := range lines[m.helpScroll:end] {
+		b.WriteString(line.text + "\n")
+	}
+
+	return b.String()
 }
 
 func (m Model) viewHelpPopup() string {

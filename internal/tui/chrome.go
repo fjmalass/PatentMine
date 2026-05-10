@@ -9,7 +9,7 @@ import (
 )
 
 func (m Model) activeMode() viewMode {
-	if m.mode != viewHelpPopup || len(m.backStack) == 0 {
+	if (m.mode != viewHelpPopup && m.mode != viewNoteEdit) || len(m.backStack) == 0 {
 		return m.mode
 	}
 	return m.backStack[len(m.backStack)-1].mode
@@ -192,12 +192,39 @@ func (m Model) renderScreenHeader() string {
 	b.WriteString(" ")
 	b.WriteString(accent.Render(m.screenTitle()))
 
-	var filters []string
-	statusLabel := m.statusFilter
-	if statusLabel == "" {
-		statusLabel = domain.CitationStatusStored
+	// Breadcrumb trail with depth counter. Each crumb is the patent number at
+	// that level; crumbs without a patent context are skipped. Capped at 3
+	// items for a stable width.  Format: [2] ‹ US10123456 › US20234567
+	if len(m.backStack) > 0 {
+		depth := len(m.backStack)
+		var parts []string
+		for _, snap := range m.backStack {
+			if snap.current.Number != "" {
+				parts = append(parts, snap.current.Number)
+			}
+		}
+		if m.current.Number != "" {
+			parts = append(parts, m.current.Number)
+		}
+		if len(parts) > 0 {
+			const maxCrumbs = 3
+			ellipsis := ""
+			if len(parts) > maxCrumbs {
+				parts = parts[len(parts)-maxCrumbs:]
+				ellipsis = "… › "
+			}
+			trail := ellipsis + strings.Join(parts, " › ")
+			b.WriteString("  ")
+			b.WriteString(subtle.Render(fmt.Sprintf("[%d] ‹ %s", depth, trail)))
+		}
 	}
-	filters = append(filters, "status:"+statusLabel)
+
+	// status:X only shown when user has changed from the default (stored).
+	// The default stored-only view is implied and omitted to reduce noise.
+	var filters []string
+	if m.statusFilter != "" && m.statusFilter != domain.CitationStatusStored {
+		filters = append(filters, "status:"+m.statusFilter)
+	}
 	if m.filter != EmptyFilter {
 		filters = append(filters, fmt.Sprintf("filter:%s", m.filter))
 	}

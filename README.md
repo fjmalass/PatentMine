@@ -107,7 +107,33 @@ PatentMine  PROJECT: My Invention (myproject) · WIP  Patent List · filter:Smit
 | `sort:<col> <order>[,<col2>]` | Active sort (e.g. `sort:status asc,expiration`) |
 | `class:<expr>` | Active classification filter, shown in light blue |
 
+## Help System
+
+### Full help screen
+
+```
+:help
+```
+
+Opens an interactive scrollable screen listing every command and shortcut, organized into sections (Navigation, Patents, Refresh & Citations, Views, Filters & Sort, Family, Project, Prosecution & Invoices, General).
+
+**Search within help** — press `/` to activate the search bar, then type:
+
+```
+refresh          ← substring match
+ref*             ← prefix match (anything starting with "ref")
+project invoice  ← multi-word substring
+```
+
+`j`/`k` scroll through results. `esc` clears the query. `q` closes help.
+
+### Context popup
+
+Press `?` from any screen to open a small overlay showing only the keys relevant to the current view, plus global shortcuts.
+
 ## Filtering
+
+All filters share the `:filter` command.
 
 ### Text / Inventor Filter
 
@@ -117,64 +143,71 @@ Type `/` followed by a term to filter the patent list by any text field (title, 
 /Smith
 ```
 
-Filter by a specific inventor from the command line:
+Filter by inventor from the command bar:
 
 ```
-:inventorfilter John Smith
+:filter inventor John Smith
 ```
 
-Clear the inventor filter:
+Clear:
 
 ```
-:inventorfilter clear
+:filter inventor clear
 ```
 
-You can also select an inventor in the **Inventors** popup (`l` from detail view) and press `Enter` — this sets the inventor filter directly.
+You can also select an inventor in the **Inventors** popup (`l` from detail view) and press `Enter` to set the filter directly.
 
 ### Classification Filter
 
-Filter by CPC/USPC classification prefix:
+Filter by CPC/USPC prefix:
 
 ```
-:classfilter H04N
+:filter class H04N
 ```
 
-AND filter — patent must match both prefixes:
+AND — patent must match both:
 
 ```
-:classfilter H04N && G06F
+:filter class H04N && G06F
 ```
 
-OR filter — patent must match at least one prefix:
+OR — patent must match at least one:
 
 ```
-:classfilter H04N || G06F
+:filter class H04N || G06F
 ```
 
-Clear the classification filter (also clears the text/inventor filter):
+Clear:
 
 ```
-:classfilter clear
+:filter class clear
 ```
 
-You can also expand a classification entry from the **Classifications** popup (`l` from any patent view) and press `Enter` to filter the list to that code directly.
+Expand a classification entry from the **Classifications** popup (`l` from any patent view) and press `Enter` to filter to that code directly.
 
-The active class filter is shown in **light blue** in the header, separate from the text filter.
+The active class filter is shown in **light blue** in the header.
 
 ### Status Filter
 
-The patent list defaults to showing only **stored** patents. The active status is always visible in the header (`status:stored`).
-
-Show patents by status:
+The patent list defaults to **stored** patents only.
 
 ```
-:statusfilter stored      ← default
-:statusfilter ignored
-:statusfilter under-review
-:statusfilter all         ← show everything except cached imports
+:filter status stored        ← default
+:filter status ignored
+:filter status under-review
+:filter status cached        ← patents fetched as citation background data
+:filter status none          ← show everything
 ```
 
-Invalid status values produce an error.
+Cycle the status of the selected list row inline with `s` (stored → under-review → ignored → stored).
+
+### Reset all filters
+
+```
+:filter clear
+```
+
+Resets status, class, and inventor filters to defaults.
 
 ### Sort
 
@@ -194,6 +227,73 @@ Sort by two columns (primary, then secondary):
 ```
 
 Supported columns: `number`, `title`, `date`, `status`, `assignee`, `inventor`, `class`, `expiration`. Patents with no expiration date sort last.
+
+## Activity Log
+
+Every meaningful database change is appended to a monthly JSON-lines file:
+
+```
+logs/activity_2026_05.jsonl   ← current month
+logs/activity_2026_06.jsonl   ← next month (created automatically)
+```
+
+Each line is a JSON object:
+
+```json
+{"time":"2026-05-10T14:32:11Z","level":"INFO","msg":"activity","project":"default","action":"patent.add","subject":"US11611785B2"}
+{"time":"2026-05-10T15:01:44Z","level":"INFO","msg":"activity","project":"default","action":"note","subject":"US11611785B2","note":"started prior art review for claim 3"}
+```
+
+### Annotating work
+
+Add a timestamped note tied to the current project and patent:
+
+```
+:note started reviewing claim 3 against H04N prior art
+```
+
+Notes are plain lines in the JSONL file. Delete by opening the file in any editor and removing the line.
+
+### Querying with jq
+
+**Today's activity:**
+```sh
+jq 'select(.time | startswith("2026-05-10"))' logs/activity_2026_05.jsonl
+```
+
+**Last 7 days (this month's file):**
+```sh
+jq -r '[.time, .action, .subject, .note] | @tsv' logs/activity_2026_05.jsonl | tail -50
+```
+
+**All notes:**
+```sh
+jq 'select(.action == "note")' logs/activity_2026_05.jsonl
+```
+
+**Everything touching one patent:**
+```sh
+jq 'select(.subject == "US11611785B2")' logs/activity_*.jsonl
+```
+
+**Status changes only:**
+```sh
+jq 'select(.action == "patent.status" or .action == "citation.status")' logs/activity_*.jsonl
+```
+
+**Daily summary — count of actions per day:**
+```sh
+jq -r '.time[:10]' logs/activity_*.jsonl | sort | uniq -c
+```
+
+**Last month's file:**
+```sh
+jq -r '[.time, .action, .subject] | @tsv' logs/activity_2026_04.jsonl
+```
+
+### Rotation
+
+Files rotate monthly. Old files are never deleted automatically — keep or archive them as needed. To query across all months at once, use the glob `logs/activity_*.jsonl`.
 
 ## Task Reference
 

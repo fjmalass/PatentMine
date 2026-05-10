@@ -26,12 +26,14 @@ const (
 	commandWeb             = "web"
 	commandProject         = "project"
 	commandSort            = "sort"
-	commandClassFilter     = "classfilter"
-	commandInventorFilter  = "inventorfilter"
-	commandStatusFilter    = "statusfilter"
+	commandFilter         = "filter"
+	commandClassFilter    = "classfilter"
+	commandInventorFilter = "inventorfilter"
+	commandStatusFilter   = "statusfilter"
 	commandFamily          = "family"
 	commandPurge           = "purge"
 	commandCompact         = "compact"
+	commandNote            = "note"
 
 	// :project subcommands
 	projectSubID            = "id"
@@ -82,6 +84,7 @@ const (
 	refreshTargetAll       = "all"
 	refreshTargetCitations = "citations"
 	refreshTargetCitedBy   = "citedby"
+	refreshArgDetails      = "details"
 
 	importActionAdded     = "added"
 	importActionImported  = "imported"
@@ -125,6 +128,8 @@ const (
 	keyIDS            = "d"
 	keyMarkPaid            = "p"
 	keyProjectInfo         = "I"
+	keyAddToIDS            = "A"
+	keyNoteEdit            = "N"
 	keyEditAppStatus       = "s"
 	keyEditSummary         = "m"
 	keyEditComment         = "c"
@@ -181,10 +186,21 @@ const (
 )
 
 const (
-	DefaultDBPath  = "db/patentmine.db"
-	DefaultLogPath = "logs/patentmine.log"
-	DefaultDBDir   = "db"
-	DefaultLogDir  = "logs"
+	noteDetailSnippetCount = 5
+	noteTextareaHeight     = 8
+	noteTextareaCharLimit  = 4000
+	noteTextareaMinWidth   = 20
+
+	idsNoteMaxLen    = 25
+	idsNoteTruncLen  = 22
+)
+
+const (
+	DefaultDBPath       = "db/patentmine.db"
+	DefaultLogPath      = "logs/patentmine.log"
+	DefaultActivityPath = "logs/activity.jsonl"
+	DefaultDBDir        = "db"
+	DefaultLogDir       = "logs"
 
 	DefaultProjectID       = "default"
 	SettingLastProjectID   = "last_project_id"
@@ -192,8 +208,9 @@ const (
 
 var StatusColors = map[string]string{
 	domain.CitationStatusIgnored:     ColorSubtle,
-	domain.CitationStatusUnderReview: "222", // Keep yellow for review
+	domain.CitationStatusUnderReview: "222",
 	domain.CitationStatusStored:      ColorTheme,
+	domain.CitationStatusCached:      ColorDim,
 }
 
 var SummaryStatusColors = map[string]string{

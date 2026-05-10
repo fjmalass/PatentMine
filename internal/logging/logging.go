@@ -81,3 +81,31 @@ func datedGlob(path string) string {
 	stem := strings.TrimSuffix(base, ext)
 	return filepath.Join(dir, stem+"-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]"+ext)
 }
+
+// OpenActivity opens (or creates) a monthly-rotated JSON-lines activity log.
+// Path is used as a stem: activity.jsonl → activity_2026_05.jsonl.
+// Returns the logger, a close function, and any open error.
+func OpenActivity(path string) (*slog.Logger, func(), error) {
+	if strings.TrimSpace(path) == "" {
+		path = "logs/activity.jsonl"
+	}
+	monthlyPath := monthlyPath(path, time.Now())
+	if err := os.MkdirAll(filepath.Dir(monthlyPath), 0o755); err != nil {
+		return slog.Default(), func() {}, err
+	}
+	file, err := os.OpenFile(monthlyPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return slog.Default(), func() {}, err
+	}
+	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	return logger, func() { _ = file.Close() }, nil
+}
+
+// monthlyPath derives logs/activity_2026_05.jsonl from logs/activity.jsonl.
+func monthlyPath(path string, now time.Time) string {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	return filepath.Join(dir, fmt.Sprintf("%s_%s%s", stem, now.Format("2006_01"), ext))
+}

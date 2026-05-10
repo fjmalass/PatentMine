@@ -20,34 +20,164 @@ var validFamilyRelations = map[string]string{
 	domain.FamilyRelationPCT:          domain.FamilyRelationPCT,
 }
 
-// familyItems returns direct parents and children of the current patent.
-func (m Model) familyItems() (parents []domain.FamilyEdge, children []domain.FamilyEdge) {
-	parents, children, _ = m.repo.ListFamilyEdges(m.ctx, m.ProjectID, m.current.Number)
-	return
+// familyNode is one entry in the rendered flat family tree.
+type familyNode struct {
+	number    string
+	depth     int    // negative = ancestor, 0 = current, positive = descendant
+	relType   string // relation type from parent to this node (empty for roots)
+	parentIdx int    // index in the flat slice of this node's parent (-1 for roots)
+	prefix    string // indentation prefix inherited from ancestor connectors
+	connector string // "├─ ", "└─ ", or "" for tree roots
+	title     string
+	grantYear string
 }
 
-func (m Model) familyItemCount() int {
-	p, c := m.familyItems()
-	return len(p) + len(c)
+// buildFamilyTree returns an ordered flat list of all family tree nodes
+// reachable from m.current, using DFS from ancestor roots downward through
+// descendants. parentIdx links each node back to its parent entry.
+// Results are cached in m.familyTreeCache; callers that modify the tree must
+// clear familyTreeCacheFor to force a rebuild.
+func (m Model) buildFamilyTree() []familyNode {
+	if m.familyTreeCacheFor == m.current.Number && len(m.familyTreeCache) > 0 {
+		return m.familyTreeCache
+	}
+	return m.buildFamilyTreeFresh()
 }
 
-// familyEdgeAt returns the edge at logical index i (parents first, then children).
-func familyEdgeAt(parents, children []domain.FamilyEdge, i int) (edge domain.FamilyEdge, isParent bool, ok bool) {
-	if i < 0 {
-		return domain.FamilyEdge{}, false, false
+func (m Model) buildFamilyTreeFresh() []familyNode {
+	allEdges, _ := m.repo.ListAllFamilyEdges(m.ctx, m.ProjectID)
+
+	parentToChildren := map[string][]domain.FamilyEdge{}
+	childToParents := map[string][]domain.FamilyEdge{}
+	for _, e := range allEdges {
+		parentToChildren[e.ParentNumber] = append(parentToChildren[e.ParentNumber], e)
+		childToParents[e.ChildNumber] = append(childToParents[e.ChildNumber], e)
 	}
-	if i < len(parents) {
-		return parents[i], true, true
+
+	current := m.current.Number
+	if current == "" {
+		return nil
 	}
-	j := i - len(parents)
-	if j < len(children) {
-		return children[j], false, true
+
+	// BFS to find all connected nodes and assign depths relative to current.
+	depths := map[string]int{current: 0}
+	queue := []string{current}
+	for i := 0; i < len(queue); i++ {
+		n := queue[i]
+		for _, e := range childToParents[n] {
+			if _, seen := depths[e.ParentNumber]; !seen {
+				depths[e.ParentNumber] = depths[n] - 1
+				queue = append(queue, e.ParentNumber)
+			}
+		}
+		for _, e := range parentToChildren[n] {
+			if _, seen := depths[e.ChildNumber]; !seen {
+				depths[e.ChildNumber] = depths[n] + 1
+				queue = append(queue, e.ChildNumber)
+			}
+		}
 	}
-	return domain.FamilyEdge{}, false, false
+
+	nodeSet := map[string]bool{}
+	for n := range depths {
+		nodeSet[n] = true
+	}
+
+	// Find roots: nodes with no parent within the connected component.
+	var roots []string
+	for node := range nodeSet {
+		hasParent := false
+		for _, e := range childToParents[node] {
+			if nodeSet[e.ParentNumber] {
+				hasParent = true
+				break
+			}
+		}
+		if !hasParent {
+			roots = append(roots, node)
+		}
+	}
+	sort.Strings(roots)
+
+	// DFS from roots, producing the flat ordered node list.
+	//
+	// linePrefix: the visual prefix for this node's rendered line (inherited
+	//             from the grandparent's childrenLinePrefix calculation).
+	// childrenLinePrefix: the prefix that will become linePrefix for each
+	//                     direct child of this node.
+	var nodes []familyNode
+	visited := map[string]bool{}
+
+	var dfs func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int)
+	dfs = func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int) {
+		if visited[number] {
+			return
+		}
+		visited[number] = true
+		idx := len(nodes)
+		nodes = append(nodes, familyNode{
+			number:    number,
+			depth:     depths[number],
+			relType:   relType,
+			parentIdx: parentIdx,
+			prefix:    linePrefix,
+			connector: connector,
+		})
+
+		var childEdges []domain.FamilyEdge
+		for _, e := range parentToChildren[number] {
+			if nodeSet[e.ChildNumber] && !visited[e.ChildNumber] {
+				childEdges = append(childEdges, e)
+			}
+		}
+		sort.Slice(childEdges, func(i, j int) bool {
+			return childEdges[i].ChildNumber < childEdges[j].ChildNumber
+		})
+
+		for i, e := range childEdges {
+			isLast := i == len(childEdges)-1
+			childConnector := "├─ "
+			grandChildrenLinePrefix := childrenLinePrefix + "│  "
+			if isLast {
+				childConnector = "└─ "
+				grandChildrenLinePrefix = childrenLinePrefix + "   "
+			}
+			dfs(e.ChildNumber, e.RelationType, childrenLinePrefix, childConnector, grandChildrenLinePrefix, idx)
+		}
+	}
+
+	for _, root := range roots {
+		dfs(root, "", "", "", "", -1)
+	}
+
+	for i, node := range nodes {
+		if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, node.number); err == nil {
+			if p.Title != "" {
+				nodes[i].title = p.Title
+			}
+			switch {
+			case len(p.GrantDate) >= 4:
+				nodes[i].grantYear = p.GrantDate[:4]
+			case len(p.PublicationDate) >= 4:
+				nodes[i].grantYear = p.PublicationDate[:4]
+			}
+		}
+	}
+
+	return nodes
+}
+
+// familyCurrentIdx returns the index of the current patent (depth == 0) in the list.
+func familyCurrentIdx(nodes []familyNode) int {
+	for i, n := range nodes {
+		if n.depth == 0 {
+			return i
+		}
+	}
+	return 0
 }
 
 // familyLevelLabel returns a human-readable depth label relative to the current patent.
-// Negative depth = ancestor direction, positive = descendant direction.
 func familyLevelLabel(depth int) string {
 	switch depth {
 	case -1:
@@ -69,7 +199,7 @@ func familyLevelLabel(depth int) string {
 	return fmt.Sprintf("Descendant (%d)", depth)
 }
 
-// familyRelationColor returns the terminal color code for a family relation type.
+// familyRelationColor returns the terminal color for a family relation type.
 func familyRelationColor(relType string) string {
 	switch relType {
 	case domain.FamilyRelationContinuation:
@@ -85,16 +215,17 @@ func familyRelationColor(relType string) string {
 	}
 }
 
-// viewFamilyOverlay renders the family tree in a two-column layout:
-// ancestors on the left, descendants on the right.
+// viewFamilyOverlay renders the interactive family tree as a single navigable column.
+// j/k move up/down, h moves to parent, l moves to first child.
 func (m Model) viewFamilyOverlay() string {
-	allEdges, _ := m.repo.ListAllFamilyEdges(m.ctx, m.ProjectID)
+	nodes := m.buildFamilyTree()
 
 	base := overlayBase()
 	subtle := base.Foreground(lipgloss.Color(ColorSubtle))
 	accent := base.Foreground(lipgloss.Color(ColorAccentFamily)).Bold(true)
 	currentStyle := base.Foreground(lipgloss.Color(ColorAccent)).Bold(true)
 	levelStyle := base.Foreground(lipgloss.Color(ColorDepth))
+	cursorStyle := base.Foreground(lipgloss.Color(ColorAccentFamily)).Bold(true)
 
 	var b strings.Builder
 	b.WriteString(currentStyle.Render(m.current.Number))
@@ -103,7 +234,7 @@ func (m Model) viewFamilyOverlay() string {
 	}
 	b.WriteString("\n")
 
-	if len(allEdges) == 0 {
+	if len(nodes) == 0 {
 		b.WriteString("\n")
 		b.WriteString(subtle.Render("No family relationships defined."))
 		b.WriteString("\n\n")
@@ -111,229 +242,153 @@ func (m Model) viewFamilyOverlay() string {
 		return b.String()
 	}
 
-	// Build adjacency maps
-	parentToChildren := map[string][]domain.FamilyEdge{}
-	childToParents := map[string][]domain.FamilyEdge{}
-	for _, e := range allEdges {
-		parentToChildren[e.ParentNumber] = append(parentToChildren[e.ParentNumber], e)
-		childToParents[e.ChildNumber] = append(childToParents[e.ChildNumber], e)
-	}
+	b.WriteString("\n")
 
-	current := m.current.Number
+	sel := clamp(m.familySelected, 0, len(nodes)-1)
+	window := pageWindow(sel, len(nodes), m.pageSize()-3)
 
-	// BFS up (ancestors, negative depths)
-	depths := map[string]int{current: 0}
-	queue := []string{current}
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
-		for _, e := range childToParents[n] {
-			if _, seen := depths[e.ParentNumber]; !seen {
-				depths[e.ParentNumber] = depths[n] - 1
-				queue = append(queue, e.ParentNumber)
+	for i := window.Start; i < window.End; i++ {
+		node := nodes[i]
+		isCurrent := node.depth == 0
+		isSelected := i == sel
+
+		var line strings.Builder
+
+		// Leading cursor column (2 chars wide to keep tree aligned).
+		if isSelected {
+			line.WriteString(cursorStyle.Render("▶ "))
+		} else {
+			line.WriteString("  ")
+		}
+
+		// Tree prefix + connector.
+		line.WriteString(base.Render(node.prefix + node.connector))
+
+		// Current-patent dot marker.
+		if isCurrent {
+			line.WriteString(accent.Render("● "))
+		}
+
+		// Patent number.
+		numStyle := base
+		if isCurrent {
+			numStyle = accent.Underline(true)
+		}
+		line.WriteString(numStyle.Render(node.number))
+
+		// Grant/publication year badge.
+		if node.grantYear != "" {
+			line.WriteString(subtle.Render(" (" + node.grantYear + ")"))
+		}
+
+		// Title (truncated).
+		if node.title != "" {
+			titleStyle := subtle
+			if isCurrent {
+				titleStyle = currentStyle.Bold(true).Underline(true)
 			}
-		}
-	}
-	// BFS down (descendants, positive depths)
-	queue = []string{current}
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
-		for _, e := range parentToChildren[n] {
-			if _, seen := depths[e.ChildNumber]; !seen {
-				depths[e.ChildNumber] = depths[n] + 1
-				queue = append(queue, e.ChildNumber)
-			}
-		}
-	}
-
-	ancestorSet := map[string]bool{}
-	descendantSet := map[string]bool{}
-	for node, d := range depths {
-		if d < 0 {
-			ancestorSet[node] = true
-		}
-		if d > 0 {
-			descendantSet[node] = true
-		}
-	}
-
-	// buildTreeLines renders nodes from nodeSet into a []string, one line per node.
-	// rootRelTypes supplies the relation type for each root node.
-	buildTreeLines := func(nodeSet map[string]bool, roots []string, rootRelTypes map[string]string) []string {
-		var lines []string
-
-		var renderNode func(number, prefix, connector, relType string)
-		var renderChildren func(parent, prefix string, visited map[string]bool)
-
-		renderNode = func(number, prefix, connector, relType string) {
-			depth := depths[number]
-			sp := base.Render(" ")
-			line := base.Render(prefix+connector) + base.Render(number)
-			line += sp + levelStyle.Render(familyLevelLabel(depth))
-			if relType != "" {
-				relColor := familyRelationColor(relType)
-				line += base.Foreground(lipgloss.Color(relColor)).Render(" [" + relType + "]")
-			}
-			lines = append(lines, line)
+			line.WriteString(" ")
+			line.WriteString(titleStyle.Render(m.truncate(node.title, 45)))
 		}
 
-		renderChildren = func(parent, prefix string, visited map[string]bool) {
-			var childEdges []domain.FamilyEdge
-			for _, e := range parentToChildren[parent] {
-				if nodeSet[e.ChildNumber] && !visited[e.ChildNumber] {
-					childEdges = append(childEdges, e)
-				}
-			}
-			sort.Slice(childEdges, func(i, j int) bool {
-				return childEdges[i].ChildNumber < childEdges[j].ChildNumber
-			})
-			for i, e := range childEdges {
-				isLast := i == len(childEdges)-1
-				connector := "├─ "
-				if isLast {
-					connector = "└─ "
-				}
-				renderNode(e.ChildNumber, prefix, connector, e.RelationType)
-				childPrefix := prefix
-				if isLast {
-					childPrefix += "   "
-				} else {
-					childPrefix += "│  "
-				}
-				visited[e.ChildNumber] = true
-				renderChildren(e.ChildNumber, childPrefix, visited)
-			}
+		// Relation-type badge.
+		if node.relType != "" {
+			relColor := familyRelationColor(node.relType)
+			line.WriteString(base.Render(" "))
+			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("[" + node.relType + "]"))
 		}
 
-		for _, root := range roots {
-			renderNode(root, "", "", rootRelTypes[root])
-			visited := map[string]bool{root: true}
-			renderChildren(root, "", visited)
+		// Depth label (omitted for the current patent).
+		if !isCurrent {
+			line.WriteString(" ")
+			line.WriteString(levelStyle.Render(familyLevelLabel(node.depth)))
 		}
-		return lines
-	}
 
-	// Ancestor roots: no parent in ancestorSet
-	var ancestorRoots []string
-	for node := range ancestorSet {
-		hasParent := false
-		for _, e := range childToParents[node] {
-			if ancestorSet[e.ParentNumber] {
-				hasParent = true
-				break
-			}
-		}
-		if !hasParent {
-			ancestorRoots = append(ancestorRoots, node)
-		}
-	}
-	sort.Strings(ancestorRoots)
-
-	// Descendant roots: no parent in descendantSet (direct children of current)
-	var descendantRoots []string
-	descendantRootRel := map[string]string{}
-	for node := range descendantSet {
-		hasParent := false
-		for _, e := range childToParents[node] {
-			if descendantSet[e.ParentNumber] {
-				hasParent = true
-				break
-			}
-		}
-		if !hasParent {
-			descendantRoots = append(descendantRoots, node)
-			for _, e := range parentToChildren[current] {
-				if e.ChildNumber == node {
-					descendantRootRel[node] = e.RelationType
-					break
-				}
-			}
-		}
-	}
-	sort.Strings(descendantRoots)
-
-	leftLines := buildTreeLines(ancestorSet, ancestorRoots, map[string]string{})
-	rightLines := buildTreeLines(descendantSet, descendantRoots, descendantRootRel)
-
-	// Two-column layout
-	colWidth := max((m.overlayWidth()-6)/2, 20)
-	gap := base.Render("  ")
-	padLine := func(s string, w int) string {
-		v := lipgloss.Width(s)
-		if v >= w {
-			return s
-		}
-		return s + base.Render(strings.Repeat(" ", w-v))
+		b.WriteString(line.String() + "\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(padLine(accent.Render("Ancestors"), colWidth) + gap + accent.Render("Descendants") + "\n")
-	sep := subtle.Render(strings.Repeat("─", colWidth))
-	b.WriteString(sep + gap + sep + "\n")
-
-	if len(leftLines) == 0 {
-		leftLines = []string{subtle.Render("(none)")}
-	}
-	if len(rightLines) == 0 {
-		rightLines = []string{subtle.Render("(none)")}
-	}
-
-	nLines := max(len(leftLines), len(rightLines))
-	for i := range nLines {
-		left, right := "", ""
-		if i < len(leftLines) {
-			left = leftLines[i]
-		}
-		if i < len(rightLines) {
-			right = rightLines[i]
-		}
-		b.WriteString(padLine(left, colWidth) + gap + right + "\n")
-	}
-
-	b.WriteString("\n")
-	b.WriteString(subtle.Render(keyEnter + " opens · " + keyDelete + " removes · :family parent/child <num> · " + keyRefs + " pull · " + keyEsc + " back"))
+	b.WriteString(subtle.Render("j/k ↕  h parent  l child  enter opens  D removes edge  :family parent/child <num>  r pull  esc back"))
 	return b.String()
 }
 
 func (m Model) moveFamilySelection(delta int) Model {
-	total := m.familyItemCount()
-	if total == 0 {
+	nodes := m.buildFamilyTreeFresh()
+	m.familyTreeCache = nodes
+	m.familyTreeCacheFor = m.current.Number
+	if len(nodes) == 0 {
 		return m
 	}
-	m.familySelected = clamp(m.familySelected+delta, 0, total-1)
+	m.familySelected = clamp(m.familySelected+delta, 0, len(nodes)-1)
+	return m
+}
+
+func (m Model) moveFamilyToParent() Model {
+	nodes := m.buildFamilyTreeFresh()
+	m.familyTreeCache = nodes
+	m.familyTreeCacheFor = m.current.Number
+	if m.familySelected < 0 || m.familySelected >= len(nodes) {
+		return m
+	}
+	pidx := nodes[m.familySelected].parentIdx
+	if pidx < 0 {
+		return m
+	}
+	m.familySelected = pidx
+	return m
+}
+
+func (m Model) moveFamilyToFirstChild() Model {
+	nodes := m.buildFamilyTreeFresh()
+	m.familyTreeCache = nodes
+	m.familyTreeCacheFor = m.current.Number
+	sel := m.familySelected
+	for i := sel + 1; i < len(nodes); i++ {
+		if nodes[i].parentIdx == sel {
+			m.familySelected = i
+			return m
+		}
+	}
 	return m
 }
 
 func (m Model) openSelectedFamilyMember() (tea.Model, tea.Cmd) {
-	parents, children := m.familyItems()
-	edge, _, ok := familyEdgeAt(parents, children, m.familySelected)
-	if !ok {
+	nodes := m.buildFamilyTree()
+	if m.familySelected < 0 || m.familySelected >= len(nodes) {
 		return m, nil
 	}
-	var number string
-	if edge.ChildNumber == m.current.Number {
-		number = edge.ParentNumber
-	} else {
-		number = edge.ChildNumber
+	node := nodes[m.familySelected]
+	if node.depth == 0 {
+		return m, nil
 	}
-	return m.openPatent(number)
+	return m.openPatent(node.number)
 }
 
 func (m Model) removeSelectedFamilyEdge() (tea.Model, tea.Cmd) {
-	parents, children := m.familyItems()
-	edge, _, ok := familyEdgeAt(parents, children, m.familySelected)
-	if !ok {
+	nodes := m.buildFamilyTree()
+	if m.familySelected < 0 || m.familySelected >= len(nodes) {
 		return m, nil
 	}
-	if err := m.repo.RemoveFamilyEdge(m.ctx, m.ProjectID, edge.ParentNumber, edge.ChildNumber); err != nil {
+	node := nodes[m.familySelected]
+	if node.parentIdx < 0 {
+		m.err = "no parent edge to remove (node is a root)"
+		return m, nil
+	}
+	parent := nodes[node.parentIdx]
+	if err := m.repo.RemoveFamilyEdge(m.ctx, m.ProjectID, parent.number, node.number); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	total := len(parents) + len(children) - 1
-	m.familySelected = clamp(m.familySelected, 0, max(0, total-1))
-	m.message = fmt.Sprintf("removed family edge: %s ↔ %s", edge.ParentNumber, edge.ChildNumber)
+	m.familySelected = clamp(m.familySelected, 0, max(0, len(nodes)-2))
+	m.familyTreeCacheFor = "" // invalidate: tree changed
+	m.message = fmt.Sprintf("removed family edge: %s → %s", parent.number, node.number)
 	return m, nil
+}
+
+// familyItems returns the direct parent and child edges of the current patent.
+func (m Model) familyItems() (parents []domain.FamilyEdge, children []domain.FamilyEdge) {
+	parents, children, _ = m.repo.ListFamilyEdges(m.ctx, m.ProjectID, m.current.Number)
+	return
 }
 
 // familyCommand handles :family parent|child|remove|pull sub-commands.
@@ -362,7 +417,8 @@ func (m Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 					m.err = err.Error()
 					return m, nil
 				}
-				m.message = "removed family edge: " + target + " ↔ " + m.current.Number
+				m.familyTreeCacheFor = ""
+				m.message = "removed family edge: " + target + " → " + m.current.Number
 				return m, nil
 			}
 		}
@@ -372,7 +428,8 @@ func (m Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 					m.err = err.Error()
 					return m, nil
 				}
-				m.message = "removed family edge: " + m.current.Number + " ↔ " + target
+				m.familyTreeCacheFor = ""
+				m.message = "removed family edge: " + m.current.Number + " → " + target
 				return m, nil
 			}
 		}
@@ -434,6 +491,7 @@ func (m Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
+	m.familyTreeCacheFor = "" // invalidate: tree changed
 	m.message = fmt.Sprintf("family edge added: %s → %s (%s)", parentNumber, childNumber, relType)
 	m.mode = viewFamily
 	return m, nil
@@ -472,7 +530,6 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			// Fetch current patent to get fresh family edges
 			bundle, err := importer.ImportGooglePatents(rawURL)
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
@@ -488,7 +545,6 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Collect unique family member numbers (excluding current)
 			seen := map[string]bool{currentNumber: true}
 			var members []string
 			for _, e := range bundle.FamilyEdges {
@@ -522,7 +578,6 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				imported++
 			}
 
-			// Re-upsert current patent so family edges now connect stored members
 			bundle.Patent.Status = currentStatus
 			_ = repo.UpsertPatentBundle(ctx, projectID, bundle)
 
@@ -539,4 +594,3 @@ func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 		},
 	)
 }
-

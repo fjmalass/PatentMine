@@ -36,11 +36,29 @@ func (r *Repository) Setup(ctx context.Context) error {
 	if err := r.createTables(ctx); err != nil {
 		return err
 	}
+	if err := r.runMigrations(ctx); err != nil {
+		return err
+	}
 
 	// Ensure default project exists
 	now := nowString()
 	if _, err := r.db.ExecContext(ctx, `insert or ignore into projects (id, name, created_at, updated_at) values ('default', 'Default Project', ?, ?)`, now, now); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (r *Repository) runMigrations(ctx context.Context) error {
+	migrations := []string{
+		`alter table project_patents add column status_changed_at text not null default ''`,
+		`alter table project_ids add column status text not null default 'pending'`,
+	}
+	for _, m := range migrations {
+		if _, err := r.db.ExecContext(ctx, m); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -477,9 +495,9 @@ func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, clas
 
 func (r *Repository) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		select 
+		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_url, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label
+			group_concat(c.code, ', ') as classification_label, pp.status_changed_at
 		from patents p
 		left join project_patents pp on p.number = pp.patent_number and pp.project_id = ?
 		left join patent_classifications c on p.number = c.patent_number
@@ -524,17 +542,17 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		// citation references marked under review
 		statusClause = `p.number in (select target_patent from citation_edges where project_id = ? and status = 'under_review')`
 		args = append(args, projectID)
+	case domain.CitationStatusCached:
+		statusClause = `pp.status = 'cached'`
 	case "none":
-		// all non-cached project patents + all citation-reviewed references
-		statusClause = `(pp.status != 'cached' or p.number in (select target_patent from citation_edges where project_id = ? and status in ('ignored', 'under_review')))`
-		args = append(args, projectID)
+		statusClause = `1=1`
 	default: // "" or "stored"
 		statusClause = fmt.Sprintf("pp.status = '%s'", domain.CitationStatusStored)
 	}
 	query := `
 		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_url, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label
+			group_concat(c.code, ', ') as classification_label, pp.status_changed_at
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
 		left join patent_classifications c on p.number = c.patent_number
@@ -698,7 +716,7 @@ func (r *Repository) UpdateCitationStatus(ctx context.Context, projectID string,
 }
 
 func (r *Repository) UpdatePatentStatus(ctx context.Context, projectID string, number string, status string) error {
-	_, err := r.db.ExecContext(ctx, `update project_patents set status = ? where project_id = ? and patent_number = ?`, status, projectID, number)
+	_, err := r.db.ExecContext(ctx, `update project_patents set status = ?, status_changed_at = ? where project_id = ? and patent_number = ?`, status, nowString(), projectID, number)
 	return err
 }
 
@@ -857,7 +875,8 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var status sql.NullString
 	var latestAssignment sql.NullString
 	var classificationLabel sql.NullString
-	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceURL, &createdAt, &status, &latestAssignment, &classificationLabel); err != nil {
+	var statusChangedAt sql.NullString
+	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceURL, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}
@@ -873,6 +892,9 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	p.Status = status.String
 	if p.Status == "" {
 		p.Status = domain.CitationStatusStored
+	}
+	if statusChangedAt.Valid && statusChangedAt.String != "" {
+		p.StatusChangedAt = parseTime(statusChangedAt.String)
 	}
 	p.LatestAssignment = latestAssignment.String
 	p.ClassificationLabel = classificationLabel.String
@@ -1153,9 +1175,12 @@ func (r *Repository) Compact(ctx context.Context) error {
 
 func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
 	now := nowString()
+	if entry.Status == "" {
+		entry.Status = domain.IDSStatusPending
+	}
 	res, err := r.db.ExecContext(ctx,
-		`insert or ignore into project_ids (project_id, patent_number, notes, added_at) values (?, ?, ?, ?)`,
-		entry.ProjectID, entry.PatentNumber, entry.Notes, now)
+		`insert or ignore into project_ids (project_id, patent_number, notes, status, added_at) values (?, ?, ?, ?, ?)`,
+		entry.ProjectID, entry.PatentNumber, entry.Notes, entry.Status, now)
 	if err != nil {
 		return domain.IDSEntry{}, err
 	}
@@ -1170,7 +1195,7 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 
 func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`select id, project_id, patent_number, notes, added_at from project_ids where project_id = ? order by added_at desc`,
+		`select id, project_id, patent_number, notes, status, added_at from project_ids where project_id = ? order by added_at desc`,
 		projectID)
 	if err != nil {
 		return nil, err
@@ -1180,13 +1205,18 @@ func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]do
 	for rows.Next() {
 		var e domain.IDSEntry
 		var addedAt string
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.Notes, &addedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.Notes, &e.Status, &addedAt); err != nil {
 			return nil, err
 		}
 		e.AddedAt = parseTime(addedAt)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) UpdateIDSEntryStatus(ctx context.Context, id int64, status string) error {
+	_, err := r.db.ExecContext(ctx, `update project_ids set status = ? where id = ?`, status, id)
+	return err
 }
 
 func (r *Repository) DeleteIDSEntry(ctx context.Context, id int64) error {
