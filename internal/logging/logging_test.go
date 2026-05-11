@@ -16,7 +16,6 @@ func TestDatedPathAddsDateBeforeExtension(t *testing.T) {
 	}
 }
 
-
 func TestOpenPrunesOldDatedLogs(t *testing.T) {
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "patentmine.log")

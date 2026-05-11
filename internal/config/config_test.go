@@ -6,12 +6,12 @@ import (
 
 func TestApplyCLI(t *testing.T) {
 	tests := []struct {
-		name            string
-		initialSource   ImportSource
-		cliSource       string
-		cliKey          string
-		expectedSource  ImportSource
-		expectedKey     string
+		name           string
+		initialSource  ImportSource
+		cliSource      string
+		cliKey         string
+		expectedSource ImportSource
+		expectedKey    string
 	}{
 		{
 			name:           "CLI overrides default",

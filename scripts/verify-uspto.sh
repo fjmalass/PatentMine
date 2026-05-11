@@ -27,17 +27,39 @@ fi
 echo "Testing USPTO ODP API for patent $PATENT_NUM..."
 SEARCH_NUM=$(echo "$PATENT_NUM" | sed 's/^US//' | sed 's/[A-Z][0-9]$//')
 
-RESPONSE=$(curl -s -H "X-API-KEY: $API_KEY" "https://api.uspto.gov/api/v1/patent/applications/search?q=patentNumber:($SEARCH_NUM)")
+QUERY="patentNumber:($SEARCH_NUM) OR publicationSequenceNumberBag:($PATENT_NUM)"
+ENCODED_QUERY=$(echo "$QUERY" | sed 's/ /%20/g' | sed 's/(/%28/g' | sed 's/)/%29/g' | sed 's/:/%3A/g')
+
+URL="https://api.uspto.gov/api/v1/patent/applications/search?q=$ENCODED_QUERY"
+
+if [ "$PATENT_DEBUG" == "1" ]; then
+    echo ">>> REQ: $URL"
+fi
+
+RESPONSE=$(curl -s -H "X-API-KEY: $API_KEY" "$URL")
+
+if [ "$PATENT_DEBUG" == "1" ]; then
+    echo "<<< RESP: $RESPONSE"
+fi
 
 if echo "$RESPONSE" | grep -q "patentFileWrapperDataBag"; then
     COUNT=$(echo "$RESPONSE" | grep -o '"count":[0-9]*' | cut -d':' -f2)
-    echo "Success! Found $COUNT application(s) for $PATENT_NUM."
+    echo "Success! Found $COUNT matching application(s) for $PATENT_NUM."
     
-    # Check forward citations
-    echo "Checking forward citations..."
-    FWD_RESPONSE=$(curl -s -H "X-API-KEY: $API_KEY" "https://api.uspto.gov/api/v1/patent/applications/search?q=forwardReferencedPatentNumber:($SEARCH_NUM)&rows=0")
-    FWD_COUNT=$(echo "$FWD_RESPONSE" | grep -o '"count":[0-9]*' | cut -d':' -f2)
-    echo "Forward citations count: $FWD_COUNT"
+    if [ "$COUNT" -gt "0" ]; then
+        # Check forward citations
+        echo "Checking forward citations..."
+        FWD_URL="https://api.uspto.gov/api/v1/patent/applications/search?q=forwardReferencedPatentNumber%3A%28$SEARCH_NUM%29&rows=0"
+        if [ "$PATENT_DEBUG" == "1" ]; then
+             echo ">>> REQ: $FWD_URL"
+        fi
+        FWD_RESPONSE=$(curl -s -H "X-API-KEY: $API_KEY" "$FWD_URL")
+        if [ "$PATENT_DEBUG" == "1" ]; then
+             echo "<<< RESP: $FWD_RESPONSE"
+        fi
+        FWD_COUNT=$(echo "$FWD_RESPONSE" | grep -o '"count":[0-9]*' | cut -d':' -f2)
+        echo "Forward citations count: $FWD_COUNT"
+    fi
 else
     echo "Error: API request failed or patent not found."
     echo "Response: $RESPONSE"

@@ -647,17 +647,21 @@ func detailFieldIndex(text TextCatalog, label TextKey) int {
 
 type stubRepo struct{}
 
-func (stubRepo) Close() error                                                            { return nil }
-func (stubRepo) Setup(context.Context) error                                             { return nil }
-func (stubRepo) CreateProject(context.Context, domain.Project) error                     { return nil }
-func (stubRepo) GetProject(context.Context, string) (domain.Project, error)              { return domain.Project{}, nil }
-func (stubRepo) ListProjects(context.Context) ([]domain.Project, error)                  { return nil, nil }
-func (stubRepo) UpdateProject(context.Context, domain.Project) error                     { return nil }
-func (stubRepo) DeleteProject(context.Context, string) error                             { return nil }
-func (stubRepo) AddPatentToProject(context.Context, string, string) error                { return nil }
-func (stubRepo) RemovePatentFromProject(context.Context, string, string) error           { return nil }
-func (stubRepo) UpsertPatentBundle(context.Context, string, domain.PatentBundle) error   { return nil }
-func (stubRepo) GetPatent(context.Context, string, string) (domain.Patent, error)         { return domain.Patent{}, nil }
+func (stubRepo) Close() error                                        { return nil }
+func (stubRepo) Setup(context.Context) error                         { return nil }
+func (stubRepo) CreateProject(context.Context, domain.Project) error { return nil }
+func (stubRepo) GetProject(context.Context, string) (domain.Project, error) {
+	return domain.Project{}, nil
+}
+func (stubRepo) ListProjects(context.Context) ([]domain.Project, error)                { return nil, nil }
+func (stubRepo) UpdateProject(context.Context, domain.Project) error                   { return nil }
+func (stubRepo) DeleteProject(context.Context, string) error                           { return nil }
+func (stubRepo) AddPatentToProject(context.Context, string, string) error              { return nil }
+func (stubRepo) RemovePatentFromProject(context.Context, string, string) error         { return nil }
+func (stubRepo) UpsertPatentBundle(context.Context, string, domain.PatentBundle) error { return nil }
+func (stubRepo) GetPatent(context.Context, string, string) (domain.Patent, error) {
+	return domain.Patent{}, nil
+}
 func (stubRepo) ListPatents(context.Context, string, storage.ListPatentsOptions) ([]domain.Patent, error) {
 	return nil, nil
 }
@@ -685,11 +689,15 @@ func (stubRepo) ListTextSections(context.Context, string, string) ([]domain.Pate
 func (stubRepo) AddNote(context.Context, string, string, string) (domain.ResearchNote, error) {
 	return domain.ResearchNote{}, nil
 }
-func (stubRepo) ListNotes(context.Context, string, string) ([]domain.ResearchNote, error) { return nil, nil }
+func (stubRepo) ListNotes(context.Context, string, string) ([]domain.ResearchNote, error) {
+	return nil, nil
+}
 func (stubRepo) AddReference(context.Context, string, string, string) (domain.ReferenceEntry, error) {
 	return domain.ReferenceEntry{}, nil
 }
-func (stubRepo) ListReferences(context.Context, string) ([]domain.ReferenceEntry, error) { return nil, nil }
+func (stubRepo) ListReferences(context.Context, string) ([]domain.ReferenceEntry, error) {
+	return nil, nil
+}
 func (stubRepo) AddAIAnalysis(context.Context, string, domain.AIAnalysis) (domain.AIAnalysis, error) {
 	return domain.AIAnalysis{}, nil
 }
@@ -710,13 +718,13 @@ func (stubRepo) ListProjectInvoices(context.Context, string) ([]domain.ProjectIn
 	return nil, nil
 }
 func (stubRepo) UpdateProjectInvoice(context.Context, domain.ProjectInvoice) error { return nil }
-func (stubRepo) DeleteProjectInvoice(context.Context, int64) error                { return nil }
+func (stubRepo) DeleteProjectInvoice(context.Context, int64) error                 { return nil }
 func (stubRepo) CountUnpaidInvoicesByProject(context.Context) (map[string]int, error) {
 	return nil, nil
 }
-func (stubRepo) GetSetting(context.Context, string) (string, error)        { return "", nil }
-func (stubRepo) SetSetting(context.Context, string, string) error          { return nil }
-func (stubRepo) AddFamilyEdge(context.Context, domain.FamilyEdge) error    { return nil }
+func (stubRepo) GetSetting(context.Context, string) (string, error)     { return "", nil }
+func (stubRepo) SetSetting(context.Context, string, string) error       { return nil }
+func (stubRepo) AddFamilyEdge(context.Context, domain.FamilyEdge) error { return nil }
 func (stubRepo) ListFamilyEdges(context.Context, string, string) ([]domain.FamilyEdge, []domain.FamilyEdge, error) {
 	return nil, nil, nil
 }

@@ -69,6 +69,13 @@ func main() {
 	}
 	cfg := appconfig.Load()
 	appconfig.ApplyCLI(&cfg, config.ImportSource, config.USPTOAPIKey, config.USPTOAPIKeyFile)
+
+	keyStatus := "not found"
+	if cfg.USPTO.APIKey != "" {
+		keyStatus = "found"
+	}
+	logger.Info("configuration loaded", "import_source", cfg.ImportSource, "uspto_key", keyStatus)
+
 	model := tui.New(ctx, repo, logger, activityLog, cfg)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
@@ -79,11 +86,11 @@ func main() {
 }
 
 type cliConfig struct {
-	LogFile        string
-	MaxLogs        int
-	Help           bool
-	ImportSource   string
-	USPTOAPIKey    string
+	LogFile         string
+	MaxLogs         int
+	Help            bool
+	ImportSource    string
+	USPTOAPIKey     string
 	USPTOAPIKeyFile string
 }
 

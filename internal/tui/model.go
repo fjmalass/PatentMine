@@ -51,6 +51,7 @@ const (
 	viewProjectIDS           viewMode = "project-ids"
 	viewProjectInfo          viewMode = "project-info"
 	viewNoteEdit             viewMode = "note-edit"
+	viewUSPTOKeyWarning      viewMode = "uspto-key-warning"
 )
 
 type Model struct {
@@ -196,6 +197,12 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		statusFilter:    domain.CitationStatusStored,
 		importCfg:       cfg,
 	}
+
+	if model.importCfg.ImportSource == config.ImportSourceUSPTO && model.importCfg.USPTO.APIKey == "" {
+		model.importCfg.ImportSource = config.ImportSourceGoogle
+		model.mode = viewUSPTOKeyWarning
+	}
+
 	model = model.reloadProjects()
 	for i, p := range model.projects {
 		if p.ID == projectID {
@@ -413,6 +420,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.mode == viewUSPTOKeyWarning {
+			if msg.String() == keyCtrlC {
+				return m, tea.Quit
+			}
+			m.mode = viewSplash
+			return m, nil
+		}
 		if m.input.Focused() {
 			switch msg.String() {
 			case keyEnter:
@@ -2598,7 +2612,7 @@ func (m Model) styleRowOverlay(index int, selected int, content string, targetWi
 func (m Model) View() string {
 	bg := m.renderView()
 
-	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo || m.mode == viewNoteEdit {
+	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo || m.mode == viewNoteEdit || m.mode == viewUSPTOKeyWarning {
 		var content string
 		if m.mode == viewPreview {
 			content = m.viewPreview()
@@ -2622,6 +2636,8 @@ func (m Model) View() string {
 			content = m.viewProjectInfo()
 		} else if m.mode == viewNoteEdit {
 			content = m.viewNoteEdit()
+		} else if m.mode == viewUSPTOKeyWarning {
+			content = m.viewUSPTOKeyWarning()
 		} else {
 			content = m.viewInventors()
 		}
@@ -2635,7 +2651,7 @@ func (m Model) View() string {
 }
 
 func (m Model) renderView() string {
-	if m.mode == viewSplash {
+	if m.mode == viewSplash || m.mode == viewUSPTOKeyWarning {
 		return m.viewSplash()
 	}
 	if m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS {
@@ -2690,6 +2706,20 @@ func (m Model) renderView() string {
 			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSuccess)).Render(m.singleLine(m.message)) + "\n")
 		}
 	}
+	return b.String()
+}
+
+func (m Model) viewUSPTOKeyWarning() string {
+	var b strings.Builder
+	b.WriteString(m.renderPopupTitle("USPTO API Key Missing"))
+	b.WriteString("\n\n")
+	b.WriteString("The application is configured to use the USPTO Open Data Portal,\n")
+	b.WriteString("but no API key was found in your configuration.\n\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Render("Fallback: Switching to Google Patents for this session."))
+	b.WriteString("\n\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("To fix this, add your key to configs/config.toml or ~/.uspto_api_key"))
+	b.WriteString("\n\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true).Render("Press any key to continue..."))
 	return b.String()
 }
 

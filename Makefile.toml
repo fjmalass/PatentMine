@@ -69,6 +69,19 @@ category = "Development"
 command = "go"
 args = ["test", "./..."]
 
+[tasks.test-debug]
+description = "Run all Go tests with verbose USPTO debug logging."
+category = "Development"
+env = { "PATENT_DEBUG" = "1" }
+command = "go"
+args = ["test", "-v", "./..."]
+
+[tasks.run-debug]
+description = "Launch PatentMine with verbose USPTO debug logging."
+category = "Application"
+env = { "PATENT_DEBUG" = "1" }
+alias = "run-uspto"
+
 [tasks.build]
 description = "Build the PatentMine binary at ./patentmine."
 category = "Development"
@@ -96,11 +109,13 @@ args = [
   "internal/storage/sqlite/repository.go",
   "internal/storage/sqlite/repository_test.go",
   "internal/config/config.go",
+  "internal/config/config_test.go",
   "internal/importer/fixture.go",
   "internal/importer/fixture_test.go",
   "internal/importer/google.go",
   "internal/importer/google_test.go",
   "internal/importer/uspto.go",
+  "internal/importer/uspto_test.go",
   "internal/ai/stub.go",
   "internal/ai/stub_test.go",
   "internal/tui/commands.go",

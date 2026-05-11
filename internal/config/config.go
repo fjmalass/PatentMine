@@ -35,8 +35,9 @@ type Config struct {
 // Load reads config with the following priority (highest wins):
 //
 //  1. PATENTMINE_IMPORT_SOURCE / USPTO_API_KEY / USPTO_API_KEY_FILE env vars
-//  2. ~/.config/patentmine/config.toml sections
-//  3. Built-in defaults (ImportSource = google)
+//  2. configs/config.toml (project-relative)
+//  3. ~/.config/patentmine/config.toml sections (user-global)
+//  4. Built-in defaults (ImportSource = google)
 func Load() Config {
 	cfg := Config{ImportSource: ImportSourceGoogle}
 	applyFile(&cfg)
@@ -95,16 +96,22 @@ func applyEnv(cfg *Config) {
 	}
 }
 
-// loadFile parses ~/.config/patentmine/config.toml into a map of sections.
-// The top-level (pre-section) keys live under the "" key.
+// loadFile parses the configuration from the first available location.
 func loadFile() (map[string]map[string]string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+	paths := []string{"configs/config.toml"}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".config", "patentmine", "config.toml"))
 	}
-	path := filepath.Join(home, ".config", "patentmine", "config.toml")
-	f, err := os.Open(path)
-	if err != nil {
+
+	var f *os.File
+	var err error
+	for _, path := range paths {
+		f, err = os.Open(path)
+		if err == nil {
+			break
+		}
+	}
+	if f == nil {
 		return nil, err
 	}
 	defer f.Close()

@@ -3,8 +3,11 @@ package importer
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -12,7 +15,7 @@ import (
 	"patentmine/internal/domain"
 )
 
-const usptoBaseURL = "https://api.uspto.gov"
+var usptoBaseURL = "https://api.uspto.gov"
 
 // ImportUSPTO fetches patent data from the USPTO Open Data Portal API.
 // patentNumber may be in any common format: US12000000B2, US12000000, 12000000.
@@ -34,10 +37,14 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 		return domain.PatentBundle{}, fmt.Errorf("could not parse patent number: %s", patentNumber)
 	}
 
+	if os.Getenv("PATENT_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "\n[USPTO] Importing %s (Search: %s)\n", patentNumber, searchNum)
+	}
+
 	logger.Info("uspto.import", "patent", patentNumber, "search_num", searchNum)
 	client := &http.Client{Timeout: 20 * time.Second}
 
-	appNum, appData, err := usptoFetchByPatentNumber(client, apiKey, searchNum, logger)
+	appNum, appData, err := usptoFetchByPatentNumber(client, apiKey, number, logger)
 	if err != nil {
 		logger.Error("uspto.import failed", "patent", patentNumber, "error", err)
 		return domain.PatentBundle{}, err
@@ -116,11 +123,23 @@ type usptoContinuityResponse struct {
 
 // --- API calls ---
 
-func usptoFetchByPatentNumber(client *http.Client, apiKey, searchNum string, logger *slog.Logger) (string, usptoApplicationData, error) {
+func usptoFetchByPatentNumber(client *http.Client, apiKey, originalNumber string, logger *slog.Logger) (string, usptoApplicationData, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	searchURL := fmt.Sprintf("%s/api/v1/patent/applications/search?q=patentNumber:(%s)", usptoBaseURL, searchNum)
+
+	searchNum := extractODPNumber(originalNumber)
+	// Broad search: 
+	// 1. patentNumber: numerical grant (e.g. 11611785)
+	// 2. publicationSequenceNumberBag: Year+Seq+Kind (e.g. 20170336383A1 - no 'US')
+	// 3. earliestPublicationNumber: Full string (e.g. US20170336383A1)
+	
+	pubNum := strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(originalNumber)), "US")
+	
+	query := fmt.Sprintf("patentNumber:(\"%s\") OR publicationSequenceNumberBag:(\"%s\") OR earliestPublicationNumber:(\"%s\")", 
+		searchNum, pubNum, originalNumber)
+	searchURL := fmt.Sprintf("%s/api/v1/patent/applications/search?q=%s", usptoBaseURL, url.QueryEscape(query))
+	
 	logger.Debug("uspto.search", "url", searchURL)
 	var searchResp usptoSearchResponse
 	if err := usptoGET(client, apiKey, searchURL, &searchResp, logger); err != nil {
@@ -202,6 +221,11 @@ func usptoGET(client *http.Client, apiKey, url string, dest any, logger *slog.Lo
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+
+	if os.Getenv("PATENT_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, ">>> USPTO REQ: %s\n", url)
+	}
+
 	logger.Debug("uspto.get", "url", url)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -215,19 +239,37 @@ func usptoGET(client *http.Client, apiKey, url string, dest any, logger *slog.Lo
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	logger.Debug("uspto.get response", "url", url, "status", resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if os.Getenv("PATENT_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "<<< USPTO RESP (%d): %s\n\n", resp.StatusCode, string(body))
+	}
+
+	logger.Debug("uspto.get response", "url", url, "status", resp.StatusCode, "body_len", len(body))
+
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		return fmt.Errorf("USPTO API key invalid or unauthorized (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("USPTO API key invalid or unauthorized (HTTP %d). Body: %s", resp.StatusCode, string(body))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("USPTO API returned HTTP %d for %s", resp.StatusCode, url)
+		return fmt.Errorf("USPTO API returned HTTP %d for %s. Body: %s", resp.StatusCode, url, string(body))
 	}
-	return json.NewDecoder(resp.Body).Decode(dest)
+
+	if err := json.Unmarshal(body, dest); err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %w. Body: %s", err, string(body))
+	}
+	return nil
 }
 
 // --- Bundle builder ---
 
 func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continuity usptoContinuityResponse, forwardNums []string, logger *slog.Logger) domain.PatentBundle {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	meta := data.ApplicationMetaData
 
 	// Canonical number: use ODP patentNumber with US prefix, else fall back to original
