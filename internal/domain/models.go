@@ -152,6 +152,13 @@ type Patent struct {
 	Status              string
 	ClassificationLabel string
 	LatestAssignment    string
+	ExpectedCitations   int // Total backward count reported by source (-1 if unknown)
+	ExpectedCitedBy     int // Total forward count reported by source (-1 if unknown)
+	ApplicationNumber   string
+	ApplicationDate     string
+	PublicationNumber   string
+	GrantNumber         string
+	FirstClaim          string
 }
 
 type PatentTextSection struct {
@@ -232,12 +239,14 @@ type IDSEntry struct {
 }
 
 type PatentBundle struct {
-	Patent          Patent
-	Sections        []PatentTextSection
-	Citations       []CitationEdge
-	FamilyEdges     []FamilyEdge
-	Classifications []Classification
-	References      []ReferenceEntry
+	Patent            Patent
+	Sections          []PatentTextSection
+	Citations         []CitationEdge
+	FamilyEdges       []FamilyEdge
+	Classifications   []Classification
+	References        []ReferenceEntry
+	ExpectedCitations int // Total backward count reported by source (-1 if unknown)
+	ExpectedCitedBy   int // Total forward count reported by source (-1 if unknown)
 }
 
 func (p Patent) IsExpired(now time.Time) bool {

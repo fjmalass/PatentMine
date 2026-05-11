@@ -22,7 +22,7 @@ var validStatusFilters = map[string]string{
 // :filter class <cpc> [&& <cpc2> | || <cpc2>]
 // :filter inventor <name>
 // :filter clear  — resets all filters to defaults
-func (m Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.err = "usage: :filter status <stored|ignored|under-review|none>  · :filter class <cpc>  · :filter inventor <name>  · :filter clear"
 		return m, nil
@@ -50,7 +50,7 @@ func (m Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 // statusFilterCommand handles :statusfilter <stored|ignored|under-review|none>.
-func (m Model) statusFilterCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) statusFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.err = "usage: :statusfilter <stored|ignored|under-review|none>"
 		return m, nil
@@ -72,7 +72,7 @@ func (m Model) statusFilterCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 // classCommand handles :classfilter <cpc> [&& <cpc2> | || <cpc2>] and :classfilter clear.
-func (m Model) classCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 || args[0] == "clear" {
 		m.classFilters = nil
 		m.classFilterOp = EmptyFilter
@@ -103,7 +103,7 @@ func (m Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 // inventorFilterCommand handles :inventorfilter <name> and :inventorfilter clear.
-func (m Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 || args[0] == "clear" {
 		m.filter = EmptyFilter
 		m.message = "inventor filter cleared"
@@ -116,7 +116,7 @@ func (m Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 // sortCommand handles :sort <col>[,<col2>] [asc|desc].
-func (m Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.err = "usage: :sort <col>[,<col2>] [asc|desc]"
 		return m, nil
@@ -162,7 +162,7 @@ func (m Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 // filterBySelectedDetail filters the patent list by the currently focused detail field.
-func (m Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
+func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 	fields := m.detailFields()
 	if len(fields) == 0 {
 		return m, nil
@@ -180,6 +180,22 @@ func (m Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		return m.navigateTo(viewFamily), nil
 	case detailActionNotes:
 		return m.navigateTo(viewNotes), nil
+	case detailActionSummary:
+		if m.current.Number != "" {
+			m.noteTA.Reset()
+			m.noteTA.SetValue(m.current.Abstract)
+			m.noteTA.Focus()
+			m = m.navigateTo(viewSummaryEdit)
+			var cmd tea.Cmd
+			m.noteTA, cmd = m.noteTA.Update(nil)
+			return m, cmd
+		}
+		return m, nil
+	case detailActionFirstClaim:
+		if m.current.FirstClaim == "" {
+			return m, nil
+		}
+		return m.navigateTo(viewClaim), nil
 	case detailActionInventors:
 		if len(m.current.Inventors) <= 1 {
 			field.value = m.current.Inventors[0]
@@ -194,13 +210,13 @@ func (m Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 	m.filter = field.value
 	m.mode = viewList
 	model, cmd := m.refreshList()
-	updated := model.(Model)
+	updated := model.(*Model)
 	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(field.label), field.value)
 	return updated, cmd
 }
 
 // filterBySelectedInventor filters the patent list by the inventor selected in the inventor popup.
-func (m Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
+func (m *Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 	inventors := m.current.Inventors
 	if len(inventors) == 0 {
 		m.mode = viewDetail
@@ -213,7 +229,7 @@ func (m Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 	m.filter = inventor
 	m.mode = viewList
 	model, cmd := m.refreshList()
-	updated := model.(Model)
+	updated := model.(*Model)
 	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(TextDetailInventor), inventor)
 	return updated, cmd
 }
@@ -259,7 +275,7 @@ func nextCitesStatusFilter(current string) string {
 }
 
 // purgeCommand handles :purge ignored — deletes ignored records for the current project and vacuums.
-func (m Model) purgeCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) purgeCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 || args[0] != "ignored" {
 		m.err = "usage: :purge ignored"
 		return m, nil

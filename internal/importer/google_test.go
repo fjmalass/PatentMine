@@ -270,6 +270,65 @@ func TestExtractFamilyEdgesContinuationApps(t *testing.T) {
 	}
 }
 
+func TestExtractExpectedCitationCountsInternational(t *testing.T) {
+	html := `
+		<h3>FAMILY CITES FAMILIES (13)</h3>
+		<section id="patentCitations">...</section>
+		<h3>FAMILIES CITING THIS FAMILY (11)</h3>
+		<section id="citedBy">...</section>
+	`
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	backward, forward := extractExpectedCitationCounts(doc, nil)
+
+	if backward != 13 {
+		t.Errorf("expected backward count 13, got %d", backward)
+	}
+	if forward != 11 {
+		t.Errorf("expected forward count 11, got %d", forward)
+	}
+}
+
+func TestExtractCitationEdgesInternational(t *testing.T) {
+	html := `
+		<div>
+			<section itemprop="backwardReferences">
+				<table>
+					<tr itemprop="patentCitation">
+						<td itemprop="publicationNumber">EP1234567A1</td>
+					</tr>
+				</table>
+			</section>
+			<section itemprop="forwardReferences">
+				<table>
+					<tr itemprop="forwardReferencesFamily">
+						<td itemprop="publicationNumber">EP7654321B1</td>
+					</tr>
+				</table>
+			</section>
+		</div>
+	`
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
+	edges := extractCitationEdges(doc, "EP3391654B1", nil)
+
+	foundBackward := false
+	foundForward := false
+	for _, e := range edges {
+		if e.TargetPatent == "EP1234567A1" && e.RelationType == domain.RelationCites {
+			foundBackward = true
+		}
+		if e.TargetPatent == "EP7654321B1" && e.RelationType == domain.RelationCitedBy {
+			foundForward = true
+		}
+	}
+
+	if !foundBackward {
+		t.Error("backward international citation not found")
+	}
+	if !foundForward {
+		t.Error("forward international citation not found")
+	}
+}
+
 func testBundle() domain.PatentBundle {
 	return domain.PatentBundle{}
 }

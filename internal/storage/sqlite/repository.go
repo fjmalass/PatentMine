@@ -41,31 +41,11 @@ func (r *Repository) Setup(ctx context.Context) error {
 	if err := r.createTables(ctx); err != nil {
 		return err
 	}
-	if err := r.runMigrations(ctx); err != nil {
-		return err
-	}
 
 	// Ensure default project exists
 	now := nowString()
 	if _, err := r.db.ExecContext(ctx, `insert or ignore into projects (id, name, created_at, updated_at) values ('default', 'Default Project', ?, ?)`, now, now); err != nil {
 		return err
-	}
-	return nil
-}
-
-func (r *Repository) runMigrations(ctx context.Context) error {
-	migrations := []string{
-		`alter table project_patents add column status_changed_at text not null default ''`,
-		`alter table project_ids add column status text not null default 'pending'`,
-		`alter table patents add column updated_at text not null default ''`,
-		`alter table patents add column import_source text not null default ''`,
-	}
-	for _, m := range migrations {
-		if _, err := r.db.ExecContext(ctx, m); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column name") {
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -96,13 +76,21 @@ func (r *Repository) createTables(ctx context.Context) error {
 			import_source text not null default '',
 			created_at text not null default '',
 			latest_assignment text not null default '',
-			updated_at text not null default ''
+			updated_at text not null default '',
+			expected_citations integer not null default -1,
+			expected_cited_by integer not null default -1,
+			application_number text not null default '',
+			application_date text not null default '',
+			publication_number text not null default '',
+			grant_number text not null default '',
+			first_claim text not null default ''
 		)`,
 		fmt.Sprintf(`create table if not exists project_patents (
 			project_id text not null,
 			patent_number text not null,
 			status text not null default '%s',
 			created_at text not null,
+			status_changed_at text not null default '',
 			primary key (project_id, patent_number),
 			foreign key (project_id) references projects(id),
 			foreign key (patent_number) references patents(number)
@@ -223,6 +211,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			project_id    text not null,
 			patent_number text not null,
 			notes         text not null default '',
+			status        text not null default 'pending',
 			added_at      text not null,
 			unique(project_id, patent_number),
 			foreign key (project_id) references projects(id)
@@ -359,22 +348,19 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 	if err := replaceClassifications(ctx, tx, bundle.Patent.Number, bundle.Classifications, r.logger); err != nil {
 		return err
 	}
-	// Store family edges only when both sides exist in project_patents
+	// Store family edges only when at least one side exists as a stored patent in this project
 	for _, edge := range bundle.FamilyEdges {
 		edge.ProjectID = projectID
 		var exists int
-		other := edge.ChildNumber
-		if other == bundle.Patent.Number {
-			other = edge.ParentNumber
-		}
-		if err := tx.QueryRowContext(ctx, `select count(*) from project_patents where project_id = ? and patent_number = ? and status = 'stored'`,
-			projectID, other).Scan(&exists); err != nil || exists == 0 {
-			continue // other side not stored yet — skip silently
+		// Check if either parent or child is stored as a citation or patent in this project
+		if err := tx.QueryRowContext(ctx, `select count(*) from project_patents where project_id = ? and patent_number in (?, ?) and status != 'ignored'`,
+			projectID, edge.ParentNumber, edge.ChildNumber).Scan(&exists); err != nil || exists == 0 {
+			continue // neither side known yet — skip
 		}
 		if _, err := tx.ExecContext(ctx,
 			`insert into patent_family (project_id, parent_number, child_number, relation_type, created_at)
 			 values (?, ?, ?, ?, ?)
-			 on conflict(project_id, parent_number, child_number) do nothing`,
+			 on conflict(project_id, parent_number, child_number) do update set relation_type = excluded.relation_type`,
 			projectID, edge.ParentNumber, edge.ChildNumber, edge.RelationType, nowString()); err != nil {
 			return err
 		}
@@ -408,8 +394,8 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 		createdAt = time.Now().UTC()
 	}
 	_, err = tx.ExecContext(ctx, `insert into patents
-		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_estimated, source_google_url, import_source, created_at, latest_assignment, updated_at)
-		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_estimated, source_google_url, import_source, created_at, latest_assignment, updated_at, expected_citations, expected_cited_by, application_number, application_date, publication_number, grant_number, first_claim)
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		on conflict(number) do update set
 			title = excluded.title,
 			abstract = excluded.abstract,
@@ -422,8 +408,15 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 			source_google_url = excluded.source_google_url,
 			import_source = case when excluded.import_source != '' then excluded.import_source else patents.import_source end,
 			latest_assignment = case when excluded.latest_assignment != '' then excluded.latest_assignment else patents.latest_assignment end,
-			updated_at = excluded.updated_at`,
-		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, boolInt(p.ExpirationEstimated), p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString())
+			updated_at = excluded.updated_at,
+			expected_citations = case when excluded.expected_citations >= 0 then excluded.expected_citations else patents.expected_citations end,
+			expected_cited_by = case when excluded.expected_cited_by >= 0 then excluded.expected_cited_by else patents.expected_cited_by end,
+			application_number = case when excluded.application_number != '' then excluded.application_number else patents.application_number end,
+			application_date = case when excluded.application_date != '' then excluded.application_date else patents.application_date end,
+			publication_number = case when excluded.publication_number != '' then excluded.publication_number else patents.publication_number end,
+			grant_number = case when excluded.grant_number != '' then excluded.grant_number else patents.grant_number end,
+			first_claim = case when excluded.first_claim != '' then excluded.first_claim else patents.first_claim end`,
+		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, boolInt(p.ExpirationEstimated), p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString(), p.ExpectedCitations, p.ExpectedCitedBy, p.ApplicationNumber, p.ApplicationDate, p.PublicationNumber, p.GrantNumber, p.FirstClaim)
 	return err
 }
 
@@ -515,7 +508,8 @@ func (r *Repository) GetPatent(ctx context.Context, projectID string, number str
 	row := r.db.QueryRowContext(ctx, `
 		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at
+			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
+			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim
 		from patents p
 		left join project_patents pp on p.number = pp.patent_number and pp.project_id = ?
 		left join patent_classifications c on p.number = c.patent_number
@@ -570,7 +564,8 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	query := `
 		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at
+			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
+			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
 		left join patent_classifications c on p.number = c.patent_number
@@ -907,7 +902,7 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var statusChangedAt sql.NullString
 	var updatedAt sql.NullString
 	var importSource sql.NullString
-	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt); err != nil {
+	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}

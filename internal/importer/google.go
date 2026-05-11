@@ -73,14 +73,19 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 	}
 
 	patent := domain.Patent{
-		Number:          number,
-		Title:           clean(firstText(doc.Selection, "span[itemprop='title']", "meta[name='DC.title']", "title")),
-		Abstract:        clean(firstText(doc.Selection, "div.abstract", "section[itemprop='abstract']", "abstract")),
-		Assignee:        clean(firstText(doc.Selection, "dd[itemprop='assigneeOriginal']", "span[itemprop='assigneeOriginal']", "dd[itemprop='assigneeCurrent']")),
-		Inventors:       texts(doc.Selection, "dd[itemprop='inventor']", "span[itemprop='inventor']"),
-		PublicationDate: attr(doc.Selection, "time[itemprop='publicationDate']", "datetime"),
-		GrantDate:       attr(doc.Selection, "time[itemprop='grantDate']", "datetime"),
-		SourceGoogleURL: rawURL,
+		Number:            number,
+		Title:             clean(firstText(doc.Selection, "span[itemprop='title']", "meta[name='DC.title']", "title")),
+		Abstract:          clean(firstText(doc.Selection, "div.abstract", "section[itemprop='abstract']", "abstract")),
+		Assignee:          clean(firstText(doc.Selection, "dd[itemprop='assigneeOriginal']", "span[itemprop='assigneeOriginal']", "dd[itemprop='assigneeCurrent']")),
+		Inventors:         texts(doc.Selection, "dd[itemprop='inventor']", "span[itemprop='inventor']"),
+		PublicationDate:   attr(doc.Selection, "time[itemprop='publicationDate']", "datetime"),
+		GrantDate:         attr(doc.Selection, "time[itemprop='grantDate']", "datetime"),
+		SourceGoogleURL:   rawURL,
+		ApplicationNumber: clean(firstText(doc.Selection, "span[itemprop='applicationNumber']", "meta[name='DC.description']")), // Fallback meta
+		ApplicationDate:   attr(doc.Selection, "time[itemprop='filingDate']", "datetime"),
+		PublicationNumber: clean(firstText(doc.Selection, "span[itemprop='publicationNumber']")),
+		GrantNumber:       clean(firstText(doc.Selection, "span[itemprop='grantNumber']")),
+		FirstClaim:         clean(doc.Find("section[itemprop='claims'] .claim").First().Text()),
 	}
 	if expirationDate := adjustedExpirationDate(doc); expirationDate != "" {
 		patent.ExpirationDate = expirationDate
@@ -101,9 +106,63 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 	extractClassifications(doc, &bundle, number, logger)
 	bundle.Citations = extractCitationEdges(doc, number, logger)
 	bundle.FamilyEdges = extractFamilyEdges(doc, number, logger)
+	bundle.ExpectedCitations, bundle.ExpectedCitedBy = extractExpectedCitationCounts(doc, logger)
+	bundle.Patent.ExpectedCitations = bundle.ExpectedCitations
+	bundle.Patent.ExpectedCitedBy = bundle.ExpectedCitedBy
+
 	bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: number, CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title)})
-	logger.Info("google.import ok", "number", number, "citations", len(bundle.Citations), "family_edges", len(bundle.FamilyEdges), "sections", len(bundle.Sections), "classifications", len(bundle.Classifications))
+
+	// Format counts for logging
+	countStr := func(actual, expected int) string {
+		eStr := "unkn"
+		if expected >= 0 {
+			eStr = fmt.Sprintf("%d", expected)
+		}
+		aStr := fmt.Sprintf("%d", actual)
+		if actual == 0 && expected > 0 {
+			aStr = "unkn"
+		}
+		if actual == 0 && expected <= 0 {
+			aStr = "unkn"
+			eStr = "unkn"
+		}
+		return fmt.Sprintf("%s/%s", aStr, eStr)
+	}
+
+	backActual, fwdActual := 0, 0
+	for _, c := range bundle.Citations {
+		if c.RelationType == domain.RelationCites {
+			backActual++
+		} else {
+			fwdActual++
+		}
+	}
+
+	logger.Info("google.import ok", "number", number, "citations", countStr(backActual, bundle.ExpectedCitations), "cited_by", countStr(fwdActual, bundle.ExpectedCitedBy), "family_edges", len(bundle.FamilyEdges), "sections", len(bundle.Sections), "classifications", len(bundle.Classifications))
 	return bundle, nil
+}
+
+func extractExpectedCitationCounts(doc *goquery.Document, logger *slog.Logger) (int, int) {
+	// Selectors for citation headers: "Patent Citations (190)", "Cited By (3)", "FAMILY CITES FAMILIES (13)"
+	countPattern := regexp.MustCompile(`\((\d+)\)`)
+	backward, forward := -1, -1
+
+	doc.Find("h3, h2").Each(func(_ int, s *goquery.Selection) {
+		text := strings.TrimSpace(s.Text())
+		if strings.Contains(text, "Patent Citations") || strings.Contains(text, "FAMILY CITES FAMILIES") {
+			matches := countPattern.FindStringSubmatch(text)
+			if len(matches) > 1 {
+				fmt.Sscanf(matches[1], "%d", &backward)
+			}
+		} else if strings.Contains(text, "Cited By") || strings.Contains(text, "FAMILIES CITING THIS FAMILY") {
+			matches := countPattern.FindStringSubmatch(text)
+			if len(matches) > 1 {
+				fmt.Sscanf(matches[1], "%d", &forward)
+			}
+		}
+	})
+
+	return backward, forward
 }
 
 func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, number string, logger *slog.Logger) {
@@ -385,23 +444,36 @@ func extractCitationEdges(doc *goquery.Document, source string, logger *slog.Log
 	}
 
 	extractRows := func(selector, relation string) {
-		doc.Find(selector).Each(func(_ int, row *goquery.Selection) {
-			row.Find("[itemprop='publicationNumber'], td.publication, a[href*='/patent/']").Each(func(_ int, s *goquery.Selection) {
+		doc.Find(selector).Each(func(_ int, section *goquery.Selection) {
+			// Find anything that looks like a patent link or result
+			section.Find("tr, .patent-result, .result, .citation, [itemprop='publicationNumber'], [itemprop='patentCitation'], [itemprop='forwardReferencesFamily'], td.publication, a[href*='/patent/']").Each(func(_ int, s *goquery.Selection) {
 				if href, ok := s.Attr("href"); ok {
-					add(patentNumberFromURL(href), relation)
+					if path := strings.TrimPrefix(href, "/patent/"); path != href {
+						add(patentNumberFromURL(href), relation)
+					}
 				}
-				add(s.Text(), relation)
+				// Also check text content if it looks like a patent ID
+				text := strings.TrimSpace(s.Text())
+				// Patent IDs are typically 5-15 chars, no spaces
+				if len(text) > 4 && len(text) < 16 && !strings.Contains(text, " ") {
+					add(text, relation)
+				}
 			})
 		})
 	}
-	extractRows("[itemprop='backwardReferences']", domain.RelationCites)
-	extractRows("[itemprop='forwardReferences']", domain.RelationCitedBy)
+	// Try multiple selector variations for the sections themselves
+	extractRows("[itemprop='backwardReferences'], #patentCitations, #backwardReferences", domain.RelationCites)
+	extractRows("[itemprop='forwardReferences'], #citedBy, #forwardReferences", domain.RelationCitedBy)
+
 	logger.Debug("google.extract_citations done", "source", source, "count", len(edges))
 	return edges
 }
 
 func normalizePatentID(value string) string {
-	value = strings.ToUpper(clean(value))
+	// Strip spaces and commas which are common in scraped text
+	value = strings.ReplaceAll(value, " ", "")
+	value = strings.ReplaceAll(value, ",", "")
+	value = strings.ToUpper(value)
 	if value == "" {
 		return ""
 	}

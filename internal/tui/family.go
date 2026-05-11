@@ -23,10 +23,10 @@ var validFamilyRelations = map[string]string{
 
 // familyNode is one entry in the rendered flat family tree.
 type familyNode struct {
-	number    string
-	depth     int    // negative = ancestor, 0 = current, positive = descendant
-	relType   string // relation type from parent to this node (empty for roots)
-	parentIdx int    // index in the flat slice of this node's parent (-1 for roots)
+	number       string
+	depth        int    // negative = ancestor, 0 = current, positive = descendant
+	relType      string // relation type from parent to this node (empty for roots)
+	parentIdx    int    // index in the flat slice of this node's parent (-1 for roots)
 	prefix       string // indentation prefix inherited from ancestor connectors
 	connector    string // "├─ ", "└─ ", or "" for tree roots
 	title        string
@@ -39,14 +39,14 @@ type familyNode struct {
 // descendants. parentIdx links each node back to its parent entry.
 // Results are cached in m.familyTreeCache; callers that modify the tree must
 // clear familyTreeCacheFor to force a rebuild.
-func (m Model) buildFamilyTree() []familyNode {
+func (m *Model) buildFamilyTree() []familyNode {
 	if m.familyTreeCacheFor == m.current.Number && len(m.familyTreeCache) > 0 {
 		return m.familyTreeCache
 	}
 	return m.buildFamilyTreeFresh()
 }
 
-func (m Model) buildFamilyTreeFresh() []familyNode {
+func (m *Model) buildFamilyTreeFresh() []familyNode {
 	allEdges, _ := m.repo.ListAllFamilyEdges(m.ctx, m.ProjectID)
 
 	parentToChildren := map[string][]domain.FamilyEdge{}
@@ -62,28 +62,57 @@ func (m Model) buildFamilyTreeFresh() []familyNode {
 	}
 
 	// BFS to find all connected nodes and assign depths relative to current.
+	// We use a modified BFS that ensures a child's depth is always parent.depth + 1.
 	depths := map[string]int{current: 0}
-	queue := []string{current}
-	for i := 0; i < len(queue); i++ {
-		n := queue[i]
+
+	// First, find all reachable nodes to establish the set.
+	reachable := map[string]bool{current: true}
+	q := []string{current}
+	for i := 0; i < len(q); i++ {
+		n := q[i]
 		for _, e := range childToParents[n] {
-			if _, seen := depths[e.ParentNumber]; !seen {
-				depths[e.ParentNumber] = depths[n] - 1
-				queue = append(queue, e.ParentNumber)
+			if !reachable[e.ParentNumber] {
+				reachable[e.ParentNumber] = true
+				q = append(q, e.ParentNumber)
 			}
 		}
 		for _, e := range parentToChildren[n] {
-			if _, seen := depths[e.ChildNumber]; !seen {
-				depths[e.ChildNumber] = depths[n] + 1
-				queue = append(queue, e.ChildNumber)
+			if !reachable[e.ChildNumber] {
+				reachable[e.ChildNumber] = true
+				q = append(q, e.ChildNumber)
 			}
 		}
 	}
 
-	nodeSet := map[string]bool{}
-	for n := range depths {
-		nodeSet[n] = true
+	// Calculate depths based on relationships.
+	// Roots get an initial depth, then propagate.
+	// This is a simple approximation for a DAG.
+	for i := 0; i < 10; i++ { // Iterate a few times to stabilize depths
+		changed := false
+		for n := range reachable {
+			for _, e := range childToParents[n] {
+				if d, ok := depths[n]; ok {
+					if oldD, ok2 := depths[e.ParentNumber]; !ok2 || oldD > d-1 {
+						depths[e.ParentNumber] = d - 1
+						changed = true
+					}
+				}
+			}
+			for _, e := range parentToChildren[n] {
+				if d, ok := depths[n]; ok {
+					if oldD, ok2 := depths[e.ChildNumber]; !ok2 || oldD < d+1 {
+						depths[e.ChildNumber] = d + 1
+						changed = true
+					}
+				}
+			}
+		}
+		if !changed {
+			break
+		}
 	}
+
+	nodeSet := reachable
 
 	// Find roots: nodes with no parent within the connected component.
 	var roots []string
@@ -112,10 +141,6 @@ func (m Model) buildFamilyTreeFresh() []familyNode {
 
 	var dfs func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int)
 	dfs = func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int) {
-		if visited[number] {
-			return
-		}
-		visited[number] = true
 		idx := len(nodes)
 		nodes = append(nodes, familyNode{
 			number:    number,
@@ -126,9 +151,15 @@ func (m Model) buildFamilyTreeFresh() []familyNode {
 			connector: connector,
 		})
 
+		if visited[number] {
+			return
+		}
+		visited[number] = true
+
 		var childEdges []domain.FamilyEdge
 		for _, e := range parentToChildren[number] {
-			if nodeSet[e.ChildNumber] && !visited[e.ChildNumber] {
+			// Only follow edges that represent the next hierarchical level
+			if nodeSet[e.ChildNumber] && depths[e.ChildNumber] == depths[number]+1 {
 				childEdges = append(childEdges, e)
 			}
 		}
@@ -231,7 +262,7 @@ func familyRelationColor(relType string) string {
 
 // viewFamilyOverlay renders the interactive family tree as a single navigable column.
 // j/k move up/down, h moves to parent, l moves to first child.
-func (m Model) viewFamilyOverlay() string {
+func (m *Model) viewFamilyOverlay() string {
 	nodes := m.buildFamilyTree()
 
 	base := overlayBase()
@@ -308,7 +339,7 @@ func (m Model) viewFamilyOverlay() string {
 				titleStyle = currentStyle.Bold(true).Underline(true)
 			}
 			line.WriteString(base.Render(" "))
-			line.WriteString(titleStyle.Render(m.truncate(node.title, 45)))
+			line.WriteString(titleStyle.Render(m.truncate(node.title, 30)))
 		}
 
 		// Relation-type badge.
@@ -332,7 +363,7 @@ func (m Model) viewFamilyOverlay() string {
 	return b.String()
 }
 
-func (m Model) moveFamilySelection(delta int) Model {
+func (m *Model) moveFamilySelection(delta int) *Model {
 	nodes := m.buildFamilyTreeFresh()
 	m.familyTreeCache = nodes
 	m.familyTreeCacheFor = m.current.Number
@@ -343,7 +374,7 @@ func (m Model) moveFamilySelection(delta int) Model {
 	return m
 }
 
-func (m Model) moveFamilyToParent() Model {
+func (m *Model) moveFamilyToParent() *Model {
 	nodes := m.buildFamilyTreeFresh()
 	m.familyTreeCache = nodes
 	m.familyTreeCacheFor = m.current.Number
@@ -358,7 +389,7 @@ func (m Model) moveFamilyToParent() Model {
 	return m
 }
 
-func (m Model) moveFamilyToFirstChild() Model {
+func (m *Model) moveFamilyToFirstChild() *Model {
 	nodes := m.buildFamilyTreeFresh()
 	m.familyTreeCache = nodes
 	m.familyTreeCacheFor = m.current.Number
@@ -372,7 +403,7 @@ func (m Model) moveFamilyToFirstChild() Model {
 	return m
 }
 
-func (m Model) openSelectedFamilyMember() (tea.Model, tea.Cmd) {
+func (m *Model) openSelectedFamilyMember() (tea.Model, tea.Cmd) {
 	nodes := m.buildFamilyTree()
 	if m.familySelected < 0 || m.familySelected >= len(nodes) {
 		return m, nil
@@ -384,7 +415,7 @@ func (m Model) openSelectedFamilyMember() (tea.Model, tea.Cmd) {
 	return m.openPatent(node.number)
 }
 
-func (m Model) removeSelectedFamilyEdge() (tea.Model, tea.Cmd) {
+func (m *Model) removeSelectedFamilyEdge() (tea.Model, tea.Cmd) {
 	nodes := m.buildFamilyTree()
 	if m.familySelected < 0 || m.familySelected >= len(nodes) {
 		return m, nil
@@ -406,13 +437,13 @@ func (m Model) removeSelectedFamilyEdge() (tea.Model, tea.Cmd) {
 }
 
 // familyItems returns the direct parent and child edges of the current patent.
-func (m Model) familyItems() (parents []domain.FamilyEdge, children []domain.FamilyEdge) {
+func (m *Model) familyItems() (parents []domain.FamilyEdge, children []domain.FamilyEdge) {
 	parents, children, _ = m.repo.ListFamilyEdges(m.ctx, m.ProjectID, m.current.Number)
 	return
 }
 
 // familyCommand handles :family parent|child|remove sub-commands.
-func (m Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.err = "usage: :family parent|child <number> [type]  ·  :family remove <number>"
 		return m, nil
@@ -516,7 +547,7 @@ func (m Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 // pullFamilyCommand fetches all direct family members detected on Google Patents,
 // stores each as a project patent, then re-upserts the current patent so all
 // family edges link up.
-func (m Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
+func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 	if m.current.Number == "" {
 		m.err = "no patent selected"
 		return m, nil

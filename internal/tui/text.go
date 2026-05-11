@@ -30,7 +30,12 @@ const (
 	TextDetailNotes             TextKey = "detail.notes"
 	TextDetailSummary           TextKey = "detail.summary"
 	TextDetailImportSource      TextKey = "detail.import_source"
+	TextDetailApplication       TextKey = "detail.application"
+	TextDetailPublicationLong    TextKey = "detail.publication_long"
+	TextDetailGrantLong          TextKey = "detail.grant_long"
+	TextDetailFirstClaim        TextKey = "detail.first_claim"
 	TextValueUnknown            TextKey = "value.unknown"
+	TextValuePending            TextKey = "value.pending"
 	TextValueEmpty              TextKey = "value.empty"
 	TextValuePageStatus         TextKey = "value.page_status"
 	TextValueOpenHint           TextKey = "value.open_hint"
@@ -204,7 +209,12 @@ func EnglishText() TextCatalog {
 		TextDetailNotes:             "Notes",
 		TextDetailSummary:           "Summary",
 		TextDetailImportSource:      "Via",
+		TextDetailApplication:       "Application",
+		TextDetailPublicationLong:    "Publication",
+		TextDetailGrantLong:          "Grant",
+		TextDetailFirstClaim:        "First Claim",
 		TextValueUnknown:            "unknown",
+		TextValuePending:            "pending",
 		TextValueEmpty:              "Empty",
 		TextValuePageStatus:         "Page %d/%d - items %d-%d of %d",
 		TextValueOpenHint:           "%s opens/previews - %s stores imported - %s ignores - %s marks under review - %s/%s page",

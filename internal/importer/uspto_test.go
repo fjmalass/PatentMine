@@ -60,9 +60,9 @@ func TestBuildUSPTOBundle(t *testing.T) {
 				{InventorNameText: "Morgan Patel"},
 			},
 			CPCClassificationBag: []string{"G06F16/33", "G06N20/00"},
-			ReferenceCitedBag: []usptoReferenceCited{
-				{PatentNumber: "10123456", PatentKindCode: "B2"},
-			},
+		},
+		ReferenceCitedBag: []usptoReferenceCited{
+			{PatentNumber: "10123456", PatentKindCode: "B2"},
 		},
 		AssignmentBag: []usptoAssignment{
 			{
@@ -76,6 +76,9 @@ func TestBuildUSPTOBundle(t *testing.T) {
 		},
 		ChildContinuityBag: []usptoContinuity{
 			{ChildPatentNumber: "12000000", ClaimParentageTypeCode: "CON"},
+		},
+		ApplicantBag: []usptoApplicant{
+			{ApplicantNameText: "Applicant Corp"},
 		},
 	}
 
@@ -128,6 +131,24 @@ func TestBuildUSPTOBundle(t *testing.T) {
 	}
 }
 
+func TestBuildUSPTOBundleWithApplicantFallback(t *testing.T) {
+	data := usptoApplicationData{
+		ApplicationNumberText: "17123456",
+		ApplicationMetaData: usptoMetaData{
+			PatentNumber: "11611785",
+		},
+		ApplicantBag: []usptoApplicant{
+			{ApplicantNameText: "Fallback Applicant"},
+		},
+	}
+
+	bundle := buildUSPTOBundle("US11611785B2", data, usptoContinuityResponse{}, nil, nil)
+
+	if bundle.Patent.Assignee != "Fallback Applicant" {
+		t.Errorf("expected assignee 'Fallback Applicant', got %q", bundle.Patent.Assignee)
+	}
+}
+
 func TestImportUSPTOUsesAPIKey(t *testing.T) {
 	apiKey := "test-secret-key"
 	patentNum := "US11611785B2"
@@ -140,7 +161,7 @@ func TestImportUSPTOUsesAPIKey(t *testing.T) {
 
 		// Mock responses based on URL
 		if strings.Contains(r.URL.Path, "/applications/search") {
-			if strings.Contains(r.URL.RawQuery, "forwardReferencedPatentNumber") {
+			if strings.Contains(r.URL.RawQuery, "referenceCitedBag") && (strings.Contains(r.URL.RawQuery, "applicationMetaData.referenceCitedBag") || strings.Contains(r.URL.RawQuery, "forwardReferencedPatentNumber")) {
 				// Forward citations
 				json.NewEncoder(w).Encode(usptoSearchResponse{Count: 0})
 				return

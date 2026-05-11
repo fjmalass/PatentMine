@@ -13,7 +13,7 @@ import (
 )
 
 func TestFormatExpirationShowsEstimatedSuffix(t *testing.T) {
-	got := (Model{}).formatExpiration(domain.Patent{
+	got := (&Model{}).formatExpiration(domain.Patent{
 		ExpirationDate:      "2043-03-21",
 		ExpirationEstimated: true,
 	})
@@ -23,7 +23,7 @@ func TestFormatExpirationShowsEstimatedSuffix(t *testing.T) {
 }
 
 func TestFormatExpirationKeepsExpiredLabelText(t *testing.T) {
-	got := (Model{}).formatExpiration(domain.Patent{
+	got := (&Model{}).formatExpiration(domain.Patent{
 		ExpirationDate:      "2001-01-01",
 		ExpirationEstimated: true,
 	})
@@ -33,7 +33,7 @@ func TestFormatExpirationKeepsExpiredLabelText(t *testing.T) {
 }
 
 func TestDetailRowAlignsValues(t *testing.T) {
-	model := Model{text: EnglishText()}
+	model := &Model{repo: stubRepo{}, text: EnglishText()}
 	got := model.detailRow(TextDetailGrant, "2023-03-21", 12) + model.detailRow(TextDetailExpiration, "2043-03-21 (est.)", 12)
 	want := "Grant:       2023-03-21\nExpiration:  2043-03-21 (est.)\n"
 	if got != want {
@@ -42,7 +42,7 @@ func TestDetailRowAlignsValues(t *testing.T) {
 }
 
 func TestDetailRowUsesTextCatalog(t *testing.T) {
-	model := Model{text: TextCatalog{
+	model := &Model{repo: stubRepo{}, text: TextCatalog{
 		TextDetailAssignee: "Titulaire",
 		TextValueUnknown:   "inconnu",
 	}}
@@ -53,15 +53,8 @@ func TestDetailRowUsesTextCatalog(t *testing.T) {
 	}
 }
 
-func TestListNumberWidthAlignsPatentNumbers(t *testing.T) {
-	model := Model{patents: []domain.Patent{{Number: "US1"}, {Number: "US12345B2"}}}
-	if got := model.listNumberWidth(); got != len("US12345B2") {
-		t.Fatalf("expected list number width %d, got %d", len("US12345B2"), got)
-	}
-}
-
 func TestPreviewOverlayUsesBorderAndSmallerWidth(t *testing.T) {
-	model := Model{width: 120}
+	model := &Model{repo: stubRepo{}, width: 120}
 	got := model.previewOverlay("US1\nPreview")
 	if !strings.Contains(got, "┌") || !strings.Contains(got, "┘") {
 		t.Fatalf("expected bordered overlay, got %q", got)
@@ -72,7 +65,7 @@ func TestPreviewOverlayUsesBorderAndSmallerWidth(t *testing.T) {
 }
 
 func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
-	model := Model{mode: viewCites}
+	model := &Model{repo: stubRepo{}, mode: viewCites}
 	got := model.renderScreenHeader()
 	if !strings.Contains(got, "Citations") {
 		t.Fatalf("expected citations title, got %q", got)
@@ -80,7 +73,7 @@ func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
 }
 
 func TestHelpKeyOpensContextPopup(t *testing.T) {
-	model := Model{
+	model := &Model{
 		mode:    viewCites,
 		text:    EnglishText(),
 		repo:    citationRepo{edges: sampleCitationEdges(2)},
@@ -89,7 +82,7 @@ func TestHelpKeyOpensContextPopup(t *testing.T) {
 		height:  20,
 	}
 	updated, _ := model.Update(teaKey(keyHelp))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewHelpPopup {
 		t.Fatalf("expected mode %q, got %q", viewHelpPopup, got.mode)
 	}
@@ -102,12 +95,12 @@ func TestHelpKeyOpensContextPopup(t *testing.T) {
 }
 
 func TestNavigationStackGoesBackToPreviousView(t *testing.T) {
-	model := Model{mode: viewList, selected: 3}
+	model := &Model{repo: stubRepo{}, mode: viewList, selected: 3}
 	model = model.navigateTo(viewDetail)
 	model.selected = 0
 
 	updated, _ := model.goBack()
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewList {
 		t.Fatalf("expected view %q, got %q", viewList, got.mode)
 	}
@@ -117,7 +110,8 @@ func TestNavigationStackGoesBackToPreviousView(t *testing.T) {
 }
 
 func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		mode:     viewList,
 		jumpMode: true,
 		patents:  []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}},
@@ -132,7 +126,8 @@ func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
 }
 
 func TestApplyJumpSelectsDetailField(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		mode:     viewDetail,
 		jumpMode: true,
 		text:     EnglishText(),
@@ -145,7 +140,8 @@ func TestApplyJumpSelectsDetailField(t *testing.T) {
 }
 
 func TestDetailJumpLabelsMatchFields(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		mode:    viewDetail,
 		text:    EnglishText(),
 		current: domain.Patent{Assignee: "Divx LLC", Inventors: []string{"Kourosh Soroushian"}},
@@ -155,15 +151,17 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		jumpLabelAssignee,
 		"L",
 		jumpLabelInventors,
+		"A", // Application
 		jumpLabelPublication,
 		jumpLabelGrant,
 		jumpLabelClassification,
 		jumpLabelExpiration,
 		jumpLabelCitationCount,
 		jumpLabelCitedByCount,
-		// Family/Status/IDS rows do not have jump labels in the current implementation
-		"", // separator
-		"", // Summary
+		// Status and IDS are skipped when repo is nil
+		"",  // separator
+		"1", // First Claim
+		"m", // Summary
 		jumpLabelNotes,
 		"", // separator
 		"", // Via
@@ -182,7 +180,8 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 }
 
 func TestDetailFieldsAlwaysIncludeClassification(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		text:    EnglishText(),
 		current: domain.Patent{Assignee: "Divx LLC"},
 	}
@@ -205,7 +204,7 @@ func TestDetailFieldsAlwaysIncludeClassification(t *testing.T) {
 }
 
 func TestViewClassificationsShowsEmptyState(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    emptyClassificationRepo{},
@@ -218,7 +217,7 @@ func TestViewClassificationsShowsEmptyState(t *testing.T) {
 }
 
 func TestViewClassificationsShowsPagedIndexedRows(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:                    t.Context(),
 		text:                   EnglishText(),
 		repo:                   classificationRepo{classifications: sampleClassifications(8)},
@@ -243,7 +242,7 @@ func TestViewClassificationsShowsPagedIndexedRows(t *testing.T) {
 }
 
 func TestEnterOnDetailClassificationOpensClassificationList(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:            t.Context(),
 		text:           EnglishText(),
 		repo:           classificationRepo{classifications: sampleClassifications(3)},
@@ -254,7 +253,7 @@ func TestEnterOnDetailClassificationOpensClassificationList(t *testing.T) {
 		height:         20,
 	}
 	updated, _ := model.Update(teaKey(keyEnter))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewClassifications {
 		t.Fatalf("expected mode %q, got %q", viewClassifications, got.mode)
 	}
@@ -265,7 +264,7 @@ func TestEnterOnDetailClassificationOpensClassificationList(t *testing.T) {
 }
 
 func TestOpenKeyOnDetailClassificationOpensClassificationList(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:            t.Context(),
 		text:           EnglishText(),
 		repo:           classificationRepo{classifications: sampleClassifications(3)},
@@ -276,14 +275,14 @@ func TestOpenKeyOnDetailClassificationOpensClassificationList(t *testing.T) {
 		height:         20,
 	}
 	updated, _ := model.Update(teaKey(keyOpen))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewClassifications {
 		t.Fatalf("expected mode %q, got %q", viewClassifications, got.mode)
 	}
 }
 
 func TestEnterOnClassificationListOpensDetail(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    classificationRepo{classifications: sampleClassifications(3)},
@@ -293,14 +292,14 @@ func TestEnterOnClassificationListOpensDetail(t *testing.T) {
 		height:  20,
 	}
 	updated, _ := model.Update(teaKey(keyEnter))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewClassificationDetail {
 		t.Fatalf("expected mode %q, got %q", viewClassificationDetail, got.mode)
 	}
 }
 
 func TestClassificationListViewRendersPopup(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    classificationRepo{classifications: sampleClassifications(3)},
@@ -319,7 +318,7 @@ func TestClassificationListViewRendersPopup(t *testing.T) {
 }
 
 func TestClassificationDetailViewRendersPopup(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    classificationRepo{classifications: sampleClassifications(3)},
@@ -339,7 +338,7 @@ func TestClassificationDetailViewRendersPopup(t *testing.T) {
 
 func TestPressLFromListOpensClassificationPopup(t *testing.T) {
 	patents := []domain.Patent{{Number: "US10218760B2", Title: "Test Patent"}}
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    classificationRepo{classifications: sampleClassifications(3)},
@@ -350,7 +349,7 @@ func TestPressLFromListOpensClassificationPopup(t *testing.T) {
 		height:  40,
 	}
 	updated, _ := model.Update(teaKey(keyClassification))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewClassifications {
 		t.Fatalf("expected mode %q after pressing %q, got %q", viewClassifications, keyClassification, got.mode)
 	}
@@ -361,7 +360,7 @@ func TestPressLFromListOpensClassificationPopup(t *testing.T) {
 }
 
 func TestClassificationPageKeysMoveByPage(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:                    t.Context(),
 		text:                   EnglishText(),
 		repo:                   classificationRepo{classifications: sampleClassifications(8)},
@@ -371,56 +370,58 @@ func TestClassificationPageKeysMoveByPage(t *testing.T) {
 		height:                 12,
 	}
 	updated, _ := model.Update(teaKey(keyCtrlF))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.classificationSelected != 5 {
 		t.Fatalf("expected page-down classification selection 5, got %d", got.classificationSelected)
 	}
 	updated, _ = got.Update(teaKey(keyCtrlD))
-	got = updated.(Model)
+	got = updated.(*Model)
 	if got.classificationSelected != 0 {
 		t.Fatalf("expected page-up classification selection 0, got %d", got.classificationSelected)
 	}
 }
 
 func TestNumericPrefixMovesSelections(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		mode:     viewList,
 		patents:  []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}},
 		selected: 0,
 	}
 	updated, _ := model.Update(teaKey("3"))
 	updated, _ = updated.Update(teaKey(keyVimDown))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.selected != 3 {
 		t.Fatalf("expected 3j to move to row 4, got %d", got.selected)
 	}
 	updated, _ = got.Update(teaKey("2"))
 	updated, _ = updated.Update(teaKey(keyVimUp))
-	got = updated.(Model)
+	got = updated.(*Model)
 	if got.selected != 1 {
 		t.Fatalf("expected 2k to move to row 2, got %d", got.selected)
 	}
 }
 
 func TestNumericPrefixGoesToAbsoluteRow(t *testing.T) {
-	model := Model{
-		ctx:     t.Context(),
-		text:    EnglishText(),
-		repo:    classificationRepo{classifications: sampleClassifications(12)},
+	model := &Model{
+		ctx:                    t.Context(),
+		text:                   EnglishText(),
+		repo:                   classificationRepo{classifications: sampleClassifications(12)},
+
 		mode:    viewClassifications,
 		current: domain.Patent{Number: "US10218760B2"},
 	}
 	updated, _ := model.Update(teaKey("1"))
 	updated, _ = updated.Update(teaKey("0"))
 	updated, _ = updated.Update(teaKey(keyGoto))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.classificationSelected != 9 {
 		t.Fatalf("expected 10g to jump to row 10, got %d", got.classificationSelected)
 	}
 }
 
 func TestViewCitationsShowsIndexedRows(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    citationRepo{edges: sampleCitationEdges(3)},
@@ -439,7 +440,7 @@ func TestViewCitationsShowsIndexedRows(t *testing.T) {
 }
 
 func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:     t.Context(),
 		text:    EnglishText(),
 		repo:    storedCitationRepo{citationRepo: citationRepo{edges: sampleCitationEdges(1)}},
@@ -449,7 +450,7 @@ func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
 		height:  20,
 	}
 	updated, _ := model.Update(teaKey(keyEnter))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewPreview {
 		t.Fatalf("expected mode %q, got %q", viewPreview, got.mode)
 	}
@@ -462,7 +463,7 @@ func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
 }
 
 func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:          t.Context(),
 		text:         EnglishText(),
 		repo:         citationRepo{edges: sampleCitationEdges(3)},
@@ -481,7 +482,7 @@ func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
 }
 
 func TestVisibleCitationEdgesReturnsCurrentPage(t *testing.T) {
-	model := Model{
+	model := &Model{
 		ctx:           t.Context(),
 		text:          EnglishText(),
 		repo:          citationRepo{edges: sampleCitationEdges(12)},
@@ -516,7 +517,8 @@ func TestRowIndexLabelUsesThreeSpacePaddedCharacters(t *testing.T) {
 }
 
 func TestDetailFieldsGroupInventors(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		text: EnglishText(),
 		current: domain.Patent{
 			Assignee:  "Divx LLC",
@@ -534,23 +536,25 @@ func TestDetailFieldsGroupInventors(t *testing.T) {
 }
 
 func TestDeleteShortcutEntersConfirmationMode(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		mode:    viewList,
 		patents: []domain.Patent{{Number: "US1"}},
 	}
 	updated, _ := model.Update(teaKey(keyDelete))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewConfirmDelete {
 		t.Fatalf("expected mode %q, got %q", viewConfirmDelete, got.mode)
 	}
 }
 
 func TestConfirmationNoReturnsToList(t *testing.T) {
-	model := Model{
+	model := &Model{repo: stubRepo{},
+
 		mode: viewConfirmDelete,
 	}
 	updated, _ := model.Update(teaKey(keyNo))
-	got := updated.(Model)
+	got := updated.(*Model)
 	if got.mode != viewList {
 		t.Fatalf("expected mode %q, got %q", viewList, got.mode)
 	}
@@ -636,7 +640,7 @@ func sampleCitationEdges(count int) []domain.CitationEdge {
 }
 
 func detailFieldIndex(text TextCatalog, label TextKey) int {
-	model := Model{text: text}
+	model := &Model{repo: stubRepo{}, text: text}
 	for i, field := range model.detailFields() {
 		if field.label == label {
 			return i
@@ -663,7 +667,7 @@ func (stubRepo) GetPatent(context.Context, string, string) (domain.Patent, error
 	return domain.Patent{}, nil
 }
 func (stubRepo) ListPatents(context.Context, string, storage.ListPatentsOptions) ([]domain.Patent, error) {
-	return nil, nil
+	return []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}}, nil
 }
 
 func (stubRepo) ListCitations(context.Context, string, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {

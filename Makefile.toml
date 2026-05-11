@@ -54,6 +54,12 @@ args = [
   "${PATENTMINE_MAX_LOGS}",
 ]
 
+[tasks.run-google-debug]
+description = "Launch PatentMine using Google Patents with debug logging."
+category = "Application"
+env = { "PATENT_DEBUG" = "1" }
+alias = "run-google"
+
 [tasks.run]
 alias = "run-uspto"
 
