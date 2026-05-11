@@ -37,7 +37,8 @@ type Config struct {
 //  1. PATENTMINE_IMPORT_SOURCE / USPTO_API_KEY / USPTO_API_KEY_FILE env vars
 //  2. configs/config.toml (project-relative)
 //  3. ~/.config/patentmine/config.toml sections (user-global)
-//  4. Built-in defaults (ImportSource = google)
+//  4. ~/.ssh/uspto_odp_key (standard key file)
+//  5. Built-in defaults (ImportSource = google)
 func Load() Config {
 	cfg := Config{ImportSource: ImportSourceGoogle}
 	applyFile(&cfg)
@@ -93,6 +94,16 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("PATENTMINE_IMPORT_SOURCE"); v != "" {
 		cfg.ImportSource = ImportSource(v)
+	}
+
+	// Final fallback: standard SSH path
+	if cfg.USPTO.APIKey == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			path := filepath.Join(home, ".ssh", "uspto_odp_key")
+			if key := readFile(path); key != "" {
+				cfg.USPTO.APIKey = key
+			}
+		}
 	}
 }
 

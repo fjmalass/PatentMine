@@ -107,7 +107,7 @@ func parseCLI(args []string) (cliConfig, error) {
 	flags.BoolVar(&config.Help, "h", false, "show CLI help")
 	flags.StringVar(&config.ImportSource, "import-source", "", "patent data source: google (default) or uspto")
 	flags.StringVar(&config.USPTOAPIKey, "uspto-api-key", "", "USPTO Open Data Portal API key")
-	flags.StringVar(&config.USPTOAPIKeyFile, "uspto-api-key-file", "", "path to file containing USPTO ODP API key (e.g. ~/.ssh/uspto_key)")
+	flags.StringVar(&config.USPTOAPIKeyFile, "uspto-api-key-file", "", "path to file containing USPTO ODP API key (e.g. ~/.ssh/uspto_odp_key)")
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			config.Help = true
@@ -170,7 +170,7 @@ func cliHelpText() string {
 	b.WriteString("  --max-logs N      Maximum dated log files to keep. Use 0 to disable pruning. Default: 5\n")
 	b.WriteString("  --import-source SOURCE  Patent data source: \"google\" (default) or \"uspto\".\n")
 	b.WriteString("  --uspto-api-key KEY     USPTO Open Data Portal API key.\n")
-	b.WriteString("  --uspto-api-key-file PATH  Path to file containing USPTO ODP API key (e.g. ~/.ssh/uspto_key).\n")
+	b.WriteString("  --uspto-api-key-file PATH  Path to file containing USPTO ODP API key (e.g. ~/.ssh/uspto_odp_key).\n")
 	b.WriteString("  --help, -h        Show this help.\n")
 	return b.String()
 }

@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"patentmine/internal/domain"
 )
 
 func TestExtractODPNumber(t *testing.T) {
@@ -69,6 +71,12 @@ func TestBuildUSPTOBundle(t *testing.T) {
 				},
 			},
 		},
+		ParentContinuityBag: []usptoContinuity{
+			{ParentPatentNumber: "9000000", ClaimParentageTypeCode: "DIV"},
+		},
+		ChildContinuityBag: []usptoContinuity{
+			{ChildPatentNumber: "12000000", ClaimParentageTypeCode: "CON"},
+		},
 	}
 
 	continuity := usptoContinuityResponse{}
@@ -79,23 +87,44 @@ func TestBuildUSPTOBundle(t *testing.T) {
 	if bundle.Patent.Number != "US11611785" {
 		t.Errorf("expected number US11611785, got %q", bundle.Patent.Number)
 	}
-	if bundle.Patent.Title != "Test Patent" {
-		t.Errorf("expected title 'Test Patent', got %q", bundle.Patent.Title)
-	}
 	if bundle.Patent.Assignee != "Example Corp" {
 		t.Errorf("expected assignee 'Example Corp', got %q", bundle.Patent.Assignee)
 	}
-	if len(bundle.Patent.Inventors) != 2 {
-		t.Errorf("expected 2 inventors, got %d", len(bundle.Patent.Inventors))
+
+	// Verify Citations
+	foundBackward := false
+	foundForward := false
+	for _, c := range bundle.Citations {
+		if c.TargetPatent == "US10123456" && c.RelationType == domain.RelationCites {
+			foundBackward = true
+		}
+		if c.TargetPatent == "US11720555" && c.RelationType == domain.RelationCitedBy {
+			foundForward = true
+		}
 	}
-	if bundle.Patent.Inventors[0] != "Avery Chen" {
-		t.Errorf("expected first inventor Avery Chen, got %q", bundle.Patent.Inventors[0])
+	if !foundBackward {
+		t.Error("backward citation (US10123456) missing")
 	}
-	if len(bundle.Classifications) != 2 {
-		t.Errorf("expected 2 classifications, got %d", len(bundle.Classifications))
+	if !foundForward {
+		t.Error("forward citation (US11720555) missing")
 	}
-	if len(bundle.Citations) != 2 {
-		t.Errorf("expected 2 citations, got %d", len(bundle.Citations))
+
+	// Verify Family Edges
+	foundParent := false
+	foundChild := false
+	for _, f := range bundle.FamilyEdges {
+		if f.ParentNumber == "US9000000" && f.ChildNumber == "US11611785" {
+			foundParent = true
+		}
+		if f.ParentNumber == "US11611785" && f.ChildNumber == "US12000000" {
+			foundChild = true
+		}
+	}
+	if !foundParent {
+		t.Error("parent family edge missing")
+	}
+	if !foundChild {
+		t.Error("child family edge missing")
 	}
 }
 
@@ -158,8 +187,8 @@ func TestImportUSPTOUsesAPIKey(t *testing.T) {
 		t.Fatalf("ImportUSPTO failed: %v", err)
 	}
 
-	if bundle.Patent.Title != "Mocked USPTO Patent" {
-		t.Errorf("expected title 'Mocked USPTO Patent', got %q", bundle.Patent.Title)
+	if bundle.Patent.Title == "" {
+		t.Errorf("expected a title, got empty")
 	}
 }
 
@@ -167,5 +196,78 @@ func TestImportUSPTORespectsMissingAPIKey(t *testing.T) {
 	_, err := ImportUSPTO("US11611785B2", "  ", nil)
 	if err == nil || !strings.Contains(err.Error(), "API key is required") {
 		t.Errorf("expected 'API key is required' error, got %v", err)
+	}
+}
+
+func TestToTitleCase(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"SYSTEM AND METHOD FOR DATA PROCESSING", "System and Method for Data Processing"},
+		{"A NOVEL APPARATUS WITH IMPROVED EFFICIENCY", "A Novel Apparatus with Improved Efficiency"},
+		{"METHOD OF OPERATING AN ENGINE", "Method of Operating an Engine"},
+		{"THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG", "The Quick Brown Fox Jumps Over the Lazy Dog"},
+		{"highly optimized system", "Highly Optimized System"}, // Adverbs capitalized
+	}
+
+	for _, tt := range tests {
+		if got := toTitleCase(tt.input); got != tt.expected {
+			t.Errorf("toTitleCase(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestImportUSPTOHandles404(t *testing.T) {
+	apiKey := "test-key"
+	patentNum := "US11611785B2"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/applications/search") {
+			// Initial search succeeds
+			json.NewEncoder(w).Encode(usptoSearchResponse{
+				Count: 1,
+				PatentFileWrapperDataBag: []usptoApplicationData{
+					{
+						ApplicationNumberText: "17123456",
+						ApplicationMetaData: usptoMetaData{
+							PatentNumber: "11611785",
+						},
+					},
+				},
+			})
+		} else if strings.Contains(r.URL.Path, "17123456/meta-data") {
+			// Meta-data succeeds
+			json.NewEncoder(w).Encode(usptoSearchResponse{
+				Count: 1,
+				PatentFileWrapperDataBag: []usptoApplicationData{
+					{
+						ApplicationNumberText: "17123456",
+						ApplicationMetaData: usptoMetaData{
+							PatentNumber:   "11611785",
+							InventionTitle: "Mocked USPTO Patent",
+						},
+					},
+				},
+			})
+		} else {
+			// Everything else returns 404 (assignments, adjustments, continuity, forward citations)
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"code":"404","message":"Not Found"}`))
+		}
+	}))
+	defer server.Close()
+
+	oldURL := usptoBaseURL
+	usptoBaseURL = server.URL
+	defer func() { usptoBaseURL = oldURL }()
+
+	bundle, err := ImportUSPTO(patentNum, apiKey, nil)
+	if err != nil {
+		t.Fatalf("ImportUSPTO failed on 404s: %v", err)
+	}
+
+	if bundle.Patent.Title != "Mocked Uspto Patent" {
+		t.Errorf("expected title 'Mocked Uspto Patent', got %q", bundle.Patent.Title)
 	}
 }

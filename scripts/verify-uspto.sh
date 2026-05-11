@@ -10,8 +10,22 @@ fi
 PATENT_NUM=$1
 API_KEY=$2
 
-# Try to find API key in config if not provided
+# Try to find API key in config or standard ssh path if not provided
 if [ -z "$API_KEY" ]; then
+    # Check project-relative config
+    if [ -f "configs/config.toml" ]; then
+        API_KEY=$(grep "api_key =" "configs/config.toml" | head -n1 | cut -d'=' -f2 | tr -d ' "' )
+        if [ -z "$API_KEY" ]; then
+             KEY_FILE=$(grep "api_key_file =" "configs/config.toml" | head -n1 | cut -d'=' -f2 | tr -d ' "' | sed "s|~|$HOME|")
+             if [ -f "$KEY_FILE" ]; then
+                 API_KEY=$(cat "$KEY_FILE")
+             fi
+        fi
+    fi
+fi
+
+if [ -z "$API_KEY" ]; then
+    # Check global config
     CONFIG_FILE="$HOME/.config/patentmine/config.toml"
     if [ -f "$CONFIG_FILE" ]; then
         API_KEY=$(grep "api_key =" "$CONFIG_FILE" | head -n1 | cut -d'=' -f2 | tr -d ' "' )
@@ -19,8 +33,19 @@ if [ -z "$API_KEY" ]; then
 fi
 
 if [ -z "$API_KEY" ]; then
-    echo "Error: No USPTO API key provided and none found in $CONFIG_FILE"
-    echo "Register at developer.uspto.gov and add to config.toml or pass as second argument."
+    # Check standard ssh path
+    SSH_KEY_FILE="$HOME/.ssh/uspto_odp_key"
+    if [ -f "$SSH_KEY_FILE" ]; then
+        API_KEY=$(cat "$SSH_KEY_FILE")
+    fi
+fi
+
+if [ -z "$API_KEY" ]; then
+    echo "Error: No USPTO API key found."
+    echo "Register at developer.uspto.gov and:"
+    echo "1. Add to configs/config.toml"
+    echo "2. OR Add to ~/.config/patentmine/config.toml"
+    echo "3. OR Save to ~/.ssh/uspto_odp_key"
     exit 1
 fi
 
