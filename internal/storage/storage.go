@@ -81,6 +81,7 @@ type Repository interface {
 	ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error)
 	DeleteIDSEntry(ctx context.Context, id int64) error
 	UpdateIDSEntryStatus(ctx context.Context, id int64, status domain.IDSStatus) error
+	UpdateIDSEntry(ctx context.Context, entry domain.IDSEntry) error
 	GetIDSMetadata(ctx context.Context, projectID string) (domain.IDSMetadata, error)
 	SaveIDSMetadata(ctx context.Context, meta domain.IDSMetadata) error
 	AddIDSNPLEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)

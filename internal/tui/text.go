@@ -179,6 +179,8 @@ const (
 	// General commands
 	TextHelpPurge      TextKey = "help.purge"
 	TextHelpCompact    TextKey = "help.compact"
+	TextHelpNote       TextKey = "help.note"
+	TextHelpExit       TextKey = "help.exit"
 	TextHelpSearchHint TextKey = "help.search_hint"
 )
 
@@ -349,6 +351,8 @@ func EnglishText() TextCatalog {
 
 		TextHelpPurge:      "Purge all ignored patents from the project and vacuum the database.",
 		TextHelpCompact:    "Compact (vacuum) the SQLite database to reclaim space.",
+		TextHelpNote:       "Log a research note for the current patent.",
+		TextHelpExit:       "Quit the application.",
 		TextHelpSearchHint: "[/] to search (smart-case) · [q/esc] to close",
 	}
 }

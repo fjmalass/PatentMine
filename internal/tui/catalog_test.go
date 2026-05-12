@@ -25,10 +25,10 @@ func TestRenderHelpUsesCommandCatalog(t *testing.T) {
 func TestFilterHelpSections(t *testing.T) {
 	text := EnglishText()
 
-	// Empty query returns all sections
+	// Empty query returns all sections plus the Commands overview section.
 	all := FilterHelpSections("", text)
-	if len(all) != len(allHelpSections) {
-		t.Fatalf("expected %d sections, got %d", len(allHelpSections), len(all))
+	if len(all) != len(allHelpSections)+1 {
+		t.Fatalf("expected %d sections (allHelp+commands), got %d", len(allHelpSections)+1, len(all))
 	}
 
 	// Query that matches nothing returns empty

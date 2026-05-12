@@ -51,6 +51,7 @@ const (
 	viewProjectIDS           viewMode = "project-ids"
 	viewProjectInfo          viewMode = "project-info"
 	viewNoteEdit             viewMode = "note-edit"
+	viewIDSEdit              viewMode = "ids-edit"
 	viewAbstract             viewMode = "abstract"
 	viewClaim                viewMode = "view-claim"
 	viewUSPTOKeyWarning      viewMode = "uspto-key-warning"
@@ -570,6 +571,56 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.mode == viewIDSEdit {
+			switch msg.String() {
+			case keyEsc, keyBack:
+				return m.goBack()
+			case "s":
+				return m.cycleCurrentPatentIDSStatus()
+			case "n":
+				entry := m.idsEntryForPatent(m.current.Number)
+				if entry != nil {
+					m.input.Focus()
+					m.input.SetValue(":ids note " + entry.Notes)
+					m.input.CursorEnd()
+				}
+			case "k":
+				entry := m.idsEntryForPatent(m.current.Number)
+				if entry != nil {
+					m.input.Focus()
+					m.input.SetValue(":ids kind " + entry.KindCode)
+					m.input.CursorEnd()
+				}
+			case "c":
+				entry := m.idsEntryForPatent(m.current.Number)
+				if entry != nil {
+					m.input.Focus()
+					m.input.SetValue(":ids country " + entry.CountryCode)
+					m.input.CursorEnd()
+				}
+			case "p":
+				entry := m.idsEntryForPatent(m.current.Number)
+				if entry != nil {
+					m.input.Focus()
+					m.input.SetValue(":ids passages " + entry.RelevantPassages)
+					m.input.CursorEnd()
+				}
+			case "f":
+				return m.idsEditCommand([]string{idsEditSubFull})
+			case keyDelete:
+				entry := m.idsEntryForPatent(m.current.Number)
+				if entry != nil {
+					if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
+						m.err = err.Error()
+					} else {
+						m.populateDetailCache()
+						m.message = "IDS entry removed"
+						return m.goBack()
+					}
+				}
+			}
+			return m, nil
+		}
 		if m.mode == viewProjectEvents {
 			switch msg.String() {
 			case keyVimDown, keyArrowDown:
@@ -624,7 +675,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
 				m.projectIDSSelected = clamp(m.projectIDSSelected+1, 0, len(ids)-1)
 			case keyVimUp, keyArrowUp:
-				m.projectIDSSelected = clamp(m.projectIDSSelected-1, 0, 0)
+				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+				m.projectIDSSelected = clamp(m.projectIDSSelected-1, 0, max(0, len(ids)-1))
 			case "s":
 				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
 				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
@@ -828,8 +880,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.goBack()
 		case keyQuit:
 			return m, tea.Quit
-		case keyProjectInfo:
-			return m.navigateTo(viewProjectInfo), nil
+		case keyIDS:
+			m.projectIDSSelected = 0
+			return m.navigateTo(viewProjectIDS), nil
 		case keyProject:
 			m = m.navigateTo(viewSplash)
 			m = m.reloadProjects()
@@ -1033,11 +1086,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m = m.navigateTo(viewRefs)
 		case keyRefreshAll:
-			if m.mode == viewCites {
-				return m.refreshCommand([]string{refreshTargetCitations})
-			}
-			if m.mode == viewCitedBy {
-				return m.refreshCommand([]string{refreshTargetCitedBy})
+			if m.isCitationView() {
+				return m.refreshVisibleCitationDetails()
 			}
 		case keyAI:
 			m = m.navigateTo(viewAI)
@@ -1146,6 +1196,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewReview {
 				return m.updateSelectedReviewCitationStatus(domain.CitationStatusIgnored, TextMessageIgnoredPatent)
 			}
+			return m.navigateTo(viewProjectInfo), nil
 		case keyUnreview:
 			if m.mode == viewPreview {
 				return m.updatePendingCitation(domain.CitationStatusUnderReview, TextMessageUnderReviewPatent)
@@ -1430,6 +1481,8 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		text := strings.Join(command.Args, " ")
 		m.logActivity(activityNoteAdd, m.current.Number, text)
 		m.message = "noted"
+	case commandIDS:
+		return m.idsEditCommand(command.Args)
 	case commandExit:
 		return m, tea.Quit
 	default:
@@ -1956,6 +2009,46 @@ func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
 	}
 	m.logActivity("ids.status", m.current.Number, string(next))
 	m.message = "IDS status: " + string(next)
+	return m, nil
+}
+
+func (m *Model) idsEditCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) < 1 {
+		m.err = "usage: :ids <note|kind|country|passages> <value>"
+		return m, nil
+	}
+	entry := m.idsEntryForPatent(m.current.Number)
+	if entry == nil {
+		m.err = "no IDS entry for this patent; add one first"
+		return m, nil
+	}
+	value := strings.Join(args[1:], " ")
+	switch args[0] {
+	case idsEditSubNote:
+		entry.Notes = value
+	case idsEditSubKind:
+		entry.KindCode = value
+	case idsEditSubCountry:
+		entry.CountryCode = value
+	case idsEditSubPassages:
+		if err := domain.ValidateIDSPassages(value); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		entry.RelevantPassages = value
+		entry.InFull = false
+	case idsEditSubFull:
+		entry.InFull = !entry.InFull
+	default:
+		m.err = "unknown ids field: " + args[0] + ". Use: note, kind, country, passages, full"
+		return m, nil
+	}
+	if err := m.repo.UpdateIDSEntry(m.ctx, *entry); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.populateDetailCache()
+	m.message = "IDS " + args[0] + " updated"
 	return m, nil
 }
 
@@ -3236,6 +3329,8 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewProjectInfo()
 	case viewNoteEdit:
 		return m.viewNoteEdit()
+	case viewIDSEdit:
+		return m.viewIDSEdit()
 	case viewAbstract:
 		return m.viewAbstract()
 	case viewClaim:
@@ -4269,7 +4364,9 @@ func (m *Model) viewPreview() string {
 		return base.Render(m.text.T(TextValueUnknown)) + "\n"
 	}
 	var b strings.Builder
-	b.WriteString(base.Bold(true).Render(m.text.T(TextPreviewTitle)))
+	b.WriteString(m.renderPopupTitle(m.text.T(TextPreviewTitle)))
+	b.WriteString("\n")
+	b.WriteString(base.Bold(true).Render(m.previewStorePrompt()))
 	b.WriteString("\n\n")
 	b.WriteString(base.Bold(true).Render(p.Number) + "\n")
 	b.WriteString(base.Render(p.Title) + "\n\n")
@@ -4301,8 +4398,6 @@ func (m *Model) viewPreview() string {
 	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate, maxW))
 	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p), maxW))
 	b.WriteString("\n")
-	b.WriteString(base.Bold(true).Render(m.previewStorePrompt()))
-	b.WriteString("\n\n")
 	if strings.TrimSpace(p.Abstract) == "" {
 		b.WriteString(base.Render(m.text.T(TextPreviewNoAbstract)) + "\n")
 	} else {
@@ -4635,6 +4730,8 @@ func (m *Model) setActiveSelectionIndex(val int) {
 		m.classificationSelected = val
 	case m.mode == viewInventors:
 		m.inventorSelected = val
+	case m.mode == viewFamily:
+		m.familySelected = val
 	case m.mode == viewDetail:
 		m.detailSelected = val
 	}
@@ -4655,6 +4752,8 @@ func (m *Model) activeItemCount() int {
 		return len(cls)
 	case m.mode == viewInventors:
 		return len(m.current.Inventors)
+	case m.mode == viewFamily:
+		return len(m.buildFamilyTree())
 	case m.mode == viewDetail:
 		return len(m.detailFields())
 	default:
@@ -4731,8 +4830,6 @@ func (m *Model) viewClassifications() string {
 	var b strings.Builder
 	b.WriteString(m.renderPopupTitle("Classifications") + "\n\n")
 	b.WriteString(subtleStyle.Render(pageStatus(m.text.T(TextValuePageStatus), window)))
-	b.WriteString("\n")
-	b.WriteString(subtleStyle.Render(m.classificationOpenHint()))
 	b.WriteString("\n\n")
 
 	rowWidth := max(44, m.overlayWidth()-6)
@@ -4786,6 +4883,9 @@ func (m *Model) viewClassificationDetail() string {
 	count := len(projectPatents)
 
 	var b strings.Builder
+	b.WriteString(m.renderPopupTitle(fmt.Sprintf("Classification · %s", cls.Code)) + "\n")
+	b.WriteString(subtleStyle.Render("[" + keyEnter + "] filters project list · [" + keyEsc + "] back to list"))
+	b.WriteString("\n\n")
 	b.WriteString(base.Render(fmt.Sprintf("System: %s", cls.System)) + "\n")
 	b.WriteString(base.Render(fmt.Sprintf("Code:   %s", cls.Code)) + "\n\n")
 
@@ -4804,8 +4904,7 @@ func (m *Model) viewClassificationDetail() string {
 
 	b.WriteString(boldStyle.Render("Description:") + "\n")
 	b.WriteString(base.Render(cls.Description) + "\n\n")
-	b.WriteString(base.Render(fmt.Sprintf("%d patent(s) in this project share this classification.", count)) + "\n")
-	b.WriteString(subtleStyle.Render("[" + keyEnter + "] filters project list · [" + keyEsc + "] back to list"))
+	b.WriteString(base.Render(fmt.Sprintf("Patents: %d patent(s)", count)) + "\n")
 	return b.String()
 }
 
@@ -5079,7 +5178,6 @@ func (m *Model) viewInventors() string {
 
 	var b strings.Builder
 	b.WriteString(m.renderPopupTitle("Inventors") + "\n\n")
-	b.WriteString(base.Render("Select an inventor to filter — Enter expands:") + "\n\n")
 	for i, inventor := range inventors {
 		prefix := "  "
 		if i == selected {
@@ -5460,12 +5558,11 @@ func (m *Model) viewProjectIDS() string {
 	}
 
 	base := overlayBase()
-	titleStyle := base.Bold(true).Underline(true)
 	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(fmt.Sprintf("IDS · %s", m.ProjectID)))
+	b.WriteString(m.renderPopupTitle(fmt.Sprintf("IDS · %s", m.ProjectID)))
 	b.WriteString("\n\n")
 
 	if len(ids) == 0 {
@@ -5473,40 +5570,58 @@ func (m *Model) viewProjectIDS() string {
 		b.WriteString("\n\n")
 		b.WriteString(subtleStyle.Render("IDS entries are prior art references to disclose to the patent office."))
 	} else {
+		sel := clamp(m.projectIDSSelected, 0, len(ids)-1)
+		window := pageWindow(sel, len(ids), m.pageSize()-4)
+
+		b.WriteString(subtleStyle.Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+		b.WriteString("\n\n")
+
+		// fixed cols: prefix(2) + #(4) + patent(17) + status(12) + date(11) = 46
+		// remaining split: notes ~20, passages ~rest
+		rowWidth := max(60, m.overlayWidth()-4)
+		noteW := 20
+		passW := max(10, rowWidth-46-noteW-1)
+
 		headerStyle := base.Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
-		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-3s %-16s %-11s %-14s %s", "#", "Patent", "Status", "Added", "Notes")))
+		b.WriteString(headerStyle.Render(fmt.Sprintf("  %-3s %-16s %-11s %-10s %-*s %s", "#", "Patent", "Status", "Added", noteW, "Notes", "Passages")))
 		b.WriteString("\n")
-		for i, e := range ids {
+		for i := window.Start; i < window.End; i++ {
+			e := ids[i]
 			rowStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 			numStyle := base.Foreground(lipgloss.Color(ColorTheme))
 			statusColor := idsStatusColor(e.Status)
-			if i == m.projectIDSSelected {
+			if i == sel {
 				rowStyle = rowStyle.Bold(true).Reverse(true)
 				numStyle = numStyle.Bold(true)
 			}
 			prefix := "  "
-			if i == m.projectIDSSelected {
+			if i == sel {
 				prefix = "→ "
 			}
 			notes := e.Notes
-			if len(notes) > idsNoteMaxLen {
-				notes = notes[:idsNoteTruncLen] + "..."
+			if len(notes) > noteW {
+				notes = notes[:noteW-3] + "..."
 			}
 			if notes == "" {
 				notes = "—"
+			}
+			passages := domain.IDSPassagesText(e)
+			if len(passages) > passW {
+				passages = passages[:passW-3] + "..."
+			}
+			if passages == "" {
+				passages = "—"
 			}
 			statusStr := string(e.Status)
 			if statusStr == "" {
 				statusStr = string(domain.IDSStatusPending)
 			}
 			statusRendered := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(fmt.Sprintf("%-11s", statusStr))
-			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s", e.PatentNumber)) + " " + statusRendered + " " + rowStyle.Render(fmt.Sprintf("%-14s %s", e.AddedAt.Format("2006-01-02"), notes)))
+			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s", e.PatentNumber)) + " " + statusRendered + " " + rowStyle.Render(fmt.Sprintf("%-10s %-*s %s", e.AddedAt.Format("2006-01-02"), noteW, notes, passages)))
 			b.WriteString("\n")
 		}
 	}
 
-	b.WriteString("\n")
-	b.WriteString(subtleStyle.Render("j/k: move · s: cycle status · D: remove · :project export ids [file] · esc: back"))
 	return b.String()
 }
 
@@ -5910,6 +6025,95 @@ func (m *Model) viewProjectInfo() string {
 	} else {
 		b.WriteString(hintStyle.Render("s: app status · m: summary · c: comment · S: status · I/esc: back"))
 	}
+	return b.String()
+}
+
+func (m *Model) viewIDSEdit() string {
+	entry := m.idsEntryForPatent(m.current.Number)
+
+	base := overlayBase()
+	titleStyle := base.Bold(true).Underline(true)
+	labelStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	valueStyle := base.Foreground(lipgloss.Color(ColorTheme))
+	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
+	hintStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+	keyHintStyle := base.Foreground(lipgloss.Color(ColorAccent)).Bold(true)
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("IDS Entry · " + m.current.Number))
+	b.WriteString("\n\n")
+
+	if entry == nil {
+		b.WriteString(dimStyle.Render("No IDS entry.") + "\n")
+		b.WriteString(hintStyle.Render("[esc] back"))
+		return b.String()
+	}
+
+	statusColor := idsStatusColor(entry.Status)
+	statusStr := string(entry.Status)
+	if statusStr == "" {
+		statusStr = string(domain.IDSStatusPending)
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Status:")) +
+		base.Foreground(lipgloss.Color(statusColor)).Bold(true).Render(statusStr) + "\n")
+
+	kindVal := entry.KindCode
+	if kindVal == "" {
+		kindVal = dimStyle.Render("—")
+	} else {
+		kindVal = valueStyle.Render(kindVal)
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Kind Code:")) + kindVal + "\n")
+
+	ccVal := entry.CountryCode
+	if ccVal == "" {
+		ccVal = dimStyle.Render("—")
+	} else {
+		ccVal = valueStyle.Render(ccVal)
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Country Code:")) + ccVal + "\n")
+
+	notesVal := entry.Notes
+	if notesVal == "" {
+		notesVal = dimStyle.Render("—")
+	} else {
+		notesVal = valueStyle.Render(notesVal)
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Notes:")) + notesVal + "\n")
+
+	inFullVal := dimStyle.Render("—")
+	if entry.InFull {
+		inFullVal = valueStyle.Render(domain.IDSIconInFull + " Yes")
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "In Full:")) + inFullVal + "\n")
+
+	passagesVal := domain.IDSPassagesText(*entry)
+	if passagesVal == "" {
+		passagesVal = dimStyle.Render("—")
+	} else {
+		passagesVal = valueStyle.Render(passagesVal)
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Relevant Passages:")) + passagesVal + "\n")
+
+	b.WriteString("\n")
+	b.WriteString("\n")
+	if m.input.Focused() {
+		b.WriteString(base.Foreground(lipgloss.Color(ColorTheme)).Bold(true).Render("COMMAND: ") + base.Render(m.input.View()) + "\n")
+		if strings.HasPrefix(m.input.Value(), ":ids passages") {
+			b.WriteString(hintStyle.Render("fmt: "+domain.IDSPassagesFormatGuide) + "\n")
+		}
+	} else {
+		b.WriteString(
+			keyHintStyle.Render("s") + hintStyle.Render(" cycle status · ") +
+				keyHintStyle.Render("f") + hintStyle.Render(" toggle in full · ") +
+				keyHintStyle.Render("n") + hintStyle.Render(" notes · ") +
+				keyHintStyle.Render("k") + hintStyle.Render(" kind code · ") +
+				keyHintStyle.Render("c") + hintStyle.Render(" country · ") +
+				keyHintStyle.Render("p") + hintStyle.Render(" passages · ") +
+				keyHintStyle.Render("D") + hintStyle.Render(" delete · ") +
+				keyHintStyle.Render("esc") + hintStyle.Render(" back"))
+	}
+
 	return b.String()
 }
 

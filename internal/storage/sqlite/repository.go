@@ -58,6 +58,18 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 		`alter table project_ids add column kind_code text not null default ''`,
 		`alter table project_ids add column country_code text not null default ''`,
 		`alter table project_ids add column relevant_passages text not null default ''`,
+		`alter table project_ids add column in_full integer not null default 0`,
+		`alter table project_ids_npl add column in_full integer not null default 0`,
+		`create trigger if not exists trg_project_patents_delete_ids
+			after delete on project_patents
+			begin
+				delete from project_ids where project_id = OLD.project_id and patent_number = OLD.patent_number;
+			end`,
+		`create trigger if not exists trg_patents_delete_ids
+			after delete on patents
+			begin
+				delete from project_ids where patent_number = OLD.number;
+			end`,
 	}
 	for _, stmt := range alterations {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
@@ -1012,6 +1024,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func nowString() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
@@ -1275,8 +1294,8 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 		entry.Status = domain.IDSStatusPending
 	}
 	res, err := r.db.ExecContext(ctx,
-		`insert or ignore into project_ids (project_id, patent_number, kind_code, country_code, relevant_passages, notes, status, added_at) values (?, ?, ?, ?, ?, ?, ?, ?)`,
-		entry.ProjectID, entry.PatentNumber, entry.KindCode, entry.CountryCode, entry.RelevantPassages, entry.Notes, string(entry.Status), now)
+		`insert or ignore into project_ids (project_id, patent_number, kind_code, country_code, in_full, relevant_passages, notes, status, added_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.ProjectID, entry.PatentNumber, entry.KindCode, entry.CountryCode, boolToInt(entry.InFull), entry.RelevantPassages, entry.Notes, string(entry.Status), now)
 	if err != nil {
 		r.logger.Error("repository.add_ids_entry failed", "project", entry.ProjectID, "patent", entry.PatentNumber, "error", err)
 		return domain.IDSEntry{}, err
@@ -1292,7 +1311,7 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 
 func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`select id, project_id, patent_number, coalesce(kind_code,''), coalesce(country_code,''), coalesce(relevant_passages,''), notes, status, added_at from project_ids where project_id = ? order by added_at desc`,
+		`select id, project_id, patent_number, coalesce(kind_code,''), coalesce(country_code,''), coalesce(in_full,0), coalesce(relevant_passages,''), notes, status, added_at from project_ids where project_id = ? order by added_at desc`,
 		projectID)
 	if err != nil {
 		return nil, err
@@ -1303,9 +1322,11 @@ func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]do
 		var e domain.IDSEntry
 		var addedAt string
 		var statusStr string
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.KindCode, &e.CountryCode, &e.RelevantPassages, &e.Notes, &statusStr, &addedAt); err != nil {
+		var inFullInt int
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.KindCode, &e.CountryCode, &inFullInt, &e.RelevantPassages, &e.Notes, &statusStr, &addedAt); err != nil {
 			return nil, err
 		}
+		e.InFull = inFullInt != 0
 		e.Status = domain.IDSStatus(statusStr)
 		e.AddedAt = parseTime(addedAt)
 		out = append(out, e)
@@ -1316,6 +1337,14 @@ func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]do
 func (r *Repository) UpdateIDSEntryStatus(ctx context.Context, id int64, status domain.IDSStatus) error {
 	r.logger.Info("repository.update_ids_status", "id", id, "status", status)
 	_, err := r.db.ExecContext(ctx, `update project_ids set status = ? where id = ?`, string(status), id)
+	return err
+}
+
+func (r *Repository) UpdateIDSEntry(ctx context.Context, entry domain.IDSEntry) error {
+	r.logger.Info("repository.update_ids_entry", "id", entry.ID)
+	_, err := r.db.ExecContext(ctx,
+		`update project_ids set kind_code=?, country_code=?, in_full=?, relevant_passages=?, notes=?, status=? where id=?`,
+		entry.KindCode, entry.CountryCode, boolToInt(entry.InFull), entry.RelevantPassages, entry.Notes, string(entry.Status), entry.ID)
 	return err
 }
 

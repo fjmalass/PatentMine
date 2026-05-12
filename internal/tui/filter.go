@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"patentmine/internal/domain"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 var validStatusFilters = map[string]string{
@@ -17,6 +18,57 @@ var validStatusFilters = map[string]string{
 	statusFilterNone:                 statusFilterNone,
 }
 
+type FilterType string
+
+const (
+	FilterStatus         FilterType = "status"
+	FilterClassification FilterType = "classification"
+	FilterInventor       FilterType = "inventor"
+	FilterClear          FilterType = "clear"
+)
+
+var filterAliases = map[string]FilterType{
+	"status":         FilterStatus,
+	"classification": FilterClassification,
+	"class":          FilterClassification,
+	"cpc":            FilterClassification,
+	"inventor":       FilterInventor,
+	"clear":          FilterClear,
+	"none":           FilterClear,
+	"reset":          FilterClear,
+}
+
+var SupportedFilters = map[FilterType]bool{
+	FilterStatus:         true,
+	FilterClassification: true,
+	FilterInventor:       true,
+	FilterClear:          true,
+}
+
+func SupportedFilterTypes() []string {
+	var list []string
+	for ft := range SupportedFilters {
+		list = append(list, string(ft))
+	}
+	return list
+}
+
+func SupportedFilterTypesString() string {
+	return strings.Join(SupportedFilterTypes(), ", ")
+}
+
+func (f FilterType) String() string {
+	return string(f)
+}
+
+func ParseFilterType(s string) (FilterType, bool) {
+	key := strings.ToLower(strings.TrimSpace(s))
+	if ft, ok := filterAliases[key]; ok {
+		return ft, true
+	}
+	return "", false
+}
+
 // filterCommand is the unified :filter gateway.
 // :filter status <stored|ignored|under-review|none>
 // :filter class <cpc> [&& <cpc2> | || <cpc2>]
@@ -24,17 +76,21 @@ var validStatusFilters = map[string]string{
 // :filter clear  — resets all filters to defaults
 func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.err = "usage: :filter status <stored|ignored|under-review|none>  · :filter class <cpc>  · :filter inventor <name>  · :filter clear"
+		m.err = fmt.Sprintf("usage: :filter <%s> ...", SupportedFilterTypesString())
 		return m, nil
 	}
-	switch strings.ToLower(args[0]) {
-	case "status":
+	ft, ok := ParseFilterType(args[0])
+	if !ok {
+		m.err = fmt.Sprintf("unknown filter type '%q' - valid: [%s]", args[0], SupportedFilterTypesString())
+	}
+	switch ft {
+	case FilterStatus:
 		return m.statusFilterCommand(args[1:])
-	case "class", "cpc", "classification":
+	case FilterClassification:
 		return m.classCommand(args[1:])
-	case "inventor":
+	case FilterInventor:
 		return m.inventorFilterCommand(args[1:])
-	case "clear":
+	case FilterClear:
 		m.statusFilter = domain.CitationStatusStored
 		m.classFilters = nil
 		m.classFilterOp = EmptyFilter
@@ -44,7 +100,8 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.mode = viewList
 		return m.refreshList()
 	default:
-		m.err = fmt.Sprintf("unknown filter type %q — valid: status, class, inventor, clear", args[0])
+		m.err = fmt.Sprintf("internal error: unhandled filter type: '%s', only [%s] supported",
+			args[0], SupportedFilterTypesString())
 		return m, nil
 	}
 }
@@ -186,7 +243,22 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case detailActionIDS:
-		return m.cycleCurrentPatentIDSStatus()
+		entry := m.idsEntryForPatent(m.current.Number)
+		if entry == nil {
+			// Create a pending entry first, then open edit popup
+			created, err := m.repo.AddIDSEntry(m.ctx, domain.IDSEntry{
+				ProjectID:    m.ProjectID,
+				PatentNumber: m.current.Number,
+				Status:       domain.IDSStatusPending,
+			})
+			if err != nil {
+				m.err = err.Error()
+				return m, nil
+			}
+			m.populateDetailCache()
+			_ = created
+		}
+		return m.navigateTo(viewIDSEdit), nil
 	case detailActionFirstClaim:
 		if m.current.FirstClaim == "" {
 			return m, nil

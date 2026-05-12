@@ -31,6 +31,7 @@ var allViewModes = []viewMode{
 	viewProjectIDS,
 	viewProjectInfo,
 	viewNoteEdit,
+	viewIDSEdit,
 	viewAbstract,
 	viewClaim,
 	viewUSPTOKeyWarning,
@@ -176,6 +177,14 @@ var modeSpecs = map[viewMode]modeSpec{
 		isOverlay: true,
 		background: func(m *Model) viewMode {
 			return previousModeOr(m, viewDetail)
+		},
+	},
+	viewIDSEdit: {
+		title:     "IDS Entry",
+		accent:    "75",
+		isOverlay: true,
+		background: func(*Model) viewMode {
+			return viewDetail
 		},
 	},
 	viewAbstract: {

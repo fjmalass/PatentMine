@@ -273,24 +273,21 @@ func (m *Model) viewFamilyOverlay() string {
 	cursorStyle := base.Foreground(lipgloss.Color(ColorAccentFamily)).Bold(true)
 
 	var b strings.Builder
-	b.WriteString(currentStyle.Render(m.current.Number))
-	if m.current.Title != "" {
-		b.WriteString(subtle.Render(" · " + m.truncate(m.current.Title, 40)))
-	}
-	b.WriteString("\n")
+	b.WriteString(m.renderPopupTitle("Family · "+m.current.Number) + "\n\n")
 
 	if len(nodes) == 0 {
-		b.WriteString("\n")
 		b.WriteString(subtle.Render("No family relationships defined."))
 		b.WriteString("\n\n")
 		b.WriteString(subtle.Render(":family parent <number> [type]  ·  :family child <number> [type]"))
 		return b.String()
 	}
 
-	b.WriteString("\n")
-
 	sel := clamp(m.familySelected, 0, len(nodes)-1)
 	window := pageWindow(sel, len(nodes), m.pageSize()-3)
+
+	b.WriteString(subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window)) + "\n\n")
+
+	titleWidth := max(20, m.overlayWidth()-46)
 
 	for i := window.Start; i < window.End; i++ {
 		node := nodes[i]
@@ -339,7 +336,7 @@ func (m *Model) viewFamilyOverlay() string {
 				titleStyle = currentStyle.Bold(true).Underline(true)
 			}
 			line.WriteString(base.Render(" "))
-			line.WriteString(titleStyle.Render(m.truncate(node.title, 30)))
+			line.WriteString(titleStyle.Render(m.truncate(node.title, titleWidth)))
 		}
 
 		// Relation-type badge.
@@ -358,8 +355,6 @@ func (m *Model) viewFamilyOverlay() string {
 		b.WriteString(line.String() + "\n")
 	}
 
-	b.WriteString("\n")
-	b.WriteString(subtle.Render("[j/k/↓↑] move · [h] parent · [l] child · [enter] opens · [D] removes edge · :family parent/child <num> · [r]: refresh family · [esc] back"))
 	return b.String()
 }
 

@@ -215,7 +215,7 @@ func TestSortableListColumnsAreRegisteredSortColumns(t *testing.T) {
 	}
 }
 
-func TestEnterOnDetailIDSCyclesStatus(t *testing.T) {
+func TestEnterOnDetailIDSOpensEditPopup(t *testing.T) {
 	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusPending}}}
 	model := &Model{
 		ctx:       t.Context(),
@@ -239,6 +239,29 @@ func TestEnterOnDetailIDSCyclesStatus(t *testing.T) {
 
 	updated, _ := model.Update(teaKey(keyEnter))
 	got := updated.(*Model)
+	if got.mode != viewIDSEdit {
+		t.Fatalf("expected mode %q, got %q", viewIDSEdit, got.mode)
+	}
+}
+
+func TestIDSEditPopupSKeyCyclesStatus(t *testing.T) {
+	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusPending}}}
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      repo,
+		logger:    slog.Default(),
+		text:      EnglishText(),
+		mode:      viewIDSEdit,
+		ProjectID: "default",
+		current:   domain.Patent{Number: "US10218760B2"},
+		detailCache: detailCache{
+			Number:     "US10218760B2",
+			IDSEntries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusPending}},
+		},
+	}
+
+	updated, _ := model.Update(teaKey("s"))
+	got := updated.(*Model)
 	if repo.updatedID != 7 || repo.updatedStatus != domain.IDSStatusSubmitted {
 		t.Fatalf("expected IDS status update to submitted, got id=%d status=%q", repo.updatedID, repo.updatedStatus)
 	}
@@ -247,14 +270,14 @@ func TestEnterOnDetailIDSCyclesStatus(t *testing.T) {
 	}
 }
 
-func TestEnterOnDetailIDSAcceptedRemovesEntry(t *testing.T) {
+func TestIDSEditPopupDKeyDeletesEntry(t *testing.T) {
 	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusAccepted}}}
 	model := &Model{
 		ctx:       t.Context(),
 		repo:      repo,
 		logger:    slog.Default(),
 		text:      EnglishText(),
-		mode:      viewDetail,
+		mode:      viewIDSEdit,
 		ProjectID: "default",
 		current:   domain.Patent{Number: "US10218760B2"},
 		detailCache: detailCache{
@@ -262,14 +285,8 @@ func TestEnterOnDetailIDSAcceptedRemovesEntry(t *testing.T) {
 			IDSEntries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusAccepted}},
 		},
 	}
-	for i, field := range model.detailFields() {
-		if field.label == TextDetailIDS {
-			model.detailSelected = i
-			break
-		}
-	}
 
-	updated, _ := model.Update(teaKey(keyEnter))
+	updated, _ := model.Update(teaKey(keyDelete))
 	got := updated.(*Model)
 	if repo.deletedID != 7 {
 		t.Fatalf("expected IDS entry deletion, got deleted id %d", repo.deletedID)
@@ -1226,7 +1243,8 @@ func (stubRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, erro
 	return nil, nil
 }
 func (stubRepo) UpdateIDSEntryStatus(context.Context, int64, domain.IDSStatus) error { return nil }
-func (stubRepo) DeleteIDSEntry(context.Context, int64) error               { return nil }
+func (stubRepo) UpdateIDSEntry(context.Context, domain.IDSEntry) error               { return nil }
+func (stubRepo) DeleteIDSEntry(context.Context, int64) error                         { return nil }
 func (stubRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
 	return domain.IDSMetadata{}, nil
 }

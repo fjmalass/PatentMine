@@ -129,8 +129,10 @@ var allHelpSections = []HelpSection{
 			{Command: ":help", Description: TextHelpShowHelp},
 			{Command: ":version", Description: TextHelpShowVersion},
 			{Command: ":browser", Description: TextHelpOpenBrowser},
+			{Command: ":note <text>", Description: TextHelpNote},
 			{Command: ":purge ignored", Description: TextHelpPurge},
 			{Command: ":compact", Description: TextHelpCompact},
+			{Command: ":exit", Description: TextHelpExit},
 		},
 	},
 }
@@ -142,6 +144,37 @@ var helpExamples = []string{
 	":import https://patents.google.com/patent/US11611785B2/en",
 	":project event provisional-filed date 2024-03-01",
 	":project invoice 5000 firm ACME date 2024-04-01 due 2024-05-01",
+}
+
+// commandsSection builds a compact "Commands" section listing each unique
+// root command (e.g. :project, :filter) derived from all help sections.
+// This gives users a fast overview of what commands exist without reading
+// every detail section.
+func commandsSection() HelpSection {
+	seen := map[string]bool{}
+	var entries []HelpEntry
+	for _, section := range allHelpSections {
+		for _, e := range section.Entries {
+			if e.Command == "" {
+				continue
+			}
+			cmd := strings.TrimPrefix(e.Command, ":")
+			parts := strings.Fields(cmd)
+			if len(parts) == 0 {
+				continue
+			}
+			root := parts[0]
+			if seen[root] {
+				continue
+			}
+			seen[root] = true
+			entries = append(entries, HelpEntry{
+				Command:     ":" + root,
+				Description: e.Description,
+			})
+		}
+	}
+	return HelpSection{Title: "Commands", Entries: entries}
 }
 
 // matchHelpQuery returns true if the entry matches the query.
@@ -160,11 +193,23 @@ func matchHelpQuery(q string, e HelpEntry, text TextCatalog) bool {
 
 // FilterHelpSections returns sections with only entries matching q.
 // Sections with no matching entries are omitted.
+// A "Commands" overview section is always prepended first.
 func FilterHelpSections(q string, text TextCatalog) []HelpSection {
+	cmds := commandsSection()
 	if q == "" {
-		return allHelpSections
+		return append([]HelpSection{cmds}, allHelpSections...)
 	}
 	var out []HelpSection
+	// Filter the commands overview section too.
+	var cmdEntries []HelpEntry
+	for _, e := range cmds.Entries {
+		if matchHelpQuery(q, e, text) {
+			cmdEntries = append(cmdEntries, e)
+		}
+	}
+	if len(cmdEntries) > 0 {
+		out = append(out, HelpSection{Title: cmds.Title, Entries: cmdEntries})
+	}
 	for _, section := range allHelpSections {
 		var entries []HelpEntry
 		for _, e := range section.Entries {

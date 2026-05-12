@@ -34,6 +34,7 @@ const (
 	commandPurge              = "purge"
 	commandCompact            = "compact"
 	commandNote               = "note"
+	commandIDS                = "ids"
 	commandVersion            = "version"
 	commandExit               = "exit"
 	commandFamilyPull         = "pull"
@@ -59,6 +60,13 @@ const (
 	// :project ids subcommands
 	idsSubAdd  = "add"
 	idsSubMeta = "meta"
+
+	// :ids edit subcommands
+	idsEditSubNote     = "note"
+	idsEditSubKind     = "kind"
+	idsEditSubCountry  = "country"
+	idsEditSubPassages = "passages"
+	idsEditSubFull     = "full"
 
 	// :project export subcommands
 	exportSubIDS    = "ids"
@@ -160,9 +168,9 @@ const (
 	keyRefreshAll        = "R"
 	keyEvents            = "e"
 	keyInvoices          = "i"
-	keyIDS               = "ctrl+i"
+	keyIDS               = "I"
 	keyMarkPaid          = "p"
-	keyProjectInfo       = "I"
+	keyProjectInfo       = "i"
 	keyAddToIDS          = "A"
 	keyNoteEdit          = "N"
 	keyEditAppStatus     = "s"

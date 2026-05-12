@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 const (
 	RelationCites   = "cites"
@@ -304,6 +308,9 @@ type AIAnalysis struct {
 	CreatedAt            time.Time
 }
 
+// IDSIconInFull is the icon shown when an IDS entry is cited in its entirety.
+const IDSIconInFull = "⊛"
+
 type IDSEntry struct {
 	ID               int64
 	ProjectID        string
@@ -315,10 +322,58 @@ type IDSEntry struct {
 	NPLTitle         string
 	NPLDate          string
 	NPLPublisher     string
+	InFull           bool      // entire document is cited; overrides RelevantPassages
 	RelevantPassages string    // pages/columns/lines with relevant content
 	Notes            string
 	Status           IDSStatus // see IDSStatus* constants
 	AddedAt          time.Time
+}
+
+// IDSPassagesText returns the display text for the relevant passages column.
+// When InFull is set it returns the icon + "In full", ignoring RelevantPassages.
+func IDSPassagesText(e IDSEntry) string {
+	if e.InFull {
+		return IDSIconInFull + " In full"
+	}
+	return e.RelevantPassages
+}
+
+// IDSPassagesFormatGuide is the one-line hint shown when editing passages.
+const IDSPassagesFormatGuide = "p. 5 · pp. 12-15 · col. 2 · cols. 3-4 · l. 10 · ll. 50-62 · para. [0014] · paras. [0014]-[0020] · FIG. 2 · FIGS. 4A-4C · Sec. 3.1"
+
+// knownPassagePrefixes are the recognised token prefixes in order of specificity.
+var knownPassagePrefixes = []string{
+	"paras. ", "para. ", "pp. ", "p. ",
+	"cols. ", "col. ",
+	"ll. ", "l. ",
+	"FIGS. ", "FIG. ",
+	"Sec. ", "§ ", "¶ ",
+}
+
+// ValidateIDSPassages checks that every comma-separated token in s starts with
+// a recognised prefix. Returns a non-nil error naming the first bad token.
+func ValidateIDSPassages(s string) error {
+	if s == "" {
+		return nil
+	}
+	tokens := strings.Split(s, ",")
+	for _, raw := range tokens {
+		tok := strings.TrimSpace(raw)
+		if tok == "" {
+			continue
+		}
+		matched := false
+		for _, pfx := range knownPassagePrefixes {
+			if strings.HasPrefix(tok, pfx) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("unknown passage format %q — use: p., pp., col., cols., l., ll., para., paras., FIG., FIGS., Sec., §, ¶", tok)
+		}
+	}
+	return nil
 }
 
 type IDSMetadata struct {
