@@ -91,9 +91,8 @@ alias = "run-uspto"
 [tasks.build]
 description = "Build the PatentMine binary at ./patentmine."
 category = "Development"
-env = { CGO_ENABLED = "0" }
-command = "go"
-args = ["build", "-buildvcs=false", "-o", "patentmine", "./cmd/patentmine"]
+command = "bash"
+args = ["-lc", "VERSION=$(git describe --tags --always --dirty 2>/dev/null || printf dev); COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf unknown); CGO_ENABLED=0 go build -ldflags \"-X patentmine/internal/version.GitVersion=$VERSION -X patentmine/internal/version.GitCommit=$COMMIT\" -o patentmine ./cmd/patentmine"]
 
 [tasks.prepare-build-dir]
 description = "Create the build output directory."
@@ -105,17 +104,15 @@ args = ["-p", "build"]
 description = "Build the macOS Intel binary at ./build/patentmine-darwin-amd64."
 category = "Development"
 dependencies = ["prepare-build-dir"]
-env = { GOOS = "darwin", GOARCH = "amd64", CGO_ENABLED = "0" }
-command = "go"
-args = ["build", "-buildvcs=false", "-o", "build/patentmine-darwin-amd64", "./cmd/patentmine"]
+command = "bash"
+args = ["-lc", "VERSION=$(git describe --tags --always --dirty 2>/dev/null || printf dev); COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf unknown); GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags \"-X patentmine/internal/version.GitVersion=$VERSION -X patentmine/internal/version.GitCommit=$COMMIT\" -o build/patentmine-darwin-amd64 ./cmd/patentmine"]
 
 [tasks.build-macos-arm64]
 description = "Build the macOS Apple Silicon binary at ./build/patentmine-darwin-arm64."
 category = "Development"
 dependencies = ["prepare-build-dir"]
-env = { GOOS = "darwin", GOARCH = "arm64", CGO_ENABLED = "0" }
-command = "go"
-args = ["build", "-buildvcs=false", "-o", "build/patentmine-darwin-arm64", "./cmd/patentmine"]
+command = "bash"
+args = ["-lc", "VERSION=$(git describe --tags --always --dirty 2>/dev/null || printf dev); COMMIT=$(git rev-parse --short HEAD 2>/dev/null || printf unknown); GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags \"-X patentmine/internal/version.GitVersion=$VERSION -X patentmine/internal/version.GitCommit=$COMMIT\" -o build/patentmine-darwin-arm64 ./cmd/patentmine"]
 
 [tasks.build-macos]
 description = "Build macOS binaries for Intel and Apple Silicon."

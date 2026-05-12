@@ -34,6 +34,7 @@ const (
 	commandPurge              = "purge"
 	commandCompact            = "compact"
 	commandNote               = "note"
+	commandVersion            = "version"
 	commandExit               = "exit"
 	commandFamilyPull         = "pull"
 

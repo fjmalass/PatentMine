@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -72,6 +73,14 @@ func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
 	}
 }
 
+func TestSplashShowsVersion(t *testing.T) {
+	model := &Model{repo: stubRepo{}, mode: viewSplash, version: "v1.2.3"}
+	got := model.viewSplash()
+	if !strings.Contains(got, "Version v1.2.3") {
+		t.Fatalf("expected splash version, got %q", got)
+	}
+}
+
 func TestAllViewModesHaveSpecs(t *testing.T) {
 	for _, mode := range allViewModes {
 		if _, ok := lookupModeSpec(mode); !ok {
@@ -133,6 +142,85 @@ func TestEditSummaryKeyOpensAbstractView(t *testing.T) {
 	}
 	if !strings.Contains(got.View(), "Abstract") {
 		t.Fatalf("expected abstract overlay, got %q", got.View())
+	}
+}
+
+func TestVersionCommandShowsVersionMessage(t *testing.T) {
+	model := &Model{repo: stubRepo{}, logger: slog.Default(), text: EnglishText(), version: "v1.2.3"}
+	updated, _ := model.runCommand(ParseCommand(":version"))
+	got := updated.(*Model)
+	if got.message != "PatentMine v1.2.3" {
+		t.Fatalf("expected version message, got %q", got.message)
+	}
+}
+
+func TestListViewShowsColumnShortcutLabelsWithoutJumpMode(t *testing.T) {
+	model := &Model{
+		repo:    stubRepo{},
+		text:    EnglishText(),
+		mode:    viewList,
+		patents: []domain.Patent{{Number: "US1", Title: "Test Patent"}},
+		width:   120,
+		height:  20,
+	}
+	got := model.viewList()
+	for _, key := range []string{jumpLabelPublication, jumpLabelInventors, jumpLabelClassification, jumpLabelExpiration, keyStatus, jumpLabelUpdated, jumpLabelNotes} {
+		if !strings.Contains(got, key+" ") {
+			t.Fatalf("expected list header to show shortcut %q, got %q", key, got)
+		}
+	}
+}
+
+func TestListViewShowsIDSColumnAndStatus(t *testing.T) {
+	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US1", Status: domain.IDSStatusSubmitted}}}
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      repo,
+		text:      EnglishText(),
+		mode:      viewList,
+		ProjectID: "default",
+		patents:   []domain.Patent{{Number: "US1", Title: "Test Patent"}},
+		width:     140,
+		height:    20,
+	}
+	got := model.viewList()
+	if !strings.Contains(got, "IDS") {
+		t.Fatalf("expected IDS column header, got %q", got)
+	}
+	if !strings.Contains(got, domain.IDSStatusSubmitted) {
+		t.Fatalf("expected IDS status in row, got %q", got)
+	}
+}
+
+func TestEnterOnDetailIDSCyclesStatus(t *testing.T) {
+	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusPending}}}
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      repo,
+		logger:    slog.Default(),
+		text:      EnglishText(),
+		mode:      viewDetail,
+		ProjectID: "default",
+		current:   domain.Patent{Number: "US10218760B2"},
+		detailCache: detailCache{
+			Number:     "US10218760B2",
+			IDSEntries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusPending}},
+		},
+	}
+	for i, field := range model.detailFields() {
+		if field.label == TextDetailIDS {
+			model.detailSelected = i
+			break
+		}
+	}
+
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if repo.updatedID != 7 || repo.updatedStatus != domain.IDSStatusSubmitted {
+		t.Fatalf("expected IDS status update to submitted, got id=%d status=%q", repo.updatedID, repo.updatedStatus)
+	}
+	if got.message != "IDS status: "+domain.IDSStatusSubmitted {
+		t.Fatalf("expected IDS status message, got %q", got.message)
 	}
 }
 
@@ -321,8 +409,8 @@ func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
 	model.patents, _ = model.repo.ListPatents(model.ctx, model.ProjectID, storage.ListPatentsOptions{})
 	model.jumpLabelsCache = model.jumpLabels()
 
-	// Select 3rd patent (index 2). Labels are: 0-7 (headers), 8, 9, 10 (US3)
-	label := model.jumpLabelsCache[10]
+	// Select 3rd patent (index 2). Labels are: 0-8 (headers), 9, 10, 11 (US3)
+	label := model.jumpLabelsCache[11]
 	updated, _ := model.applyJump(label.key)
 	got := updated.(*Model)
 	if got.selected != 2 {
@@ -498,6 +586,23 @@ func TestEnterOnClassificationListOpensDetail(t *testing.T) {
 		height:  20,
 	}
 	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if got.mode != viewClassificationDetail {
+		t.Fatalf("expected mode %q, got %q", viewClassificationDetail, got.mode)
+	}
+}
+
+func TestOpenKeyOnClassificationListOpensDetail(t *testing.T) {
+	model := &Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    classificationRepo{classifications: sampleClassifications(3)},
+		mode:    viewClassifications,
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   100,
+		height:  20,
+	}
+	updated, _ := model.Update(teaKey(keyOpen))
 	got := updated.(*Model)
 	if got.mode != viewClassificationDetail {
 		t.Fatalf("expected mode %q, got %q", viewClassificationDetail, got.mode)
@@ -856,6 +961,34 @@ func detailFieldIndex(text TextCatalog, label TextKey) int {
 }
 
 type stubRepo struct{}
+
+type idsMutationRepo struct {
+	stubRepo
+	entries       []domain.IDSEntry
+	updatedID     int64
+	updatedStatus string
+}
+
+func (r *idsMutationRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
+	return append([]domain.IDSEntry(nil), r.entries...), nil
+}
+
+func (r *idsMutationRepo) UpdateIDSEntryStatus(_ context.Context, id int64, status string) error {
+	r.updatedID = id
+	r.updatedStatus = status
+	for i := range r.entries {
+		if r.entries[i].ID == id {
+			r.entries[i].Status = status
+		}
+	}
+	return nil
+}
+
+func (r *idsMutationRepo) AddIDSEntry(_ context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	entry.ID = int64(len(r.entries) + 1)
+	r.entries = append(r.entries, entry)
+	return entry, nil
+}
 
 func (stubRepo) Close() error                                        { return nil }
 func (stubRepo) Setup(context.Context) error                         { return nil }

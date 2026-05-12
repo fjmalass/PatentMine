@@ -17,6 +17,7 @@ import (
 	"patentmine/internal/logging"
 	sqliterepo "patentmine/internal/storage/sqlite"
 	"patentmine/internal/tui"
+	appversion "patentmine/internal/version"
 )
 
 func main() {
@@ -43,7 +44,7 @@ func main() {
 	}
 	defer closeLog()
 	slog.SetDefault(logger)
-	logger.Info("starting patentmine", "log_file", logPath, "max_logs", config.MaxLogs)
+	logger.Info("starting patentmine", "version", appversion.Current(), "log_file", logPath, "max_logs", config.MaxLogs)
 
 	activityLog, closeActivity, err := logging.OpenActivity(tui.DefaultActivityPath)
 	if err != nil {
@@ -76,7 +77,7 @@ func main() {
 	}
 	logger.Info("configuration loaded", "import_source", cfg.ImportSource, "uspto_key", keyStatus)
 
-	model := tui.New(ctx, repo, logger, activityLog, cfg)
+	model := tui.New(ctx, repo, logger, activityLog, cfg, appversion.Current())
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		logger.Error("tui failed", "error", err)

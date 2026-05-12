@@ -16,6 +16,7 @@ func TestParseCommand(t *testing.T) {
 		{":refresh-refs-details", "refresh-refs-details", nil},
 		{":ref export", "ref", []string{"export"}},
 		{":help", "help", nil},
+		{":version", "version", nil},
 	}
 	for _, tt := range tests {
 		got := ParseCommand(tt.input)

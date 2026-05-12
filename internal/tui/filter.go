@@ -185,6 +185,8 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 			return m.navigateTo(viewAbstract), nil
 		}
 		return m, nil
+	case detailActionIDS:
+		return m.cycleCurrentPatentIDSStatus()
 	case detailActionFirstClaim:
 		if m.current.FirstClaim == "" {
 			return m, nil

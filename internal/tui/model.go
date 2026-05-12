@@ -135,6 +135,7 @@ type Model struct {
 	listSearchActive           bool
 	popupSearchQuery           string
 	popupSearchActive          bool
+	version                    string
 }
 
 type detailCache struct {
@@ -196,7 +197,7 @@ type navSnapshot struct {
 	popupSearchActive          bool
 }
 
-func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger, cfg config.Config) *Model {
+func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger, cfg config.Config, version string) *Model {
 	input := textinput.New()
 	input.Placeholder = ":add US11611785B2, :open US11611785B2, /machine learning"
 	input.Prompt = EmptyPrompt
@@ -244,6 +245,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		text:            EnglishText(),
 		statusFilter:    domain.CitationStatusStored,
 		importCfg:       cfg,
+		version:         version,
 	}
 
 	if model.importCfg.ImportSource == config.ImportSourceUSPTO && model.importCfg.USPTO.APIKey == "" {
@@ -816,7 +818,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyEnter, keyOpen:
 			m.countBuffer = EmptyCount
-			if m.mode == viewClassifications && m.popupSearchQuery != "" {
+			if msg.String() == keyEnter && m.mode == viewClassifications && m.popupSearchQuery != "" {
 				m.popupSearchActive = false
 				return m, nil
 			}
@@ -1369,6 +1371,8 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.openBrowser(command.Args)
 	case commandHelp, commandHelpShort, keyHelp:
 		m = m.navigateTo(viewHelp)
+	case commandVersion:
+		m.message = "PatentMine " + m.displayVersion()
 	case commandProject:
 		return m.projectCommand(command.Args)
 	case commandPurge:
@@ -1856,6 +1860,44 @@ func idsStatusColor(status string) string {
 	default:
 		return ColorSubtle
 	}
+}
+
+func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
+	if m.current.Number == "" {
+		return m, nil
+	}
+
+	entry := m.idsEntryForPatent(m.current.Number)
+	if entry == nil {
+		created, err := m.repo.AddIDSEntry(m.ctx, domain.IDSEntry{
+			ProjectID:    m.ProjectID,
+			PatentNumber: m.current.Number,
+			Status:       domain.IDSStatusPending,
+		})
+		if err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		m.populateDetailCache()
+		m.logActivity("ids.add", m.current.Number, created.Status)
+		m.message = "IDS status: " + created.Status
+		return m, nil
+	}
+
+	next := nextIDSStatus(entry.Status)
+	if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	for i := range m.detailCache.IDSEntries {
+		if m.detailCache.IDSEntries[i].ID == entry.ID {
+			m.detailCache.IDSEntries[i].Status = next
+			break
+		}
+	}
+	m.logActivity("ids.status", m.current.Number, next)
+	m.message = "IDS status: " + next
+	return m, nil
 }
 
 // refreshSelectedCitationDetail re-fetches Google Patents for the single
@@ -2935,6 +2977,8 @@ type listColumn struct {
 	jumpLabel string
 }
 
+const listColumnIDS = "ids"
+
 func (m *Model) listColumns() []listColumn {
 	numWidth := m.listNumWidth
 	titleWidth := 40
@@ -2942,6 +2986,7 @@ func (m *Model) listColumns() []listColumn {
 	cpcWidth := 15
 	expWidth := 12
 	statusWidth := 10
+	idsWidth := 11
 	updatedWidth := 16
 	notesWidth := 6
 
@@ -2952,6 +2997,7 @@ func (m *Model) listColumns() []listColumn {
 		{"Classification", cpcWidth + 2, domain.SortColumnCPC, jumpLabelClassification},
 		{"Expires", expWidth + 2, domain.SortColumnExpiration, jumpLabelExpiration},
 		{"Status", statusWidth + 2, domain.SortColumnStatus, keyStatus},
+		{"IDS", idsWidth + 2, listColumnIDS, keyIDS},
 		{"Updated", updatedWidth + 2, domain.SortColumnUpdated, jumpLabelUpdated},
 		{"Notes", notesWidth, domain.SortColumnNotes, jumpLabelNotes},
 	}
@@ -3247,6 +3293,13 @@ func (m *Model) singleLine(value string) string {
 	return value[:m.width-3] + "..."
 }
 
+func (m *Model) displayVersion() string {
+	if strings.TrimSpace(m.version) == "" {
+		return "dev"
+	}
+	return m.version
+}
+
 func (m *Model) navDefault() string {
 	return fmt.Sprintf(m.text.T(TextNavDefault), keyVimDown, keyVimUp, keyEnter, keyJump, keySort, keyCommand, keySearch, keyHelp, keyBack, keyQuit)
 }
@@ -3270,6 +3323,12 @@ func (m *Model) viewList() string {
 	window := pageWindow(m.selected, len(m.patents), m.pageSize())
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n\n")
+	idsByPatent := map[string]string{}
+	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
+		for _, entry := range idsEntries {
+			idsByPatent[entry.PatentNumber] = entry.Status
+		}
+	}
 
 	idxWidth := len(fmt.Sprintf("%d", len(m.patents)))
 	if idxWidth < 2 {
@@ -3307,14 +3366,15 @@ func (m *Model) viewList() string {
 			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
 		}
 
-		// Header jump label
-		jumpColLabel := ""
-		if m.jumpMode && i < len(m.jumpLabelsCache) {
-			jumpColLabel = m.jumpLabelsCache[i].key
-		}
+		// Always show the per-column shortcut so the list mirrors detail keys.
+		jumpColLabel := c.jumpLabel
 		jumpColPrefix := ""
 		if jumpColLabel != "" {
-			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
+			jumpStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow))
+			if !m.jumpMode {
+				jumpStyle = jumpStyle.Faint(true)
+			}
+			jumpColPrefix = jumpStyle.Render(jumpColLabel) + " "
 		}
 
 		// Calculate total width for this column header (visible chars)
@@ -3367,6 +3427,10 @@ func (m *Model) viewList() string {
 			expDate = "-"
 		}
 		status := p.Status
+		idsStatus := "-"
+		if status, ok := idsByPatent[p.Number]; ok && status != "" {
+			idsStatus = status
+		}
 		updated := formatStoredTime(p.UpdatedAt, "-")
 		notes := "-"
 		if p.NotesCount > 0 {
@@ -3393,6 +3457,8 @@ func (m *Model) viewList() string {
 				val = expDate
 			case domain.SortColumnStatus:
 				val = status
+			case listColumnIDS:
+				val = idsStatus
 			case domain.SortColumnUpdated:
 				val = updated
 			case domain.SortColumnNotes:
@@ -3536,6 +3602,7 @@ const (
 	detailActionNotes
 	detailActionFirstClaim
 	detailActionAbstract
+	detailActionIDS
 )
 
 func (m *Model) detailFields() []detailField {
@@ -3678,14 +3745,14 @@ func (m *Model) detailFields() []detailField {
 				label:        TextDetailIDS,
 				displayValue: value,
 				jumpLabel:    keyIDS,
-				action:       detailActionNone,
+				action:       detailActionIDS,
 			})
 		} else {
 			fields = append(fields, detailField{
 				label:        TextDetailIDS,
 				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true).Render("Not in IDS"),
 				jumpLabel:    keyIDS,
-				action:       detailActionNone,
+				action:       detailActionIDS,
 			})
 		}
 
@@ -5073,6 +5140,8 @@ func (m *Model) viewSplash() string {
 	b.WriteString(m.center(style.Render(logo)))
 	b.WriteString("\n")
 	b.WriteString(m.center(sub.Render("Local Patent Research & Intelligence")))
+	b.WriteString("\n")
+	b.WriteString(m.center(sub.Render("Version " + m.displayVersion())))
 	b.WriteString("\n\n" + m.rule() + "\n\n")
 
 	if m.input.Focused() {

@@ -77,6 +77,7 @@ const (
 	TextHelpReviewUnderReview    TextKey = "help.command.review_under_review"
 	TextHelpOpenBrowser          TextKey = "help.command.open_browser"
 	TextHelpShowHelp             TextKey = "help.command.show_help"
+	TextHelpShowVersion          TextKey = "help.command.show_version"
 	TextHelpMoveList             TextKey = "help.shortcut.move_list"
 	TextHelpOpenSelected         TextKey = "help.shortcut.open_selected"
 	TextHelpJumpViews            TextKey = "help.shortcut.jump_views"
@@ -220,7 +221,7 @@ func EnglishText() TextCatalog {
 		TextValuePageStatus:         "Page %d/%d - items %d-%d of %d",
 		TextValueOpenHint:           "[%s] open/preview · [%s] save · [%s] ignore · [%s] unmark · [%s] refresh · [%s/%s] page · [↓↑] scroll",
 		TextValueReviewOpenHint:     "[%s] open/preview · [%s] save · [%s] ignore · [%s] unmark · [%s] refresh · [%s] browse · [%s/%s] page · [↓↑] scroll",
-		TextValueClassificationHint: "[%s] open detail · [%s] find · [%s] next · [%s/%s] page · [↓↑] scroll",
+		TextValueClassificationHint: "[%s/%s] open detail · [%s] find · [%s] next · [%s/%s] page · [↓↑] scroll",
 		TextNavDefault:              "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavJump:                 "jump: press a hint key to move focus, [esc] cancels",
 		TextDetailOpenHint:          "Enter filters patents by the selected detail value",
@@ -257,6 +258,7 @@ func EnglishText() TextCatalog {
 		TextHelpReviewUnderReview:       "List all citation references under review with the date they were labeled.",
 		TextHelpOpenBrowser:             "Open the selected/current patent in the system browser.",
 		TextHelpShowHelp:                "Show this help screen.",
+		TextHelpShowVersion:             "Show the current PatentMine version.",
 		TextHelpMoveList:                "Move row or column focus. Supports multipliers: [10j], [4l], etc.",
 		TextHelpOpenSelected:            "Open the selected list item.",
 		TextHelpDeletePatent:            "Delete the selected patent (mark as ignored and delete PDF).",

@@ -127,6 +127,7 @@ var allHelpSections = []HelpSection{
 		Entries: []HelpEntry{
 			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
 			{Command: ":help", Description: TextHelpShowHelp},
+			{Command: ":version", Description: TextHelpShowVersion},
 			{Command: ":browser", Description: TextHelpOpenBrowser},
 			{Command: ":purge ignored", Description: TextHelpPurge},
 			{Command: ":compact", Description: TextHelpCompact},
@@ -137,6 +138,7 @@ var allHelpSections = []HelpSection{
 var helpExamples = []string{
 	":add US11611785B2",
 	":refresh citedby",
+	":version",
 	":import https://patents.google.com/patent/US11611785B2/en",
 	":project event provisional-filed date 2024-03-01",
 	":project invoice 5000 firm ACME date 2024-04-01 due 2024-05-01",
@@ -267,7 +269,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Key: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
 			{Key: "10" + keyGoto, Description: TextHelpMoveList},
-			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
+			{Key: keyEnter + " / " + keyOpen, Description: TextHelpOpenSelected},
 			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
 			{Key: keyBack, Description: TextHelpBackOrQuit},
@@ -362,6 +364,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 func globalHelpEntries() []HelpEntry {
 	return []HelpEntry{
 		{Command: keyCommand + commandHelp, Description: TextHelpShowHelp},
+		{Command: keyCommand + commandVersion, Description: TextHelpShowVersion},
 		{Command: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
 		{Command: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
 		{Command: keyCommand + commandRefreshRefsDetails, Description: TextHelpRefreshDetails},
