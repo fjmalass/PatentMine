@@ -509,12 +509,13 @@ func (r *Repository) GetPatent(ctx context.Context, projectID string, number str
 		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
-			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim
+			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
+			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
 		from patents p
 		left join project_patents pp on p.number = pp.patent_number and pp.project_id = ?
 		left join patent_classifications c on p.number = c.patent_number
 		where p.number = ?
-		group by p.number`, projectID, number)
+		group by p.number`, projectID, projectID, number)
 	return scanPatent(row)
 }
 
@@ -536,6 +537,10 @@ func sortExpr(col, direction string) string {
 		return "classification_label " + direction
 	case domain.SortColumnExpiration:
 		return "case when p.expiration_date = '' then 1 else 0 end " + direction + ", p.expiration_date " + direction
+	case domain.SortColumnUpdated:
+		return "p.updated_at " + direction
+	case domain.SortColumnNotes:
+		return "notes_count " + direction
 	}
 	return ""
 }
@@ -565,11 +570,13 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		select
 			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
-			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim
+			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
+			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
 		left join patent_classifications c on p.number = c.patent_number
 		where pp.project_id = ? and ` + statusClause
+	args = append(args, projectID)
 
 	if strings.TrimSpace(opts.Filter) != "" {
 		query += ` and lower(p.number || ' ' || p.title || ' ' || p.abstract || ' ' || p.assignee || ' ' || p.inventors_json || ' ' || p.publication_date || ' ' || p.grant_date || ' ' || p.expiration_date || ' ' || p.source_google_url || ' ' || p.latest_assignment) like ?`
@@ -902,7 +909,7 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var statusChangedAt sql.NullString
 	var updatedAt sql.NullString
 	var importSource sql.NullString
-	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim); err != nil {
+	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}

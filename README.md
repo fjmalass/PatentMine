@@ -135,6 +135,21 @@ Press `?` from any screen to open a small overlay showing only the keys relevant
 
 All filters share the `:filter` command.
 
+## Shortcuts
+
+- `[j]` / `[k]` or **[↓]** / **[↑]**: Move selection.
+- `[enter]` or `[o]`: Open patent detail.
+- `[f]`: Toggle jump mode (shortcuts for fields/rows).
+- `[L]`: Jump to Classifications.
+- `[t]`: Jump to Full Text.
+- `[n]`: Jump to Notes.
+- `[ctrl+r]`: Jump to References.
+- `[w]`: Open in browser.
+- `[D]`: Delete patent.
+- `[A]`: Add to IDS.
+- `[?]`: Show help.
+- `[q]`: Quit or back.
+
 ### Text / Inventor Filter
 
 Type `/` followed by a term to filter the patent list by any text field (title, number, assignee, inventor):
@@ -208,6 +223,33 @@ Cycle the status of the selected list row inline with `s` (stored → under-revi
 ```
 
 Resets status, class, and inventor filters to defaults.
+
+## Interactive Sorting & Navigation
+
+In the main patent list, you can navigate and sort using Vim-like shortcuts:
+
+- **Column Focus:** Use `[h]` / `[l]` or **Left** / **Right** arrow keys to move the yellow highlight across the column headers (Number, Title, Inventor, etc.).
+- **Interactive Sort:** Press `[.]` (dot) to sort the list by the currently focused column. Pressing `[.]` again toggles between **Ascending** (`▴`) and **Descending** (`▾`) order.
+- **Vim-like Navigation:**
+    - `[j]` / `[k]` or **[↓]** / **[↑]**: Move row selection. Supports multipliers (e.g., `10j` moves down 10 rows).
+    - `[h]` / `[l]`: Move column focus. Supports multipliers (e.g., `3l` moves focus 3 columns to the right).
+    - `[gg]` / `[G]`: Jump to the very top or bottom of the list.
+    - `[ctrl+f]` / `[ctrl+d]`: Page down and page up.
+    - `[number]g`: Jump to a specific row number (e.g., `10g`).
+    - `[/]`: Search the list (**Smart Case**: all-lowercase is case-insensitive; any uppercase character makes it case-sensitive). Use `[n]` for the next match.
+
+## Visual Mode & Bulk Actions
+
+Select and process multiple records at once:
+
+- **Toggle Visual Mode:** Press `[v]` or `[V]` to start a multi-line selection. Move with `[j]`/`[k]` to expand the range (highlighted in deep blue).
+- **Select All:** Press `[%]` to select every item in the current list.
+- **Confirm & Execute:** With multiple items selected, press:
+    - `[y]` or `[enter]`: **Store** all selected citations (triggers a confirmation popup and background download).
+    - `[i]`: **Ignore** all selected items.
+    - `[r]`: **Unmark** (set to Under Review) all selected items.
+    - `[s]`: **Cycle Status** for all selected items.
+- **Cancel:** Press `[esc]` to clear the selection and exit visual mode.
 
 ### Sort
 

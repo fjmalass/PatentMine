@@ -54,6 +54,15 @@ const (
 	viewSummaryEdit          viewMode = "summary-edit"
 	viewClaim                viewMode = "view-claim"
 	viewUSPTOKeyWarning      viewMode = "uspto-key-warning"
+	viewBulkConfirm          viewMode = "bulk-confirm"
+)
+
+type bulkActionType string
+
+const (
+	bulkActionStore  bulkActionType = "store"
+	bulkActionIgnore bulkActionType = "ignore"
+	bulkActionUnmark bulkActionType = "unmark"
 )
 
 type Model struct {
@@ -81,6 +90,8 @@ type Model struct {
 	classificationSelected  int
 	inventorSelected        int
 	familySelected          int
+	visualMode              bool
+	selectionStart          int
 	current                 domain.Patent
 	pendingBundle           domain.PatentBundle
 	pendingCitation         domain.CitationEdge
@@ -104,6 +115,7 @@ type Model struct {
 	classFilter             string // display label derived from classFilters
 	statusFilter            string // domain.CitationStatusStored (default), "ignored", "under_review", statusFilterNone
 	citesStatusFilter       string // "" (all), "stored", "ignored", "under_review"
+	listNumWidth            int
 	unpaidCounts            map[string]int
 	familyTreeCache         []familyNode
 	familyTreeCacheFor      string
@@ -114,6 +126,15 @@ type Model struct {
 	importCfg               config.Config
 	detailCache             detailCache
 	jumpLabelsCache         []string
+	bulkAction              bulkActionType
+	bulkActionIndices       []int
+	sortColumnIndex         int
+	classificationQuery     string
+	classificationSearchActive bool
+	listSearchQuery         string
+	listSearchActive        bool
+	popupSearchQuery        string
+	popupSearchActive       bool
 }
 
 type detailCache struct {
@@ -146,6 +167,8 @@ type navSnapshot struct {
 	classificationSelected  int
 	inventorSelected        int
 	familySelected          int
+	visualMode              bool
+	selectionStart          int
 	current                 domain.Patent
 	pendingBundle           domain.PatentBundle
 	pendingCitation         domain.CitationEdge
@@ -164,6 +187,13 @@ type navSnapshot struct {
 	classFilter             string
 	statusFilter            string
 	citesStatusFilter       string
+	listNumWidth            int
+	classificationQuery     string
+	classificationSearchActive bool
+	listSearchQuery         string
+	listSearchActive        bool
+	popupSearchQuery        string
+	popupSearchActive       bool
 }
 
 func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger, cfg config.Config) *Model {
@@ -705,7 +735,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.jumpMode {
-			if msg.String() == keyEsc {
+			if msg.String() == keyEsc || msg.String() == keyJump {
 				m.jumpMode = false
 				return m, nil
 			}
@@ -713,16 +743,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "1":
+		case keyFirstClaim:
 			if m.mode == viewDetail && m.current.FirstClaim != "" {
-				m.detailSelected = indexString(m.jumpLabels(), "1")
+				m.detailSelected = indexString(m.jumpLabels(), jumpLabelFirstClaim)
 				return m.navigateTo(viewClaim), nil
 			}
 			m.countBuffer += msg.String()
 			return m, nil
-		case "m":
+		case keyEditSummary:
 			if m.mode == viewDetail && m.current.Number != "" {
-				m.detailSelected = indexString(m.jumpLabels(), "m")
+				m.detailSelected = indexString(m.jumpLabels(), jumpLabelSummary)
 				m.noteTA.Reset()
 				m.noteTA.SetValue(m.current.Abstract)
 				m.noteTA.Focus()
@@ -733,6 +763,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		default:
 			if isCountKey(msg.String()) {
+				// Don't start a count with '0'
+				if msg.String() == "0" && m.countBuffer == "" {
+					return m, nil
+				}
 				m.countBuffer += msg.String()
 				return m, nil
 			}
@@ -742,6 +776,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyCtrlC:
 			return m, tea.Quit
 		case keyEsc:
+			if m.visualMode {
+				m.visualMode = false
+				return m, nil
+			}
 			if m.mode == viewClaim {
 				return m.goBack()
 			}
@@ -756,11 +794,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.goBack()
 		case keyProjectInfo:
-			m.backStack = append(m.backStack, m.snapshot())
-			m.mode = viewProjectInfo
-			return m, nil
+			return m.navigateTo(viewProjectInfo), nil
 		case keyProject:
-			m.mode = viewSplash
+			m = m.navigateTo(viewSplash)
 			m = m.reloadProjects()
 			for i, p := range m.projects {
 				if p.ID == m.ProjectID {
@@ -833,97 +869,85 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyVimDown, keyArrowDown:
 			count := m.consumeCount(1)
-			if m.isCitationView() {
-				return m.moveCitationSelection(count), nil
-			}
-			if m.mode == viewClassifications {
-				return m.moveClassificationSelection(count), nil
-			}
-			if m.mode == viewInventors {
-				return m.moveInventorSelection(count), nil
-			}
-			if m.mode == viewFamily {
-				return m.moveFamilySelection(count), nil
-			}
-			if m.mode == viewReview {
-				return m.moveReviewSelection(count), nil
-			}
-			if m.mode == viewDetail {
-				return m.moveDetailSelection(count), nil
-			}
-			if m.mode == viewList && len(m.patents) > 0 {
-				m.selected = clamp(m.selected+count, 0, len(m.patents)-1)
-			}
+			return m.moveSelection(count), nil
 		case keyVimUp, keyArrowUp:
 			count := m.consumeCount(1)
-			if m.isCitationView() {
-				return m.moveCitationSelection(-count), nil
-			}
-			if m.mode == viewClassifications {
-				return m.moveClassificationSelection(-count), nil
-			}
-			if m.mode == viewInventors {
-				return m.moveInventorSelection(-count), nil
-			}
-			if m.mode == viewFamily {
-				return m.moveFamilySelection(-count), nil
-			}
-			if m.mode == viewReview {
-				return m.moveReviewSelection(-count), nil
-			}
-			if m.mode == viewDetail {
-				return m.moveDetailSelection(-count), nil
-			}
-			if m.mode == viewList && len(m.patents) > 0 {
-				m.selected = clamp(m.selected-count, 0, len(m.patents)-1)
-			}
-		case keyCtrlF:
+			return m.moveSelection(-count), nil
+		case keyCtrlF, "pgdown":
 			m.countBuffer = EmptyCount
-			if m.isCitationView() {
-				return m.moveCitationSelection(m.pageSize()), nil
-			}
-			if m.mode == viewClassifications {
-				return m.moveClassificationSelection(m.pageSize()), nil
-			}
-			if m.mode == viewReview {
-				return m.moveReviewSelection(m.pageSize()), nil
-			}
-		case keyCtrlD:
+			return m.moveSelection(m.pageSize()), nil
+		case keyCtrlD, "pgup":
 			m.countBuffer = EmptyCount
-			if m.isCitationView() {
-				return m.moveCitationSelection(-m.pageSize()), nil
-			}
-			if m.mode == viewClassifications {
-				return m.moveClassificationSelection(-m.pageSize()), nil
-			}
-			if m.mode == viewReview {
-				return m.moveReviewSelection(-m.pageSize()), nil
-			}
+			return m.moveSelection(-m.pageSize()), nil
 		case keyGoto:
+			if m.countBuffer == "g" {
+				m.countBuffer = ""
+				return m.goToRow(1), nil
+			}
 			if m.countBuffer != "" {
 				count := m.consumeCount(1)
 				return m.goToRow(count), nil
 			}
+			// wait for second 'g' for 'gg'
+			m.countBuffer = "g"
+			return m, nil
+		case keyBottom:
+			m.countBuffer = ""
+			return m.goToRow(m.activeItemCount()), nil
 		case keyJump:
 			m.countBuffer = EmptyCount
 			m.jumpMode = !m.jumpMode
 			return m, nil
+		case "v", "V":
+			if m.mode == viewList || m.isCitationView() || m.mode == viewReview {
+				m.visualMode = !m.visualMode
+				if m.visualMode {
+					m.selectionStart = m.activeSelectionIndex()
+				}
+			}
+			return m, nil
+		case "%":
+			if m.mode == viewList || m.isCitationView() || m.mode == viewReview {
+				m.visualMode = true
+				m.selectionStart = 0
+				m.setActiveSelectionIndex(m.activeItemCount() - 1)
+			}
+			return m, nil
+		case keyColLeft, "left":
+			count := m.consumeCount(1)
+			if m.mode == viewList {
+				m.sortColumnIndex = clamp(m.sortColumnIndex-count, 0, len(m.listColumns())-1)
+				return m, nil
+			}
+			if m.mode == viewFamily {
+				// For family, we can repeat the move to parent logic
+				for i := 0; i < count; i++ {
+					m = m.moveFamilyToParent()
+				}
+				return m, nil
+			}
+		case keyColRight, "right":
+			count := m.consumeCount(1)
+			if m.mode == viewList {
+				m.sortColumnIndex = clamp(m.sortColumnIndex+count, 0, len(m.listColumns())-1)
+				return m, nil
+			}
+			if m.mode == viewFamily {
+				for i := 0; i < count; i++ {
+					m = m.moveFamilyToFirstChild()
+				}
+				return m, nil
+			}
+		case keyClassification: // "L"
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.selected]
+				m.populateDetailCache()
+			}
+			return m.navigateTo(viewClassifications), nil
 		case keyCites:
 			m = m.navigateTo(viewCites)
 		case keyCitedBy:
 			m = m.navigateTo(viewCitedBy)
-		case "h":
-			if m.mode == viewFamily {
-				return m.moveFamilyToParent(), nil
-			}
-		case keyClassification:
-			if m.mode == viewFamily {
-				return m.moveFamilyToFirstChild(), nil
-			}
-			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[m.selected]
-			}
-			m = m.navigateTo(viewClassifications)
 		case keyFamily:
 			if m.mode == viewList && len(m.patents) > 0 {
 				m.current = m.patents[m.selected]
@@ -932,7 +956,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.familySelected = familyCurrentIdx(m.buildFamilyTree())
 		case keyText:
 			m = m.navigateTo(viewText)
-		case keyNotes:
+		case keyNotes: // which is "n"
+			if (m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS) && m.popupSearchActive {
+				return m.popupSearchNext(), nil
+			}
+			if m.mode == viewList && m.listSearchActive {
+				return m.listSearchNext(), nil
+			}
+			if m.mode == viewBulkConfirm {
+				m.bulkActionIndices = nil
+				return m.goBack()
+			}
 			if m.mode == viewConfirmDelete {
 				m.mode = viewList
 				return m, nil
@@ -949,7 +983,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.pullFamilyCommand()
 			}
 			m = m.navigateTo(viewRefs)
-		case "R":
+		case keyRefreshAll:
 			if m.mode == viewCites {
 				return m.refreshCommand([]string{refreshTargetCitations})
 			}
@@ -998,7 +1032,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-		case "s":
+		case keySort:
+			if m.mode == viewList {
+				// Column mapping for sorting
+				cols := m.listColumns()
+				sortCols := make([]string, len(cols))
+				for i, c := range cols {
+					sortCols[i] = c.id
+				}
+				newCol := sortCols[clamp(m.sortColumnIndex, 0, len(sortCols)-1)]
+				if m.sortColumn == newCol {
+					if m.sortOrder == domain.SortOrderAsc {
+						m.sortOrder = domain.SortOrderDesc
+					} else {
+						m.sortOrder = domain.SortOrderAsc
+					}
+				} else {
+					m.sortColumn = newCol
+					m.sortOrder = domain.SortOrderAsc
+				}
+				m.visualMode = false
+				return m.refreshList()
+			}
+		case keyStatus:
 			if m.isCitationView() {
 				m.citesStatusFilter = nextCitesStatusFilter(m.citesStatusFilter)
 				return m, nil
@@ -1016,6 +1072,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case keyYes:
+			if m.mode == viewBulkConfirm {
+				return m.executeBulkAction()
+			}
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
 			}
@@ -1066,8 +1125,7 @@ func (m *Model) navigateTo(mode viewMode) *Model {
 }
 
 func (m *Model) snapshot() navSnapshot {
-	patents := make([]domain.Patent, len(m.patents))
-	copy(patents, m.patents)
+	patents := m.patents
 	projects := make([]domain.Project, len(m.projects))
 	copy(projects, m.projects)
 	return navSnapshot{
@@ -1086,6 +1144,8 @@ func (m *Model) snapshot() navSnapshot {
 		classificationSelected:  m.classificationSelected,
 		inventorSelected:        m.inventorSelected,
 		familySelected:          m.familySelected,
+		visualMode:              m.visualMode,
+		selectionStart:          m.selectionStart,
 		current:                 m.current,
 		pendingBundle:           m.pendingBundle,
 		pendingCitation:         m.pendingCitation,
@@ -1104,6 +1164,13 @@ func (m *Model) snapshot() navSnapshot {
 		classFilter:             m.classFilter,
 		statusFilter:            m.statusFilter,
 		citesStatusFilter:       m.citesStatusFilter,
+		listNumWidth:            m.listNumWidth,
+		classificationQuery:     m.classificationQuery,
+		classificationSearchActive: m.classificationSearchActive,
+		listSearchQuery:         m.listSearchQuery,
+		listSearchActive:        m.listSearchActive,
+		popupSearchQuery:        m.popupSearchQuery,
+		popupSearchActive:       m.popupSearchActive,
 	}
 }
 
@@ -1123,6 +1190,8 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.classificationSelected = snapshot.classificationSelected
 	m.inventorSelected = snapshot.inventorSelected
 	m.familySelected = snapshot.familySelected
+	m.visualMode = snapshot.visualMode
+	m.selectionStart = snapshot.selectionStart
 	m.current = snapshot.current
 	m.pendingBundle = snapshot.pendingBundle
 	m.pendingCitation = snapshot.pendingCitation
@@ -1141,10 +1210,26 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.classFilter = snapshot.classFilter
 	m.statusFilter = snapshot.statusFilter
 	m.citesStatusFilter = snapshot.citesStatusFilter
+	m.listNumWidth = snapshot.listNumWidth
+	m.classificationQuery = snapshot.classificationQuery
+	m.classificationSearchActive = snapshot.classificationSearchActive
+	m.listSearchQuery = snapshot.listSearchQuery
+	m.listSearchActive = snapshot.listSearchActive
+	m.popupSearchQuery = snapshot.popupSearchQuery
+	m.popupSearchActive = snapshot.popupSearchActive
 	return m
 }
-
 func (m *Model) goBack() (tea.Model, tea.Cmd) {
+	if (m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS) && m.popupSearchActive {
+		m.popupSearchActive = false
+		m.popupSearchQuery = ""
+		return m, nil
+	}
+	if m.mode == viewList && m.listSearchActive {
+		m.listSearchActive = false
+		m.listSearchQuery = ""
+		return m, nil
+	}
 	if len(m.backStack) > 0 {
 		last := m.backStack[len(m.backStack)-1]
 		m.backStack = m.backStack[:len(m.backStack)-1]
@@ -1172,6 +1257,24 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 	m.logger.Info("tui command", "name", command.Name, "args", command.Args)
 	switch command.Name {
 	case commandSearch:
+		if m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS {
+			if len(command.Args) > 0 {
+				m.popupSearchQuery = command.Args[0]
+				m.popupSearchActive = true
+				return m.popupSearchNext(), nil
+			}
+			return m, nil
+		}
+		if m.mode == viewList {
+			if len(command.Args) > 0 && command.Args[0] != "clear" {
+				m.listSearchQuery = command.Args[0]
+				m.listSearchActive = true
+				return m.listSearchNext(), nil
+			}
+			m.listSearchActive = false
+			m.listSearchQuery = ""
+			return m, nil
+		}
 		if len(command.Args) > 0 && command.Args[0] != "clear" {
 			m.backStack = append(m.backStack, m.snapshot())
 			m.filter = command.Args[0]
@@ -1268,7 +1371,7 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		text := strings.Join(command.Args, " ")
-		m.logActivity("note", m.current.Number, text)
+		m.logActivity(activityNoteAdd, m.current.Number, text)
 		m.message = "noted"
 	case commandExit:
 		return m, tea.Quit
@@ -1323,7 +1426,7 @@ func (m *Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 				patent:  p,
 				mode:    viewDetail,
 				message: msg,
-				action:  "patent.import",
+				action:  activityPatentImport,
 				source:  "google",
 			}
 		},
@@ -1352,7 +1455,7 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if target == "family" {
+	if target == "family" || target == commandFamily {
 		return m.pullFamilyCommand()
 	}
 	if target != refreshTargetAll && target != refreshTargetCitations && target != domain.RelationCites && target != refreshTargetCitedBy && target != domain.RelationCitedBy {
@@ -1581,16 +1684,36 @@ func (m *Model) cycleSelectedPatentStatus() (tea.Model, tea.Cmd) {
 	if len(m.patents) == 0 {
 		return m, nil
 	}
-	sel := clamp(m.selected, 0, len(m.patents)-1)
-	p := m.patents[sel]
-	next := nextPatentStatus(p.Status)
-	if err := m.repo.UpdatePatentStatus(m.ctx, m.ProjectID, p.Number, next); err != nil {
-		m.err = err.Error()
+	indices := m.selectedIndices()
+	if len(indices) == 0 {
 		return m, nil
 	}
-	m.patents[sel].Status = next
-	m.message = fmt.Sprintf("%s → %s", p.Number, next)
-	m.logActivity("patent.status", p.Number, next)
+
+	updatedCount := 0
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(m.patents) {
+			continue
+		}
+		p := m.patents[idx]
+		next := nextPatentStatus(p.Status)
+		if err := m.repo.UpdatePatentStatus(m.ctx, m.ProjectID, p.Number, next); err != nil {
+			m.logger.Error("bulk patent status update failed", "patent", p.Number, "error", err)
+			continue
+		}
+		m.patents[idx].Status = next
+		m.logActivity("patent.status", p.Number, next)
+		updatedCount++
+	}
+
+	if updatedCount > 1 {
+		m.message = fmt.Sprintf("updated status for %d patents", updatedCount)
+	} else if updatedCount == 1 {
+		idx := indices[0]
+		p := m.patents[idx]
+		m.message = fmt.Sprintf("%s → %s", p.Number, p.Status)
+	}
+
+	m.visualMode = false
 	return m, nil
 }
 
@@ -1790,6 +1913,32 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	)
 }
 
+func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
+	repo := m.repo
+	projectID := m.ProjectID
+	target := edge.TargetPatent
+	importSource := m.importCfg.ImportSource
+
+	return func() tea.Msg {
+		bundle, err := m.importPatent(target)
+		if err != nil {
+			return refreshDetailsResultMsg{err: fmt.Errorf("bulk import failed for %s: %w", target, err)}
+		}
+
+		bundle.Patent.Status = domain.CitationStatusStored
+		bundle.Patent.ImportSource = string(importSource)
+		if err := repo.UpsertPatentBundle(context.Background(), projectID, bundle); err != nil {
+			return refreshDetailsResultMsg{err: fmt.Errorf("bulk save failed for %s: %w", target, err)}
+		}
+
+		if err := repo.UpdateCitationStatus(context.Background(), projectID, edge, domain.CitationStatusStored); err != nil {
+			return refreshDetailsResultMsg{err: fmt.Errorf("bulk status update failed for %s: %w", target, err)}
+		}
+
+		return refreshDetailsResultMsg{message: fmt.Sprintf("imported %s", target)}
+	}
+}
+
 func (m *Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
 	var edges []domain.CitationEdge
 	var selected int
@@ -1854,6 +2003,14 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.patents = patents
+	// Pre-calculate number width for list view
+	m.listNumWidth = 6
+	for _, p := range m.patents {
+		w := lipgloss.Width(p.Number)
+		if w > m.listNumWidth {
+			m.listNumWidth = w
+		}
+	}
 	if m.selected >= len(m.patents) {
 		m.selected = max(0, len(m.patents)-1)
 	}
@@ -1956,19 +2113,6 @@ func (m *Model) patentBrowserURL(value string) (string, error) {
 	return importer.GooglePatentsURL(value)
 }
 
-func (m *Model) moveDetailSelection(delta int) *Model {
-	fields := m.detailFields()
-	if len(fields) == 0 {
-		return m
-	}
-	next := clamp(m.detailSelected+delta, 0, len(fields)-1)
-	for next > 0 && next < len(fields)-1 && fields[next].separator {
-		next += delta
-	}
-	m.detailSelected = clamp(next, 0, len(fields)-1)
-	return m
-}
-
 func (m *Model) openPatent(number string) (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
 	p, err := m.repo.GetPatent(m.ctx, m.ProjectID, number)
@@ -2026,14 +2170,20 @@ func (m *Model) selectedCitationEdge() (domain.CitationEdge, bool, error) {
 }
 
 func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
-	edge, ok, err := m.selectedCitationEdge()
-	if err != nil {
-		m.err = err.Error()
+	indices := m.selectedIndices()
+	edges, err := m.currentCitationEdges()
+	if err != nil || len(edges) == 0 {
 		return m, nil
 	}
-	if !ok {
-		return m, nil
+
+	if len(indices) > 1 {
+		m.bulkAction = bulkActionStore
+		m.bulkActionIndices = indices
+		return m.navigateTo(viewBulkConfirm), nil
 	}
+
+	idx := indices[0]
+	edge := edges[idx]
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedCitation()
 	}
@@ -2043,6 +2193,7 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	}
 	m.logActivity("citation.store", edge.TargetPatent, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
+	m.visualMode = false
 	return m, nil
 }
 
@@ -2108,20 +2259,31 @@ func (m *Model) updatePendingCitation(status string, messageKey TextKey) (tea.Mo
 }
 
 func (m *Model) updateSelectedCitationStatus(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
-	edge, ok, err := m.selectedCitationEdge()
-	if err != nil {
-		m.err = err.Error()
+	indices := m.selectedIndices()
+	edges, err := m.currentCitationEdges()
+	if err != nil || len(edges) == 0 {
 		return m, nil
 	}
-	if !ok {
-		return m, nil
+
+	if len(indices) > 1 {
+		m.bulkActionIndices = indices
+		if status == domain.CitationStatusIgnored {
+			m.bulkAction = bulkActionIgnore
+		} else {
+			m.bulkAction = bulkActionUnmark
+		}
+		return m.navigateTo(viewBulkConfirm), nil
 	}
+
+	edge := edges[indices[0]]
 	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
 	m.logActivity("citation.status", edge.TargetPatent, status)
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
+
+	m.visualMode = false
 	return m, nil
 }
 
@@ -2146,15 +2308,6 @@ func (m *Model) selectedReviewCitationEdge() (domain.CitationEdge, bool, error) 
 	}
 	selected := clamp(m.reviewSelected, 0, len(edges)-1)
 	return edges[selected], true, nil
-}
-
-func (m *Model) moveReviewSelection(delta int) *Model {
-	edges, err := m.currentReviewCitationEdges()
-	if err != nil || len(edges) == 0 {
-		return m
-	}
-	m.reviewSelected = clamp(m.reviewSelected+delta, 0, len(edges)-1)
-	return m
 }
 
 func (m *Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
@@ -2186,14 +2339,20 @@ func (m *Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
-	edge, ok, err := m.selectedReviewCitationEdge()
-	if err != nil {
-		m.err = err.Error()
+	indices := m.selectedIndices()
+	edges, err := m.currentReviewCitationEdges()
+	if err != nil || len(edges) == 0 {
 		return m, nil
 	}
-	if !ok {
-		return m, nil
+
+	if len(indices) > 1 {
+		m.bulkAction = bulkActionStore
+		m.bulkActionIndices = indices
+		return m.navigateTo(viewBulkConfirm), nil
 	}
+
+	idx := indices[0]
+	edge := edges[idx]
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedReviewCitation()
 	}
@@ -2206,14 +2365,23 @@ func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateSelectedReviewCitationStatus(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
-	edge, ok, err := m.selectedReviewCitationEdge()
-	if err != nil {
-		m.err = err.Error()
+	indices := m.selectedIndices()
+	edges, err := m.currentReviewCitationEdges()
+	if err != nil || len(edges) == 0 {
 		return m, nil
 	}
-	if !ok {
-		return m, nil
+
+	if len(indices) > 1 {
+		m.bulkActionIndices = indices
+		if status == domain.CitationStatusIgnored {
+			m.bulkAction = bulkActionIgnore
+		} else {
+			m.bulkAction = bulkActionUnmark
+		}
+		return m.navigateTo(viewBulkConfirm), nil
 	}
+
+	edge := edges[indices[0]]
 	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -2223,21 +2391,76 @@ func (m *Model) updateSelectedReviewCitationStatus(status string, messageKey Tex
 		m.reviewSelected = clamp(m.reviewSelected, 0, max(0, len(edges)-1))
 	}
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
+	m.visualMode = false
 	return m, nil
+}
+
+func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
+	indices := m.bulkActionIndices
+	if len(indices) == 0 {
+		return m.goBack()
+	}
+
+	var edges []domain.CitationEdge
+	var err error
+	if m.mode == viewReview {
+		edges, err = m.currentReviewCitationEdges()
+	} else {
+		edges, err = m.currentCitationEdges()
+	}
+
+	if err != nil || len(edges) == 0 {
+		m.err = "bulk action failed: " + err.Error()
+		return m.goBack()
+	}
+
+	var cmds []tea.Cmd
+	action := m.bulkAction
+	status := domain.CitationStatusStored
+	if action == bulkActionIgnore {
+		status = domain.CitationStatusIgnored
+	} else if action == bulkActionUnmark {
+		status = domain.CitationStatusUnderReview
+	}
+
+	executedCount := 0
+	importCount := 0
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(edges) {
+			continue
+		}
+		edge := edges[idx]
+		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err == nil {
+			m.logActivity("bulk."+string(action), edge.TargetPatent, "")
+			executedCount++
+
+			// If storing, trigger download if not already in DB
+			if action == bulkActionStore {
+				if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
+					// Trigger background import
+					cmds = append(cmds, m.importCitationDetailsCommand(edge))
+					importCount++
+				}
+			}
+		}
+	}
+
+	m.message = fmt.Sprintf("performed bulk %s on %d items", action, executedCount)
+	m.visualMode = false
+	m.bulkActionIndices = nil
+
+	// pop viewBulkConfirm from backstack
+	model, _ := m.goBack()
+	if importCount > 0 {
+		m.loading = true
+		m.loadingMsg = fmt.Sprintf("downloading %d patents...", importCount)
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	return model, tea.Batch(cmds...)
 }
 
 func (m *Model) isCitationView() bool {
 	return m.mode == viewCites || m.mode == viewCitedBy
-}
-
-func (m *Model) moveCitationSelection(delta int) *Model {
-	edges, err := m.currentCitationEdges()
-	if err != nil || len(edges) == 0 {
-		return m
-	}
-	next := clamp(m.citationSelection()+delta, 0, len(edges)-1)
-	m.setCitationSelection(next)
-	return m
 }
 
 func (m *Model) citationSelection() int {
@@ -2648,7 +2871,9 @@ func (m *Model) styleRow(index int, selected int, content string) string {
 
 func (m *Model) styleRowW(index int, selected int, content string, targetWidth int) string {
 	style := lipgloss.NewStyle()
-	if index == selected {
+	if m.isInSelection(index) {
+		style = style.Background(lipgloss.Color(ColorSelection))
+	} else if index == selected {
 		style = style.Background(lipgloss.Color(ColorHighlight))
 	} else if index%2 != 0 {
 		style = style.Background(lipgloss.Color(ColorAltRow))
@@ -2666,7 +2891,9 @@ func (m *Model) styleRowW(index int, selected int, content string, targetWidth i
 // so that all rows inside overlay popups have a consistent background.
 func (m *Model) styleRowOverlay(index int, selected int, content string, targetWidth int) string {
 	style := overlayBase()
-	if index == selected {
+	if m.isInSelection(index) {
+		style = style.Background(lipgloss.Color(ColorSelection))
+	} else if index == selected {
 		style = style.Background(lipgloss.Color(ColorHighlight))
 	} else if index%2 != 0 {
 		style = style.Background(lipgloss.Color(ColorAltRow))
@@ -2680,6 +2907,34 @@ func (m *Model) styleRowOverlay(index int, selected int, content string, targetW
 	return style.Render(content)
 }
 
+type listColumn struct {
+	label string
+	width int
+	id    string
+}
+
+func (m *Model) listColumns() []listColumn {
+	numWidth := m.listNumWidth
+	titleWidth := 40
+	invWidth := 20
+	cpcWidth := 15
+	expWidth := 12
+	statusWidth := 10
+	updatedWidth := 16
+	notesWidth := 6
+
+	return []listColumn{
+		{"Number", numWidth + 2, domain.SortColumnNumber},
+		{"Title", titleWidth + 2, domain.SortColumnTitle},
+		{"Inventor", invWidth + 2, domain.SortColumnInventor},
+		{"Classification", cpcWidth + 2, domain.SortColumnCPC},
+		{"Expires", expWidth + 2, domain.SortColumnExpiration},
+		{"Status", statusWidth + 2, domain.SortColumnStatus},
+		{"Updated", updatedWidth + 2, domain.SortColumnUpdated},
+		{"Notes", notesWidth, domain.SortColumnNotes},
+	}
+}
+
 func (m *Model) View() string {
 	start := time.Now()
 	// Pre-calculate jump labels for this render frame to avoid redundant allocations and logic in loops.
@@ -2687,7 +2942,7 @@ func (m *Model) View() string {
 
 	bg := m.renderView()
 
-	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo || m.mode == viewNoteEdit || m.mode == viewClaim || m.mode == viewUSPTOKeyWarning {
+	if m.mode == viewPreview || m.mode == viewConfirmDelete || m.mode == viewClassificationDetail || m.mode == viewClassifications || m.mode == viewInventors || m.mode == viewFamily || m.mode == viewHelpPopup || m.mode == viewProjectEvents || m.mode == viewProjectInvoices || m.mode == viewProjectIDS || m.mode == viewProjectInfo || m.mode == viewNoteEdit || m.mode == viewClaim || m.mode == viewUSPTOKeyWarning || m.mode == viewBulkConfirm {
 		var content string
 		if m.mode == viewPreview {
 			content = m.viewPreview()
@@ -2715,6 +2970,8 @@ func (m *Model) View() string {
 			content = m.viewClaim()
 		} else if m.mode == viewUSPTOKeyWarning {
 			content = m.viewUSPTOKeyWarning()
+		} else if m.mode == viewBulkConfirm {
+			content = m.viewBulkConfirm()
 		} else {
 			content = m.viewInventors()
 		}
@@ -2788,8 +3045,14 @@ func (m *Model) renderView() string {
 	if m.input.Focused() {
 		b.WriteString(m.input.View() + "\n")
 	} else if m.jumpMode {
+		if m.visualMode {
+			b.WriteString(lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color("15")).Render(" VISUAL ") + " ")
+		}
 		b.WriteString(m.text.T(TextNavJump) + "\n")
 	} else {
+		if m.visualMode {
+			b.WriteString(lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color("15")).Render(" VISUAL ") + " ")
+		}
 		b.WriteString(m.navDefault() + "\n")
 	}
 	b.WriteString(m.rule() + "\n")
@@ -2830,6 +3093,29 @@ func (m *Model) renderView() string {
 			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSuccess)).Render(m.singleLine(m.message)) + "\n")
 		}
 	}
+	return b.String()
+}
+
+func (m *Model) viewBulkConfirm() string {
+	base := overlayBase()
+	var b strings.Builder
+	count := len(m.bulkActionIndices)
+
+	var actionVerb string
+	switch m.bulkAction {
+	case bulkActionStore:
+		actionVerb = "save"
+	case bulkActionIgnore:
+		actionVerb = "ignore"
+	case bulkActionUnmark:
+		actionVerb = "unmark (under review)"
+	}
+
+	b.WriteString(base.Bold(true).Render("Bulk Action Confirmation") + "\n\n")
+	b.WriteString(base.Render(fmt.Sprintf("Do you want to %s %d citation(s) in the database?", actionVerb, count)) + "\n\n")
+	b.WriteString(base.Foreground(lipgloss.Color(ColorSuccess)).Bold(true).Render("y: confirm") + "  " +
+		base.Foreground(lipgloss.Color(ColorError)).Bold(true).Render("n/esc: cancel"))
+
 	return b.String()
 }
 
@@ -2914,7 +3200,7 @@ func (m *Model) singleLine(value string) string {
 }
 
 func (m *Model) navDefault() string {
-	return fmt.Sprintf(m.text.T(TextNavDefault), keyVimDown, keyVimUp, keyEnter, keyJump, keyCommand, keySearch, keyHelp, keyEsc, keyQuit)
+	return fmt.Sprintf(m.text.T(TextNavDefault), keyVimDown, keyVimUp, keyEnter, keyJump, keySort, keyCommand, keySearch, keyHelp, keyEsc, keyQuit)
 }
 
 func (m *Model) viewList() string {
@@ -2941,19 +3227,6 @@ func (m *Model) viewList() string {
 	if idxWidth < 2 {
 		idxWidth = 2
 	}
-	// Use cached or windowed number width calculation for speed
-	numWidth := 6
-	for i := window.Start; i < window.End; i++ {
-		w := lipgloss.Width(m.patents[i].Number)
-		if w > numWidth {
-			numWidth = w
-		}
-	}
-	titleWidth := 40
-	invWidth := 20
-	cpcWidth := 15
-	expWidth := 12
-	statusWidth := 10
 
 	// Account for jump prefix width in header if jump targets exist
 	jumpPrefixWidth := 0
@@ -2961,17 +3234,55 @@ func (m *Model) viewList() string {
 		jumpPrefixWidth = 2
 	}
 
+	cols := m.listColumns()
+
+	// Clamp sortColumnIndex
+	if m.sortColumnIndex >= len(cols) {
+		m.sortColumnIndex = len(cols) - 1
+	}
+
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
-		m.pad("#", idxWidth+2) +
-		m.pad("Number", numWidth+2) +
-		m.pad("Title", titleWidth+2) +
-		m.pad("Inventor", invWidth+2) +
-		m.pad("Classification", cpcWidth+2) +
-		m.pad("Expires", expWidth+2) +
-		m.pad("Status", statusWidth)
+		m.pad("#", idxWidth+2)
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
+	for i, c := range cols {
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+		label := c.label
+		if m.sortColumn == c.id {
+			indicator := " ▴"
+			if m.sortOrder == domain.SortOrderDesc {
+				indicator = " ▾"
+			}
+			label += indicator
+		}
+		if i == m.sortColumnIndex {
+			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
+		}
+
+		// Header jump label
+		jumpColLabel := ""
+		if m.jumpMode && i < len(m.jumpLabelsCache) {
+			jumpColLabel = m.jumpLabelsCache[i]
+		}
+		jumpColPrefix := ""
+		if jumpColLabel != "" {
+			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
+		}
+
+		// Calculate total width for this column header (visible chars)
+		colWidth := c.width
+		if jumpColLabel != "" {
+			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
+		}
+
+		padding := 2
+		if i == len(cols)-1 {
+			padding = 0
+		}
+		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
+	}
+
+	b.WriteString(header)
 	b.WriteString("\n")
 
 	for i := window.Start; i < window.End; i++ {
@@ -2981,14 +3292,20 @@ func (m *Model) viewList() string {
 			prefix = "> "
 		}
 
-		jumpPrefix := m.jumpPrefix(i - window.Start)
-		if jumpPrefix == "" && jumpPrefixWidth > 0 {
-			jumpPrefix = strings.Repeat(" ", jumpPrefixWidth)
+		jumpRowPrefix := ""
+		if m.jumpMode {
+			jumpIdx := len(cols) + (i - window.Start)
+			if jumpIdx < len(m.jumpLabelsCache) {
+				jumpRowPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(m.jumpLabelsCache[jumpIdx]) + " "
+			}
+		}
+		if jumpRowPrefix == "" && jumpPrefixWidth > 0 {
+			jumpRowPrefix = strings.Repeat(" ", jumpPrefixWidth)
 		}
 
-		title := m.truncate(p.Title, titleWidth)
-		inventors := m.truncate(formatInventorsShort(p.Inventors), invWidth)
-		cpc := m.truncate(p.ClassificationLabel, cpcWidth)
+		title := m.truncate(p.Title, 40)
+		inventors := m.truncate(formatInventorsShort(p.Inventors), 20)
+		cpc := m.truncate(p.ClassificationLabel, 15)
 		if cpc == "" {
 			cpc = "-"
 		}
@@ -2997,17 +3314,54 @@ func (m *Model) viewList() string {
 			expDate = "-"
 		}
 		status := p.Status
+		updated := formatStoredTime(p.UpdatedAt, "-")
+		notes := "-"
+		if p.NotesCount > 0 {
+			notes = fmt.Sprintf("%d", p.NotesCount)
+		}
 
 		idxLabel := fmt.Sprintf("%*d", idxWidth, i+1)
 		row := m.pad(prefix, 2) +
-			m.pad(jumpPrefix, jumpPrefixWidth) +
-			m.pad(idxLabel, idxWidth+2) +
-			m.pad(p.Number, numWidth+2) +
-			m.pad(title, titleWidth+2) +
-			m.pad(inventors, invWidth+2) +
-			m.pad(cpc, cpcWidth+2) +
-			m.pad(expDate, expWidth+2) +
-			m.pad(status, statusWidth)
+			m.pad(jumpRowPrefix, jumpPrefixWidth) +
+			m.pad(idxLabel, idxWidth+2)
+
+		for j, c := range cols {
+			val := ""
+			switch c.id {
+			case domain.SortColumnNumber:
+				val = p.Number
+			case domain.SortColumnTitle:
+				val = title
+			case domain.SortColumnInventor:
+				val = inventors
+			case domain.SortColumnCPC:
+				val = cpc
+			case domain.SortColumnExpiration:
+				val = expDate
+			case domain.SortColumnStatus:
+				val = status
+			case domain.SortColumnUpdated:
+				val = updated
+			case domain.SortColumnNotes:
+				val = notes
+			}
+
+			// Use the same width calculation as the header for alignment
+			colWidth := c.width
+			jumpColLabel := ""
+			if m.jumpMode && j < len(m.jumpLabelsCache) {
+				jumpColLabel = m.jumpLabelsCache[j]
+			}
+			if jumpColLabel != "" {
+				colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+c.label))
+			}
+
+			padding := 2
+			if j == len(cols)-1 {
+				padding = 0
+			}
+			row += m.pad(val, colWidth+padding)
+		}
 
 		style := lipgloss.NewStyle()
 		if color, ok := StatusColors[p.Status]; ok {
@@ -3062,7 +3416,6 @@ func (m *Model) truncate(s string, width int) string {
 
 func (m *Model) viewDetail() string {
 	p := m.current
-	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
 	var b strings.Builder
 	b.WriteString(p.Number + "\n")
@@ -3104,9 +3457,6 @@ func (m *Model) viewDetail() string {
 		b.WriteString(prefix + m.jumpPrefix(i) + m.detailRow(field.label, value, groupWidths[groupIndex]))
 	}
 	b.WriteString(dimStyle.Render(m.rule()) + "\n")
-	b.WriteString(subtleStyle.Render(m.text.T(TextDetailOpenHint)))
-	b.WriteString("  ")
-	b.WriteString(subtleStyle.Render("s: cycle status · A: add to IDS · N: note"))
 	b.WriteString("\n")
 
 	return b.String()
@@ -3161,7 +3511,7 @@ func (m *Model) detailFields() []detailField {
 
 	fields := []detailField{
 		{label: TextDetailAssignee, value: p.Assignee, jumpLabel: jumpLabelAssignee},
-		{label: TextDetailLatestAssignment, value: p.LatestAssignment, jumpLabel: "L"},
+		{label: TextDetailLatestAssignment, value: p.LatestAssignment, jumpLabel: jumpLabelLatestAssignment},
 	}
 
 	// Add grouped inventors as a single field
@@ -3178,7 +3528,7 @@ func (m *Model) detailFields() []detailField {
 	}
 
 	fields = append(fields,
-		detailField{label: TextDetailApplication, value: formatLifecycle(p.ApplicationNumber, p.ApplicationDate), jumpLabel: "A"},
+		detailField{label: TextDetailApplication, value: formatLifecycle(p.ApplicationNumber, p.ApplicationDate), jumpLabel: jumpLabelApplication},
 		detailField{label: TextDetailPublicationLong, value: formatLifecycle(p.PublicationNumber, p.PublicationDate), jumpLabel: jumpLabelPublication},
 		detailField{label: TextDetailGrantLong, value: formatLifecycle(p.GrantNumber, p.GrantDate), jumpLabel: jumpLabelGrant},
 	)
@@ -3260,6 +3610,8 @@ func (m *Model) detailFields() []detailField {
 			fields = append(fields, detailField{
 				label:        TextDetailStatus,
 				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(p.Status),
+				jumpLabel:    keyStatus,
+				action:       detailActionNone, // cycle status is handled by 's' globally
 			})
 		}
 		idsEntry := m.idsEntryForPatent(p.Number)
@@ -3272,11 +3624,15 @@ func (m *Model) detailFields() []detailField {
 			fields = append(fields, detailField{
 				label:        TextDetailIDS,
 				displayValue: value,
+				jumpLabel:    keyIDS,
+				action:       detailActionNone,
 			})
 		} else {
 			fields = append(fields, detailField{
 				label:        TextDetailIDS,
 				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true).Render("Not in IDS"),
+				jumpLabel:    keyIDS,
+				action:       detailActionNone,
 			})
 		}
 
@@ -3300,14 +3656,14 @@ func (m *Model) detailFields() []detailField {
 			label:        TextDetailFirstClaim,
 			value:        claimValue,
 			displayValue: claimDisplay,
-			jumpLabel:    "1",
+			jumpLabel:    jumpLabelFirstClaim,
 			action:       detailActionFirstClaim,
 		},
 		detailField{
 			label:        TextDetailSummary,
 			value:        p.Abstract,
 			displayValue: summaryValue,
-			jumpLabel:    "m",
+			jumpLabel:    jumpLabelSummary,
 			action:       detailActionSummary,
 		},
 		detailField{
@@ -3468,25 +3824,41 @@ func (m *Model) viewCitations(relation string) string {
 	b.WriteString("\n\n")
 
 	indexWidth := 4
-	numWidth := 14
+	numWidth := 16
 	titleWidth := 40
 	invWidth := 20
 	expWidth := 12
 	statusWidth := 10
 
+	// Account for jump prefix width in header if jump targets exist
 	jumpPrefixWidth := 0
 	if m.hasJumpTargets() {
 		jumpPrefixWidth = 2
 	}
 
+	type col struct {
+		label string
+		width int
+	}
+	cols := []col{
+		{"Number", numWidth},
+		{"Title", titleWidth},
+		{"Inventor", invWidth},
+		{"Expires", expWidth},
+		{"Status", statusWidth},
+	}
+
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
-		m.pad("#", indexWidth) +
-		m.pad("Number", numWidth+2) +
-		m.pad("Title", titleWidth+2) +
-		m.pad("Inventor", invWidth+2) +
-		m.pad("Expires", expWidth+2) +
-		m.pad("Status", statusWidth)
+		m.pad("#", indexWidth)
+
+	for i, c := range cols {
+		padding := 2
+		if i == len(cols)-1 {
+			padding = 0
+		}
+		header += m.pad(c.label, c.width+padding)
+	}
 
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
@@ -3502,14 +3874,15 @@ func (m *Model) viewCitations(relation string) string {
 			jumpPrefix = strings.Repeat(" ", jumpPrefixWidth)
 		}
 
-		title := m.truncate(edges[i].TargetTitle, titleWidth)
-		inventors := m.truncate(formatInventorsShort(edges[i].TargetInventors), invWidth)
-		expDate := edges[i].TargetExpirationDate
+		edge := edges[i]
+		title := m.truncate(edge.TargetTitle, titleWidth)
+		inventors := m.truncate(formatInventorsShort(edge.TargetInventors), invWidth)
+		expDate := edge.TargetExpirationDate
 		if expDate == "" {
 			expDate = "-"
 		}
-		numCell := edges[i].TargetPatent
-		if src := edges[i].TargetImportSource; src == "uspto" {
+		numCell := edge.TargetPatent
+		if src := edge.TargetImportSource; src == "uspto" {
 			numCell += " [u]"
 		} else if src == "google" {
 			numCell += " [g]"
@@ -3517,12 +3890,13 @@ func (m *Model) viewCitations(relation string) string {
 
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
-			m.pad(rowIndexLabel(i), indexWidth) +
-			m.pad(numCell, numWidth+2) +
-			m.pad(title, titleWidth+2) +
-			m.pad(inventors, invWidth+2) +
-			m.pad(expDate, expWidth+2) +
-			m.pad(m.citationStatusLabel(edges[i].Status), statusWidth)
+			m.pad(rowIndexLabel(i), indexWidth)
+
+		row += m.pad(numCell, numWidth+2)
+		row += m.pad(title, titleWidth+2)
+		row += m.pad(inventors, invWidth+2)
+		row += m.pad(expDate, expWidth+2)
+		row += m.pad(m.citationStatusLabel(edge.Status), statusWidth)
 
 		b.WriteString(m.styleRow(i, selected, row) + "\n")
 	}
@@ -3548,25 +3922,41 @@ func (m *Model) viewReviewQueue() string {
 	b.WriteString("\n\n")
 
 	indexWidth := 4
-	numWidth := 14
+	numWidth := 16
 	titleWidth := 40
 	invWidth := 20
 	expWidth := 12
-	sourceWidth := 14
+	sourceWidth := 16
 
+	// Account for jump prefix width in header if jump targets exist
 	jumpPrefixWidth := 0
 	if m.hasJumpTargets() {
 		jumpPrefixWidth = 2
 	}
 
+	type col struct {
+		label string
+		width int
+	}
+	cols := []col{
+		{"Number", numWidth},
+		{"Title", titleWidth},
+		{"Inventor", invWidth},
+		{"Expires", expWidth},
+		{"Source", sourceWidth},
+	}
+
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
-		m.pad("#", indexWidth) +
-		m.pad("Number", numWidth+2) +
-		m.pad("Title", titleWidth+2) +
-		m.pad("Inventor", invWidth+2) +
-		m.pad("Expires", expWidth+2) +
-		m.pad("Source", sourceWidth)
+		m.pad("#", indexWidth)
+
+	for i, c := range cols {
+		padding := 2
+		if i == len(cols)-1 {
+			padding = 0
+		}
+		header += m.pad(c.label, c.width+padding)
+	}
 
 	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
 	b.WriteString("\n")
@@ -3582,21 +3972,23 @@ func (m *Model) viewReviewQueue() string {
 			jumpPrefix = strings.Repeat(" ", jumpPrefixWidth)
 		}
 
-		title := m.truncate(edges[i].TargetTitle, titleWidth)
-		inventors := m.truncate(formatInventorsShort(edges[i].TargetInventors), invWidth)
-		expDate := edges[i].TargetExpirationDate
+		edge := edges[i]
+		title := m.truncate(edge.TargetTitle, titleWidth)
+		inventors := m.truncate(formatInventorsShort(edge.TargetInventors), invWidth)
+		expDate := edge.TargetExpirationDate
 		if expDate == "" {
 			expDate = "-"
 		}
 
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
-			m.pad(rowIndexLabel(i), indexWidth) +
-			m.pad(edges[i].TargetPatent, numWidth+2) +
-			m.pad(title, titleWidth+2) +
-			m.pad(inventors, invWidth+2) +
-			m.pad(expDate, expWidth+2) +
-			m.pad(edges[i].SourcePatent, sourceWidth)
+			m.pad(rowIndexLabel(i), indexWidth)
+
+		row += m.pad(edge.TargetPatent, numWidth+2)
+		row += m.pad(title, titleWidth+2)
+		row += m.pad(inventors, invWidth+2)
+		row += m.pad(expDate, expWidth+2)
+		row += m.pad(edge.SourcePatent, sourceWidth)
 
 		b.WriteString(m.styleRow(i, selected, row) + "\n")
 	}
@@ -3620,16 +4012,27 @@ func (m *Model) citationStatusLabel(status string) string {
 	return label
 }
 
+func (m *Model) moveSelection(delta int) *Model {
+	count := m.activeItemCount()
+	if count == 0 {
+		return m
+	}
+	current := m.activeSelectionIndex()
+	next := clamp(current+delta, 0, count-1)
+	m.setActiveSelectionIndex(next)
+	return m
+}
+
 func (m *Model) citationOpenHint() string {
-	return fmt.Sprintf(m.text.T(TextValueOpenHint), keyEnter, keyYes, keyIgnore, keyUnreview, keyCtrlF, keyCtrlD)
+	return fmt.Sprintf(m.text.T(TextValueOpenHint), keyEnter, keyYes, keyIgnore, keyUnreview, keyRefreshAll, keyCtrlF, keyCtrlD)
 }
 
 func (m *Model) reviewOpenHint() string {
-	return fmt.Sprintf(m.text.T(TextValueReviewOpenHint), keyEnter, keyYes, keyIgnore, keyUnreview, keyWeb, keyCtrlF, keyCtrlD)
+	return fmt.Sprintf(m.text.T(TextValueReviewOpenHint), keyEnter, keyYes, keyIgnore, keyUnreview, keyRefreshAll, keyWeb, keyCtrlF, keyCtrlD)
 }
 
 func (m *Model) classificationOpenHint() string {
-	return fmt.Sprintf(m.text.T(TextValueClassificationHint), keyEnter, keyCtrlF, keyCtrlD)
+	return fmt.Sprintf(m.text.T(TextValueClassificationHint), keyEnter, keySearch, keyNotes, keyCtrlF, keyCtrlD)
 }
 
 func (m *Model) previewStorePrompt() string {
@@ -3784,7 +4187,9 @@ func (m *Model) jumpLabels() []string {
 	switch {
 	case m.mode == viewList:
 		window := pageWindow(m.selected, len(m.patents), m.pageSize())
-		return fallbackJumpLabels(window.End-window.Start, nil)
+		cols := m.listColumns()
+		// column headers + rows in window
+		return fallbackJumpLabels(len(cols)+window.End-window.Start, nil)
 	case m.mode == viewDetail:
 		fields := m.detailFields()
 		labels := make([]string, 0, len(fields))
@@ -3834,9 +4239,24 @@ func (m *Model) applyJump(key string) *Model {
 		return m
 	}
 	m.jumpMode = false
+
 	switch {
 	case m.mode == viewList:
-		m.selected = index
+		cols := m.listColumns()
+		colCount := len(cols)
+		if index < colCount {
+			m.sortColumnIndex = index
+			return m
+		}
+		// Adjust index for row jump (skip header labels)
+		index -= colCount
+		window := pageWindow(m.selected, len(m.patents), m.pageSize())
+
+		target := window.Start + index
+		if target < len(m.patents) {
+			m.selected = target
+			_, _ = m.openPatent(m.patents[target].Number)
+		}
 	case m.mode == viewDetail:
 		m.detailSelected = index
 	case m.isCitationView():
@@ -3896,6 +4316,97 @@ func indexString(values []string, target string) int {
 	return -1
 }
 
+func (m *Model) isInSelection(idx int) bool {
+	if !m.visualMode {
+		return false
+	}
+	current := m.activeSelectionIndex()
+	start, end := m.selectionStart, current
+	if start > end {
+		start, end = end, start
+	}
+	return idx >= start && idx <= end
+}
+
+func (m *Model) activeSelectionIndex() int {
+	switch {
+	case m.isCitationView():
+		return m.citationSelection()
+	case m.mode == viewReview:
+		return m.reviewSelected
+	case m.mode == viewList:
+		return m.selected
+	case m.mode == viewClassifications:
+		return m.classificationSelected
+	case m.mode == viewInventors:
+		return m.inventorSelected
+	case m.mode == viewDetail:
+		return m.detailSelected
+	default:
+		return 0
+	}
+}
+
+func (m *Model) selectedIndices() []int {
+	current := m.activeSelectionIndex()
+	if !m.visualMode {
+		return []int{current}
+	}
+	start, end := m.selectionStart, current
+	if start > end {
+		start, end = end, start
+	}
+	var res []int
+	for i := start; i <= end; i++ {
+		res = append(res, i)
+	}
+	return res
+}
+
+func (m *Model) setActiveSelectionIndex(val int) {
+	count := m.activeItemCount()
+	if count == 0 {
+		return
+	}
+	val = clamp(val, 0, count-1)
+	switch {
+	case m.isCitationView():
+		m.setCitationSelection(val)
+	case m.mode == viewReview:
+		m.reviewSelected = val
+	case m.mode == viewList:
+		m.selected = val
+	case m.mode == viewClassifications:
+		m.classificationSelected = val
+	case m.mode == viewInventors:
+		m.inventorSelected = val
+	case m.mode == viewDetail:
+		m.detailSelected = val
+	}
+}
+
+func (m *Model) activeItemCount() int {
+	switch {
+	case m.isCitationView():
+		edges, _ := m.currentCitationEdges()
+		return len(edges)
+	case m.mode == viewReview:
+		edges, _ := m.currentReviewCitationEdges()
+		return len(edges)
+	case m.mode == viewList:
+		return len(m.patents)
+	case m.mode == viewClassifications:
+		cls, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
+		return len(cls)
+	case m.mode == viewInventors:
+		return len(m.current.Inventors)
+	case m.mode == viewDetail:
+		return len(m.detailFields())
+	default:
+		return 0
+	}
+}
+
 func (m *Model) pageSize() int {
 	if m.height <= 0 {
 		return 20
@@ -3938,29 +4449,7 @@ func (m *Model) goToRow(index int) *Model {
 		index = 1
 	}
 	target := index - 1
-	switch {
-	case m.mode == viewList && len(m.patents) > 0:
-		m.selected = clamp(target, 0, len(m.patents)-1)
-	case m.mode == viewDetail:
-		fields := m.detailFields()
-		if len(fields) > 0 {
-			m.detailSelected = clamp(target, 0, len(fields)-1)
-		}
-	case m.isCitationView():
-		edges, err := m.currentCitationEdges()
-		if err == nil && len(edges) > 0 {
-			m.setCitationSelection(clamp(target, 0, len(edges)-1))
-		}
-	case m.mode == viewReview:
-		edges, err := m.currentReviewCitationEdges()
-		if err == nil && len(edges) > 0 {
-			m.reviewSelected = clamp(target, 0, len(edges)-1)
-		}
-	case m.mode == viewClassifications:
-		return m.goToClassification(index)
-	case m.mode == viewInventors && len(m.current.Inventors) > 0:
-		m.inventorSelected = clamp(target, 0, len(m.current.Inventors)-1)
-	}
+	m.setActiveSelectionIndex(target)
 	return m
 }
 
@@ -3987,6 +4476,9 @@ func (m *Model) viewClassifications() string {
 	var b strings.Builder
 	b.WriteString(subtleStyle.Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	b.WriteString("\n")
+	if m.classificationSearchActive && m.classificationQuery != "" {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorYellow)).Bold(true).Render(fmt.Sprintf("searching: %s", m.classificationQuery)) + "\n")
+	}
 	b.WriteString(subtleStyle.Render(m.classificationOpenHint()))
 	b.WriteString("\n\n")
 
@@ -4060,18 +4552,188 @@ func (m *Model) viewClassificationDetail() string {
 	b.WriteString(boldStyle.Render("Description:") + "\n")
 	b.WriteString(base.Render(cls.Description) + "\n\n")
 	b.WriteString(base.Render(fmt.Sprintf("%d patent(s) in this project share this classification.", count)) + "\n")
-	b.WriteString(subtleStyle.Render(keyEnter + " filters project list · " + keyEsc + " back to list"))
+	b.WriteString(subtleStyle.Render("[" + keyEnter + "] filters project list · [" + keyEsc + "] back to list"))
 	return b.String()
 }
 
-func (m *Model) moveClassificationSelection(delta int) *Model {
-	classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
-	if len(classifications) == 0 {
-		m.countBuffer = EmptyCount
+func (m *Model) listSearchNext() *Model {
+	if m.listSearchQuery == "" {
 		return m
 	}
-	m.classificationSelected = clamp(m.classificationSelected+delta, 0, len(classifications)-1)
+	if len(m.patents) == 0 {
+		return m
+	}
+
+	query := m.listSearchQuery
+	ignoreCase := strings.ToLower(query) == query
+
+	start := m.selected + 1
+	for i := 0; i < len(m.patents); i++ {
+		idx := (start + i) % len(m.patents)
+		p := m.patents[idx]
+
+		match := containsMatch(p.Number, query, ignoreCase) ||
+			containsMatch(p.Title, query, ignoreCase) ||
+			containsMatch(p.Abstract, query, ignoreCase) ||
+			containsMatch(p.Assignee, query, ignoreCase) ||
+			containsMatch(p.ClassificationLabel, query, ignoreCase)
+
+		if !match {
+			for _, inv := range p.Inventors {
+				if containsMatch(inv, query, ignoreCase) {
+					match = true
+					break
+				}
+			}
+		}
+
+		if match {
+			m.selected = idx
+			m.message = fmt.Sprintf("found match: %s", p.Number)
+			return m
+		}
+	}
+	m.message = "no matches found for: " + m.listSearchQuery
 	return m
+}
+
+type popupSearchable interface {
+	ItemCount() int
+	Match(idx int, query string, ignoreCase bool) bool
+	SetSelected(idx int)
+	GetSelected() int
+	MatchLabel(idx int) string
+}
+
+type classificationSearchable struct{ m *Model }
+
+func (s classificationSearchable) ItemCount() int {
+	cls, _ := s.m.repo.ListClassifications(s.m.ctx, s.m.ProjectID, s.m.current.Number)
+	return len(cls)
+}
+func (s classificationSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	cls, _ := s.m.repo.ListClassifications(s.m.ctx, s.m.ProjectID, s.m.current.Number)
+	if idx < 0 || idx >= len(cls) {
+		return false
+	}
+	c := cls[idx]
+	return containsMatch(c.Code, query, ignoreCase) || containsMatch(c.Description, query, ignoreCase)
+}
+func (s classificationSearchable) SetSelected(idx int) { s.m.classificationSelected = idx }
+func (s classificationSearchable) GetSelected() int    { return s.m.classificationSelected }
+func (s classificationSearchable) MatchLabel(idx int) string {
+	cls, _ := s.m.repo.ListClassifications(s.m.ctx, s.m.ProjectID, s.m.current.Number)
+	return cls[idx].Code
+}
+
+type inventorSearchable struct{ m *Model }
+
+func (s inventorSearchable) ItemCount() int { return len(s.m.current.Inventors) }
+func (s inventorSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	return containsMatch(s.m.current.Inventors[idx], query, ignoreCase)
+}
+func (s inventorSearchable) SetSelected(idx int)    { s.m.inventorSelected = idx }
+func (s inventorSearchable) GetSelected() int       { return s.m.inventorSelected }
+func (s inventorSearchable) MatchLabel(idx int) string { return s.m.current.Inventors[idx] }
+
+type eventSearchable struct{ m *Model }
+
+func (s eventSearchable) ItemCount() int {
+	events, _ := s.m.repo.ListProjectEvents(s.m.ctx, s.m.ProjectID)
+	return len(events)
+}
+func (s eventSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	events, _ := s.m.repo.ListProjectEvents(s.m.ctx, s.m.ProjectID)
+	e := events[idx]
+	return containsMatch(e.EventType, query, ignoreCase) || containsMatch(e.Notes, query, ignoreCase) || containsMatch(e.Reference, query, ignoreCase)
+}
+func (s eventSearchable) SetSelected(idx int)    { s.m.projectEventsSelected = idx }
+func (s eventSearchable) GetSelected() int       { return s.m.projectEventsSelected }
+func (s eventSearchable) MatchLabel(idx int) string { return "" }
+
+type invoiceSearchable struct{ m *Model }
+
+func (s invoiceSearchable) ItemCount() int {
+	invoices, _ := s.m.repo.ListProjectInvoices(s.m.ctx, s.m.ProjectID)
+	return len(invoices)
+}
+func (s invoiceSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	invoices, _ := s.m.repo.ListProjectInvoices(s.m.ctx, s.m.ProjectID)
+	inv := invoices[idx]
+	return containsMatch(inv.FirmName, query, ignoreCase) || containsMatch(inv.Description, query, ignoreCase) || containsMatch(inv.InvoiceNumber, query, ignoreCase)
+}
+func (s invoiceSearchable) SetSelected(idx int)    { s.m.projectInvoicesSelected = idx }
+func (s invoiceSearchable) GetSelected() int       { return s.m.projectInvoicesSelected }
+func (s invoiceSearchable) MatchLabel(idx int) string { return "" }
+
+type idsSearchable struct{ m *Model }
+
+func (s idsSearchable) ItemCount() int {
+	entries, _ := s.m.repo.ListIDSEntries(s.m.ctx, s.m.ProjectID)
+	return len(entries)
+}
+func (s idsSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	entries, _ := s.m.repo.ListIDSEntries(s.m.ctx, s.m.ProjectID)
+	e := entries[idx]
+	return containsMatch(e.PatentNumber, query, ignoreCase) || containsMatch(e.Notes, query, ignoreCase)
+}
+func (s idsSearchable) SetSelected(idx int)    { s.m.projectIDSSelected = idx }
+func (s idsSearchable) GetSelected() int       { return s.m.projectIDSSelected }
+func (s idsSearchable) MatchLabel(idx int) string { return "" }
+
+func (m *Model) popupSearchNext() *Model {
+	if m.popupSearchQuery == "" {
+		return m
+	}
+
+	var s popupSearchable
+	switch m.mode {
+	case viewClassifications:
+		s = classificationSearchable{m}
+	case viewInventors:
+		s = inventorSearchable{m}
+	case viewProjectEvents:
+		s = eventSearchable{m}
+	case viewProjectInvoices:
+		s = invoiceSearchable{m}
+	case viewProjectIDS:
+		s = idsSearchable{m}
+	default:
+		return m
+	}
+
+	count := s.ItemCount()
+	if count == 0 {
+		return m
+	}
+
+	query := m.popupSearchQuery
+	ignoreCase := strings.ToLower(query) == query
+	start := s.GetSelected() + 1
+
+	for i := 0; i < count; i++ {
+		idx := (start + i) % count
+		if s.Match(idx, query, ignoreCase) {
+			s.SetSelected(idx)
+			label := s.MatchLabel(idx)
+			if label != "" {
+				m.message = fmt.Sprintf("found match: %s", label)
+			} else {
+				m.message = "found match"
+			}
+			return m
+		}
+	}
+
+	m.message = "no matches found for: " + query
+	return m
+}
+
+func containsMatch(s, query string, ignoreCase bool) bool {
+	if ignoreCase {
+		return strings.Contains(strings.ToLower(s), strings.ToLower(query))
+	}
+	return strings.Contains(s, query)
 }
 
 func (m *Model) goToClassification(index int) *Model {
@@ -4128,17 +4790,8 @@ func (m *Model) viewInventors() string {
 		b.WriteString(m.styleRowOverlay(i, selected, row, rowWidth) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(subtleStyle.Render(keyEnter + " filters list · " + keyEsc + " back"))
+	b.WriteString(subtleStyle.Render("[" + keyEnter + "] filters list · [" + keyEsc + "] back"))
 	return b.String()
-}
-
-func (m *Model) moveInventorSelection(delta int) *Model {
-	inventors := m.current.Inventors
-	if len(inventors) == 0 {
-		return m
-	}
-	m.inventorSelected = clamp(m.inventorSelected+delta, 0, len(inventors)-1)
-	return m
 }
 
 func (m *Model) viewText() string {
@@ -4186,7 +4839,7 @@ func (m *Model) viewNoteEdit() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.noteTA.View())
 	b.WriteString("\n\n")
-	b.WriteString(subtleStyle.Render("ctrl+s: save · esc: cancel"))
+	b.WriteString(subtleStyle.Render("[ctrl+s]: save · [esc]: cancel"))
 	return b.String()
 }
 
@@ -4222,7 +4875,7 @@ func (m *Model) viewNotes() string {
 			b.WriteString("\n\n")
 		}
 	}
-	b.WriteString(subtleStyle.Render("N: add note · esc: back"))
+	b.WriteString(subtleStyle.Render("[N]: add note · [esc]: back"))
 	return b.String()
 }
 
@@ -4331,7 +4984,7 @@ func (m *Model) viewSplash() string {
 	}
 
 	b.WriteString("\n\n" + m.rule() + "\n")
-	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("j/k: move · enter: select · e: events · i: invoices · d: IDS · n: new · q: quit")))
+	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("[j/k/↓↑]: move · [enter]: select · [e]: events · [i]: invoices · [d]: IDS · [n]: new · [q]: quit")))
 
 	// Center vertically
 	content := b.String()

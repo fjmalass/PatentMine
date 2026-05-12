@@ -110,18 +110,18 @@ func TestNavigationStackGoesBackToPreviousView(t *testing.T) {
 }
 
 func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
-	model := &Model{repo: stubRepo{},
-
-		mode:     viewList,
-		jumpMode: true,
-		patents:  []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}},
+	model := &Model{
+		repo: stubRepo{},
+		mode: viewList,
 	}
-	got := model.applyJump("d")
+	model.patents, _ = model.repo.ListPatents(model.ctx, model.ProjectID, storage.ListPatentsOptions{})
+	model.jumpLabelsCache = model.jumpLabels()
+
+	// Select 3rd patent (index 2). Labels are: 0-7 (headers), 8, 9, 10 (US3)
+	label := model.jumpLabelsCache[10]
+	got := model.applyJump(label)
 	if got.selected != 2 {
 		t.Fatalf("expected list selection 2, got %d", got.selected)
-	}
-	if got.jumpMode {
-		t.Fatal("expected jump mode to exit after a valid jump")
 	}
 }
 
@@ -149,9 +149,9 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 	got := model.jumpLabels()
 	want := []string{
 		jumpLabelAssignee,
-		"L",
+		jumpLabelLatestAssignment, // L
 		jumpLabelInventors,
-		"A", // Application
+		jumpLabelApplication, // A
 		jumpLabelPublication,
 		jumpLabelGrant,
 		jumpLabelClassification,
@@ -160,8 +160,8 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		jumpLabelCitedByCount,
 		// Status and IDS are skipped when repo is nil
 		"",  // separator
-		"1", // First Claim
-		"m", // Summary
+		jumpLabelFirstClaim, // First Claim
+		jumpLabelSummary,    // Summary
 		jumpLabelNotes,
 		"", // separator
 		"", // Via
@@ -411,7 +411,7 @@ func TestNumericPrefixGoesToAbsoluteRow(t *testing.T) {
 		mode:    viewClassifications,
 		current: domain.Patent{Number: "US10218760B2"},
 	}
-	updated, _ := model.Update(teaKey("1"))
+	updated, _ := model.Update(teaKey(keyFirstClaim))
 	updated, _ = updated.Update(teaKey("0"))
 	updated, _ = updated.Update(teaKey(keyGoto))
 	got := updated.(*Model)

@@ -39,6 +39,8 @@ const (
 	SortColumnClass      = "class"
 	SortColumnCPC        = "cpc"
 	SortColumnExpiration = "expiration"
+	SortColumnUpdated    = "updated"
+	SortColumnNotes      = "notes"
 
 	SortOrderAsc  = "asc"
 	SortOrderDesc = "desc"
@@ -154,6 +156,7 @@ type Patent struct {
 	LatestAssignment    string
 	ExpectedCitations   int // Total backward count reported by source (-1 if unknown)
 	ExpectedCitedBy     int // Total forward count reported by source (-1 if unknown)
+	NotesCount          int
 	ApplicationNumber   string
 	ApplicationDate     string
 	PublicationNumber   string

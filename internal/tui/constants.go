@@ -35,6 +35,7 @@ const (
 	commandCompact            = "compact"
 	commandNote               = "note"
 	commandExit               = "exit"
+	commandFamilyPull         = "pull"
 
 	// :project subcommands
 	projectSubID            = "id"
@@ -61,6 +62,29 @@ const (
 	exportSubIDS    = "ids"
 	exportSubStatus = "status"
 	exportSubState  = "state"
+
+	// :filter subcommands
+	filterSubStatus   = "status"
+	filterSubClass    = "class"
+	filterSubInventor = "inventor"
+	filterSubClear    = "clear"
+
+	// :family subcommands
+	familySubParent = "parent"
+	familySubChild  = "child"
+	familySubRemove = "remove"
+	familySubView   = "view"
+
+	// activity actions
+	activityPatentAdd      = "patent.add"
+	activityPatentStatus   = "patent.status"
+	activityPatentImport   = "patent.import"
+	activityCitationStatus = "citation.status"
+	activityCitationStore  = "citation.store"
+	activityNoteAdd        = "note.add"
+	activityRefAdd         = "ref.add"
+	activityIDSAdd         = "ids.add"
+	activityIDSStatus      = "ids.status"
 
 	// export state aliases
 	exportStateAll         = "all"
@@ -107,23 +131,30 @@ const (
 	keyArrowDown         = "down"
 	keyArrowUp           = "up"
 	keyGoto              = "g"
+	keyBottom            = "G"
 	keyCites             = "c"
 	keyCitedBy           = "b"
-	keyClassification    = "l"
+	keyStatus            = "s"
+	keySort              = "."
+	keyColLeft           = "h"
+	keyColRight          = "l"
+	keyClassification    = "L"
 	keyText              = "t"
 	keyNotes             = "n"
-	keyRefs              = "r"
+	keyRefs              = "ctrl+r"
 	keyAI                = "a"
 	keyWeb               = "w"
 	keyJump              = "f"
 	keyFamily            = "F"
 	keyProject           = "P"
+	keyFirstClaim        = "1"
 	keyHelp              = "?"
 	keyYes               = "y"
 	keyNo                = "n"
 	keyNew               = "n"
 	keyIgnore            = "i"
-	keyUnreview          = "u"
+	keyUnreview          = "r"
+	keyRefreshAll        = "R"
 	keyEvents            = "e"
 	keyInvoices          = "i"
 	keyIDS               = "d"
@@ -142,10 +173,13 @@ const (
 
 	jumpLabelAssignee       = "a"
 	jumpLabelInventors      = "i"
+	jumpLabelApplication    = "A"
 	jumpLabelPublication    = "p"
 	jumpLabelGrant          = "g"
 	jumpLabelClassification = "k"
 	jumpLabelExpiration     = "x"
+	jumpLabelFirstClaim     = "1"
+	jumpLabelSummary        = "m"
 	jumpLabelStoredLocal    = "l"
 	jumpLabelUpdated        = "u"
 	jumpLabelSource         = "h"
@@ -156,6 +190,7 @@ const (
 	jumpLabelFamilyParents  = "P"
 	jumpLabelFamilyChildren = "C"
 	jumpLabelNotes          = "n"
+	jumpLabelLatestAssignment = "L"
 
 	inventorJumpNumberLabels = "123456789"
 
@@ -174,6 +209,7 @@ const (
 	ColorAccentFamily = "213" // Bright Pink (family tree root)
 	ColorSubtle       = "245" // Light Gray
 	ColorHighlight    = "236" // Dark Gray (Selection)
+	ColorSelection    = "61"  // Deep Blue/Purple (Multi-selection)
 	ColorAltRow       = "233" // Near Black (Alternating)
 	ColorSurface      = "235" // Very Dark Gray (Surface)
 	ColorError        = "9"   // Red

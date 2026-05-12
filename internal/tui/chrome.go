@@ -8,14 +8,14 @@ import (
 	"patentmine/internal/domain"
 )
 
-func (m Model) activeMode() viewMode {
+func (m *Model) activeMode() viewMode {
 	if (m.mode != viewHelpPopup && m.mode != viewNoteEdit) || len(m.backStack) == 0 {
 		return m.mode
 	}
 	return m.backStack[len(m.backStack)-1].mode
 }
 
-func (m Model) screenTitle() string {
+func (m *Model) screenTitle() string {
 	return screenTitleForMode(m.activeMode())
 }
 
@@ -62,7 +62,7 @@ func screenTitleForMode(mode viewMode) string {
 	}
 }
 
-func (m Model) screenSubtitle() string {
+func (m *Model) screenSubtitle() string {
 	switch m.activeMode() {
 	case viewDetail:
 		if m.current.Number != "" {
@@ -126,11 +126,11 @@ func screenAccentForMode(mode viewMode) string {
 	}
 }
 
-func (m Model) screenAccent() string {
+func (m *Model) screenAccent() string {
 	return screenAccentForMode(m.activeMode())
 }
 
-func (m Model) renderScreenHeader() string {
+func (m *Model) renderScreenHeader() string {
 	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
 	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	var b strings.Builder
@@ -281,7 +281,10 @@ func (m Model) renderScreenHeader() string {
 	return b.String()
 }
 
-func (m Model) renderPopupTitle(label string) string {
+func (m *Model) renderPopupTitle(label string) string {
+	if m.popupSearchActive && m.popupSearchQuery != "" {
+		label += fmt.Sprintf(" [searching: %s]", m.popupSearchQuery)
+	}
 	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
 	return accent.Render(label)
 }

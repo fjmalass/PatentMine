@@ -359,7 +359,7 @@ func (m *Model) viewFamilyOverlay() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(subtle.Render("j/k ↕  h parent  l child  enter opens  D removes edge  :family parent/child <num>  r :refresh family  esc back"))
+	b.WriteString(subtle.Render("[j/k/↓↑] move · [h] parent · [l] child · [enter] opens · [D] removes edge · :family parent/child <num> · [r]: refresh family · [esc] back"))
 	return b.String()
 }
 
