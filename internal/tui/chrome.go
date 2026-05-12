@@ -9,10 +9,11 @@ import (
 )
 
 func (m *Model) activeMode() viewMode {
-	if (m.mode != viewHelpPopup && m.mode != viewNoteEdit) || len(m.backStack) == 0 {
+	spec, ok := lookupModeSpec(m.mode)
+	if !ok || !spec.isOverlay || spec.background == nil {
 		return m.mode
 	}
-	return m.backStack[len(m.backStack)-1].mode
+	return spec.background(m)
 }
 
 func (m *Model) screenTitle() string {
@@ -20,46 +21,10 @@ func (m *Model) screenTitle() string {
 }
 
 func screenTitleForMode(mode viewMode) string {
-	switch mode {
-	case viewList:
-		return "Patent List"
-	case viewDetail:
-		return "Detail"
-	case viewCites:
-		return "Citations"
-	case viewCitedBy:
-		return "Cited By"
-	case viewClassifications:
-		return "Classifications"
-	case viewText:
-		return "Full Text"
-	case viewNotes:
-		return "Notes"
-	case viewRefs:
-		return "References"
-	case viewAI:
-		return "AI"
-	case viewHelp:
-		return "Help"
-	case viewPreview:
-		return "Reference Preview"
-	case viewReview:
-		return "Review Queue"
-	case viewConfirmDelete:
-		return "Confirm Delete"
-	case viewClassificationDetail:
-		return "Classification Detail"
-	case viewInventors:
-		return "Inventors"
-	case viewFamily:
-		return "Patent Family"
-	case viewProjectIDS:
-		return "IDS"
-	case viewHelpPopup:
-		return "Help"
-	default:
-		return strings.Title(string(mode))
+	if spec, ok := lookupModeSpec(mode); ok && spec.title != "" {
+		return spec.title
 	}
+	return strings.Title(string(mode))
 }
 
 func (m *Model) screenSubtitle() string {
@@ -86,44 +51,10 @@ func (m *Model) screenSubtitle() string {
 }
 
 func screenAccentForMode(mode viewMode) string {
-	switch mode {
-	case viewList:
-		return "39"
-	case viewDetail:
-		return "51"
-	case viewCites:
-		return "214"
-	case viewCitedBy:
-		return "40"
-	case viewClassifications:
-		return "170"
-	case viewText:
-		return "250"
-	case viewNotes:
-		return "220"
-	case viewRefs:
-		return "27"
-	case viewAI:
-		return "141"
-	case viewHelp, viewHelpPopup:
-		return "245"
-	case viewPreview:
-		return "81"
-	case viewReview:
-		return "202"
-	case viewConfirmDelete:
-		return "196"
-	case viewClassificationDetail:
-		return "170"
-	case viewInventors:
-		return "51"
-	case viewFamily:
-		return "213"
-	case viewProjectIDS:
-		return "75"
-	default:
-		return "39"
+	if spec, ok := lookupModeSpec(mode); ok && spec.accent != "" {
+		return spec.accent
 	}
+	return "39"
 }
 
 func (m *Model) screenAccent() string {
@@ -282,9 +213,25 @@ func (m *Model) renderScreenHeader() string {
 }
 
 func (m *Model) renderPopupTitle(label string) string {
-	if m.popupSearchActive && m.popupSearchQuery != "" {
-		label += fmt.Sprintf(" [searching: %s]", m.popupSearchQuery)
+	query := m.popupSearchQuery
+	if m.input.Focused() && strings.HasPrefix(m.input.Value(), "/") {
+		query = strings.TrimPrefix(m.input.Value(), "/")
 	}
+
 	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
-	return accent.Render(label)
+	res := accent.Render(label)
+
+	if m.popupSearchActive || query != "" {
+		searchText := "search:/"
+		if query != "" {
+			searchText += query
+		}
+		searchStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color(m.screenAccent())).
+			Foreground(lipgloss.Color("0")).
+			Bold(true).
+			Padding(0, 1)
+		res += "  " + searchStyle.Render(searchText)
+	}
+	return res
 }

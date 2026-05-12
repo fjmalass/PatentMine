@@ -23,6 +23,7 @@ var allHelpSections = []HelpSection{
 			{Key: "j/k / ↓/↑", Description: TextHelpMoveList},
 			{Key: "enter / o", Description: TextHelpOpenSelected},
 			{Key: "esc / q", Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 			{Key: "?", Description: TextHelpShortcutShowHelp},
 			{Key: "ctrl+f / ctrl+d", Description: TextHelpJumpViews},
 		},
@@ -213,7 +214,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyClassification, Description: TextHelpJumpClassification},
 			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewDetail:
 		return []HelpEntry{
@@ -224,7 +226,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyClassification, Description: TextHelpJumpClassification},
 			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewCites, viewCitedBy:
 		return []HelpEntry{
@@ -240,7 +243,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyRefreshAll, Description: TextHelpCitationRefreshAll},
 			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewReview:
 		return []HelpEntry{
@@ -255,7 +259,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyWeb, Description: TextHelpOpenBrowser},
 			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewClassifications:
 		return []HelpEntry{
@@ -265,7 +270,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewPreview:
 		return []HelpEntry{
@@ -280,12 +286,14 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewText, viewRefs, viewNotes, viewAI:
 		return []HelpEntry{
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewFamily:
 		return []HelpEntry{
@@ -300,7 +308,8 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyFamily, Command: keyCommand + commandFamily + " parent|child <num> [type]", Description: TextHelpFamilyAdd},
 			{Command: keyCommand + commandFamily + " remove <num>", Description: TextHelpFamilyRemove},
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewSplash:
 		return []HelpEntry{
@@ -310,36 +319,42 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 			{Key: keyInvoices, Description: TextHelpSplashInvoices},
 			{Key: keyIDS, Description: TextHelpSplashIDS},
 			{Key: keyNew, Description: TextHelpSplashNew},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewProjectInfo:
 		return []HelpEntry{
 			{Key: "s / m / c / S", Description: TextHelpProjectInfoKeys},
-			{Key: keyEsc + "/" + keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewProjectEvents:
 		return []HelpEntry{
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Key: keyDelete, Description: TextHelpDeleteSelected},
-			{Key: keyEsc + "/" + keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewProjectInvoices:
 		return []HelpEntry{
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Key: keyMarkPaid, Description: TextHelpMarkPaid},
 			{Key: keyDelete, Description: TextHelpDeleteSelected},
-			{Key: keyEsc + "/" + keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	case viewProjectIDS:
 		return []HelpEntry{
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
 			{Key: keyDelete, Description: TextHelpDeleteSelected},
-			{Key: keyEsc + "/" + keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	default:
 		return []HelpEntry{
 			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyQuit, Description: TextHelpBackOrQuit},
+			{Key: keyBack, Description: TextHelpBackOrQuit},
+			{Key: keyQuit, Description: TextHelpQuitApp},
 		}
 	}
 }

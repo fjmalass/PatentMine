@@ -28,11 +28,11 @@ const (
 	TextDetailFamilyParents     TextKey = "detail.family_parents"
 	TextDetailFamilyChildren    TextKey = "detail.family_children"
 	TextDetailNotes             TextKey = "detail.notes"
-	TextDetailSummary           TextKey = "detail.summary"
+	TextDetailAbstract          TextKey = "detail.abstract"
 	TextDetailImportSource      TextKey = "detail.import_source"
 	TextDetailApplication       TextKey = "detail.application"
-	TextDetailPublicationLong    TextKey = "detail.publication_long"
-	TextDetailGrantLong          TextKey = "detail.grant_long"
+	TextDetailPublicationLong   TextKey = "detail.publication_long"
+	TextDetailGrantLong         TextKey = "detail.grant_long"
 	TextDetailFirstClaim        TextKey = "detail.first_claim"
 	TextValueUnknown            TextKey = "value.unknown"
 	TextValuePending            TextKey = "value.pending"
@@ -82,6 +82,7 @@ const (
 	TextHelpJumpViews            TextKey = "help.shortcut.jump_views"
 	TextHelpShortcutShowHelp     TextKey = "help.shortcut.show_help"
 	TextHelpBackOrQuit           TextKey = "help.shortcut.back_or_quit"
+	TextHelpQuitApp              TextKey = "help.shortcut.quit_app"
 	TextHelpJumpCitations        TextKey = "help.jump.citations"
 	TextHelpJumpCitedBy          TextKey = "help.jump.cited_by"
 	TextHelpJumpClassification   TextKey = "help.jump.cpc"
@@ -207,11 +208,11 @@ func EnglishText() TextCatalog {
 		TextDetailFamilyParents:     "Parents",
 		TextDetailFamilyChildren:    "Children",
 		TextDetailNotes:             "Notes",
-		TextDetailSummary:           "Summary",
+		TextDetailAbstract:          "Abstract",
 		TextDetailImportSource:      "Via",
 		TextDetailApplication:       "Application",
-		TextDetailPublicationLong:    "Publication",
-		TextDetailGrantLong:          "Grant",
+		TextDetailPublicationLong:   "Publication",
+		TextDetailGrantLong:         "Grant",
 		TextDetailFirstClaim:        "First Claim",
 		TextValueUnknown:            "unknown",
 		TextValuePending:            "pending",
@@ -261,7 +262,8 @@ func EnglishText() TextCatalog {
 		TextHelpDeletePatent:            "Delete the selected patent (mark as ignored and delete PDF).",
 		TextHelpJumpViews:               "Jump to citations, cited-by, classifications, text, notes, refs, AI, or browser.",
 		TextHelpShortcutShowHelp:        "Show this help screen.",
-		TextHelpBackOrQuit:              "Go back to the list, or quit from the list.",
+		TextHelpBackOrQuit:              "Go back or clear the current search/filter state.",
+		TextHelpQuitApp:                 "Quit the application immediately.",
 		TextHelpJumpCitations:           "Jump to citations",
 		TextHelpJumpCitedBy:             "Jump to cited-by",
 		TextHelpJumpClassification:      "Jump to classifications",

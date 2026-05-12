@@ -180,15 +180,9 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		return m.navigateTo(viewFamily), nil
 	case detailActionNotes:
 		return m.navigateTo(viewNotes), nil
-	case detailActionSummary:
+	case detailActionAbstract:
 		if m.current.Number != "" {
-			m.noteTA.Reset()
-			m.noteTA.SetValue(m.current.Abstract)
-			m.noteTA.Focus()
-			m = m.navigateTo(viewSummaryEdit)
-			var cmd tea.Cmd
-			m.noteTA, cmd = m.noteTA.Update(nil)
-			return m, cmd
+			return m.navigateTo(viewAbstract), nil
 		}
 		return m, nil
 	case detailActionFirstClaim:

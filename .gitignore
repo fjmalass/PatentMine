@@ -3,6 +3,7 @@
 /logs/
 /pdfs/
 /backups/
+/build/
 
 .claude
 .gemeni

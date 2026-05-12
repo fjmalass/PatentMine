@@ -91,8 +91,36 @@ alias = "run-uspto"
 [tasks.build]
 description = "Build the PatentMine binary at ./patentmine."
 category = "Development"
+env = { CGO_ENABLED = "0" }
 command = "go"
 args = ["build", "-buildvcs=false", "-o", "patentmine", "./cmd/patentmine"]
+
+[tasks.prepare-build-dir]
+description = "Create the build output directory."
+category = "Development"
+command = "mkdir"
+args = ["-p", "build"]
+
+[tasks.build-macos-amd64]
+description = "Build the macOS Intel binary at ./build/patentmine-darwin-amd64."
+category = "Development"
+dependencies = ["prepare-build-dir"]
+env = { GOOS = "darwin", GOARCH = "amd64", CGO_ENABLED = "0" }
+command = "go"
+args = ["build", "-buildvcs=false", "-o", "build/patentmine-darwin-amd64", "./cmd/patentmine"]
+
+[tasks.build-macos-arm64]
+description = "Build the macOS Apple Silicon binary at ./build/patentmine-darwin-arm64."
+category = "Development"
+dependencies = ["prepare-build-dir"]
+env = { GOOS = "darwin", GOARCH = "arm64", CGO_ENABLED = "0" }
+command = "go"
+args = ["build", "-buildvcs=false", "-o", "build/patentmine-darwin-arm64", "./cmd/patentmine"]
+
+[tasks.build-macos]
+description = "Build macOS binaries for Intel and Apple Silicon."
+category = "Development"
+dependencies = ["build-macos-amd64", "build-macos-arm64"]
 
 [tasks.tidy]
 description = "Resolve and tidy Go module dependencies."
@@ -132,6 +160,7 @@ args = [
   "internal/tui/text.go",
   "internal/tui/pagination.go",
   "internal/tui/model.go",
+  "internal/tui/modes.go",
   "internal/tui/model_test.go",
 ]
 
@@ -145,6 +174,12 @@ description = "Remove the built binary."
 category = "Maintenance"
 command = "rm"
 args = ["-f", "patentmine"]
+
+[tasks.clean-all]
+description = "Remove all local build outputs, including ./patentmine and ./build/."
+category = "Maintenance"
+command = "rm"
+args = ["-rf", "patentmine", "build/"]
 
 [tasks.reset-db]
 description = "Remove the local SQLite database so the next launch reseeds the fixture."

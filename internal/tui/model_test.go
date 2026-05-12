@@ -72,6 +72,31 @@ func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
 	}
 }
 
+func TestAllViewModesHaveSpecs(t *testing.T) {
+	for _, mode := range allViewModes {
+		if _, ok := lookupModeSpec(mode); !ok {
+			t.Fatalf("missing mode spec for %q", mode)
+		}
+	}
+}
+
+func TestOverlayModesResolveBackground(t *testing.T) {
+	model := &Model{mode: viewHelpPopup, backStack: []navSnapshot{{mode: viewCites}}}
+	for _, mode := range allViewModes {
+		spec := mustModeSpec(mode)
+		if !spec.isOverlay {
+			continue
+		}
+		if spec.background == nil {
+			t.Fatalf("overlay mode %q missing background resolver", mode)
+		}
+		model.mode = mode
+		if bg := spec.background(model); bg == "" {
+			t.Fatalf("overlay mode %q resolved empty background", mode)
+		}
+	}
+}
+
 func TestHelpKeyOpensContextPopup(t *testing.T) {
 	model := &Model{
 		mode:    viewCites,
@@ -91,6 +116,185 @@ func TestHelpKeyOpensContextPopup(t *testing.T) {
 	}
 	if !strings.Contains(got.View(), "This Screen") {
 		t.Fatalf("expected contextual help popup, got %q", got.View())
+	}
+}
+
+func TestEditSummaryKeyOpensAbstractView(t *testing.T) {
+	model := &Model{
+		repo:    stubRepo{},
+		text:    EnglishText(),
+		mode:    viewDetail,
+		current: domain.Patent{Number: "US10218760B2", Abstract: "A patent abstract."},
+	}
+	updated, _ := model.Update(teaKey(keyEditSummary))
+	got := updated.(*Model)
+	if got.mode != viewAbstract {
+		t.Fatalf("expected mode %q, got %q", viewAbstract, got.mode)
+	}
+	if !strings.Contains(got.View(), "Abstract") {
+		t.Fatalf("expected abstract overlay, got %q", got.View())
+	}
+}
+
+func TestSlashInClassificationPopupStartsSearchImmediately(t *testing.T) {
+	model := &Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    classificationRepo{classifications: sampleClassifications(3)},
+		mode:    viewClassifications,
+		current: domain.Patent{Number: "US10218760B2"},
+	}
+	updated, _ := model.Update(teaKey(keySearch))
+	got := updated.(*Model)
+	if !got.popupSearchActive {
+		t.Fatal("expected popup search to activate")
+	}
+	if got.input.Focused() {
+		t.Fatal("expected popup search to avoid focusing command input")
+	}
+	if !strings.Contains(got.viewClassifications(), "search:/") {
+		t.Fatalf("expected search badge in popup title, got %q", got.viewClassifications())
+	}
+}
+
+func TestPopupSearchTypingAdvancesWithoutCommandInput(t *testing.T) {
+	model := &Model{
+		ctx:                    t.Context(),
+		text:                   EnglishText(),
+		repo:                   classificationRepo{classifications: sampleClassifications(8)},
+		mode:                   viewClassifications,
+		current:                domain.Patent{Number: "US10218760B2"},
+		classificationSelected: 0,
+		popupSearchActive:      true,
+	}
+	updated, _ := model.Update(teaKey("4"))
+	got := updated.(*Model)
+	if got.popupSearchQuery != "4" {
+		t.Fatalf("expected popup search query %q, got %q", "4", got.popupSearchQuery)
+	}
+	if got.input.Focused() {
+		t.Fatal("expected popup search typing to stay in popup")
+	}
+}
+
+func TestPopupSearchTypingRestartsFromTop(t *testing.T) {
+	model := &Model{
+		ctx:  t.Context(),
+		text: EnglishText(),
+		repo: classificationRepo{classifications: []domain.Classification{
+			{System: "CPC", Code: "AAA", Description: "Alpha"},
+			{System: "CPC", Code: "BBB", Description: "Beta"},
+			{System: "CPC", Code: "CCC", Description: "Gamma"},
+		}},
+		mode:                   viewClassifications,
+		current:                domain.Patent{Number: "US10218760B2"},
+		classificationSelected: 2,
+		popupSearchActive:      true,
+	}
+
+	updated, _ := model.Update(teaKey("A"))
+	got := updated.(*Model)
+	if got.classificationSelected != 0 {
+		t.Fatalf("expected edited popup search to restart from top match, got selection %d", got.classificationSelected)
+	}
+}
+
+func TestPopupSearchNextWorksAfterEnter(t *testing.T) {
+	model := &Model{
+		ctx:  t.Context(),
+		text: EnglishText(),
+		repo: classificationRepo{classifications: []domain.Classification{
+			{System: "CPC", Code: "AAA", Description: "Alpha"},
+			{System: "CPC", Code: "AAB", Description: "Alpine"},
+			{System: "CPC", Code: "CCC", Description: "Gamma"},
+		}},
+		mode:                   viewClassifications,
+		current:                domain.Patent{Number: "US10218760B2"},
+		classificationSelected: 0,
+		popupSearchActive:      true,
+		popupSearchQuery:       "A",
+	}
+
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if got.popupSearchActive {
+		t.Fatal("expected enter to exit active popup search mode")
+	}
+	if got.mode != viewClassifications {
+		t.Fatalf("expected to remain in classifications after enter, got %q", got.mode)
+	}
+
+	updated, _ = got.Update(teaKey(keyNotes))
+	got = updated.(*Model)
+	if got.classificationSelected != 1 {
+		t.Fatal("expected n to advance to the next popup search match after enter")
+	}
+}
+
+func TestQuitClearsPopupSearchBeforeClosingOverlay(t *testing.T) {
+	model := &Model{
+		ctx:               t.Context(),
+		text:              EnglishText(),
+		repo:              classificationRepo{classifications: sampleClassifications(3)},
+		mode:              viewClassifications,
+		current:           domain.Patent{Number: "US10218760B2"},
+		popupSearchActive: true,
+		popupSearchQuery:  "H04N",
+	}
+
+	updated, _ := model.Update(teaKey(keyBack))
+	got := updated.(*Model)
+	if got.mode != viewClassifications {
+		t.Fatalf("expected to stay in popup mode, got %q", got.mode)
+	}
+	if got.popupSearchActive || got.popupSearchQuery != "" {
+		t.Fatalf("expected q/esc back behavior to clear popup search, got active=%v query=%q", got.popupSearchActive, got.popupSearchQuery)
+	}
+}
+
+func TestQuitClearsHelpSearchBeforeClosingHelp(t *testing.T) {
+	model := &Model{
+		repo:             stubRepo{},
+		text:             EnglishText(),
+		mode:             viewHelp,
+		helpSearchActive: true,
+		helpQuery:        "filter",
+		helpScroll:       3,
+	}
+
+	updated, cmd := model.Update(teaKey(keyBack))
+	got := updated.(*Model)
+	if cmd != nil {
+		t.Fatal("expected q back behavior while help search is active to avoid closing help")
+	}
+	if got.mode != viewHelp {
+		t.Fatalf("expected to stay in help mode, got %q", got.mode)
+	}
+	if got.helpSearchActive || got.helpQuery != "" || got.helpScroll != 0 {
+		t.Fatalf("expected q/esc back behavior to clear help search state, got active=%v query=%q scroll=%d", got.helpSearchActive, got.helpQuery, got.helpScroll)
+	}
+}
+
+func TestQuitClearsListSearchBeforeExiting(t *testing.T) {
+	model := &Model{
+		ctx:              t.Context(),
+		text:             EnglishText(),
+		repo:             stubRepo{},
+		mode:             viewList,
+		listSearchActive: true,
+		listSearchQuery:  "US102",
+	}
+
+	updated, cmd := model.Update(teaKey(keyBack))
+	got := updated.(*Model)
+	if cmd != nil {
+		t.Fatal("expected q back behavior while list search is active to avoid quit command")
+	}
+	if got.listSearchActive || got.listSearchQuery != "" {
+		t.Fatalf("expected q/esc back behavior to clear list search, got active=%v query=%q", got.listSearchActive, got.listSearchQuery)
+	}
+	if got.mode != viewList {
+		t.Fatalf("expected to remain in list mode, got %q", got.mode)
 	}
 }
 
@@ -119,7 +323,8 @@ func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
 
 	// Select 3rd patent (index 2). Labels are: 0-7 (headers), 8, 9, 10 (US3)
 	label := model.jumpLabelsCache[10]
-	got := model.applyJump(label)
+	updated, _ := model.applyJump(label.key)
+	got := updated.(*Model)
 	if got.selected != 2 {
 		t.Fatalf("expected list selection 2, got %d", got.selected)
 	}
@@ -127,13 +332,14 @@ func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
 
 func TestApplyJumpSelectsDetailField(t *testing.T) {
 	model := &Model{repo: stubRepo{},
-
 		mode:     viewDetail,
 		jumpMode: true,
 		text:     EnglishText(),
 		current:  domain.Patent{Assignee: "Divx LLC", Inventors: []string{"Kourosh Soroushian"}},
 	}
-	got := model.applyJump(jumpLabelInventors)
+	model.jumpLabelsCache = model.jumpLabels()
+	updated, _ := model.applyJump(jumpLabelInventors)
+	got := updated.(*Model)
 	if got.detailSelected != 2 {
 		t.Fatalf("expected detail selection 2, got %d", got.detailSelected)
 	}
@@ -159,9 +365,9 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		jumpLabelCitationCount,
 		jumpLabelCitedByCount,
 		// Status and IDS are skipped when repo is nil
-		"",  // separator
+		"",                  // separator
 		jumpLabelFirstClaim, // First Claim
-		jumpLabelSummary,    // Summary
+		jumpLabelAbstract,   // Abstract
 		jumpLabelNotes,
 		"", // separator
 		"", // Via
@@ -173,8 +379,8 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		t.Fatalf("expected %d labels, got %d: %v vs %v", len(want), len(got), want, got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("at index %d: expected label %q, got %q", i, want[i], got[i])
+		if got[i].key != want[i] {
+			t.Fatalf("at index %d: expected label %q, got %q", i, want[i], got[i].key)
 		}
 	}
 }
@@ -404,9 +610,9 @@ func TestNumericPrefixMovesSelections(t *testing.T) {
 
 func TestNumericPrefixGoesToAbsoluteRow(t *testing.T) {
 	model := &Model{
-		ctx:                    t.Context(),
-		text:                   EnglishText(),
-		repo:                   classificationRepo{classifications: sampleClassifications(12)},
+		ctx:  t.Context(),
+		text: EnglishText(),
+		repo: classificationRepo{classifications: sampleClassifications(12)},
 
 		mode:    viewClassifications,
 		current: domain.Patent{Number: "US10218760B2"},
