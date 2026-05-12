@@ -208,6 +208,7 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 	case viewList:
 		return []HelpEntry{
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
+			{Key: keyColLeft + "/" + keyColRight + " or left/right arrows", Description: TextHelpMoveColumns},
 			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
 			{Key: keySearch + "term", Description: TextHelpFilterPatents},
 			{Key: keyStatus, Description: TextHelpCyclePatentStatus},

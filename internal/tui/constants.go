@@ -57,7 +57,8 @@ const (
 	projectSubExport        = "export"
 
 	// :project ids subcommands
-	idsSubAdd = "add"
+	idsSubAdd  = "add"
+	idsSubMeta = "meta"
 
 	// :project export subcommands
 	exportSubIDS    = "ids"
@@ -159,7 +160,7 @@ const (
 	keyRefreshAll        = "R"
 	keyEvents            = "e"
 	keyInvoices          = "i"
-	keyIDS               = "d"
+	keyIDS               = "ctrl+i"
 	keyMarkPaid          = "p"
 	keyProjectInfo       = "I"
 	keyAddToIDS          = "A"

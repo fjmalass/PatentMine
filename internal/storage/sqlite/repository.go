@@ -41,11 +41,30 @@ func (r *Repository) Setup(ctx context.Context) error {
 	if err := r.createTables(ctx); err != nil {
 		return err
 	}
+	if err := r.runMigrations(ctx); err != nil {
+		return err
+	}
 
 	// Ensure default project exists
 	now := nowString()
 	if _, err := r.db.ExecContext(ctx, `insert or ignore into projects (id, name, created_at, updated_at) values ('default', 'Default Project', ?, ?)`, now, now); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (r *Repository) runMigrations(ctx context.Context) error {
+	alterations := []string{
+		`alter table project_ids add column kind_code text not null default ''`,
+		`alter table project_ids add column country_code text not null default ''`,
+		`alter table project_ids add column relevant_passages text not null default ''`,
+	}
+	for _, stmt := range alterations {
+		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -214,6 +233,30 @@ func (r *Repository) createTables(ctx context.Context) error {
 			status        text not null default 'pending',
 			added_at      text not null,
 			unique(project_id, patent_number),
+			foreign key (project_id) references projects(id)
+		)`,
+		`create table if not exists project_ids_metadata (
+			project_id      text primary key,
+			app_number      text not null default '',
+			filing_date     text not null default '',
+			first_inventor  text not null default '',
+			examiner_name   text not null default '',
+			art_unit        text not null default '',
+			attorney_docket text not null default '',
+			updated_at      text not null default '',
+			foreign key (project_id) references projects(id)
+		)`,
+		`create table if not exists project_ids_npl (
+			id              integer primary key autoincrement,
+			project_id      text not null,
+			npl_author      text not null default '',
+			npl_title       text not null default '',
+			npl_date        text not null default '',
+			npl_publisher   text not null default '',
+			relevant_passages text not null default '',
+			notes           text not null default '',
+			status          text not null default 'pending',
+			added_at        text not null,
 			foreign key (project_id) references projects(id)
 		)`,
 	}
@@ -541,6 +584,8 @@ func sortExpr(col, direction string) string {
 		return "p.updated_at " + direction
 	case domain.SortColumnNotes:
 		return "notes_count " + direction
+	case domain.SortColumnIDS:
+		return "case when pid.status is null or pid.status = '' then 1 else 0 end " + direction + ", pid.status " + direction
 	}
 	return ""
 }
@@ -574,6 +619,7 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
+		left join project_ids pid on pid.project_id = pp.project_id and pid.patent_number = p.number
 		left join patent_classifications c on p.number = c.patent_number
 		where pp.project_id = ? and ` + statusClause
 	args = append(args, projectID)
@@ -1229,8 +1275,8 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 		entry.Status = domain.IDSStatusPending
 	}
 	res, err := r.db.ExecContext(ctx,
-		`insert or ignore into project_ids (project_id, patent_number, notes, status, added_at) values (?, ?, ?, ?, ?)`,
-		entry.ProjectID, entry.PatentNumber, entry.Notes, entry.Status, now)
+		`insert or ignore into project_ids (project_id, patent_number, kind_code, country_code, relevant_passages, notes, status, added_at) values (?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.ProjectID, entry.PatentNumber, entry.KindCode, entry.CountryCode, entry.RelevantPassages, entry.Notes, string(entry.Status), now)
 	if err != nil {
 		r.logger.Error("repository.add_ids_entry failed", "project", entry.ProjectID, "patent", entry.PatentNumber, "error", err)
 		return domain.IDSEntry{}, err
@@ -1246,7 +1292,7 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 
 func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`select id, project_id, patent_number, notes, status, added_at from project_ids where project_id = ? order by added_at desc`,
+		`select id, project_id, patent_number, coalesce(kind_code,''), coalesce(country_code,''), coalesce(relevant_passages,''), notes, status, added_at from project_ids where project_id = ? order by added_at desc`,
 		projectID)
 	if err != nil {
 		return nil, err
@@ -1256,23 +1302,99 @@ func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]do
 	for rows.Next() {
 		var e domain.IDSEntry
 		var addedAt string
-		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.Notes, &e.Status, &addedAt); err != nil {
+		var statusStr string
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.PatentNumber, &e.KindCode, &e.CountryCode, &e.RelevantPassages, &e.Notes, &statusStr, &addedAt); err != nil {
 			return nil, err
 		}
+		e.Status = domain.IDSStatus(statusStr)
 		e.AddedAt = parseTime(addedAt)
 		out = append(out, e)
 	}
 	return out, rows.Err()
 }
 
-func (r *Repository) UpdateIDSEntryStatus(ctx context.Context, id int64, status string) error {
+func (r *Repository) UpdateIDSEntryStatus(ctx context.Context, id int64, status domain.IDSStatus) error {
 	r.logger.Info("repository.update_ids_status", "id", id, "status", status)
-	_, err := r.db.ExecContext(ctx, `update project_ids set status = ? where id = ?`, status, id)
+	_, err := r.db.ExecContext(ctx, `update project_ids set status = ? where id = ?`, string(status), id)
 	return err
 }
 
 func (r *Repository) DeleteIDSEntry(ctx context.Context, id int64) error {
 	r.logger.Info("repository.delete_ids_entry", "id", id)
 	_, err := r.db.ExecContext(ctx, `delete from project_ids where id = ?`, id)
+	return err
+}
+
+func (r *Repository) AddIDSNPLEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	r.logger.Info("repository.add_ids_npl_entry", "project", entry.ProjectID, "author", entry.NPLAuthor)
+	now := nowString()
+	if entry.Status == "" {
+		entry.Status = domain.IDSStatusPending
+	}
+	res, err := r.db.ExecContext(ctx,
+		`insert into project_ids_npl (project_id, npl_author, npl_title, npl_date, npl_publisher, relevant_passages, notes, status, added_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.ProjectID, entry.NPLAuthor, entry.NPLTitle, entry.NPLDate, entry.NPLPublisher, entry.RelevantPassages, entry.Notes, string(entry.Status), now)
+	if err != nil {
+		return domain.IDSEntry{}, err
+	}
+	id, _ := res.LastInsertId()
+	entry.ID = id
+	entry.IsNPL = true
+	entry.AddedAt = parseTime(now)
+	return entry, nil
+}
+
+func (r *Repository) ListIDSNPLEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`select id, project_id, npl_author, npl_title, npl_date, npl_publisher, relevant_passages, notes, status, added_at from project_ids_npl where project_id = ? order by added_at desc`,
+		projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.IDSEntry
+	for rows.Next() {
+		var e domain.IDSEntry
+		var addedAt string
+	var statusStr string
+		if err := rows.Scan(&e.ID, &e.ProjectID, &e.NPLAuthor, &e.NPLTitle, &e.NPLDate, &e.NPLPublisher, &e.RelevantPassages, &e.Notes, &statusStr, &addedAt); err != nil {
+			return nil, err
+		}
+		e.Status = domain.IDSStatus(statusStr)
+		e.IsNPL = true
+		e.AddedAt = parseTime(addedAt)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) DeleteIDSNPLEntry(ctx context.Context, id int64) error {
+	r.logger.Info("repository.delete_ids_npl_entry", "id", id)
+	_, err := r.db.ExecContext(ctx, `delete from project_ids_npl where id = ?`, id)
+	return err
+}
+
+func (r *Repository) GetIDSMetadata(ctx context.Context, projectID string) (domain.IDSMetadata, error) {
+	var m domain.IDSMetadata
+	var updatedAt string
+	err := r.db.QueryRowContext(ctx,
+		`select project_id, app_number, filing_date, first_inventor, examiner_name, art_unit, attorney_docket, updated_at from project_ids_metadata where project_id = ?`,
+		projectID).Scan(&m.ProjectID, &m.AppNumber, &m.FilingDate, &m.FirstInventor, &m.ExaminerName, &m.ArtUnit, &m.AttorneyDocket, &updatedAt)
+	if err == sql.ErrNoRows {
+		m.ProjectID = projectID
+		return m, nil
+	}
+	if err != nil {
+		return domain.IDSMetadata{}, err
+	}
+	m.UpdatedAt = parseTime(updatedAt)
+	return m, nil
+}
+
+func (r *Repository) SaveIDSMetadata(ctx context.Context, meta domain.IDSMetadata) error {
+	now := nowString()
+	_, err := r.db.ExecContext(ctx,
+		`insert into project_ids_metadata (project_id, app_number, filing_date, first_inventor, examiner_name, art_unit, attorney_docket, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?) on conflict(project_id) do update set app_number=excluded.app_number, filing_date=excluded.filing_date, first_inventor=excluded.first_inventor, examiner_name=excluded.examiner_name, art_unit=excluded.art_unit, attorney_docket=excluded.attorney_docket, updated_at=excluded.updated_at`,
+		meta.ProjectID, meta.AppNumber, meta.FilingDate, meta.FirstInventor, meta.ExaminerName, meta.ArtUnit, meta.AttorneyDocket, now)
 	return err
 }

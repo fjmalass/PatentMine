@@ -42,6 +42,7 @@ const (
 	TextValueReviewOpenHint     TextKey = "value.review_open_hint"
 	TextValueClassificationHint TextKey = "value.classification_hint"
 	TextNavDefault              TextKey = "nav.default"
+	TextNavList                 TextKey = "nav.list"
 	TextNavJump                 TextKey = "nav.jump"
 	TextDetailOpenHint          TextKey = "detail.open_hint"
 	TextListEmpty               TextKey = "list.empty"
@@ -84,6 +85,7 @@ const (
 	TextHelpShortcutShowHelp     TextKey = "help.shortcut.show_help"
 	TextHelpBackOrQuit           TextKey = "help.shortcut.back_or_quit"
 	TextHelpQuitApp              TextKey = "help.shortcut.quit_app"
+	TextHelpMoveColumns          TextKey = "help.shortcut.move_columns"
 	TextHelpJumpCitations        TextKey = "help.jump.citations"
 	TextHelpJumpCitedBy          TextKey = "help.jump.cited_by"
 	TextHelpJumpClassification   TextKey = "help.jump.cpc"
@@ -223,6 +225,7 @@ func EnglishText() TextCatalog {
 		TextValueReviewOpenHint:     "[%s] open/preview · [%s] save · [%s] ignore · [%s] unmark · [%s] refresh · [%s] browse · [%s/%s] page · [↓↑] scroll",
 		TextValueClassificationHint: "[%s/%s] open detail · [%s] find · [%s] next · [%s/%s] page · [↓↑] scroll",
 		TextNavDefault:              "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
+		TextNavList:                 "keys: [%s/%s/↓↑] rows · [%s/%s/←→] cols · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavJump:                 "jump: press a hint key to move focus, [esc] cancels",
 		TextDetailOpenHint:          "Enter filters patents by the selected detail value",
 		TextListEmpty:               "No patents found.",
@@ -260,6 +263,7 @@ func EnglishText() TextCatalog {
 		TextHelpShowHelp:                "Show this help screen.",
 		TextHelpShowVersion:             "Show the current PatentMine version.",
 		TextHelpMoveList:                "Move row or column focus. Supports multipliers: [10j], [4l], etc.",
+		TextHelpMoveColumns:             "Move list column focus with [h/l] or left/right arrows. Supports multipliers: [4l].",
 		TextHelpOpenSelected:            "Open the selected list item.",
 		TextHelpDeletePatent:            "Delete the selected patent (mark as ignored and delete PDF).",
 		TextHelpJumpViews:               "Jump to citations, cited-by, classifications, text, notes, refs, AI, or browser.",

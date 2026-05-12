@@ -154,14 +154,15 @@ func TestVersionCommandShowsVersionMessage(t *testing.T) {
 	}
 }
 
-func TestListViewShowsColumnShortcutLabelsWithoutJumpMode(t *testing.T) {
+func TestListViewShowsColumnShortcutLabelsInJumpMode(t *testing.T) {
 	model := &Model{
-		repo:    stubRepo{},
-		text:    EnglishText(),
-		mode:    viewList,
-		patents: []domain.Patent{{Number: "US1", Title: "Test Patent"}},
-		width:   120,
-		height:  20,
+		repo:     stubRepo{},
+		text:     EnglishText(),
+		mode:     viewList,
+		jumpMode: true,
+		patents:  []domain.Patent{{Number: "US1", Title: "Test Patent"}},
+		width:    120,
+		height:   20,
 	}
 	got := model.viewList()
 	for _, key := range []string{jumpLabelPublication, jumpLabelInventors, jumpLabelClassification, jumpLabelExpiration, keyStatus, jumpLabelUpdated, jumpLabelNotes} {
@@ -187,8 +188,30 @@ func TestListViewShowsIDSColumnAndStatus(t *testing.T) {
 	if !strings.Contains(got, "IDS") {
 		t.Fatalf("expected IDS column header, got %q", got)
 	}
-	if !strings.Contains(got, domain.IDSStatusSubmitted) {
+	if !strings.Contains(got, "Notes") || strings.Index(got, "IDS") < strings.Index(got, "Notes") {
+		t.Fatalf("expected IDS column after Notes, got %q", got)
+	}
+	if !strings.Contains(got, string(domain.IDSStatusSubmitted)) {
 		t.Fatalf("expected IDS status in row, got %q", got)
+	}
+}
+
+func TestSortableListColumnsAreRegisteredSortColumns(t *testing.T) {
+	allowed := map[string]bool{}
+	for _, col := range domain.PatentSortColumns {
+		allowed[col] = true
+	}
+	model := &Model{}
+	for _, col := range model.listColumns() {
+		if col.id == "" {
+			continue
+		}
+		if !allowed[col.id] {
+			t.Fatalf("list column %q uses unregistered sort id %q", col.label, col.id)
+		}
+		if normalizeSortCol(col.id) == "" {
+			t.Fatalf("list column %q sort id %q is not normalized", col.label, col.id)
+		}
 	}
 }
 
@@ -219,8 +242,40 @@ func TestEnterOnDetailIDSCyclesStatus(t *testing.T) {
 	if repo.updatedID != 7 || repo.updatedStatus != domain.IDSStatusSubmitted {
 		t.Fatalf("expected IDS status update to submitted, got id=%d status=%q", repo.updatedID, repo.updatedStatus)
 	}
-	if got.message != "IDS status: "+domain.IDSStatusSubmitted {
+	if got.message != "IDS status: "+string(domain.IDSStatusSubmitted) {
 		t.Fatalf("expected IDS status message, got %q", got.message)
+	}
+}
+
+func TestEnterOnDetailIDSAcceptedRemovesEntry(t *testing.T) {
+	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusAccepted}}}
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      repo,
+		logger:    slog.Default(),
+		text:      EnglishText(),
+		mode:      viewDetail,
+		ProjectID: "default",
+		current:   domain.Patent{Number: "US10218760B2"},
+		detailCache: detailCache{
+			Number:     "US10218760B2",
+			IDSEntries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusAccepted}},
+		},
+	}
+	for i, field := range model.detailFields() {
+		if field.label == TextDetailIDS {
+			model.detailSelected = i
+			break
+		}
+	}
+
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if repo.deletedID != 7 {
+		t.Fatalf("expected IDS entry deletion, got deleted id %d", repo.deletedID)
+	}
+	if got.message != "IDS entry removed" {
+		t.Fatalf("expected IDS removal message, got %q", got.message)
 	}
 }
 
@@ -242,6 +297,56 @@ func TestSlashInClassificationPopupStartsSearchImmediately(t *testing.T) {
 	}
 	if !strings.Contains(got.viewClassifications(), "search:/") {
 		t.Fatalf("expected search badge in popup title, got %q", got.viewClassifications())
+	}
+}
+
+func TestSlashInListStartsInlineSearchImmediately(t *testing.T) {
+	model := &Model{repo: stubRepo{}, text: EnglishText(), mode: viewList, patents: []domain.Patent{{Number: "US1"}}}
+	updated, _ := model.Update(teaKey(keySearch))
+	got := updated.(*Model)
+	if !got.listSearchActive {
+		t.Fatal("expected list search to activate")
+	}
+	if got.input.Focused() {
+		t.Fatal("expected list search to avoid focusing command input")
+	}
+}
+
+func TestListSearchTypingRestartsFromTop(t *testing.T) {
+	model := &Model{
+		repo:             stubRepo{},
+		text:             EnglishText(),
+		mode:             viewList,
+		patents:          []domain.Patent{{Number: "CCC", Title: "Gamma"}, {Number: "BBB", Title: "Beta"}, {Number: "AAA", Title: "Alpha"}},
+		selected:         2,
+		listSearchActive: true,
+	}
+	updated, _ := model.Update(teaKey("B"))
+	got := updated.(*Model)
+	if got.selected != 1 {
+		t.Fatalf("expected edited list search to restart from top match, got selection %d", got.selected)
+	}
+}
+
+func TestListSearchNextWorksAfterEnter(t *testing.T) {
+	model := &Model{
+		repo:             stubRepo{},
+		text:             EnglishText(),
+		mode:             viewList,
+		patents:          []domain.Patent{{Number: "AAA"}, {Number: "AAB"}, {Number: "CCC"}},
+		selected:         0,
+		listSearchActive: true,
+		listSearchQuery:  "A",
+	}
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if got.listSearchActive {
+		t.Fatal("expected enter to exit active list search mode")
+	}
+	updated, _ = got.Update(teaKey(keyNotes))
+	got = updated.(*Model)
+	if got.selected != 1 {
+		t.Fatalf("expected n to advance to next list match, got selection %d", got.selected)
 	}
 }
 
@@ -966,14 +1071,15 @@ type idsMutationRepo struct {
 	stubRepo
 	entries       []domain.IDSEntry
 	updatedID     int64
-	updatedStatus string
+	updatedStatus domain.IDSStatus
+	deletedID     int64
 }
 
 func (r *idsMutationRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
 	return append([]domain.IDSEntry(nil), r.entries...), nil
 }
 
-func (r *idsMutationRepo) UpdateIDSEntryStatus(_ context.Context, id int64, status string) error {
+func (r *idsMutationRepo) UpdateIDSEntryStatus(_ context.Context, id int64, status domain.IDSStatus) error {
 	r.updatedID = id
 	r.updatedStatus = status
 	for i := range r.entries {
@@ -988,6 +1094,42 @@ func (r *idsMutationRepo) AddIDSEntry(_ context.Context, entry domain.IDSEntry) 
 	entry.ID = int64(len(r.entries) + 1)
 	r.entries = append(r.entries, entry)
 	return entry, nil
+}
+
+func (r *idsMutationRepo) DeleteIDSEntry(_ context.Context, id int64) error {
+	r.deletedID = id
+	filtered := r.entries[:0]
+	for _, entry := range r.entries {
+		if entry.ID != id {
+			filtered = append(filtered, entry)
+		}
+	}
+	r.entries = filtered
+	return nil
+}
+
+func (r *idsMutationRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
+	return domain.IDSMetadata{}, nil
+}
+func (r *idsMutationRepo) SaveIDSMetadata(context.Context, domain.IDSMetadata) error { return nil }
+func (r *idsMutationRepo) AddIDSNPLEntry(_ context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	entry.ID = int64(len(r.entries) + 1)
+	entry.IsNPL = true
+	r.entries = append(r.entries, entry)
+	return entry, nil
+}
+func (r *idsMutationRepo) ListIDSNPLEntries(context.Context, string) ([]domain.IDSEntry, error) {
+	return nil, nil
+}
+func (r *idsMutationRepo) DeleteIDSNPLEntry(_ context.Context, id int64) error {
+	filtered := r.entries[:0]
+	for _, entry := range r.entries {
+		if entry.ID != id {
+			filtered = append(filtered, entry)
+		}
+	}
+	r.entries = filtered
+	return nil
 }
 
 func (stubRepo) Close() error                                        { return nil }
@@ -1083,5 +1225,16 @@ func (stubRepo) AddIDSEntry(context.Context, domain.IDSEntry) (domain.IDSEntry, 
 func (stubRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
 	return nil, nil
 }
-func (stubRepo) UpdateIDSEntryStatus(context.Context, int64, string) error { return nil }
+func (stubRepo) UpdateIDSEntryStatus(context.Context, int64, domain.IDSStatus) error { return nil }
 func (stubRepo) DeleteIDSEntry(context.Context, int64) error               { return nil }
+func (stubRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
+	return domain.IDSMetadata{}, nil
+}
+func (stubRepo) SaveIDSMetadata(context.Context, domain.IDSMetadata) error { return nil }
+func (stubRepo) AddIDSNPLEntry(context.Context, domain.IDSEntry) (domain.IDSEntry, error) {
+	return domain.IDSEntry{}, nil
+}
+func (stubRepo) ListIDSNPLEntries(context.Context, string) ([]domain.IDSEntry, error) {
+	return nil, nil
+}
+func (stubRepo) DeleteIDSNPLEntry(context.Context, int64) error { return nil }

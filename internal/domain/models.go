@@ -41,10 +41,26 @@ const (
 	SortColumnExpiration = "expiration"
 	SortColumnUpdated    = "updated"
 	SortColumnNotes      = "notes"
+	SortColumnIDS        = "ids"
 
 	SortOrderAsc  = "asc"
 	SortOrderDesc = "desc"
 )
+
+var PatentSortColumns = []string{
+	SortColumnNumber,
+	SortColumnTitle,
+	SortColumnDate,
+	SortColumnStatus,
+	SortColumnAssignee,
+	SortColumnInventor,
+	SortColumnClass,
+	SortColumnCPC,
+	SortColumnExpiration,
+	SortColumnUpdated,
+	SortColumnNotes,
+	SortColumnIDS,
+}
 
 const (
 	AnalysisTypeSummary    = "summary"
@@ -76,11 +92,67 @@ const (
 	InvoiceStatusDisputed    = "disputed"
 )
 
+type IDSStatus string
+
 const (
-	IDSStatusPending   = "pending"
-	IDSStatusSubmitted = "submitted"
-	IDSStatusAccepted  = "accepted"
+	IDSStatusPending   IDSStatus = "pending"
+	IDSStatusSubmitted IDSStatus = "submitted"
+	IDSStatusAccepted  IDSStatus = "accepted"
 )
+
+// USPTO document kind codes.
+const (
+	IDSKindCodeA1 = "A1" // published application (first publication)
+	IDSKindCodeA2 = "A2" // published application (second publication)
+	IDSKindCodeB1 = "B1" // patent, no pre-grant publication
+	IDSKindCodeB2 = "B2" // patent, with prior pre-grant publication
+	IDSKindCodeE1 = "E1" // reissue patent
+	IDSKindCodeH  = "H"  // statutory invention registration
+	IDSKindCodeP  = "P"  // plant patent application
+	IDSKindCodeP2 = "P2" // plant patent
+	IDSKindCodeS  = "S"  // design patent
+)
+
+// IDSKindCodes lists the recognized USPTO kind codes for TUI hints and validation.
+var IDSKindCodes = []string{
+	IDSKindCodeA1, IDSKindCodeA2,
+	IDSKindCodeB1, IDSKindCodeB2,
+	IDSKindCodeE1, IDSKindCodeH,
+	IDSKindCodeP, IDSKindCodeP2,
+	IDSKindCodeS,
+}
+
+// ISO 3166-1 alpha-2 codes for major patent offices.
+const (
+	IDSCountryUS = "US" // United States
+	IDSCountryEP = "EP" // European Patent Office
+	IDSCountryWO = "WO" // WIPO / PCT
+	IDSCountryJP = "JP" // Japan
+	IDSCountryCN = "CN" // China
+	IDSCountryKR = "KR" // South Korea
+	IDSCountryDE = "DE" // Germany
+	IDSCountryFR = "FR" // France
+	IDSCountryGB = "GB" // United Kingdom
+	IDSCountryCA = "CA" // Canada
+	IDSCountryAU = "AU" // Australia
+	IDSCountryIN = "IN" // India
+	IDSCountryTW = "TW" // Taiwan
+	IDSCountryIL = "IL" // Israel
+	IDSCountrySG = "SG" // Singapore
+	IDSCountryBR = "BR" // Brazil
+	IDSCountryMX = "MX" // Mexico
+	IDSCountryRU = "RU" // Russia
+)
+
+// IDSCountryCodes lists recognized country codes for TUI hints and validation.
+var IDSCountryCodes = []string{
+	IDSCountryUS, IDSCountryEP, IDSCountryWO,
+	IDSCountryJP, IDSCountryCN, IDSCountryKR,
+	IDSCountryDE, IDSCountryFR, IDSCountryGB,
+	IDSCountryCA, IDSCountryAU, IDSCountryIN,
+	IDSCountryTW, IDSCountryIL, IDSCountrySG,
+	IDSCountryBR, IDSCountryMX, IDSCountryRU,
+}
 
 type ProjectInvoice struct {
 	ID            int64
@@ -233,12 +305,31 @@ type AIAnalysis struct {
 }
 
 type IDSEntry struct {
-	ID           int64
-	ProjectID    string
-	PatentNumber string
-	Notes        string
-	Status       string
-	AddedAt      time.Time
+	ID               int64
+	ProjectID        string
+	PatentNumber     string
+	KindCode         string    // see IDSKindCode* constants
+	CountryCode      string    // see IDSCountry* constants
+	IsNPL            bool      // non-patent literature
+	NPLAuthor        string
+	NPLTitle         string
+	NPLDate          string
+	NPLPublisher     string
+	RelevantPassages string    // pages/columns/lines with relevant content
+	Notes            string
+	Status           IDSStatus // see IDSStatus* constants
+	AddedAt          time.Time
+}
+
+type IDSMetadata struct {
+	ProjectID      string
+	AppNumber      string
+	FilingDate     string
+	FirstInventor  string
+	ExaminerName   string
+	ArtUnit        string
+	AttorneyDocket string
+	UpdatedAt      time.Time
 }
 
 type PatentBundle struct {

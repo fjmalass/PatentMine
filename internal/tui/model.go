@@ -630,11 +630,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
 					entry := ids[m.projectIDSSelected]
 					next := nextIDSStatus(entry.Status)
-					if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
+					if next == "" {
+						if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
+							m.err = err.Error()
+						} else {
+							m.projectIDSSelected = clamp(m.projectIDSSelected, 0, max(0, len(ids)-2))
+							m.logActivity("ids.remove", entry.PatentNumber, "")
+							m.message = "IDS entry removed"
+						}
+					} else if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
 						m.err = err.Error()
 					} else {
-						m.logActivity("ids.status", entry.PatentNumber, next)
-						m.message = "IDS status: " + next
+						m.logActivity("ids.status", entry.PatentNumber, string(next))
+						m.message = "IDS status: " + string(next)
 					}
 				}
 			case keyDelete:
@@ -724,6 +732,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if m.mode == viewList && m.listSearchActive {
+			switch msg.String() {
+			case keyEsc, keyBack:
+				m.listSearchActive = false
+				m.listSearchQuery = ""
+				return m, nil
+			case "backspace", "ctrl+h":
+				if len(m.listSearchQuery) > 0 {
+					m.listSearchQuery = m.listSearchQuery[:len(m.listSearchQuery)-1]
+					if m.listSearchQuery != "" {
+						return m.listSearchFirst(), nil
+					}
+				}
+				return m, nil
+			case keyEnter:
+				m.listSearchActive = false
+				return m, nil
+			default:
+				if len(msg.String()) == 1 {
+					m.listSearchQuery += msg.String()
+					return m.listSearchFirst(), nil
+				}
+				return m, nil
+			}
+		}
+
 		if m.isPopupSearchMode() && m.popupSearchActive {
 			switch msg.String() {
 			case keyEsc, keyBack:
@@ -808,6 +842,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyCommand, keySearch:
 			m.countBuffer = EmptyCount
+			if msg.String() == keySearch && m.mode == viewList {
+				m.listSearchActive = true
+				m.listSearchQuery = ""
+				return m, nil
+			}
 			if msg.String() == keySearch && m.isPopupSearchMode() {
 				m.popupSearchActive = true
 				m.popupSearchQuery = ""
@@ -970,7 +1009,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.isPopupSearchMode() && m.popupSearchQuery != "" {
 				return m.popupSearchNext(), nil
 			}
-			if m.mode == viewList && m.listSearchActive {
+			if m.mode == viewList && m.listSearchQuery != "" {
 				return m.listSearchNext(), nil
 			}
 			if m.mode == viewBulkConfirm {
@@ -1285,7 +1324,7 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			if len(command.Args) > 0 && command.Args[0] != "clear" {
 				m.listSearchQuery = command.Args[0]
 				m.listSearchActive = true
-				return m.listSearchNext(), nil
+				return m.listSearchFirst(), nil
 			}
 			m.listSearchActive = false
 			m.listSearchQuery = ""
@@ -1840,18 +1879,22 @@ func (m *Model) recentNotesSnippet(number string) string {
 	return b.String()
 }
 
-func nextIDSStatus(current string) string {
+func nextIDSStatus(current domain.IDSStatus) domain.IDSStatus {
 	switch current {
+	case "":
+		return domain.IDSStatusPending
 	case domain.IDSStatusPending:
 		return domain.IDSStatusSubmitted
 	case domain.IDSStatusSubmitted:
 		return domain.IDSStatusAccepted
+	case domain.IDSStatusAccepted:
+		return ""
 	default:
 		return domain.IDSStatusPending
 	}
 }
 
-func idsStatusColor(status string) string {
+func idsStatusColor(status domain.IDSStatus) string {
 	switch status {
 	case domain.IDSStatusSubmitted:
 		return ColorTheme
@@ -1879,12 +1922,28 @@ func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.populateDetailCache()
-		m.logActivity("ids.add", m.current.Number, created.Status)
-		m.message = "IDS status: " + created.Status
+		m.logActivity("ids.add", m.current.Number, string(created.Status))
+		m.message = "IDS status: " + string(created.Status)
 		return m, nil
 	}
 
 	next := nextIDSStatus(entry.Status)
+	if next == "" {
+		if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		filtered := m.detailCache.IDSEntries[:0]
+		for _, idsEntry := range m.detailCache.IDSEntries {
+			if idsEntry.ID != entry.ID {
+				filtered = append(filtered, idsEntry)
+			}
+		}
+		m.detailCache.IDSEntries = filtered
+		m.logActivity("ids.remove", m.current.Number, "")
+		m.message = "IDS entry removed"
+		return m, nil
+	}
 	if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -1895,8 +1954,8 @@ func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
 			break
 		}
 	}
-	m.logActivity("ids.status", m.current.Number, next)
-	m.message = "IDS status: " + next
+	m.logActivity("ids.status", m.current.Number, string(next))
+	m.message = "IDS status: " + string(next)
 	return m, nil
 }
 
@@ -2977,7 +3036,7 @@ type listColumn struct {
 	jumpLabel string
 }
 
-const listColumnIDS = "ids"
+const listColumnIDS = domain.SortColumnIDS
 
 func (m *Model) listColumns() []listColumn {
 	numWidth := m.listNumWidth
@@ -2997,9 +3056,9 @@ func (m *Model) listColumns() []listColumn {
 		{"Classification", cpcWidth + 2, domain.SortColumnCPC, jumpLabelClassification},
 		{"Expires", expWidth + 2, domain.SortColumnExpiration, jumpLabelExpiration},
 		{"Status", statusWidth + 2, domain.SortColumnStatus, keyStatus},
-		{"IDS", idsWidth + 2, listColumnIDS, keyIDS},
 		{"Updated", updatedWidth + 2, domain.SortColumnUpdated, jumpLabelUpdated},
 		{"Notes", notesWidth, domain.SortColumnNotes, jumpLabelNotes},
+		{"IDS", idsWidth + 2, listColumnIDS, keyIDS},
 	}
 }
 
@@ -3301,6 +3360,9 @@ func (m *Model) displayVersion() string {
 }
 
 func (m *Model) navDefault() string {
+	if m.mode == viewList {
+		return fmt.Sprintf(m.text.T(TextNavList), keyVimDown, keyVimUp, keyColLeft, keyColRight, keyEnter, keyJump, keySort, keyCommand, keySearch, keyHelp, keyBack, keyQuit)
+	}
 	return fmt.Sprintf(m.text.T(TextNavDefault), keyVimDown, keyVimUp, keyEnter, keyJump, keySort, keyCommand, keySearch, keyHelp, keyBack, keyQuit)
 }
 
@@ -3326,7 +3388,7 @@ func (m *Model) viewList() string {
 	idsByPatent := map[string]string{}
 	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
 		for _, entry := range idsEntries {
-			idsByPatent[entry.PatentNumber] = entry.Status
+			idsByPatent[entry.PatentNumber] = string(entry.Status)
 		}
 	}
 
@@ -3366,15 +3428,13 @@ func (m *Model) viewList() string {
 			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
 		}
 
-		// Always show the per-column shortcut so the list mirrors detail keys.
-		jumpColLabel := c.jumpLabel
+		jumpColLabel := ""
+		if m.jumpMode {
+			jumpColLabel = c.jumpLabel
+		}
 		jumpColPrefix := ""
 		if jumpColLabel != "" {
-			jumpStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow))
-			if !m.jumpMode {
-				jumpStyle = jumpStyle.Faint(true)
-			}
-			jumpColPrefix = jumpStyle.Render(jumpColLabel) + " "
+			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
 		}
 
 		// Calculate total width for this column header (visible chars)
@@ -3737,7 +3797,7 @@ func (m *Model) detailFields() []detailField {
 		idsEntry := m.idsEntryForPatent(p.Number)
 		if idsEntry != nil {
 			statusColor := idsStatusColor(idsEntry.Status)
-			value := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(idsEntry.Status)
+			value := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(string(idsEntry.Status))
 			if idsEntry.Notes != "" {
 				value += lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true).Render("  " + idsEntry.Notes)
 			}
@@ -4750,6 +4810,14 @@ func (m *Model) viewClassificationDetail() string {
 }
 
 func (m *Model) listSearchNext() *Model {
+	return m.listSearchFrom(true)
+}
+
+func (m *Model) listSearchFirst() *Model {
+	return m.listSearchFrom(false)
+}
+
+func (m *Model) listSearchFrom(next bool) *Model {
 	if m.listSearchQuery == "" {
 		return m
 	}
@@ -4760,7 +4828,10 @@ func (m *Model) listSearchNext() *Model {
 	query := m.listSearchQuery
 	ignoreCase := strings.ToLower(query) == query
 
-	start := m.selected + 1
+	start := 0
+	if next {
+		start = m.selected + 1
+	}
 	for i := 0; i < len(m.patents); i++ {
 		idx := (start + i) % len(m.patents)
 		p := m.patents[idx]
@@ -5424,9 +5495,9 @@ func (m *Model) viewProjectIDS() string {
 			if notes == "" {
 				notes = "—"
 			}
-			statusStr := e.Status
+			statusStr := string(e.Status)
 			if statusStr == "" {
-				statusStr = domain.IDSStatusPending
+				statusStr = string(domain.IDSStatusPending)
 			}
 			statusRendered := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(fmt.Sprintf("%-11s", statusStr))
 			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s", e.PatentNumber)) + " " + statusRendered + " " + rowStyle.Render(fmt.Sprintf("%-14s %s", e.AddedAt.Format("2006-01-02"), notes)))
@@ -5467,6 +5538,41 @@ func (m *Model) idsCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = "IDS entry added: " + entry.PatentNumber
+	case idsSubMeta:
+		// :project ids meta <field> <value>
+		// fields: app, filed, inventor, art, examiner, docket
+		if len(args) < 3 {
+			m.err = "usage: :project ids meta <field> <value>"
+			return m, nil
+		}
+		meta, err := m.repo.GetIDSMetadata(m.ctx, m.ProjectID)
+		if err != nil {
+			m.err = "error loading IDS metadata: " + err.Error()
+			return m, nil
+		}
+		value := strings.Join(args[2:], " ")
+		switch strings.ToLower(args[1]) {
+		case "appnumber", "app":
+			meta.AppNumber = value
+		case "filingdate", "filed":
+			meta.FilingDate = value
+		case "inventor":
+			meta.FirstInventor = value
+		case "artunit", "art":
+			meta.ArtUnit = value
+		case "examiner":
+			meta.ExaminerName = value
+		case "docket":
+			meta.AttorneyDocket = value
+		default:
+			m.err = "unknown IDS meta field: " + args[1] + ". Use: app, filed, inventor, art, examiner, docket"
+			return m, nil
+		}
+		if err := m.repo.SaveIDSMetadata(m.ctx, meta); err != nil {
+			m.err = "error saving IDS metadata: " + err.Error()
+			return m, nil
+		}
+		m.message = "IDS metadata updated"
 	default:
 		m.err = "unknown ids subcommand: " + args[0]
 	}
@@ -5686,49 +5792,6 @@ func (m *Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.message = fmt.Sprintf("state exported to %s (%d patents)", filename, len(patents))
-	return m, nil
-}
-
-func (m *Model) idsExportCommand(args []string) (tea.Model, tea.Cmd) {
-	ids, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-	if err != nil {
-		m.err = "error loading IDS: " + err.Error()
-		return m, nil
-	}
-
-	projectName := m.ProjectID
-	for _, p := range m.projects {
-		if p.ID == m.ProjectID {
-			projectName = p.Name
-			break
-		}
-	}
-
-	filename := fmt.Sprintf("%s_IDS_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format("2006-01-02"))
-	if len(args) > 0 {
-		filename = args[0]
-	}
-
-	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("# Information Disclosure Statement\n\n"))
-	buf.WriteString(fmt.Sprintf("**Project:** %s (%s)  \n", projectName, m.ProjectID))
-	buf.WriteString(fmt.Sprintf("**Date:** %s  \n\n", time.Now().Format("2006-01-02")))
-	buf.WriteString("## Prior Art References\n\n")
-	buf.WriteString("| # | Patent Number | Notes | Added |\n")
-	buf.WriteString("|---|---------------|-------|-------|\n")
-	for i, e := range ids {
-		notes := e.Notes
-		if notes == "" {
-			notes = "—"
-		}
-		buf.WriteString(fmt.Sprintf("| %d | %s | %s | %s |\n", i+1, e.PatentNumber, notes, e.AddedAt.Format("2006-01-02")))
-	}
-
-	if err := os.WriteFile(filename, []byte(buf.String()), 0644); err != nil {
-		m.err = "export failed: " + err.Error()
-		return m, nil
-	}
-	m.message = fmt.Sprintf("IDS exported to %s (%d entries)", filename, len(ids))
 	return m, nil
 }
 

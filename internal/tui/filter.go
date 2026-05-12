@@ -237,7 +237,8 @@ func normalizeSortCol(col string) string {
 		return domain.SortColumnClass
 	case domain.SortColumnNumber, domain.SortColumnTitle, domain.SortColumnDate,
 		domain.SortColumnStatus, domain.SortColumnAssignee, domain.SortColumnInventor,
-		domain.SortColumnClass, domain.SortColumnExpiration:
+		domain.SortColumnClass, domain.SortColumnExpiration, domain.SortColumnUpdated,
+		domain.SortColumnNotes, domain.SortColumnIDS:
 		return strings.ToLower(col)
 	}
 	return ""
