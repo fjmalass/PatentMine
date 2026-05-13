@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
@@ -45,7 +46,7 @@ func TestFormatExpirationShowsImportSuffix(t *testing.T) {
 
 func TestFormatExpirationKeepsExpiredLabelText(t *testing.T) {
 	got := (&Model{}).formatExpiration(domain.Patent{
-		ExpirationDate:      "2001-01-01",
+		ExpirationDate:   "2001-01-01",
 		ExpirationSource: domain.ExpirationSourceEstimated,
 	})
 	if got != "2001-01-01 (est.)" {
@@ -55,7 +56,7 @@ func TestFormatExpirationKeepsExpiredLabelText(t *testing.T) {
 
 func TestDetailRowAlignsValues(t *testing.T) {
 	model := &Model{repo: stubRepo{}, text: EnglishText()}
-	got := model.detailRow(TextDetailGrant, "2023-03-21", 12) + model.detailRow(TextDetailExpiration, "2043-03-21 (est.)", 12)
+	got := model.detailRow(TextDetailGrant, "2023-03-21", 12) + "\n" + model.detailRow(TextDetailExpiration, "2043-03-21 (est.)", 12) + "\n"
 	want := "Grant:       2023-03-21\nExpiration:  2043-03-21 (est.)\n"
 	if got != want {
 		t.Fatalf("expected aligned detail rows:\n%q\ngot:\n%q", want, got)
@@ -68,20 +69,106 @@ func TestDetailRowUsesTextCatalog(t *testing.T) {
 		TextValueUnknown:   "inconnu",
 	}}
 	got := model.detailRow(TextDetailAssignee, "", 12)
-	want := "Titulaire:   inconnu\n"
+	want := "Titulaire:   inconnu"
 	if got != want {
 		t.Fatalf("expected localized detail row %q, got %q", want, got)
 	}
 }
 
+func TestDetailRowWrapsLongValuesUnderValueColumn(t *testing.T) {
+	model := &Model{repo: stubRepo{}, text: EnglishText(), width: 60}
+	got := model.detailRow(TextDetailClassification, "A, A01, A01K, A01K15/00, A01K15/02, A01K15/021", 15)
+	if !strings.Contains(got, "\n") {
+		t.Fatalf("expected wrapped detail row, got %q", got)
+	}
+	if !strings.Contains(got, "\n                A01K15/02") {
+		t.Fatalf("expected continuation line indented under value column, got %q", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if lipgloss.Width(line) > model.width {
+			t.Fatalf("expected wrapped detail line width <= %d, got %d for %q", model.width, lipgloss.Width(line), line)
+		}
+	}
+}
+
+func TestDetailRowWrapsLongValuesWithPrefixIndent(t *testing.T) {
+	model := &Model{repo: stubRepo{}, text: EnglishText(), width: 60}
+	got := model.detailRow(TextDetailClassification, "A, A01, A01K, A01K15/00, A01K15/02, A01K15/021", 15, 2)
+	if !strings.Contains(got, "\n                  A01K15/02") {
+		t.Fatalf("expected continuation line indented with row prefix width, got %q", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if lipgloss.Width(line)+2 > model.width {
+			t.Fatalf("expected wrapped detail line with prefix to fit width %d, got %d for %q", model.width, lipgloss.Width(line)+2, line)
+		}
+	}
+}
+
+func TestViewDetailDoesNotInsertBlankLinesBetweenRows(t *testing.T) {
+	model := &Model{
+		repo:  stubRepo{},
+		text:  EnglishText(),
+		mode:  viewDetail,
+		width: 120,
+		current: domain.Patent{
+			Number:           "US1",
+			Title:            "Test Patent",
+			Assignee:         "Troxler",
+			LatestAssignment: "unknown",
+		},
+	}
+
+	got := model.viewDetail()
+	if strings.Contains(got, "Assignee:") && strings.Contains(got, "\n\n  Latest Assignment") {
+		t.Fatalf("expected no blank line between detail rows, got %q", got)
+	}
+	if !strings.Contains(got, "Assignee:          Troxler") {
+		t.Fatalf("expected assignee row in detail view, got %q", got)
+	}
+	if !strings.Contains(got, "Latest Assignment: unknown") {
+		t.Fatalf("expected latest assignment row in detail view, got %q", got)
+	}
+}
+
 func TestPreviewOverlayUsesBorderAndSmallerWidth(t *testing.T) {
-	model := &Model{repo: stubRepo{}, width: 120, mode: viewFamily}
+	model := &Model{
+		repo:   stubRepo{},
+		text:   EnglishText(),
+		width:  120,
+		height: 30,
+		mode:   viewFamily,
+		backStack: []navSnapshot{{
+			mode:  viewDetail,
+			width: 120,
+		}},
+		current: domain.Patent{Number: "US1", Title: "Preview Backdrop"},
+	}
 	got := model.previewOverlay("US1\nPreview")
 	if !strings.Contains(got, "┌") || !strings.Contains(got, "┘") {
 		t.Fatalf("expected bordered overlay, got %q", got)
 	}
+	if !strings.Contains(got, "US1") {
+		t.Fatalf("expected centered overlay content, got %q", got)
+	}
+	if !strings.Contains(got, "Assignee:") {
+		t.Fatalf("expected backdrop content behind overlay, got %q", got)
+	}
 	if width := model.overlayWidth(); width >= model.width {
 		t.Fatalf("expected overlay width below terminal width, got %d for terminal %d", width, model.width)
+	}
+}
+
+func TestFamilyViewIgnoresHLNavigation(t *testing.T) {
+	model := &Model{repo: stubRepo{}, mode: viewFamily, familySelected: 2}
+	updated, _ := model.Update(teaKey(keyColLeft))
+	got := updated.(*Model)
+	if got.familySelected != 2 {
+		t.Fatalf("expected h to leave family selection unchanged, got %d", got.familySelected)
+	}
+	updated, _ = got.Update(teaKey(keyColRight))
+	got = updated.(*Model)
+	if got.familySelected != 2 {
+		t.Fatalf("expected l to leave family selection unchanged, got %d", got.familySelected)
 	}
 }
 
@@ -94,9 +181,8 @@ func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
 
 	model.mode = viewCites
 	got = model.renderScreenHeader()
-	// Overlay mode shows background mode (Detail) in screen header for continuity
-	if !strings.Contains(got, "Detail") {
-		t.Fatalf("expected background title (Detail) for citations overlay, got %q", got)
+	if !strings.Contains(got, "Citations") {
+		t.Fatalf("expected citations title for citations overlay, got %q", got)
 	}
 }
 
@@ -116,19 +202,20 @@ func TestAllViewModesHaveSpecs(t *testing.T) {
 	}
 }
 
-func TestOverlayModesResolveBackground(t *testing.T) {
-	model := &Model{mode: viewHelpPopup, backStack: []navSnapshot{{mode: viewCites}}}
+func TestOverlayModesHaveRenderableSpecs(t *testing.T) {
 	for _, mode := range allViewModes {
 		spec := mustModeSpec(mode)
 		if !spec.isOverlay {
 			continue
 		}
-		if spec.background == nil {
-			t.Fatalf("overlay mode %q missing background resolver", mode)
+		if spec.title == "" {
+			t.Fatalf("overlay mode %q missing title", mode)
 		}
-		model.mode = mode
-		if bg := spec.background(model); bg == "" {
-			t.Fatalf("overlay mode %q resolved empty background", mode)
+		if spec.themeColor == "" {
+			t.Fatalf("overlay mode %q missing theme color", mode)
+		}
+		if spec.helpHint == "" {
+			t.Fatalf("overlay mode %q missing help hint", mode)
 		}
 	}
 }
@@ -181,6 +268,15 @@ func TestVersionCommandShowsVersionMessage(t *testing.T) {
 	}
 }
 
+func TestNextCitationDetailStatus(t *testing.T) {
+	if got := nextCitationDetailStatus(domain.CitationStatusIgnored, false); got != domain.CitationStatusCached {
+		t.Fatalf("expected new detail import status %q, got %q", domain.CitationStatusCached, got)
+	}
+	if got := nextCitationDetailStatus(domain.CitationStatusUnderReview, true); got != domain.CitationStatusUnderReview {
+		t.Fatalf("expected existing citation status to be preserved, got %q", got)
+	}
+}
+
 func TestListViewShowsColumnShortcutLabelsInJumpMode(t *testing.T) {
 	model := &Model{
 		repo:     stubRepo{},
@@ -220,6 +316,33 @@ func TestListViewShowsIDSColumnAndStatus(t *testing.T) {
 	}
 	if !strings.Contains(got, string(domain.IDSStatusSubmitted)) {
 		t.Fatalf("expected IDS status in row, got %q", got)
+	}
+}
+
+func TestListViewFitsNarrowWidthWithoutWrapping(t *testing.T) {
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      stubRepo{},
+		text:      EnglishText(),
+		mode:      viewList,
+		ProjectID: "default",
+		patents: []domain.Patent{{
+			Number:              "US123456789B2",
+			Title:               "Very Long Patent Title That Should Still Stay On One Visible Row",
+			Inventors:           []string{"Firstname Lastname", "Second Inventor"},
+			ClassificationLabel: "H04L12/58",
+			ExpirationDate:      "2043-03-21",
+			Status:              domain.CitationStatusStored,
+			NotesCount:          12,
+		}},
+		width:  120,
+		height: 20,
+	}
+
+	for _, line := range strings.Split(model.viewList(), "\n") {
+		if lipgloss.Width(line) > model.width {
+			t.Fatalf("expected line width <= %d, got %d for %q", model.width, lipgloss.Width(line), line)
+		}
 	}
 }
 
@@ -904,6 +1027,30 @@ func TestViewCitationsShowsIndexedRows(t *testing.T) {
 	}
 }
 
+func TestViewCitationsFitsOverlayAndOmitsImportSourceTag(t *testing.T) {
+	edges := sampleCitationEdges(1)
+	edges[0].Status = domain.CitationStatusIgnored
+	edges[0].TargetImportSource = ImportSourceGoogle
+	edges[0].TargetTitle = "Paving-related measuring device incorporating a computer device and communication element therebetween and another very long suffix"
+	model := &Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    citationRepo{edges: edges},
+		mode:    viewCites,
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   100,
+		height:  20,
+	}
+
+	got := model.viewCitations(domain.RelationCites)
+	if strings.Contains(got, "[g]") || strings.Contains(got, "[u]") {
+		t.Fatalf("expected citation rows without inline import source tags, got %q", got)
+	}
+	if strings.Contains(got, "\n│  Status") {
+		t.Fatalf("expected status column to stay on the header row, got %q", got)
+	}
+}
+
 func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
 	model := &Model{
 		ctx:     t.Context(),
@@ -1065,14 +1212,14 @@ type storedCitationRepo struct {
 
 func (r storedCitationRepo) GetPatent(_ context.Context, _ string, number string) (domain.Patent, error) {
 	return domain.Patent{
-		Number:              number,
-		Title:               "Stored citation patent",
-		Inventors:           []string{"Inventor One"},
-		PublicationDate:     "2019-01-01",
-		GrantDate:           "2020-01-01",
-		ExpirationDate:      "2040-01-01",
+		Number:           number,
+		Title:            "Stored citation patent",
+		Inventors:        []string{"Inventor One"},
+		PublicationDate:  "2019-01-01",
+		GrantDate:        "2020-01-01",
+		ExpirationDate:   "2040-01-01",
 		ExpirationSource: domain.ExpirationSourceEstimated,
-		SourceGoogleURL:     "https://patents.google.com/patent/" + number + "/en",
+		SourceGoogleURL:  "https://patents.google.com/patent/" + number + "/en",
 	}, nil
 }
 

@@ -93,8 +93,6 @@ var allHelpSections = []HelpSection{
 			{Key: keyFamily, Command: ":family parent|child <num> [type]", Description: TextHelpFamilyAdd},
 			{Command: ":family remove <num>", Description: TextHelpFamilyRemove},
 			{Command: ":family pull", Description: TextHelpFamilyPull},
-			{Key: "h", Description: TextHelpFamilyParent},
-			{Key: "l (in family view)", Description: TextHelpFamilyChild},
 			{Key: keyDelete + " (in family view)", Description: TextHelpFamilyRemoveEdge},
 			{Key: "+ (in family view)", Description: TextHelpFamilyAddChild},
 		},
@@ -375,9 +373,6 @@ func contextHelpEntries(mode viewMode) []HelpEntry {
 	case viewFamily:
 		return []HelpEntry{
 			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyColLeft, Description: TextHelpFamilyParent},
-			{Key: keyColRight, Description: TextHelpFamilyChild},
-
 			{Key: keyEnter, Description: TextHelpOpenSelected},
 			{Key: keyDelete, Description: TextHelpFamilyRemoveEdge},
 			{Key: keyRefs, Description: TextHelpFamilyPull},

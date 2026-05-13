@@ -9,6 +9,9 @@ import (
 )
 
 func (m *Model) activeMode() viewMode {
+	if m.mode == viewHelpPopup {
+		return previousModeOr(m, viewList)
+	}
 	return m.mode
 }
 

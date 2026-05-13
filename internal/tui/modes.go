@@ -36,6 +36,7 @@ var allViewModes = []viewMode{
 	viewClaim,
 	viewUSPTOKeyWarning,
 	viewBulkConfirm,
+	viewStatusSelect,
 }
 
 var modeSpecs = map[viewMode]modeSpec{
@@ -131,7 +132,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Patent Family",
 		themeColor: ColorThemeFamily,
 		isOverlay:  true,
-		helpHint:   "j/k: move · h: parent · l: child · enter: open · esc: back",
+		helpHint:   "j/k: move · enter: open · esc: back",
 	},
 	viewSplash: {
 		title:      "Splash",

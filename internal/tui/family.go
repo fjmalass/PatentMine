@@ -191,7 +191,7 @@ func familyRelationColor(relType string) string {
 }
 
 // viewFamilyOverlay renders the interactive family tree as a single navigable column.
-// j/k move up/down, h moves to parent, l moves to first child.
+// j/k move up/down.
 func (m *Model) viewFamilyOverlay() string {
 	nodes := m.buildFamilyTree()
 

@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	ansi "github.com/charmbracelet/x/ansi"
 
 	"patentmine/internal/ai"
 	"patentmine/internal/config"
@@ -63,8 +64,8 @@ const (
 type bulkActionType string
 
 const (
-	bulkActionStore  bulkActionType = "store"
-	bulkActionIgnore bulkActionType = "ignore"
+	bulkActionStore       bulkActionType = "store"
+	bulkActionIgnore      bulkActionType = "ignore"
 	bulkActionUnderReview bulkActionType = "under_review"
 )
 
@@ -1062,23 +1063,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sortColumnIndex = clamp(m.sortColumnIndex-count, 0, len(m.listColumns())-1)
 				return m, nil
 			}
-			if m.mode == viewFamily {
-				// For family, we can repeat the move to parent logic
-				for i := 0; i < count; i++ {
-					m = m.moveFamilyToParent()
-				}
-				return m, nil
-			}
 		case keyColRight, "right":
 			count := m.consumeCount(1)
 			if m.mode == viewList {
 				m.sortColumnIndex = clamp(m.sortColumnIndex+count, 0, len(m.listColumns())-1)
-				return m, nil
-			}
-			if m.mode == viewFamily {
-				for i := 0; i < count; i++ {
-					m = m.moveFamilyToFirstChild()
-				}
 				return m, nil
 			}
 		case keyClassification: // "L"
@@ -1821,10 +1809,7 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 					return refreshDetailsResultMsg{err: err}
 				}
 
-				status := edge.Status
-				if !exists {
-					status = domain.CitationStatusIgnored
-				}
+				status := nextCitationDetailStatus(edge.Status, exists)
 				if err := repo.UpdateCitationStatus(ctx, projectID, edge, status); err != nil {
 					return refreshDetailsResultMsg{err: err}
 				}
@@ -2104,10 +2089,7 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 				logger.Error("citation refresh failed", "patent", edge.TargetPatent, "error", err)
 				return refreshDetailsResultMsg{err: err}
 			}
-			status := edge.Status
-			if !exists {
-				status = domain.CitationStatusIgnored
-			}
+			status := nextCitationDetailStatus(edge.Status, exists)
 			if err := repo.UpdateCitationStatus(ctx, projectID, edge, status); err != nil {
 				return refreshDetailsResultMsg{err: err}
 			}
@@ -2140,6 +2122,13 @@ func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
 
 		return refreshDetailsResultMsg{message: fmt.Sprintf("imported %s", target)}
 	}
+}
+
+func nextCitationDetailStatus(current string, exists bool) string {
+	if exists {
+		return current
+	}
+	return domain.CitationStatusCached
 }
 
 func (m *Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
@@ -3126,8 +3115,48 @@ type listColumn struct {
 
 const listColumnIDS = domain.SortColumnIDS
 
+func fitColumns(cols []listColumn, available int, minWidths map[string]int, shrinkOrder []string) []listColumn {
+	if len(cols) == 0 || available <= 0 {
+		return cols
+	}
+
+	fitted := append([]listColumn(nil), cols...)
+	totalWidth := func(columns []listColumn) int {
+		total := 0
+		for i, col := range columns {
+			total += col.width
+			if i < len(columns)-1 {
+				total += 2
+			}
+		}
+		return total
+	}
+
+	for totalWidth(fitted) > available {
+		shrunk := false
+		for _, id := range shrinkOrder {
+			for i := range fitted {
+				minWidth := minWidths[fitted[i].id]
+				if fitted[i].id == id && fitted[i].width > minWidth {
+					fitted[i].width--
+					shrunk = true
+					break
+				}
+			}
+			if shrunk {
+				break
+			}
+		}
+		if !shrunk {
+			break
+		}
+	}
+
+	return fitted
+}
+
 func (m *Model) listColumns() []listColumn {
-	numWidth := m.listNumWidth
+	numWidth := max(6, m.listNumWidth)
 	titleWidth := 40
 	invWidth := 20
 	cpcWidth := 15
@@ -3138,16 +3167,45 @@ func (m *Model) listColumns() []listColumn {
 	notesWidth := 6
 
 	return []listColumn{
-		{"Number", numWidth + 2, domain.SortColumnNumber, jumpLabelPublication},
-		{"Title", titleWidth + 2, domain.SortColumnTitle, ""},
-		{"Inventor", invWidth + 2, domain.SortColumnInventor, jumpLabelInventors},
-		{"Classification", cpcWidth + 2, domain.SortColumnCPC, jumpLabelClassification},
-		{"Expires", expWidth + 2, domain.SortColumnExpiration, jumpLabelExpiration},
-		{"Status", statusWidth + 2, domain.SortColumnStatus, keyStatus},
-		{"Updated", updatedWidth + 2, domain.SortColumnUpdated, jumpLabelUpdated},
+		{"Number", numWidth, domain.SortColumnNumber, jumpLabelPublication},
+		{"Title", titleWidth, domain.SortColumnTitle, ""},
+		{"Inventor", invWidth, domain.SortColumnInventor, jumpLabelInventors},
+		{"Classification", cpcWidth, domain.SortColumnCPC, jumpLabelClassification},
+		{"Expires", expWidth, domain.SortColumnExpiration, jumpLabelExpiration},
+		{"Status", statusWidth, domain.SortColumnStatus, keyStatus},
+		{"Updated", updatedWidth, domain.SortColumnUpdated, jumpLabelUpdated},
 		{"Notes", notesWidth, domain.SortColumnNotes, jumpLabelNotes},
-		{"IDS", idsWidth + 2, listColumnIDS, keyIDS},
+		{"IDS", idsWidth, listColumnIDS, keyIDS},
 	}
+}
+
+func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
+	if len(cols) == 0 || available <= 0 {
+		return cols
+	}
+	minWidths := map[string]int{
+		domain.SortColumnNumber:     12,
+		domain.SortColumnTitle:      18,
+		domain.SortColumnInventor:   10,
+		domain.SortColumnCPC:        8,
+		domain.SortColumnExpiration: 10,
+		domain.SortColumnStatus:     8,
+		domain.SortColumnUpdated:    10,
+		domain.SortColumnNotes:      5,
+		listColumnIDS:               7,
+	}
+	shrinkOrder := []string{
+		domain.SortColumnTitle,
+		domain.SortColumnInventor,
+		domain.SortColumnCPC,
+		domain.SortColumnUpdated,
+		domain.SortColumnNumber,
+		listColumnIDS,
+		domain.SortColumnStatus,
+		domain.SortColumnExpiration,
+		domain.SortColumnNotes,
+	}
+	return fitColumns(cols, available, minWidths, shrinkOrder)
 }
 
 func (m *Model) View() string {
@@ -3232,6 +3290,18 @@ func wrapText(text string, width int) string {
 	}
 	b.WriteString(line)
 	return b.String()
+}
+
+func wrapIndentedText(text string, width int, indent string) string {
+	wrapped := wrapText(text, width)
+	if !strings.Contains(wrapped, "\n") {
+		return wrapped
+	}
+	lines := strings.Split(wrapped, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = indent + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) styleLine(content string) string {
@@ -3483,6 +3553,7 @@ func (m *Model) viewList() string {
 	}
 
 	cols := m.listColumns()
+	cols = m.fitListColumns(cols, m.width-(2+jumpPrefixWidth+idxWidth+2))
 
 	// Clamp sortColumnIndex
 	if m.sortColumnIndex >= len(cols) {
@@ -3554,25 +3625,28 @@ func (m *Model) viewList() string {
 			jumpRowPrefix = strings.Repeat(" ", jumpPrefixWidth)
 		}
 
-		title := m.truncate(p.Title, 40)
-		inventors := m.truncate(formatInventorsShort(p.Inventors), 20)
-		cpc := m.truncate(p.ClassificationLabel, 15)
-		if cpc == "" {
-			cpc = "-"
+		rowValues := map[string]string{
+			domain.SortColumnNumber:     p.Number,
+			domain.SortColumnTitle:      p.Title,
+			domain.SortColumnInventor:   formatInventorsShort(p.Inventors),
+			domain.SortColumnCPC:        p.ClassificationLabel,
+			domain.SortColumnExpiration: p.ExpirationDate,
+			domain.SortColumnStatus:     p.Status,
+			domain.SortColumnUpdated:    formatStoredTime(p.UpdatedAt, "-"),
+			domain.SortColumnNotes:      "-",
+			listColumnIDS:               "-",
 		}
-		expDate := p.ExpirationDate
-		if expDate == "" {
-			expDate = "-"
+		if rowValues[domain.SortColumnCPC] == "" {
+			rowValues[domain.SortColumnCPC] = "-"
 		}
-		status := p.Status
-		idsStatus := "-"
-		if status, ok := idsByPatent[p.Number]; ok && status != "" {
-			idsStatus = status
+		if rowValues[domain.SortColumnExpiration] == "" {
+			rowValues[domain.SortColumnExpiration] = "-"
 		}
-		updated := formatStoredTime(p.UpdatedAt, "-")
-		notes := "-"
 		if p.NotesCount > 0 {
-			notes = fmt.Sprintf("%d", p.NotesCount)
+			rowValues[domain.SortColumnNotes] = fmt.Sprintf("%d", p.NotesCount)
+		}
+		if idsStatus, ok := idsByPatent[p.Number]; ok && idsStatus != "" {
+			rowValues[listColumnIDS] = idsStatus
 		}
 
 		idxLabel := fmt.Sprintf("%*d", idxWidth, i+1)
@@ -3581,27 +3655,7 @@ func (m *Model) viewList() string {
 			m.pad(idxLabel, idxWidth+2)
 
 		for j, c := range cols {
-			val := ""
-			switch c.id {
-			case domain.SortColumnNumber:
-				val = p.Number
-			case domain.SortColumnTitle:
-				val = title
-			case domain.SortColumnInventor:
-				val = inventors
-			case domain.SortColumnCPC:
-				val = cpc
-			case domain.SortColumnExpiration:
-				val = expDate
-			case domain.SortColumnStatus:
-				val = status
-			case listColumnIDS:
-				val = idsStatus
-			case domain.SortColumnUpdated:
-				val = updated
-			case domain.SortColumnNotes:
-				val = notes
-			}
+			val := rowValues[c.id]
 
 			// Use the same width calculation as the header for alignment
 			colWidth := c.width
@@ -3612,6 +3666,7 @@ func (m *Model) viewList() string {
 			if jumpColLabel != "" {
 				colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+c.label))
 			}
+			val = m.truncate(val, c.width)
 
 			padding := 2
 			if j == len(cols)-1 {
@@ -3653,6 +3708,15 @@ func formatInventorsShort(inventors []string) string {
 }
 
 func (m *Model) truncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if width <= 3 {
+		if lipgloss.Width(s) <= width {
+			return s
+		}
+		return strings.Repeat(".", width)
+	}
 	if lipgloss.Width(s) <= width {
 		return s
 	}
@@ -3715,7 +3779,8 @@ func (m *Model) viewDetail() string {
 		if field.displayValue != "" {
 			value = field.displayValue
 		}
-		b.WriteString(style.Render(prefix+m.jumpPrefix(i)+m.detailRow(field.label, value, groupWidths[groupIndex])) + "\n")
+		lead := prefix + m.jumpPrefix(i)
+		b.WriteString(style.Render(lead+m.detailRow(field.label, value, groupWidths[groupIndex], lipgloss.Width(lead))) + "\n")
 	}
 	b.WriteString(separator + "\n")
 
@@ -4011,9 +4076,13 @@ func (m *Model) jumpLabelForInventor(index int) string {
 	})[index].key
 }
 
-func (m *Model) detailRow(label TextKey, value string, width int) string {
+func (m *Model) detailRow(label TextKey, value string, width int, leadWidth ...int) string {
 	if strings.TrimSpace(value) == "" {
 		value = m.text.T(TextValueUnknown)
+	}
+	prefixWidth := 0
+	if len(leadWidth) > 0 {
+		prefixWidth = leadWidth[0]
 	}
 	l := m.text.T(label) + ":"
 	padding := ""
@@ -4021,7 +4090,11 @@ func (m *Model) detailRow(label TextKey, value string, width int) string {
 		padding = strings.Repeat(" ", width-w)
 	}
 	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
-	return fmt.Sprintf("%s%s %s\n", labelStyle.Render(l), padding, value)
+	indent := strings.Repeat(" ", prefixWidth+width+1)
+	if m.width > 0 && !strings.Contains(value, "\x1b[") {
+		value = wrapIndentedText(value, max(12, m.width-prefixWidth-width-1), indent)
+	}
+	return fmt.Sprintf("%s%s %s", labelStyle.Render(l), padding, value)
 }
 
 func (m *Model) populateDetailCache() {
@@ -4105,17 +4178,20 @@ func (m *Model) viewCitations(relation string) string {
 		jumpPrefixWidth = 2
 	}
 
-	type col struct {
-		label string
-		width int
+	cols := []listColumn{
+		{label: "Number", width: numWidth, id: "number"},
+		{label: "Title", width: titleWidth, id: "title"},
+		{label: "Inventor", width: invWidth, id: "inventor"},
+		{label: "Expires", width: expWidth, id: "expires"},
+		{label: "Status", width: statusWidth, id: "status"},
 	}
-	cols := []col{
-		{"Number", numWidth},
-		{"Title", titleWidth},
-		{"Inventor", invWidth},
-		{"Expires", expWidth},
-		{"Status", statusWidth},
-	}
+	cols = fitColumns(cols, m.overlayWidth()-4-(2+jumpPrefixWidth+indexWidth), map[string]int{
+		"number":   12,
+		"title":    18,
+		"inventor": 10,
+		"expires":  10,
+		"status":   8,
+	}, []string{"title", "inventor", "number", "status", "expires"})
 
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
@@ -4151,21 +4227,16 @@ func (m *Model) viewCitations(relation string) string {
 			expDate = "-"
 		}
 		numCell := edge.TargetPatent
-		if src := edge.TargetImportSource; src == ImportSourceUSPTO {
-			numCell += " [u]"
-		} else if src == ImportSourceGoogle {
-			numCell += " [g]"
-		}
 
 		row := m.pad(prefix, 2) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
 			m.pad(rowIndexLabel(i), indexWidth)
 
-		row += m.pad(numCell, numWidth+2)
-		row += m.pad(title, titleWidth+2)
-		row += m.pad(inventors, invWidth+2)
-		row += m.pad(expDate, expWidth+2)
-		row += m.pad(m.citationStatusLabel(edge.Status), statusWidth)
+		row += m.pad(m.truncate(numCell, cols[0].width), cols[0].width+2)
+		row += m.pad(m.truncate(title, cols[1].width), cols[1].width+2)
+		row += m.pad(m.truncate(inventors, cols[2].width), cols[2].width+2)
+		row += m.pad(m.truncate(expDate, cols[3].width), cols[3].width+2)
+		row += m.pad(m.citationStatusLabel(edge.Status), cols[4].width)
 
 		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-4) + "\n")
 	}
@@ -4206,17 +4277,20 @@ func (m *Model) viewReviewQueue() string {
 		jumpPrefixWidth = 2
 	}
 
-	type col struct {
-		label string
-		width int
+	cols := []listColumn{
+		{label: "Number", width: numWidth, id: "number"},
+		{label: "Title", width: titleWidth, id: "title"},
+		{label: "Inventor", width: invWidth, id: "inventor"},
+		{label: "Expires", width: expWidth, id: "expires"},
+		{label: "Source", width: sourceWidth, id: "source"},
 	}
-	cols := []col{
-		{"Number", numWidth},
-		{"Title", titleWidth},
-		{"Inventor", invWidth},
-		{"Expires", expWidth},
-		{"Source", sourceWidth},
-	}
+	cols = fitColumns(cols, m.overlayWidth()-4-(2+jumpPrefixWidth+indexWidth), map[string]int{
+		"number":   12,
+		"title":    18,
+		"inventor": 10,
+		"expires":  10,
+		"source":   12,
+	}, []string{"title", "inventor", "source", "number", "expires"})
 
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
@@ -4256,11 +4330,11 @@ func (m *Model) viewReviewQueue() string {
 			m.pad(jumpPrefix, jumpPrefixWidth) +
 			m.pad(rowIndexLabel(i), indexWidth)
 
-		row += m.pad(edge.TargetPatent, numWidth+2)
-		row += m.pad(title, titleWidth+2)
-		row += m.pad(inventors, invWidth+2)
-		row += m.pad(expDate, expWidth+2)
-		row += m.pad(edge.SourcePatent, sourceWidth)
+		row += m.pad(m.truncate(edge.TargetPatent, cols[0].width), cols[0].width+2)
+		row += m.pad(m.truncate(title, cols[1].width), cols[1].width+2)
+		row += m.pad(m.truncate(inventors, cols[2].width), cols[2].width+2)
+		row += m.pad(m.truncate(expDate, cols[3].width), cols[3].width+2)
+		row += m.pad(m.truncate(edge.SourcePatent, cols[4].width), cols[4].width)
 
 		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-4) + "\n")
 	}
@@ -4383,17 +4457,17 @@ func (m *Model) viewPreview() string {
 		}
 	}
 
-	b.WriteString(m.detailRow(TextDetailAssignee, p.Assignee, maxW))
+	b.WriteString(m.detailRow(TextDetailAssignee, p.Assignee, maxW) + "\n")
 	if len(p.Inventors) == 0 {
-		b.WriteString(m.detailRow(TextDetailInventors, "", maxW))
+		b.WriteString(m.detailRow(TextDetailInventors, "", maxW) + "\n")
 	} else {
 		for i, inventor := range p.Inventors {
-			b.WriteString(m.detailRow(TextDetailInventor, fmt.Sprintf("%d. %s", i+1, inventor), maxW))
+			b.WriteString(m.detailRow(TextDetailInventor, fmt.Sprintf("%d. %s", i+1, inventor), maxW) + "\n")
 		}
 	}
-	b.WriteString(m.detailRow(TextDetailPublication, p.PublicationDate, maxW))
-	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate, maxW))
-	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p), maxW))
+	b.WriteString(m.detailRow(TextDetailPublication, p.PublicationDate, maxW) + "\n")
+	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate, maxW) + "\n")
+	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p), maxW) + "\n")
 	b.WriteString("\n")
 	if strings.TrimSpace(p.Abstract) == "" {
 		b.WriteString(base.Render(m.text.T(TextPreviewNoAbstract)) + "\n")
@@ -4409,14 +4483,73 @@ func overlayBase() lipgloss.Style {
 	return lipgloss.NewStyle().Background(lipgloss.Color(ColorSurface))
 }
 
+func (m *Model) overlayBackdrop() string {
+	if m.width <= 0 || m.height <= 0 {
+		return ""
+	}
+
+	idx := len(m.backStack) - 1
+	for idx >= 0 {
+		if !mustModeSpec(m.backStack[idx].mode).isOverlay {
+			break
+		}
+		idx--
+	}
+	if idx < 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, "")
+	}
+
+	backdrop := *m
+	backdrop.restore(m.backStack[idx])
+	backdrop.width = m.width
+	backdrop.height = m.height
+	backdrop.backStack = append([]navSnapshot(nil), m.backStack[:idx]...)
+	backdrop.jumpLabelsCache = nil
+
+	plain := ansi.Strip(backdrop.renderView())
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim))
+	lines := strings.Split(lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, plain), "\n")
+	for i := range lines {
+		lines[i] = dim.Render(lines[i])
+	}
+	return strings.Join(lines, "\n")
+}
+
+func overlayLine(base, overlay string, x, totalWidth int) string {
+	left := ansi.Cut(base, 0, x)
+	rightStart := x + lipgloss.Width(overlay)
+	right := ""
+	if rightStart < totalWidth {
+		right = ansi.Cut(base, rightStart, totalWidth)
+	}
+	return left + overlay + right
+}
+
 func (m *Model) previewOverlay(content string) string {
-	width := m.overlayWidth()
-	style := lipgloss.NewStyle().
+	popup := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(ColorSubtle)).
 		Padding(1, 2).
-		Width(width)
-	return style.Render(content)
+		Width(m.overlayWidth()).
+		Render(content)
+
+	if m.width <= 0 || m.height <= 0 {
+		return popup
+	}
+
+	backdrop := m.overlayBackdrop()
+	popupWidth := lipgloss.Width(popup)
+	popupHeight := lipgloss.Height(popup)
+	x := max(0, (m.width-popupWidth)/2)
+	y := max(0, (m.height-popupHeight)/2)
+
+	baseLines := strings.Split(lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, backdrop), "\n")
+	popupLines := strings.Split(popup, "\n")
+	scrimLine := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Render(strings.Repeat(" ", m.width))
+	for i := 0; i < popupHeight && y+i < len(baseLines) && i < len(popupLines); i++ {
+		baseLines[y+i] = overlayLine(scrimLine, popupLines[i], x, m.width)
+	}
+	return strings.Join(baseLines, "\n")
 }
 
 func (m *Model) overlayWidth() int {
@@ -6195,7 +6328,6 @@ func (m *Model) viewIDSEdit() string {
 	}
 	return m.renderPopup("IDS Entry · "+m.current.Number, body.String())
 }
-
 
 func (m *Model) center(s string) string {
 	if m.width <= 0 {
