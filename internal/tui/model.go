@@ -3074,14 +3074,11 @@ func (m *Model) styleRow(index int, selected int, content string) string {
 
 func (m *Model) styleRowW(index int, selected int, content string, targetWidth int) string {
 	style := lipgloss.NewStyle()
-	if m.mode != viewSplash && m.activeMode() != viewSplash {
-		style = style.Background(lipgloss.Color(ColorSurface))
-	}
 	if m.isInSelection(index) {
 		style = style.Background(lipgloss.Color(ColorSelection))
 	} else if index == selected {
 		style = style.Background(lipgloss.Color(ColorHighlight))
-	} else if index%2 != 0 && (m.mode != viewSplash && m.activeMode() != viewSplash) {
+	} else if index%2 != 0 {
 		style = style.Background(lipgloss.Color(ColorAltRow))
 	}
 	if targetWidth > 0 {
@@ -3238,21 +3235,17 @@ func wrapText(text string, width int) string {
 }
 
 func (m *Model) styleLine(content string) string {
-	style := lipgloss.NewStyle().Width(m.width)
-	if !m.isSplashContext() {
-		style = style.Background(lipgloss.Color(ColorSurface))
-	}
-	return style.Render(content)
+	return lipgloss.NewStyle().Width(m.width).Render(content)
 }
 
 func (m *Model) renderView() string {
-	mode := m.activeMode()
+	mode := m.mode
 	if mode == viewSplash {
 		return m.viewSplash()
 	}
 
-	lineStyle := lipgloss.NewStyle().Width(m.width).Background(lipgloss.Color(ColorSurface))
-	ruleStyle := lipgloss.NewStyle().Width(m.width).Background(lipgloss.Color(ColorSurface)).Foreground(lipgloss.Color(ColorSubtle))
+	lineStyle := lipgloss.NewStyle().Width(m.width)
+	ruleStyle := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorSubtle))
 
 	var b strings.Builder
 	b.WriteString(m.renderScreenHeader())
