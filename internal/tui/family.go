@@ -6,11 +6,12 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/importer"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var validFamilyRelations = map[string]string{
@@ -46,11 +47,17 @@ func (m *Model) buildFamilyTree() []familyNode {
 	return m.buildFamilyTreeFresh()
 }
 
+const maxFamilyNodes = 250
+
 func (m *Model) buildFamilyTreeFresh() []familyNode {
 	allEdges, _ := m.repo.ListAllFamilyEdges(m.ctx, m.ProjectID)
+	if len(allEdges) == 0 {
+		return nil
+	}
 
 	parentToChildren := map[string][]domain.FamilyEdge{}
 	childToParents := map[string][]domain.FamilyEdge{}
+
 	for _, e := range allEdges {
 		parentToChildren[e.ParentNumber] = append(parentToChildren[e.ParentNumber], e)
 		childToParents[e.ChildNumber] = append(childToParents[e.ChildNumber], e)
@@ -61,14 +68,13 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 		return nil
 	}
 
-	// BFS to find all connected nodes and assign depths relative to current.
-	// We use a modified BFS that ensures a child's depth is always parent.depth + 1.
-	depths := map[string]int{current: 0}
-
-	// First, find all reachable nodes to establish the set.
+	// 1. Find reachable nodes
 	reachable := map[string]bool{current: true}
 	q := []string{current}
 	for i := 0; i < len(q); i++ {
+		if len(reachable) >= maxFamilyNodes {
+			break
+		}
 		n := q[i]
 		for _, e := range childToParents[n] {
 			if !reachable[e.ParentNumber] {
@@ -84,63 +90,77 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 		}
 	}
 
-	// Calculate depths based on relationships.
-	// Roots get an initial depth, then propagate.
-	// This is a simple approximation for a DAG.
-	for i := 0; i < 10; i++ { // Iterate a few times to stabilize depths
-		changed := false
-		for n := range reachable {
-			for _, e := range childToParents[n] {
-				if d, ok := depths[n]; ok {
-					if oldD, ok2 := depths[e.ParentNumber]; !ok2 || oldD > d-1 {
-						depths[e.ParentNumber] = d - 1
-						changed = true
-					}
-				}
-			}
-			for _, e := range parentToChildren[n] {
-				if d, ok := depths[n]; ok {
-					if oldD, ok2 := depths[e.ChildNumber]; !ok2 || oldD < d+1 {
-						depths[e.ChildNumber] = d + 1
-						changed = true
-					}
-				}
-			}
-		}
-		if !changed {
-			break
-		}
-	}
+	// 2. Compute depths (longest path from roots) - safe for DAGs
+	depths := make(map[string]int, len(reachable))
+	inDegree := make(map[string]int, len(reachable))
 
-	nodeSet := reachable
-
-	// Find roots: nodes with no parent within the connected component.
-	var roots []string
-	for node := range nodeSet {
-		hasParent := false
+	for node := range reachable {
 		for _, e := range childToParents[node] {
-			if nodeSet[e.ParentNumber] {
-				hasParent = true
-				break
+			if reachable[e.ParentNumber] {
+				inDegree[node]++
 			}
 		}
-		if !hasParent {
+	}
+
+	var roots []string
+	for node := range reachable {
+		if inDegree[node] == 0 {
 			roots = append(roots, node)
+			depths[node] = 0
 		}
 	}
-	sort.Strings(roots)
 
-	// DFS from roots, producing the flat ordered node list.
-	//
-	// linePrefix: the visual prefix for this node's rendered line (inherited
-	//             from the grandparent's childrenLinePrefix calculation).
-	// childrenLinePrefix: the prefix that will become linePrefix for each
-	//                     direct child of this node.
+	queue := make([]string, len(roots))
+	copy(queue, roots)
+	processed := 0
+
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		processed++
+
+		for _, e := range parentToChildren[n] {
+			child := e.ChildNumber
+			if !reachable[child] {
+				continue
+			}
+
+			// Take maximum depth (important for diamonds)
+			if newD := depths[n] + 1; newD > depths[child] {
+				depths[child] = newD
+			}
+
+			inDegree[child]--
+			if inDegree[child] == 0 {
+				queue = append(queue, child)
+			}
+		}
+	}
+
+	// Only warn once and only if real cycle
+	if processed != len(reachable) {
+		if m.message != "⚠️ Patent family has cycles" {
+			m.message = "⚠️ Patent family has cycles or complex structure"
+		}
+	}
+
+	// 3. Build visual tree (allow limited duplication for diamonds)
 	var nodes []familyNode
-	visited := map[string]bool{}
+	visited := map[string]bool{}   // global visited (to avoid infinite)
+	visitCount := map[string]int{} // how many times we rendered this node
 
 	var dfs func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int)
 	dfs = func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int) {
+		if len(nodes) >= maxFamilyNodes {
+			return
+		}
+
+		visitCount[number]++
+		// Allow a node to appear up to 2 times (good compromise for diamonds)
+		if visitCount[number] > 2 {
+			return
+		}
+
 		idx := len(nodes)
 		nodes = append(nodes, familyNode{
 			number:    number,
@@ -149,49 +169,58 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 			parentIdx: parentIdx,
 			prefix:    linePrefix,
 			connector: connector,
+			// You can add a field like: isDuplicate: visitCount[number] > 1
 		})
 
-		if visited[number] {
-			return
+		// Mark as visited only on first visit
+		if visitCount[number] == 1 {
+			visited[number] = true
 		}
-		visited[number] = true
 
+		// Get children
 		var childEdges []domain.FamilyEdge
 		for _, e := range parentToChildren[number] {
-			// Only follow edges that represent the next hierarchical level
-			if nodeSet[e.ChildNumber] && depths[e.ChildNumber] == depths[number]+1 {
+			if reachable[e.ChildNumber] && depths[e.ChildNumber] == depths[number]+1 {
 				childEdges = append(childEdges, e)
 			}
 		}
+
 		sort.Slice(childEdges, func(i, j int) bool {
 			return childEdges[i].ChildNumber < childEdges[j].ChildNumber
 		})
 
 		for i, e := range childEdges {
+			if len(nodes) >= maxFamilyNodes {
+				break
+			}
 			isLast := i == len(childEdges)-1
+
 			childConnector := "├─ "
-			grandChildrenLinePrefix := childrenLinePrefix + "│  "
+			grandChildrenPrefix := childrenLinePrefix + "│ "
 			if isLast {
 				childConnector = "└─ "
-				grandChildrenLinePrefix = childrenLinePrefix + "   "
+				grandChildrenPrefix = childrenLinePrefix + "  "
 			}
-			dfs(e.ChildNumber, e.RelationType, childrenLinePrefix, childConnector, grandChildrenLinePrefix, idx)
+
+			dfs(e.ChildNumber, e.RelationType, childrenLinePrefix, childConnector, grandChildrenPrefix, idx)
 		}
 	}
 
+	sort.Strings(roots)
 	for _, root := range roots {
+		if len(nodes) >= maxFamilyNodes {
+			break
+		}
 		dfs(root, "", "", "", "", -1)
 	}
 
-	for i, node := range nodes {
-		if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, node.number); err == nil {
-			if p.Title != "" {
-				nodes[i].title = p.Title
-			}
-			switch {
-			case len(p.GrantDate) >= 4:
+	// 4. Enrich with patent info
+	for i := range nodes {
+		if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, nodes[i].number); err == nil {
+			nodes[i].title = p.Title
+			if len(p.GrantDate) >= 4 {
 				nodes[i].grantYear = p.GrantDate[:4]
-			case len(p.PublicationDate) >= 4:
+			} else if len(p.PublicationDate) >= 4 {
 				nodes[i].grantYear = p.PublicationDate[:4]
 			}
 			nodes[i].importSource = p.ImportSource
