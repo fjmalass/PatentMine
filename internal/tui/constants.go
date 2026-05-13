@@ -218,6 +218,8 @@ const (
 	jumpLabelFamilyChildren   = "C"
 	jumpLabelNotes            = "n"
 	jumpLabelLatestAssignment = "L"
+	jumpLabelImportSource     = "v"
+	jumpLabelTags             = "t"
 
 	inventorJumpNumberLabels = "123456789"
 

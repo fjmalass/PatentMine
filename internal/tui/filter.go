@@ -104,7 +104,7 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.tagFilter = EmptyFilter
 		m.filter = EmptyFilter
 		m.message = "all filters cleared"
-		m.mode = viewList
+		m.setMode(viewList)
 		return m.refreshList()
 	default:
 		m.err = fmt.Sprintf("internal error: unhandled filter type: '%s', only [%s] supported",
@@ -126,7 +126,7 @@ func (m *Model) statusFilterCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.statusFilter = canonical
-	m.mode = viewList
+	m.setMode(viewList)
 	if canonical == statusFilterNone {
 		m.message = "showing all patents (no status filter)"
 	} else {
@@ -162,7 +162,7 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		m.message = "filtering by classification: " + m.classFilter
 	}
-	m.mode = viewList
+	m.setMode(viewList)
 	return m.refreshList()
 }
 
@@ -175,7 +175,7 @@ func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.filter = strings.Join(args, " ")
 		m.message = "filtering by inventor: " + m.filter
 	}
-	m.mode = viewList
+	m.setMode(viewList)
 	return m.refreshList()
 }
 
@@ -183,7 +183,7 @@ func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 || args[0] == "clear" {
 		m.countryFilter = EmptyFilter
 		m.message = "country filter cleared"
-		m.mode = viewList
+		m.setMode(viewList)
 		return m.refreshList()
 	}
 	code := strings.ToUpper(strings.TrimSpace(args[0]))
@@ -200,7 +200,7 @@ func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 	m.countryFilter = code
 	m.message = "filtering by country: " + code
-	m.mode = viewList
+	m.setMode(viewList)
 	return m.refreshList()
 }
 
@@ -284,7 +284,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		m.countryFilter = code
 		m.statusFilter = domain.CitationStatusStored
 		m.message = fmt.Sprintf("showing stored patents from %s", code)
-		m.mode = viewList
+		m.setMode(viewList)
 		return m.refreshList()
 	case detailActionFirstClaim:
 		if m.current.FirstClaim == "" {
@@ -323,7 +323,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 	}
 	m.backStack = append(m.backStack, m.snapshot())
 	m.filter = field.value
-	m.mode = viewList
+	m.setMode(viewList)
 	model, cmd := m.refreshList()
 	updated := model.(*Model)
 	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(field.label), field.value)
@@ -334,7 +334,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 func (m *Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 	inventors := m.current.Inventors
 	if len(inventors) == 0 {
-		m.mode = viewDetail
+		m.setMode(viewDetail)
 		return m, nil
 	}
 	selected := clamp(m.inventorSelected, 0, len(inventors)-1)
@@ -342,7 +342,7 @@ func (m *Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 
 	m.backStack = append(m.backStack, m.snapshot())
 	m.filter = inventor
-	m.mode = viewList
+	m.setMode(viewList)
 	model, cmd := m.refreshList()
 	updated := model.(*Model)
 	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(TextDetailInventor), inventor)

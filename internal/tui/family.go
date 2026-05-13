@@ -764,7 +764,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 	m.invalidateFamilyCaches()
 	m.message = fmt.Sprintf("family edge added: %s → %s (%s)", parentNumber, childNumber, relType)
-	m.mode = viewFamily
+	m.setMode(viewFamily)
 	return m, nil
 }
 

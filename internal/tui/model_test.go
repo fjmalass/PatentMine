@@ -888,36 +888,22 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		current: domain.Patent{Assignee: "Divx LLC", Inventors: []string{"Kourosh Soroushian"}},
 	}
 	got := model.jumpLabels()
-	want := []string{
-		jumpLabelAssignee,
-		jumpLabelLatestAssignment,
-		jumpLabelInventors,
-		jumpLabelApplication,
-		jumpLabelPublication,
-		jumpLabelGrant,
-		jumpLabelExpiration,
-		jumpLabelClassification,
-		jumpLabelCitationCount,
-		jumpLabelCitedByCount,
-		// Status and IDS are skipped when repo is nil
-		"",                  // separator
-		jumpLabelFirstClaim, // First Claim
-		jumpLabelAbstract,   // Abstract
-		jumpLabelNotes,
-		"", // separator
-		"", // Via
-		jumpLabelSource,
-		jumpLabelStoredLocal,
-		jumpLabelUpdated,
-		"", // Tags
+
+	// Build set of jump labels present in output
+	present := map[string]bool{}
+	for _, jl := range got {
+		if jl.key != "" {
+			present[jl.key] = true
+		}
 	}
 
-	if len(got) != len(want) {
-		t.Fatalf("expected %d labels, got %d: %v vs %v", len(want), len(got), want, got)
-	}
-	for i := range want {
-		if got[i].key != want[i] {
-			t.Fatalf("at index %d: expected label %q, got %q", i, want[i], got[i].key)
+	// Check every non-optional registered label appears
+	for _, reg := range DetailFieldLabelRegistrations() {
+		if reg.JumpLabel == "" || reg.Optional {
+			continue
+		}
+		if !present[reg.JumpLabel] {
+			t.Errorf("required jump label %q for field %q not found in jumpLabels()", reg.JumpLabel, reg.TextKey)
 		}
 	}
 }

@@ -157,6 +157,7 @@ type Model struct {
 	overlayBackdropCache       string
 	overlayBackdropCacheKey    string
 	version                    string
+	activeKeys                 KeyMap
 }
 
 type detailCache struct {
@@ -479,7 +480,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.current = msg.patent
 		m.populateDetailCache()
-		m.mode = msg.mode
+		m.setMode(msg.mode)
 		m.citesSelected = msg.citesSelected
 		m.citedBySelected = msg.citedBySelected
 		m.familySelected = msg.familySelected
@@ -524,7 +525,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == keyCtrlC {
 				return m, tea.Quit
 			}
-			m.mode = viewSplash
+			m.setMode(viewSplash)
 			return m, nil
 		}
 		if m.input.Focused() {
@@ -584,7 +585,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.projects) > 0 {
 					m.ProjectID = m.projects[m.projectSelected].ID
 					m.saveLastProject()
-					m.mode = viewList
+					m.setMode(viewList)
 					return m.refreshList()
 				}
 			case keyEvents:
@@ -592,21 +593,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ProjectID = m.projects[m.projectSelected].ID
 				}
 				m.projectEventsSelected = 0
-				m.mode = viewProjectEvents
+				m.setMode(viewProjectEvents)
 				return m, nil
 			case keyInvoices:
 				if len(m.projects) > 0 {
 					m.ProjectID = m.projects[m.projectSelected].ID
 				}
 				m.projectInvoicesSelected = 0
-				m.mode = viewProjectInvoices
+				m.setMode(viewProjectInvoices)
 				return m, nil
 			case keyIDS:
 				if len(m.projects) > 0 {
 					m.ProjectID = m.projects[m.projectSelected].ID
 				}
 				m.projectIDSSelected = 0
-				m.mode = viewProjectIDS
+				m.setMode(viewProjectIDS)
 				return m, nil
 			case keyNew:
 				m.input.Focus()
@@ -984,6 +985,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailSelected = m.indexJumpLabel(jumpLabelAbstract)
 				return m.navigateTo(viewAbstract), nil
 			}
+		case keyText:
+			if m.mode == viewDetail {
+				m.detailSelected = m.indexJumpLabel(jumpLabelTags)
+				return m, nil
+			}
 		default:
 			if isCountKey(msg.String()) {
 				// Don't start a count with '0'
@@ -1061,7 +1067,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.classFilters = []string{code}
 					m.classFilterOp = domain.FilterOpAnd
 					m.classFilter = code
-					m.mode = viewList
+					m.setMode(viewList)
 					return m.refreshList()
 				}
 				return m.goBack()
@@ -1096,7 +1102,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.removeSelectedFamilyEdge()
 			}
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.mode = viewConfirmDelete
+				m.setMode(viewConfirmDelete)
 				return m, nil
 			}
 		case keyVimDown, keyArrowDown:
@@ -1194,7 +1200,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.goBack()
 			}
 			if m.mode == viewConfirmDelete {
-				m.mode = viewList
+				m.setMode(viewList)
 				return m, nil
 			}
 			if m.mode == viewPreview {
@@ -1352,7 +1358,7 @@ func (m *Model) navigateTo(mode viewMode) *Model {
 		return m
 	}
 	m.backStack = append(m.backStack, m.snapshot())
-	m.mode = mode
+	m.setMode(mode)
 	m.err = EmptyError
 	m.message = EmptyMessage
 
@@ -1421,7 +1427,7 @@ func (m *Model) effectiveWidth() int {
 }
 
 func (m *Model) restore(snapshot navSnapshot) *Model {
-	m.mode = snapshot.mode
+	m.setMode(snapshot.mode)
 	m.patents = snapshot.patents
 	m.projects = snapshot.projects
 	m.selected = snapshot.selected
@@ -1499,7 +1505,7 @@ func (m *Model) goBack() (tea.Model, tea.Cmd) {
 		return m.refreshList()
 	}
 	if m.mode != viewList {
-		m.mode = viewList
+		m.setMode(viewList)
 		return m.refreshList()
 	}
 	return m, nil
@@ -1536,7 +1542,7 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		} else {
 			m.filter = EmptyFilter
 		}
-		m.mode = viewList
+		m.setMode(viewList)
 		return m.refreshList()
 	case commandOpen:
 		if len(command.Args) != 1 {
@@ -2349,7 +2355,7 @@ func (m *Model) reviewCommand(args []string) (tea.Model, tea.Cmd) {
 
 func (m *Model) openReviewQueue(status string) (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
-	m.mode = viewReview
+	m.setMode(viewReview)
 	m.reviewStatus = status
 	m.reviewSelected = 0
 	m.err = EmptyError
@@ -2435,7 +2441,7 @@ func (m *Model) openPatent(number string) (tea.Model, tea.Cmd) {
 	}
 	m.current = p
 	m.populateDetailCache()
-	m.mode = viewDetail
+	m.setMode(viewDetail)
 	m.message = "opened " + p.Number
 	return m, m.enrichClassificationDescriptionsCommand(number)
 }
@@ -2463,7 +2469,7 @@ func (m *Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
 	m.pendingBundle = bundle
 	m.pendingCitation = edge
-	m.mode = viewPreview
+	m.setMode(viewPreview)
 	m.message = fmt.Sprintf(m.text.T(TextMessagePreviewLoaded), bundle.Patent.Number)
 	return m, nil
 }
@@ -2534,7 +2540,7 @@ func (m *Model) storePendingPatent() (tea.Model, tea.Cmd) {
 	}
 	m.current = p
 	m.populateDetailCache()
-	m.mode = viewDetail
+	m.setMode(viewDetail)
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), number)
 	return m.refreshList()
 }
@@ -2644,7 +2650,7 @@ func (m *Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
 	m.pendingBundle = bundle
 	m.pendingCitation = edge
-	m.mode = viewPreview
+	m.setMode(viewPreview)
 	m.message = fmt.Sprintf(m.text.T(TextMessagePreviewLoaded), bundle.Patent.Number)
 	return m, nil
 }
@@ -2807,7 +2813,7 @@ func (m *Model) currentCitationEdges() ([]domain.CitationEdge, error) {
 
 func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.mode = viewSplash
+		m.setMode(viewSplash)
 		m = m.reloadProjects()
 		// Set selection to current project
 		for i, p := range m.projects {
@@ -2822,7 +2828,7 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 	sub := args[0]
 	switch sub {
 	case projectSubList:
-		m.mode = viewSplash
+		m.setMode(viewSplash)
 		m = m.reloadProjects()
 		for i, p := range m.projects {
 			if p.ID == m.ProjectID {
@@ -2856,7 +2862,7 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		m.mode = viewList
+		m.setMode(viewList)
 		return m.refreshList()
 	case projectSubAdd:
 		if len(args) != 2 {
@@ -2887,7 +2893,7 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		m.ProjectID = p.ID
 		m.saveLastProject()
-		m.mode = viewList
+		m.setMode(viewList)
 		m.message = "switched to project: " + p.Name
 		return m.refreshList()
 	case projectSubStatus:
@@ -2982,14 +2988,14 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			m.ProjectID = m.projects[m.projectSelected].ID
 		}
 		m.projectEventsSelected = 0
-		m.mode = viewProjectEvents
+		m.setMode(viewProjectEvents)
 		return m, nil
 	case projectSubInvoices:
 		if len(m.projects) > 0 {
 			m.ProjectID = m.projects[m.projectSelected].ID
 		}
 		m.projectInvoicesSelected = 0
-		m.mode = viewProjectInvoices
+		m.setMode(viewProjectInvoices)
 		return m, nil
 	case projectSubInvoice:
 		if len(args) < 2 {
@@ -3123,7 +3129,7 @@ func (m *Model) summarize() (tea.Model, tea.Cmd) {
 		m.logger.Error("summary artifact insert failed", "patent", m.current.Number, "error", err)
 		return m, nil
 	}
-	m.mode = viewAI
+	m.setMode(viewAI)
 	m.message = "created local summary"
 	return m, nil
 }
@@ -3144,7 +3150,7 @@ func (m *Model) compare(otherNumber string) (tea.Model, tea.Cmd) {
 		m.logger.Error("comparison artifact insert failed", "patent", m.current.Number, "other", otherNumber, "error", err)
 		return m, nil
 	}
-	m.mode = viewAI
+	m.setMode(viewAI)
 	m.message = "created local comparison"
 	return m, nil
 }
@@ -3168,7 +3174,7 @@ func (m *Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 		m.logActivity(ActivityRefAdd, m.current.Number, "")
 		m.message = "reference added"
 	case refActionExport:
-		m.mode = viewRefs
+		m.setMode(viewRefs)
 		m.message = "Markdown reference export is shown below"
 	default:
 		m.err = "usage: :ref add or :ref export"
@@ -4081,6 +4087,11 @@ func (m *Model) detailFields() []detailField {
 			action:       detailActionFamily,
 		})
 
+		fields = append(fields,
+			detailField{separator: true},
+			detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags), jumpLabel: jumpLabelTags},
+		)
+
 		// Add Status and IDS
 		if color, ok := StatusColors[p.Status]; ok {
 			fields = append(fields, detailField{
@@ -4157,11 +4168,10 @@ func (m *Model) detailFields() []detailField {
 	}
 	fields = append(fields,
 		detailField{separator: true},
-		detailField{label: TextDetailImportSource, value: importSourceValue},
+		detailField{label: TextDetailImportSource, value: importSourceValue, jumpLabel: jumpLabelImportSource},
 		detailField{label: TextDetailSource, value: p.SourceGoogleURL, jumpLabel: jumpLabelSource},
 		detailField{label: TextDetailStoredLocal, value: formatStoredTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
 		detailField{label: TextDetailUpdated, value: formatStoredTime(p.UpdatedAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelUpdated},
-		detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags)},
 	)
 
 	return fields
@@ -4812,7 +4822,7 @@ func (m *Model) patentDateCommand(args []string) (tea.Model, tea.Cmd) {
 		if len(m.backStack) > 0 {
 			m.backStack = m.backStack[:len(m.backStack)-1]
 		}
-		m.mode = viewDetail
+		m.setMode(viewDetail)
 	}
 
 	return m, nil
@@ -4844,13 +4854,13 @@ func (m *Model) patentNumberCommand(args []string) (tea.Model, tea.Cmd) {
 
 func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 	if m.selected < 0 || m.selected >= len(m.patents) {
-		m.mode = viewList
+		m.setMode(viewList)
 		return m, nil
 	}
 	p := m.patents[m.selected]
 	if err := m.repo.DeletePatent(m.ctx, m.ProjectID, p.Number); err != nil {
 		m.err = err.Error()
-		m.mode = viewList
+		m.setMode(viewList)
 		return m, nil
 	}
 
@@ -4866,7 +4876,7 @@ func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 
 	m.logActivity(ActivityPatentDelete, p.Number, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageDeletedPatent), p.Number)
-	m.mode = viewList
+	m.setMode(viewList)
 	return m.refreshList()
 }
 
@@ -6077,7 +6087,7 @@ func (m *Model) viewProjectIDS() string {
 func (m *Model) idsCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.projectIDSSelected = 0
-		m.mode = viewProjectIDS
+		m.setMode(viewProjectIDS)
 		return m, nil
 	}
 	switch args[0] {
