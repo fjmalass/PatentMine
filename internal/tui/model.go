@@ -59,6 +59,8 @@ const (
 	viewUSPTOKeyWarning      viewMode = "uspto-key-warning"
 	viewBulkConfirm          viewMode = "bulk-confirm"
 	viewStatusSelect         viewMode = "status-select"
+	viewProjectTags          viewMode = "project-tags"
+	viewTagSelect            viewMode = "tag-select"
 )
 
 type bulkActionType string
@@ -119,6 +121,7 @@ type Model struct {
 	classFilters               []string
 	classFilterOp              string
 	classFilter                string // display label derived from classFilters
+	tagFilter                  string
 	countryFilter              string
 	statusFilter               string // domain.CitationStatusStored (default), "ignored", "under_review", statusFilterNone
 	citesStatusFilter          string // "" (all), "stored", "ignored", "under_review"
@@ -145,6 +148,11 @@ type Model struct {
 	popupSearchQuery           string
 	popupSearchActive          bool
 	statusSelected             int
+	projectTagsSelected        int
+	tagSelectSelected          int
+	projectTags                []domain.TagWithCount
+	availableTags              []domain.Tag
+	selectedPatentTags         map[int64]bool
 	familyRefreshElapsed       string
 	overlayBackdropCache       string
 	overlayBackdropCacheKey    string
@@ -163,6 +171,7 @@ type detailCache struct {
 	Children            []domain.FamilyEdge
 	Notes               []domain.ResearchNote
 	IDSEntries          []domain.IDSEntry
+	Tags                []domain.Tag
 }
 
 type navSnapshot struct {
@@ -199,6 +208,7 @@ type navSnapshot struct {
 	classFilters               []string
 	classFilterOp              string
 	classFilter                string
+	tagFilter                  string
 	countryFilter              string
 	statusFilter               string
 	citesStatusFilter          string
@@ -266,7 +276,10 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		text:            EnglishText(),
 		statusFilter:    domain.CitationStatusStored,
 		importCfg:       cfg,
-		version:         version,
+		version:                version,
+		projectTags:            []domain.TagWithCount{},
+		availableTags:          []domain.Tag{},
+		selectedPatentTags:     make(map[int64]bool),
 	}
 
 	if model.importCfg.ImportSource == config.ImportSourceUSPTO && model.importCfg.USPTO.APIKey == "" {
@@ -767,6 +780,62 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.mode == viewProjectTags {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				m.projectTagsSelected = clamp(m.projectTagsSelected+1, 0, len(m.projectTags)-1)
+			case keyVimUp, keyArrowUp:
+				m.projectTagsSelected = clamp(m.projectTagsSelected-1, 0, max(0, len(m.projectTags)-1))
+			case keyDelete:
+				if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
+					tag := m.projectTags[m.projectTagsSelected]
+					if err := m.repo.DeleteTag(m.ctx, tag.ID); err != nil {
+						m.err = err.Error()
+					} else {
+						m.message = fmt.Sprintf("tag '%s' deleted", tag.Name)
+						m.reloadProjectTags()
+					}
+				}
+			case "r":
+				if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
+					tag := m.projectTags[m.projectTagsSelected]
+					m.input.Focus()
+					m.input.SetValue(fmt.Sprintf(":tag rename %s ", tag.Name))
+					return m, nil
+				}
+			case keyEsc, keyBack:
+				return m.goBack()
+			}
+			return m, nil
+		}
+		if m.mode == viewTagSelect {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				m.tagSelectSelected = clamp(m.tagSelectSelected+1, 0, len(m.availableTags)-1)
+			case keyVimUp, keyArrowUp:
+				m.tagSelectSelected = clamp(m.tagSelectSelected-1, 0, max(0, len(m.availableTags)-1))
+			case " ", keyEnter:
+				if m.tagSelectSelected >= 0 && m.tagSelectSelected < len(m.availableTags) {
+					tag := m.availableTags[m.tagSelectSelected]
+					if m.selectedPatentTags[tag.ID] {
+						if err := m.repo.RemoveTagFromPatent(m.ctx, m.current.Number, tag.ID); err != nil {
+							m.err = err.Error()
+						} else {
+							m.selectedPatentTags[tag.ID] = false
+						}
+					} else {
+						if err := m.repo.ApplyTagToPatent(m.ctx, m.current.Number, tag.ID); err != nil {
+							m.err = err.Error()
+						} else {
+							m.selectedPatentTags[tag.ID] = true
+						}
+					}
+				}
+			case keyEsc, keyBack:
+				return m.goBack()
+			}
+			return m, nil
+		}
 		if m.mode == viewNoteEdit {
 			switch msg.String() {
 			case "ctrl+s":
@@ -1104,6 +1173,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m = m.navigateTo(viewFamily)
 			m.familySelected = familyCurrentIdx(m.buildFamilyTree())
+		case keyTag:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.selected]
+			}
+			if m.current.Number != "" {
+				m = m.navigateTo(viewTagSelect).reloadAvailableTags()
+			}
 		case keyText:
 			m = m.navigateTo(viewText)
 		case keyNotes: // which is "n"
@@ -1321,6 +1397,7 @@ func (m *Model) snapshot() navSnapshot {
 		classFilters:               append([]string(nil), m.classFilters...),
 		classFilterOp:              m.classFilterOp,
 		classFilter:                m.classFilter,
+		tagFilter:                  m.tagFilter,
 		countryFilter:              m.countryFilter,
 		statusFilter:               m.statusFilter,
 		citesStatusFilter:          m.citesStatusFilter,
@@ -1377,6 +1454,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.classFilters = snapshot.classFilters
 	m.classFilterOp = snapshot.classFilterOp
 	m.classFilter = snapshot.classFilter
+	m.tagFilter = snapshot.tagFilter
 	m.countryFilter = snapshot.countryFilter
 	m.statusFilter = snapshot.statusFilter
 	m.citesStatusFilter = snapshot.citesStatusFilter
@@ -1540,6 +1618,8 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		m.message = "PatentMine " + m.displayVersion()
 	case commandProject:
 		return m.projectCommand(command.Args)
+	case commandTag:
+		return m.tagCommand(command.Args)
 	case commandPurge:
 		return m.purgeCommand(command.Args)
 	case commandCompact:
@@ -2219,6 +2299,7 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 		StatusFilter:  m.statusFilter,
 		ClassFilters:  m.classFilters,
 		ClassFilterOp: m.classFilterOp,
+		TagFilter:     m.tagFilter,
 		SortColumn:    m.sortColumn,
 		SortOrder:     m.sortOrder,
 		SortColumn2:   m.sortColumn2,
@@ -3203,6 +3284,7 @@ func (m *Model) listColumns() []listColumn {
 	idsWidth := 11
 	updatedWidth := 16
 	notesWidth := 6
+	tagsWidth := 10
 
 	return []listColumn{
 		{"Number", numWidth, domain.SortColumnNumber, jumpLabelPublication},
@@ -3213,6 +3295,7 @@ func (m *Model) listColumns() []listColumn {
 		{"Status", statusWidth, domain.SortColumnStatus, keyStatus},
 		{"Updated", updatedWidth, domain.SortColumnUpdated, jumpLabelUpdated},
 		{"Notes", notesWidth, domain.SortColumnNotes, jumpLabelNotes},
+		{"Tags", tagsWidth, domain.SortColumnTags, ""},
 		{"IDS", idsWidth, listColumnIDS, keyIDS},
 	}
 }
@@ -3230,6 +3313,7 @@ func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
 		domain.SortColumnStatus:     8,
 		domain.SortColumnUpdated:    10,
 		domain.SortColumnNotes:      5,
+		domain.SortColumnTags:       5,
 		listColumnIDS:               7,
 	}
 	shrinkOrder := []string{
@@ -3242,6 +3326,7 @@ func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
 		domain.SortColumnStatus,
 		domain.SortColumnExpiration,
 		domain.SortColumnNotes,
+		domain.SortColumnTags,
 	}
 	return fitColumns(cols, available, minWidths, shrinkOrder)
 }
@@ -3460,6 +3545,10 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewBulkConfirm()
 	case viewStatusSelect:
 		return m.viewStatusSelect()
+	case viewProjectTags:
+		return m.viewProjectTags()
+	case viewTagSelect:
+		return m.viewTagSelect()
 	default:
 		return ""
 	}
@@ -3578,6 +3667,7 @@ func (m *Model) viewList() string {
 			idsByPatent[entry.PatentNumber] = string(entry.Status)
 		}
 	}
+	tagsByPatent, _ := m.repo.ListPatentTagsForProject(m.ctx, m.ProjectID)
 
 	idxWidth := len(fmt.Sprintf("%d", len(m.patents)))
 	if idxWidth < 2 {
@@ -3682,6 +3772,11 @@ func (m *Model) viewList() string {
 		}
 		if p.NotesCount > 0 {
 			rowValues[domain.SortColumnNotes] = fmt.Sprintf("%d", p.NotesCount)
+		}
+		if tags, ok := tagsByPatent[p.Number]; ok {
+			rowValues[domain.SortColumnTags] = formatTags(tags)
+		} else {
+			rowValues[domain.SortColumnTags] = "-"
 		}
 		if idsStatus, ok := idsByPatent[p.Number]; ok && idsStatus != "" {
 			rowValues[listColumnIDS] = idsStatus
@@ -4066,6 +4161,7 @@ func (m *Model) detailFields() []detailField {
 		detailField{label: TextDetailSource, value: p.SourceGoogleURL, jumpLabel: jumpLabelSource},
 		detailField{label: TextDetailStoredLocal, value: formatStoredTime(p.StoredAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelStoredLocal},
 		detailField{label: TextDetailUpdated, value: formatStoredTime(p.UpdatedAt, m.text.T(TextValueUnknown)), jumpLabel: jumpLabelUpdated},
+		detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags)},
 	)
 
 	return fields
@@ -4157,6 +4253,7 @@ func (m *Model) populateDetailCache() {
 	parents, children, _ := m.repo.ListFamilyEdges(m.ctx, m.ProjectID, p.Number)
 	notes, _ := m.repo.ListNotes(m.ctx, m.ProjectID, p.Number)
 	ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+	tags, _ := m.repo.GetPatentTags(m.ctx, p.Number)
 
 	m.detailCache = detailCache{
 		Number:              p.Number,
@@ -4170,6 +4267,7 @@ func (m *Model) populateDetailCache() {
 		Children:            children,
 		Notes:               notes,
 		IDSEntries:          ids,
+		Tags:                tags,
 	}
 }
 func (m *Model) formatExpiration(p domain.Patent) string {
@@ -5453,6 +5551,10 @@ func (m *Model) popupSearchFrom(next bool) *Model {
 		s = invoiceSearchable{m}
 	case viewProjectIDS:
 		s = idsSearchable{m}
+	case viewProjectTags:
+		s = tagSearchable{m}
+	case viewTagSelect:
+		s = tagSelectSearchable{m}
 	case viewFamily:
 		s = familySearchable{m}
 	default:

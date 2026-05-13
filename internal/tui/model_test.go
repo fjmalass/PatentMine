@@ -856,8 +856,8 @@ func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
 	model.patents, _ = model.repo.ListPatents(model.ctx, model.ProjectID, storage.ListPatentsOptions{})
 	model.jumpLabelsCache = model.jumpLabels()
 
-	// Select 3rd patent (index 2). Labels are: 0-8 (headers), 9, 10, 11 (US3)
-	label := model.jumpLabelsCache[11]
+	// Select 3rd patent (index 2). Labels are: 0-9 (headers), 10, 11, 12 (US3)
+	label := model.jumpLabelsCache[12]
 	updated, _ := model.applyJump(label.key)
 	got := updated.(*Model)
 	if got.selected != 2 {
@@ -909,6 +909,7 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		jumpLabelSource,
 		jumpLabelStoredLocal,
 		jumpLabelUpdated,
+		"", // Tags
 	}
 
 	if len(got) != len(want) {
@@ -1701,3 +1702,15 @@ func (stubRepo) ListIDSNPLEntries(context.Context, string) ([]domain.IDSEntry, e
 	return nil, nil
 }
 func (stubRepo) DeleteIDSNPLEntry(context.Context, int64) error { return nil }
+
+// Tag stubs
+func (stubRepo) CreateTag(context.Context, string, string, string) (int64, error)            { return 0, nil }
+func (stubRepo) ListTagsWithCounts(context.Context, string) ([]domain.TagWithCount, error)    { return nil, nil }
+func (stubRepo) DeleteTag(context.Context, int64) error                                       { return nil }
+func (stubRepo) RenameTag(context.Context, int64, string) error                               { return nil }
+func (stubRepo) UpdateTagColor(context.Context, int64, string) error                          { return nil }
+func (stubRepo) GetTagByName(context.Context, string, string) (domain.Tag, error)             { return domain.Tag{}, nil }
+func (stubRepo) ApplyTagToPatent(context.Context, string, int64) error                        { return nil }
+func (stubRepo) RemoveTagFromPatent(context.Context, string, int64) error                     { return nil }
+func (stubRepo) GetPatentTags(context.Context, string) ([]domain.Tag, error)                  { return nil, nil }
+func (stubRepo) ListPatentTagsForProject(context.Context, string) (map[string][]domain.Tag, error) { return nil, nil }

@@ -111,6 +111,7 @@ var PatentSortColumns = []string{
 	SortColumnUpdated,
 	SortColumnNotes,
 	SortColumnIDS,
+	SortColumnTags,
 }
 
 const (

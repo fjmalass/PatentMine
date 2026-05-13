@@ -43,6 +43,16 @@ const (
 	commandVersion            = "version"
 	commandExit               = "exit"
 	commandFamilyPull         = "pull"
+	commandTag                = "tag"
+
+	// :tag subcommands
+	tagSubAdd    = "add"
+	tagSubList   = "list"
+	tagSubDelete = "delete"
+	tagSubRename = "rename"
+	tagSubColor  = "color"
+	tagSubFilter = "filter"
+	tagSubHelp   = "help"
 
 	// :project subcommands
 	projectSubID            = "id"
@@ -163,6 +173,7 @@ const (
 	keyJump              = "f"
 	keyFamily            = "F"
 	keyProject           = "P"
+	keyTag               = "T"
 	keyFirstClaim        = "1"
 	keyHelp              = "?"
 	keyYes               = "y"
@@ -258,6 +269,7 @@ const (
 	ColorThemeDelete          = "196" // Red
 	ColorThemeFamily          = "213" // Purple
 	ColorThemeIDS             = "75"  // Light Blue
+	ColorThemeTags            = "118" // Lime Green
 	ColorThemeText            = "250" // White/Light Gray
 
 	// Overlay dimensions

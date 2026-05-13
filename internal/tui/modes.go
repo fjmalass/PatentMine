@@ -37,6 +37,8 @@ var allViewModes = []viewMode{
 	viewUSPTOKeyWarning,
 	viewBulkConfirm,
 	viewStatusSelect,
+	viewProjectTags,
+	viewTagSelect,
 }
 
 var modeSpecs = map[viewMode]modeSpec{
@@ -209,6 +211,18 @@ var modeSpecs = map[viewMode]modeSpec{
 		themeColor: ColorThemeList,
 		isOverlay:  true,
 		helpHint:   "j/k: move · enter: select · esc: back",
+	},
+	viewProjectTags: {
+		title:      "Project Tags",
+		themeColor: ColorThemeTags,
+		isOverlay:  true,
+		helpHint:   "j/k: move · D: delete · r: rename · esc: back",
+	},
+	viewTagSelect: {
+		title:      "Select Tags",
+		themeColor: ColorThemeTags,
+		isOverlay:  true,
+		helpHint:   "j/k: move · space: toggle · esc: back",
 	},
 }
 

@@ -16,6 +16,7 @@ type ListPatentsOptions struct {
 	StatusFilter  string   // "stored" (default), "ignored", "under_review", "all"
 	ClassFilters  []string // CPC prefix filters
 	ClassFilterOp string   // "and" (default) or "or"
+	TagFilter     string
 	SortColumn    string
 	SortOrder     string
 	SortColumn2   string
@@ -95,6 +96,18 @@ type Repository interface {
 	AddIDSNPLEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)
 	ListIDSNPLEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error)
 	DeleteIDSNPLEntry(ctx context.Context, id int64) error
+
+	// Tagging
+	CreateTag(ctx context.Context, projectID, name, color string) (int64, error)
+	ListTagsWithCounts(ctx context.Context, projectID string) ([]domain.TagWithCount, error)
+	DeleteTag(ctx context.Context, tagID int64) error
+	RenameTag(ctx context.Context, tagID int64, newName string) error
+	UpdateTagColor(ctx context.Context, tagID int64, color string) error
+	GetTagByName(ctx context.Context, projectID, name string) (domain.Tag, error)
+	ApplyTagToPatent(ctx context.Context, patentNumber string, tagID int64) error
+	RemoveTagFromPatent(ctx context.Context, patentNumber string, tagID int64) error
+	GetPatentTags(ctx context.Context, patentNumber string) ([]domain.Tag, error)
+	ListPatentTagsForProject(ctx context.Context, projectID string) (map[string][]domain.Tag, error)
 
 	// Maintenance
 	PurgeIgnored(ctx context.Context, projectID string) (int, error)

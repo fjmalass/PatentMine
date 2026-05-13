@@ -906,6 +906,8 @@ func sortExpr(col, direction string) string {
 		return "notes_count " + direction
 	case domain.SortColumnIDS:
 		return "case when pid.status is null or pid.status = '' then 1 else 0 end " + direction + ", pid.status " + direction
+	case domain.SortColumnTags:
+		return "(select group_concat(t.name) from patent_tags pt2 join tags t on pt2.tag_id = t.id where pt2.patent_number = p.number) " + direction
 	}
 	return ""
 }

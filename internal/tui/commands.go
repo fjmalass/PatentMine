@@ -23,5 +23,33 @@ func ParseCommand(input string) Command {
 	if len(parts) == 0 {
 		return Command{}
 	}
-	return Command{Name: strings.ToLower(parts[0]), Args: parts[1:], Raw: input}
+	name := strings.ToLower(parts[0])
+	args := parts[1:]
+
+	// Short aliases
+	switch name {
+	case "ta":
+		name = commandTag
+		args = append([]string{tagSubAdd}, args...)
+	case "tl":
+		name = commandTag
+		args = append([]string{tagSubList}, args...)
+	case "td":
+		name = commandTag
+		args = append([]string{tagSubDelete}, args...)
+	case "tr":
+		name = commandTag
+		args = append([]string{tagSubRename}, args...)
+	case "tc":
+		name = commandTag
+		args = append([]string{tagSubColor}, args...)
+	case "tf":
+		name = commandTag
+		args = append([]string{tagSubFilter}, args...)
+	case "th":
+		name = commandTag
+		args = append([]string{tagSubHelp}, args...)
+	}
+
+	return Command{Name: name, Args: args, Raw: input}
 }

@@ -101,6 +101,7 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.classFilterOp = EmptyFilter
 		m.classFilter = EmptyFilter
 		m.countryFilter = EmptyFilter
+		m.tagFilter = EmptyFilter
 		m.filter = EmptyFilter
 		m.message = "all filters cleared"
 		m.mode = viewList
@@ -356,7 +357,7 @@ func normalizeSortCol(col string) string {
 	case domain.SortColumnNumber, domain.SortColumnTitle, domain.SortColumnDate,
 		domain.SortColumnStatus, domain.SortColumnAssignee, domain.SortColumnInventor,
 		domain.SortColumnClass, domain.SortColumnExpiration, domain.SortColumnUpdated,
-		domain.SortColumnNotes, domain.SortColumnIDS:
+		domain.SortColumnNotes, domain.SortColumnTags, domain.SortColumnIDS:
 		return strings.ToLower(col)
 	}
 	return ""

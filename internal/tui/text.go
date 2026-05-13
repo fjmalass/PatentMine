@@ -29,6 +29,7 @@ const (
 	TextDetailFamilyParents      TextKey = "detail.family_parents"
 	TextDetailFamilyChildren     TextKey = "detail.family_children"
 	TextDetailNotes              TextKey = "detail.notes"
+	TextDetailTags               TextKey = "detail.tags"
 	TextDetailAbstract           TextKey = "detail.abstract"
 	TextDetailImportSource       TextKey = "detail.import_source"
 	TextDetailApplication        TextKey = "detail.application"
@@ -230,6 +231,7 @@ func EnglishText() TextCatalog {
 		TextDetailFamilyParents:      "Parents",
 		TextDetailFamilyChildren:     "Children",
 		TextDetailNotes:              "Notes",
+		TextDetailTags:               "Tags",
 		TextDetailAbstract:           "Abstract",
 		TextDetailImportSource:       "Via",
 		TextDetailApplication:        "Application",

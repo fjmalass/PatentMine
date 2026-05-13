@@ -17,6 +17,26 @@ func TestParseCommand(t *testing.T) {
 		{":ref export", "ref", []string{"export"}},
 		{":help", "help", nil},
 		{":version", "version", nil},
+
+		// tag command aliases
+		{":ta mytag", "tag", []string{"add", "mytag"}},
+		{":ta mytag 118", "tag", []string{"add", "mytag", "118"}},
+		{":tl", "tag", []string{"list"}},
+		{":td mytag", "tag", []string{"delete", "mytag"}},
+		{":tr old new", "tag", []string{"rename", "old", "new"}},
+		{":tc mytag 208", "tag", []string{"color", "mytag", "208"}},
+		{":tf mytag", "tag", []string{"filter", "mytag"}},
+		{":tf", "tag", []string{"filter"}},
+		{":th", "tag", []string{"help"}},
+
+		// full :tag subcommands
+		{":tag add mytag", "tag", []string{"add", "mytag"}},
+		{":tag list", "tag", []string{"list"}},
+		{":tag delete mytag", "tag", []string{"delete", "mytag"}},
+		{":tag rename old new", "tag", []string{"rename", "old", "new"}},
+		{":tag color mytag 208", "tag", []string{"color", "mytag", "208"}},
+		{":tag filter mytag", "tag", []string{"filter", "mytag"}},
+		{":tag help", "tag", []string{"help"}},
 	}
 	for _, tt := range tests {
 		got := ParseCommand(tt.input)
