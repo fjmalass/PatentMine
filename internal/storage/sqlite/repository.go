@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,8 +19,32 @@ import (
 )
 
 type Repository struct {
-	db     *sql.DB
-	logger *slog.Logger
+	db                *sql.DB
+	logger            *slog.Logger
+	migrationReporter func(MigrationEvent)
+}
+
+const currentSchemaVersion = 1
+
+type MigrationEventKind string
+
+const (
+	MigrationEventBackupCreated MigrationEventKind = "backup_created"
+	MigrationEventMigrating     MigrationEventKind = "migrating"
+	MigrationEventProgress      MigrationEventKind = "progress"
+	MigrationEventMigrated      MigrationEventKind = "migrated"
+	MigrationEventFailed        MigrationEventKind = "failed"
+)
+
+type MigrationEvent struct {
+	Kind        MigrationEventKind
+	FromVersion int
+	ToVersion   int
+	Step        int
+	TotalSteps  int
+	BackupPath  string
+	Message     string
+	Err         error
 }
 
 func Open(path string, logger *slog.Logger) (*Repository, error) {
@@ -37,24 +63,71 @@ func (r *Repository) Close() error {
 	return r.db.Close()
 }
 
+func (r *Repository) SetMigrationReporter(fn func(MigrationEvent)) {
+	r.migrationReporter = fn
+}
+
+func (r *Repository) reportMigration(event MigrationEvent) {
+	if r.migrationReporter != nil {
+		r.migrationReporter(event)
+	}
+	if r.logger != nil && event.Message != "" {
+		attrs := []any{"kind", event.Kind, "from", event.FromVersion, "to", event.ToVersion, "step", event.Step, "total_steps", event.TotalSteps, "backup", event.BackupPath, "message", event.Message}
+		if event.Err != nil {
+			attrs = append(attrs, "error", event.Err)
+			r.logger.Error("sqlite migration", attrs...)
+			return
+		}
+		r.logger.Info("sqlite migration", attrs...)
+	}
+}
+
+func (r *Repository) reportMigrationFailure(kind MigrationEventKind, fromVersion int, err error, message string) {
+	r.reportMigration(MigrationEvent{
+		Kind:        kind,
+		FromVersion: fromVersion,
+		ToVersion:   currentSchemaVersion,
+		Message:     message,
+		Err:         err,
+	})
+}
+
 func (r *Repository) Setup(ctx context.Context) error {
+	currentVersion, _ := r.schemaVersion(ctx)
+	if err := r.maybeBackupBeforeMigration(ctx); err != nil {
+		r.reportMigrationFailure(MigrationEventFailed, currentVersion, err, "Database backup before migration failed")
+		return err
+	}
 	if err := r.createTables(ctx); err != nil {
+		r.reportMigrationFailure(MigrationEventFailed, currentVersion, err, "Database table setup failed")
 		return err
 	}
 	if err := r.runMigrations(ctx); err != nil {
+		r.reportMigrationFailure(MigrationEventFailed, currentVersion, err, "Database migration failed")
 		return err
 	}
 
 	// Ensure default project exists
 	now := nowString()
 	if _, err := r.db.ExecContext(ctx, `insert or ignore into projects (id, name, created_at, updated_at) values ('default', 'Default Project', ?, ?)`, now, now); err != nil {
+		r.reportMigrationFailure(MigrationEventFailed, currentVersion, err, "Default project initialization failed")
 		return err
 	}
 	return nil
 }
 
 func (r *Repository) runMigrations(ctx context.Context) error {
+	currentVersion, _ := r.schemaVersion(ctx)
+	if currentVersion < currentSchemaVersion {
+		r.reportMigration(MigrationEvent{
+			Kind:        MigrationEventMigrating,
+			FromVersion: currentVersion,
+			ToVersion:   currentSchemaVersion,
+			Message:     fmt.Sprintf("Migrating database schema from v%d to v%d", currentVersion, currentSchemaVersion),
+		})
+	}
 	alterations := []string{
+		`alter table patents add column country_code text not null default ''`,
 		`alter table project_ids add column kind_code text not null default ''`,
 		`alter table project_ids add column country_code text not null default ''`,
 		`alter table project_ids add column relevant_passages text not null default ''`,
@@ -74,7 +147,18 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 				delete from project_ids where patent_number = OLD.number;
 			end`,
 	}
+	totalSteps := len(alterations) + 2
+	step := 0
 	for _, stmt := range alterations {
+		step++
+		r.reportMigration(MigrationEvent{
+			Kind:        MigrationEventProgress,
+			FromVersion: currentVersion,
+			ToVersion:   currentSchemaVersion,
+			Step:        step,
+			TotalSteps:  totalSteps,
+			Message:     fmt.Sprintf("Applying migration step %d/%d", step, totalSteps),
+		})
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
 			// Ignore errors for already existing columns or missing old columns during migration
 			if !strings.Contains(err.Error(), "duplicate column name") &&
@@ -83,7 +167,126 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 			}
 		}
 	}
+	step++
+	r.reportMigration(MigrationEvent{
+		Kind:        MigrationEventProgress,
+		FromVersion: currentVersion,
+		ToVersion:   currentSchemaVersion,
+		Step:        step,
+		TotalSteps:  totalSteps,
+		Message:     fmt.Sprintf("Backfilling patent country codes %d/%d", step, totalSteps),
+	})
+	if err := r.backfillPatentCountryCodes(ctx); err != nil {
+		return err
+	}
+	step++
+	r.reportMigration(MigrationEvent{
+		Kind:        MigrationEventProgress,
+		FromVersion: currentVersion,
+		ToVersion:   currentSchemaVersion,
+		Step:        step,
+		TotalSteps:  totalSteps,
+		Message:     fmt.Sprintf("Finalizing schema version %d/%d", step, totalSteps),
+	})
+	if err := r.setSchemaVersion(ctx, currentSchemaVersion); err != nil {
+		return err
+	}
+	if currentVersion < currentSchemaVersion {
+		r.reportMigration(MigrationEvent{
+			Kind:        MigrationEventMigrated,
+			FromVersion: currentVersion,
+			ToVersion:   currentSchemaVersion,
+			Message:     fmt.Sprintf("Database schema migrated to v%d", currentSchemaVersion),
+		})
+	}
 	return nil
+}
+
+func (r *Repository) schemaVersion(ctx context.Context) (int, error) {
+	var version int
+	if err := r.db.QueryRowContext(ctx, `pragma user_version`).Scan(&version); err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func (r *Repository) setSchemaVersion(ctx context.Context, version int) error {
+	_, err := r.db.ExecContext(ctx, fmt.Sprintf(`pragma user_version = %d`, version))
+	return err
+}
+
+func (r *Repository) databasePath(ctx context.Context) (string, error) {
+	rows, err := r.db.QueryContext(ctx, `pragma database_list`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var seq int
+		var name, file string
+		if err := rows.Scan(&seq, &name, &file); err != nil {
+			return "", err
+		}
+		if name == "main" {
+			return filepath.Clean(file), nil
+		}
+	}
+	return "", rows.Err()
+}
+
+func (r *Repository) maybeBackupBeforeMigration(ctx context.Context) error {
+	currentVersion, err := r.schemaVersion(ctx)
+	if err != nil || currentVersion >= currentSchemaVersion {
+		return nil
+	}
+	path, err := r.databasePath(ctx)
+	if err != nil || path == "" || path == ":memory:" {
+		return nil
+	}
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		return nil
+	}
+	backupPath := fmt.Sprintf("%s.schema-v%d.bak", path, currentVersion)
+	if _, err := os.Stat(backupPath); err == nil {
+		return nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(backupPath, content, 0o600); err != nil {
+		return err
+	}
+	r.reportMigration(MigrationEvent{
+		Kind:        MigrationEventBackupCreated,
+		FromVersion: currentVersion,
+		ToVersion:   currentSchemaVersion,
+		BackupPath:  backupPath,
+		Message:     fmt.Sprintf("Backed up database before migration: %s", backupPath),
+	})
+	return nil
+}
+
+func (r *Repository) backfillPatentCountryCodes(ctx context.Context) error {
+	rows, err := r.db.QueryContext(ctx, `select number, coalesce(country_code,'') from patents`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var number, country string
+		if err := rows.Scan(&number, &country); err != nil {
+			return err
+		}
+		derived := domain.PatentCountryFromNumber(number)
+		if strings.TrimSpace(country) == derived {
+			continue
+		}
+		if _, err := r.db.ExecContext(ctx, `update patents set country_code = ? where number = ?`, derived, number); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 func (r *Repository) createTables(ctx context.Context) error {
@@ -108,6 +311,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			grant_date text not null,
 			expiration_date text not null default '',
 			expiration_source text not null default '',
+			country_code text not null default '',
 			source_google_url text not null,
 			import_source text not null default '',
 			created_at text not null default '',
@@ -454,10 +658,14 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
+	if strings.TrimSpace(p.CountryCode) == "" {
+		p.CountryCode = domain.PatentCountryFromNumber(p.Number)
+	}
 	_, err = tx.ExecContext(ctx, `insert into patents
-		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_source, source_google_url, import_source, created_at, latest_assignment, updated_at, expected_citations, expected_cited_by, application_number, application_date, publication_number, grant_number, first_claim)
-		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(number, country_code, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_source, source_google_url, import_source, created_at, latest_assignment, updated_at, expected_citations, expected_cited_by, application_number, application_date, publication_number, grant_number, first_claim)
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		on conflict(number) do update set
+			country_code = case when excluded.country_code != '' then excluded.country_code else patents.country_code end,
 			title = excluded.title,
 			abstract = excluded.abstract,
 			assignee = excluded.assignee,
@@ -477,7 +685,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 			publication_number = case when excluded.publication_number != '' then excluded.publication_number else patents.publication_number end,
 			grant_number = case when excluded.grant_number != '' then excluded.grant_number else patents.grant_number end,
 			first_claim = case when excluded.first_claim != '' then excluded.first_claim else patents.first_claim end`,
-		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, p.ExpirationSource, p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString(), p.ExpectedCitations, p.ExpectedCitedBy, p.ApplicationNumber, p.ApplicationDate, p.PublicationNumber, p.GrantNumber, p.FirstClaim)
+		p.Number, p.CountryCode, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, p.ExpirationSource, p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString(), p.ExpectedCitations, p.ExpectedCitedBy, p.ApplicationNumber, p.ApplicationDate, p.PublicationNumber, p.GrantNumber, p.FirstClaim)
 	return err
 }
 
@@ -569,7 +777,7 @@ func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, clas
 func (r *Repository) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
 	row := r.db.QueryRowContext(ctx, `
 		select
-			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
+			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
 			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
@@ -632,7 +840,7 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	}
 	query := `
 		select
-			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
+			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
 			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
@@ -646,6 +854,10 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	if strings.TrimSpace(opts.Filter) != "" {
 		query += ` and lower(p.number || ' ' || p.title || ' ' || p.abstract || ' ' || p.assignee || ' ' || p.inventors_json || ' ' || p.publication_date || ' ' || p.grant_date || ' ' || p.expiration_date || ' ' || p.source_google_url || ' ' || p.latest_assignment) like ?`
 		args = append(args, "%"+strings.ToLower(strings.TrimSpace(opts.Filter))+"%")
+	}
+	if strings.TrimSpace(opts.CountryFilter) != "" {
+		query += ` and p.country_code = ?`
+		args = append(args, strings.ToUpper(strings.TrimSpace(opts.CountryFilter)))
 	}
 
 	if len(opts.ClassFilters) > 0 {
@@ -1015,7 +1227,7 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var statusChangedAt sql.NullString
 	var updatedAt sql.NullString
 	var importSource sql.NullString
-	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationSource, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
+	if err := row.Scan(&p.Number, &p.CountryCode, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationSource, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}
@@ -1023,6 +1235,9 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	}
 	if err := json.Unmarshal([]byte(inventors), &p.Inventors); err != nil {
 		return domain.Patent{}, err
+	}
+	if p.CountryCode == "" {
+		p.CountryCode = domain.PatentCountryFromNumber(p.Number)
 	}
 	p.ExpirationSource = expirationSource.String
 	if createdAt.Valid {
@@ -1433,7 +1648,7 @@ func (r *Repository) ListIDSNPLEntries(ctx context.Context, projectID string) ([
 	for rows.Next() {
 		var e domain.IDSEntry
 		var addedAt string
-	var statusStr string
+		var statusStr string
 		if err := rows.Scan(&e.ID, &e.ProjectID, &e.NPLAuthor, &e.NPLTitle, &e.NPLDate, &e.NPLPublisher, &e.RelevantPassages, &e.Notes, &statusStr, &addedAt); err != nil {
 			return nil, err
 		}

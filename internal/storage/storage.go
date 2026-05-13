@@ -12,6 +12,7 @@ const (
 
 type ListPatentsOptions struct {
 	Filter        string
+	CountryFilter string
 	StatusFilter  string   // "stored" (default), "ignored", "under_review", "all"
 	ClassFilters  []string // CPC prefix filters
 	ClassFilterOp string   // "and" (default) or "or"

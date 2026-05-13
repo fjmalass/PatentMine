@@ -24,6 +24,7 @@ const (
 	FilterStatus         FilterType = "status"
 	FilterClassification FilterType = "classification"
 	FilterInventor       FilterType = "inventor"
+	FilterCountry        FilterType = "country"
 	FilterClear          FilterType = "clear"
 )
 
@@ -33,6 +34,7 @@ var filterAliases = map[string]FilterType{
 	"class":          FilterClassification,
 	"cpc":            FilterClassification,
 	"inventor":       FilterInventor,
+	"country":        FilterCountry,
 	"clear":          FilterClear,
 	"none":           FilterClear,
 	"reset":          FilterClear,
@@ -42,6 +44,7 @@ var SupportedFilters = map[FilterType]bool{
 	FilterStatus:         true,
 	FilterClassification: true,
 	FilterInventor:       true,
+	FilterCountry:        true,
 	FilterClear:          true,
 }
 
@@ -90,11 +93,14 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		return m.classCommand(args[1:])
 	case FilterInventor:
 		return m.inventorFilterCommand(args[1:])
+	case FilterCountry:
+		return m.countryFilterCommand(args[1:])
 	case FilterClear:
 		m.statusFilter = domain.CitationStatusStored
 		m.classFilters = nil
 		m.classFilterOp = EmptyFilter
 		m.classFilter = EmptyFilter
+		m.countryFilter = EmptyFilter
 		m.filter = EmptyFilter
 		m.message = "all filters cleared"
 		m.mode = viewList
@@ -172,6 +178,31 @@ func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	return m.refreshList()
 }
 
+func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 || args[0] == "clear" {
+		m.countryFilter = EmptyFilter
+		m.message = "country filter cleared"
+		m.mode = viewList
+		return m.refreshList()
+	}
+	code := strings.ToUpper(strings.TrimSpace(args[0]))
+	valid := false
+	for _, supported := range domain.PatentCountryCodes {
+		if code == supported {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		m.err = fmt.Sprintf("unknown country %q — valid values: %s", code, strings.Join(domain.PatentCountryCodes, ", "))
+		return m, nil
+	}
+	m.countryFilter = code
+	m.message = "filtering by country: " + code
+	m.mode = viewList
+	return m.refreshList()
+}
+
 // sortCommand handles :sort <col>[,<col2>] [asc|desc].
 func (m *Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
@@ -243,22 +274,17 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case detailActionIDS:
-		entry := m.idsEntryForPatent(m.current.Number)
-		if entry == nil {
-			// Create a pending entry first, then open edit popup
-			created, err := m.repo.AddIDSEntry(m.ctx, domain.IDSEntry{
-				ProjectID:    m.ProjectID,
-				PatentNumber: m.current.Number,
-				Status:       domain.IDSStatusPending,
-			})
-			if err != nil {
-				m.err = err.Error()
-				return m, nil
-			}
-			m.populateDetailCache()
-			_ = created
+		return m.openCurrentPatentIDSEdit(), nil
+	case detailActionCountryFilter:
+		code := strings.ToUpper(strings.TrimSpace(field.value))
+		if code == "" || code == "-" {
+			return m, nil
 		}
-		return m.navigateTo(viewIDSEdit), nil
+		m.countryFilter = code
+		m.statusFilter = domain.CitationStatusStored
+		m.message = fmt.Sprintf("showing stored patents from %s", code)
+		m.mode = viewList
+		return m.refreshList()
 	case detailActionFirstClaim:
 		if m.current.FirstClaim == "" {
 			return m, nil

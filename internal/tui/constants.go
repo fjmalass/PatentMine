@@ -268,16 +268,16 @@ const (
 	OverlayAbsoluteMinWidth = 20
 
 	// Activity actions
-	ActivityPatentImport = "patent.import"
-	ActivityPatentDelete = "patent.delete"
-	ActivityPatentStatus = "patent.status"
-	ActivityPatentDate   = "patent.date"
-	ActivityPatentNumber = "patent.number"
-	ActivityPatentRefresh = "patent.refresh"
-	ActivityNoteAdd      = "note.add"
-	ActivityIDSAdd       = "ids.add"
-	ActivityIDSRemove    = "ids.remove"
-	ActivityIDSStatus    = "ids.status"
+	ActivityPatentImport   = "patent.import"
+	ActivityPatentDelete   = "patent.delete"
+	ActivityPatentStatus   = "patent.status"
+	ActivityPatentDate     = "patent.date"
+	ActivityPatentNumber   = "patent.number"
+	ActivityPatentRefresh  = "patent.refresh"
+	ActivityNoteAdd        = "note.add"
+	ActivityIDSAdd         = "ids.add"
+	ActivityIDSRemove      = "ids.remove"
+	ActivityIDSStatus      = "ids.status"
 	ActivityCitationStore  = "citation.store"
 	ActivityCitationStatus = "citation.status"
 	ActivityRefAdd         = "ref.add"
@@ -308,6 +308,14 @@ const (
 
 	idsNoteMaxLen   = 25
 	idsNoteTruncLen = 22
+
+	FamilyNodeStatusIconUnloadedCircle = "◌"
+	FamilyNodeStatusIconUnloadedDots   = "…"
+	FamilyNodeStatusIconUnloadedBlock  = "⊘"
+	FamilyNodeStatusIconUnloadedOpen   = "○"
+	FamilyNodeStatusIconUnloadedWave   = "⌁"
+	FamilyNodeStatusIconUnloaded       = FamilyNodeStatusIconUnloadedCircle
+	FamilyNodeStatusLabelUnloaded      = FamilyNodeStatusIconUnloaded + " unloaded"
 )
 
 const (

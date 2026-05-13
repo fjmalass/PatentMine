@@ -59,6 +59,35 @@ func main() {
 		logger.Error("open sqlite failed", "error", err)
 		exit(err)
 	}
+	migrationBarActive := false
+	repo.SetMigrationReporter(func(event sqliterepo.MigrationEvent) {
+		switch event.Kind {
+		case sqliterepo.MigrationEventProgress:
+			migrationBarActive = true
+			const barWidth = 24
+			filled := 0
+			if event.TotalSteps > 0 {
+				filled = event.Step * barWidth / event.TotalSteps
+			}
+			if filled < 0 {
+				filled = 0
+			}
+			if filled > barWidth {
+				filled = barWidth
+			}
+			bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
+			fmt.Fprintf(os.Stderr, "\r[%s] %d/%d %s", bar, event.Step, event.TotalSteps, event.Message)
+			return
+		case sqliterepo.MigrationEventMigrated, sqliterepo.MigrationEventFailed:
+			if migrationBarActive {
+				fmt.Fprintln(os.Stderr)
+				migrationBarActive = false
+			}
+		}
+		if strings.TrimSpace(event.Message) != "" {
+			fmt.Fprintln(os.Stderr, event.Message)
+		}
+	})
 	defer repo.Close()
 	if err := repo.Setup(ctx); err != nil {
 		logger.Error("sqlite setup failed", "error", err)

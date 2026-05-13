@@ -119,6 +119,7 @@ type Model struct {
 	classFilters               []string
 	classFilterOp              string
 	classFilter                string // display label derived from classFilters
+	countryFilter              string
 	statusFilter               string // domain.CitationStatusStored (default), "ignored", "under_review", statusFilterNone
 	citesStatusFilter          string // "" (all), "stored", "ignored", "under_review"
 	listNumWidth               int
@@ -142,6 +143,7 @@ type Model struct {
 	popupSearchQuery           string
 	popupSearchActive          bool
 	statusSelected             int
+	familyRefreshElapsed       string
 	version                    string
 }
 
@@ -193,6 +195,7 @@ type navSnapshot struct {
 	classFilters               []string
 	classFilterOp              string
 	classFilter                string
+	countryFilter              string
 	statusFilter               string
 	citesStatusFilter          string
 	listNumWidth               int
@@ -372,6 +375,8 @@ type refreshResultMsg struct {
 	mode            viewMode
 	citesSelected   int
 	citedBySelected int
+	familySelected  int
+	elapsed         time.Duration
 	withDetails     bool
 	action          string
 	source          string
@@ -460,7 +465,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = msg.mode
 		m.citesSelected = msg.citesSelected
 		m.citedBySelected = msg.citedBySelected
+		m.familySelected = msg.familySelected
 		m.message = msg.message
+		if msg.action == ActivityFamilyRefresh && msg.elapsed > 0 {
+			m.familyRefreshElapsed = formatElapsedHint(msg.elapsed)
+			if m.logger != nil {
+				m.logger.Info("family refresh completed", "patent", msg.patent.Number, "duration_ms", msg.elapsed.Milliseconds())
+			}
+		}
 		updated, listCmd := m.refreshList()
 		if msg.withDetails {
 			detailsModel, detailsCmd := updated.(*Model).refreshVisibleCitationDetails()
@@ -923,6 +935,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyQuit:
 			return m, tea.Quit
 		case keyIDS:
+			if m.mode == viewDetail && m.current.Number != "" {
+				return m.openCurrentPatentIDSEdit(), nil
+			}
 			m.projectIDSSelected = 0
 			return m.navigateTo(viewProjectIDS), nil
 		case keyProject:
@@ -1111,7 +1126,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.refreshSelectedCitationDetail()
 			}
 			if m.mode == viewFamily {
-				return m.pullFamilyCommand()
+				return m.refreshSelectedFamilyMember()
 			}
 			m = m.navigateTo(viewRefs)
 		case keyRefreshAll:
@@ -1302,6 +1317,7 @@ func (m *Model) snapshot() navSnapshot {
 		classFilters:               append([]string(nil), m.classFilters...),
 		classFilterOp:              m.classFilterOp,
 		classFilter:                m.classFilter,
+		countryFilter:              m.countryFilter,
 		statusFilter:               m.statusFilter,
 		citesStatusFilter:          m.citesStatusFilter,
 		listNumWidth:               m.listNumWidth,
@@ -1357,6 +1373,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.classFilters = snapshot.classFilters
 	m.classFilterOp = snapshot.classFilterOp
 	m.classFilter = snapshot.classFilter
+	m.countryFilter = snapshot.countryFilter
 	m.statusFilter = snapshot.statusFilter
 	m.citesStatusFilter = snapshot.citesStatusFilter
 	m.listNumWidth = snapshot.listNumWidth
@@ -1863,6 +1880,22 @@ func (m *Model) idsEntryForPatent(number string) *domain.IDSEntry {
 	return nil
 }
 
+func (m *Model) openCurrentPatentIDSEdit() *Model {
+	entry := m.idsEntryForPatent(m.current.Number)
+	if entry == nil {
+		if _, err := m.repo.AddIDSEntry(m.ctx, domain.IDSEntry{
+			ProjectID:    m.ProjectID,
+			PatentNumber: m.current.Number,
+			Status:       domain.IDSStatusPending,
+		}); err != nil {
+			m.err = err.Error()
+			return m
+		}
+		m.populateDetailCache()
+	}
+	return m.navigateTo(viewIDSEdit)
+}
+
 // markdownHeadingSummary extracts # and ## heading lines from body as a compact
 // summary. Falls back to the first non-empty line when no headings are present.
 func markdownHeadingSummary(body string) string {
@@ -2178,6 +2211,7 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 	}
 	opts := storage.ListPatentsOptions{
 		Filter:        m.filter,
+		CountryFilter: m.countryFilter,
 		StatusFilter:  m.statusFilter,
 		ClassFilters:  m.classFilters,
 		ClassFilterOp: m.classFilterOp,
@@ -3810,6 +3844,7 @@ const (
 	detailActionFirstClaim
 	detailActionAbstract
 	detailActionIDS
+	detailActionCountryFilter
 	detailActionEditDate
 	detailActionEditNumber
 	detailActionStatic
@@ -3885,6 +3920,18 @@ func (m *Model) detailFields() []detailField {
 		jumpLabel:    jumpLabelClassification,
 		action:       detailActionClassification,
 	})
+
+	if code := patentCountryLabel(p); code != "-" {
+		countryValue := code
+		storedCount := m.storedPatentCountForCountry(code)
+		countryDisplay := fmt.Sprintf("%s · %d stored", code, storedCount)
+		fields = append(fields, detailField{
+			label:        TextDetailCountry,
+			value:        countryValue,
+			displayValue: countryDisplay,
+			action:       detailActionCountryFilter,
+		})
+	}
 
 	fields = append(fields,
 		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(cache.CitationCount, p.ExpectedCitations, cache.CitationRefreshedAt), jumpLabel: jumpLabelCitationCount, action: detailActionCitations},
@@ -4429,6 +4476,27 @@ func formatStoredTime(value time.Time, fallback string) string {
 	return local.Format("2006-01-02")
 }
 
+func formatElapsedHint(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("updated in %dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("updated in %.1fs", d.Seconds())
+}
+
+func (m *Model) storedPatentCountForCountry(code string) int {
+	if m.repo == nil || strings.TrimSpace(code) == "" {
+		return 0
+	}
+	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
+		CountryFilter: code,
+		StatusFilter:  domain.CitationStatusStored,
+	})
+	if err != nil {
+		return 0
+	}
+	return len(patents)
+}
+
 func (m *Model) viewPreview() string {
 	base := overlayBase()
 
@@ -4480,7 +4548,7 @@ func (m *Model) viewPreview() string {
 // overlayBase returns a base lipgloss style with ColorSurface background
 // used by all overlay popup view functions for consistent text rendering.
 func overlayBase() lipgloss.Style {
-	return lipgloss.NewStyle().Background(lipgloss.Color(ColorSurface))
+	return lipgloss.NewStyle()
 }
 
 func (m *Model) overlayBackdrop() string {
@@ -4545,7 +4613,7 @@ func (m *Model) previewOverlay(content string) string {
 
 	baseLines := strings.Split(lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, backdrop), "\n")
 	popupLines := strings.Split(popup, "\n")
-	scrimLine := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Render(strings.Repeat(" ", m.width))
+	scrimLine := strings.Repeat(" ", m.width)
 	for i := 0; i < popupHeight && y+i < len(baseLines) && i < len(popupLines); i++ {
 		baseLines[y+i] = overlayLine(scrimLine, popupLines[i], x, m.width)
 	}
@@ -4588,7 +4656,7 @@ func (m *Model) viewConfirmDelete() string {
 
 func (m *Model) patentDateCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) < 2 {
-		m.err = "usage: :date app|pub|grant <YYYY-MM-DD>"
+		m.err = "usage: :date app|pub|grant|exp <YYYY-MM-DD>"
 		return m, nil
 	}
 	dateType := strings.ToLower(args[0])
@@ -4607,6 +4675,14 @@ func (m *Model) patentDateCommand(args []string) (tea.Model, tea.Cmd) {
 	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, m.current.Number); err == nil {
 		m.current = p
 		m.populateDetailCache()
+	}
+
+	if m.mode == viewDateEdit {
+		m.dateInput.Blur()
+		if len(m.backStack) > 0 {
+			m.backStack = m.backStack[:len(m.backStack)-1]
+		}
+		m.mode = viewDetail
 	}
 
 	return m, nil
@@ -4939,6 +5015,8 @@ func (m *Model) activeSelectionIndex() int {
 		return m.classificationSelected
 	case m.mode == viewInventors:
 		return m.inventorSelected
+	case m.mode == viewFamily:
+		return m.familySelected
 	case m.mode == viewDetail:
 		return m.detailSelected
 	default:
@@ -6263,7 +6341,7 @@ func (m *Model) viewIDSEdit() string {
 
 	base := overlayBase()
 	labelStyle := base.Foreground(lipgloss.Color(ColorSubtle))
-	valueStyle := base.Foreground(lipgloss.Color(ColorTheme))
+	valueStyle := base.Foreground(lipgloss.Color(ColorWhite))
 	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
 	hintStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 
@@ -6273,13 +6351,16 @@ func (m *Model) viewIDSEdit() string {
 		return m.renderPopup("IDS Entry · "+m.current.Number, body.String())
 	}
 
+	row := func(label string, value string) {
+		body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", label+":")) + " " + value + "\n")
+	}
+
 	statusColor := idsStatusColor(entry.Status)
 	statusStr := string(entry.Status)
 	if statusStr == "" {
 		statusStr = string(domain.IDSStatusPending)
 	}
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Status:")) +
-		base.Foreground(lipgloss.Color(statusColor)).Bold(true).Render(statusStr) + "\n")
+	row("Status", base.Foreground(lipgloss.Color(statusColor)).Bold(true).Render(statusStr))
 
 	kindVal := entry.KindCode
 	if kindVal == "" {
@@ -6287,7 +6368,7 @@ func (m *Model) viewIDSEdit() string {
 	} else {
 		kindVal = valueStyle.Render(kindVal)
 	}
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Kind Code:")) + kindVal + "\n")
+	row("Kind Code", kindVal)
 
 	ccVal := entry.CountryCode
 	if ccVal == "" {
@@ -6295,7 +6376,7 @@ func (m *Model) viewIDSEdit() string {
 	} else {
 		ccVal = valueStyle.Render(ccVal)
 	}
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Country Code:")) + ccVal + "\n")
+	row("Country Code", ccVal)
 
 	notesVal := entry.Notes
 	if notesVal == "" {
@@ -6303,13 +6384,13 @@ func (m *Model) viewIDSEdit() string {
 	} else {
 		notesVal = valueStyle.Render(notesVal)
 	}
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Notes:")) + notesVal + "\n")
+	row("Notes", notesVal)
 
 	inFullVal := dimStyle.Render("—")
 	if entry.InFull {
-		inFullVal = valueStyle.Render(domain.IDSIconInFull + " Yes")
+		inFullVal = base.Foreground(lipgloss.Color(ColorLime)).Bold(true).Render(domain.IDSIconInFull + " Yes")
 	}
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "In Full:")) + inFullVal + "\n")
+	row("In Full", inFullVal)
 
 	passagesVal := domain.IDSPassagesText(*entry)
 	if passagesVal == "" {
@@ -6317,7 +6398,7 @@ func (m *Model) viewIDSEdit() string {
 	} else {
 		passagesVal = valueStyle.Render(passagesVal)
 	}
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-18s", "Relevant Passages:")) + passagesVal + "\n")
+	row("Relevant Passages", passagesVal)
 
 	if m.input.Focused() {
 		body.WriteString("\n")

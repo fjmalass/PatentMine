@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
@@ -30,6 +31,10 @@ type familyNode struct {
 	prefix       string // indentation prefix inherited from ancestor connectors
 	connector    string // "├─ ", "└─ ", or "" for tree roots
 	title        string
+	assignee     string
+	expiration   string
+	expSource    string
+	countryCode  string
 	grantYear    string
 	importSource string
 	isDuplicate  bool
@@ -119,6 +124,10 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 		}
 		if ok {
 			nodes[i].title = p.Title
+			nodes[i].assignee = p.Assignee
+			nodes[i].expiration = p.ExpirationDate
+			nodes[i].expSource = p.ExpirationSource
+			nodes[i].countryCode = p.CountryCode
 			if len(p.GrantDate) >= 4 {
 				nodes[i].grantYear = p.GrantDate[:4]
 			} else if len(p.PublicationDate) >= 4 {
@@ -141,26 +150,26 @@ func familyCurrentIdx(nodes []familyNode) int {
 	return 0
 }
 
-// familyLevelLabel returns a human-readable depth label relative to the current patent.
-func familyLevelLabel(depth int) string {
-	switch depth {
-	case -1:
-		return "Parent"
-	case -2:
-		return "Grandparent"
-	case -3:
-		return "Great-grandparent"
-	case 1:
-		return "Child"
-	case 2:
-		return "Grandchild"
-	case 3:
-		return "Great-grandchild"
-	}
+var familyRelationBadgeLabels = map[string]string{
+	domain.FamilyRelationContinuation: "cont.",
+	domain.FamilyRelationDivisional:   "div.",
+	domain.FamilyRelationCIP:          "cip",
+	domain.FamilyRelationPCT:          "pct",
+}
+
+// familyDepthBadge returns a compact, unambiguous depth marker relative to the current patent.
+func familyDepthBadge(depth int) string {
 	if depth < 0 {
-		return fmt.Sprintf("Ancestor (%d)", -depth)
+		return fmt.Sprintf("↑%d", -depth)
 	}
-	return fmt.Sprintf("Descendant (%d)", depth)
+	return fmt.Sprintf("↓%d", depth)
+}
+
+func familyRelationBadge(relType string) string {
+	if label, ok := familyRelationBadgeLabels[relType]; ok {
+		return label
+	}
+	return relType
 }
 
 // importSourceBadge renders a compact source indicator: [g] or [u].
@@ -209,7 +218,11 @@ func (m *Model) viewFamilyOverlay() string {
 	window := pageWindow(sel, len(nodes), m.overlayPageSize())
 
 	var body strings.Builder
-	body.WriteString(subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window)) + "\n\n")
+	statusLine := subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window))
+	if m.familyRefreshElapsed != "" {
+		statusLine += subtle.Render(" · ") + base.Foreground(lipgloss.Color(ColorDim)).Italic(true).Render(m.familyRefreshElapsed)
+	}
+	body.WriteString(statusLine + "\n\n")
 
 	titleWidth := max(20, m.overlayWidth()-56)
 
@@ -242,15 +255,14 @@ func (m *Model) viewFamilyOverlay() string {
 		}
 		line.WriteString(numStyle.Render(node.number))
 
-		// Depth label (compact relative indicator).
+		// Depth badge (compact relative position indicator).
 		if !isCurrent {
 			relColor := ColorDim
 			if node.depth < 0 {
 				relColor = ColorDepth // Ancestors
 			}
-			label := familyLevelLabel(node.depth)
 			line.WriteString(base.Render(" "))
-			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("«" + label + "»"))
+			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("«" + familyDepthBadge(node.depth) + "»"))
 		}
 
 		// Grant/publication year badge.
@@ -278,13 +290,97 @@ func (m *Model) viewFamilyOverlay() string {
 		if node.relType != "" {
 			relColor := familyRelationColor(node.relType)
 			line.WriteString(base.Render(" "))
-			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("[" + node.relType + "]"))
+			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("[" + familyRelationBadge(node.relType) + "]"))
+		}
+
+		if nodeNeedsRefresh(node, selectedFamilyPatentValue(node)) {
+			line.WriteString(base.Render(" "))
+			line.WriteString(subtle.Italic(true).Render(FamilyNodeStatusLabelUnloaded))
 		}
 
 		body.WriteString(line.String() + "\n")
 	}
 
+	if selectedPatent, ok := m.selectedFamilyPatent(nodes[sel]); ok {
+		body.WriteString("\n")
+		body.WriteString(subtle.Render(strings.Repeat("─", max(24, m.overlayWidth()-6))) + "\n")
+		body.WriteString("\n")
+
+		labelStyle := base.Foreground(lipgloss.Color(ColorSubtle))
+		valueStyle := base.Foreground(lipgloss.Color(ColorWhite))
+		previewTitleWidth := max(20, m.overlayWidth()-22)
+		nameValue := selectedPatent.Assignee
+		if strings.TrimSpace(nameValue) == "" {
+			nameValue = m.text.T(TextValueUnknown)
+		}
+		titleValue := selectedPatent.Title
+		if strings.TrimSpace(titleValue) == "" {
+			titleValue = m.text.T(TextValueUnknown)
+		}
+		rows := []struct {
+			label string
+			value string
+		}{
+			{label: "Number", value: selectedPatent.Number},
+			{label: "Country", value: patentCountryLabel(selectedPatent)},
+			{label: "Expires", value: m.formatExpiration(selectedPatent)},
+			{label: "Name", value: nameValue},
+			{label: "Title", value: m.truncate(titleValue, previewTitleWidth)},
+		}
+		for _, row := range rows {
+			body.WriteString(labelStyle.Render(fmt.Sprintf("%-8s", row.label+":")) + " " + valueStyle.Render(row.value) + "\n")
+		}
+		if nodeNeedsRefresh(nodes[sel], selectedPatent) {
+			body.WriteString("\n")
+			body.WriteString(subtle.Render("No stored metadata for this family member. Press ctrl+r to refresh selected.") + "\n")
+		}
+	}
+
 	return m.renderPopup("Family · "+m.current.Number, body.String())
+}
+
+func (m *Model) selectedFamilyPatent(node familyNode) (domain.Patent, bool) {
+	if node.number == "" {
+		return domain.Patent{}, false
+	}
+	return selectedFamilyPatentValue(node), true
+}
+
+func selectedFamilyPatentValue(node familyNode) domain.Patent {
+	return domain.Patent{
+		Number:           node.number,
+		CountryCode:      node.countryCode,
+		Title:            node.title,
+		Assignee:         node.assignee,
+		ExpirationDate:   node.expiration,
+		ExpirationSource: node.expSource,
+	}
+}
+
+func nodeNeedsRefresh(node familyNode, p domain.Patent) bool {
+	if strings.TrimSpace(node.number) == "" {
+		return false
+	}
+	return strings.TrimSpace(p.Title) == "" && strings.TrimSpace(p.Assignee) == "" && strings.TrimSpace(p.ExpirationDate) == ""
+}
+
+func patentCountryLabel(p domain.Patent) string {
+	if strings.TrimSpace(p.CountryCode) != "" {
+		return p.CountryCode
+	}
+	code := domain.PatentCountryFromNumber(p.Number)
+	if code == "" {
+		return "-"
+	}
+	return code
+}
+
+func (m *Model) selectedFamilyNode() (familyNode, bool) {
+	nodes := m.buildFamilyTree()
+	if m.familySelected < 0 || m.familySelected >= len(nodes) {
+		return familyNode{}, false
+	}
+	return nodes[m.familySelected], true
 }
 
 func (m *Model) moveFamilySelection(delta int) *Model {
@@ -294,6 +390,67 @@ func (m *Model) moveFamilySelection(delta int) *Model {
 	}
 	m.familySelected = clamp(m.familySelected+delta, 0, len(nodes)-1)
 	return m
+}
+
+func (m *Model) refreshSelectedFamilyMember() (tea.Model, tea.Cmd) {
+	node, ok := m.selectedFamilyNode()
+	if !ok {
+		m.err = "no family member selected"
+		return m, nil
+	}
+	if node.number == "" {
+		m.err = "selected family member has no patent number"
+		return m, nil
+	}
+	if node.number == m.current.Number {
+		return m.pullFamilyCommand()
+	}
+
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.loading = true
+	m.loadingMsg = fmt.Sprintf("Refreshing family member %s...", node.number)
+	m.cancel = cancel
+
+	repo := m.repo
+	projectID := m.ProjectID
+	logger := m.logger
+	targetNumber := node.number
+	selection := m.familySelected
+
+	return m, tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			startedAt := time.Now()
+			bundle, err := m.importPatent(targetNumber)
+			if err != nil {
+				return refreshResultMsg{err: fmt.Errorf("family member refresh failed: %w", err)}
+			}
+
+			bundle.Patent.Status = domain.CitationStatusCached
+			if existing, err := repo.GetPatent(ctx, projectID, targetNumber); err == nil && existing.Number != "" && existing.Status != "" {
+				bundle.Patent.Status = existing.Status
+			}
+			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
+				logger.Error("family member store failed", "patent", targetNumber, "error", err)
+				return refreshResultMsg{err: err}
+			}
+			m.familyTreeCacheFor = ""
+
+			p, err := repo.GetPatent(ctx, projectID, m.current.Number)
+			if err != nil {
+				return refreshResultMsg{err: err}
+			}
+			return refreshResultMsg{
+				patent:         p,
+				mode:           viewFamily,
+				familySelected: selection,
+				elapsed:        time.Since(startedAt),
+				message:        fmt.Sprintf("refreshed family member %s", targetNumber),
+				action:         ActivityFamilyRefresh,
+				source:         bundle.Patent.ImportSource,
+			}
+		},
+	)
 }
 
 func (m *Model) moveFamilyToParent() *Model {
@@ -501,6 +658,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
+			startedAt := time.Now()
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
@@ -527,6 +685,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				return refreshResultMsg{
 					patent:  p,
 					mode:    viewFamily,
+					elapsed: time.Since(startedAt),
 					message: "no family edges found for " + currentNumber,
 					action:  ActivityFamilyRefresh,
 					source:  source,
@@ -592,7 +751,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 			if failed > 0 {
 				msg += fmt.Sprintf(" (%d failed)", failed)
 			}
-			return refreshResultMsg{patent: p, mode: viewFamily, message: msg, action: ActivityFamilyRefresh, source: source}
+			return refreshResultMsg{patent: p, mode: viewFamily, elapsed: time.Since(startedAt), message: msg, action: ActivityFamilyRefresh, source: source}
 		},
 	)
 }

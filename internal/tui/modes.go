@@ -132,7 +132,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Patent Family",
 		themeColor: ColorThemeFamily,
 		isOverlay:  true,
-		helpHint:   "j/k: move · enter: open · esc: back",
+		helpHint:   "j/k: move · enter: open · ctrl+r: refresh selected · esc: back",
 	},
 	viewSplash: {
 		title:      "Splash",
@@ -172,7 +172,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "IDS Entry",
 		themeColor: ColorThemeIDS,
 		isOverlay:  true,
-		helpHint:   "s/n/k/c/p/f: edit · D: remove · esc: back",
+		helpHint:   "s=status · n=note · k=kind · c=country · p=passages · f=in-full · D=remove · esc=back",
 	},
 	viewDateEdit: {
 		title:      "Edit Date",

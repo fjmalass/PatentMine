@@ -6,6 +6,41 @@ import (
 	"time"
 )
 
+const PatentCountryUnknown = ""
+
+// ISO 3166-1 alpha-2 codes for major patent offices.
+const (
+	PatentCountryUS = "US" // United States
+	PatentCountryEP = "EP" // European Patent Office
+	PatentCountryWO = "WO" // WIPO / PCT
+	PatentCountryJP = "JP" // Japan
+	PatentCountryCN = "CN" // China
+	PatentCountryKR = "KR" // South Korea
+	PatentCountryDE = "DE" // Germany
+	PatentCountryFR = "FR" // France
+	PatentCountryGB = "GB" // United Kingdom
+	PatentCountryCA = "CA" // Canada
+	PatentCountryAU = "AU" // Australia
+	PatentCountryIN = "IN" // India
+	PatentCountryTW = "TW" // Taiwan
+	PatentCountryIL = "IL" // Israel
+	PatentCountrySG = "SG" // Singapore
+	PatentCountryBR = "BR" // Brazil
+	PatentCountryMX = "MX" // Mexico
+	PatentCountryRU = "RU" // Russia
+	PatentCountryMY = "MY" // Malaysia
+)
+
+var PatentCountryCodes = []string{
+	PatentCountryUS, PatentCountryEP, PatentCountryWO,
+	PatentCountryJP, PatentCountryCN, PatentCountryKR,
+	PatentCountryDE, PatentCountryFR, PatentCountryGB,
+	PatentCountryCA, PatentCountryAU, PatentCountryIN,
+	PatentCountryTW, PatentCountryIL, PatentCountrySG,
+	PatentCountryBR, PatentCountryMX, PatentCountryRU,
+	PatentCountryMY,
+}
+
 const (
 	RelationCites   = "cites"
 	RelationCitedBy = "cited_by"
@@ -138,36 +173,42 @@ var IDSKindCodes = []string{
 	IDSKindCodeS,
 }
 
-// ISO 3166-1 alpha-2 codes for major patent offices.
 const (
-	IDSCountryUS = "US" // United States
-	IDSCountryEP = "EP" // European Patent Office
-	IDSCountryWO = "WO" // WIPO / PCT
-	IDSCountryJP = "JP" // Japan
-	IDSCountryCN = "CN" // China
-	IDSCountryKR = "KR" // South Korea
-	IDSCountryDE = "DE" // Germany
-	IDSCountryFR = "FR" // France
-	IDSCountryGB = "GB" // United Kingdom
-	IDSCountryCA = "CA" // Canada
-	IDSCountryAU = "AU" // Australia
-	IDSCountryIN = "IN" // India
-	IDSCountryTW = "TW" // Taiwan
-	IDSCountryIL = "IL" // Israel
-	IDSCountrySG = "SG" // Singapore
-	IDSCountryBR = "BR" // Brazil
-	IDSCountryMX = "MX" // Mexico
-	IDSCountryRU = "RU" // Russia
+	IDSCountryUS = PatentCountryUS
+	IDSCountryEP = PatentCountryEP
+	IDSCountryWO = PatentCountryWO
+	IDSCountryJP = PatentCountryJP
+	IDSCountryCN = PatentCountryCN
+	IDSCountryKR = PatentCountryKR
+	IDSCountryDE = PatentCountryDE
+	IDSCountryFR = PatentCountryFR
+	IDSCountryGB = PatentCountryGB
+	IDSCountryCA = PatentCountryCA
+	IDSCountryAU = PatentCountryAU
+	IDSCountryIN = PatentCountryIN
+	IDSCountryTW = PatentCountryTW
+	IDSCountryIL = PatentCountryIL
+	IDSCountrySG = PatentCountrySG
+	IDSCountryBR = PatentCountryBR
+	IDSCountryMX = PatentCountryMX
+	IDSCountryRU = PatentCountryRU
 )
 
 // IDSCountryCodes lists recognized country codes for TUI hints and validation.
-var IDSCountryCodes = []string{
-	IDSCountryUS, IDSCountryEP, IDSCountryWO,
-	IDSCountryJP, IDSCountryCN, IDSCountryKR,
-	IDSCountryDE, IDSCountryFR, IDSCountryGB,
-	IDSCountryCA, IDSCountryAU, IDSCountryIN,
-	IDSCountryTW, IDSCountryIL, IDSCountrySG,
-	IDSCountryBR, IDSCountryMX, IDSCountryRU,
+var IDSCountryCodes = PatentCountryCodes
+
+func PatentCountryFromNumber(number string) string {
+	n := strings.ToUpper(strings.TrimSpace(number))
+	if len(n) < 2 {
+		return PatentCountryUnknown
+	}
+	code := n[:2]
+	for _, valid := range PatentCountryCodes {
+		if code == valid {
+			return code
+		}
+	}
+	return PatentCountryUnknown
 }
 
 type ProjectInvoice struct {
@@ -232,6 +273,7 @@ const (
 
 type Patent struct {
 	Number              string
+	CountryCode         string
 	Title               string
 	Abstract            string
 	Assignee            string
@@ -333,15 +375,15 @@ type IDSEntry struct {
 	ID               int64
 	ProjectID        string
 	PatentNumber     string
-	KindCode         string    // see IDSKindCode* constants
-	CountryCode      string    // see IDSCountry* constants
-	IsNPL            bool      // non-patent literature
+	KindCode         string // see IDSKindCode* constants
+	CountryCode      string // see IDSCountry* constants
+	IsNPL            bool   // non-patent literature
 	NPLAuthor        string
 	NPLTitle         string
 	NPLDate          string
 	NPLPublisher     string
-	InFull           bool      // entire document is cited; overrides RelevantPassages
-	RelevantPassages string    // pages/columns/lines with relevant content
+	InFull           bool   // entire document is cited; overrides RelevantPassages
+	RelevantPassages string // pages/columns/lines with relevant content
 	Notes            string
 	Status           IDSStatus // see IDSStatus* constants
 	AddedAt          time.Time

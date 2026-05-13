@@ -156,6 +156,9 @@ func (m *Model) renderScreenHeader() string {
 	if m.filter != EmptyFilter {
 		filters = append(filters, fmt.Sprintf("%s%s", m.text.T(TextValueFilterGeneralTag), m.filter))
 	}
+	if m.countryFilter != EmptyFilter {
+		filters = append(filters, "country:"+m.countryFilter)
+	}
 	if m.sortColumn != "" {
 		sort := fmt.Sprintf("%s%s %s", m.text.T(TextValueFilterSortTag), m.sortColumn, m.sortOrder)
 		if m.sortColumn2 != "" {

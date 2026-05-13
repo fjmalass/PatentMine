@@ -172,6 +172,131 @@ func TestFamilyViewIgnoresHLNavigation(t *testing.T) {
 	}
 }
 
+func TestFamilyViewJKMovesFromCurrentSelection(t *testing.T) {
+	repo := familyRepo{edges: []domain.FamilyEdge{
+		{ProjectID: "default", ParentNumber: "US-PARENT", ChildNumber: "US-CURRENT", RelationType: domain.FamilyRelationContinuation},
+		{ProjectID: "default", ParentNumber: "US-CURRENT", ChildNumber: "US-CHILD-1", RelationType: domain.FamilyRelationContinuation},
+		{ProjectID: "default", ParentNumber: "US-CURRENT", ChildNumber: "US-CHILD-2", RelationType: domain.FamilyRelationContinuation},
+	}, patents: map[string]domain.Patent{
+		"US-PARENT":  {Number: "US-PARENT", Title: "Parent Patent"},
+		"US-CURRENT": {Number: "US-CURRENT", Title: "Current Patent"},
+		"US-CHILD-1": {Number: "US-CHILD-1", Title: "Child One"},
+		"US-CHILD-2": {Number: "US-CHILD-2", Title: "Child Two"},
+	}}
+	model := &Model{
+		ctx:            t.Context(),
+		repo:           repo,
+		text:           EnglishText(),
+		mode:           viewFamily,
+		ProjectID:      "default",
+		current:        domain.Patent{Number: "US-CURRENT"},
+		familySelected: 2,
+	}
+
+	updated, _ := model.Update(teaKey(keyVimDown))
+	got := updated.(*Model)
+	if got.familySelected != 3 {
+		t.Fatalf("expected j to move from selected child to next child, got %d", got.familySelected)
+	}
+
+	updated, _ = got.Update(teaKey(keyVimUp))
+	got = updated.(*Model)
+	if got.familySelected != 2 {
+		t.Fatalf("expected k to move back to previous child, got %d", got.familySelected)
+	}
+}
+
+func TestFamilyViewShowsSelectedNodePreview(t *testing.T) {
+	repo := familyRepo{edges: []domain.FamilyEdge{
+		{ProjectID: "default", ParentNumber: "US-PARENT", ChildNumber: "US-CURRENT", RelationType: domain.FamilyRelationContinuation},
+	}, patents: map[string]domain.Patent{
+		"US-PARENT": {
+			Number:         "US-PARENT",
+			Title:          "A Very Long Parent Patent Title That Should Be Shortened In The Preview Panel",
+			Assignee:       "Parent Corp",
+			ExpirationDate: "2035-01-01",
+		},
+		"US-CURRENT": {Number: "US-CURRENT", Title: "Current Patent"},
+	}}
+	model := &Model{
+		ctx:            t.Context(),
+		repo:           repo,
+		text:           EnglishText(),
+		mode:           viewFamily,
+		ProjectID:      "default",
+		width:          120,
+		height:         30,
+		current:        domain.Patent{Number: "US-CURRENT"},
+		familySelected: 0,
+	}
+
+	got := model.viewFamilyOverlay()
+	for _, want := range []string{"Number:", "US-PARENT", "Expires:", "2035-01-01", "Name:", "Parent Corp", "Title:"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected family preview to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestFamilyViewUsesCompactDepthAndRelationBadges(t *testing.T) {
+	repo := familyRepo{edges: []domain.FamilyEdge{
+		{ProjectID: "default", ParentNumber: "US-PARENT", ChildNumber: "US-CURRENT", RelationType: domain.FamilyRelationContinuation},
+		{ProjectID: "default", ParentNumber: "US-CURRENT", ChildNumber: "US-CHILD", RelationType: domain.FamilyRelationContinuation},
+	}, patents: map[string]domain.Patent{
+		"US-PARENT":  {Number: "US-PARENT", Title: "Parent Patent"},
+		"US-CURRENT": {Number: "US-CURRENT", Title: "Current Patent"},
+		"US-CHILD":   {Number: "US-CHILD", Title: "Child Patent"},
+	}}
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      repo,
+		text:      EnglishText(),
+		mode:      viewFamily,
+		ProjectID: "default",
+		width:     120,
+		height:    30,
+		current:   domain.Patent{Number: "US-CURRENT"},
+	}
+
+	got := model.viewFamilyOverlay()
+	if strings.Contains(got, "«Parent»") || strings.Contains(got, "«Child»") || strings.Contains(got, "Descendant") {
+		t.Fatalf("expected compact family depth badges, got %q", got)
+	}
+	for _, want := range []string{"«↑1»", "«↓1»", "[cont.]"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected family overlay to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestFamilyViewShowsRefreshHintForUnloadedSelectedNode(t *testing.T) {
+	repo := familyRepo{edges: []domain.FamilyEdge{
+		{ProjectID: "default", ParentNumber: "US-PARENT", ChildNumber: "US-CURRENT", RelationType: domain.FamilyRelationContinuation},
+	}, patents: map[string]domain.Patent{
+		"US-PARENT":  {Number: "US-PARENT"},
+		"US-CURRENT": {Number: "US-CURRENT", Title: "Current Patent"},
+	}}
+	model := &Model{
+		ctx:            t.Context(),
+		repo:           repo,
+		text:           EnglishText(),
+		mode:           viewFamily,
+		ProjectID:      "default",
+		width:          120,
+		height:         30,
+		current:        domain.Patent{Number: "US-CURRENT"},
+		familySelected: 0,
+	}
+
+	got := model.viewFamilyOverlay()
+	if !strings.Contains(got, FamilyNodeStatusLabelUnloaded) {
+		t.Fatalf("expected unloaded family badge, got %q", got)
+	}
+	if !strings.Contains(got, "Press ctrl+r to refresh selected") {
+		t.Fatalf("expected family refresh hint for unloaded node, got %q", got)
+	}
+}
+
 func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
 	model := &Model{repo: stubRepo{}, mode: viewDetail}
 	got := model.renderScreenHeader()
@@ -265,6 +390,38 @@ func TestVersionCommandShowsVersionMessage(t *testing.T) {
 	got := updated.(*Model)
 	if got.message != "PatentMine v1.2.3" {
 		t.Fatalf("expected version message, got %q", got.message)
+	}
+}
+
+func TestPatentDateCommandClosesPopupAndMarksExpirationManual(t *testing.T) {
+	repo := &dateMutationRepo{patent: domain.Patent{Number: "US10218760B2", ExpirationSource: domain.ExpirationSourceImported}}
+	model := &Model{
+		ctx:          t.Context(),
+		repo:         repo,
+		text:         EnglishText(),
+		mode:         viewDateEdit,
+		ProjectID:    "default",
+		current:      domain.Patent{Number: "US10218760B2"},
+		backStack:    []navSnapshot{{mode: viewDetail}},
+		editDateType: domain.LifecycleTypeExp,
+	}
+
+	updated, _ := model.patentDateCommand([]string{domain.LifecycleTypeExp, "2037-02-26"})
+	got := updated.(*Model)
+	if repo.updatedType != domain.LifecycleTypeExp || repo.updatedValue != "2037-02-26" {
+		t.Fatalf("expected expiration update, got type=%q value=%q", repo.updatedType, repo.updatedValue)
+	}
+	if got.mode != viewDetail {
+		t.Fatalf("expected mode %q after popup save, got %q", viewDetail, got.mode)
+	}
+	if got.current.ExpirationDate != "2037-02-26" {
+		t.Fatalf("expected refreshed expiration date, got %q", got.current.ExpirationDate)
+	}
+	if got.current.ExpirationSource != domain.ExpirationSourceManual {
+		t.Fatalf("expected expiration source %q, got %q", domain.ExpirationSourceManual, got.current.ExpirationSource)
+	}
+	if got.message != "updated exp date: 2037-02-26" {
+		t.Fatalf("expected update message, got %q", got.message)
 	}
 }
 
@@ -388,6 +545,24 @@ func TestEnterOnDetailIDSOpensEditPopup(t *testing.T) {
 	}
 
 	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if got.mode != viewIDSEdit {
+		t.Fatalf("expected mode %q, got %q", viewIDSEdit, got.mode)
+	}
+}
+
+func TestIDSShortcutInDetailOpensEditPopup(t *testing.T) {
+	repo := &idsMutationRepo{entries: []domain.IDSEntry{{ID: 7, ProjectID: "default", PatentNumber: "US10218760B2", Status: domain.IDSStatusPending}}}
+	model := &Model{
+		ctx:       t.Context(),
+		repo:      repo,
+		text:      EnglishText(),
+		mode:      viewDetail,
+		ProjectID: "default",
+		current:   domain.Patent{Number: "US10218760B2"},
+	}
+
+	updated, _ := model.Update(teaKey(keyIDS))
 	got := updated.(*Model)
 	if got.mode != viewIDSEdit {
 		t.Fatalf("expected mode %q, got %q", viewIDSEdit, got.mode)
@@ -852,6 +1027,36 @@ func TestOpenKeyOnDetailClassificationOpensClassificationList(t *testing.T) {
 	}
 }
 
+func TestEnterOnDetailCountryFiltersStoredPatentsByCountry(t *testing.T) {
+	model := &Model{
+		ctx:       t.Context(),
+		text:      EnglishText(),
+		repo:      stubRepo{},
+		mode:      viewDetail,
+		ProjectID: "default",
+		current:   domain.Patent{Number: "US10218760B2", CountryCode: domain.PatentCountryUS},
+		width:     100,
+		height:    20,
+	}
+	for i, field := range model.detailFields() {
+		if field.label == TextDetailCountry {
+			model.detailSelected = i
+			break
+		}
+	}
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if got.mode != viewList {
+		t.Fatalf("expected mode %q, got %q", viewList, got.mode)
+	}
+	if got.countryFilter != domain.PatentCountryUS {
+		t.Fatalf("expected country filter %q, got %q", domain.PatentCountryUS, got.countryFilter)
+	}
+	if got.statusFilter != domain.CitationStatusStored {
+		t.Fatalf("expected stored status filter, got %q", got.statusFilter)
+	}
+}
+
 func TestEnterOnClassificationListOpensDetail(t *testing.T) {
 	model := &Model{
 		ctx:     t.Context(),
@@ -1193,6 +1398,23 @@ func (r classificationRepo) ListClassifications(context.Context, string, string)
 	return r.classifications, nil
 }
 
+type familyRepo struct {
+	stubRepo
+	edges   []domain.FamilyEdge
+	patents map[string]domain.Patent
+}
+
+func (r familyRepo) ListAllFamilyEdges(context.Context, string) ([]domain.FamilyEdge, error) {
+	return append([]domain.FamilyEdge(nil), r.edges...), nil
+}
+
+func (r familyRepo) GetPatent(_ context.Context, _ string, number string) (domain.Patent, error) {
+	if p, ok := r.patents[number]; ok {
+		return p, nil
+	}
+	return domain.Patent{}, nil
+}
+
 type citationRepo struct {
 	stubRepo
 	edges []domain.CitationEdge
@@ -1271,6 +1493,13 @@ type idsMutationRepo struct {
 	deletedID     int64
 }
 
+type dateMutationRepo struct {
+	stubRepo
+	patent       domain.Patent
+	updatedType  string
+	updatedValue string
+}
+
 func (r *idsMutationRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
 	return append([]domain.IDSEntry(nil), r.entries...), nil
 }
@@ -1326,6 +1555,28 @@ func (r *idsMutationRepo) DeleteIDSNPLEntry(_ context.Context, id int64) error {
 	}
 	r.entries = filtered
 	return nil
+}
+
+func (r *dateMutationRepo) UpdatePatentDate(_ context.Context, number string, dateType string, value string) error {
+	r.updatedType = dateType
+	r.updatedValue = value
+	r.patent.Number = number
+	switch dateType {
+	case domain.LifecycleTypeApp:
+		r.patent.ApplicationDate = value
+	case domain.LifecycleTypePub:
+		r.patent.PublicationDate = value
+	case domain.LifecycleTypeGrant:
+		r.patent.GrantDate = value
+	case domain.LifecycleTypeExp:
+		r.patent.ExpirationDate = value
+		r.patent.ExpirationSource = domain.ExpirationSourceManual
+	}
+	return nil
+}
+
+func (r *dateMutationRepo) GetPatent(context.Context, string, string) (domain.Patent, error) {
+	return r.patent, nil
 }
 
 func (stubRepo) Close() error                                        { return nil }
