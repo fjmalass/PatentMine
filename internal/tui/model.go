@@ -1050,10 +1050,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyEnter, keyOpen:
 			m.countBuffer = EmptyCount
-			if msg.String() == keyEnter && m.mode == viewClassifications && m.popupSearchQuery != "" {
-				m.popupSearchActive = false
-				return m, nil
-			}
 			if m.mode == viewPreview {
 				return m.storePendingPatent()
 			}
@@ -1431,7 +1427,6 @@ func (m *Model) effectiveWidth() int {
 }
 
 func (m *Model) restore(snapshot navSnapshot) *Model {
-	m.setMode(snapshot.mode)
 	m.patents = snapshot.patents
 	m.projects = snapshot.projects
 	m.selected = snapshot.selected
@@ -1476,6 +1471,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.popupSearchQuery = snapshot.popupSearchQuery
 	m.popupSearchActive = snapshot.popupSearchActive
 	m.reviewStateSelected = snapshot.reviewStateSelected
+	m.setMode(snapshot.mode)
 	return m
 }
 func (m *Model) goBack() (tea.Model, tea.Cmd) {
@@ -3597,6 +3593,7 @@ func (m *Model) selectableReviewStates() []string {
 		domain.ReviewStateStored,
 		domain.ReviewStateUnderReview,
 		domain.ReviewStateIgnored,
+		domain.ReviewStateCached,
 	}
 }
 
@@ -3717,14 +3714,25 @@ func (m *Model) viewList() string {
 
 	for i, c := range cols {
 		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
-		label := c.label
+
+		sortIndicator := ""
 		if m.sortColumn == c.id {
-			indicator := " ▴"
 			if m.sortOrder == domain.SortOrderDesc {
-				indicator = " ▾"
+				sortIndicator = " ▾"
+			} else {
+				sortIndicator = " ▴"
 			}
-			label += indicator
 		}
+		avail := c.width - lipgloss.Width(sortIndicator)
+		if avail < 1 {
+			avail = 1
+		}
+		displayLabel := c.label
+		if lipgloss.Width(c.label) > avail {
+			displayLabel = m.truncate(c.label, avail)
+		}
+		label := displayLabel + sortIndicator
+
 		if i == m.sortColumnIndex {
 			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
 		}
@@ -3738,7 +3746,6 @@ func (m *Model) viewList() string {
 			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
 		}
 
-		// Calculate total width for this column header (visible chars)
 		colWidth := c.width
 		if jumpColLabel != "" {
 			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
@@ -4907,17 +4914,9 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	// Determine which patents to update
 	indices := m.selectedIndices()
 	if len(indices) == 0 && m.mode == viewDetail {
-		// If in detail view, update current patent
 		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
 			m.err = err.Error()
 			return m.goBack()
-		}
-		m.current.ReviewState = next
-		for i, p := range m.patents {
-			if p.Number == m.current.Number {
-				m.patents[i].ReviewState = next
-				break
-			}
 		}
 		m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
 		m.logActivity(ActivityPatentReviewState, m.current.Number, next)
@@ -5365,8 +5364,9 @@ func (m *Model) viewClassificationDetail() string {
 
 	// count patents in project with this classification code (prefix match)
 	projectPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
-		ClassFilters:  []string{cls.Code},
-		ClassFilterOp: domain.FilterOpAnd,
+		ClassFilters:     []string{cls.Code},
+		ClassFilterOp:    domain.FilterOpAnd,
+		ReviewStateFilter: storage.ReviewStateFilterNone,
 	})
 	count := len(projectPatents)
 
@@ -6172,7 +6172,7 @@ func (m *Model) idsCommand(args []string) (tea.Model, tea.Cmd) {
 
 func (m *Model) exportCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.err = "usage: :project export ids|status|state [<state>] [filename]"
+		m.err = "usage: :project export ids|review_state|state [<state>] [filename]"
 		return m, nil
 	}
 	switch args[0] {

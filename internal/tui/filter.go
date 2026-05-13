@@ -50,11 +50,13 @@ var SupportedFilters = map[FilterType]bool{
 }
 
 func SupportedFilterTypes() []string {
-	var list []string
-	for ft := range SupportedFilters {
-		list = append(list, string(ft))
+	return []string{
+		"review_state",
+		"class",
+		"inventor",
+		"country",
+		"clear",
 	}
-	return list
 }
 
 func SupportedFilterTypesString() string {
@@ -80,12 +82,13 @@ func ParseFilterType(s string) (FilterType, bool) {
 // :filter clear  — resets all filters to defaults
 func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.err = fmt.Sprintf("usage: :filter <%s> ...", SupportedFilterTypesString())
+		m.err = fmt.Sprintf("usage: :filter <%s>", SupportedFilterTypesString())
 		return m, nil
 	}
 	ft, ok := ParseFilterType(args[0])
 	if !ok {
 		m.err = fmt.Sprintf("unknown filter type '%q' - valid: [%s]", args[0], SupportedFilterTypesString())
+		return m, nil
 	}
 	switch ft {
 	case FilterReviewState:
@@ -114,16 +117,16 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 }
 
-// reviewStateFilterCommand handles :filter review_state <stored|ignored|under-review|none>.
+// reviewStateFilterCommand handles :filter review_state <stored|ignored|under-review|cached|none>.
 func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.err = "usage: :filter review_state <stored|ignored|under-review|none>"
+		m.err = "usage: :filter review_state <stored|ignored|under-review|cached|none>"
 		return m, nil
 	}
 	raw := strings.ToLower(args[0])
 	canonical, ok := validReviewStateFilters[raw]
 	if !ok {
-		m.err = fmt.Sprintf("unknown review state %q — valid values: stored, ignored, under-review, none", raw)
+		m.err = fmt.Sprintf("unknown review state %q — valid values: stored, ignored, under-review, cached, none", raw)
 		return m, nil
 	}
 	m.reviewStateFilter = canonical

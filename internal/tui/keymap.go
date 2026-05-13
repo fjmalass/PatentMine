@@ -218,6 +218,9 @@ func (m *Model) setMode(mode viewMode) {
 	for k, v := range modeKeys[mode] {
 		m.activeKeys[k] = v
 	}
+	if spec, ok := modeSpecs[mode]; ok && spec.onActivate != nil {
+		spec.onActivate(m)
+	}
 }
 
 func init() {

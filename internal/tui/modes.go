@@ -5,6 +5,7 @@ type modeSpec struct {
 	themeColor string
 	isOverlay  bool
 	helpHint   string
+	onActivate func(*Model)
 }
 
 var allViewModes = []viewMode{
@@ -49,6 +50,22 @@ var modeSpecs = map[viewMode]modeSpec{
 	viewDetail: {
 		title:      "Detail",
 		themeColor: ColorThemeDetail,
+		onActivate: func(m *Model) {
+			if m.current.Number == "" || m.repo == nil {
+				return
+			}
+			p, err := m.repo.GetPatent(m.ctx, m.ProjectID, m.current.Number)
+			if err == nil {
+				m.current = p
+				for i, p2 := range m.patents {
+					if p2.Number == m.current.Number {
+						m.patents[i] = m.current
+						break
+					}
+				}
+			}
+			m.populateDetailCache()
+		},
 	},
 	viewCites: {
 		title:      "Citations",
@@ -66,7 +83,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Classifications",
 		themeColor: ColorThemeClassifications,
 		isOverlay:  true,
-		helpHint:   "j/k: move · enter: filter · /: search · esc: back",
+		helpHint:   "j/k: move · enter: details · /: search · esc: back",
 	},
 	viewText: {
 		title:      "Full Text",
@@ -122,7 +139,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Classification Detail",
 		themeColor: ColorThemeClassifications,
 		isOverlay:  true,
-		helpHint:   "esc: back",
+		helpHint:   "enter: filter · esc: back",
 	},
 	viewInventors: {
 		title:      "Inventors",
@@ -207,7 +224,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		helpHint:   "y: confirm · n: cancel",
 	},
 	viewReviewStateSelect: {
-		title:      "Select ReviewState",
+		title:      "Select Review State",
 		themeColor: ColorThemeList,
 		isOverlay:  true,
 		helpHint:   "j/k: move · enter: select · esc: back",
