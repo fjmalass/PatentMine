@@ -34,7 +34,7 @@ const (
 	commandFilter             = "filter"
 	commandClassFilter        = "classfilter"
 	commandInventorFilter     = "inventorfilter"
-	commandStatusFilter       = "statusfilter"
+	// commandStatusFilter removed — use :filter review_state instead
 	commandFamily             = "family"
 	commandPurge              = "purge"
 	commandCompact            = "compact"
@@ -86,11 +86,11 @@ const (
 
 	// :project export subcommands
 	exportSubIDS    = "ids"
-	exportSubStatus = "status"
+	exportSubReviewState = "review_state"
 	exportSubState  = "state"
 
 	// :filter subcommands
-	filterSubStatus   = "status"
+	filterSubReviewState = "review_state"
 	filterSubClass    = "class"
 	filterSubInventor = "inventor"
 	filterSubClear    = "clear"
@@ -103,9 +103,9 @@ const (
 
 	// activity actions
 	activityPatentAdd      = "patent.add"
-	activityPatentStatus   = "patent.status"
-	activityPatentImport   = "patent.import"
-	activityCitationStatus = "citation.status"
+	activityPatentReviewState   = "patent.review_state"
+	activityPatentImport        = "patent.import"
+	activityCitationReviewState = "citation.review_state"
 	activityCitationStore  = "citation.store"
 	activityNoteAdd        = "note.add"
 	activityRefAdd         = "ref.add"
@@ -161,7 +161,7 @@ const (
 	keyBottom            = "G"
 	keyCites             = "c"
 	keyCitedBy           = "b"
-	keyStatus            = "s"
+	keyReviewState = "s"
 	keySort              = "."
 	keyColLeft           = "h"
 	keyColRight          = "l"
@@ -224,7 +224,7 @@ const (
 
 	inventorJumpNumberLabels = "123456789"
 
-	statusFilterNone = storage.StatusFilterNone // no status restriction
+	reviewStateFilterNone = storage.ReviewStateFilterNone // no review state restriction
 
 	EmptyFilter     = ""
 	EmptySortColumn = ""
@@ -285,7 +285,7 @@ const (
 	// Activity actions
 	ActivityPatentImport   = "patent.import"
 	ActivityPatentDelete   = "patent.delete"
-	ActivityPatentStatus   = "patent.status"
+	ActivityPatentReviewState = "patent.review_state"
 	ActivityPatentDate     = "patent.date"
 	ActivityPatentNumber   = "patent.number"
 	ActivityPatentRefresh  = "patent.refresh"
@@ -294,7 +294,7 @@ const (
 	ActivityIDSRemove      = "ids.remove"
 	ActivityIDSStatus      = "ids.status"
 	ActivityCitationStore  = "citation.store"
-	ActivityCitationStatus = "citation.status"
+	ActivityCitationReviewState = "citation.review_state"
 	ActivityRefAdd         = "ref.add"
 	ActivityBulkPrefix     = "bulk."
 	ActivityFamilyRefresh  = "family.refresh"
@@ -344,11 +344,11 @@ const (
 	SettingLastProjectID = "last_project_id"
 )
 
-var StatusColors = map[string]string{
-	domain.CitationStatusIgnored:     ColorSubtle,
-	domain.CitationStatusUnderReview: ColorWarning,
-	domain.CitationStatusStored:      ColorTheme,
-	domain.CitationStatusCached:      ColorDim,
+var ReviewStateColors = map[string]string{
+	domain.ReviewStateIgnored:     ColorSubtle,
+	domain.ReviewStateUnderReview: ColorWarning,
+	domain.ReviewStateStored:      ColorTheme,
+	domain.ReviewStateCached:      ColorDim,
 }
 
 var SummaryStatusColors = map[string]string{

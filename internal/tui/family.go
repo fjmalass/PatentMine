@@ -575,9 +575,9 @@ func (m *Model) refreshSelectedFamilyMember() (tea.Model, tea.Cmd) {
 				return refreshResultMsg{err: fmt.Errorf("family member refresh failed: %w", err)}
 			}
 
-			bundle.Patent.Status = domain.CitationStatusCached
-			if existing, err := repo.GetPatent(ctx, projectID, targetNumber); err == nil && existing.Number != "" && existing.Status != "" {
-				bundle.Patent.Status = existing.Status
+			bundle.Patent.ReviewState = domain.ReviewStateCached
+			if existing, err := repo.GetPatent(ctx, projectID, targetNumber); err == nil && existing.Number != "" && existing.ReviewState != "" {
+				bundle.Patent.ReviewState = existing.ReviewState
 			}
 			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				logger.Error("family member store failed", "patent", targetNumber, "error", err)
@@ -727,8 +727,8 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = fmt.Sprintf("patent %s not in project — add with :add %s first", target, target)
 		return m, nil
 	}
-	if targetPatent.Status != domain.CitationStatusStored {
-		m.err = fmt.Sprintf("patent %s is not stored in this project (status: %s)", target, targetPatent.Status)
+	if targetPatent.ReviewState != domain.ReviewStateStored {
+		m.err = fmt.Sprintf("patent %s is not stored in this project (status: %s)", target, targetPatent.ReviewState)
 		return m, nil
 	}
 
@@ -801,7 +801,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 	repo := m.repo
 	projectID := m.ProjectID
 	currentNumber := m.current.Number
-	currentStatus := m.current.Status
+	currentStatus := m.current.ReviewState
 	logger := m.logger
 
 	return m, tea.Batch(
@@ -823,7 +823,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 			} else {
 				bundle.Patent.ImportSource = ImportSourceGoogle
 			}
-			bundle.Patent.Status = currentStatus
+			bundle.Patent.ReviewState = currentStatus
 
 			if len(bundle.FamilyEdges) == 0 {
 				p, _ := repo.GetPatent(ctx, projectID, currentNumber)
@@ -875,7 +875,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				} else {
 					memberBundle.Patent.ImportSource = ImportSourceGoogle
 				}
-				memberBundle.Patent.Status = domain.CitationStatusCached
+				memberBundle.Patent.ReviewState = domain.ReviewStateCached
 				if err := repo.UpsertPatentBundle(ctx, projectID, memberBundle); err != nil {
 					logger.Error("family member store failed", "patent", num, "error", err)
 					failed++
@@ -884,7 +884,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				imported++
 			}
 
-			bundle.Patent.Status = currentStatus
+			bundle.Patent.ReviewState = currentStatus
 			_ = repo.UpsertPatentBundle(ctx, projectID, bundle)
 
 			p, err := repo.GetPatent(ctx, projectID, currentNumber)

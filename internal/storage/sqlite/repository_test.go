@@ -94,7 +94,7 @@ func TestRepositoryRefreshPrunesStaleCitationsAndPreservesStatus(t *testing.T) {
 	if len(citedBy) != 2 {
 		t.Fatalf("expected initial cited-by count 2, got %d", len(citedBy))
 	}
-	if err := repo.UpdateCitationStatus(ctx, "default", citedBy[0], domain.CitationStatusIgnored); err != nil {
+	if err := repo.UpdateCitationReviewState(ctx, "default", citedBy[0], domain.ReviewStateIgnored); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,8 +113,8 @@ func TestRepositoryRefreshPrunesStaleCitationsAndPreservesStatus(t *testing.T) {
 	if len(citedBy) != 1 {
 		t.Fatalf("expected stale cited-by row to be pruned, got %+v", citedBy)
 	}
-	if citedBy[0].Status != domain.CitationStatusIgnored {
-		t.Fatalf("expected status to be preserved, got %q", citedBy[0].Status)
+	if citedBy[0].ReviewState != domain.ReviewStateIgnored {
+		t.Fatalf("expected review state to be preserved, got %q", citedBy[0].ReviewState)
 	}
 }
 
@@ -167,26 +167,26 @@ func TestRepositoryOperations(t *testing.T) {
 	if len(citations) != 1 {
 		t.Fatalf("expected citation, got %d", len(citations))
 	}
-	if citations[0].Status != domain.CitationStatusCached {
-		t.Fatalf("expected cached citation status (new default), got %q", citations[0].Status)
+	if citations[0].ReviewState != domain.ReviewStateCached {
+		t.Fatalf("expected cached citation review state (new default), got %q", citations[0].ReviewState)
 	}
 	if citations[0].CreatedAt.IsZero() || citations[0].RefreshedAt.IsZero() || citations[0].LabeledAt.IsZero() {
 		t.Fatalf("expected citation timestamps, got created=%v refreshed=%v labeled=%v", citations[0].CreatedAt, citations[0].RefreshedAt, citations[0].LabeledAt)
 	}
-	if err := repo.UpdateCitationStatus(ctx, "default", citations[0], domain.CitationStatusIgnored); err != nil {
+	if err := repo.UpdateCitationReviewState(ctx, "default", citations[0], domain.ReviewStateIgnored); err != nil {
 		t.Fatal(err)
 	}
 	citations, err = repo.ListCitations(ctx, "default", "US1", domain.RelationCites, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if citations[0].Status != domain.CitationStatusIgnored {
-		t.Fatalf("expected ignored citation status, got %q", citations[0].Status)
+	if citations[0].ReviewState != domain.ReviewStateIgnored {
+		t.Fatalf("expected ignored citation review state, got %q", citations[0].ReviewState)
 	}
 	if citations[0].LabeledAt.IsZero() {
 		t.Fatal("expected citation labeled timestamp")
 	}
-	ignored, err := repo.ListCitationsByStatus(ctx, "default", domain.CitationStatusIgnored, storage.ListCitationsOptions{})
+	ignored, err := repo.ListCitationsByReviewState(ctx, "default", domain.ReviewStateIgnored, storage.ListCitationsOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +200,8 @@ func TestRepositoryOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if citations[0].Status != domain.CitationStatusIgnored {
-		t.Fatalf("expected refresh to preserve citation status, got %q", citations[0].Status)
+	if citations[0].ReviewState != domain.ReviewStateIgnored {
+		t.Fatalf("expected refresh to preserve citation review state, got %q", citations[0].ReviewState)
 	}
 	if got, _ := repo.ListTextSections(ctx, "default", "US1"); len(got) != 1 {
 		t.Fatalf("expected text section, got %d", len(got))
@@ -233,8 +233,8 @@ func TestRepositoryOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if patent.Status != domain.CitationStatusIgnored {
-		t.Fatalf("expected patent status to be ignored, got %q", patent.Status)
+	if patent.ReviewState != domain.ReviewStateIgnored {
+		t.Fatalf("expected patent status to be ignored, got %q", patent.ReviewState)
 	}
 	// Default (stored) should not show deleted patent
 	storedPatents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{})
@@ -246,8 +246,8 @@ func TestRepositoryOperations(t *testing.T) {
 			t.Fatal("deleted patent should not appear in default (stored) list")
 		}
 	}
-	// StatusFilter ignored should surface deleted project patent
-	ignoredPatents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{StatusFilter: "ignored"})
+	// ReviewStateFilter ignored should surface deleted project patent
+	ignoredPatents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{ReviewStateFilter: domain.ReviewStateIgnored})
 	if err != nil {
 		t.Fatal(err)
 	}

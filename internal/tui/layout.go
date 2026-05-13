@@ -150,8 +150,8 @@ func (m *Model) renderScreenHeader() string {
 	// status:X only shown when user has changed from the default (stored).
 	// The default stored-only view is implied and omitted to reduce noise.
 	var filters []string
-	if m.statusFilter != "" && m.statusFilter != domain.CitationStatusStored {
-		filters = append(filters, m.text.T(TextValueFilterStatusTag)+m.statusFilter)
+	if m.reviewStateFilter != "" && m.reviewStateFilter != domain.ReviewStateStored {
+		filters = append(filters, m.text.T(TextValueFilterReviewStateTag)+m.reviewStateFilter)
 	}
 	if m.filter != EmptyFilter {
 		filters = append(filters, fmt.Sprintf("%s%s", m.text.T(TextValueFilterGeneralTag), m.filter))
@@ -175,9 +175,9 @@ func (m *Model) renderScreenHeader() string {
 		b.WriteString(subtle.Render("· " + strings.Join(filters, ", ")))
 	}
 
-	if m.isCitationView() && m.citesStatusFilter != "" {
-		label := m.citesStatusFilter
-		if label == domain.CitationStatusUnderReview {
+	if m.isCitationView() && m.citesReviewStateFilter != "" {
+		label := m.citesReviewStateFilter
+		if label == domain.ReviewStateUnderReview {
 			label = "under-review"
 		}
 		filters = append(filters, m.text.T(TextValueFilterRefsTag)+label)

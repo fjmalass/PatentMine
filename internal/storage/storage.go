@@ -7,26 +7,26 @@ import (
 )
 
 const (
-	StatusFilterNone = "none"
+	ReviewStateFilterNone = "none"
 )
 
 type ListPatentsOptions struct {
-	Filter        string
-	CountryFilter string
-	StatusFilter  string   // "stored" (default), "ignored", "under_review", "all"
-	ClassFilters  []string // CPC prefix filters
-	ClassFilterOp string   // "and" (default) or "or"
-	TagFilter     string
-	SortColumn    string
-	SortOrder     string
-	SortColumn2   string
-	SortOrder2    string
+	Filter           string
+	CountryFilter    string
+	ReviewStateFilter string // "stored" (default), "ignored", "under_review", "all"
+	ClassFilters     []string // CPC prefix filters
+	ClassFilterOp    string   // "and" (default) or "or"
+	TagFilter        string
+	SortColumn       string
+	SortOrder        string
+	SortColumn2      string
+	SortOrder2       string
 }
 
 type ListCitationsOptions struct {
-	StatusFilter string // "stored", "ignored", "under_review", or "" for all
-	SortColumn   string
-	SortOrder    string
+	ReviewStateFilter string // "stored", "ignored", "under_review", or "" for all
+	SortColumn        string
+	SortOrder         string
 }
 
 type Repository interface {
@@ -47,9 +47,9 @@ type Repository interface {
 	ListFamilyPatents(ctx context.Context, projectID string, numbers []string) (map[string]domain.Patent, error)
 	ListPatents(ctx context.Context, projectID string, opts ListPatentsOptions) ([]domain.Patent, error)
 	ListCitations(ctx context.Context, projectID string, number, relationType string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
-	ListCitationsByStatus(ctx context.Context, projectID string, status string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
-	UpdateCitationStatus(ctx context.Context, projectID string, edge domain.CitationEdge, status string) error
-	UpdatePatentStatus(ctx context.Context, projectID string, number string, status string) error
+	ListCitationsByReviewState(ctx context.Context, projectID string, reviewState string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
+	UpdateCitationReviewState(ctx context.Context, projectID string, edge domain.CitationEdge, reviewState string) error
+	UpdatePatentReviewState(ctx context.Context, projectID string, number string, reviewState string) error
 	UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error
 	UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error
 	UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error

@@ -425,12 +425,12 @@ func TestPatentDateCommandClosesPopupAndMarksExpirationManual(t *testing.T) {
 	}
 }
 
-func TestNextCitationDetailStatus(t *testing.T) {
-	if got := nextCitationDetailStatus(domain.CitationStatusIgnored, false); got != domain.CitationStatusCached {
-		t.Fatalf("expected new detail import status %q, got %q", domain.CitationStatusCached, got)
+func TestNextCitationDetailReviewState(t *testing.T) {
+	if got := nextCitationDetailReviewState(domain.ReviewStateIgnored, false); got != domain.ReviewStateCached {
+		t.Fatalf("expected new detail import review state %q, got %q", domain.ReviewStateCached, got)
 	}
-	if got := nextCitationDetailStatus(domain.CitationStatusUnderReview, true); got != domain.CitationStatusUnderReview {
-		t.Fatalf("expected existing citation status to be preserved, got %q", got)
+	if got := nextCitationDetailReviewState(domain.ReviewStateUnderReview, true); got != domain.ReviewStateUnderReview {
+		t.Fatalf("expected existing citation review state to be preserved, got %q", got)
 	}
 }
 
@@ -445,7 +445,7 @@ func TestListViewShowsColumnShortcutLabelsInJumpMode(t *testing.T) {
 		height:   20,
 	}
 	got := model.viewList()
-	for _, key := range []string{jumpLabelPublication, jumpLabelInventors, jumpLabelClassification, jumpLabelExpiration, keyStatus, jumpLabelUpdated, jumpLabelNotes} {
+	for _, key := range []string{jumpLabelPublication, jumpLabelInventors, jumpLabelClassification, jumpLabelExpiration, keyReviewState, jumpLabelUpdated, jumpLabelNotes} {
 		if !strings.Contains(got, key+" ") {
 			t.Fatalf("expected list header to show shortcut %q, got %q", key, got)
 		}
@@ -489,7 +489,7 @@ func TestListViewFitsNarrowWidthWithoutWrapping(t *testing.T) {
 			Inventors:           []string{"Firstname Lastname", "Second Inventor"},
 			ClassificationLabel: "H04L12/58",
 			ExpirationDate:      "2043-03-21",
-			Status:              domain.CitationStatusStored,
+			ReviewState:         domain.ReviewStateStored,
 			NotesCount:          12,
 		}},
 		width:  120,
@@ -1039,8 +1039,8 @@ func TestEnterOnDetailCountryFiltersStoredPatentsByCountry(t *testing.T) {
 	if got.countryFilter != domain.PatentCountryUS {
 		t.Fatalf("expected country filter %q, got %q", domain.PatentCountryUS, got.countryFilter)
 	}
-	if got.statusFilter != domain.CitationStatusStored {
-		t.Fatalf("expected stored status filter, got %q", got.statusFilter)
+	if got.reviewStateFilter != domain.ReviewStateStored {
+		t.Fatalf("expected stored review state filter, got %q", got.reviewStateFilter)
 	}
 }
 
@@ -1221,7 +1221,7 @@ func TestViewCitationsShowsIndexedRows(t *testing.T) {
 
 func TestViewCitationsFitsOverlayAndOmitsImportSourceTag(t *testing.T) {
 	edges := sampleCitationEdges(1)
-	edges[0].Status = domain.CitationStatusIgnored
+	edges[0].ReviewState = domain.ReviewStateIgnored
 	edges[0].TargetImportSource = ImportSourceGoogle
 	edges[0].TargetTitle = "Paving-related measuring device incorporating a computer device and communication element therebetween and another very long suffix"
 	model := &Model{
@@ -1272,7 +1272,7 @@ func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
 		text:         EnglishText(),
 		repo:         citationRepo{edges: sampleCitationEdges(3)},
 		mode:         viewReview,
-		reviewStatus: domain.CitationStatusUnderReview,
+		reviewState: domain.ReviewStateUnderReview,
 		width:        100,
 		height:       20,
 	}
@@ -1421,7 +1421,7 @@ func (r citationRepo) ListCitations(context.Context, string, string, string, sto
 	return r.edges, nil
 }
 
-func (r citationRepo) ListCitationsByStatus(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (r citationRepo) ListCitationsByReviewState(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return r.edges, nil
 }
 
@@ -1461,7 +1461,7 @@ func sampleCitationEdges(count int) []domain.CitationEdge {
 			SourcePatent:         "US10218760B2",
 			TargetPatent:         fmt.Sprintf("US100000%dB2", i+1),
 			RelationType:         domain.RelationCites,
-			Status:               domain.CitationStatusUnderReview,
+			ReviewState:          domain.ReviewStateUnderReview,
 			TargetTitle:          fmt.Sprintf("Citation %d", i+1),
 			TargetInventors:      []string{fmt.Sprintf("Inventor %d", i+1)},
 			TargetExpirationDate: "2030-01-01",
@@ -1601,13 +1601,13 @@ func (stubRepo) ListPatents(context.Context, string, storage.ListPatentsOptions)
 func (stubRepo) ListCitations(context.Context, string, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return nil, nil
 }
-func (stubRepo) ListCitationsByStatus(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (stubRepo) ListCitationsByReviewState(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return nil, nil
 }
-func (stubRepo) UpdateCitationStatus(context.Context, string, domain.CitationEdge, string) error {
+func (stubRepo) UpdateCitationReviewState(context.Context, string, domain.CitationEdge, string) error {
 	return nil
 }
-func (stubRepo) UpdatePatentStatus(context.Context, string, string, string) error { return nil }
+func (stubRepo) UpdatePatentReviewState(context.Context, string, string, string) error { return nil }
 func (stubRepo) UpdatePatentDate(context.Context, string, string, string) error   { return nil }
 func (stubRepo) UpdatePatentNumber(context.Context, string, string, string) error { return nil }
 func (stubRepo) UpdateClassificationDescription(context.Context, string, string, string, string) error {

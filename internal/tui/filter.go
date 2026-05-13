@@ -9,19 +9,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var validStatusFilters = map[string]string{
-	domain.CitationStatusStored:      domain.CitationStatusStored,
-	domain.CitationStatusIgnored:     domain.CitationStatusIgnored,
-	domain.CitationStatusUnderReview: domain.CitationStatusUnderReview,
-	domain.CitationStatusCached:      domain.CitationStatusCached,
-	"under-review":                   domain.CitationStatusUnderReview,
-	statusFilterNone:                 statusFilterNone,
+var validReviewStateFilters = map[string]string{
+	domain.ReviewStateStored:      domain.ReviewStateStored,
+	domain.ReviewStateIgnored:     domain.ReviewStateIgnored,
+	domain.ReviewStateUnderReview: domain.ReviewStateUnderReview,
+	domain.ReviewStateCached:      domain.ReviewStateCached,
+	"under-review":                domain.ReviewStateUnderReview,
+	reviewStateFilterNone:         reviewStateFilterNone,
 }
 
 type FilterType string
 
 const (
-	FilterStatus         FilterType = "status"
+	FilterReviewState    FilterType = "review_state"
 	FilterClassification FilterType = "classification"
 	FilterInventor       FilterType = "inventor"
 	FilterCountry        FilterType = "country"
@@ -29,7 +29,8 @@ const (
 )
 
 var filterAliases = map[string]FilterType{
-	"status":         FilterStatus,
+	"review_state":  FilterReviewState,
+	"status":        FilterReviewState,
 	"classification": FilterClassification,
 	"class":          FilterClassification,
 	"cpc":            FilterClassification,
@@ -41,7 +42,7 @@ var filterAliases = map[string]FilterType{
 }
 
 var SupportedFilters = map[FilterType]bool{
-	FilterStatus:         true,
+	FilterReviewState:    true,
 	FilterClassification: true,
 	FilterInventor:       true,
 	FilterCountry:        true,
@@ -73,7 +74,7 @@ func ParseFilterType(s string) (FilterType, bool) {
 }
 
 // filterCommand is the unified :filter gateway.
-// :filter status <stored|ignored|under-review|none>
+// :filter review_state <stored|ignored|under-review|none>
 // :filter class <cpc> [&& <cpc2> | || <cpc2>]
 // :filter inventor <name>
 // :filter clear  — resets all filters to defaults
@@ -87,8 +88,8 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = fmt.Sprintf("unknown filter type '%q' - valid: [%s]", args[0], SupportedFilterTypesString())
 	}
 	switch ft {
-	case FilterStatus:
-		return m.statusFilterCommand(args[1:])
+	case FilterReviewState:
+		return m.reviewStateFilterCommand(args[1:])
 	case FilterClassification:
 		return m.classCommand(args[1:])
 	case FilterInventor:
@@ -96,7 +97,7 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	case FilterCountry:
 		return m.countryFilterCommand(args[1:])
 	case FilterClear:
-		m.statusFilter = domain.CitationStatusStored
+		m.reviewStateFilter = domain.ReviewStateStored
 		m.classFilters = nil
 		m.classFilterOp = EmptyFilter
 		m.classFilter = EmptyFilter
@@ -113,24 +114,24 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 }
 
-// statusFilterCommand handles :statusfilter <stored|ignored|under-review|none>.
-func (m *Model) statusFilterCommand(args []string) (tea.Model, tea.Cmd) {
+// reviewStateFilterCommand handles :filter review_state <stored|ignored|under-review|none>.
+func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		m.err = "usage: :statusfilter <stored|ignored|under-review|none>"
+		m.err = "usage: :filter review_state <stored|ignored|under-review|none>"
 		return m, nil
 	}
 	raw := strings.ToLower(args[0])
-	canonical, ok := validStatusFilters[raw]
+	canonical, ok := validReviewStateFilters[raw]
 	if !ok {
-		m.err = fmt.Sprintf("unknown status %q — valid values: stored, ignored, under-review, none", raw)
+		m.err = fmt.Sprintf("unknown review state %q — valid values: stored, ignored, under-review, none", raw)
 		return m, nil
 	}
-	m.statusFilter = canonical
+	m.reviewStateFilter = canonical
 	m.setMode(viewList)
-	if canonical == statusFilterNone {
-		m.message = "showing all patents (no status filter)"
+	if canonical == reviewStateFilterNone {
+		m.message = "showing all patents (no review state filter)"
 	} else {
-		m.message = "showing patents with status: " + canonical
+		m.message = "showing patents with review state: " + canonical
 	}
 	return m.refreshList()
 }
@@ -282,7 +283,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.countryFilter = code
-		m.statusFilter = domain.CitationStatusStored
+		m.reviewStateFilter = domain.ReviewStateStored
 		m.message = fmt.Sprintf("showing stored patents from %s", code)
 		m.setMode(viewList)
 		return m.refreshList()
@@ -355,7 +356,7 @@ func normalizeSortCol(col string) string {
 	case "cpc":
 		return domain.SortColumnClass
 	case domain.SortColumnNumber, domain.SortColumnTitle, domain.SortColumnDate,
-		domain.SortColumnStatus, domain.SortColumnAssignee, domain.SortColumnInventor,
+		domain.SortColumnReviewState, domain.SortColumnAssignee, domain.SortColumnInventor,
 		domain.SortColumnClass, domain.SortColumnExpiration, domain.SortColumnUpdated,
 		domain.SortColumnNotes, domain.SortColumnTags, domain.SortColumnIDS:
 		return strings.ToLower(col)
@@ -375,16 +376,16 @@ func splitTrim(s, sep string) []string {
 	return out
 }
 
-// nextCitesStatusFilter cycles through citation view status filters.
+// nextCitesReviewStateFilter cycles through citation view review state filters.
 // "" (all) → stored → ignored → under_review → "" (all)
-func nextCitesStatusFilter(current string) string {
+func nextCitesReviewStateFilter(current string) string {
 	switch current {
 	case "":
-		return domain.CitationStatusStored
-	case domain.CitationStatusStored:
-		return domain.CitationStatusIgnored
-	case domain.CitationStatusIgnored:
-		return domain.CitationStatusUnderReview
+		return domain.ReviewStateStored
+	case domain.ReviewStateStored:
+		return domain.ReviewStateIgnored
+	case domain.ReviewStateIgnored:
+		return domain.ReviewStateUnderReview
 	default:
 		return ""
 	}

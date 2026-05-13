@@ -149,6 +149,9 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 			begin
 				delete from project_ids where patent_number = OLD.number;
 			end`,
+		`alter table project_patents rename column status to review_state`,
+		`alter table project_patents rename column status_changed_at to review_state_changed_at`,
+		`alter table citation_edges rename column status to review_state`,
 	}
 	totalSteps := len(alterations) + 2
 	step := 0
@@ -337,7 +340,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			primary key (project_id, patent_number),
 			foreign key (project_id) references projects(id),
 			foreign key (patent_number) references patents(number)
-		)`, domain.CitationStatusCached),
+		)`, domain.ReviewStateCached),
 
 		`create table if not exists patent_text_sections (
 			patent_number text not null,
@@ -359,7 +362,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			primary key (project_id, source_patent, target_patent, relation_type),
 			foreign key (project_id) references projects(id),
 			foreign key (source_patent) references patents(number)
-		)`, domain.CitationStatusCached),
+		)`, domain.ReviewStateCached),
 		`create table if not exists patent_classifications (
 			patent_number text not null,
 			system text not null,
@@ -605,15 +608,15 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 	}
 
 	// Association to project
-	status := bundle.Patent.Status
+	status := bundle.Patent.ReviewState
 	if status == "" {
-		status = domain.CitationStatusStored
+		status = domain.ReviewStateStored
 	}
 	now := nowString()
-	if _, err := tx.ExecContext(ctx, `insert into project_patents (project_id, patent_number, status, created_at)
+	if _, err := tx.ExecContext(ctx, `insert into project_patents (project_id, patent_number, review_state, created_at)
 		values (?, ?, ?, ?)
 		on conflict(project_id, patent_number) do update set
-			status = case when excluded.status = 'stored' then 'stored' else project_patents.status end`,
+			review_state = case when excluded.review_state = 'stored' then 'stored' else project_patents.review_state end`,
 		projectID, bundle.Patent.Number, status, now); err != nil {
 		r.logger.Error("repository.project_patent_association failed", "project", projectID, "patent", bundle.Patent.Number, "error", err)
 		return err
@@ -637,7 +640,7 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 		edge.ProjectID = projectID
 		var exists int
 		// Check if either parent or child is stored as a citation or patent in this project
-		if err := tx.QueryRowContext(ctx, `select count(*) from project_patents where project_id = ? and patent_number in (?, ?) and status != 'ignored'`,
+		if err := tx.QueryRowContext(ctx, `select count(*) from project_patents where project_id = ? and patent_number in (?, ?) and review_state != 'ignored'`,
 			projectID, edge.ParentNumber, edge.ChildNumber).Scan(&exists); err != nil || exists == 0 {
 			continue // neither side known yet — skip
 		}
@@ -729,10 +732,10 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number 
 	refreshedRelations := map[string]bool{}
 	for _, edge := range edges {
 		source := firstNonEmpty(edge.SourcePatent, number)
-		status := firstNonEmpty(edge.Status, domain.CitationStatusCached)
+		status := firstNonEmpty(edge.ReviewState, domain.ReviewStateCached)
 
 		refreshedRelations[edge.RelationType] = true
-		if _, err := tx.ExecContext(ctx, `insert into citation_edges (project_id, source_patent, target_patent, relation_type, status, created_at, refreshed_at, labeled_at)
+		if _, err := tx.ExecContext(ctx, `insert into citation_edges (project_id, source_patent, target_patent, relation_type, review_state, created_at, refreshed_at, labeled_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?)
 			on conflict(project_id, source_patent, target_patent, relation_type) do update set
 				refreshed_at = excluded.refreshed_at`,
@@ -797,8 +800,8 @@ func (r *Repository) GetPatent(ctx context.Context, projectID string, number str
 	startedAt := time.Now()
 	row := r.db.QueryRowContext(ctx, `
 		select
-			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
+			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.review_state, p.latest_assignment,
+			group_concat(c.code, ', ') as classification_label, pp.review_state_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
 			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
 		from patents p
@@ -890,8 +893,8 @@ func sortExpr(col, direction string) string {
 		return "p.title " + direction
 	case domain.SortColumnDate:
 		return "p.publication_date " + direction
-	case domain.SortColumnStatus:
-		return "pp.status " + direction
+	case domain.SortColumnReviewState:
+		return "pp.review_state " + direction
 	case domain.SortColumnAssignee:
 		return "p.assignee " + direction
 	case domain.SortColumnInventor:
@@ -914,36 +917,36 @@ func sortExpr(col, direction string) string {
 
 func (r *Repository) ListPatents(ctx context.Context, projectID string, opts storage.ListPatentsOptions) ([]domain.Patent, error) {
 	args := []any{projectID}
-	// statusClause is appended after the base WHERE; subqueries that reference project_id
+	// reviewStateClause is appended after the base WHERE; subqueries that reference project_id
 	// need an extra projectID arg inserted immediately after the base projectID arg.
-	var statusClause string
-	switch strings.ToLower(opts.StatusFilter) {
-	case domain.CitationStatusIgnored:
+	var reviewStateClause string
+	switch strings.ToLower(opts.ReviewStateFilter) {
+	case domain.ReviewStateIgnored:
 		// deleted project patents + citation references marked ignored
-		statusClause = `(pp.status = 'ignored' or p.number in (select target_patent from citation_edges where project_id = ? and status = 'ignored'))`
+		reviewStateClause = `(pp.review_state = 'ignored' or p.number in (select target_patent from citation_edges where project_id = ? and review_state = 'ignored'))`
 		args = append(args, projectID)
-	case domain.CitationStatusUnderReview:
+	case domain.ReviewStateUnderReview:
 		// citation references marked under review
-		statusClause = `p.number in (select target_patent from citation_edges where project_id = ? and status = 'under_review')`
+		reviewStateClause = `p.number in (select target_patent from citation_edges where project_id = ? and review_state = 'under_review')`
 		args = append(args, projectID)
-	case domain.CitationStatusCached:
-		statusClause = `pp.status = 'cached'`
-	case storage.StatusFilterNone:
-		statusClause = `1=1`
+	case domain.ReviewStateCached:
+		reviewStateClause = `pp.review_state = 'cached'`
+	case storage.ReviewStateFilterNone:
+		reviewStateClause = `1=1`
 	default: // "" or "stored"
-		statusClause = fmt.Sprintf("pp.status = '%s'", domain.CitationStatusStored)
+		reviewStateClause = fmt.Sprintf("pp.review_state = '%s'", domain.ReviewStateStored)
 	}
 	query := `
 		select
-			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
-			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
+			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.review_state, p.latest_assignment,
+			group_concat(c.code, ', ') as classification_label, pp.review_state_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
 			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
 		from patents p
 		join project_patents pp on p.number = pp.patent_number
 		left join project_ids pid on pid.project_id = pp.project_id and pid.patent_number = p.number
 		left join patent_classifications c on p.number = c.patent_number
-		where pp.project_id = ? and ` + statusClause
+		where pp.project_id = ? and ` + reviewStateClause
 	args = append(args, projectID)
 
 	if strings.TrimSpace(opts.Filter) != "" {
@@ -1003,16 +1006,16 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 func (r *Repository) ListCitations(ctx context.Context, projectID string, number, relationType string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	query := `
 		select 
-			ce.source_patent, ce.target_patent, ce.relation_type, ce.status, ce.created_at, ce.refreshed_at, ce.labeled_at,
+			ce.source_patent, ce.target_patent, ce.relation_type, ce.review_state, ce.created_at, ce.refreshed_at, ce.labeled_at,
 			p.title, p.inventors_json, p.expiration_date, p.import_source
 		from citation_edges ce
 		left join patents p on ce.target_patent = p.number
 		where ce.project_id = ? and ce.source_patent = ? and ce.relation_type = ?`
 
 	args := []any{projectID, number, relationType}
-	if opts.StatusFilter != "" {
-		query += ` and ce.status = ?`
-		args = append(args, opts.StatusFilter)
+	if opts.ReviewStateFilter != "" {
+		query += ` and ce.review_state = ?`
+		args = append(args, opts.ReviewStateFilter)
 	}
 
 	orderBy := "ce.target_patent"
@@ -1028,8 +1031,8 @@ func (r *Repository) ListCitations(ctx context.Context, projectID string, number
 			orderBy = "p.title " + direction
 		case domain.SortColumnDate:
 			orderBy = "p.publication_date " + direction
-		case domain.SortColumnStatus:
-			orderBy = "ce.status " + direction
+		case domain.SortColumnReviewState:
+			orderBy = "ce.review_state " + direction
 		}
 	}
 
@@ -1041,14 +1044,14 @@ func (r *Repository) ListCitations(ctx context.Context, projectID string, number
 	return scanCitationEdges(rows)
 }
 
-func (r *Repository) ListCitationsByStatus(ctx context.Context, projectID string, status string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (r *Repository) ListCitationsByReviewState(ctx context.Context, projectID string, status string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	query := `
 		select 
-			ce.source_patent, ce.target_patent, ce.relation_type, ce.status, ce.created_at, ce.refreshed_at, ce.labeled_at,
+			ce.source_patent, ce.target_patent, ce.relation_type, ce.review_state, ce.created_at, ce.refreshed_at, ce.labeled_at,
 			p.title, p.inventors_json, p.expiration_date, p.import_source
 		from citation_edges ce
 		left join patents p on ce.target_patent = p.number
-		where ce.project_id = ? and ce.status = ?`
+		where ce.project_id = ? and ce.review_state = ?`
 
 	orderBy := "ce.labeled_at desc, ce.source_patent, ce.target_patent"
 	if opts.SortColumn != "" {
@@ -1063,8 +1066,8 @@ func (r *Repository) ListCitationsByStatus(ctx context.Context, projectID string
 			orderBy = "p.title " + direction
 		case domain.SortColumnDate:
 			orderBy = "p.publication_date " + direction
-		case domain.SortColumnStatus:
-			orderBy = "ce.status " + direction
+		case domain.SortColumnReviewState:
+			orderBy = "ce.review_state " + direction
 		}
 	}
 
@@ -1082,11 +1085,11 @@ func scanCitationEdges(rows *sql.Rows) ([]domain.CitationEdge, error) {
 		var edge domain.CitationEdge
 		var createdAt, refreshedAt, labeledAt string
 		var title, inventorsJson, expirationDate, importSource sql.NullString
-		if err := rows.Scan(&edge.SourcePatent, &edge.TargetPatent, &edge.RelationType, &edge.Status, &createdAt, &refreshedAt, &labeledAt, &title, &inventorsJson, &expirationDate, &importSource); err != nil {
+		if err := rows.Scan(&edge.SourcePatent, &edge.TargetPatent, &edge.RelationType, &edge.ReviewState, &createdAt, &refreshedAt, &labeledAt, &title, &inventorsJson, &expirationDate, &importSource); err != nil {
 			return nil, err
 		}
-		if edge.Status == "" {
-			edge.Status = domain.CitationStatusUnderReview
+		if edge.ReviewState == "" {
+			edge.ReviewState = domain.ReviewStateUnderReview
 		}
 		edge.CreatedAt = parseTime(createdAt)
 		edge.RefreshedAt = parseTime(refreshedAt)
@@ -1102,16 +1105,16 @@ func scanCitationEdges(rows *sql.Rows) ([]domain.CitationEdge, error) {
 	return out, rows.Err()
 }
 
-func (r *Repository) UpdateCitationStatus(ctx context.Context, projectID string, edge domain.CitationEdge, status string) error {
-	r.logger.Info("repository.update_citation_status", "project", projectID, "source", edge.SourcePatent, "target", edge.TargetPatent, "status", status)
-	_, err := r.db.ExecContext(ctx, `update citation_edges set status = ?, labeled_at = ? where project_id = ? and source_patent = ? and target_patent = ? and relation_type = ?`,
-		status, nowString(), projectID, edge.SourcePatent, edge.TargetPatent, edge.RelationType)
+func (r *Repository) UpdateCitationReviewState(ctx context.Context, projectID string, edge domain.CitationEdge, reviewState string) error {
+	r.logger.Info("repository.update_citation_review_state", "project", projectID, "source", edge.SourcePatent, "target", edge.TargetPatent, "review_state", reviewState)
+	_, err := r.db.ExecContext(ctx, `update citation_edges set review_state = ?, labeled_at = ? where project_id = ? and source_patent = ? and target_patent = ? and relation_type = ?`,
+		reviewState, nowString(), projectID, edge.SourcePatent, edge.TargetPatent, edge.RelationType)
 	return err
 }
 
-func (r *Repository) UpdatePatentStatus(ctx context.Context, projectID string, number string, status string) error {
-	r.logger.Info("repository.update_patent_status", "project", projectID, "patent", number, "status", status)
-	_, err := r.db.ExecContext(ctx, `update project_patents set status = ?, status_changed_at = ? where project_id = ? and patent_number = ?`, status, nowString(), projectID, number)
+func (r *Repository) UpdatePatentReviewState(ctx context.Context, projectID string, number string, reviewState string) error {
+	r.logger.Info("repository.update_patent_review_state", "project", projectID, "patent", number, "review_state", reviewState)
+	_, err := r.db.ExecContext(ctx, `update project_patents set review_state = ?, review_state_changed_at = ? where project_id = ? and patent_number = ?`, reviewState, nowString(), projectID, number)
 	return err
 }
 
@@ -1172,7 +1175,7 @@ func (r *Repository) UpdateClassificationDescription(ctx context.Context, projec
 
 func (r *Repository) DeletePatent(ctx context.Context, projectID string, number string) error {
 	r.logger.Info("repository.delete_patent", "project", projectID, "patent", number)
-	return r.UpdatePatentStatus(ctx, projectID, number, domain.CitationStatusIgnored)
+	return r.UpdatePatentReviewState(ctx, projectID, number, domain.ReviewStateIgnored)
 }
 
 func (r *Repository) ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error) {
@@ -1316,13 +1319,13 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var inventors string
 	var expirationSource sql.NullString
 	var createdAt sql.NullString
-	var status sql.NullString
+	var reviewState sql.NullString
 	var latestAssignment sql.NullString
 	var classificationLabel sql.NullString
-	var statusChangedAt sql.NullString
+	var reviewStateChangedAt sql.NullString
 	var updatedAt sql.NullString
 	var importSource sql.NullString
-	if err := row.Scan(&p.Number, &p.CountryCode, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationSource, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
+	if err := row.Scan(&p.Number, &p.CountryCode, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationSource, &p.SourceGoogleURL, &importSource, &createdAt, &reviewState, &latestAssignment, &classificationLabel, &reviewStateChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}
@@ -1338,12 +1341,12 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	if createdAt.Valid {
 		p.StoredAt = parseTime(createdAt.String)
 	}
-	p.Status = status.String
-	if p.Status == "" {
-		p.Status = domain.CitationStatusStored
+	p.ReviewState = reviewState.String
+	if p.ReviewState == "" {
+		p.ReviewState = domain.ReviewStateStored
 	}
-	if statusChangedAt.Valid && statusChangedAt.String != "" {
-		p.StatusChangedAt = parseTime(statusChangedAt.String)
+	if reviewStateChangedAt.Valid && reviewStateChangedAt.String != "" {
+		p.ReviewStateChangedAt = parseTime(reviewStateChangedAt.String)
 	}
 	if updatedAt.Valid && updatedAt.String != "" {
 		p.UpdatedAt = parseTime(updatedAt.String)

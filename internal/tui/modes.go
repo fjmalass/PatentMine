@@ -36,7 +36,7 @@ var allViewModes = []viewMode{
 	viewClaim,
 	viewUSPTOKeyWarning,
 	viewBulkConfirm,
-	viewStatusSelect,
+	viewReviewStateSelect,
 	viewProjectTags,
 	viewTagSelect,
 }
@@ -206,8 +206,8 @@ var modeSpecs = map[viewMode]modeSpec{
 		isOverlay:  true,
 		helpHint:   "y: confirm · n: cancel",
 	},
-	viewStatusSelect: {
-		title:      "Select Status",
+	viewReviewStateSelect: {
+		title:      "Select ReviewState",
 		themeColor: ColorThemeList,
 		isOverlay:  true,
 		helpHint:   "j/k: move · enter: select · esc: back",
@@ -222,7 +222,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Select Tags",
 		themeColor: ColorThemeTags,
 		isOverlay:  true,
-		helpHint:   "j/k: move · space: toggle · esc: back",
+		helpHint:   "j/k: move · space: toggle · enter: save & close · esc: cancel",
 	},
 }
 

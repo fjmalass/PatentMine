@@ -74,17 +74,17 @@ type FamilyEdge struct {
 }
 
 const (
-	CitationStatusUnderReview = "under_review"
-	CitationStatusStored      = "stored"
-	CitationStatusIgnored     = "ignored"
-	CitationStatusCached      = "cached"
+	ReviewStateUnderReview = "under_review"
+	ReviewStateStored      = "stored"
+	ReviewStateIgnored     = "ignored"
+	ReviewStateCached      = "cached"
 )
 
 const (
 	SortColumnNumber     = "number"
 	SortColumnTitle      = "title"
 	SortColumnDate       = "date"
-	SortColumnStatus     = "status"
+	SortColumnReviewState = "review_state"
 	SortColumnAssignee   = "assignee"
 	SortColumnInventor   = "inventor"
 	SortColumnClass      = "class"
@@ -102,7 +102,7 @@ var PatentSortColumns = []string{
 	SortColumnNumber,
 	SortColumnTitle,
 	SortColumnDate,
-	SortColumnStatus,
+	SortColumnReviewState,
 	SortColumnAssignee,
 	SortColumnInventor,
 	SortColumnClass,
@@ -287,9 +287,9 @@ type Patent struct {
 	ImportSource        string
 	StoredAt            time.Time
 	UpdatedAt           time.Time
-	StatusChangedAt     time.Time
-	Status              string
-	ClassificationLabel string
+	ReviewStateChangedAt time.Time
+	ReviewState          string
+	ClassificationLabel  string
 	LatestAssignment    string
 	ExpectedCitations   int // Total backward count reported by source (-1 if unknown)
 	ExpectedCitedBy     int // Total forward count reported by source (-1 if unknown)
@@ -312,7 +312,7 @@ type CitationEdge struct {
 	SourcePatent         string
 	TargetPatent         string
 	RelationType         string
-	Status               string
+	ReviewState          string
 	CreatedAt            time.Time
 	RefreshedAt          time.Time
 	LabeledAt            time.Time

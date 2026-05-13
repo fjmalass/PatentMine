@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"patentmine/internal/domain"
+	"patentmine/internal/storage"
 	"testing"
 )
 
@@ -13,6 +14,10 @@ type familyStubRepo struct {
 
 func (r familyStubRepo) ListAllFamilyEdges(ctx context.Context, projectID string) ([]domain.FamilyEdge, error) {
 	return r.edges, nil
+}
+
+func (r familyStubRepo) ListCitationsByReviewState(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+	return nil, nil
 }
 
 func (r familyStubRepo) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {

@@ -58,7 +58,7 @@ const (
 	viewClaim                viewMode = "view-claim"
 	viewUSPTOKeyWarning      viewMode = "uspto-key-warning"
 	viewBulkConfirm          viewMode = "bulk-confirm"
-	viewStatusSelect         viewMode = "status-select"
+	viewReviewStateSelect         viewMode = "status-select"
 	viewProjectTags          viewMode = "project-tags"
 	viewTagSelect            viewMode = "tag-select"
 )
@@ -103,7 +103,7 @@ type Model struct {
 	current                    domain.Patent
 	pendingBundle              domain.PatentBundle
 	pendingCitation            domain.CitationEdge
-	reviewStatus               string
+	reviewState               string
 	filter                     string
 	message                    string
 	err                        string
@@ -123,8 +123,8 @@ type Model struct {
 	classFilter                string // display label derived from classFilters
 	tagFilter                  string
 	countryFilter              string
-	statusFilter               string // domain.CitationStatusStored (default), "ignored", "under_review", statusFilterNone
-	citesStatusFilter          string // "" (all), "stored", "ignored", "under_review"
+	reviewStateFilter               string // domain.ReviewStateStored (default), "ignored", "under_review", reviewStateFilterNone
+	citesReviewStateFilter          string // "" (all), "stored", "ignored", "under_review"
 	listNumWidth               int
 	unpaidCounts               map[string]int
 	familyTreeCache            []familyNode
@@ -147,7 +147,7 @@ type Model struct {
 	listSearchActive           bool
 	popupSearchQuery           string
 	popupSearchActive          bool
-	statusSelected             int
+	reviewStateSelected             int
 	projectTagsSelected        int
 	tagSelectSelected          int
 	projectTags                []domain.TagWithCount
@@ -196,7 +196,7 @@ type navSnapshot struct {
 	current                    domain.Patent
 	pendingBundle              domain.PatentBundle
 	pendingCitation            domain.CitationEdge
-	reviewStatus               string
+	reviewState               string
 	filter                     string
 	message                    string
 	err                        string
@@ -211,8 +211,8 @@ type navSnapshot struct {
 	classFilter                string
 	tagFilter                  string
 	countryFilter              string
-	statusFilter               string
-	citesStatusFilter          string
+	reviewStateFilter               string
+	citesReviewStateFilter          string
 	listNumWidth               int
 	classificationQuery        string
 	classificationSearchActive bool
@@ -220,7 +220,7 @@ type navSnapshot struct {
 	listSearchActive           bool
 	popupSearchQuery           string
 	popupSearchActive          bool
-	statusSelected             int
+	reviewStateSelected             int
 	width                      int
 }
 
@@ -251,7 +251,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 	}
 
 	patents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
-		StatusFilter: domain.CitationStatusStored,
+		ReviewStateFilter: domain.ReviewStateStored,
 		SortColumn:   EmptySortColumn,
 		SortOrder:    EmptySortOrder,
 	})
@@ -275,7 +275,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		logger:          logger,
 		activityLog:     activityLog,
 		text:            EnglishText(),
-		statusFilter:    domain.CitationStatusStored,
+		reviewStateFilter:    domain.ReviewStateStored,
 		importCfg:       cfg,
 		version:                version,
 		projectTags:            []domain.TagWithCount{},
@@ -345,7 +345,7 @@ func (m *Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
 	projectID := m.ProjectID
 	logger := m.logger
 	apiKey := m.importCfg.USPTO.APIKey
-	currentStatus := m.current.Status
+	currentStatus := m.current.ReviewState
 
 	return m, tea.Batch(
 		m.spinner.Tick,
@@ -356,9 +356,9 @@ func (m *Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
 			}
 			bundle.Patent.ImportSource = ImportSourceUSPTO
 			if verb == importActionRefreshed {
-				bundle.Patent.Status = currentStatus
+				bundle.Patent.ReviewState = currentStatus
 			} else {
-				bundle.Patent.Status = domain.CitationStatusStored
+				bundle.Patent.ReviewState = domain.ReviewStateStored
 			}
 			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
@@ -560,14 +560,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		if m.mode == viewStatusSelect {
+		if m.mode == viewReviewStateSelect {
 			switch msg.String() {
 			case keyVimDown, keyArrowDown:
-				m.statusSelected = clamp(m.statusSelected+1, 0, len(m.selectableStatuses())-1)
+				m.reviewStateSelected = clamp(m.reviewStateSelected+1, 0, len(m.selectableReviewStates())-1)
 			case keyVimUp, keyArrowUp:
-				m.statusSelected = clamp(m.statusSelected-1, 0, len(m.selectableStatuses())-1)
+				m.reviewStateSelected = clamp(m.reviewStateSelected-1, 0, len(m.selectableReviewStates())-1)
 			case keyEnter:
-				return m.applyStatusSelection()
+				return m.applyReviewStateSelection()
 			case keyEsc, keyBack:
 				return m.goBack()
 			}
@@ -815,7 +815,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tagSelectSelected = clamp(m.tagSelectSelected+1, 0, len(m.availableTags)-1)
 			case keyVimUp, keyArrowUp:
 				m.tagSelectSelected = clamp(m.tagSelectSelected-1, 0, max(0, len(m.availableTags)-1))
-			case " ", keyEnter:
+			case " ":
 				if m.tagSelectSelected >= 0 && m.tagSelectSelected < len(m.availableTags) {
 					tag := m.availableTags[m.tagSelectSelected]
 					if m.selectedPatentTags[tag.ID] {
@@ -832,6 +832,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
+			case keyEnter, "ctrl+s":
+				m, cmd := m.goBack()
+				m.(*Model).populateDetailCache()
+				return m, cmd
 			case keyEsc, keyBack:
 				return m.goBack()
 			}
@@ -1283,28 +1287,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.visualMode = false
 				return m.refreshList()
 			}
-		case keyStatus:
+		case keyReviewState:
 			if m.isCitationView() {
-				m.citesStatusFilter = nextCitesStatusFilter(m.citesStatusFilter)
+				m.citesReviewStateFilter = nextCitesReviewStateFilter(m.citesReviewStateFilter)
 				return m, nil
 			}
 			// Pre-select current status in the list
 			currentStatus := ""
 			if m.mode == viewDetail {
-				currentStatus = m.current.Status
+				currentStatus = m.current.ReviewState
 			} else if m.mode == viewList && len(m.patents) > 0 {
-				currentStatus = m.patents[m.selected].Status
+				currentStatus = m.patents[m.selected].ReviewState
 			}
-			m.statusSelected = 0
+			m.reviewStateSelected = 0
 			if currentStatus != "" {
-				for i, s := range m.selectableStatuses() {
+				for i, s := range m.selectableReviewStates() {
 					if s == currentStatus {
-						m.statusSelected = i
+						m.reviewStateSelected = i
 						break
 					}
 				}
 			}
-			return m.navigateTo(viewStatusSelect), nil
+			return m.navigateTo(viewReviewStateSelect), nil
 		case "+":
 			if m.mode == viewFamily {
 				m.input.Focus()
@@ -1329,24 +1333,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyIgnore:
 			if m.mode == viewPreview {
-				return m.updatePendingCitation(domain.CitationStatusIgnored, TextMessageIgnoredPatent)
+				return m.updatePendingCitation(domain.ReviewStateIgnored, TextMessageIgnoredPatent)
 			}
 			if m.isCitationView() {
-				return m.updateSelectedCitationStatus(domain.CitationStatusIgnored, TextMessageIgnoredPatent)
+				return m.updateSelectedCitationReviewState(domain.ReviewStateIgnored, TextMessageIgnoredPatent)
 			}
 			if m.mode == viewReview {
-				return m.updateSelectedReviewCitationStatus(domain.CitationStatusIgnored, TextMessageIgnoredPatent)
+				return m.updateSelectedReviewCitationReviewState(domain.ReviewStateIgnored, TextMessageIgnoredPatent)
 			}
 			return m.navigateTo(viewProjectInfo), nil
 		case keyUnreview:
 			if m.mode == viewPreview {
-				return m.updatePendingCitation(domain.CitationStatusUnderReview, TextMessageUnderReviewPatent)
+				return m.updatePendingCitation(domain.ReviewStateUnderReview, TextMessageUnderReviewPatent)
 			}
 			if m.isCitationView() {
-				return m.updateSelectedCitationStatus(domain.CitationStatusUnderReview, TextMessageUnderReviewPatent)
+				return m.updateSelectedCitationReviewState(domain.ReviewStateUnderReview, TextMessageUnderReviewPatent)
 			}
 			if m.mode == viewReview {
-				return m.updateSelectedReviewCitationStatus(domain.CitationStatusUnderReview, TextMessageUnderReviewPatent)
+				return m.updateSelectedReviewCitationReviewState(domain.ReviewStateUnderReview, TextMessageUnderReviewPatent)
 			}
 		}
 	}
@@ -1390,7 +1394,7 @@ func (m *Model) snapshot() navSnapshot {
 		current:                    m.current,
 		pendingBundle:              m.pendingBundle,
 		pendingCitation:            m.pendingCitation,
-		reviewStatus:               m.reviewStatus,
+		reviewState:               m.reviewState,
 		filter:                     m.filter,
 		message:                    m.message,
 		err:                        m.err,
@@ -1405,8 +1409,8 @@ func (m *Model) snapshot() navSnapshot {
 		classFilter:                m.classFilter,
 		tagFilter:                  m.tagFilter,
 		countryFilter:              m.countryFilter,
-		statusFilter:               m.statusFilter,
-		citesStatusFilter:          m.citesStatusFilter,
+		reviewStateFilter:               m.reviewStateFilter,
+		citesReviewStateFilter:          m.citesReviewStateFilter,
 		listNumWidth:               m.listNumWidth,
 		classificationQuery:        m.classificationQuery,
 		classificationSearchActive: m.classificationSearchActive,
@@ -1414,7 +1418,7 @@ func (m *Model) snapshot() navSnapshot {
 		listSearchActive:           m.listSearchActive,
 		popupSearchQuery:           m.popupSearchQuery,
 		popupSearchActive:          m.popupSearchActive,
-		statusSelected:             m.statusSelected,
+		reviewStateSelected:             m.reviewStateSelected,
 		width:                      m.effectiveWidth(),
 	}
 }
@@ -1447,7 +1451,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.current = snapshot.current
 	m.pendingBundle = snapshot.pendingBundle
 	m.pendingCitation = snapshot.pendingCitation
-	m.reviewStatus = snapshot.reviewStatus
+	m.reviewState = snapshot.reviewState
 	m.filter = snapshot.filter
 	m.message = snapshot.message
 	m.err = snapshot.err
@@ -1462,8 +1466,8 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.classFilter = snapshot.classFilter
 	m.tagFilter = snapshot.tagFilter
 	m.countryFilter = snapshot.countryFilter
-	m.statusFilter = snapshot.statusFilter
-	m.citesStatusFilter = snapshot.citesStatusFilter
+	m.reviewStateFilter = snapshot.reviewStateFilter
+	m.citesReviewStateFilter = snapshot.citesReviewStateFilter
 	m.listNumWidth = snapshot.listNumWidth
 	m.classificationQuery = snapshot.classificationQuery
 	m.classificationSearchActive = snapshot.classificationSearchActive
@@ -1471,7 +1475,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.listSearchActive = snapshot.listSearchActive
 	m.popupSearchQuery = snapshot.popupSearchQuery
 	m.popupSearchActive = snapshot.popupSearchActive
-	m.statusSelected = snapshot.statusSelected
+	m.reviewStateSelected = snapshot.reviewStateSelected
 	return m
 }
 func (m *Model) goBack() (tea.Model, tea.Cmd) {
@@ -1611,9 +1615,9 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 	case commandRef:
 		return m.refCommand(command.Args)
 	case commandIgnored:
-		return m.openReviewQueue(domain.CitationStatusIgnored)
+		return m.openReviewQueue(domain.ReviewStateIgnored)
 	case commandUnderReview:
-		return m.openReviewQueue(domain.CitationStatusUnderReview)
+		return m.openReviewQueue(domain.ReviewStateUnderReview)
 	case commandReview:
 		return m.reviewCommand(command.Args)
 	case commandBrowser, commandWeb:
@@ -1678,7 +1682,7 @@ func (m *Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 	repo := m.repo
 	projectID := m.ProjectID
 	logger := m.logger
-	currentStatus := m.current.Status
+	currentStatus := m.current.ReviewState
 
 	return m, tea.Batch(
 		m.spinner.Tick,
@@ -1689,9 +1693,9 @@ func (m *Model) importGooglePatent(rawURL, verb string) (tea.Model, tea.Cmd) {
 			}
 			bundle.Patent.ImportSource = ImportSourceGoogle
 			if verb == importActionRefreshed {
-				bundle.Patent.Status = currentStatus
+				bundle.Patent.ReviewState = currentStatus
 			} else {
-				bundle.Patent.Status = domain.CitationStatusStored
+				bundle.Patent.ReviewState = domain.ReviewStateStored
 			}
 			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
@@ -1787,7 +1791,7 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	citedBySelected := m.citedBySelected
 	citesSelected := m.citesSelected
 	logger := m.logger
-	currentStatus := m.current.Status
+	currentStatus := m.current.ReviewState
 
 	return m, tea.Batch(
 		m.spinner.Tick,
@@ -1807,7 +1811,7 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			}
 
 			bundle.Patent.ImportSource = sourceLabel
-			bundle.Patent.Status = currentStatus
+			bundle.Patent.ReviewState = currentStatus
 			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				return refreshResultMsg{err: fmt.Errorf("storage failed: %w", err)}
 			}
@@ -1923,14 +1927,14 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				} else {
 					bundle.Patent.ImportSource = ImportSourceGoogle
 				}
-				bundle.Patent.Status = domain.CitationStatusCached
+				bundle.Patent.ReviewState = domain.ReviewStateCached
 				if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 					logger.Error("citation details storage failed", "patent", edge.TargetPatent, "error", err)
 					return refreshDetailsResultMsg{err: err}
 				}
 
-				status := nextCitationDetailStatus(edge.Status, exists)
-				if err := repo.UpdateCitationStatus(ctx, projectID, edge, status); err != nil {
+				status := nextCitationDetailReviewState(edge.ReviewState, exists)
+				if err := repo.UpdateCitationReviewState(ctx, projectID, edge, status); err != nil {
 					return refreshDetailsResultMsg{err: err}
 				}
 				updatedCount++
@@ -2218,15 +2222,15 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 				return refreshDetailsResultMsg{err: err}
 			}
 			bundle.Patent.ImportSource = string(importSource)
-			bundle.Patent.Status = domain.CitationStatusCached
+			bundle.Patent.ReviewState = domain.ReviewStateCached
 			_, existsErr := repo.GetPatent(ctx, projectID, edge.TargetPatent)
 			exists := existsErr == nil
 			if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
 				logger.Error("citation refresh failed", "patent", edge.TargetPatent, "error", err)
 				return refreshDetailsResultMsg{err: err}
 			}
-			status := nextCitationDetailStatus(edge.Status, exists)
-			if err := repo.UpdateCitationStatus(ctx, projectID, edge, status); err != nil {
+			status := nextCitationDetailReviewState(edge.ReviewState, exists)
+			if err := repo.UpdateCitationReviewState(ctx, projectID, edge, status); err != nil {
 				return refreshDetailsResultMsg{err: err}
 			}
 			return refreshDetailsResultMsg{message: fmt.Sprintf("refreshed %s", edge.TargetPatent)}
@@ -2246,13 +2250,13 @@ func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk import failed for %s: %w", target, err)}
 		}
 
-		bundle.Patent.Status = domain.CitationStatusStored
+		bundle.Patent.ReviewState = domain.ReviewStateStored
 		bundle.Patent.ImportSource = string(importSource)
 		if err := repo.UpsertPatentBundle(context.Background(), projectID, bundle); err != nil {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk save failed for %s: %w", target, err)}
 		}
 
-		if err := repo.UpdateCitationStatus(context.Background(), projectID, edge, domain.CitationStatusStored); err != nil {
+		if err := repo.UpdateCitationReviewState(context.Background(), projectID, edge, domain.ReviewStateStored); err != nil {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk status update failed for %s: %w", target, err)}
 		}
 
@@ -2260,11 +2264,11 @@ func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
 	}
 }
 
-func nextCitationDetailStatus(current string, exists bool) string {
+func nextCitationDetailReviewState(current string, exists bool) string {
 	if exists {
 		return current
 	}
-	return domain.CitationStatusCached
+	return domain.ReviewStateCached
 }
 
 func (m *Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
@@ -2315,7 +2319,7 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 	opts := storage.ListPatentsOptions{
 		Filter:        m.filter,
 		CountryFilter: m.countryFilter,
-		StatusFilter:  m.statusFilter,
+		ReviewStateFilter:  m.reviewStateFilter,
 		ClassFilters:  m.classFilters,
 		ClassFilterOp: m.classFilterOp,
 		TagFilter:     m.tagFilter,
@@ -2356,10 +2360,10 @@ func (m *Model) reviewCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch strings.ToLower(args[0]) {
-	case domain.CitationStatusIgnored:
-		return m.openReviewQueue(domain.CitationStatusIgnored)
-	case domain.CitationStatusUnderReview:
-		return m.openReviewQueue(domain.CitationStatusUnderReview)
+	case domain.ReviewStateIgnored:
+		return m.openReviewQueue(domain.ReviewStateIgnored)
+	case domain.ReviewStateUnderReview:
+		return m.openReviewQueue(domain.ReviewStateUnderReview)
 	default:
 		m.err = m.text.T(TextMessageReviewUsage)
 		return m, nil
@@ -2369,7 +2373,7 @@ func (m *Model) reviewCommand(args []string) (tea.Model, tea.Cmd) {
 func (m *Model) openReviewQueue(status string) (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
 	m.setMode(viewReview)
-	m.reviewStatus = status
+	m.reviewState = status
 	m.reviewSelected = 0
 	m.err = EmptyError
 	m.message = EmptyMessage
@@ -2517,7 +2521,7 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedCitation()
 	}
-	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, domain.CitationStatusStored); err != nil {
+	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, domain.ReviewStateStored); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -2531,7 +2535,7 @@ func (m *Model) storePendingPatent() (tea.Model, tea.Cmd) {
 	if m.pendingBundle.Patent.Number == "" {
 		return m, nil
 	}
-	m.pendingBundle.Patent.Status = domain.CitationStatusStored
+	m.pendingBundle.Patent.ReviewState = domain.ReviewStateStored
 	if err := m.repo.UpsertPatentBundle(m.ctx, m.ProjectID, m.pendingBundle); err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -2539,7 +2543,7 @@ func (m *Model) storePendingPatent() (tea.Model, tea.Cmd) {
 	number := m.pendingBundle.Patent.Number
 	m.logActivity(ActivityPatentImport, number, string(m.importCfg.ImportSource))
 	if m.pendingCitation.TargetPatent != "" {
-		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, m.pendingCitation, domain.CitationStatusStored); err != nil {
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, m.pendingCitation, domain.ReviewStateStored); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -2570,10 +2574,10 @@ func (m *Model) skipPendingPatent() (tea.Model, tea.Cmd) {
 	return updated, cmd
 }
 
-func (m *Model) updatePendingCitation(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
+func (m *Model) updatePendingCitation(reviewState string, messageKey TextKey) (tea.Model, tea.Cmd) {
 	number := m.pendingBundle.Patent.Number
 	if m.pendingCitation.TargetPatent != "" {
-		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, m.pendingCitation, status); err != nil {
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, m.pendingCitation, reviewState); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -2588,7 +2592,7 @@ func (m *Model) updatePendingCitation(status string, messageKey TextKey) (tea.Mo
 	return updated, cmd
 }
 
-func (m *Model) updateSelectedCitationStatus(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
+func (m *Model) updateSelectedCitationReviewState(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
 	indices := m.selectedIndices()
 	edges, err := m.currentCitationEdges()
 	if err != nil || len(edges) == 0 {
@@ -2597,7 +2601,7 @@ func (m *Model) updateSelectedCitationStatus(status string, messageKey TextKey) 
 
 	if len(indices) > 1 {
 		m.bulkActionIndices = indices
-		if status == domain.CitationStatusIgnored {
+		if status == domain.ReviewStateIgnored {
 			m.bulkAction = bulkActionIgnore
 		} else {
 			m.bulkAction = bulkActionUnderReview
@@ -2606,11 +2610,11 @@ func (m *Model) updateSelectedCitationStatus(status string, messageKey TextKey) 
 	}
 
 	edge := edges[indices[0]]
-	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err != nil {
+	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.logActivity(ActivityCitationStatus, edge.TargetPatent, status)
+	m.logActivity(ActivityCitationReviewState, edge.TargetPatent, status)
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
 
 	m.visualMode = false
@@ -2618,14 +2622,14 @@ func (m *Model) updateSelectedCitationStatus(status string, messageKey TextKey) 
 }
 
 func (m *Model) currentReviewCitationEdges() ([]domain.CitationEdge, error) {
-	if strings.TrimSpace(m.reviewStatus) == "" {
+	if strings.TrimSpace(m.reviewState) == "" {
 		return nil, nil
 	}
 	opts := storage.ListCitationsOptions{
 		SortColumn: m.sortColumn,
 		SortOrder:  m.sortOrder,
 	}
-	return m.repo.ListCitationsByStatus(m.ctx, m.ProjectID, m.reviewStatus, opts)
+	return m.repo.ListCitationsByReviewState(m.ctx, m.ProjectID, m.reviewState, opts)
 }
 
 func (m *Model) selectedReviewCitationEdge() (domain.CitationEdge, bool, error) {
@@ -2686,7 +2690,7 @@ func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedReviewCitation()
 	}
-	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, domain.CitationStatusStored); err != nil {
+	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, domain.ReviewStateStored); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
@@ -2694,7 +2698,7 @@ func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) updateSelectedReviewCitationStatus(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
+func (m *Model) updateSelectedReviewCitationReviewState(status string, messageKey TextKey) (tea.Model, tea.Cmd) {
 	indices := m.selectedIndices()
 	edges, err := m.currentReviewCitationEdges()
 	if err != nil || len(edges) == 0 {
@@ -2703,7 +2707,7 @@ func (m *Model) updateSelectedReviewCitationStatus(status string, messageKey Tex
 
 	if len(indices) > 1 {
 		m.bulkActionIndices = indices
-		if status == domain.CitationStatusIgnored {
+		if status == domain.ReviewStateIgnored {
 			m.bulkAction = bulkActionIgnore
 		} else {
 			m.bulkAction = bulkActionUnderReview
@@ -2712,11 +2716,11 @@ func (m *Model) updateSelectedReviewCitationStatus(status string, messageKey Tex
 	}
 
 	edge := edges[indices[0]]
-	if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err != nil {
+	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err != nil {
 		m.err = err.Error()
 		return m, nil
 	}
-	if status != m.reviewStatus {
+	if status != m.reviewState {
 		edges, _ := m.currentReviewCitationEdges()
 		m.reviewSelected = clamp(m.reviewSelected, 0, max(0, len(edges)-1))
 	}
@@ -2746,11 +2750,11 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 
 	var cmds []tea.Cmd
 	action := m.bulkAction
-	status := domain.CitationStatusStored
+	status := domain.ReviewStateStored
 	if action == bulkActionIgnore {
-		status = domain.CitationStatusIgnored
+		status = domain.ReviewStateIgnored
 	} else if action == bulkActionUnderReview {
-		status = domain.CitationStatusUnderReview
+		status = domain.ReviewStateUnderReview
 	}
 
 	executedCount := 0
@@ -2760,7 +2764,7 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 			continue
 		}
 		edge := edges[idx]
-		if err := m.repo.UpdateCitationStatus(m.ctx, m.ProjectID, edge, status); err == nil {
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err == nil {
 			m.logActivity(ActivityBulkPrefix+string(action), edge.TargetPatent, "")
 			executedCount++
 
@@ -2819,7 +2823,7 @@ func (m *Model) currentCitationEdges() ([]domain.CitationEdge, error) {
 	opts := storage.ListCitationsOptions{
 		SortColumn:   m.sortColumn,
 		SortOrder:    m.sortOrder,
-		StatusFilter: m.citesStatusFilter,
+		ReviewStateFilter: m.citesReviewStateFilter,
 	}
 	return m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 }
@@ -3299,7 +3303,7 @@ func (m *Model) listColumns() []listColumn {
 	invWidth := 20
 	cpcWidth := 15
 	expWidth := 12
-	statusWidth := 10
+	reviewStateWidth := 10
 	idsWidth := 11
 	updatedWidth := 16
 	notesWidth := 6
@@ -3311,7 +3315,7 @@ func (m *Model) listColumns() []listColumn {
 		{"Inventor", invWidth, domain.SortColumnInventor, jumpLabelInventors},
 		{"Classification", cpcWidth, domain.SortColumnCPC, jumpLabelClassification},
 		{"Expires", expWidth, domain.SortColumnExpiration, jumpLabelExpiration},
-		{"Status", statusWidth, domain.SortColumnStatus, keyStatus},
+		{"ReviewState", reviewStateWidth, domain.SortColumnReviewState, keyReviewState},
 		{"Updated", updatedWidth, domain.SortColumnUpdated, jumpLabelUpdated},
 		{"Notes", notesWidth, domain.SortColumnNotes, jumpLabelNotes},
 		{"Tags", tagsWidth, domain.SortColumnTags, ""},
@@ -3329,7 +3333,7 @@ func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
 		domain.SortColumnInventor:   10,
 		domain.SortColumnCPC:        8,
 		domain.SortColumnExpiration: 10,
-		domain.SortColumnStatus:     8,
+		domain.SortColumnReviewState:     8,
 		domain.SortColumnUpdated:    10,
 		domain.SortColumnNotes:      5,
 		domain.SortColumnTags:       5,
@@ -3342,7 +3346,7 @@ func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
 		domain.SortColumnUpdated,
 		domain.SortColumnNumber,
 		listColumnIDS,
-		domain.SortColumnStatus,
+		domain.SortColumnReviewState,
 		domain.SortColumnExpiration,
 		domain.SortColumnNotes,
 		domain.SortColumnTags,
@@ -3562,8 +3566,8 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewUSPTOKeyWarning()
 	case viewBulkConfirm:
 		return m.viewBulkConfirm()
-	case viewStatusSelect:
-		return m.viewStatusSelect()
+	case viewReviewStateSelect:
+		return m.viewReviewStateSelect()
 	case viewProjectTags:
 		return m.viewProjectTags()
 	case viewTagSelect:
@@ -3588,27 +3592,27 @@ func (m *Model) viewDateEdit() string {
 	return m.renderPopup(title, m.dateInput.View())
 }
 
-func (m *Model) selectableStatuses() []string {
+func (m *Model) selectableReviewStates() []string {
 	return []string{
-		domain.CitationStatusStored,
-		domain.CitationStatusUnderReview,
-		domain.CitationStatusIgnored,
+		domain.ReviewStateStored,
+		domain.ReviewStateUnderReview,
+		domain.ReviewStateIgnored,
 	}
 }
 
-func (m *Model) viewStatusSelect() string {
+func (m *Model) viewReviewStateSelect() string {
 	var body strings.Builder
-	statuses := m.selectableStatuses()
+	statuses := m.selectableReviewStates()
 	for i, s := range statuses {
 		cursor := "  "
-		if i == m.statusSelected {
+		if i == m.reviewStateSelected {
 			cursor = "> "
 		}
 		style := overlayBase()
-		if color, ok := StatusColors[s]; ok {
+		if color, ok := ReviewStateColors[s]; ok {
 			style = style.Foreground(lipgloss.Color(color))
 		}
-		if i == m.statusSelected {
+		if i == m.reviewStateSelected {
 			style = style.Bold(true).Underline(true)
 		}
 		body.WriteString(cursor + style.Render(s) + "\n")
@@ -3778,7 +3782,7 @@ func (m *Model) viewList() string {
 			domain.SortColumnInventor:   formatInventorsShort(p.Inventors),
 			domain.SortColumnCPC:        p.ClassificationLabel,
 			domain.SortColumnExpiration: p.ExpirationDate,
-			domain.SortColumnStatus:     p.Status,
+			domain.SortColumnReviewState:     p.ReviewState,
 			domain.SortColumnUpdated:    formatStoredTime(p.UpdatedAt, "-"),
 			domain.SortColumnNotes:      "-",
 			listColumnIDS:               "-",
@@ -3828,7 +3832,7 @@ func (m *Model) viewList() string {
 		}
 
 		style := lipgloss.NewStyle()
-		if color, ok := StatusColors[p.Status]; ok {
+		if color, ok := ReviewStateColors[p.ReviewState]; ok {
 			style = style.Foreground(lipgloss.Color(color))
 		}
 
@@ -4106,11 +4110,11 @@ func (m *Model) detailFields() []detailField {
 		)
 
 		// Add Status and IDS
-		if color, ok := StatusColors[p.Status]; ok {
+		if color, ok := ReviewStateColors[p.ReviewState]; ok {
 			fields = append(fields, detailField{
-				label:        TextDetailStatus,
-				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(p.Status),
-				jumpLabel:    keyStatus,
+				label:        TextDetailReviewState,
+				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(p.ReviewState),
+				jumpLabel:    keyReviewState,
 				action:       detailActionNone, // cycle status is handled by 's' globally
 			})
 		}
@@ -4321,7 +4325,7 @@ func (m *Model) viewCitations(relation string) string {
 	opts := storage.ListCitationsOptions{
 		SortColumn:   m.sortColumn,
 		SortOrder:    m.sortOrder,
-		StatusFilter: m.citesStatusFilter,
+		ReviewStateFilter: m.citesReviewStateFilter,
 	}
 	edges, err := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 	if err != nil {
@@ -4342,7 +4346,7 @@ func (m *Model) viewCitations(relation string) string {
 	titleWidth := max(20, m.overlayWidth()-64)
 	invWidth := 20
 	expWidth := 12
-	statusWidth := 10
+	reviewStateWidth := 10
 
 	// Account for jump prefix width in header if jump targets exist
 	jumpPrefixWidth := 0
@@ -4355,15 +4359,15 @@ func (m *Model) viewCitations(relation string) string {
 		{label: "Title", width: titleWidth, id: "title"},
 		{label: "Inventor", width: invWidth, id: "inventor"},
 		{label: "Expires", width: expWidth, id: "expires"},
-		{label: "Status", width: statusWidth, id: "status"},
+		{label: "ReviewState", width: reviewStateWidth, id: "review_state"},
 	}
 	cols = fitColumns(cols, m.overlayWidth()-4-(2+jumpPrefixWidth+indexWidth), map[string]int{
 		"number":   12,
 		"title":    18,
 		"inventor": 10,
 		"expires":  10,
-		"status":   8,
-	}, []string{"title", "inventor", "number", "status", "expires"})
+		"review_state":   8,
+	}, []string{"title", "inventor", "number", "review_state", "expires"})
 
 	header := m.pad("  ", 2) +
 		m.pad("", jumpPrefixWidth) +
@@ -4408,7 +4412,7 @@ func (m *Model) viewCitations(relation string) string {
 		row += m.pad(m.truncate(title, cols[1].width), cols[1].width+2)
 		row += m.pad(m.truncate(inventors, cols[2].width), cols[2].width+2)
 		row += m.pad(m.truncate(expDate, cols[3].width), cols[3].width+2)
-		row += m.pad(m.citationStatusLabel(edge.Status), cols[4].width)
+		row += m.pad(m.citationReviewStateLabel(edge.ReviewState), cols[4].width)
 
 		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-4) + "\n")
 	}
@@ -4432,7 +4436,7 @@ func (m *Model) viewReviewQueue() string {
 	m.reviewSelected = selected
 	window := pageWindow(selected, len(edges), m.overlayPageSize())
 	var body strings.Builder
-	body.WriteString(m.citationStatusLabel(m.reviewStatus) + "\n")
+	body.WriteString(m.citationReviewStateLabel(m.reviewState) + "\n")
 	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	body.WriteString("\n\n")
 
@@ -4513,20 +4517,20 @@ func (m *Model) viewReviewQueue() string {
 	return m.renderPopup("Review Queue", body.String())
 }
 
-func (m *Model) citationStatusLabel(status string) string {
+func (m *Model) citationReviewStateLabel(status string) string {
 	label := ""
 	switch status {
-	case domain.CitationStatusStored:
-		label = m.text.T(TextCitationStored)
-	case domain.CitationStatusIgnored:
-		label = m.text.T(TextCitationIgnored)
-	case domain.CitationStatusCached:
-		label = m.text.T(TextCitationCached)
+	case domain.ReviewStateStored:
+		label = m.text.T(TextReviewStateStored)
+	case domain.ReviewStateIgnored:
+		label = m.text.T(TextReviewStateIgnored)
+	case domain.ReviewStateCached:
+		label = m.text.T(TextReviewStateCached)
 	default:
-		label = m.text.T(TextCitationUnderReview)
+		label = m.text.T(TextReviewStateUnderReview)
 	}
 
-	if color, ok := StatusColors[status]; ok {
+	if color, ok := ReviewStateColors[status]; ok {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(label)
 	}
 	return label
@@ -4614,7 +4618,7 @@ func (m *Model) storedPatentCountForCountry(code string) int {
 	}
 	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
 		CountryFilter: code,
-		StatusFilter:  domain.CitationStatusStored,
+		ReviewStateFilter:  domain.ReviewStateStored,
 	})
 	if err != nil {
 		return 0
@@ -4893,30 +4897,30 @@ func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 	return m.refreshList()
 }
 
-func (m *Model) applyStatusSelection() (tea.Model, tea.Cmd) {
-	statuses := m.selectableStatuses()
-	if m.statusSelected < 0 || m.statusSelected >= len(statuses) {
+func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
+	statuses := m.selectableReviewStates()
+	if m.reviewStateSelected < 0 || m.reviewStateSelected >= len(statuses) {
 		return m.goBack()
 	}
-	next := statuses[m.statusSelected]
+	next := statuses[m.reviewStateSelected]
 
 	// Determine which patents to update
 	indices := m.selectedIndices()
 	if len(indices) == 0 && m.mode == viewDetail {
 		// If in detail view, update current patent
-		if err := m.repo.UpdatePatentStatus(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
+		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
 			m.err = err.Error()
 			return m.goBack()
 		}
-		m.current.Status = next
+		m.current.ReviewState = next
 		for i, p := range m.patents {
 			if p.Number == m.current.Number {
-				m.patents[i].Status = next
+				m.patents[i].ReviewState = next
 				break
 			}
 		}
 		m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
-		m.logActivity(ActivityPatentStatus, m.current.Number, next)
+		m.logActivity(ActivityPatentReviewState, m.current.Number, next)
 		return m.goBack()
 	}
 
@@ -4930,12 +4934,12 @@ func (m *Model) applyStatusSelection() (tea.Model, tea.Cmd) {
 			continue
 		}
 		p := m.patents[idx]
-		if err := m.repo.UpdatePatentStatus(m.ctx, m.ProjectID, p.Number, next); err != nil {
+		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, p.Number, next); err != nil {
 			m.logger.Error("status selection update failed", "patent", p.Number, "error", err)
 			continue
 		}
-		m.patents[idx].Status = next
-		m.logActivity(ActivityPatentStatus, p.Number, next)
+		m.patents[idx].ReviewState = next
+		m.logActivity(ActivityPatentReviewState, p.Number, next)
 		updatedCount++
 	}
 
@@ -4943,7 +4947,7 @@ func (m *Model) applyStatusSelection() (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("updated status to %s for %d patents", next, updatedCount)
 	} else if updatedCount == 1 {
 		p := m.patents[indices[0]]
-		m.message = fmt.Sprintf("%s → %s", p.Number, p.Status)
+		m.message = fmt.Sprintf("%s → %s", p.Number, p.ReviewState)
 	}
 
 	m.visualMode = false
@@ -6174,8 +6178,8 @@ func (m *Model) exportCommand(args []string) (tea.Model, tea.Cmd) {
 	switch args[0] {
 	case exportSubIDS:
 		return m.idsExportCommand(args[1:])
-	case exportSubStatus:
-		return m.statusExportCommand(args[1:])
+	case exportSubReviewState:
+		return m.reviewStateExportCommand(args[1:])
 	case exportSubState:
 		return m.stateExportCommand(args[1:])
 	default:
@@ -6193,7 +6197,7 @@ func (m *Model) projectNameForExport() string {
 	return m.ProjectID
 }
 
-func (m *Model) statusExportCommand(args []string) (tea.Model, tea.Cmd) {
+func (m *Model) reviewStateExportCommand(args []string) (tea.Model, tea.Cmd) {
 	projectName := m.projectNameForExport()
 	filename := fmt.Sprintf("%s_status_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format("2006-01-02"))
 	if len(args) > 0 {
@@ -6211,11 +6215,11 @@ func (m *Model) statusExportCommand(args []string) (tea.Model, tea.Cmd) {
 	events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
 	invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
 	ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-	allPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{StatusFilter: statusFilterNone})
+	allPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{ReviewStateFilter: reviewStateFilterNone})
 
 	statusCounts := map[string]int{}
 	for _, p := range allPatents {
-		statusCounts[p.Status]++
+		statusCounts[p.ReviewState]++
 	}
 
 	var buf strings.Builder
@@ -6239,7 +6243,7 @@ func (m *Model) statusExportCommand(args []string) (tea.Model, tea.Cmd) {
 
 	buf.WriteString("\n## Patents\n\n")
 	buf.WriteString(fmt.Sprintf("| Status | Count |\n|--------|-------|\n"))
-	for _, s := range []string{domain.CitationStatusStored, domain.CitationStatusUnderReview, domain.CitationStatusIgnored, domain.CitationStatusCached} {
+	for _, s := range []string{domain.ReviewStateStored, domain.ReviewStateUnderReview, domain.ReviewStateIgnored, domain.ReviewStateCached} {
 		if n := statusCounts[s]; n > 0 {
 			buf.WriteString(fmt.Sprintf("| %s | %d |\n", s, n))
 		}
@@ -6305,37 +6309,37 @@ func (m *Model) statusExportCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 var exportStateAliases = map[string]string{
-	exportStateStored:      domain.CitationStatusStored,
-	exportStateIgnored:     domain.CitationStatusIgnored,
-	exportStateUnderReview: domain.CitationStatusUnderReview,
-	"under_review":         domain.CitationStatusUnderReview,
-	exportStateAll:         statusFilterNone,
-	exportStateNone:        statusFilterNone,
+	exportStateStored:      domain.ReviewStateStored,
+	exportStateIgnored:     domain.ReviewStateIgnored,
+	exportStateUnderReview: domain.ReviewStateUnderReview,
+	"under_review":         domain.ReviewStateUnderReview,
+	exportStateAll:         reviewStateFilterNone,
+	exportStateNone:        reviewStateFilterNone,
 }
 
 func (m *Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
-	statusFilter := m.statusFilter
+	reviewStateFilter := m.reviewStateFilter
 	filenameArgs := args
 
 	if len(args) > 0 {
 		if canonical, ok := exportStateAliases[strings.ToLower(args[0])]; ok {
-			statusFilter = canonical
+			reviewStateFilter = canonical
 			filenameArgs = args[1:]
 		}
 	}
 
-	if statusFilter == "" {
-		statusFilter = statusFilterNone
+	if reviewStateFilter == "" {
+		reviewStateFilter = reviewStateFilterNone
 	}
 
 	projectName := m.projectNameForExport()
-	stateLabel := statusFilter
+	stateLabel := reviewStateFilter
 	filename := fmt.Sprintf("%s_state_%s_%s.md", strings.ReplaceAll(projectName, " ", "_"), stateLabel, time.Now().Format("2006-01-02"))
 	if len(filenameArgs) > 0 {
 		filename = filenameArgs[0]
 	}
 
-	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{StatusFilter: statusFilter})
+	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{ReviewStateFilter: reviewStateFilter})
 	if err != nil {
 		m.err = "export failed: " + err.Error()
 		return m, nil
@@ -6370,7 +6374,7 @@ func (m *Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
 				exp = "—"
 			}
 			buf.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %s | %s | %s |\n",
-				i+1, p.Number, title, assignee, pub, exp, p.Status))
+				i+1, p.Number, title, assignee, pub, exp, p.ReviewState))
 		}
 	}
 

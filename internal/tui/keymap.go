@@ -262,7 +262,7 @@ func init() {
 	registerKey(keyAI, nil, "AI view", nil, false)
 	registerKey(keyWeb, nil, "Open browser", nil, false)
 	registerKey(keyDelete, nil, "Delete", nil, false)
-	registerKey(keyStatus, nil, "Status", nil, false)
+	registerKey(keyReviewState, nil, "ReviewState", nil, false)
 	registerKey(keyOpen, nil, "Open / select", nil, false)
 	registerKey(keyFirstClaim, nil, "First claim", nil, false)
 	registerKey(keyEditSummary, nil, "Abstract / summary", nil, false)
@@ -294,7 +294,8 @@ func init() {
 	// viewTagSelect
 	registerKey(" ", []viewMode{viewTagSelect}, "Toggle tag", nil, true)
 	registerKey("a", []viewMode{viewTagSelect}, "Add tag", nil, true)
-	registerKey(keyEnter, []viewMode{viewTagSelect}, "Toggle tag", nil, false)
+	registerKey(keyEnter, []viewMode{viewTagSelect}, "Save & close", nil, false)
+	registerKey("ctrl+s", []viewMode{viewTagSelect}, "Save & close", nil, false)
 
 	// viewProjectTags
 	registerKey("r", []viewMode{viewProjectTags}, "Rename tag", nil, true)

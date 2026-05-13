@@ -18,7 +18,7 @@ const (
 	TextDetailClassification     TextKey = "detail.classification"
 	TextDetailCountry            TextKey = "detail.country"
 	TextDetailExpiration         TextKey = "detail.expiration"
-	TextDetailStatus             TextKey = "detail.status"
+	TextDetailReviewState TextKey = "detail.review_state"
 	TextDetailIDS                TextKey = "detail.ids"
 	TextDetailLatestAssignment   TextKey = "detail.latest_assignment"
 	TextDetailStoredLocal        TextKey = "detail.stored_local"
@@ -49,7 +49,7 @@ const (
 	TextValueSearchLabel         TextKey = "value.search_label"
 	TextValueProjectTag          TextKey = "value.project_tag"
 	TextValueBreadcrumbFormat    TextKey = "value.breadcrumb_format"
-	TextValueFilterStatusTag     TextKey = "value.filter.status_tag"
+	TextValueFilterReviewStateTag TextKey = "value.filter.review_state_tag"
 	TextValueFilterGeneralTag    TextKey = "value.filter.general_tag"
 	TextValueFilterSortTag       TextKey = "value.filter.sort_tag"
 	TextValueFilterRefsTag       TextKey = "value.filter.refs_tag"
@@ -136,7 +136,7 @@ const (
 	TextHelpSort                 TextKey = "help.sort"
 	TextHelpClass                TextKey = "help.class"
 	TextHelpInventorFilter       TextKey = "help.inventorfilter"
-	TextHelpStatusFilter         TextKey = "help.filterstatus"
+	TextHelpReviewStateFilter TextKey = "help.filter_review_state"
 	TextHelpFamilyAdd            TextKey = "help.family.add"
 	TextHelpFamilyRemove         TextKey = "help.family.remove"
 	TextHelpFamilyView           TextKey = "help.family.view"
@@ -151,10 +151,10 @@ const (
 	TextCitationLabeled          TextKey = "citation.labeled"
 	TextCitationNeverRefreshed   TextKey = "citation.never_refreshed"
 	TextReviewQueueEmpty         TextKey = "review_queue.empty"
-	TextCitationUnderReview      TextKey = "citation.status.under_review"
-	TextCitationStored           TextKey = "citation.status.stored"
-	TextCitationIgnored          TextKey = "citation.status.ignored"
-	TextCitationCached           TextKey = "citation.status.cached"
+	TextReviewStateUnderReview TextKey = "review_state.under_review"
+	TextReviewStateStored      TextKey = "review_state.stored"
+	TextReviewStateIgnored     TextKey = "review_state.ignored"
+	TextReviewStateCached      TextKey = "review_state.cached"
 	TextMessagePreviewLoaded     TextKey = "message.preview_loaded"
 	TextMessageStoredPatent      TextKey = "message.stored_patent"
 	TextMessageSkippedPatent     TextKey = "message.skipped_patent"
@@ -173,10 +173,10 @@ const (
 	TextHelpFamilyAddChild   TextKey = "help.family.add_child"
 
 	// List view
-	TextHelpCyclePatentStatus TextKey = "help.cycle_patent_status"
+	TextHelpCyclePatentReviewState TextKey = "help.cycle_patent_review_state"
 
 	// Citation/review view
-	TextHelpStatusCycle             TextKey = "help.status_cycle"
+	TextHelpReviewStateCycle TextKey = "help.review_state_cycle"
 	TextHelpCitationRefreshSelected TextKey = "help.citation.refresh_selected"
 	TextHelpCitationRefreshAll      TextKey = "help.citation.refresh_all"
 
@@ -221,7 +221,7 @@ func EnglishText() TextCatalog {
 		TextDetailClassification:     "Classification",
 		TextDetailCountry:            "Country",
 		TextDetailExpiration:         "Expiration",
-		TextDetailStatus:             "Status",
+		TextDetailReviewState: "ReviewState",
 		TextDetailIDS:                "IDS",
 		TextDetailLatestAssignment:   "Latest Assignment",
 		TextDetailStoredLocal:        "Imported",
@@ -252,7 +252,7 @@ func EnglishText() TextCatalog {
 		TextValueSearchLabel:         " search:/",
 		TextValueProjectTag:          "PROJECT: %s (%s)",
 		TextValueBreadcrumbFormat:    "[%d] ‹ %s",
-		TextValueFilterStatusTag:     "status:",
+		TextValueFilterReviewStateTag: "review_state:",
 		TextValueFilterGeneralTag:    "filter:",
 		TextValueFilterSortTag:       "sort:",
 		TextValueFilterRefsTag:       "refs:",
@@ -340,7 +340,7 @@ func EnglishText() TextCatalog {
 		TextHelpSort:                    "Sort the list by column (number, title, date, status, assignee, inventor, class, expiration, updated). Comma-separate for secondary sort: status,expiration.",
 		TextHelpClass:                   "Filter by classification prefix. Supports && (AND) and || (OR): H04N && G06F or H04N || G06F. Clear with :classfilter clear.",
 		TextHelpInventorFilter:          "Filter the patent list by inventor name. Clear with :inventorfilter clear.",
-		TextHelpStatusFilter:            "Filter by patent status: stored (default), ignored, under-review, all.",
+		TextHelpReviewStateFilter: "Filter by review state: stored (default), ignored, under-review, all.",
 		TextHelpFamilyAdd:               "Declare a parent or child relationship. Types: continuation, divisional, cip, pct.",
 		TextHelpFamilyRemove:            "Remove a family relationship with the specified patent.",
 		TextHelpFamilyView:              "Open the patent family overlay (parents and children).",
@@ -350,8 +350,8 @@ func EnglishText() TextCatalog {
 		TextHelpFamilyRemoveEdge:        "Remove the edge between the selected node and its tree-parent.",
 		TextHelpFamilyPull:              "Refresh the selected family member; on the current patent, pull and store the full family.",
 		TextHelpFamilyAddChild:          "Pre-fill :family child command in the input bar.",
-		TextHelpCyclePatentStatus:       "Open the status selection popup for the selected patent(s).",
-		TextHelpStatusCycle:             "Cycle the status filter: stored → ignored → under-review → all.",
+		TextHelpCyclePatentReviewState: "Open the review state selection popup for the selected patent(s).",
+		TextHelpReviewStateCycle: "Cycle the review state filter: stored → ignored → under-review → all.",
 		TextHelpCitationRefreshSelected: "Re-fetch the selected citation from Google Patents (title, inventors, expiration).",
 		TextHelpCitationRefreshAll:      "Re-fetch all citations for the current patent from Google Patents.",
 		TextHelpProjectInfoKeys:         "Edit project fields inline: [s]=app status, [m]=summary, [c]=comment, [S]=project status.",
@@ -372,10 +372,10 @@ func EnglishText() TextCatalog {
 		TextCitationLabeled:             "labeled",
 		TextCitationNeverRefreshed:      "never refreshed",
 		TextReviewQueueEmpty:            "No references currently under review.",
-		TextCitationUnderReview:         "under-review",
-		TextCitationStored:              "stored",
-		TextCitationIgnored:             "ignored",
-		TextCitationCached:              "cached",
+		TextReviewStateUnderReview: "under-review",
+		TextReviewStateStored:      "stored",
+		TextReviewStateIgnored:     "ignored",
+		TextReviewStateCached:      "cached",
 		TextMessagePreviewLoaded:        "patent preview loaded",
 
 		TextMessageStoredPatent:      "stored patent: %s",
