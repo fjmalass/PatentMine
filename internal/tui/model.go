@@ -3966,17 +3966,17 @@ func (m *Model) citationStats(number string) (int, time.Time, int, time.Time) {
 
 func (m *Model) formatCitationSummary(count int, expected int, refreshedAt time.Time) string {
 	refreshed := formatCitationTime(refreshedAt, m.text.T(TextCitationNeverRefreshed))
-	expectedStr := "unkn"
+	expectedStr := "—"
 	if expected >= 0 {
 		expectedStr = fmt.Sprintf("%d", expected)
 	}
 	actualStr := fmt.Sprintf("%d", count)
 	if count == 0 && expected > 0 {
-		actualStr = "unkn"
+		actualStr = "—"
 	}
 	if count == 0 && expected <= 0 {
-		actualStr = "unkn"
-		expectedStr = "unkn"
+		actualStr = "—"
+		expectedStr = "—"
 	}
 	return fmt.Sprintf("%s/%-4s  %s: %s", actualStr, expectedStr, m.text.T(TextCitationRefreshed), refreshed)
 }
