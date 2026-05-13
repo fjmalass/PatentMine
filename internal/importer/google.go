@@ -89,10 +89,10 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 	}
 	if expirationDate := adjustedExpirationDate(doc); expirationDate != "" {
 		patent.ExpirationDate = expirationDate
-		patent.ExpirationEstimated = false
+		patent.ExpirationSource = domain.ExpirationSourceImported
 	} else if expirationDate := estimatedExpirationDate(patent.PublicationDate, patent.GrantDate); expirationDate != "" {
 		patent.ExpirationDate = expirationDate
-		patent.ExpirationEstimated = true
+		patent.ExpirationSource = domain.ExpirationSourceEstimated
 	}
 	if patent.Title == "" {
 		patent.Title = number

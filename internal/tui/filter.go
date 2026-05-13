@@ -138,17 +138,17 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 		m.message = "all filters cleared"
 	} else {
 		raw := strings.ToUpper(strings.Join(args, " "))
-		op := FilterOpAnd
+		op := domain.FilterOpAnd
 		var parts []string
 		if strings.Contains(raw, "||") {
-			op = FilterOpOr
+			op = domain.FilterOpOr
 			parts = splitTrim(raw, "||")
 		} else {
 			parts = splitTrim(raw, "&&")
 		}
 		m.classFilters = parts
 		m.classFilterOp = op
-		if op == FilterOpOr {
+		if op == domain.FilterOpOr {
 			m.classFilter = strings.Join(parts, " || ")
 		} else {
 			m.classFilter = strings.Join(parts, " && ")
@@ -275,12 +275,14 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		// Pre-fill current value if possible
 		currentVal := ""
 		switch field.data {
-		case LifecycleTypeApp:
+		case domain.LifecycleTypeApp:
 			currentVal = m.current.ApplicationDate
-		case LifecycleTypePub:
+		case domain.LifecycleTypePub:
 			currentVal = m.current.PublicationDate
-		case LifecycleTypeGrant:
+		case domain.LifecycleTypeGrant:
 			currentVal = m.current.GrantDate
+		case domain.LifecycleTypeExp:
+			currentVal = m.current.ExpirationDate
 		}
 		m.dateInput.SetValue(currentVal)
 		m.dateInput.Focus()

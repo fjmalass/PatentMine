@@ -12,6 +12,18 @@ const (
 )
 
 const (
+	LifecycleTypeApp   = "app"
+	LifecycleTypePub   = "pub"
+	LifecycleTypeGrant = "grant"
+	LifecycleTypeExp   = "exp"
+)
+
+const (
+	FilterOpAnd = "and"
+	FilterOpOr  = "or"
+)
+
+const (
 	FamilyRelationContinuation = "continuation"
 	FamilyRelationDivisional   = "divisional"
 	FamilyRelationCIP          = "cip"
@@ -212,6 +224,12 @@ type ProjectEvent struct {
 	CreatedAt time.Time
 }
 
+const (
+	ExpirationSourceManual    = "manual"
+	ExpirationSourceImported  = "imported"
+	ExpirationSourceEstimated = "estimated"
+)
+
 type Patent struct {
 	Number              string
 	Title               string
@@ -221,7 +239,7 @@ type Patent struct {
 	PublicationDate     string
 	GrantDate           string
 	ExpirationDate      string
-	ExpirationEstimated bool
+	ExpirationSource    string
 	SourceGoogleURL     string
 	ImportSource        string
 	StoredAt            time.Time

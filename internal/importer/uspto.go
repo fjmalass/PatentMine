@@ -715,13 +715,13 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 
 	if exp := estimatedExpirationDate(meta.EarliestPublicationDate, meta.GrantDate); exp != "" {
 		patent.ExpirationDate = exp
-		patent.ExpirationEstimated = true
+		patent.ExpirationSource = domain.ExpirationSourceEstimated
 		// Refine with Patent Term Adjustment (PTA) if available
 		if ptaDays > 0 {
 			if t, err := time.Parse("2006-01-02", exp); err == nil {
 				refined := t.AddDate(0, 0, ptaDays)
 				patent.ExpirationDate = refined.Format("2006-01-02")
-				patent.ExpirationEstimated = false // More precise with PTA
+				patent.ExpirationSource = domain.ExpirationSourceImported // More precise with PTA
 			}
 		}
 	}

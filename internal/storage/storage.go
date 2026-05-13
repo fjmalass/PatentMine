@@ -6,6 +6,10 @@ import (
 	"patentmine/internal/domain"
 )
 
+const (
+	StatusFilterNone = "none"
+)
+
 type ListPatentsOptions struct {
 	Filter        string
 	StatusFilter  string   // "stored" (default), "ignored", "under_review", "all"

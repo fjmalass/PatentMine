@@ -41,6 +41,18 @@ const (
 	TextValueOpenHint           TextKey = "value.open_hint"
 	TextValueReviewOpenHint     TextKey = "value.review_open_hint"
 	TextValueClassificationHint TextKey = "value.classification_hint"
+	TextValueExpirationManual   TextKey = "value.expiration.manual"
+	TextValueExpirationImported TextKey = "value.expiration.imported"
+	TextValueExpirationEstimated TextKey = "value.expiration.estimated"
+	TextValueSearchLabel         TextKey = "value.search_label"
+	TextValueProjectTag          TextKey = "value.project_tag"
+	TextValueBreadcrumbFormat    TextKey = "value.breadcrumb_format"
+	TextValueFilterStatusTag     TextKey = "value.filter.status_tag"
+	TextValueFilterGeneralTag    TextKey = "value.filter.general_tag"
+	TextValueFilterSortTag       TextKey = "value.filter.sort_tag"
+	TextValueFilterRefsTag       TextKey = "value.filter.refs_tag"
+	TextValueFilterClassTag      TextKey = "value.filter.class_tag"
+	TextValueProjectSummaryLead  TextKey = "value.project_summary_lead"
 	TextNavDefault              TextKey = "nav.default"
 	TextNavList                 TextKey = "nav.list"
 	TextNavJump                 TextKey = "nav.jump"
@@ -139,6 +151,7 @@ const (
 	TextCitationUnderReview      TextKey = "citation.status.under_review"
 	TextCitationStored           TextKey = "citation.status.stored"
 	TextCitationIgnored          TextKey = "citation.status.ignored"
+	TextCitationCached           TextKey = "citation.status.cached"
 	TextMessagePreviewLoaded     TextKey = "message.preview_loaded"
 	TextMessageStoredPatent      TextKey = "message.stored_patent"
 	TextMessageSkippedPatent     TextKey = "message.skipped_patent"
@@ -225,9 +238,21 @@ func EnglishText() TextCatalog {
 		TextValuePending:            "pending",
 		TextValueEmpty:              "Empty",
 		TextValuePageStatus:         "Page %d/%d - items %d-%d of %d",
-		TextValueOpenHint:           "[%s] open/preview · [%s] save · [%s] ignore · [%s] unmark · [%s] refresh · [%s/%s] page · [↓↑] scroll",
-		TextValueReviewOpenHint:     "[%s] open/preview · [%s] save · [%s] ignore · [%s] unmark · [%s] refresh · [%s] browse · [%s/%s] page · [↓↑] scroll",
+		TextValueOpenHint:           "[%s] open/preview · [%s] save · [%s] ignore · [%s] under review · [%s] refresh · [%s/%s] page · [↓↑] scroll",
+		TextValueReviewOpenHint:     "[%s] open/preview · [%s] save · [%s] ignore · [%s] under review · [%s] refresh · [%s] browse · [%s/%s] page · [↓↑] scroll",
 		TextValueClassificationHint: "[%s/%s] open detail · [%s] find · [%s] next · [%s/%s] page · [↓↑] scroll",
+		TextValueExpirationManual:   " (man.)",
+		TextValueExpirationImported: " (import)",
+		TextValueExpirationEstimated: " (est.)",
+		TextValueSearchLabel:         " search:/",
+		TextValueProjectTag:          "PROJECT: %s (%s)",
+		TextValueBreadcrumbFormat:    "[%d] ‹ %s",
+		TextValueFilterStatusTag:     "status:",
+		TextValueFilterGeneralTag:    "filter:",
+		TextValueFilterSortTag:       "sort:",
+		TextValueFilterRefsTag:       "refs:",
+		TextValueFilterClassTag:      "class:",
+		TextValueProjectSummaryLead:  "> ",
 		TextNavDefault:              "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavList:                 "keys: [%s/%s/↓↑] rows · [%s/%s/←→] cols · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavJump:                 "jump: press a hint key to move focus, [esc] cancels",
@@ -242,7 +267,7 @@ func EnglishText() TextCatalog {
 		TextMessageBrowserNoPatent:  "no patent selected for browser",
 		TextMessageBrowserUsage:     "usage: :browser [patent-number-or-url]",
 		TextMessageBrowserEmpty:     "empty patent number",
-		TextMessageReviewUsage:      "usage: :review ignored or :review unreviewed",
+		TextMessageReviewUsage:      "usage: :review ignored or :review under_review",
 
 		TextHelpFilterPatents:           "Filter the patent list.",
 		TextHelpAddPatent:               "Build the Google Patents URL and import that patent.",
@@ -334,17 +359,19 @@ func EnglishText() TextCatalog {
 		TextCitationsEmpty:              "No citation records.",
 		TextCitationsOpenFailed:         "patent is not stored and could not be imported",
 		TextPreviewTitle:                "Reference preview",
-		TextPreviewStorePrompt:          "[%s] save · [%s] ignore · [%s] unmark · [%s] skip · [%s] back",
+		TextPreviewStorePrompt:          "[%s] save · [%s] ignore · [%s] under review · [%s] skip · [%s] back",
 		TextPreviewNoAbstract:           "No abstract parsed.",
 		TextCitationCreated:             "created",
 		TextCitationRefreshed:           "refreshed",
 		TextCitationLabeled:             "labeled",
 		TextCitationNeverRefreshed:      "never refreshed",
 		TextReviewQueueEmpty:            "No references currently under review.",
-		TextCitationUnderReview:         "under review",
-		TextCitationStored:              "stored",
-		TextCitationIgnored:             "ignored",
-		TextMessagePreviewLoaded:        "preview loaded: %s",
+		TextCitationUnderReview:      "under-review",
+		TextCitationStored:           "stored",
+		TextCitationIgnored:          "ignored",
+		TextCitationCached:           "cached",
+		TextMessagePreviewLoaded:     "patent preview loaded",
+
 		TextMessageStoredPatent:         "stored patent: %s",
 		TextMessageSkippedPatent:        "skipped patent: %s",
 		TextMessageIgnoredPatent:        "ignored patent: %s",

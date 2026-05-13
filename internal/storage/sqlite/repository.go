@@ -60,6 +60,9 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 		`alter table project_ids add column relevant_passages text not null default ''`,
 		`alter table project_ids add column in_full integer not null default 0`,
 		`alter table project_ids_npl add column in_full integer not null default 0`,
+		`alter table patents add column expiration_source text not null default ''`,
+		`update patents set expiration_source = 'estimated' where expiration_estimated = 1 and expiration_source = ''`,
+		`update patents set expiration_source = 'imported' where expiration_estimated = 0 and expiration_date != '' and expiration_source = ''`,
 		`create trigger if not exists trg_project_patents_delete_ids
 			after delete on project_patents
 			begin
@@ -73,7 +76,9 @@ func (r *Repository) runMigrations(ctx context.Context) error {
 	}
 	for _, stmt := range alterations {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column name") {
+			// Ignore errors for already existing columns or missing old columns during migration
+			if !strings.Contains(err.Error(), "duplicate column name") &&
+				!strings.Contains(err.Error(), "no such column") {
 				return err
 			}
 		}
@@ -102,7 +107,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			publication_date text not null,
 			grant_date text not null,
 			expiration_date text not null default '',
-			expiration_estimated integer not null default 0,
+			expiration_source text not null default '',
 			source_google_url text not null,
 			import_source text not null default '',
 			created_at text not null default '',
@@ -125,7 +130,8 @@ func (r *Repository) createTables(ctx context.Context) error {
 			primary key (project_id, patent_number),
 			foreign key (project_id) references projects(id),
 			foreign key (patent_number) references patents(number)
-		)`, domain.CitationStatusStored),
+		)`, domain.CitationStatusCached),
+
 		`create table if not exists patent_text_sections (
 			patent_number text not null,
 			section_type text not null,
@@ -146,7 +152,7 @@ func (r *Repository) createTables(ctx context.Context) error {
 			primary key (project_id, source_patent, target_patent, relation_type),
 			foreign key (project_id) references projects(id),
 			foreign key (source_patent) references patents(number)
-		)`, domain.CitationStatusIgnored),
+		)`, domain.CitationStatusCached),
 		`create table if not exists patent_classifications (
 			patent_number text not null,
 			system text not null,
@@ -449,7 +455,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 		createdAt = time.Now().UTC()
 	}
 	_, err = tx.ExecContext(ctx, `insert into patents
-		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_estimated, source_google_url, import_source, created_at, latest_assignment, updated_at, expected_citations, expected_cited_by, application_number, application_date, publication_number, grant_number, first_claim)
+		(number, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_source, source_google_url, import_source, created_at, latest_assignment, updated_at, expected_citations, expected_cited_by, application_number, application_date, publication_number, grant_number, first_claim)
 		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		on conflict(number) do update set
 			title = excluded.title,
@@ -459,7 +465,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 			publication_date = excluded.publication_date,
 			grant_date = excluded.grant_date,
 			expiration_date = excluded.expiration_date,
-			expiration_estimated = excluded.expiration_estimated,
+			expiration_source = case when excluded.expiration_source != '' then excluded.expiration_source else patents.expiration_source end,
 			source_google_url = excluded.source_google_url,
 			import_source = case when excluded.import_source != '' then excluded.import_source else patents.import_source end,
 			latest_assignment = case when excluded.latest_assignment != '' then excluded.latest_assignment else patents.latest_assignment end,
@@ -471,7 +477,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 			publication_number = case when excluded.publication_number != '' then excluded.publication_number else patents.publication_number end,
 			grant_number = case when excluded.grant_number != '' then excluded.grant_number else patents.grant_number end,
 			first_claim = case when excluded.first_claim != '' then excluded.first_claim else patents.first_claim end`,
-		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, boolInt(p.ExpirationEstimated), p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString(), p.ExpectedCitations, p.ExpectedCitedBy, p.ApplicationNumber, p.ApplicationDate, p.PublicationNumber, p.GrantNumber, p.FirstClaim)
+		p.Number, p.Title, p.Abstract, p.Assignee, string(inventors), p.PublicationDate, p.GrantDate, p.ExpirationDate, p.ExpirationSource, p.SourceGoogleURL, p.ImportSource, createdAt.Format(time.RFC3339), p.LatestAssignment, nowString(), p.ExpectedCitations, p.ExpectedCitedBy, p.ApplicationNumber, p.ApplicationDate, p.PublicationNumber, p.GrantNumber, p.FirstClaim)
 	return err
 }
 
@@ -496,7 +502,8 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number 
 	refreshedRelations := map[string]bool{}
 	for _, edge := range edges {
 		source := firstNonEmpty(edge.SourcePatent, number)
-		status := firstNonEmpty(edge.Status, domain.CitationStatusIgnored)
+		status := firstNonEmpty(edge.Status, domain.CitationStatusCached)
+
 		refreshedRelations[edge.RelationType] = true
 		if _, err := tx.ExecContext(ctx, `insert into citation_edges (project_id, source_patent, target_patent, relation_type, status, created_at, refreshed_at, labeled_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?)
@@ -562,7 +569,7 @@ func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, clas
 func (r *Repository) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
 	row := r.db.QueryRowContext(ctx, `
 		select
-			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
+			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
 			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
@@ -618,14 +625,14 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		args = append(args, projectID)
 	case domain.CitationStatusCached:
 		statusClause = `pp.status = 'cached'`
-	case "none":
+	case storage.StatusFilterNone:
 		statusClause = `1=1`
 	default: // "" or "stored"
 		statusClause = fmt.Sprintf("pp.status = '%s'", domain.CitationStatusStored)
 	}
 	query := `
 		select
-			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_estimated, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
+			p.number, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
 			group_concat(c.code, ', ') as classification_label, pp.status_changed_at, p.updated_at, p.expected_citations, p.expected_cited_by,
 			p.application_number, p.application_date, p.publication_number, p.grant_number, p.first_claim,
 			(select count(*) from research_notes rn where rn.patent_number = p.number and rn.project_id = ?) as notes_count
@@ -642,7 +649,7 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	}
 
 	if len(opts.ClassFilters) > 0 {
-		if strings.EqualFold(opts.ClassFilterOp, "or") {
+		if strings.EqualFold(opts.ClassFilterOp, domain.FilterOpOr) {
 			conds := make([]string, len(opts.ClassFilters))
 			for i, f := range opts.ClassFilters {
 				conds[i] = "code like ?"
@@ -804,12 +811,19 @@ func (r *Repository) UpdatePatentStatus(ctx context.Context, projectID string, n
 func (r *Repository) UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error {
 	var column string
 	switch dateType {
-	case "app":
+	case domain.LifecycleTypeApp:
 		column = "application_date"
-	case "pub":
+	case domain.LifecycleTypePub:
 		column = "publication_date"
-	case "grant":
+	case domain.LifecycleTypeGrant:
 		column = "grant_date"
+	case domain.LifecycleTypeExp:
+		column = "expiration_date"
+		r.logger.Info("repository.update_patent_date.set_manual", "patent", number)
+		_, err := r.db.ExecContext(ctx, `update patents set expiration_source = ? where number = ?`, domain.ExpirationSourceManual, number)
+		if err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("invalid date type: %s", dateType)
 	}
@@ -821,11 +835,11 @@ func (r *Repository) UpdatePatentDate(ctx context.Context, number string, dateTy
 func (r *Repository) UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error {
 	var column string
 	switch numType {
-	case "app":
+	case domain.LifecycleTypeApp:
 		column = "application_number"
-	case "pub":
+	case domain.LifecycleTypePub:
 		column = "publication_number"
-	case "grant":
+	case domain.LifecycleTypeGrant:
 		column = "grant_number"
 	default:
 		return fmt.Errorf("invalid number type: %s", numType)
@@ -993,7 +1007,7 @@ func (r *Repository) ListAIAnalyses(ctx context.Context, projectID string, numbe
 func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var p domain.Patent
 	var inventors string
-	var expirationEstimated int
+	var expirationSource sql.NullString
 	var createdAt sql.NullString
 	var status sql.NullString
 	var latestAssignment sql.NullString
@@ -1001,7 +1015,7 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	var statusChangedAt sql.NullString
 	var updatedAt sql.NullString
 	var importSource sql.NullString
-	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationEstimated, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
+	if err := row.Scan(&p.Number, &p.Title, &p.Abstract, &p.Assignee, &inventors, &p.PublicationDate, &p.GrantDate, &p.ExpirationDate, &expirationSource, &p.SourceGoogleURL, &importSource, &createdAt, &status, &latestAssignment, &classificationLabel, &statusChangedAt, &updatedAt, &p.ExpectedCitations, &p.ExpectedCitedBy, &p.ApplicationNumber, &p.ApplicationDate, &p.PublicationNumber, &p.GrantNumber, &p.FirstClaim, &p.NotesCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Patent{}, fmt.Errorf("patent not found")
 		}
@@ -1010,7 +1024,7 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 	if err := json.Unmarshal([]byte(inventors), &p.Inventors); err != nil {
 		return domain.Patent{}, err
 	}
-	p.ExpirationEstimated = expirationEstimated == 1
+	p.ExpirationSource = expirationSource.String
 	if createdAt.Valid {
 		p.StoredAt = parseTime(createdAt.String)
 	}

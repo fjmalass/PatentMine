@@ -1,6 +1,9 @@
 package tui
 
-import "patentmine/internal/domain"
+import (
+	"patentmine/internal/domain"
+	"patentmine/internal/storage"
+)
 
 const (
 	commandSearch             = "search"
@@ -207,7 +210,7 @@ const (
 
 	inventorJumpNumberLabels = "123456789"
 
-	statusFilterNone = "none" // no status restriction — passes "none" to storage layer
+	statusFilterNone = storage.StatusFilterNone // no status restriction
 
 	EmptyFilter     = ""
 	EmptySortColumn = ""
@@ -234,6 +237,11 @@ const (
 	ColorDepth        = "75"  // Cyan-blue (family tree depth labels)
 	ColorBlack        = "0"   // Black
 	ColorWhite        = "255" // White
+	ColorLavender     = "147" // Lavender
+	ColorOrange       = "208" // Orange
+	ColorLime         = "118" // Lime Green
+	ColorCyan         = "81"  // Cyan
+	ColorGold         = "214" // Gold
 
 	// Mode Theme Colors
 	ColorThemeList            = "39"  // Blue
@@ -259,11 +267,6 @@ const (
 	OverlayMinWidth         = 44
 	OverlayAbsoluteMinWidth = 20
 
-	// Lifecycle types
-	LifecycleTypeApp   = "app"
-	LifecycleTypePub   = "pub"
-	LifecycleTypeGrant = "grant"
-
 	// Activity actions
 	ActivityPatentImport = "patent.import"
 	ActivityPatentDelete = "patent.delete"
@@ -284,10 +287,6 @@ const (
 	// Import sources
 	ImportSourceUSPTO  = "uspto"
 	ImportSourceGoogle = "google"
-
-	// Filter operations
-	FilterOpAnd = "and"
-	FilterOpOr  = "or"
 
 	// Family relation types
 	FamilyRelationContinuation = "continuation"
@@ -324,15 +323,15 @@ const (
 
 var StatusColors = map[string]string{
 	domain.CitationStatusIgnored:     ColorSubtle,
-	domain.CitationStatusUnderReview: "222",
+	domain.CitationStatusUnderReview: ColorWarning,
 	domain.CitationStatusStored:      ColorTheme,
 	domain.CitationStatusCached:      ColorDim,
 }
 
 var SummaryStatusColors = map[string]string{
 	domain.ProjectSummaryStatusWorkInProgress:   ColorWarning,
-	domain.ProjectSummaryStatusProvisionalFiled: "81",  // Cyan-ish
-	domain.ProjectSummaryStatusApplicationFiled: "147", // Lavender
+	domain.ProjectSummaryStatusProvisionalFiled: ColorCyan,
+	domain.ProjectSummaryStatusApplicationFiled: ColorLavender,
 	domain.ProjectSummaryStatusPublished:        ColorTheme,
 	domain.ProjectSummaryStatusGranted:          ColorSuccess,
 }
@@ -375,7 +374,7 @@ var InvoiceStatusColors = map[string]string{
 	domain.InvoiceStatusOutstanding: ColorWarning,
 	domain.InvoiceStatusPaid:        ColorSuccess,
 	domain.InvoiceStatusOverdue:     ColorError,
-	domain.InvoiceStatusDisputed:    "208", // Orange
+	domain.InvoiceStatusDisputed:    ColorOrange,
 }
 
 var InvoiceStatusLabels = map[string]string{
@@ -391,24 +390,24 @@ var InvoiceDirectionLabels = map[string]string{
 }
 
 var EventTypeColors = map[string]string{
-	domain.EventTypeProvisionalFiled:  "81",         // Cyan
-	domain.EventTypeApplicationFiled:  "147",        // Lavender
+	domain.EventTypeProvisionalFiled:  ColorCyan,
+	domain.EventTypeApplicationFiled:  ColorLavender,
 	domain.EventTypePublication:       ColorTheme,   // Blue
 	domain.EventTypeOANonFinal:        ColorWarning, // Yellow
-	domain.EventTypeOAFinal:           "208",        // Orange
-	domain.EventTypeResponseFiled:     "118",        // Green
-	domain.EventTypeRCEFiled:          "214",        // Gold
+	domain.EventTypeOAFinal:           ColorOrange,  // Orange
+	domain.EventTypeResponseFiled:     ColorLime,    // Green
+	domain.EventTypeRCEFiled:          ColorGold,    // Gold
 	domain.EventTypeNoticeOfAllowance: ColorSuccess, // Green
 	domain.EventTypeIssueFee:          ColorSuccess,
 	domain.EventTypeGranted:           ColorSuccess,
 	domain.EventTypeMaintenance3:      ColorWarning,
 	domain.EventTypeMaintenance7:      ColorWarning,
 	domain.EventTypeMaintenance11:     ColorWarning,
-	domain.EventTypeContinuationFiled: "81",
-	domain.EventTypeDivisionalFiled:   "81",
-	domain.EventTypeCIPFiled:          "81",
-	domain.EventTypeAppealFiled:       "208",
-	domain.EventTypePTABDecision:      "147",
+	domain.EventTypeContinuationFiled: ColorCyan,
+	domain.EventTypeDivisionalFiled:   ColorCyan,
+	domain.EventTypeCIPFiled:          ColorCyan,
+	domain.EventTypeAppealFiled:       ColorOrange,
+	domain.EventTypePTABDecision:      ColorLavender,
 	domain.EventTypeIPRFiled:          ColorError,
 	domain.EventTypeReexamRequested:   ColorError,
 	domain.EventTypeExtensionFiled:    ColorSubtle,

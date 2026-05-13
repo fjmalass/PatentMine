@@ -247,7 +247,7 @@ Select and process multiple records at once:
 - **Confirm & Execute:** With multiple items selected, press:
     - `[y]` or `[enter]`: **Store** all selected citations (triggers a confirmation popup and background download).
     - `[i]`: **Ignore** all selected items.
-    - `[r]`: **Unmark** (set to Under Review) all selected items.
+    - `[r]`: **Mark under review** all selected items.
     - `[s]`: **Cycle Status** for all selected items.
 - **Cancel:** Press `[esc]` to clear the selection and exit visual mode.
 

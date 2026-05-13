@@ -206,7 +206,7 @@ func (m *Model) viewFamilyOverlay() string {
 	}
 
 	sel := clamp(m.familySelected, 0, len(nodes)-1)
-	window := pageWindow(sel, len(nodes), m.pageSize()-4)
+	window := pageWindow(sel, len(nodes), m.overlayPageSize())
 
 	var body strings.Builder
 	body.WriteString(subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window)) + "\n\n")
@@ -567,7 +567,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				} else {
 					memberBundle.Patent.ImportSource = ImportSourceGoogle
 				}
-				memberBundle.Patent.Status = domain.CitationStatusIgnored
+				memberBundle.Patent.Status = domain.CitationStatusCached
 				if err := repo.UpsertPatentBundle(ctx, projectID, memberBundle); err != nil {
 					logger.Error("family member store failed", "patent", num, "error", err)
 					failed++

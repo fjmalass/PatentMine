@@ -39,7 +39,7 @@ func TestRepositorySetupAndSeedIdempotency(t *testing.T) {
 	if patent.ExpirationDate != "2043-03-21" {
 		t.Fatalf("expected expiration date to persist, got %q", patent.ExpirationDate)
 	}
-	if !patent.ExpirationEstimated {
+	if patent.ExpirationSource != domain.ExpirationSourceEstimated {
 		t.Fatal("expected estimated expiration flag to persist")
 	}
 	if patent.StoredAt.IsZero() {
@@ -131,7 +131,7 @@ func TestRepositoryOperations(t *testing.T) {
 			PublicationDate:     "2024-01-01",
 			GrantDate:           "2024-02-01",
 			ExpirationDate:      "2044-01-01",
-			ExpirationEstimated: true,
+			ExpirationSource: domain.ExpirationSourceEstimated,
 			SourceGoogleURL:     "https://example.test",
 		},
 		Sections:        []domain.PatentTextSection{{SectionType: "claims", Ordinal: 1, Text: "A widget analyzer."}},
@@ -148,7 +148,7 @@ func TestRepositoryOperations(t *testing.T) {
 	if patent.ExpirationDate != "2044-01-01" {
 		t.Fatalf("expected expiration date, got %q", patent.ExpirationDate)
 	}
-	if !patent.ExpirationEstimated {
+	if patent.ExpirationSource != domain.ExpirationSourceEstimated {
 		t.Fatal("expected expiration estimated flag")
 	}
 	if patent.StoredAt.IsZero() {
@@ -167,8 +167,8 @@ func TestRepositoryOperations(t *testing.T) {
 	if len(citations) != 1 {
 		t.Fatalf("expected citation, got %d", len(citations))
 	}
-	if citations[0].Status != domain.CitationStatusIgnored {
-		t.Fatalf("expected ignored citation status (new default), got %q", citations[0].Status)
+	if citations[0].Status != domain.CitationStatusCached {
+		t.Fatalf("expected cached citation status (new default), got %q", citations[0].Status)
 	}
 	if citations[0].CreatedAt.IsZero() || citations[0].RefreshedAt.IsZero() || citations[0].LabeledAt.IsZero() {
 		t.Fatalf("expected citation timestamps, got created=%v refreshed=%v labeled=%v", citations[0].CreatedAt, citations[0].RefreshedAt, citations[0].LabeledAt)

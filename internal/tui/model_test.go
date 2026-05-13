@@ -15,18 +15,38 @@ import (
 
 func TestFormatExpirationShowsEstimatedSuffix(t *testing.T) {
 	got := (&Model{}).formatExpiration(domain.Patent{
-		ExpirationDate:      "2043-03-21",
-		ExpirationEstimated: true,
+		ExpirationDate:   "2043-03-21",
+		ExpirationSource: domain.ExpirationSourceEstimated,
 	})
 	if got != "2043-03-21 (est.)" {
 		t.Fatalf("expected estimated expiration label, got %q", got)
 	}
 }
 
+func TestFormatExpirationShowsManualSuffix(t *testing.T) {
+	got := (&Model{}).formatExpiration(domain.Patent{
+		ExpirationDate:   "2043-03-21",
+		ExpirationSource: domain.ExpirationSourceManual,
+	})
+	if got != "2043-03-21 (man.)" {
+		t.Fatalf("expected manual expiration label, got %q", got)
+	}
+}
+
+func TestFormatExpirationShowsImportSuffix(t *testing.T) {
+	got := (&Model{}).formatExpiration(domain.Patent{
+		ExpirationDate:   "2043-03-21",
+		ExpirationSource: domain.ExpirationSourceImported,
+	})
+	if got != "2043-03-21 (import)" {
+		t.Fatalf("expected imported expiration label, got %q", got)
+	}
+}
+
 func TestFormatExpirationKeepsExpiredLabelText(t *testing.T) {
 	got := (&Model{}).formatExpiration(domain.Patent{
 		ExpirationDate:      "2001-01-01",
-		ExpirationEstimated: true,
+		ExpirationSource: domain.ExpirationSourceEstimated,
 	})
 	if got != "2001-01-01 (est.)" {
 		t.Fatalf("expected expired expiration label text, got %q", got)
@@ -572,13 +592,13 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 	got := model.jumpLabels()
 	want := []string{
 		jumpLabelAssignee,
-		jumpLabelLatestAssignment, // L
+		jumpLabelLatestAssignment,
 		jumpLabelInventors,
-		jumpLabelApplication, // A
+		jumpLabelApplication,
 		jumpLabelPublication,
 		jumpLabelGrant,
-		jumpLabelClassification,
 		jumpLabelExpiration,
+		jumpLabelClassification,
 		jumpLabelCitationCount,
 		jumpLabelCitedByCount,
 		// Status and IDS are skipped when repo is nil
@@ -592,6 +612,7 @@ func TestDetailJumpLabelsMatchFields(t *testing.T) {
 		jumpLabelStoredLocal,
 		jumpLabelUpdated,
 	}
+
 	if len(got) != len(want) {
 		t.Fatalf("expected %d labels, got %d: %v vs %v", len(want), len(got), want, got)
 	}
@@ -652,7 +673,9 @@ func TestViewClassificationsShowsPagedIndexedRows(t *testing.T) {
 		width:                  80,
 	}
 	got := model.viewClassifications()
-	if !strings.Contains(got, "Page 7/8 - items 7-7 of 8") {
+	// Total 8 items. overlayPageSize with m.height=12 is max(3, 12-18) = 3.
+	// selected=6 (item 7) -> Page 3/3 (items 7-8 of 8)
+	if !strings.Contains(got, "Page 3/3 - items 7-8 of 8") {
 		t.Fatalf("expected page status, got %q", got)
 	}
 	if strings.Contains(got, "[CPC]") {
@@ -1048,7 +1071,7 @@ func (r storedCitationRepo) GetPatent(_ context.Context, _ string, number string
 		PublicationDate:     "2019-01-01",
 		GrantDate:           "2020-01-01",
 		ExpirationDate:      "2040-01-01",
-		ExpirationEstimated: true,
+		ExpirationSource: domain.ExpirationSourceEstimated,
 		SourceGoogleURL:     "https://patents.google.com/patent/" + number + "/en",
 	}, nil
 }

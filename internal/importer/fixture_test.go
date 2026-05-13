@@ -13,7 +13,7 @@ func TestLoadFixture(t *testing.T) {
 	if bundle.Patent.ExpirationDate != "2043-03-21" {
 		t.Fatalf("unexpected expiration date %q", bundle.Patent.ExpirationDate)
 	}
-	if !bundle.Patent.ExpirationEstimated {
+	if bundle.Patent.ExpirationSource != "estimated" {
 		t.Fatal("expected fixture expiration to be marked estimated")
 	}
 	if len(bundle.Sections) == 0 || len(bundle.Classifications) == 0 || len(bundle.Citations) == 0 {

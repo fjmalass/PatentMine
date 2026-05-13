@@ -9,15 +9,11 @@ import (
 )
 
 func (m *Model) activeMode() viewMode {
-	spec, ok := lookupModeSpec(m.mode)
-	if !ok || !spec.isOverlay || spec.background == nil {
-		return m.mode
-	}
-	return spec.background(m)
+	return m.mode
 }
 
 func (m *Model) screenTitle() string {
-	return screenTitleForMode(m.activeMode())
+	return screenTitleForMode(m.mode)
 }
 
 func screenTitleForMode(mode viewMode) string {
@@ -28,7 +24,7 @@ func screenTitleForMode(mode viewMode) string {
 }
 
 func (m *Model) screenSubtitle() string {
-	active := m.activeMode()
+	active := m.mode
 	switch active {
 	case viewDetail, viewCites, viewCitedBy, viewClassifications, viewClassificationDetail, viewInventors, viewFamily, viewText, viewNotes, viewNoteEdit, viewIDSEdit, viewDateEdit, viewAbstract, viewClaim:
 		if m.current.Number != "" {
@@ -57,14 +53,14 @@ func screenColorForMode(mode viewMode) string {
 }
 
 func (m *Model) screenColor() string {
-	return screenColorForMode(m.activeMode())
+	return screenColorForMode(m.mode)
 }
 
 func (m *Model) renderScreenHeader() string {
 	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenColor()))
 	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorTheme)).Render("PatentMine"))
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenColor())).Render("PatentMine"))
 	b.WriteString(" ")
 
 	// Project details
@@ -81,10 +77,9 @@ func (m *Model) renderScreenHeader() string {
 	}
 
 	projectTag := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorSurface)).
-		Foreground(lipgloss.Color(ColorTheme)).
+		Foreground(lipgloss.Color(m.screenColor())).
 		Padding(0, 1).
-		Render(fmt.Sprintf("PROJECT: %s (%s)", pName, m.ProjectID))
+		Render(fmt.Sprintf(m.text.T(TextValueProjectTag), pName, m.ProjectID))
 	b.WriteString(projectTag)
 
 	// Summary status badge
@@ -145,7 +140,7 @@ func (m *Model) renderScreenHeader() string {
 			}
 			trail := ellipsis + strings.Join(parts, " › ")
 			b.WriteString("  ")
-			b.WriteString(subtle.Render(fmt.Sprintf("[%d] ‹ %s", depth, trail)))
+			b.WriteString(subtle.Render(fmt.Sprintf(m.text.T(TextValueBreadcrumbFormat), depth, trail)))
 		}
 	}
 
@@ -153,13 +148,13 @@ func (m *Model) renderScreenHeader() string {
 	// The default stored-only view is implied and omitted to reduce noise.
 	var filters []string
 	if m.statusFilter != "" && m.statusFilter != domain.CitationStatusStored {
-		filters = append(filters, "status:"+m.statusFilter)
+		filters = append(filters, m.text.T(TextValueFilterStatusTag)+m.statusFilter)
 	}
 	if m.filter != EmptyFilter {
-		filters = append(filters, fmt.Sprintf("filter:%s", m.filter))
+		filters = append(filters, fmt.Sprintf("%s%s", m.text.T(TextValueFilterGeneralTag), m.filter))
 	}
 	if m.sortColumn != "" {
-		sort := fmt.Sprintf("sort:%s %s", m.sortColumn, m.sortOrder)
+		sort := fmt.Sprintf("%s%s %s", m.text.T(TextValueFilterSortTag), m.sortColumn, m.sortOrder)
 		if m.sortColumn2 != "" {
 			sort += "," + m.sortColumn2
 		}
@@ -176,14 +171,14 @@ func (m *Model) renderScreenHeader() string {
 		if label == domain.CitationStatusUnderReview {
 			label = "under-review"
 		}
-		filters = append(filters, "refs:"+label)
+		filters = append(filters, m.text.T(TextValueFilterRefsTag)+label)
 	}
 	if m.classFilter != EmptyFilter {
-		classStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+		classStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDepth))
 		b.WriteString(" ")
 		b.WriteString(subtle.Render("·"))
 		b.WriteString(" ")
-		b.WriteString(classStyle.Render("class:" + m.classFilter))
+		b.WriteString(classStyle.Render(m.text.T(TextValueFilterClassTag) + m.classFilter))
 	}
 
 	if subtitle := strings.TrimSpace(m.screenSubtitle()); subtitle != "" {
@@ -203,12 +198,24 @@ func (m *Model) renderScreenHeader() string {
 		if p.ID == m.ProjectID && p.Summary != "" {
 			b.WriteString("\n")
 			summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
-			b.WriteString(summaryStyle.Render("> " + p.Summary))
+			b.WriteString(summaryStyle.Render(m.text.T(TextValueProjectSummaryLead) + p.Summary))
 			break
 		}
 	}
 
-	return b.String()
+	// Render and pad each line of the header
+	headerLines := strings.Split(b.String(), "\n")
+	style := lipgloss.NewStyle().Width(m.width)
+
+	var res strings.Builder
+	for i, line := range headerLines {
+		res.WriteString(style.Render(line))
+		if i < len(headerLines)-1 {
+			res.WriteString("\n")
+		}
+	}
+
+	return res.String()
 }
 
 func (m *Model) renderPopup(title, content string) string {
@@ -221,12 +228,10 @@ func (m *Model) renderPopup(title, content string) string {
 func (m *Model) renderPopupHeader(label string) string {
 	spec := mustModeSpec(m.mode)
 
-	// Style for the main title: themed background, bold
+	// Use standard surface background instead of themed background
 	titleStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(m.screenColor())).
-		Foreground(lipgloss.Color(ColorBlack)).
-		Bold(true).
-		Padding(0, 1)
+		Foreground(lipgloss.Color(m.screenColor())).
+		Bold(true)
 
 	res := titleStyle.Render(label)
 
@@ -236,29 +241,46 @@ func (m *Model) renderPopupHeader(label string) string {
 		query = strings.TrimPrefix(m.input.Value(), "/")
 	}
 	if m.popupSearchActive || query != "" {
-		searchText := "search:/"
+		searchText := m.text.T(TextValueSearchLabel)
 		if query != "" {
 			searchText += query
 		}
-		// Search text style: slightly different but consistent
 		searchStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color(ColorWhite)).
-			Foreground(lipgloss.Color(ColorBlack)).
-			Padding(0, 1).
-			MarginLeft(1)
+			Foreground(lipgloss.Color(ColorWarning)).
+			Italic(true)
 		res += searchStyle.Render(searchText)
 	}
 
-	// Style for the hint: same background as title, regular weight, tight to title
+	// Hint style: regular weight, same background
 	if spec.helpHint != "" {
 		hintStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color(m.screenColor())).
-			Foreground(lipgloss.Color(ColorBlack)).
-			Padding(0, 1)
+			Foreground(lipgloss.Color(ColorSubtle)).
+			Padding(0, 0)
 		res += "\n" + hintStyle.Render(spec.helpHint)
 	}
 
-	return res + "\n\n"
+	// Add a separator rule to separate header from payload
+	popupWidth := m.overlayWidth() - 4
+	if popupWidth < 20 {
+		popupWidth = 20
+	}
+	rule := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(ColorSubtle)).
+		Render(strings.Repeat("─", popupWidth))
+
+	// Ensure all lines in the header have the correct background and width
+	headerLines := strings.Split(res+"\n"+rule, "\n")
+	style := lipgloss.NewStyle().Width(m.overlayWidth() - 4)
+
+	var final strings.Builder
+	for i, line := range headerLines {
+		final.WriteString(style.Render(line))
+		if i < len(headerLines)-1 {
+			final.WriteString("\n")
+		}
+	}
+
+	return final.String() + "\n\n"
 }
 
 func (m *Model) renderPopupTitle(label string) string {
@@ -271,12 +293,11 @@ func (m *Model) renderPopupTitle(label string) string {
 	res := accent.Render(label)
 
 	if m.popupSearchActive || query != "" {
-		searchText := "search:/"
+		searchText := strings.TrimSpace(m.text.T(TextValueSearchLabel))
 		if query != "" {
 			searchText += query
 		}
 		searchStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color(m.screenColor())).
 			Foreground(lipgloss.Color(ColorBlack)).
 			Bold(true).
 			Padding(0, 1)

@@ -65,7 +65,7 @@ type bulkActionType string
 const (
 	bulkActionStore  bulkActionType = "store"
 	bulkActionIgnore bulkActionType = "ignore"
-	bulkActionUnmark bulkActionType = "unmark"
+	bulkActionUnderReview bulkActionType = "under_review"
 )
 
 type Model struct {
@@ -970,7 +970,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					sel := clamp(m.classificationSelected, 0, len(classifications)-1)
 					code := classifications[sel].Code
 					m.classFilters = []string{code}
-					m.classFilterOp = FilterOpAnd
+					m.classFilterOp = domain.FilterOpAnd
 					m.classFilter = code
 					m.mode = viewList
 					return m.refreshList()
@@ -2473,7 +2473,7 @@ func (m *Model) updateSelectedCitationStatus(status string, messageKey TextKey) 
 		if status == domain.CitationStatusIgnored {
 			m.bulkAction = bulkActionIgnore
 		} else {
-			m.bulkAction = bulkActionUnmark
+			m.bulkAction = bulkActionUnderReview
 		}
 		return m.navigateTo(viewBulkConfirm), nil
 	}
@@ -2579,7 +2579,7 @@ func (m *Model) updateSelectedReviewCitationStatus(status string, messageKey Tex
 		if status == domain.CitationStatusIgnored {
 			m.bulkAction = bulkActionIgnore
 		} else {
-			m.bulkAction = bulkActionUnmark
+			m.bulkAction = bulkActionUnderReview
 		}
 		return m.navigateTo(viewBulkConfirm), nil
 	}
@@ -2622,7 +2622,7 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 	status := domain.CitationStatusStored
 	if action == bulkActionIgnore {
 		status = domain.CitationStatusIgnored
-	} else if action == bulkActionUnmark {
+	} else if action == bulkActionUnderReview {
 		status = domain.CitationStatusUnderReview
 	}
 
@@ -3074,11 +3074,14 @@ func (m *Model) styleRow(index int, selected int, content string) string {
 
 func (m *Model) styleRowW(index int, selected int, content string, targetWidth int) string {
 	style := lipgloss.NewStyle()
+	if m.mode != viewSplash && m.activeMode() != viewSplash {
+		style = style.Background(lipgloss.Color(ColorSurface))
+	}
 	if m.isInSelection(index) {
 		style = style.Background(lipgloss.Color(ColorSelection))
 	} else if index == selected {
 		style = style.Background(lipgloss.Color(ColorHighlight))
-	} else if index%2 != 0 {
+	} else if index%2 != 0 && (m.mode != viewSplash && m.activeMode() != viewSplash) {
 		style = style.Background(lipgloss.Color(ColorAltRow))
 	}
 	if targetWidth > 0 {
@@ -3152,30 +3155,36 @@ func (m *Model) listColumns() []listColumn {
 
 func (m *Model) View() string {
 	start := time.Now()
-	// Pre-calculate jump labels for this render frame to avoid redundant allocations and logic in loops.
+	// Pre-calculate jump labels for this render frame
 	m.jumpLabelsCache = m.jumpLabels()
 
 	spec := mustModeSpec(m.mode)
-	bg := m.renderView()
+	var res string
 
 	if spec.isOverlay {
 		content := m.renderModeBody(m.mode)
-		overlay := m.previewOverlay(content)
-
-		dimmedBg := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAltRow)).Faint(true).Render(bg)
-		res := m.composite(dimmedBg, overlay)
-		if os.Getenv("PATENT_DEBUG") == "1" {
-			elapsed := time.Since(start)
-			m.logger.Debug("tui.render_frame", "mode", m.mode, "duration_ms", elapsed.Milliseconds())
-		}
-		return res
+		res = m.previewOverlay(content)
+	} else {
+		res = m.renderView()
 	}
 
 	if os.Getenv("PATENT_DEBUG") == "1" {
 		elapsed := time.Since(start)
 		m.logger.Debug("tui.render_frame", "mode", m.mode, "duration_ms", elapsed.Milliseconds())
 	}
-	return bg
+
+	// Enforce global background only for non-splash contexts
+	if !m.isSplashContext() {
+		res = lipgloss.NewStyle().
+			Width(m.width).
+			Render(res)
+
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Left, lipgloss.Top,
+			res)
+	}
+
+	return res
 }
 
 func (m *Model) viewClaim() string {
@@ -3228,45 +3237,61 @@ func wrapText(text string, width int) string {
 	return b.String()
 }
 
+func (m *Model) styleLine(content string) string {
+	style := lipgloss.NewStyle().Width(m.width)
+	if !m.isSplashContext() {
+		style = style.Background(lipgloss.Color(ColorSurface))
+	}
+	return style.Render(content)
+}
+
 func (m *Model) renderView() string {
 	mode := m.activeMode()
 	if mode == viewSplash {
 		return m.viewSplash()
 	}
 
+	lineStyle := lipgloss.NewStyle().Width(m.width).Background(lipgloss.Color(ColorSurface))
+	ruleStyle := lipgloss.NewStyle().Width(m.width).Background(lipgloss.Color(ColorSurface)).Foreground(lipgloss.Color(ColorSubtle))
+
 	var b strings.Builder
 	b.WriteString(m.renderScreenHeader())
 	b.WriteString("\n")
+
 	if m.input.Focused() {
 		isPopupSearch := m.isPopupMode() && strings.HasPrefix(m.input.Value(), keySearch)
 		if !isPopupSearch {
-			b.WriteString(m.input.View() + "\n")
+			b.WriteString(lineStyle.Render(m.input.View()) + "\n")
 		} else {
-			b.WriteString(m.navDefault() + "\n")
+			b.WriteString(lineStyle.Render(m.navDefault()) + "\n")
 		}
 	} else if m.jumpMode {
+		prefix := ""
 		if m.visualMode {
-			b.WriteString(lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(" VISUAL ") + " ")
+			prefix = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(" VISUAL ") + " "
 		}
-		b.WriteString(m.text.T(TextNavJump) + "\n")
+		b.WriteString(lineStyle.Render(prefix+m.text.T(TextNavJump)) + "\n")
 	} else {
+		prefix := ""
 		if m.visualMode {
-			b.WriteString(lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(" VISUAL ") + " ")
+			prefix = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(" VISUAL ") + " "
 		}
-		b.WriteString(m.navDefault() + "\n")
+		b.WriteString(lineStyle.Render(prefix+m.navDefault()) + "\n")
 	}
-	b.WriteString(m.rule() + "\n")
+	b.WriteString(ruleStyle.Render(strings.Repeat("─", m.width)) + "\n")
 	b.WriteString(m.renderModeBody(mode))
+
 	if m.err != "" || m.message != "" {
-		b.WriteString("\n" + m.rule() + "\n")
+		b.WriteString("\n" + ruleStyle.Render(strings.Repeat("─", m.width)) + "\n")
 		if m.err != "" {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorError)).Render(m.singleLine(m.err)) + "\n")
+			errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorError))
+			b.WriteString(lineStyle.Render(errStyle.Render(m.err)) + "\n")
 		} else {
 			messageStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSuccess))
 			if strings.HasPrefix(m.message, "found match") {
 				messageStyle = messageStyle.Bold(true)
 			}
-			b.WriteString(messageStyle.Render(m.singleLine(m.message)) + "\n")
+			b.WriteString(lineStyle.Render(messageStyle.Render(m.message)) + "\n")
 		}
 	}
 	return b.String()
@@ -3342,12 +3367,14 @@ func (m *Model) renderModeBody(mode viewMode) string {
 func (m *Model) viewDateEdit() string {
 	title := "Edit Date"
 	switch m.editDateType {
-	case LifecycleTypeApp:
+	case domain.LifecycleTypeApp:
 		title = "Edit Application Date"
-	case LifecycleTypePub:
+	case domain.LifecycleTypePub:
 		title = "Edit Publication Date"
-	case LifecycleTypeGrant:
+	case domain.LifecycleTypeGrant:
 		title = "Edit Grant Date"
+	case domain.LifecycleTypeExp:
+		title = "Edit Expiration Date"
 	}
 	return m.renderPopup(title, m.dateInput.View())
 }
@@ -3388,8 +3415,8 @@ func (m *Model) viewBulkConfirm() string {
 		actionVerb = "save"
 	case bulkActionIgnore:
 		actionVerb = "ignore"
-	case bulkActionUnmark:
-		actionVerb = "unmark (under review)"
+	case bulkActionUnderReview:
+		actionVerb = "mark as under review"
 	}
 	content := fmt.Sprintf("Do you want to %s %d citation(s) in the database?", actionVerb, count)
 	return m.renderPopup("Bulk Action Confirmation", content)
@@ -3405,70 +3432,8 @@ func (m *Model) viewUSPTOKeyWarning() string {
 	return m.renderPopup("USPTO API Key Missing", body.String())
 }
 
-func (m *Model) composite(bg, overlay string) string {
-	bgLines := strings.Split(bg, "\n")
-	overlayLines := strings.Split(overlay, "\n")
-
-	// Ensure bg has enough height
-	for len(bgLines) < m.height {
-		bgLines = append(bgLines, "")
-	}
-
-	oWidth := lipgloss.Width(overlayLines[0])
-	oHeight := len(overlayLines)
-
-	startX := (m.width - oWidth) / 2
-	startY := (m.height - oHeight) / 2
-
-	if startX < 0 {
-		startX = 0
-	}
-	if startY < 0 {
-		startY = 0
-	}
-
-	for i, oLine := range overlayLines {
-		y := startY + i
-		if y >= len(bgLines) || y >= m.height {
-			break
-		}
-
-		bgLine := bgLines[y]
-		// Pad bgLine to m.width to ensure we can overwrite correctly
-		bgLineWidth := lipgloss.Width(bgLine)
-		if bgLineWidth < m.width {
-			bgLine += strings.Repeat(" ", m.width-bgLineWidth)
-		}
-
-		// Truncate bg to startX
-		left := lipgloss.NewStyle().MaxWidth(startX).Render(bgLine)
-		// Since reverse truncation is hard with ANSI, we'll just fill the right side with spaces
-		// for this prototype. Real terminal transparency is complex.
-		right := strings.Repeat(" ", max(0, m.width-(startX+oWidth)))
-
-		bgLines[y] = left + oLine + right
-	}
-
-	return strings.Join(bgLines, "\n")
-}
-
-func (m *Model) rule() string {
-	width := m.width
-	if width <= 0 {
-		width = 80
-	}
-	return strings.Repeat("─", width)
-}
-
-func (m *Model) singleLine(value string) string {
-	value = strings.Join(strings.Fields(value), " ")
-	if m.width <= 0 || len(value) <= m.width {
-		return value
-	}
-	if m.width <= 3 {
-		return value[:m.width]
-	}
-	return value[:m.width-3] + "..."
+func (m *Model) isSplashContext() bool {
+	return m.mode == viewSplash
 }
 
 func (m *Model) displayVersion() string {
@@ -3498,12 +3463,14 @@ func (m *Model) viewList() string {
 		activeFilters = append(activeFilters, "class:"+m.classFilter)
 	}
 	if len(activeFilters) > 0 {
-		b.WriteString(m.text.T(TextListFilter) + ": " + strings.Join(activeFilters, " · ") + "\n\n")
+		b.WriteString(m.styleLine(m.text.T(TextListFilter)+": "+strings.Join(activeFilters, " · ")) + "\n")
+		b.WriteString(m.styleLine("") + "\n")
 	}
 
 	window := pageWindow(m.selected, len(m.patents), m.pageSize())
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
-	b.WriteString("\n\n")
+	status := pageStatus(m.text.T(TextValuePageStatus), window)
+	b.WriteString(m.styleLine(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(status)) + "\n")
+	b.WriteString(m.styleLine("") + "\n")
 	idsByPatent := map[string]string{}
 	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
 		for _, entry := range idsEntries {
@@ -3569,8 +3536,7 @@ func (m *Model) viewList() string {
 		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
 	}
 
-	b.WriteString(header)
-	b.WriteString("\n")
+	b.WriteString(m.styleLine(header) + "\n")
 
 	for i := window.Start; i < window.End; i++ {
 		p := m.patents[i]
@@ -3714,10 +3680,11 @@ func (m *Model) truncate(s string, width int) string {
 
 func (m *Model) viewDetail() string {
 	p := m.current
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
+	style := lipgloss.NewStyle().
+		Width(m.width)
 	var b strings.Builder
-	b.WriteString(p.Number + "\n")
-	b.WriteString(p.Title + "\n\n")
+	b.WriteString(style.Bold(true).Render(p.Number) + "\n")
+	b.WriteString(style.Render(p.Title) + "\n\n")
 	fields := m.detailFields()
 
 	// Calculate max label width per group for alignment
@@ -3738,9 +3705,12 @@ func (m *Model) viewDetail() string {
 
 	selected := clamp(m.detailSelected, 0, max(0, len(fields)-1))
 	groupIndex := 0
+	ruleStyle := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorDim))
+	separator := ruleStyle.Render(strings.Repeat("─", m.width))
+
 	for i, field := range fields {
 		if field.separator {
-			b.WriteString(dimStyle.Render(m.rule()) + "\n")
+			b.WriteString(separator + "\n")
 			groupIndex++
 			continue
 		}
@@ -3752,10 +3722,9 @@ func (m *Model) viewDetail() string {
 		if field.displayValue != "" {
 			value = field.displayValue
 		}
-		b.WriteString(prefix + m.jumpPrefix(i) + m.detailRow(field.label, value, groupWidths[groupIndex]))
+		b.WriteString(style.Render(prefix+m.jumpPrefix(i)+m.detailRow(field.label, value, groupWidths[groupIndex])) + "\n")
 	}
-	b.WriteString(dimStyle.Render(m.rule()) + "\n")
-	b.WriteString("\n")
+	b.WriteString(separator + "\n")
 
 	return b.String()
 }
@@ -3831,9 +3800,10 @@ func (m *Model) detailFields() []detailField {
 	}
 
 	fields = append(fields,
-		detailField{label: TextDetailApplication, value: formatLifecycle(p.ApplicationNumber, p.ApplicationDate), jumpLabel: jumpLabelApplication, action: detailActionEditDate, data: LifecycleTypeApp},
-		detailField{label: TextDetailPublicationLong, value: formatLifecycle(p.PublicationNumber, p.PublicationDate), jumpLabel: jumpLabelPublication, action: detailActionEditDate, data: LifecycleTypePub},
-		detailField{label: TextDetailGrantLong, value: formatLifecycle(p.GrantNumber, p.GrantDate), jumpLabel: jumpLabelGrant, action: detailActionEditDate, data: LifecycleTypeGrant},
+		detailField{label: TextDetailApplication, value: formatLifecycle(p.ApplicationNumber, p.ApplicationDate), jumpLabel: jumpLabelApplication, action: detailActionEditDate, data: domain.LifecycleTypeApp},
+		detailField{label: TextDetailPublicationLong, value: formatLifecycle(p.PublicationNumber, p.PublicationDate), jumpLabel: jumpLabelPublication, action: detailActionEditDate, data: domain.LifecycleTypePub},
+		detailField{label: TextDetailGrantLong, value: formatLifecycle(p.GrantNumber, p.GrantDate), jumpLabel: jumpLabelGrant, action: detailActionEditDate, data: domain.LifecycleTypeGrant},
+		detailField{label: TextDetailExpiration, value: m.formatExpiration(p), jumpLabel: jumpLabelExpiration, action: detailActionEditDate, data: domain.LifecycleTypeExp},
 	)
 
 	// Add grouped Classification codes as a single field
@@ -3859,7 +3829,6 @@ func (m *Model) detailFields() []detailField {
 	})
 
 	fields = append(fields,
-		detailField{label: TextDetailExpiration, value: m.formatExpiration(p), jumpLabel: jumpLabelExpiration},
 		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(cache.CitationCount, p.ExpectedCitations, cache.CitationRefreshedAt), jumpLabel: jumpLabelCitationCount, action: detailActionCitations},
 		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(cache.CitedByCount, p.ExpectedCitedBy, cache.CitedByRefreshedAt), jumpLabel: jumpLabelCitedByCount, action: detailActionCitedBy},
 	)
@@ -4086,15 +4055,21 @@ func (m *Model) populateDetailCache() {
 		IDSEntries:          ids,
 	}
 }
-
 func (m *Model) formatExpiration(p domain.Patent) string {
 	if p.ExpirationDate == "" {
 		return m.text.T(TextValueUnknown)
 	}
 	label := p.ExpirationDate
-	if p.ExpirationEstimated {
-		label += " (est.)"
+	switch p.ExpirationSource {
+	case domain.ExpirationSourceManual:
+		label += m.text.T(TextValueExpirationManual)
+	case domain.ExpirationSourceImported:
+		label += m.text.T(TextValueExpirationImported)
+	case domain.ExpirationSourceEstimated:
+		label += m.text.T(TextValueExpirationEstimated)
 	}
+	// Highlight if expired
+
 	if p.IsExpired(time.Now()) {
 		return lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color(ColorDisabled)).Render(label)
 	}
@@ -4119,7 +4094,7 @@ func (m *Model) viewCitations(relation string) string {
 	}
 	selected := clamp(m.citationSelection(), 0, len(edges)-1)
 	m.setCitationSelection(selected)
-	window := pageWindow(selected, len(edges), m.pageSize()-4)
+	window := pageWindow(selected, len(edges), m.overlayPageSize())
 	var body strings.Builder
 	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	body.WriteString("\n\n")
@@ -4219,7 +4194,7 @@ func (m *Model) viewReviewQueue() string {
 	}
 	selected := clamp(m.reviewSelected, 0, len(edges)-1)
 	m.reviewSelected = selected
-	window := pageWindow(selected, len(edges), m.pageSize()-4)
+	window := pageWindow(selected, len(edges), m.overlayPageSize())
 	var body strings.Builder
 	body.WriteString(m.citationStatusLabel(m.reviewStatus) + "\n")
 	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
@@ -4306,6 +4281,8 @@ func (m *Model) citationStatusLabel(status string) string {
 		label = m.text.T(TextCitationStored)
 	case domain.CitationStatusIgnored:
 		label = m.text.T(TextCitationIgnored)
+	case domain.CitationStatusCached:
+		label = m.text.T(TextCitationCached)
 	default:
 		label = m.text.T(TextCitationUnderReview)
 	}
@@ -4445,8 +4422,7 @@ func (m *Model) previewOverlay(content string) string {
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color(ColorSubtle)).
 		Padding(1, 2).
-		Width(width).
-		Background(lipgloss.Color(ColorSurface))
+		Width(width)
 	return style.Render(content)
 }
 
@@ -4912,7 +4888,16 @@ func (m *Model) pageSize() int {
 	if m.height <= 0 {
 		return 20
 	}
-	return max(5, m.height-8)
+	// Full screen views use about 10-12 lines for layout (header, nav, status, rule, message)
+	return max(5, m.height-14)
+}
+
+func (m *Model) overlayPageSize() int {
+	if m.height <= 0 {
+		return 15
+	}
+	// Overlays use more internal layout lines and we want a margin to see background
+	return max(3, m.height-18)
 }
 
 func clamp(value, low, high int) int {
@@ -4969,7 +4954,7 @@ func (m *Model) viewClassifications() string {
 
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	m.classificationSelected = selected
-	window := pageWindow(selected, len(classifications), m.pageSize()-4)
+	window := pageWindow(selected, len(classifications), m.overlayPageSize())
 
 	var body strings.Builder
 	body.WriteString(overlayBase().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
@@ -5020,7 +5005,7 @@ func (m *Model) viewClassificationDetail() string {
 	// count patents in project with this classification code (prefix match)
 	projectPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
 		ClassFilters:  []string{cls.Code},
-		ClassFilterOp: FilterOpAnd,
+		ClassFilterOp: domain.FilterOpAnd,
 	})
 	count := len(projectPatents)
 
@@ -5425,25 +5410,27 @@ func (m *Model) viewSplash() string {
   ██║     ██║  ██║   ██║   ███████╗██║ ╚████║   ██║       ██║ ╚═╝ ██║██║██║ ╚████║███████╗
   ╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝   ╚═╝       ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝
 	`
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
-	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Italic(true)
+	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.screenColor())).Bold(true)
+	subStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Italic(true)
 
 	var b strings.Builder
 	b.WriteString("\n\n")
-	b.WriteString(m.center(style.Render(logo)))
+	b.WriteString(m.center(logoStyle.Render(logo)))
 	b.WriteString("\n")
-	b.WriteString(m.center(sub.Render("Local Patent Research & Intelligence")))
+	b.WriteString(m.center(subStyle.Render("Local Patent Research & Intelligence")))
 	b.WriteString("\n")
-	b.WriteString(m.center(sub.Render("Version " + m.displayVersion())))
-	b.WriteString("\n\n" + m.rule() + "\n\n")
+	b.WriteString(m.center(subStyle.Render("Version " + m.displayVersion())))
+	separator := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorSubtle)).Render(strings.Repeat("─", m.width))
+
+	b.WriteString("\n\n" + separator + "\n\n")
 
 	if m.input.Focused() {
-		promptStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
+		promptStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.screenColor())).Bold(true)
 		b.WriteString(m.center(promptStyle.Render("COMMAND: ") + m.input.View()))
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString(m.center(lipgloss.NewStyle().Bold(true).Underline(true).Render("SELECT PROJECT")))
+	b.WriteString(m.center(lipgloss.NewStyle().Bold(true).Underline(true).Foreground(lipgloss.Color(m.screenColor())).Render("SELECT PROJECT")))
 	b.WriteString("\n\n")
 
 	if len(m.projects) == 0 {
@@ -5506,7 +5493,7 @@ func (m *Model) viewSplash() string {
 		}
 	}
 
-	b.WriteString("\n\n" + m.rule() + "\n")
+	b.WriteString("\n\n" + separator + "\n")
 	b.WriteString(m.center(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("[j/k/↓↑]: move · [enter]: select · [e]: events · [i]: invoices · [d]: IDS · [n]: new · [Q]: quit")))
 
 	// Center vertically
@@ -5695,7 +5682,7 @@ func (m *Model) viewProjectIDS() string {
 		b.WriteString(subtleStyle.Render("IDS entries are prior art references to disclose to the patent office."))
 	} else {
 		sel := clamp(m.projectIDSSelected, 0, len(ids)-1)
-		window := pageWindow(sel, len(ids), m.pageSize()-4)
+		window := pageWindow(sel, len(ids), m.overlayPageSize())
 
 		b.WriteString(subtleStyle.Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 		b.WriteString("\n\n")
@@ -6221,7 +6208,11 @@ func (m *Model) center(s string) string {
 	if m.width <= 0 {
 		return s
 	}
-	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, s)
+	if m.isSplashContext() {
+		return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, s)
+	}
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, s,
+		lipgloss.WithWhitespaceBackground(lipgloss.Color(ColorSurface)))
 }
 
 func (m *Model) viewAI() string {

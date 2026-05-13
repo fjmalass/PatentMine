@@ -184,7 +184,7 @@ func seedFixture(ctx context.Context, repo *sqliterepo.Repository) error {
 	bundle.Patent.ImportSource = "google"
 	// Note: We use a placeholder project ID for seeding
 	existing, err := repo.GetPatent(ctx, "default", "US11611785B2")
-	if err == nil && existing.ExpirationDate != "" && existing.ExpirationEstimated == bundle.Patent.ExpirationEstimated {
+	if err == nil && existing.ExpirationDate != "" && existing.ExpirationSource == bundle.Patent.ExpirationSource {
 		return nil
 	}
 	return repo.UpsertPatentBundle(ctx, "default", bundle)
