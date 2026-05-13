@@ -41,6 +41,7 @@ const (
 	commandNote               = "note"
 	commandIDS                = "ids"
 	commandVersion            = "version"
+	commandKeymap             = "keymap"
 	commandExit               = "exit"
 	commandFamilyPull         = "pull"
 	commandTag                = "tag"

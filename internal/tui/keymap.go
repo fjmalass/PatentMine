@@ -3,6 +3,11 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -57,6 +62,111 @@ func DetailFieldLabelRegistrations() []detailFieldLabelReg {
 	r := make([]detailFieldLabelReg, len(detailFieldLabels))
 	copy(r, detailFieldLabels)
 	return r
+}
+
+const (
+	keymapGlobalMode = "*global*"
+	keymapDetailMode = "detail-field"
+
+	keymapModeFile = "keymap_mode.csv"
+	keymapKeyFile  = "keymap_key.csv"
+)
+
+type keymapCSVRow struct {
+	Mode  string
+	Key   string
+	Label string
+}
+
+func exportKeymapCSV(modePath, keyPath string) error {
+	var rows []keymapCSVRow
+	for k, kb := range globalKeys {
+		rows = append(rows, keymapCSVRow{Mode: keymapGlobalMode, Key: k, Label: kb.Label})
+	}
+	for m, km := range modeKeys {
+		for k, kb := range km {
+			rows = append(rows, keymapCSVRow{Mode: string(m), Key: k, Label: kb.Label})
+		}
+	}
+	for _, reg := range detailFieldLabels {
+		rows = append(rows, keymapCSVRow{Mode: keymapDetailMode, Key: reg.JumpLabel, Label: string(reg.TextKey)})
+	}
+
+	// Write mode-sorted
+	if err := writeCSV(modePath, rows, func(i, j int) bool {
+		if rows[i].Mode != rows[j].Mode {
+			mi, mj := strings.ToLower(rows[i].Mode), strings.ToLower(rows[j].Mode)
+			if mi != mj {
+				return mi < mj
+			}
+			return rows[i].Mode < rows[j].Mode
+		}
+		ki, kj := strings.ToLower(rows[i].Key), strings.ToLower(rows[j].Key)
+		if ki != kj {
+			return ki < kj
+		}
+		return rows[i].Key < rows[j].Key
+	}); err != nil {
+		return fmt.Errorf("mode file: %w", err)
+	}
+
+	// Write key-sorted
+	if err := writeCSV(keyPath, rows, func(i, j int) bool {
+		if rows[i].Key != rows[j].Key {
+			ki, kj := strings.ToLower(rows[i].Key), strings.ToLower(rows[j].Key)
+			if ki != kj {
+				return ki < kj
+			}
+			return rows[i].Key < rows[j].Key
+		}
+		mi, mj := strings.ToLower(rows[i].Mode), strings.ToLower(rows[j].Mode)
+		if mi != mj {
+			return mi < mj
+		}
+		return rows[i].Mode < rows[j].Mode
+	}); err != nil {
+		return fmt.Errorf("key file: %w", err)
+	}
+
+	return nil
+}
+
+func writeCSV(path string, rows []keymapCSVRow, less func(i, j int) bool) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	type col struct{ mode, key, label string }
+	all := make([]col, 0, 1+len(rows))
+	all = append(all, col{"mode", "key", "label"})
+	sort.Slice(rows, less)
+	for _, r := range rows {
+		all = append(all, col{r.Mode, r.Key, r.Label})
+	}
+
+	maxMode, maxKey, maxLabel := 0, 0, 0
+	for _, c := range all {
+		if len(c.mode) > maxMode {
+			maxMode = len(c.mode)
+		}
+		if len(c.key) > maxKey {
+			maxKey = len(c.key)
+		}
+		if len(c.label) > maxLabel {
+			maxLabel = len(c.label)
+		}
+	}
+
+	format := fmt.Sprintf("%%-%ds ,%%-%ds ,%%s\n", maxMode, maxKey)
+	for _, c := range all {
+		fmt.Fprintf(f, format, c.mode, c.key, c.label)
+	}
+	return nil
 }
 
 func registerKey(key string, modes []viewMode, label string, handler KeyHandler, dualUse bool) {

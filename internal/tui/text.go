@@ -95,6 +95,7 @@ const (
 	TextHelpOpenBrowser          TextKey = "help.command.open_browser"
 	TextHelpShowHelp             TextKey = "help.command.show_help"
 	TextHelpShowVersion          TextKey = "help.command.show_version"
+	TextHelpExportKeymap         TextKey = "help.command.export_keymap"
 	TextHelpMoveList             TextKey = "help.shortcut.move_list"
 	TextHelpOpenSelected         TextKey = "help.shortcut.open_selected"
 	TextHelpJumpViews            TextKey = "help.shortcut.jump_views"
@@ -297,6 +298,7 @@ func EnglishText() TextCatalog {
 		TextHelpOpenBrowser:             "Open the selected/current patent in the system browser.",
 		TextHelpShowHelp:                "Show this help screen.",
 		TextHelpShowVersion:             "Show the current PatentMine version.",
+		TextHelpExportKeymap:            "Export all key bindings to logs/keymap.csv.",
 		TextHelpMoveList:                "Move row or column focus. Supports multipliers: [10j], [4l], etc.",
 		TextHelpMoveColumns:             "Move list column focus with [h/l] or left/right arrows. Supports multipliers: [4l].",
 		TextHelpOpenSelected:            "Open the selected list item.",

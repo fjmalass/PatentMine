@@ -435,6 +435,7 @@ func globalHelpEntries() []HelpEntry {
 	return []HelpEntry{
 		{Command: keyCommand + commandHelp, Description: TextHelpShowHelp},
 		{Command: keyCommand + commandVersion, Description: TextHelpShowVersion},
+		{Command: keyCommand + commandKeymap, Description: TextHelpExportKeymap},
 		{Command: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
 		{Command: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
 		{Command: keyCommand + commandRefreshRefsDetails, Description: TextHelpRefreshDetails},

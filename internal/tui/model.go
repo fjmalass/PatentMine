@@ -1622,6 +1622,19 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		m = m.navigateTo(viewHelp)
 	case commandVersion:
 		m.message = "PatentMine " + m.displayVersion()
+	case commandKeymap:
+		if m.logger == nil {
+			m.err = "no logger available"
+			return m, nil
+		}
+		modePath := DefaultLogDir + "/" + keymapModeFile
+		keyPath := DefaultLogDir + "/" + keymapKeyFile
+		if err := exportKeymapCSV(modePath, keyPath); err != nil {
+			m.err = fmt.Sprintf("failed to export keymap: %s", err)
+		} else {
+			m.logger.Info("keymap exported", "mode_file", modePath, "key_file", keyPath)
+			m.message = fmt.Sprintf("keymap exported to %s and %s", modePath, keyPath)
+		}
 	case commandProject:
 		return m.projectCommand(command.Args)
 	case commandTag:
