@@ -2,8 +2,9 @@ package tui
 
 type modeSpec struct {
 	title      string
-	accent     string
+	themeColor string
 	isOverlay  bool
+	helpHint   string
 	background func(*Model) viewMode
 }
 
@@ -40,183 +41,248 @@ var allViewModes = []viewMode{
 
 var modeSpecs = map[viewMode]modeSpec{
 	viewList: {
-		title:  "Patent List",
-		accent: "39",
+		title:      "Patent List",
+		themeColor: ColorThemeList,
 	},
 	viewDetail: {
-		title:  "Detail",
-		accent: "51",
+		title:      "Detail",
+		themeColor: ColorThemeDetail,
 	},
 	viewCites: {
-		title:  "Citations",
-		accent: "214",
+		title:      "Citations",
+		themeColor: ColorThemeCitations,
+		isOverlay:  true,
+		helpHint:   "j/k: move · enter/y: save · i: ignore · r: review · /: search · esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
 	},
 	viewCitedBy: {
-		title:  "Cited By",
-		accent: "40",
+		title:      "Cited By",
+		themeColor: ColorThemeCitedBy,
+		isOverlay:  true,
+		helpHint:   "j/k: move · enter/y: save · i: ignore · r: review · /: search · esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
 	},
 	viewClassifications: {
-		title:     "Classifications",
-		accent:    "170",
-		isOverlay: true,
+		title:      "Classifications",
+		themeColor: ColorThemeClassifications,
+		isOverlay:  true,
+		helpHint:   "j/k: move · enter: filter · /: search · esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewText: {
-		title:  "Full Text",
-		accent: "250",
+		title:      "Full Text",
+		themeColor: ColorThemeText,
+		isOverlay:  true,
+		helpHint:   "j/k: scroll · esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
 	},
 	viewNotes: {
-		title:  "Notes",
-		accent: "220",
+		title:      "Notes",
+		themeColor: ColorThemeNotes,
+		isOverlay:  true,
+		helpHint:   "N: add note · esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
 	},
 	viewRefs: {
-		title:  "References",
-		accent: "27",
+		title:      "References",
+		themeColor: ColorThemeReferences,
+		isOverlay:  true,
+		helpHint:   "esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
 	},
 	viewAI: {
-		title:  "AI",
-		accent: "141",
+		title:      "AI Analysis",
+		themeColor: ColorThemeAI,
+		isOverlay:  true,
+		helpHint:   "esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
 	},
 	viewHelp: {
-		title:  "Help",
-		accent: "245",
+		title:      "Help",
+		themeColor: ColorThemeHelp,
 	},
 	viewHelpPopup: {
-		title:     "Help",
-		accent:    "245",
-		isOverlay: true,
+		title:      "Help",
+		themeColor: ColorThemeHelp,
+		isOverlay:  true,
+		helpHint:   "j/k: scroll · /: search · esc: back",
 		background: func(m *Model) viewMode {
 			return previousModeOr(m, viewDetail)
 		},
 	},
 	viewPreview: {
-		title:     "Reference Preview",
-		accent:    "81",
-		isOverlay: true,
+		title:      "Reference Preview",
+		themeColor: ColorThemePreview,
+		isOverlay:  true,
+		helpHint:   "y: save · i: ignore · r: review · n: skip · esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewReview: {
-		title:  "Review Queue",
-		accent: "202",
+		title:      "Review Queue",
+		themeColor: ColorThemeReview,
 	},
 	viewConfirmDelete: {
-		title:     "Confirm Delete",
-		accent:    "196",
-		isOverlay: true,
+		title:      "Confirm Delete",
+		themeColor: ColorThemeDelete,
+		isOverlay:  true,
+		helpHint:   "y: confirm · n: cancel",
 		background: func(*Model) viewMode {
 			return viewList
 		},
 	},
 	viewClassificationDetail: {
-		title:     "Classification Detail",
-		accent:    "170",
-		isOverlay: true,
+		title:      "Classification Detail",
+		themeColor: ColorThemeClassifications,
+		isOverlay:  true,
+		helpHint:   "esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewInventors: {
-		title:     "Inventors",
-		accent:    "51",
-		isOverlay: true,
+		title:      "Inventors",
+		themeColor: ColorThemeDetail,
+		isOverlay:  true,
+		helpHint:   "j/k: move · enter: filter · esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewFamily: {
-		title:     "Patent Family",
-		accent:    "213",
-		isOverlay: true,
+		title:      "Patent Family",
+		themeColor: ColorThemeFamily,
+		isOverlay:  true,
+		helpHint:   "j/k: move · h: parent · l: child · enter: open · esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewSplash: {
-		title:  "Splash",
-		accent: "39",
+		title:      "Splash",
+		themeColor: ColorThemeList,
 	},
 	viewProjectEvents: {
-		title:     "Project Events",
-		accent:    "39",
-		isOverlay: true,
+		title:      "Project Events",
+		themeColor: ColorThemeList,
+		isOverlay:  true,
+		helpHint:   "j/k: move · D: delete · esc: back",
 		background: func(*Model) viewMode {
 			return viewSplash
 		},
 	},
 	viewProjectInvoices: {
-		title:     "Project Invoices",
-		accent:    "39",
-		isOverlay: true,
+		title:      "Project Invoices",
+		themeColor: ColorThemeList,
+		isOverlay:  true,
+		helpHint:   "j/k: move · s: mark paid · D: delete · esc: back",
 		background: func(*Model) viewMode {
 			return viewSplash
 		},
 	},
 	viewProjectIDS: {
-		title:     "IDS",
-		accent:    "75",
-		isOverlay: true,
+		title:      "IDS",
+		themeColor: ColorThemeIDS,
+		isOverlay:  true,
+		helpHint:   "j/k: move · s: cycle status · D: remove · esc: back",
 		background: func(*Model) viewMode {
 			return viewSplash
 		},
 	},
 	viewProjectInfo: {
-		title:     "Project Info",
-		accent:    "39",
-		isOverlay: true,
+		title:      "Project Info",
+		themeColor: ColorThemeList,
+		isOverlay:  true,
+		helpHint:   "s/m/c/S: edit fields · esc: back",
 		background: func(m *Model) viewMode {
 			return previousModeOr(m, viewList)
 		},
 	},
 	viewNoteEdit: {
-		title:     "Note",
-		accent:    "220",
-		isOverlay: true,
+		title:      "Note",
+		themeColor: ColorThemeNotes,
+		isOverlay:  true,
+		helpHint:   "ctrl+s: save · esc: cancel",
 		background: func(m *Model) viewMode {
 			return previousModeOr(m, viewDetail)
 		},
 	},
 	viewIDSEdit: {
-		title:     "IDS Entry",
-		accent:    "75",
-		isOverlay: true,
+		title:      "IDS Entry",
+		themeColor: ColorThemeIDS,
+		isOverlay:  true,
+		helpHint:   "s/n/k/c/p/f: edit · D: remove · esc: back",
+		background: func(*Model) viewMode {
+			return viewDetail
+		},
+	},
+	viewDateEdit: {
+		title:      "Edit Date",
+		themeColor: ColorThemeDetail,
+		isOverlay:  true,
+		helpHint:   "enter: save · esc: cancel",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewAbstract: {
-		title:     "Abstract",
-		accent:    "51",
-		isOverlay: true,
+		title:      "Abstract",
+		themeColor: ColorThemeDetail,
+		isOverlay:  true,
+		helpHint:   "j/k: scroll · esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewClaim: {
-		title:     "Claim 1",
-		accent:    "51",
-		isOverlay: true,
+		title:      "Claim 1",
+		themeColor: ColorThemeDetail,
+		isOverlay:  true,
+		helpHint:   "j/k: scroll · esc: back",
 		background: func(*Model) viewMode {
 			return viewDetail
 		},
 	},
 	viewUSPTOKeyWarning: {
-		title:     "USPTO API Key Missing",
-		accent:    "39",
-		isOverlay: true,
+		title:      "USPTO API Key Missing",
+		themeColor: ColorThemeList,
+		isOverlay:  true,
+		helpHint:   "any key: continue · ctrl+c: quit",
 		background: func(*Model) viewMode {
 			return viewSplash
 		},
 	},
 	viewBulkConfirm: {
-		title:     "Bulk Action Confirmation",
-		accent:    "202",
-		isOverlay: true,
+		title:      "Bulk Action Confirmation",
+		themeColor: ColorThemeReview,
+		isOverlay:  true,
+		helpHint:   "y: confirm · n: cancel",
 		background: func(m *Model) viewMode {
 			return previousModeOr(m, viewReview)
+		},
+	},
+	viewStatusSelect: {
+		title:      "Select Status",
+		themeColor: ColorThemeList,
+		isOverlay:  true,
+		helpHint:   "j/k: move · enter: select · esc: back",
+		background: func(m *Model) viewMode {
+			return previousModeOr(m, viewList)
 		},
 	},
 }

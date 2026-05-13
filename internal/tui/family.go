@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"patentmine/internal/config"
@@ -33,6 +32,7 @@ type familyNode struct {
 	title        string
 	grantYear    string
 	importSource string
+	isDuplicate  bool
 }
 
 // buildFamilyTree returns an ordered flat list of all family tree nodes
@@ -55,168 +55,69 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 		return nil
 	}
 
-	parentToChildren := map[string][]domain.FamilyEdge{}
-	childToParents := map[string][]domain.FamilyEdge{}
-
-	for _, e := range allEdges {
-		parentToChildren[e.ParentNumber] = append(parentToChildren[e.ParentNumber], e)
-		childToParents[e.ChildNumber] = append(childToParents[e.ChildNumber], e)
-	}
-
-	current := m.current.Number
-	if current == "" {
+	graph := domain.BuildFamilyGraph(m.current.Number, allEdges)
+	if graph == nil || len(graph.Nodes) == 0 {
 		return nil
 	}
 
-	// 1. Find reachable nodes
-	reachable := map[string]bool{current: true}
-	q := []string{current}
-	for i := 0; i < len(q); i++ {
-		if len(reachable) >= maxFamilyNodes {
-			break
-		}
-		n := q[i]
-		for _, e := range childToParents[n] {
-			if !reachable[e.ParentNumber] {
-				reachable[e.ParentNumber] = true
-				q = append(q, e.ParentNumber)
-			}
-		}
-		for _, e := range parentToChildren[n] {
-			if !reachable[e.ChildNumber] {
-				reachable[e.ChildNumber] = true
-				q = append(q, e.ChildNumber)
-			}
+	nodes := make([]familyNode, len(graph.Nodes))
+	for i, tn := range graph.Nodes {
+		nodes[i] = familyNode{
+			number:    tn.Number,
+			depth:     tn.Depth,
+			relType:   tn.RelationType,
+			parentIdx: tn.ParentIdx,
 		}
 	}
 
-	// 2. Compute depths (longest path from roots) - safe for DAGs
-	depths := make(map[string]int, len(reachable))
-	inDegree := make(map[string]int, len(reachable))
-
-	for node := range reachable {
-		for _, e := range childToParents[node] {
-			if reachable[e.ParentNumber] {
-				inDegree[node]++
-			}
-		}
+	// 2. Compute visual connectors (prefix/connector)
+	// This logic remains in TUI as it's purely for rendering.
+	type nodeInfo struct {
+		childrenLinePrefix string
 	}
+	infos := make([]nodeInfo, len(nodes))
 
-	var roots []string
-	for node := range reachable {
-		if inDegree[node] == 0 {
-			roots = append(roots, node)
-			depths[node] = 0
-		}
-	}
-
-	queue := make([]string, len(roots))
-	copy(queue, roots)
-	processed := 0
-
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
-		processed++
-
-		for _, e := range parentToChildren[n] {
-			child := e.ChildNumber
-			if !reachable[child] {
-				continue
-			}
-
-			// Take maximum depth (important for diamonds)
-			if newD := depths[n] + 1; newD > depths[child] {
-				depths[child] = newD
-			}
-
-			inDegree[child]--
-			if inDegree[child] == 0 {
-				queue = append(queue, child)
-			}
-		}
-	}
-
-	// Only warn once and only if real cycle
-	if processed != len(reachable) {
-		if m.message != "⚠️ Patent family has cycles" {
-			m.message = "⚠️ Patent family has cycles or complex structure"
-		}
-	}
-
-	// 3. Build visual tree (allow limited duplication for diamonds)
-	var nodes []familyNode
-	visited := map[string]bool{}   // global visited (to avoid infinite)
-	visitCount := map[string]int{} // how many times we rendered this node
-
-	var dfs func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int)
-	dfs = func(number, relType, linePrefix, connector, childrenLinePrefix string, parentIdx int) {
-		if len(nodes) >= maxFamilyNodes {
-			return
+	for i := range nodes {
+		pIdx := nodes[i].parentIdx
+		if pIdx < 0 {
+			nodes[i].prefix = ""
+			nodes[i].connector = ""
+			infos[i].childrenLinePrefix = ""
+			continue
 		}
 
-		visitCount[number]++
-		// Allow a node to appear up to 2 times (good compromise for diamonds)
-		if visitCount[number] > 2 {
-			return
-		}
-
-		idx := len(nodes)
-		nodes = append(nodes, familyNode{
-			number:    number,
-			depth:     depths[number],
-			relType:   relType,
-			parentIdx: parentIdx,
-			prefix:    linePrefix,
-			connector: connector,
-			// You can add a field like: isDuplicate: visitCount[number] > 1
-		})
-
-		// Mark as visited only on first visit
-		if visitCount[number] == 1 {
-			visited[number] = true
-		}
-
-		// Get children
-		var childEdges []domain.FamilyEdge
-		for _, e := range parentToChildren[number] {
-			if reachable[e.ChildNumber] && depths[e.ChildNumber] == depths[number]+1 {
-				childEdges = append(childEdges, e)
-			}
-		}
-
-		sort.Slice(childEdges, func(i, j int) bool {
-			return childEdges[i].ChildNumber < childEdges[j].ChildNumber
-		})
-
-		for i, e := range childEdges {
-			if len(nodes) >= maxFamilyNodes {
+		// Is this the last child of its parent?
+		isLast := true
+		for j := i + 1; j < len(nodes); j++ {
+			if nodes[j].parentIdx == pIdx {
+				isLast = false
 				break
 			}
-			isLast := i == len(childEdges)-1
+		}
 
-			childConnector := "├─ "
-			grandChildrenPrefix := childrenLinePrefix + "│ "
-			if isLast {
-				childConnector = "└─ "
-				grandChildrenPrefix = childrenLinePrefix + "  "
-			}
-
-			dfs(e.ChildNumber, e.RelationType, childrenLinePrefix, childConnector, grandChildrenPrefix, idx)
+		nodes[i].prefix = infos[pIdx].childrenLinePrefix
+		nodes[i].connector = "├─ "
+		infos[i].childrenLinePrefix = nodes[i].prefix + "│ "
+		if isLast {
+			nodes[i].connector = "└─ "
+			infos[i].childrenLinePrefix = nodes[i].prefix + "  "
 		}
 	}
 
-	sort.Strings(roots)
-	for _, root := range roots {
-		if len(nodes) >= maxFamilyNodes {
-			break
-		}
-		dfs(root, "", "", "", "", -1)
-	}
-
-	// 4. Enrich with patent info
+	// 3. Enrich with patent info (use local cache to avoid redundant lookups)
+	patentCache := make(map[string]domain.Patent)
 	for i := range nodes {
-		if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, nodes[i].number); err == nil {
+		num := nodes[i].number
+		p, ok := patentCache[num]
+		if !ok {
+			var err error
+			p, err = m.repo.GetPatent(m.ctx, m.ProjectID, num)
+			if err == nil {
+				patentCache[num] = p
+				ok = true
+			}
+		}
+		if ok {
 			nodes[i].title = p.Title
 			if len(p.GrantDate) >= 4 {
 				nodes[i].grantYear = p.GrantDate[:4]
@@ -265,9 +166,9 @@ func familyLevelLabel(depth int) string {
 // importSourceBadge renders a compact source indicator: [g] or [u].
 func importSourceBadge(base lipgloss.Style, source string) string {
 	switch source {
-	case "uspto":
+	case ImportSourceUSPTO:
 		return base.Foreground(lipgloss.Color(ColorDepth)).Render("[u]")
-	case "google":
+	case ImportSourceGoogle:
 		return base.Foreground(lipgloss.Color(ColorDim)).Render("[g]")
 	}
 	return ""
@@ -298,29 +199,23 @@ func (m *Model) viewFamilyOverlay() string {
 	subtle := base.Foreground(lipgloss.Color(ColorSubtle))
 	accent := base.Foreground(lipgloss.Color(ColorAccentFamily)).Bold(true)
 	currentStyle := base.Foreground(lipgloss.Color(ColorAccent)).Bold(true)
-	levelStyle := base.Foreground(lipgloss.Color(ColorDepth))
 	cursorStyle := base.Foreground(lipgloss.Color(ColorAccentFamily)).Bold(true)
 
-	var b strings.Builder
-	b.WriteString(m.renderPopupTitle("Family · "+m.current.Number) + "\n\n")
-
 	if len(nodes) == 0 {
-		b.WriteString(subtle.Render("No family relationships defined."))
-		b.WriteString("\n\n")
-		b.WriteString(subtle.Render(":family parent <number> [type]  ·  :family child <number> [type]"))
-		return b.String()
+		return m.renderPopup("Family · "+m.current.Number, subtle.Render("No family relationships defined."))
 	}
 
 	sel := clamp(m.familySelected, 0, len(nodes)-1)
-	window := pageWindow(sel, len(nodes), m.pageSize()-3)
+	window := pageWindow(sel, len(nodes), m.pageSize()-4)
 
-	b.WriteString(subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window)) + "\n\n")
+	var body strings.Builder
+	body.WriteString(subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window)) + "\n\n")
 
-	titleWidth := max(20, m.overlayWidth()-46)
+	titleWidth := max(20, m.overlayWidth()-56)
 
 	for i := window.Start; i < window.End; i++ {
 		node := nodes[i]
-		isCurrent := node.depth == 0
+		isCurrent := node.number == m.current.Number
 		isSelected := i == sel
 
 		var line strings.Builder
@@ -335,7 +230,7 @@ func (m *Model) viewFamilyOverlay() string {
 		// Tree prefix + connector.
 		line.WriteString(base.Render(node.prefix + node.connector))
 
-		// Current-patent dot marker.
+		// Current-patent marker.
 		if isCurrent {
 			line.WriteString(accent.Render("● "))
 		}
@@ -346,6 +241,17 @@ func (m *Model) viewFamilyOverlay() string {
 			numStyle = accent.Underline(true)
 		}
 		line.WriteString(numStyle.Render(node.number))
+
+		// Depth label (compact relative indicator).
+		if !isCurrent {
+			relColor := ColorDim
+			if node.depth < 0 {
+				relColor = ColorDepth // Ancestors
+			}
+			label := familyLevelLabel(node.depth)
+			line.WriteString(base.Render(" "))
+			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("«" + label + "»"))
+		}
 
 		// Grant/publication year badge.
 		if node.grantYear != "" {
@@ -375,22 +281,14 @@ func (m *Model) viewFamilyOverlay() string {
 			line.WriteString(base.Foreground(lipgloss.Color(relColor)).Render("[" + node.relType + "]"))
 		}
 
-		// Depth label (omitted for the current patent).
-		if !isCurrent {
-			line.WriteString(base.Render(" "))
-			line.WriteString(levelStyle.Render(familyLevelLabel(node.depth)))
-		}
-
-		b.WriteString(line.String() + "\n")
+		body.WriteString(line.String() + "\n")
 	}
 
-	return b.String()
+	return m.renderPopup("Family · "+m.current.Number, body.String())
 }
 
 func (m *Model) moveFamilySelection(delta int) *Model {
-	nodes := m.buildFamilyTreeFresh()
-	m.familyTreeCache = nodes
-	m.familyTreeCacheFor = m.current.Number
+	nodes := m.buildFamilyTree()
 	if len(nodes) == 0 {
 		return m
 	}
@@ -399,9 +297,7 @@ func (m *Model) moveFamilySelection(delta int) *Model {
 }
 
 func (m *Model) moveFamilyToParent() *Model {
-	nodes := m.buildFamilyTreeFresh()
-	m.familyTreeCache = nodes
-	m.familyTreeCacheFor = m.current.Number
+	nodes := m.buildFamilyTree()
 	if m.familySelected < 0 || m.familySelected >= len(nodes) {
 		return m
 	}
@@ -414,9 +310,7 @@ func (m *Model) moveFamilyToParent() *Model {
 }
 
 func (m *Model) moveFamilyToFirstChild() *Model {
-	nodes := m.buildFamilyTreeFresh()
-	m.familyTreeCache = nodes
-	m.familyTreeCacheFor = m.current.Number
+	nodes := m.buildFamilyTree()
 	sel := m.familySelected
 	for i := sel + 1; i < len(nodes); i++ {
 		if nodes[i].parentIdx == sel {
@@ -618,23 +512,23 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				return refreshResultMsg{err: fmt.Errorf("import failed: %w", err)}
 			}
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle.Patent.ImportSource = "uspto"
+				bundle.Patent.ImportSource = ImportSourceUSPTO
 			} else {
-				bundle.Patent.ImportSource = "google"
+				bundle.Patent.ImportSource = ImportSourceGoogle
 			}
 			bundle.Patent.Status = currentStatus
 
 			if len(bundle.FamilyEdges) == 0 {
 				p, _ := repo.GetPatent(ctx, projectID, currentNumber)
-				source := "google"
+				source := ImportSourceGoogle
 				if importSource == config.ImportSourceUSPTO && apiKey != "" {
-					source = "uspto"
+					source = ImportSourceUSPTO
 				}
 				return refreshResultMsg{
 					patent:  p,
 					mode:    viewFamily,
 					message: "no family edges found for " + currentNumber,
-					action:  "family.refresh",
+					action:  ActivityFamilyRefresh,
 					source:  source,
 				}
 			}
@@ -669,9 +563,9 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 					continue
 				}
 				if importSource == config.ImportSourceUSPTO && apiKey != "" {
-					memberBundle.Patent.ImportSource = "uspto"
+					memberBundle.Patent.ImportSource = ImportSourceUSPTO
 				} else {
-					memberBundle.Patent.ImportSource = "google"
+					memberBundle.Patent.ImportSource = ImportSourceGoogle
 				}
 				memberBundle.Patent.Status = domain.CitationStatusIgnored
 				if err := repo.UpsertPatentBundle(ctx, projectID, memberBundle); err != nil {
@@ -690,15 +584,15 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				return refreshResultMsg{err: err}
 			}
 
-			source := "google"
+			source := ImportSourceGoogle
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				source = "uspto"
+				source = ImportSourceUSPTO
 			}
 			msg := fmt.Sprintf("family refresh: %d/%d members imported", imported, len(members))
 			if failed > 0 {
 				msg += fmt.Sprintf(" (%d failed)", failed)
 			}
-			return refreshResultMsg{patent: p, mode: viewFamily, message: msg, action: "family.refresh", source: source}
+			return refreshResultMsg{patent: p, mode: viewFamily, message: msg, action: ActivityFamilyRefresh, source: source}
 		},
 	)
 }

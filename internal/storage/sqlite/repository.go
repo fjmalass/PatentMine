@@ -801,6 +801,40 @@ func (r *Repository) UpdatePatentStatus(ctx context.Context, projectID string, n
 	return err
 }
 
+func (r *Repository) UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error {
+	var column string
+	switch dateType {
+	case "app":
+		column = "application_date"
+	case "pub":
+		column = "publication_date"
+	case "grant":
+		column = "grant_date"
+	default:
+		return fmt.Errorf("invalid date type: %s", dateType)
+	}
+	r.logger.Info("repository.update_patent_date", "patent", number, "type", dateType, "value", value)
+	_, err := r.db.ExecContext(ctx, fmt.Sprintf(`update patents set %s = ?, updated_at = ? where number = ?`, column), value, nowString(), number)
+	return err
+}
+
+func (r *Repository) UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error {
+	var column string
+	switch numType {
+	case "app":
+		column = "application_number"
+	case "pub":
+		column = "publication_number"
+	case "grant":
+		column = "grant_number"
+	default:
+		return fmt.Errorf("invalid number type: %s", numType)
+	}
+	r.logger.Info("repository.update_patent_number", "patent", number, "type", numType, "value", value)
+	_, err := r.db.ExecContext(ctx, fmt.Sprintf(`update patents set %s = ?, updated_at = ? where number = ?`, column), value, nowString(), number)
+	return err
+}
+
 func (r *Repository) UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error {
 	r.logger.Debug("repository.update_classification_description", "system", system, "code", code)
 	cls := domain.ParseClassification(code)

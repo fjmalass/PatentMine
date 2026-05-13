@@ -14,6 +14,8 @@ const (
 	commandText               = "text"
 	commandRefs               = "refs"
 	commandNotes              = "notes"
+	commandDate               = "date"
+	commandNum                = "num"
 	commandSummarize          = "summarize"
 	commandCompare            = "compare"
 	commandRef                = "ref"
@@ -230,6 +232,68 @@ const (
 	ColorDisabled     = "244" // Gray
 	ColorDim          = "240" // Muted Gray
 	ColorDepth        = "75"  // Cyan-blue (family tree depth labels)
+	ColorBlack        = "0"   // Black
+	ColorWhite        = "255" // White
+
+	// Mode Theme Colors
+	ColorThemeList            = "39"  // Blue
+	ColorThemeDetail          = "51"  // Cyan
+	ColorThemeCitations       = "214" // Orange
+	ColorThemeCitedBy         = "40"  // Green
+	ColorThemeClassifications = "170" // Pink/Magenta
+	ColorThemeNotes           = "220" // Yellow
+	ColorThemeReferences      = "27"  // Dark Blue
+	ColorThemeAI              = "141" // Purple/Violet
+	ColorThemeHelp            = "245" // Light Gray
+	ColorThemePreview         = "81"  // SteelBlue
+	ColorThemeReview          = "202" // Orange/Red
+	ColorThemeDelete          = "196" // Red
+	ColorThemeFamily          = "213" // Purple
+	ColorThemeIDS             = "75"  // Light Blue
+	ColorThemeText            = "250" // White/Light Gray
+
+	// Overlay dimensions
+	OverlayDefaultRatio     = 0.8
+	OverlayExpandedRatio    = 0.85
+	OverlayFallbackWidth    = 76
+	OverlayMinWidth         = 44
+	OverlayAbsoluteMinWidth = 20
+
+	// Lifecycle types
+	LifecycleTypeApp   = "app"
+	LifecycleTypePub   = "pub"
+	LifecycleTypeGrant = "grant"
+
+	// Activity actions
+	ActivityPatentImport = "patent.import"
+	ActivityPatentDelete = "patent.delete"
+	ActivityPatentStatus = "patent.status"
+	ActivityPatentDate   = "patent.date"
+	ActivityPatentNumber = "patent.number"
+	ActivityPatentRefresh = "patent.refresh"
+	ActivityNoteAdd      = "note.add"
+	ActivityIDSAdd       = "ids.add"
+	ActivityIDSRemove    = "ids.remove"
+	ActivityIDSStatus    = "ids.status"
+	ActivityCitationStore  = "citation.store"
+	ActivityCitationStatus = "citation.status"
+	ActivityRefAdd         = "ref.add"
+	ActivityBulkPrefix     = "bulk."
+	ActivityFamilyRefresh  = "family.refresh"
+
+	// Import sources
+	ImportSourceUSPTO  = "uspto"
+	ImportSourceGoogle = "google"
+
+	// Filter operations
+	FilterOpAnd = "and"
+	FilterOpOr  = "or"
+
+	// Family relation types
+	FamilyRelationContinuation = "continuation"
+	FamilyRelationDivisional   = "divisional"
+	FamilyRelationCIP          = "cip"
+	FamilyRelationPCT          = "pct"
 
 	ColorFamilyContinuation = "33"  // Dodger Blue
 	ColorFamilyCIP          = "171" // Medium Orchid

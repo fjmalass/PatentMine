@@ -64,6 +64,8 @@ const (
 	TextHelpRefreshCitations     TextKey = "help.command.refresh_citations"
 	TextHelpRefreshDetails       TextKey = "help.command.refresh_details"
 	TextHelpOpenPatent           TextKey = "help.command.open_patent"
+	TextHelpPatentDate           TextKey = "help.command.patent_date"
+	TextHelpPatentNum            TextKey = "help.command.patent_num"
 	TextHelpShowCites            TextKey = "help.command.show_cites"
 	TextHelpShowCitedBy          TextKey = "help.command.show_cited_by"
 	TextHelpShowClassification   TextKey = "help.command.show_cpc"
@@ -249,6 +251,8 @@ func EnglishText() TextCatalog {
 		TextHelpRefreshCitations:        "Re-fetch the current patent page and refresh cited references.",
 		TextHelpRefreshDetails:          "Refresh details for visible citation rows (citations, cited-by, or review queue) so title, inventors, and expiration are shown.",
 		TextHelpOpenPatent:              "Open a patent already stored in the database.",
+		TextHelpPatentDate:              "Update patent date (supports YYYY/MM/DD).",
+		TextHelpPatentNum:               "Update patent application/publication/grant number.",
 		TextHelpShowCites:               "Show patents cited by the current patent.",
 		TextHelpShowCitedBy:             "Show patents citing the current patent.",
 		TextHelpShowClassification:      "Show patent classifications (CPC/USPC).",
@@ -315,7 +319,7 @@ func EnglishText() TextCatalog {
 		TextHelpFamilyRemoveEdge:        "Remove the edge between the selected node and its tree-parent.",
 		TextHelpFamilyPull:              "Pull all family members from Google Patents and store them.",
 		TextHelpFamilyAddChild:          "Pre-fill :family child command in the input bar.",
-		TextHelpCyclePatentStatus:       "Cycle the selected patent's status: stored → under-review → ignored.",
+		TextHelpCyclePatentStatus:       "Open the status selection popup for the selected patent(s).",
 		TextHelpStatusCycle:             "Cycle the status filter: stored → ignored → under-review → all.",
 		TextHelpCitationRefreshSelected: "Re-fetch the selected citation from Google Patents (title, inventors, expiration).",
 		TextHelpCitationRefreshAll:      "Re-fetch all citations for the current patent from Google Patents.",

@@ -138,17 +138,17 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 		m.message = "all filters cleared"
 	} else {
 		raw := strings.ToUpper(strings.Join(args, " "))
-		op := "and"
+		op := FilterOpAnd
 		var parts []string
 		if strings.Contains(raw, "||") {
-			op = "or"
+			op = FilterOpOr
 			parts = splitTrim(raw, "||")
 		} else {
 			parts = splitTrim(raw, "&&")
 		}
 		m.classFilters = parts
 		m.classFilterOp = op
-		if op == "or" {
+		if op == FilterOpOr {
 			m.classFilter = strings.Join(parts, " || ")
 		} else {
 			m.classFilter = strings.Join(parts, " && ")
@@ -270,6 +270,24 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		} else {
 			return m.navigateTo(viewInventors), nil
 		}
+	case detailActionEditDate:
+		m.editDateType = field.data
+		// Pre-fill current value if possible
+		currentVal := ""
+		switch field.data {
+		case LifecycleTypeApp:
+			currentVal = m.current.ApplicationDate
+		case LifecycleTypePub:
+			currentVal = m.current.PublicationDate
+		case LifecycleTypeGrant:
+			currentVal = m.current.GrantDate
+		}
+		m.dateInput.SetValue(currentVal)
+		m.dateInput.Focus()
+		m.dateInput.CursorEnd()
+		return m.navigateTo(viewDateEdit), nil
+	case detailActionStatic:
+		return m, nil
 	}
 	if strings.TrimSpace(field.value) == "" || field.value == m.text.T(TextValueUnknown) {
 		return m, nil

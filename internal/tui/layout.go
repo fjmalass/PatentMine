@@ -28,41 +28,40 @@ func screenTitleForMode(mode viewMode) string {
 }
 
 func (m *Model) screenSubtitle() string {
-	switch m.activeMode() {
-	case viewDetail:
+	active := m.activeMode()
+	switch active {
+	case viewDetail, viewCites, viewCitedBy, viewClassifications, viewClassificationDetail, viewInventors, viewFamily, viewText, viewNotes, viewNoteEdit, viewIDSEdit, viewDateEdit, viewAbstract, viewClaim:
 		if m.current.Number != "" {
-			if strings.TrimSpace(m.current.Title) != "" {
-				return m.current.Title
+			suffix := ""
+			if active != viewDetail {
+				suffix = " · " + m.current.Number
 			}
-			return fmt.Sprintf("Detail · %s", m.current.Number)
+			if strings.TrimSpace(m.current.Title) != "" {
+				return m.current.Title + suffix
+			}
+			return m.current.Number
 		}
-	}
-	switch m.activeMode() {
-	case viewList:
-		return ""
 	case viewPreview:
 		if m.pendingBundle.Patent.Title != "" {
 			return m.pendingBundle.Patent.Title
 		}
-		return ""
-	default:
-		return ""
 	}
+	return ""
 }
 
-func screenAccentForMode(mode viewMode) string {
-	if spec, ok := lookupModeSpec(mode); ok && spec.accent != "" {
-		return spec.accent
+func screenColorForMode(mode viewMode) string {
+	if spec, ok := lookupModeSpec(mode); ok && spec.themeColor != "" {
+		return spec.themeColor
 	}
-	return "39"
+	return ColorThemeList
 }
 
-func (m *Model) screenAccent() string {
-	return screenAccentForMode(m.activeMode())
+func (m *Model) screenColor() string {
+	return screenColorForMode(m.activeMode())
 }
 
 func (m *Model) renderScreenHeader() string {
-	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
+	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenColor()))
 	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	var b strings.Builder
 	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorTheme)).Render("PatentMine"))
@@ -212,13 +211,63 @@ func (m *Model) renderScreenHeader() string {
 	return b.String()
 }
 
+func (m *Model) renderPopup(title, content string) string {
+	var b strings.Builder
+	b.WriteString(m.renderPopupHeader(title))
+	b.WriteString(content)
+	return b.String()
+}
+
+func (m *Model) renderPopupHeader(label string) string {
+	spec := mustModeSpec(m.mode)
+
+	// Style for the main title: themed background, bold
+	titleStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color(m.screenColor())).
+		Foreground(lipgloss.Color(ColorBlack)).
+		Bold(true).
+		Padding(0, 1)
+
+	res := titleStyle.Render(label)
+
+	// Add search info if active
+	query := m.popupSearchQuery
+	if m.input.Focused() && strings.HasPrefix(m.input.Value(), "/") {
+		query = strings.TrimPrefix(m.input.Value(), "/")
+	}
+	if m.popupSearchActive || query != "" {
+		searchText := "search:/"
+		if query != "" {
+			searchText += query
+		}
+		// Search text style: slightly different but consistent
+		searchStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color(ColorWhite)).
+			Foreground(lipgloss.Color(ColorBlack)).
+			Padding(0, 1).
+			MarginLeft(1)
+		res += searchStyle.Render(searchText)
+	}
+
+	// Style for the hint: same background as title, regular weight, tight to title
+	if spec.helpHint != "" {
+		hintStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color(m.screenColor())).
+			Foreground(lipgloss.Color(ColorBlack)).
+			Padding(0, 1)
+		res += "\n" + hintStyle.Render(spec.helpHint)
+	}
+
+	return res + "\n\n"
+}
+
 func (m *Model) renderPopupTitle(label string) string {
 	query := m.popupSearchQuery
 	if m.input.Focused() && strings.HasPrefix(m.input.Value(), "/") {
 		query = strings.TrimPrefix(m.input.Value(), "/")
 	}
 
-	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenAccent()))
+	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenColor()))
 	res := accent.Render(label)
 
 	if m.popupSearchActive || query != "" {
@@ -227,8 +276,8 @@ func (m *Model) renderPopupTitle(label string) string {
 			searchText += query
 		}
 		searchStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color(m.screenAccent())).
-			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color(m.screenColor())).
+			Foreground(lipgloss.Color(ColorBlack)).
 			Bold(true).
 			Padding(0, 1)
 		res += "  " + searchStyle.Render(searchText)

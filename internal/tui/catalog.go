@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 type HelpEntry struct {
@@ -34,6 +36,10 @@ var allHelpSections = []HelpSection{
 			{Command: ":add US11611785B2", Description: TextHelpAddPatent},
 			{Command: ":import <url>", Description: TextHelpImportPatent},
 			{Command: ":open US11611785B2", Description: TextHelpOpenPatent},
+			{Command: ":date app|pub|grant <YYYY-MM-DD>", Description: TextHelpPatentDate},
+			{Command: ":num app|pub|grant <number>", Description: TextHelpPatentNum},
+			{Command: ":compare <num>", Description: TextHelpCompare},
+			{Command: ":summarize", Description: TextHelpSummarize},
 			{Key: keyStatus, Description: TextHelpCyclePatentStatus},
 			{Key: keyDelete, Description: TextHelpDeletePatent},
 			{Key: keySearch, Command: "/term", Description: TextHelpFilterPatents},
@@ -240,7 +246,30 @@ func RenderHelp(text TextCatalog) string {
 
 func RenderContextHelp(text TextCatalog, mode viewMode) string {
 	var b strings.Builder
-	b.WriteString(text.T(TextHelpPopupTitle) + " · " + screenTitleForMode(mode) + "\n\n")
+
+	spec := mustModeSpec(viewHelpPopup)
+	accentColor := spec.themeColor
+	if accentColor == "" {
+		accentColor = ColorThemeList
+	}
+
+	titleStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color(accentColor)).
+		Foreground(lipgloss.Color(ColorBlack)).
+		Bold(true).
+		Padding(0, 1)
+
+	b.WriteString(titleStyle.Render(text.T(TextHelpPopupTitle)+" · "+screenTitleForMode(mode)) + "\n")
+
+	if spec.helpHint != "" {
+		hintStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color(accentColor)).
+			Foreground(lipgloss.Color(ColorBlack)).
+			Padding(0, 1)
+		b.WriteString(hintStyle.Render(spec.helpHint) + "\n")
+	}
+
+	b.WriteString("\n")
 	b.WriteString(text.T(TextHelpScreen) + "\n\n")
 	writeHelpEntries(&b, contextHelpEntries(mode), text)
 	b.WriteString("\n" + text.T(TextHelpGlobal) + "\n\n")

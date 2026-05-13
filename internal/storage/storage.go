@@ -43,6 +43,8 @@ type Repository interface {
 	ListCitationsByStatus(ctx context.Context, projectID string, status string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
 	UpdateCitationStatus(ctx context.Context, projectID string, edge domain.CitationEdge, status string) error
 	UpdatePatentStatus(ctx context.Context, projectID string, number string, status string) error
+	UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error
+	UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error
 	UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error
 	DeletePatent(ctx context.Context, projectID string, number string) error
 	ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error)

@@ -55,7 +55,7 @@ func TestDetailRowUsesTextCatalog(t *testing.T) {
 }
 
 func TestPreviewOverlayUsesBorderAndSmallerWidth(t *testing.T) {
-	model := &Model{repo: stubRepo{}, width: 120}
+	model := &Model{repo: stubRepo{}, width: 120, mode: viewFamily}
 	got := model.previewOverlay("US1\nPreview")
 	if !strings.Contains(got, "┌") || !strings.Contains(got, "┘") {
 		t.Fatalf("expected bordered overlay, got %q", got)
@@ -66,10 +66,17 @@ func TestPreviewOverlayUsesBorderAndSmallerWidth(t *testing.T) {
 }
 
 func TestScreenHeaderUsesActiveModeTitle(t *testing.T) {
-	model := &Model{repo: stubRepo{}, mode: viewCites}
+	model := &Model{repo: stubRepo{}, mode: viewDetail}
 	got := model.renderScreenHeader()
-	if !strings.Contains(got, "Citations") {
-		t.Fatalf("expected citations title, got %q", got)
+	if !strings.Contains(got, "Detail") {
+		t.Fatalf("expected detail title, got %q", got)
+	}
+
+	model.mode = viewCites
+	got = model.renderScreenHeader()
+	// Overlay mode shows background mode (Detail) in screen header for continuity
+	if !strings.Contains(got, "Detail") {
+		t.Fatalf("expected background title (Detail) for citations overlay, got %q", got)
 	}
 }
 
@@ -625,6 +632,7 @@ func TestViewClassificationsShowsEmptyState(t *testing.T) {
 		text:    EnglishText(),
 		repo:    emptyClassificationRepo{},
 		current: domain.Patent{Number: "US10218760B2"},
+		mode:    viewClassifications,
 	}
 	got := model.viewClassifications()
 	if !strings.Contains(got, "No CPC/USPC") {
@@ -639,11 +647,12 @@ func TestViewClassificationsShowsPagedIndexedRows(t *testing.T) {
 		repo:                   classificationRepo{classifications: sampleClassifications(8)},
 		current:                domain.Patent{Number: "US10218760B2"},
 		classificationSelected: 6,
+		mode:                   viewClassifications,
 		height:                 12,
 		width:                  80,
 	}
 	got := model.viewClassifications()
-	if !strings.Contains(got, "Page 2/2 - items 6-8 of 8") {
+	if !strings.Contains(got, "Page 7/8 - items 7-7 of 8") {
 		t.Fatalf("expected page status, got %q", got)
 	}
 	if strings.Contains(got, "[CPC]") {
@@ -1178,6 +1187,8 @@ func (stubRepo) UpdateCitationStatus(context.Context, string, domain.CitationEdg
 	return nil
 }
 func (stubRepo) UpdatePatentStatus(context.Context, string, string, string) error { return nil }
+func (stubRepo) UpdatePatentDate(context.Context, string, string, string) error   { return nil }
+func (stubRepo) UpdatePatentNumber(context.Context, string, string, string) error { return nil }
 func (stubRepo) UpdateClassificationDescription(context.Context, string, string, string, string) error {
 	return nil
 }
