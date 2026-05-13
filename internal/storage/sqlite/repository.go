@@ -93,6 +93,9 @@ func (r *Repository) reportMigrationFailure(kind MigrationEventKind, fromVersion
 }
 
 func (r *Repository) Setup(ctx context.Context) error {
+	if _, err := r.db.ExecContext(ctx, `pragma foreign_keys = on`); err != nil {
+		return err
+	}
 	currentVersion, _ := r.schemaVersion(ctx)
 	if err := r.maybeBackupBeforeMigration(ctx); err != nil {
 		r.reportMigrationFailure(MigrationEventFailed, currentVersion, err, "Database backup before migration failed")
@@ -480,6 +483,22 @@ func (r *Repository) createTables(ctx context.Context) error {
 			status          text not null default 'pending',
 			added_at        text not null,
 			foreign key (project_id) references projects(id)
+		)`,
+		`create table if not exists tags (
+			id integer primary key autoincrement,
+			project_id text not null,
+			name text not null,
+			color text not null default '',
+			created_at text not null,
+			unique(project_id, name),
+			foreign key (project_id) references projects(id)
+		)`,
+		`create table if not exists patent_tags (
+			tag_id integer not null,
+			patent_number text not null,
+			primary key (tag_id, patent_number),
+			foreign key (tag_id) references tags(id) on delete cascade,
+			foreign key (patent_number) references patents(number) on delete cascade
 		)`,
 	}
 	for _, stmt := range stmts {
