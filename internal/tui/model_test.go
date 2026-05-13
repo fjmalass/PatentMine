@@ -1415,6 +1415,16 @@ func (r familyRepo) GetPatent(_ context.Context, _ string, number string) (domai
 	return domain.Patent{}, nil
 }
 
+func (r familyRepo) ListFamilyPatents(_ context.Context, _ string, numbers []string) (map[string]domain.Patent, error) {
+	out := make(map[string]domain.Patent, len(numbers))
+	for _, number := range numbers {
+		if p, ok := r.patents[number]; ok {
+			out[number] = p
+		}
+	}
+	return out, nil
+}
+
 type citationRepo struct {
 	stubRepo
 	edges []domain.CitationEdge
@@ -1593,6 +1603,9 @@ func (stubRepo) RemovePatentFromProject(context.Context, string, string) error  
 func (stubRepo) UpsertPatentBundle(context.Context, string, domain.PatentBundle) error { return nil }
 func (stubRepo) GetPatent(context.Context, string, string) (domain.Patent, error) {
 	return domain.Patent{}, nil
+}
+func (stubRepo) ListFamilyPatents(context.Context, string, []string) (map[string]domain.Patent, error) {
+	return map[string]domain.Patent{}, nil
 }
 func (stubRepo) ListPatents(context.Context, string, storage.ListPatentsOptions) ([]domain.Patent, error) {
 	return []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}}, nil

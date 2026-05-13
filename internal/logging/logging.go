@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+func logLevel() slog.Level {
+	if os.Getenv("PATENT_DEBUG") == "1" {
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
+}
+
 func Open(path string, maxLogs int) (*slog.Logger, func(), string, error) {
 	logPath := DatedPath(path, time.Now())
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
@@ -23,7 +30,7 @@ func Open(path string, maxLogs int) (*slog.Logger, func(), string, error) {
 		_ = file.Close()
 		return slog.Default(), func() {}, logPath, err
 	}
-	logger := slog.New(slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewTextHandler(file, &slog.HandlerOptions{Level: logLevel()}))
 	closeFn := func() {
 		_ = file.Close()
 	}
@@ -97,7 +104,7 @@ func OpenActivity(path string) (*slog.Logger, func(), error) {
 	if err != nil {
 		return slog.Default(), func() {}, err
 	}
-	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{Level: logLevel()}))
 	return logger, func() { _ = file.Close() }, nil
 }
 

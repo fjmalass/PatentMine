@@ -126,6 +126,8 @@ type Model struct {
 	unpaidCounts               map[string]int
 	familyTreeCache            []familyNode
 	familyTreeCacheFor         string
+	familyPatentCache          map[string]domain.Patent
+	familyPatentCacheMisses    map[string]bool
 	helpQuery                  string
 	helpSearchActive           bool
 	helpScroll                 int
@@ -144,6 +146,8 @@ type Model struct {
 	popupSearchActive          bool
 	statusSelected             int
 	familyRefreshElapsed       string
+	overlayBackdropCache       string
+	overlayBackdropCacheKey    string
 	version                    string
 }
 
@@ -4551,9 +4555,31 @@ func overlayBase() lipgloss.Style {
 	return lipgloss.NewStyle()
 }
 
+func (m *Model) overlayBackdropCacheToken() string {
+	if m.width <= 0 || m.height <= 0 {
+		return ""
+	}
+	idx := len(m.backStack) - 1
+	for idx >= 0 {
+		if !mustModeSpec(m.backStack[idx].mode).isOverlay {
+			break
+		}
+		idx--
+	}
+	if idx < 0 {
+		return fmt.Sprintf("empty:%d:%d", m.width, m.height)
+	}
+	snap := m.backStack[idx]
+	return fmt.Sprintf("%d:%d:%s:%s:%s:%d", m.width, m.height, snap.mode, snap.current.Number, snap.ProjectID, idx)
+}
+
 func (m *Model) overlayBackdrop() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
+	}
+	cacheKey := m.overlayBackdropCacheToken()
+	if cacheKey != "" && m.overlayBackdropCacheKey == cacheKey && m.overlayBackdropCache != "" {
+		return m.overlayBackdropCache
 	}
 
 	idx := len(m.backStack) - 1
@@ -4564,7 +4590,10 @@ func (m *Model) overlayBackdrop() string {
 		idx--
 	}
 	if idx < 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, "")
+		backdrop := lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, "")
+		m.overlayBackdropCacheKey = cacheKey
+		m.overlayBackdropCache = backdrop
+		return backdrop
 	}
 
 	backdrop := *m
@@ -4580,7 +4609,10 @@ func (m *Model) overlayBackdrop() string {
 	for i := range lines {
 		lines[i] = dim.Render(lines[i])
 	}
-	return strings.Join(lines, "\n")
+	backdropRendered := strings.Join(lines, "\n")
+	m.overlayBackdropCacheKey = cacheKey
+	m.overlayBackdropCache = backdropRendered
+	return backdropRendered
 }
 
 func overlayLine(base, overlay string, x, totalWidth int) string {

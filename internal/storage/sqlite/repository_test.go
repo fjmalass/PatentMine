@@ -123,16 +123,16 @@ func TestRepositoryOperations(t *testing.T) {
 	repo := newTestRepo(t)
 	bundle := domain.PatentBundle{
 		Patent: domain.Patent{
-			Number:              "US1",
-			Title:               "Widget analyzer",
-			Abstract:            "Analyzes widgets.",
-			Assignee:            "Example",
-			Inventors:           []string{"Inventor One"},
-			PublicationDate:     "2024-01-01",
-			GrantDate:           "2024-02-01",
-			ExpirationDate:      "2044-01-01",
+			Number:           "US1",
+			Title:            "Widget analyzer",
+			Abstract:         "Analyzes widgets.",
+			Assignee:         "Example",
+			Inventors:        []string{"Inventor One"},
+			PublicationDate:  "2024-01-01",
+			GrantDate:        "2024-02-01",
+			ExpirationDate:   "2044-01-01",
 			ExpirationSource: domain.ExpirationSourceEstimated,
-			SourceGoogleURL:     "https://example.test",
+			SourceGoogleURL:  "https://example.test",
 		},
 		Sections:        []domain.PatentTextSection{{SectionType: "claims", Ordinal: 1, Text: "A widget analyzer."}},
 		Citations:       []domain.CitationEdge{{TargetPatent: "US2", RelationType: domain.RelationCites}},
@@ -260,6 +260,37 @@ func TestRepositoryOperations(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected deleted patent to appear under statusfilter ignored")
+	}
+}
+
+func TestRepositoryListFamilyPatentsReturnsLightweightMetadata(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepo(t)
+	bundles := []domain.PatentBundle{
+		{Patent: domain.Patent{Number: "US-FAM-1", Title: "Family One", Assignee: "Alpha", PublicationDate: "2018-01-01", GrantDate: "2020-02-02", ExpirationDate: "2038-03-03", ExpirationSource: domain.ExpirationSourceEstimated, ImportSource: "google", CountryCode: "US"}},
+		{Patent: domain.Patent{Number: "US-FAM-2", Title: "Family Two", Assignee: "Beta", PublicationDate: "2019-01-01", GrantDate: "2021-02-02", ExpirationDate: "2039-03-03", ExpirationSource: domain.ExpirationSourceManual, ImportSource: "uspto", CountryCode: "EP"}},
+	}
+	for _, bundle := range bundles {
+		if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := repo.ListFamilyPatents(ctx, "default", []string{"US-FAM-1", "US-FAM-2", "US-MISSING"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 family patents, got %d", len(got))
+	}
+	if got["US-FAM-1"].Title != "Family One" || got["US-FAM-1"].GrantDate != "2020-02-02" {
+		t.Fatalf("unexpected family patent metadata: %+v", got["US-FAM-1"])
+	}
+	if got["US-FAM-2"].Assignee != "Beta" || got["US-FAM-2"].ImportSource != "uspto" {
+		t.Fatalf("unexpected family patent metadata: %+v", got["US-FAM-2"])
+	}
+	if _, ok := got["US-MISSING"]; ok {
+		t.Fatal("did not expect missing family patent metadata to be returned")
 	}
 }
 

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -46,22 +47,125 @@ type familyNode struct {
 // Results are cached in m.familyTreeCache; callers that modify the tree must
 // clear familyTreeCacheFor to force a rebuild.
 func (m *Model) buildFamilyTree() []familyNode {
+	startedAt := time.Now()
 	if m.familyTreeCacheFor == m.current.Number && len(m.familyTreeCache) > 0 {
+		logFamilyDebug(m.logger, "tui.family_tree.cache_hit",
+			"patent", m.current.Number,
+			"node_count", len(m.familyTreeCache),
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+		)
 		return m.familyTreeCache
 	}
-	return m.buildFamilyTreeFresh()
+	nodes := m.buildFamilyTreeFresh()
+	m.familyTreeCache = nodes
+	m.familyTreeCacheFor = m.current.Number
+	logFamilyDebug(m.logger, "tui.family_tree.cache_miss",
+		"patent", m.current.Number,
+		"node_count", len(nodes),
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+	)
+	return nodes
 }
 
 const maxFamilyNodes = 250
 
+func familyDebugEnabled(logger *slog.Logger) bool {
+	return logger != nil && logger.Enabled(context.Background(), slog.LevelDebug)
+}
+
+func logFamilyDebug(logger *slog.Logger, msg string, attrs ...any) {
+	if !familyDebugEnabled(logger) {
+		return
+	}
+	logger.Debug(msg, attrs...)
+}
+
+func (m *Model) invalidateFamilyCaches() {
+	m.familyTreeCache = nil
+	m.familyTreeCacheFor = ""
+	m.familyPatentCache = nil
+	m.familyPatentCacheMisses = nil
+}
+
+func (m *Model) loadFamilyPatentMetadata(numbers []string) (map[string]domain.Patent, int, int, int, int, error) {
+	if m.familyPatentCache == nil {
+		m.familyPatentCache = make(map[string]domain.Patent)
+	}
+	if m.familyPatentCacheMisses == nil {
+		m.familyPatentCacheMisses = make(map[string]bool)
+	}
+
+	result := make(map[string]domain.Patent, len(numbers))
+	toFetch := make([]string, 0, len(numbers))
+	cacheHits := 0
+	cacheMisses := 0
+	alreadyMissing := 0
+	seen := make(map[string]bool, len(numbers))
+	for _, number := range numbers {
+		if number == "" || seen[number] {
+			continue
+		}
+		seen[number] = true
+		if p, ok := m.familyPatentCache[number]; ok {
+			result[number] = p
+			cacheHits++
+			continue
+		}
+		if m.familyPatentCacheMisses[number] {
+			alreadyMissing++
+			continue
+		}
+		toFetch = append(toFetch, number)
+	}
+	if len(toFetch) == 0 {
+		return result, cacheHits, cacheMisses, alreadyMissing, 0, nil
+	}
+
+	fetched, err := m.repo.ListFamilyPatents(m.ctx, m.ProjectID, toFetch)
+	if err != nil {
+		return nil, cacheHits, cacheMisses, alreadyMissing, len(toFetch), err
+	}
+	for _, number := range toFetch {
+		p, ok := fetched[number]
+		if ok {
+			m.familyPatentCache[number] = p
+			result[number] = p
+			cacheMisses++
+			continue
+		}
+		m.familyPatentCacheMisses[number] = true
+	}
+	return result, cacheHits, cacheMisses, alreadyMissing, len(toFetch), nil
+}
+
 func (m *Model) buildFamilyTreeFresh() []familyNode {
+	startedAt := time.Now()
+	stageStartedAt := time.Now()
 	allEdges, _ := m.repo.ListAllFamilyEdges(m.ctx, m.ProjectID)
+	listEdgesMs := time.Since(stageStartedAt).Milliseconds()
 	if len(allEdges) == 0 {
+		logFamilyDebug(m.logger, "tui.family_tree.build",
+			"patent", m.current.Number,
+			"edge_count", 0,
+			"node_count", 0,
+			"list_edges_ms", listEdgesMs,
+			"total_ms", time.Since(startedAt).Milliseconds(),
+		)
 		return nil
 	}
 
+	stageStartedAt = time.Now()
 	graph := domain.BuildFamilyGraph(m.current.Number, allEdges)
+	graphMs := time.Since(stageStartedAt).Milliseconds()
 	if graph == nil || len(graph.Nodes) == 0 {
+		logFamilyDebug(m.logger, "tui.family_tree.build",
+			"patent", m.current.Number,
+			"edge_count", len(allEdges),
+			"node_count", 0,
+			"list_edges_ms", listEdgesMs,
+			"build_graph_ms", graphMs,
+			"total_ms", time.Since(startedAt).Milliseconds(),
+		)
 		return nil
 	}
 
@@ -77,10 +181,17 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 
 	// 2. Compute visual connectors (prefix/connector)
 	// This logic remains in TUI as it's purely for rendering.
+	stageStartedAt = time.Now()
 	type nodeInfo struct {
 		childrenLinePrefix string
 	}
 	infos := make([]nodeInfo, len(nodes))
+	lastChildForParent := make(map[int]int, len(nodes))
+	for i := range nodes {
+		if nodes[i].parentIdx >= 0 {
+			lastChildForParent[nodes[i].parentIdx] = i
+		}
+	}
 
 	for i := range nodes {
 		pIdx := nodes[i].parentIdx
@@ -91,14 +202,7 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 			continue
 		}
 
-		// Is this the last child of its parent?
-		isLast := true
-		for j := i + 1; j < len(nodes); j++ {
-			if nodes[j].parentIdx == pIdx {
-				isLast = false
-				break
-			}
-		}
+		isLast := lastChildForParent[pIdx] == i
 
 		nodes[i].prefix = infos[pIdx].childrenLinePrefix
 		nodes[i].connector = "├─ "
@@ -108,20 +212,26 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 			infos[i].childrenLinePrefix = nodes[i].prefix + "  "
 		}
 	}
+	connectorsMs := time.Since(stageStartedAt).Milliseconds()
 
 	// 3. Enrich with patent info (use local cache to avoid redundant lookups)
-	patentCache := make(map[string]domain.Patent)
+	stageStartedAt = time.Now()
+	numbers := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		numbers = append(numbers, node.number)
+	}
+	patentCache, cacheHits, cacheMisses, knownMisses, bulkFetchCount, err := m.loadFamilyPatentMetadata(numbers)
+	if err != nil {
+		logFamilyDebug(m.logger, "tui.family_tree.family_metadata_error",
+			"patent", m.current.Number,
+			"requested_count", len(numbers),
+			"error", err,
+		)
+		patentCache = map[string]domain.Patent{}
+	}
 	for i := range nodes {
 		num := nodes[i].number
 		p, ok := patentCache[num]
-		if !ok {
-			var err error
-			p, err = m.repo.GetPatent(m.ctx, m.ProjectID, num)
-			if err == nil {
-				patentCache[num] = p
-				ok = true
-			}
-		}
 		if ok {
 			nodes[i].title = p.Title
 			nodes[i].assignee = p.Assignee
@@ -136,6 +246,23 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 			nodes[i].importSource = p.ImportSource
 		}
 	}
+	enrichMs := time.Since(stageStartedAt).Milliseconds()
+
+	logFamilyDebug(m.logger, "tui.family_tree.build",
+		"patent", m.current.Number,
+		"edge_count", len(allEdges),
+		"node_count", len(nodes),
+		"list_edges_ms", listEdgesMs,
+		"build_graph_ms", graphMs,
+		"connectors_ms", connectorsMs,
+		"enrich_patents_ms", enrichMs,
+		"bulk_fetch_count", bulkFetchCount,
+		"requested_patent_count", len(numbers),
+		"cache_hits", cacheHits,
+		"cache_misses", cacheMisses,
+		"known_misses", knownMisses,
+		"total_ms", time.Since(startedAt).Milliseconds(),
+	)
 
 	return nodes
 }
@@ -202,6 +329,7 @@ func familyRelationColor(relType string) string {
 // viewFamilyOverlay renders the interactive family tree as a single navigable column.
 // j/k move up/down.
 func (m *Model) viewFamilyOverlay() string {
+	startedAt := time.Now()
 	nodes := m.buildFamilyTree()
 
 	base := overlayBase()
@@ -211,6 +339,13 @@ func (m *Model) viewFamilyOverlay() string {
 	cursorStyle := base.Foreground(lipgloss.Color(ColorAccentFamily)).Bold(true)
 
 	if len(nodes) == 0 {
+		logFamilyDebug(m.logger, "tui.family_overlay.render",
+			"patent", m.current.Number,
+			"node_count", 0,
+			"visible_rows", 0,
+			"selected", m.familySelected,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+		)
 		return m.renderPopup("Family · "+m.current.Number, subtle.Render("No family relationships defined."))
 	}
 
@@ -311,11 +446,17 @@ func (m *Model) viewFamilyOverlay() string {
 		previewTitleWidth := max(20, m.overlayWidth()-22)
 		nameValue := selectedPatent.Assignee
 		if strings.TrimSpace(nameValue) == "" {
-			nameValue = m.text.T(TextValueUnknown)
+			nameValue = "-"
 		}
 		titleValue := selectedPatent.Title
 		if strings.TrimSpace(titleValue) == "" {
-			titleValue = m.text.T(TextValueUnknown)
+			titleValue = "-"
+		}
+		expiresValue := selectedPatent.ExpirationDate
+		if strings.TrimSpace(expiresValue) == "" {
+			expiresValue = "-"
+		} else {
+			expiresValue = m.formatExpiration(selectedPatent)
 		}
 		rows := []struct {
 			label string
@@ -323,7 +464,7 @@ func (m *Model) viewFamilyOverlay() string {
 		}{
 			{label: "Number", value: selectedPatent.Number},
 			{label: "Country", value: patentCountryLabel(selectedPatent)},
-			{label: "Expires", value: m.formatExpiration(selectedPatent)},
+			{label: "Expires", value: expiresValue},
 			{label: "Name", value: nameValue},
 			{label: "Title", value: m.truncate(titleValue, previewTitleWidth)},
 		}
@@ -335,6 +476,14 @@ func (m *Model) viewFamilyOverlay() string {
 			body.WriteString(subtle.Render("No stored metadata for this family member. Press ctrl+r to refresh selected.") + "\n")
 		}
 	}
+
+	logFamilyDebug(m.logger, "tui.family_overlay.render",
+		"patent", m.current.Number,
+		"node_count", len(nodes),
+		"visible_rows", window.End-window.Start,
+		"selected", sel,
+		"duration_ms", time.Since(startedAt).Milliseconds(),
+	)
 
 	return m.renderPopup("Family · "+m.current.Number, body.String())
 }
@@ -434,7 +583,7 @@ func (m *Model) refreshSelectedFamilyMember() (tea.Model, tea.Cmd) {
 				logger.Error("family member store failed", "patent", targetNumber, "error", err)
 				return refreshResultMsg{err: err}
 			}
-			m.familyTreeCacheFor = ""
+			m.invalidateFamilyCaches()
 
 			p, err := repo.GetPatent(ctx, projectID, m.current.Number)
 			if err != nil {
@@ -506,7 +655,7 @@ func (m *Model) removeSelectedFamilyEdge() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.familySelected = clamp(m.familySelected, 0, max(0, len(nodes)-2))
-	m.familyTreeCacheFor = "" // invalidate: tree changed
+	m.invalidateFamilyCaches()
 	m.message = fmt.Sprintf("removed family edge: %s → %s", parent.number, node.number)
 	return m, nil
 }
@@ -539,7 +688,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 					m.err = err.Error()
 					return m, nil
 				}
-				m.familyTreeCacheFor = ""
+				m.invalidateFamilyCaches()
 				m.message = "removed family edge: " + target + " → " + m.current.Number
 				return m, nil
 			}
@@ -550,7 +699,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 					m.err = err.Error()
 					return m, nil
 				}
-				m.familyTreeCacheFor = ""
+				m.invalidateFamilyCaches()
 				m.message = "removed family edge: " + m.current.Number + " → " + target
 				return m, nil
 			}
@@ -613,7 +762,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.familyTreeCacheFor = "" // invalidate: tree changed
+	m.invalidateFamilyCaches()
 	m.message = fmt.Sprintf("family edge added: %s → %s (%s)", parentNumber, childNumber, relType)
 	m.mode = viewFamily
 	return m, nil

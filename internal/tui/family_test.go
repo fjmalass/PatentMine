@@ -2,8 +2,8 @@ package tui
 
 import (
 	"context"
-	"testing"
 	"patentmine/internal/domain"
+	"testing"
 )
 
 type familyStubRepo struct {
@@ -17,6 +17,14 @@ func (r familyStubRepo) ListAllFamilyEdges(ctx context.Context, projectID string
 
 func (r familyStubRepo) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
 	return domain.Patent{Number: number}, nil
+}
+
+func (r familyStubRepo) ListFamilyPatents(ctx context.Context, projectID string, numbers []string) (map[string]domain.Patent, error) {
+	out := make(map[string]domain.Patent, len(numbers))
+	for _, number := range numbers {
+		out[number] = domain.Patent{Number: number}
+	}
+	return out, nil
 }
 
 func TestBuildFamilyTreeWithCycle(t *testing.T) {

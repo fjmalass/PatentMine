@@ -775,6 +775,7 @@ func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, clas
 }
 
 func (r *Repository) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
+	startedAt := time.Now()
 	row := r.db.QueryRowContext(ctx, `
 		select
 			p.number, p.country_code, p.title, p.abstract, p.assignee, p.inventors_json, p.publication_date, p.grant_date, p.expiration_date, p.expiration_source, p.source_google_url, p.import_source, pp.created_at, pp.status, p.latest_assignment,
@@ -786,7 +787,80 @@ func (r *Repository) GetPatent(ctx context.Context, projectID string, number str
 		left join patent_classifications c on p.number = c.patent_number
 		where p.number = ?
 		group by p.number`, projectID, projectID, number)
-	return scanPatent(row)
+	patent, err := scanPatent(row)
+	if r.logger != nil && r.logger.Enabled(ctx, slog.LevelDebug) {
+		r.logger.Debug("repository.get_patent",
+			"project", projectID,
+			"patent", number,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"error", err,
+		)
+	}
+	return patent, err
+}
+
+func (r *Repository) ListFamilyPatents(ctx context.Context, projectID string, numbers []string) (map[string]domain.Patent, error) {
+	startedAt := time.Now()
+	if len(numbers) == 0 {
+		return map[string]domain.Patent{}, nil
+	}
+	placeholders := make([]string, len(numbers))
+	args := make([]any, 0, len(numbers)+1)
+	args = append(args, projectID)
+	for i, number := range numbers {
+		placeholders[i] = "?"
+		args = append(args, number)
+	}
+	query := `
+		select
+			p.number,
+			coalesce(p.country_code, ''),
+			coalesce(p.title, ''),
+			coalesce(p.assignee, ''),
+			coalesce(p.publication_date, ''),
+			coalesce(p.grant_date, ''),
+			coalesce(p.expiration_date, ''),
+			coalesce(p.expiration_source, ''),
+			coalesce(p.import_source, '')
+		from patents p
+		left join project_patents pp on p.number = pp.patent_number and pp.project_id = ?
+		where p.number in (` + strings.Join(placeholders, ",") + `)`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]domain.Patent, len(numbers))
+	for rows.Next() {
+		var p domain.Patent
+		if err := rows.Scan(
+			&p.Number,
+			&p.CountryCode,
+			&p.Title,
+			&p.Assignee,
+			&p.PublicationDate,
+			&p.GrantDate,
+			&p.ExpirationDate,
+			&p.ExpirationSource,
+			&p.ImportSource,
+		); err != nil {
+			return nil, err
+		}
+		out[p.Number] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if r.logger != nil && r.logger.Enabled(ctx, slog.LevelDebug) {
+		r.logger.Debug("repository.list_family_patents",
+			"project", projectID,
+			"requested_count", len(numbers),
+			"returned_count", len(out),
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+		)
+	}
+	return out, nil
 }
 
 func sortExpr(col, direction string) string {

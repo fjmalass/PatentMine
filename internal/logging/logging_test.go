@@ -3,6 +3,7 @@ package logging
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,5 +47,25 @@ func TestOpenPrunesOldDatedLogs(t *testing.T) {
 	}
 	if _, err := os.Stat(logPath); err != nil {
 		t.Fatalf("expected current log %q to exist: %v", logPath, err)
+	}
+}
+
+func TestOpenUsesDebugLevelWhenPatentDebugSet(t *testing.T) {
+	t.Setenv("PATENT_DEBUG", "1")
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "patentmine.log")
+	logger, closeLog, logPath, err := Open(basePath, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Debug("debug message visible")
+	closeLog()
+
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "debug message visible") {
+		t.Fatalf("expected debug log to be written, got %q", string(body))
 	}
 }

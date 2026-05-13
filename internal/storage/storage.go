@@ -43,6 +43,7 @@ type Repository interface {
 
 	UpsertPatentBundle(ctx context.Context, projectID string, bundle domain.PatentBundle) error
 	GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error)
+	ListFamilyPatents(ctx context.Context, projectID string, numbers []string) (map[string]domain.Patent, error)
 	ListPatents(ctx context.Context, projectID string, opts ListPatentsOptions) ([]domain.Patent, error)
 	ListCitations(ctx context.Context, projectID string, number, relationType string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
 	ListCitationsByStatus(ctx context.Context, projectID string, status string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
