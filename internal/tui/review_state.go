@@ -35,7 +35,43 @@ func (m *Model) viewReviewStateSelect() string {
 		}
 		body.WriteString(cursor + style.Render(s) + "\n")
 	}
-	return m.renderPopup("Change Status", body.String())
+	return m.renderPopup(m.reviewStateSelectTitle(), body.String())
+}
+
+func (m *Model) reviewStateSelectTitle() string {
+	prevMode := previousModeOr(m, viewList)
+	switch {
+	case prevMode == viewDetail:
+		if m.current.Number != "" {
+			return "Change Status · " + m.current.Number
+		}
+	case prevMode == viewCites || prevMode == viewCitedBy:
+		if edge, ok, err := m.selectedCitationEdge(); err == nil && ok {
+			return "Change Status · " + edge.TargetPatent
+		}
+	case prevMode == viewFamily:
+		nodes := m.buildFamilyTree()
+		if m.familySelected >= 0 && m.familySelected < len(nodes) {
+			return "Change Status · " + nodes[m.familySelected].number
+		}
+	case prevMode == viewList:
+		if len(m.backStack) > 0 {
+			snap := m.backStack[len(m.backStack)-1]
+			if snap.visualMode {
+				start, end := snap.selectionStart, snap.selected
+				if start > end {
+					start, end = end, start
+				}
+				return fmt.Sprintf("Change Status · %d patents", end-start+1)
+			}
+			if snap.selected >= 0 && snap.selected < len(snap.patents) {
+				return "Change Status · " + snap.patents[snap.selected].Number
+			}
+		} else if m.selected >= 0 && m.selected < len(m.patents) {
+			return "Change Status · " + m.patents[m.selected].Number
+		}
+	}
+	return "Change Status"
 }
 
 func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
@@ -47,8 +83,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 
 	prevMode := previousModeOr(m, viewList)
 
-	indices := m.selectedIndices()
-	if len(indices) == 0 && prevMode == viewDetail {
+	if prevMode == viewDetail {
 		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
 			m.err = err.Error()
 			return m.goBack()
@@ -88,9 +123,9 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		return m.goBack()
 	}
 
-	if len(indices) == 0 && prevMode == viewList {
-		indices = []int{m.selected}
-	}
+	// viewList: activeSelectionIndex() returns 0 for overlay modes, so read
+	// selection from the pre-overlay backStack snapshot instead.
+	indices := m.listSelectionFromSnapshot()
 
 	updatedCount := 0
 	for _, idx := range indices {
@@ -111,11 +146,33 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("updated status to %s for %d patents", next, updatedCount)
 	} else if updatedCount == 1 {
 		p := m.patents[indices[0]]
-		m.message = fmt.Sprintf("%s → %s", p.Number, p.ReviewState)
+		m.message = fmt.Sprintf("%s → %s", p.Number, next)
 	}
 
 	m.visualMode = false
 	return m.goBack()
+}
+
+// listSelectionFromSnapshot reads selected indices from the pre-overlay backStack
+// snapshot. Overlay modes have m.mode != viewList so activeSelectionIndex() falls
+// to default:0 — using the snapshot avoids that.
+func (m *Model) listSelectionFromSnapshot() []int {
+	if len(m.backStack) > 0 {
+		snap := m.backStack[len(m.backStack)-1]
+		if snap.visualMode {
+			start, end := snap.selectionStart, snap.selected
+			if start > end {
+				start, end = end, start
+			}
+			res := make([]int, 0, end-start+1)
+			for i := start; i <= end; i++ {
+				res = append(res, i)
+			}
+			return res
+		}
+		return []int{snap.selected}
+	}
+	return []int{m.selected}
 }
 
 func (m *Model) selectableCountries() []string {
