@@ -1180,12 +1180,12 @@ func (r *Repository) DeletePatent(ctx context.Context, projectID string, number 
 
 func (r *Repository) ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		select c.patent_number, c.system, c.code, 
-			coalesce(d.section, ''), coalesce(d.class, ''), coalesce(d.subclass, ''), 
+		select c.patent_number, c.system, c.code,
+			coalesce(d.section, ''), coalesce(d.class, ''), coalesce(d.subclass, ''),
 			coalesce(d.main_group, ''), coalesce(d.subgroup, ''), coalesce(d.description, '')
 		from patent_classifications c
 		left join classification_definitions d on c.system = d.system and c.code = d.code
-		where c.patent_number = ? 
+		where c.patent_number = ?
 		order by c.system, c.code`, number)
 	if err != nil {
 		return nil, err
@@ -1202,6 +1202,40 @@ func (r *Repository) ListClassifications(ctx context.Context, projectID string, 
 	return out, rows.Err()
 }
 
+func (r *Repository) GetClassificationStats(ctx context.Context, projectID string, code string) (domain.ClassificationStats, error) {
+	query := `
+		SELECT review_state, count(*)
+		FROM project_patents
+		WHERE project_id = ? 
+		  AND patent_number IN (SELECT patent_number FROM patent_classifications WHERE code LIKE ?)
+		GROUP BY review_state`
+	rows, err := r.db.QueryContext(ctx, query, projectID, code+"%")
+	if err != nil {
+		return domain.ClassificationStats{}, err
+	}
+	defer rows.Close()
+
+	var stats domain.ClassificationStats
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return stats, err
+		}
+		switch state {
+		case domain.ReviewStateStored:
+			stats.Stored = count
+		case domain.ReviewStateUnderReview:
+			stats.UnderReview = count
+		case domain.ReviewStateIgnored:
+			stats.Ignored = count
+		case domain.ReviewStateCached:
+			stats.Cached = count
+		}
+		stats.Total += count
+	}
+	return stats, rows.Err()
+}
 func (r *Repository) ListTextSections(ctx context.Context, projectID string, number string) ([]domain.PatentTextSection, error) {
 	rows, err := r.db.QueryContext(ctx, `select patent_number, section_type, ordinal, text from patent_text_sections where patent_number = ? order by section_type, ordinal`, number)
 	if err != nil {

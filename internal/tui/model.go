@@ -40,6 +40,8 @@ const (
 	viewAI                   viewMode = "ai"
 	viewHelp                 viewMode = "help"
 	viewHelpPopup            viewMode = "help-popup"
+	viewKeymap               viewMode = "keymap"
+	viewKeymapPopup          viewMode = "keymap-popup"
 	viewPreview              viewMode = "preview"
 	viewReview               viewMode = "review"
 	viewConfirmDelete        viewMode = "confirm-delete"
@@ -61,6 +63,7 @@ const (
 	viewReviewStateSelect         viewMode = "status-select"
 	viewProjectTags          viewMode = "project-tags"
 	viewTagSelect            viewMode = "tag-select"
+	viewCountrySelect        viewMode = "country-select"
 )
 
 type bulkActionType string
@@ -96,6 +99,7 @@ type Model struct {
 	citedBySelected            int
 	reviewSelected             int
 	classificationSelected     int
+	classificationDetailSelected int
 	inventorSelected           int
 	familySelected             int
 	visualMode                 bool
@@ -148,6 +152,7 @@ type Model struct {
 	popupSearchQuery           string
 	popupSearchActive          bool
 	reviewStateSelected             int
+	countrySelectSelected           int
 	projectTagsSelected        int
 	tagSelectSelected          int
 	projectTags                []domain.TagWithCount
@@ -189,6 +194,7 @@ type navSnapshot struct {
 	citedBySelected            int
 	reviewSelected             int
 	classificationSelected     int
+	classificationDetailSelected int
 	inventorSelected           int
 	familySelected             int
 	visualMode                 bool
@@ -574,6 +580,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.mode == viewCountrySelect {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				m.countrySelectSelected = clamp(m.countrySelectSelected+1, 0, len(m.selectableCountries())-1)
+			case keyVimUp, keyArrowUp:
+				m.countrySelectSelected = clamp(m.countrySelectSelected-1, 0, len(m.selectableCountries())-1)
+			case keyEnter:
+				return m.applyCountrySelection()
+			case keyEsc, keyBack:
+				return m.goBack()
+			}
+			return m, nil
+		}
+
 		// Mode-specific key handlers
 		if m.mode == viewSplash {
 			switch msg.String() {
@@ -870,7 +890,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		}
-		if m.mode == viewHelp {
+		if m.mode == viewHelp || m.mode == viewKeymap {
 			if m.helpSearchActive {
 				switch msg.String() {
 				case keyEsc, keyBack:
@@ -906,6 +926,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "k", "up":
 				if m.helpScroll > 0 {
 					m.helpScroll--
+				}
+				return m, nil
+			case "pgdown", "ctrl+f", "ctrl+d":
+				m.helpScroll += m.pageSize() - 4
+				return m, nil
+			case "pgup", "ctrl+b", "ctrl+u":
+				m.helpScroll -= m.pageSize() - 4
+				if m.helpScroll < 0 {
+					m.helpScroll = 0
 				}
 				return m, nil
 			case keyEsc, keyBack:
@@ -1019,6 +1048,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case keyIDS:
 			if m.mode == viewDetail && m.current.Number != "" {
+				m.detailSelected = m.indexJumpLabel(keyIDS)
 				return m.openCurrentPatentIDSEdit(), nil
 			}
 			m.projectIDSSelected = 0
@@ -1053,24 +1083,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewPreview {
 				return m.storePendingPatent()
 			}
-			if m.mode == viewHelpPopup {
+			if m.mode == viewHelpPopup || m.mode == viewKeymapPopup {
 				return m.goBack()
 			}
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
 			}
 			if m.mode == viewClassificationDetail {
-				classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
-				if len(classifications) > 0 {
-					sel := clamp(m.classificationSelected, 0, len(classifications)-1)
-					code := classifications[sel].Code
-					m.classFilters = []string{code}
-					m.classFilterOp = domain.FilterOpAnd
-					m.classFilter = code
-					m.setMode(viewList)
-					return m.refreshList()
-				}
-				return m.goBack()
+				return m.filterBySelectedClassification()
 			}
 			if m.mode == viewInventors {
 				return m.filterBySelectedInventor()
@@ -1081,6 +1101,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewClassifications {
 				cls, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 				if len(cls) > 0 {
+					m.classificationDetailSelected = 0
 					m = m.navigateTo(viewClassificationDetail)
 				}
 				return m, nil
@@ -1106,9 +1127,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case keyVimDown, keyArrowDown:
+			if m.mode == viewClassificationDetail {
+				m.classificationDetailSelected = clamp(m.classificationDetailSelected+1, 0, 4)
+				return m, nil
+			}
 			count := m.consumeCount(1)
 			return m.moveSelection(count), nil
 		case keyVimUp, keyArrowUp:
+			if m.mode == viewClassificationDetail {
+				m.classificationDetailSelected = clamp(m.classificationDetailSelected-1, 0, 4)
+				return m, nil
+			}
 			count := m.consumeCount(1)
 			return m.moveSelection(-count), nil
 		case keyCtrlF, "pgdown":
@@ -1224,7 +1253,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyWeb:
 			return m.openBrowser(nil)
 		case keyHelp:
-			if m.mode == viewHelpPopup {
+			if m.mode == viewHelpPopup || m.mode == viewKeymapPopup {
 				return m.goBack()
 			}
 			m = m.navigateTo(viewHelpPopup)
@@ -1292,6 +1321,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			currentStatus := ""
 			if m.mode == viewDetail {
 				currentStatus = m.current.ReviewState
+				m.detailSelected = m.indexJumpLabel(keyReviewState)
 			} else if m.mode == viewList && len(m.patents) > 0 {
 				currentStatus = m.patents[m.selected].ReviewState
 			}
@@ -1305,6 +1335,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m.navigateTo(viewReviewStateSelect), nil
+		case keyCountry:
+			m.countrySelectSelected = 0
+			if m.countryFilter != EmptyFilter {
+				for i, c := range m.selectableCountries() {
+					if c == m.countryFilter {
+						m.countrySelectSelected = i
+						break
+					}
+				}
+			}
+			return m.navigateTo(viewCountrySelect), nil
 		case "+":
 			if m.mode == viewFamily {
 				m.input.Focus()
@@ -1475,7 +1516,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	return m
 }
 func (m *Model) goBack() (tea.Model, tea.Cmd) {
-	if m.mode == viewHelp && m.helpSearchActive {
+	if (m.mode == viewHelp || m.mode == viewKeymap) && m.helpSearchActive {
 		m.helpSearchActive = false
 		m.helpQuery = ""
 		m.helpScroll = 0
@@ -1580,6 +1621,8 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		return m.refreshVisibleCitationDetails()
 	case commandFilter:
 		return m.filterCommand(command.Args)
+	case commandCountry:
+		return m.countryCommand(command.Args)
 	case commandFamily:
 		return m.familyCommand(command.Args)
 	case commandSort:
@@ -1623,18 +1666,22 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 	case commandVersion:
 		m.message = "PatentMine " + m.displayVersion()
 	case commandKeymap:
-		if m.logger == nil {
-			m.err = "no logger available"
+		if len(command.Args) > 0 && command.Args[0] == "export" {
+			if m.logger == nil {
+				m.err = "no logger available"
+				return m, nil
+			}
+			modePath := DefaultLogDir + "/" + keymapModeFile
+			keyPath := DefaultLogDir + "/" + keymapKeyFile
+			if err := exportKeymapCSV(modePath, keyPath); err != nil {
+				m.err = fmt.Sprintf("failed to export keymap: %s", err)
+			} else {
+				m.logger.Info("keymap exported", "mode_file", modePath, "key_file", keyPath)
+				m.message = fmt.Sprintf("keymap exported to %s and %s", modePath, keyPath)
+			}
 			return m, nil
 		}
-		modePath := DefaultLogDir + "/" + keymapModeFile
-		keyPath := DefaultLogDir + "/" + keymapKeyFile
-		if err := exportKeymapCSV(modePath, keyPath); err != nil {
-			m.err = fmt.Sprintf("failed to export keymap: %s", err)
-		} else {
-			m.logger.Info("keymap exported", "mode_file", modePath, "key_file", keyPath)
-			m.message = fmt.Sprintf("keymap exported to %s and %s", modePath, keyPath)
-		}
+		m = m.navigateTo(viewKeymap)
 	case commandProject:
 		return m.projectCommand(command.Args)
 	case commandTag:
@@ -3526,6 +3573,10 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewHelp()
 	case viewHelpPopup:
 		return m.viewHelpPopup()
+	case viewKeymap:
+		return m.viewKeymap()
+	case viewKeymapPopup:
+		return m.viewKeymapPopup()
 	case viewPreview:
 		return m.viewPreview()
 	case viewReview:
@@ -3564,6 +3615,8 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewBulkConfirm()
 	case viewReviewStateSelect:
 		return m.viewReviewStateSelect()
+	case viewCountrySelect:
+		return m.viewCountrySelect()
 	case viewProjectTags:
 		return m.viewProjectTags()
 	case viewTagSelect:
@@ -3615,6 +3668,62 @@ func (m *Model) viewReviewStateSelect() string {
 		body.WriteString(cursor + style.Render(s) + "\n")
 	}
 	return m.renderPopup("Change Status", body.String())
+}
+
+func (m *Model) selectableCountries() []string {
+	countries := make([]string, 0, len(domain.PatentCountryCodes)+1)
+	countries = append(countries, "(clear)")
+	countries = append(countries, domain.PatentCountryCodes...)
+	return countries
+}
+
+func (m *Model) countryCounts() map[string]int {
+	counts := make(map[string]int)
+	for _, p := range m.patents {
+		code := patentCountryLabel(p)
+		if code != "-" {
+			counts[code]++
+		}
+	}
+	return counts
+}
+
+func (m *Model) viewCountrySelect() string {
+	var body strings.Builder
+	countries := m.selectableCountries()
+	counts := m.countryCounts()
+	base := overlayBase()
+	activeCode := m.countryFilter
+
+	for i, c := range countries {
+		cursor := "  "
+		if i == m.countrySelectSelected {
+			cursor = "> "
+		}
+		style := base
+		label := c
+
+		if c == "(clear)" {
+			if activeCode == EmptyFilter {
+				style = style.Foreground(lipgloss.Color(ColorYellow))
+			}
+		} else {
+			if c == activeCode {
+				style = style.Foreground(lipgloss.Color(ColorYellow))
+			}
+			if count, ok := counts[c]; ok {
+				label = fmt.Sprintf("%s  (%d)", c, count)
+			}
+		}
+
+		if i == m.countrySelectSelected {
+			style = style.Bold(true).Underline(true)
+		}
+
+		body.WriteString(cursor + style.Render(label) + "\n")
+	}
+
+	return m.renderPopup("Select Country", body.String())
 }
 
 func (m *Model) viewBulkConfirm() string {
@@ -3977,6 +4086,8 @@ const (
 	detailActionEditDate
 	detailActionEditNumber
 	detailActionStatic
+	detailActionReviewState
+	detailActionTags
 )
 
 func (m *Model) detailFields() []detailField {
@@ -4059,6 +4170,7 @@ func (m *Model) detailFields() []detailField {
 			value:        countryValue,
 			displayValue: countryDisplay,
 			action:       detailActionCountryFilter,
+			jumpLabel:    jumpLabelCountry,
 		})
 	}
 
@@ -4113,7 +4225,7 @@ func (m *Model) detailFields() []detailField {
 
 		fields = append(fields,
 			detailField{separator: true},
-			detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags), jumpLabel: jumpLabelTags},
+			detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags), jumpLabel: jumpLabelTags, action: detailActionTags},
 		)
 
 		// Add Status and IDS
@@ -4122,7 +4234,7 @@ func (m *Model) detailFields() []detailField {
 				label:        TextDetailReviewState,
 				displayValue: lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(p.ReviewState),
 				jumpLabel:    keyReviewState,
-				action:       detailActionNone, // cycle status is handled by 's' globally
+				action:       detailActionReviewState,
 			})
 		}
 		idsEntry := m.idsEntryForPatent(p.Number)
@@ -4562,6 +4674,7 @@ func (m *Model) isPopupMode() bool {
 		m.mode == viewProjectIDS ||
 		m.mode == viewClassificationDetail ||
 		m.mode == viewHelpPopup ||
+		m.mode == viewKeymapPopup ||
 		m.mode == viewBulkConfirm ||
 		m.mode == viewConfirmDelete ||
 		m.mode == viewPreview
@@ -4953,6 +5066,25 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	return m.goBack()
 }
 
+func (m *Model) applyCountrySelection() (tea.Model, tea.Cmd) {
+	countries := m.selectableCountries()
+	if m.countrySelectSelected < 0 || m.countrySelectSelected >= len(countries) {
+		return m.goBack()
+	}
+	code := countries[m.countrySelectSelected]
+
+	if code == "(clear)" {
+		m.countryFilter = EmptyFilter
+		m.message = "country filter cleared"
+	} else {
+		m.countryFilter = code
+		m.message = "filtering by country: " + code
+	}
+
+	m.setMode(viewList)
+	return m.refreshList()
+}
+
 func (m *Model) hasJumpTargets() bool {
 	return len(m.jumpLabelsCache) > 0
 }
@@ -5022,10 +5154,12 @@ func (m *Model) jumpPrefix(index int) string {
 		return ""
 	}
 	color := ColorYellow
+	style := lipgloss.NewStyle().Bold(true)
 	if !label.preferred {
-		color = ColorThemeDetail // Cyan/Light Blue for fallbacks
+		color = ColorDim
+		style = style.Italic(true).Bold(false)
 	}
-	return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(color)).Render(label.key) + " "
+	return style.Foreground(lipgloss.Color(color)).Render(label.key) + " "
 }
 
 func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
@@ -5362,13 +5496,8 @@ func (m *Model) viewClassificationDetail() string {
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	cls := classifications[selected]
 
-	// count patents in project with this classification code (prefix match)
-	projectPatents, _ := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
-		ClassFilters:     []string{cls.Code},
-		ClassFilterOp:    domain.FilterOpAnd,
-		ReviewStateFilter: storage.ReviewStateFilterNone,
-	})
-	count := len(projectPatents)
+	// Get classification stats via SQL
+	stats, _ := m.repo.GetClassificationStats(m.ctx, m.ProjectID, cls.Code)
 
 	var body strings.Builder
 	body.WriteString(base.Render(fmt.Sprintf("System: %s", cls.System)) + "\n")
@@ -5389,7 +5518,28 @@ func (m *Model) viewClassificationDetail() string {
 
 	body.WriteString(boldStyle.Render("Description:") + "\n")
 	body.WriteString(base.Render(cls.Description) + "\n\n")
-	body.WriteString(base.Render(fmt.Sprintf("Patents: %d patent(s)", count)) + "\n")
+
+	body.WriteString(boldStyle.Render("Patents in Project:") + "\n")
+
+	renderCount := func(idx int, label string, val int, style lipgloss.Style) {
+		prefix := "  "
+		if idx == m.classificationDetailSelected {
+			prefix = "> "
+		}
+		line := fmt.Sprintf("%-13s %d", label+":", val)
+		if idx == m.classificationDetailSelected {
+			body.WriteString(style.Bold(true).Render(prefix+line) + "\n")
+		} else {
+			body.WriteString(style.Render(prefix+line) + "\n")
+		}
+	}
+
+	renderCount(0, "Total", stats.Total, base)
+	renderCount(1, "Stored", stats.Stored, base.Foreground(lipgloss.Color(ColorSuccess)))
+	renderCount(2, "Under Review", stats.UnderReview, base.Foreground(lipgloss.Color(ColorWarning)))
+	renderCount(3, "Ignored", stats.Ignored, base.Foreground(lipgloss.Color(ColorDim)))
+	renderCount(4, "Cached", stats.Cached, base)
+
 	return m.renderPopup(fmt.Sprintf("Classification · %s", cls.Code), body.String())
 }
 
@@ -6602,15 +6752,20 @@ func (m *Model) viewAI() string {
 }
 
 func (m *Model) viewHelp() string {
+	return m.renderHelp(FilterHelpSections(m.helpQuery, m.text))
+}
+
+func (m *Model) viewKeymap() string {
+	return m.renderHelp(FilterHelpSections(m.helpQuery, m.text))
+}
+
+func (m *Model) renderHelp(sections []HelpSection) string {
 	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	accent := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.screenColor()))
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Bold(true)
 	cmdStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAccent))
 	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorWarning))
 	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim))
-
-	// Build filtered sections
-	sections := FilterHelpSections(m.helpQuery, m.text)
 
 	// Build flat line list
 	type helpLine struct {
@@ -6661,16 +6816,28 @@ func (m *Model) viewHelp() string {
 
 	var b strings.Builder
 
-	// Search bar
-	searchBar := ""
+	// Search bar & Pagination
+	var searchBar strings.Builder
 	if m.helpSearchActive {
-		searchBar = accent.Render("/") + " " + m.helpQuery + "█"
+		searchBar.WriteString(accent.Render("/") + " " + m.helpQuery + "█")
 	} else if m.helpQuery != "" {
-		searchBar = accent.Render("/") + " " + m.helpQuery + subtle.Render(" (esc to clear)")
+		searchBar.WriteString(accent.Render("/") + " " + m.helpQuery + subtle.Render(" (esc to clear)"))
 	} else {
-		searchBar = subtle.Render(m.text.T(TextHelpSearchHint))
+		searchBar.WriteString(subtle.Render(m.text.T(TextHelpSearchHint)))
 	}
-	b.WriteString(searchBar + "\n\n")
+
+	// Add pagination info
+	totalLines := len(lines)
+	if totalLines > 0 {
+		currentPage := (m.helpScroll / pageH) + 1
+		totalPages := (totalLines + pageH - 1) / pageH
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		pageInfo := fmt.Sprintf(" (Page %d/%d)", currentPage, totalPages)
+		searchBar.WriteString(subtle.Render(pageInfo))
+	}
+	b.WriteString(searchBar.String() + "\n\n")
 
 	// Content with scroll window
 	end := m.helpScroll + pageH
@@ -6685,5 +6852,9 @@ func (m *Model) viewHelp() string {
 }
 
 func (m *Model) viewHelpPopup() string {
+	return RenderContextHelp(m.text, m.activeMode())
+}
+
+func (m *Model) viewKeymapPopup() string {
 	return RenderContextHelp(m.text, m.activeMode())
 }

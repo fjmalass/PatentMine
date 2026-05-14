@@ -55,6 +55,7 @@ type Repository interface {
 	UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error
 	DeletePatent(ctx context.Context, projectID string, number string) error
 	ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error)
+	GetClassificationStats(ctx context.Context, projectID string, code string) (domain.ClassificationStats, error)
 	ListTextSections(ctx context.Context, projectID string, number string) ([]domain.PatentTextSection, error)
 	AddNote(ctx context.Context, projectID string, number, body string) (domain.ResearchNote, error)
 	ListNotes(ctx context.Context, projectID string, number string) ([]domain.ResearchNote, error)

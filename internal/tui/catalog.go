@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -18,127 +19,277 @@ type HelpSection struct {
 	Entries []HelpEntry
 }
 
-var allHelpSections = []HelpSection{
-	{
-		Title: "Navigation",
-		Entries: []HelpEntry{
-			{Key: "j/k / ↓/↑", Description: TextHelpMoveList},
-			{Key: "enter / o", Description: TextHelpOpenSelected},
-			{Key: "esc / q", Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-			{Key: "?", Description: TextHelpShortcutShowHelp},
-			{Key: "ctrl+f / ctrl+d", Description: TextHelpJumpViews},
+var allHelpSections []HelpSection
+
+func buildAllHelpSections() []HelpSection {
+	// Seed with hardcoded command-based entries and special shortcuts not in KeyMap.
+	// We use a slice of structs to maintain section order.
+	type sectionSeed struct {
+		Title   string
+		Entries []HelpEntry
+	}
+	seeds := []sectionSeed{
+		{
+			Title: "Navigation",
+			Entries: []HelpEntry{
+				{Key: "↓/↑", Description: TextHelpMoveList},
+				{Key: "esc", Description: TextHelpBackOrQuit},
+				{Key: "ctrl+f / ctrl+d", Description: TextHelpJumpViews},
+			},
 		},
-	},
-	{
-		Title: "Patents",
-		Entries: []HelpEntry{
-			{Command: ":add US11611785B2", Description: TextHelpAddPatent},
-			{Command: ":import <url>", Description: TextHelpImportPatent},
-			{Command: ":open US11611785B2", Description: TextHelpOpenPatent},
-			{Command: ":date app|pub|grant <YYYY-MM-DD>", Description: TextHelpPatentDate},
-			{Command: ":num app|pub|grant <number>", Description: TextHelpPatentNum},
-			{Command: ":compare <num>", Description: TextHelpCompare},
-			{Command: ":summarize", Description: TextHelpSummarize},
-			{Key: keyReviewState, Description: TextHelpCyclePatentReviewState},
-			{Key: keyDelete, Description: TextHelpDeletePatent},
-			{Key: keySearch, Command: "/term", Description: TextHelpFilterPatents},
-			{Key: keyWeb, Description: TextHelpJumpWeb},
+		{
+			Title: "Patents",
+			Entries: []HelpEntry{
+				{Command: ":add US11611785B2", Description: TextHelpAddPatent},
+				{Command: ":import <url>", Description: TextHelpImportPatent},
+				{Command: ":open US11611785B2", Description: TextHelpOpenPatent},
+				{Command: ":date app|pub|grant <YYYY-MM-DD>", Description: TextHelpPatentDate},
+				{Command: ":num app|pub|grant <number>", Description: TextHelpPatentNum},
+				{Command: ":compare <num>", Description: TextHelpCompare},
+				{Command: ":summarize", Description: TextHelpSummarize},
+				{Command: "/term", Description: TextHelpSearchHint},
+			},
 		},
-	},
-	{
-		Title: "Refresh & Citations",
-		Entries: []HelpEntry{
-			{Key: "ctrl+r", Command: ":refresh citations [details]", Description: TextHelpRefreshCitations},
-			{Key: keyRefreshAll, Command: ":refresh citedby [details]", Description: TextHelpRefreshCitedBy},
-			{Command: ":refresh-refs-details", Description: TextHelpRefreshDetails},
-			{Key: "ctrl+r (in citation view)", Description: TextHelpCitationRefreshSelected},
-			{Key: keyRefreshAll + " (in citation view)", Description: TextHelpCitationRefreshAll},
-			{Key: keyCites, Description: TextHelpJumpCitations},
-			{Key: keyCitedBy, Description: TextHelpJumpCitedBy},
-			{Key: keyYes, Description: TextHelpRefAdd},
-			{Key: keyIgnore, Description: TextHelpReviewIgnored},
-			{Key: keyUnreview, Description: TextHelpReviewUnderReview},
-			{Key: keyReviewState + " (in citation view)", Description: TextHelpReviewStateCycle},
-			{Command: ":ignored", Description: TextHelpReviewIgnored},
-			{Command: ":under-review", Description: TextHelpReviewUnderReview},
+		{
+			Title: "Refresh & Citations",
+			Entries: []HelpEntry{
+				{Command: ":refresh citations [details]", Description: TextHelpRefreshCitations},
+				{Command: ":refresh citedby [details]", Description: TextHelpRefreshCitedBy},
+				{Command: ":refresh-refs-details", Description: TextHelpRefreshDetails},
+				{Key: "ctrl+r (in citation view)", Description: TextHelpCitationRefreshSelected},
+				{Key: keyRefreshAll + " (in citation view)", Description: TextHelpCitationRefreshAll},
+				{Key: "s (in citation view)", Description: TextHelpReviewStateCycle},
+				{Command: ":ignored", Description: TextHelpReviewIgnored},
+				{Command: ":under-review", Description: TextHelpReviewUnderReview},
+			},
 		},
-	},
-	{
-		Title: "Views",
-		Entries: []HelpEntry{
-			{Key: keyClassification, Description: TextHelpJumpClassification},
-			{Key: keyText, Description: TextHelpJumpText},
-			{Key: keyNotes, Description: TextHelpJumpNotes},
-			{Key: keyRefs + " (in list/detail)", Description: TextHelpJumpRefs},
-			{Key: keyAI, Description: TextHelpJumpAI},
-			{Key: keyFamily, Description: TextHelpFamilyView},
-			{Key: keyProject, Description: TextHelpJumpProject},
-			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
+		{
+			Title: "Views",
+			Entries: []HelpEntry{
+				{Key: "ctrl+r (in list/detail)", Description: TextHelpJumpRefs},
+			},
 		},
-	},
-	{
-		Title: "Filters & Sort",
-		Entries: []HelpEntry{
-			{Command: ":filter review_state stored|ignored|under-review|cached|none", Description: TextHelpReviewStateFilter},
-			{Command: ":filter class <cpc> [&& <cpc2>||| <cpc2>]", Description: TextHelpClass},
-			{Command: ":filter inventor <name>", Description: TextHelpInventorFilter},
-			{Command: ":filter clear", Description: TextHelpFilterClear},
-			{Command: ":sort <col>[,<col2>] [asc|desc]", Description: TextHelpSort},
+		{
+			Title: "Filters & Sort",
+			Entries: []HelpEntry{
+				{Command: ":filter review_state stored|ignored|under-review|cached|none", Description: TextHelpReviewStateFilter},
+				{Command: ":filter class <cpc> [&& <cpc2>||| <cpc2>]", Description: TextHelpClass},
+				{Command: ":filter inventor <name>", Description: TextHelpInventorFilter},
+				{Command: ":filter clear", Description: TextHelpFilterClear},
+				{Command: ":country list|<CODE>", Description: TextHelpCountryFilter},
+				{Command: ":sort <col>[,<col2>] [asc|desc]", Description: TextHelpSort},
+			},
 		},
-	},
-	{
-		Title: "Family",
-		Entries: []HelpEntry{
-			{Key: keyFamily, Command: ":family parent|child <num> [type]", Description: TextHelpFamilyAdd},
-			{Command: ":family remove <num>", Description: TextHelpFamilyRemove},
-			{Command: ":family pull", Description: TextHelpFamilyPull},
-			{Key: keyDelete + " (in family view)", Description: TextHelpFamilyRemoveEdge},
-			{Key: "+ (in family view)", Description: TextHelpFamilyAddChild},
+		{
+			Title: "Family",
+			Entries: []HelpEntry{
+				{Command: ":family parent|child <num> [type]", Description: TextHelpFamilyAdd},
+				{Command: ":family remove <num>", Description: TextHelpFamilyRemove},
+				{Command: ":family pull", Description: TextHelpFamilyPull},
+				{Key: "D (in family view)", Description: TextHelpFamilyRemoveEdge},
+				{Key: "+", Description: TextHelpFamilyAddChild},
+			},
 		},
-	},
-	{
-		Title: "Project",
-		Entries: []HelpEntry{
-			{Command: ":project id", Description: TextHelpProjectID},
-			{Command: ":project list", Description: TextHelpProjectList},
-			{Command: ":project create <id> [name]", Description: TextHelpProjectCreate},
-			{Command: ":project switch <id>", Description: TextHelpProjectSwitch},
-			{Command: ":project add <id>", Description: TextHelpProjectAdd},
-			{Command: ":project status <active|archived>", Description: TextHelpProjectStatus},
-			{Command: ":project summary-status <stage>", Description: TextHelpProjectSummaryStatus},
-			{Command: ":project summary <text>", Description: TextHelpProjectSummary},
-			{Command: ":project comment <text>", Description: TextHelpProjectComment},
-			{Command: ":project delete <id>", Description: TextHelpProjectDelete},
+		{
+			Title: "Project",
+			Entries: []HelpEntry{
+				{Command: ":project id", Description: TextHelpProjectID},
+				{Command: ":project list", Description: TextHelpProjectList},
+				{Command: ":project create <id> [name]", Description: TextHelpProjectCreate},
+				{Command: ":project switch <id>", Description: TextHelpProjectSwitch},
+				{Command: ":project add <id>", Description: TextHelpProjectAdd},
+				{Command: ":project status <active|archived>", Description: TextHelpProjectStatus},
+				{Command: ":project summary-status <stage>", Description: TextHelpProjectSummaryStatus},
+				{Command: ":project summary <text>", Description: TextHelpProjectSummary},
+				{Command: ":project comment <text>", Description: TextHelpProjectComment},
+				{Command: ":project delete <id>", Description: TextHelpProjectDelete},
+			},
 		},
-	},
-	{
-		Title: "Prosecution & Invoices",
-		Entries: []HelpEntry{
-			{Command: ":project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]", Description: TextHelpProjectEvent},
-			{Command: ":project events", Description: TextHelpProjectEvents},
-			{Command: ":project invoice <amount> [currency USD] [direction to-firm|from-firm] ...", Description: TextHelpProjectInvoice},
-			{Command: ":project invoices", Description: TextHelpProjectInvoices},
-			{Command: ":project ids add <num> [note <text>]", Description: TextHelpProjectIDSAdd},
-			{Command: ":project ids", Description: TextHelpProjectIDS},
-			{Command: ":project export ids [file]", Description: TextHelpExportIDS},
-			{Command: ":project export status [file]", Description: TextHelpExportStatus},
-			{Command: ":project export state [stored|ignored|under-review|all] [file]", Description: TextHelpExportState},
+		{
+			Title: "Prosecution & Invoices",
+			Entries: []HelpEntry{
+				{Command: ":project event <type> [date YYYY-MM-DD] [due YYYY-MM-DD] [ref <ref>] [note <text>]", Description: TextHelpProjectEvent},
+				{Command: ":project events", Description: TextHelpProjectEvents},
+				{Command: ":project invoice <amount> [currency USD] [direction to-firm|from-firm] ...", Description: TextHelpProjectInvoice},
+				{Command: ":project invoices", Description: TextHelpProjectInvoices},
+				{Command: ":project ids add <num> [note <text>]", Description: TextHelpProjectIDSAdd},
+				{Command: ":project ids", Description: TextHelpProjectIDS},
+				{Command: ":project export ids [file]", Description: TextHelpExportIDS},
+				{Command: ":project export status [file]", Description: TextHelpExportStatus},
+				{Command: ":project export state [stored|ignored|under-review|all] [file]", Description: TextHelpExportState},
+			},
 		},
-	},
-	{
-		Title: "General",
-		Entries: []HelpEntry{
-			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
-			{Command: ":help", Description: TextHelpShowHelp},
-			{Command: ":version", Description: TextHelpShowVersion},
-			{Command: ":browser", Description: TextHelpOpenBrowser},
-			{Command: ":note <text>", Description: TextHelpNote},
-			{Command: ":purge ignored", Description: TextHelpPurge},
-			{Command: ":compact", Description: TextHelpCompact},
-			{Command: ":exit", Description: TextHelpExit},
+		{
+			Title: "General",
+			Entries: []HelpEntry{
+				{Command: ":help", Description: TextHelpShowHelp},
+				{Command: ":version", Description: TextHelpShowVersion},
+				{Command: ":browser", Description: TextHelpOpenBrowser},
+				{Command: ":note <text>", Description: TextHelpNote},
+				{Command: ":purge ignored", Description: TextHelpPurge},
+				{Command: ":compact", Description: TextHelpCompact},
+				{Command: ":exit", Description: TextHelpExit},
+			},
 		},
-	},
+	}
+
+	// Collect all registered keys from GlobalKeys and all ModeKeys.
+	type kbGroup struct {
+		Help    TextKey
+		Section string
+	}
+	groups := make(map[kbGroup][]string)
+	addKeys := func(km KeyMap) {
+		for _, kb := range km {
+			if kb.Help == "" || kb.Section == "" {
+				continue
+			}
+			gk := kbGroup{kb.Help, kb.Section}
+			// Avoid duplicate keys for the same help in the same section.
+			found := false
+			for _, k := range groups[gk] {
+				if k == kb.Key {
+					found = true
+					break
+				}
+			}
+			if !found {
+				groups[gk] = append(groups[gk], kb.Key)
+			}
+		}
+	}
+	addKeys(GlobalKeys)
+	for _, km := range ModeKeys {
+		addKeys(km)
+	}
+
+	// Build the final sections.
+	var sections []HelpSection
+	for _, seed := range seeds {
+		section := HelpSection{Title: seed.Title}
+		// Map to track entries by description for merging.
+		entryByDesc := make(map[TextKey]*HelpEntry)
+
+		for i := range seed.Entries {
+			e := &seed.Entries[i]
+			section.Entries = append(section.Entries, *e)
+			entryByDesc[e.Description] = &section.Entries[len(section.Entries)-1]
+		}
+
+		// Find groups for this section.
+		var sectionGK []kbGroup
+		for gk := range groups {
+			if gk.Section == seed.Title {
+				sectionGK = append(sectionGK, gk)
+			}
+		}
+		// Sort for deterministic output.
+		sort.Slice(sectionGK, func(i, j int) bool {
+			return string(sectionGK[i].Help) < string(sectionGK[j].Help)
+		})
+
+		for _, gk := range sectionGK {
+			ks := groups[gk]
+			sort.Strings(ks)
+			keyStr := strings.Join(ks, "/")
+
+			if e, ok := entryByDesc[gk.Help]; ok {
+				// Merge keys.
+				if e.Key != "" {
+					e.Key = keyStr + " / " + e.Key
+				} else {
+					e.Key = keyStr
+				}
+			} else {
+				// Add new entry.
+				newEntry := HelpEntry{
+					Key:         keyStr,
+					Description: gk.Help,
+				}
+				section.Entries = append(section.Entries, newEntry)
+				entryByDesc[gk.Help] = &section.Entries[len(section.Entries)-1]
+			}
+			// Mark as used.
+			delete(groups, gk)
+		}
+		sections = append(sections, section)
+	}
+
+	// Add any remaining sections that were in KeyMap but not in seeds.
+	remainingSections := make(map[string]bool)
+	for gk := range groups {
+		remainingSections[gk.Section] = true
+	}
+	var sortedRemaining []string
+	for s := range remainingSections {
+		sortedRemaining = append(sortedRemaining, s)
+	}
+	sort.Strings(sortedRemaining)
+
+	for _, sTitle := range sortedRemaining {
+		section := HelpSection{Title: sTitle}
+		var sectionGK []kbGroup
+		for gk := range groups {
+			if gk.Section == sTitle {
+				sectionGK = append(sectionGK, gk)
+			}
+		}
+		sort.Slice(sectionGK, func(i, j int) bool {
+			return string(sectionGK[i].Help) < string(sectionGK[j].Help)
+		})
+		for _, gk := range sectionGK {
+			ks := groups[gk]
+			sort.Strings(ks)
+			section.Entries = append(section.Entries, HelpEntry{
+				Key:         strings.Join(ks, "/"),
+				Description: gk.Help,
+			})
+		}
+		sections = append(sections, section)
+	}
+
+	return sections
+}
+
+func groupBindings(keys KeyMap) []HelpEntry {
+	groups := make(map[TextKey][]string)
+	var ordered []TextKey
+	for _, k := range sortedKeyMapKeys(keys) {
+		kb := keys[k]
+		if kb.Help == "" || kb.Section == "" {
+			continue
+		}
+		if _, ok := groups[kb.Help]; !ok {
+			ordered = append(ordered, kb.Help)
+		}
+		groups[kb.Help] = append(groups[kb.Help], kb.Key)
+	}
+
+	var entries []HelpEntry
+	for _, h := range ordered {
+		ks := groups[h]
+		sort.Strings(ks)
+		entries = append(entries, HelpEntry{
+			Key:         strings.Join(ks, "/"),
+			Description: h,
+		})
+	}
+	return entries
+}
+
+func sortedKeyMapKeys(m KeyMap) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func ensureHelpBuilt() {
+	if len(allHelpSections) == 0 {
+		allHelpSections = buildAllHelpSections()
+	}
 }
 
 var helpExamples = []string{
@@ -155,6 +306,7 @@ var helpExamples = []string{
 // This gives users a fast overview of what commands exist without reading
 // every detail section.
 func commandsSection() HelpSection {
+	ensureHelpBuilt()
 	seen := map[string]bool{}
 	var entries []HelpEntry
 	for _, section := range allHelpSections {
@@ -199,6 +351,7 @@ func matchHelpQuery(q string, e HelpEntry, text TextCatalog) bool {
 // Sections with no matching entries are omitted.
 // A "Commands" overview section is always prepended first.
 func FilterHelpSections(q string, text TextCatalog) []HelpSection {
+	ensureHelpBuilt()
 	cmds := commandsSection()
 	if q == "" {
 		return append([]HelpSection{cmds}, allHelpSections...)
@@ -229,6 +382,7 @@ func FilterHelpSections(q string, text TextCatalog) []HelpSection {
 }
 
 func RenderHelp(text TextCatalog) string {
+	ensureHelpBuilt()
 	var b strings.Builder
 	for _, section := range allHelpSections {
 		b.WriteString(section.Title + "\n\n")
@@ -276,171 +430,18 @@ func RenderContextHelp(text TextCatalog, mode viewMode) string {
 }
 
 func contextHelpEntries(mode viewMode) []HelpEntry {
-	switch mode {
-	case viewList:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyColLeft + "/" + keyColRight + " or left/right arrows", Description: TextHelpMoveColumns},
-			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
-			{Key: keySearch + "term", Description: TextHelpFilterPatents},
-			{Key: keyReviewState, Description: TextHelpCyclePatentReviewState},
-			{Key: keyCites, Description: TextHelpJumpCitations},
-			{Key: keyCitedBy, Description: TextHelpJumpCitedBy},
-			{Key: keyClassification, Description: TextHelpJumpClassification},
-			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewDetail:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
-			{Key: keyCites, Description: TextHelpJumpCitations},
-			{Key: keyCitedBy, Description: TextHelpJumpCitedBy},
-			{Key: keyClassification, Description: TextHelpJumpClassification},
-			{Key: keyProjectInfo, Description: TextHelpProjectInfo},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewCites, viewCitedBy:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
-			{Key: "10" + keyGoto, Description: TextHelpMoveList},
-			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
-			{Key: keyYes, Description: TextHelpRefAdd},
-			{Key: keyIgnore, Description: TextHelpReviewIgnored},
-			{Key: keyUnreview, Description: TextHelpReviewUnderReview},
-			{Key: keyReviewState, Description: TextHelpReviewStateCycle},
-			{Key: keyRefs, Description: TextHelpCitationRefreshSelected},
-			{Key: keyRefreshAll, Description: TextHelpCitationRefreshAll},
-			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewReview:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
-			{Key: "10" + keyGoto, Description: TextHelpMoveList},
-			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
-			{Key: keyYes, Description: TextHelpRefAdd},
-			{Key: keyIgnore, Description: TextHelpReviewIgnored},
-			{Key: keyUnreview, Description: TextHelpReviewUnderReview},
-			{Key: keyReviewState, Description: TextHelpReviewStateCycle},
-			{Key: keyWeb, Description: TextHelpOpenBrowser},
-			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewClassifications:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: "10" + keyVimDown + "/" + "10" + keyVimUp, Description: TextHelpMoveList},
-			{Key: "10" + keyGoto, Description: TextHelpMoveList},
-			{Key: keyEnter + " / " + keyOpen, Description: TextHelpOpenSelected},
-			{Key: keyCtrlF + "/" + keyCtrlD, Description: TextHelpJumpViews},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewPreview:
-		return []HelpEntry{
-			{Key: keyYes, Description: TextHelpRefAdd},
-			{Key: keyIgnore, Description: TextHelpReviewIgnored},
-			{Key: keyUnreview, Description: TextHelpReviewUnderReview},
-			{Key: keyNo + "/" + keyEsc, Description: TextHelpBackOrQuit},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-		}
-	case viewInventors:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyEnter + " or " + keyOpen, Description: TextHelpOpenSelected},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewText, viewRefs, viewNotes, viewAI:
-		return []HelpEntry{
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewFamily:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyEnter, Description: TextHelpOpenSelected},
-			{Key: keyDelete, Description: TextHelpFamilyRemoveEdge},
-			{Key: keyRefs, Description: TextHelpFamilyPull},
-			{Key: "+", Description: TextHelpFamilyAddChild},
-			{Key: keyFamily, Command: keyCommand + commandFamily + " parent|child <num> [type]", Description: TextHelpFamilyAdd},
-			{Command: keyCommand + commandFamily + " remove <num>", Description: TextHelpFamilyRemove},
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewSplash:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyEnter, Description: TextHelpSplashSelect},
-			{Key: keyEvents, Description: TextHelpSplashEvents},
-			{Key: keyInvoices, Description: TextHelpSplashInvoices},
-			{Key: keyIDS, Description: TextHelpSplashIDS},
-			{Key: keyNew, Description: TextHelpSplashNew},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewProjectInfo:
-		return []HelpEntry{
-			{Key: "s / m / c / S", Description: TextHelpProjectInfoKeys},
-			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewProjectEvents:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyDelete, Description: TextHelpDeleteSelected},
-			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewProjectInvoices:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyMarkPaid, Description: TextHelpMarkPaid},
-			{Key: keyDelete, Description: TextHelpDeleteSelected},
-			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	case viewProjectIDS:
-		return []HelpEntry{
-			{Key: keyVimDown + "/" + keyVimUp + " or arrow keys", Description: TextHelpMoveList},
-			{Key: keyDelete, Description: TextHelpDeleteSelected},
-			{Key: keyEsc + "/" + keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
-	default:
-		return []HelpEntry{
-			{Key: keyHelp, Description: TextHelpShortcutShowHelp},
-			{Key: keyBack, Description: TextHelpBackOrQuit},
-			{Key: keyQuit, Description: TextHelpQuitApp},
-		}
+	active := make(KeyMap)
+	for k, v := range GlobalKeys {
+		active[k] = v
 	}
+	for k, v := range ModeKeys[mode] {
+		active[k] = v
+	}
+	return groupBindings(active)
 }
 
 func globalHelpEntries() []HelpEntry {
-	return []HelpEntry{
-		{Command: keyCommand + commandHelp, Description: TextHelpShowHelp},
-		{Command: keyCommand + commandVersion, Description: TextHelpShowVersion},
-		{Command: keyCommand + commandKeymap, Description: TextHelpExportKeymap},
-		{Command: keyCommand + commandRefresh + " " + refreshTargetCitedBy, Description: TextHelpRefreshCitedBy},
-		{Command: keyCommand + commandRefresh + " " + refreshTargetCitations, Description: TextHelpRefreshCitations},
-		{Command: keyCommand + commandRefreshRefsDetails, Description: TextHelpRefreshDetails},
-		{Command: keyCommand + commandBrowser, Description: TextHelpOpenBrowser},
-	}
+	return groupBindings(GlobalKeys)
 }
 
 func writeHelpEntries(b *strings.Builder, entries []HelpEntry, text TextCatalog) {

@@ -49,6 +49,8 @@ func ParseCommand(input string) Command {
 	case "th":
 		name = commandTag
 		args = append([]string{tagSubHelp}, args...)
+	case "co":
+		name = commandCountry
 	}
 
 	return Command{Name: name, Args: args, Raw: input}

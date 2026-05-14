@@ -46,6 +46,11 @@ const (
 	commandFamilyPull         = "pull"
 	commandTag                = "tag"
 
+	// :country subcommands
+	commandCountry           = "country"
+	countrySubList           = "list"
+	countrySubHelp           = "help"
+
 	// :tag subcommands
 	tagSubAdd    = "add"
 	tagSubList   = "list"
@@ -174,7 +179,8 @@ const (
 	keyJump              = "f"
 	keyFamily            = "F"
 	keyProject           = "P"
-	keyTag               = "T"
+	keyTag        = "T"
+	keyCountry    = "C"
 	keyFirstClaim        = "1"
 	keyHelp              = "?"
 	keyYes               = "y"
@@ -221,6 +227,7 @@ const (
 	jumpLabelLatestAssignment = "L"
 	jumpLabelImportSource     = "v"
 	jumpLabelTags             = "t"
+	jumpLabelCountry          = "o"
 
 	inventorJumpNumberLabels = "123456789"
 

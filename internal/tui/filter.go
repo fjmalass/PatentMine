@@ -208,6 +208,38 @@ func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	return m.refreshList()
 }
 
+func (m *Model) countryCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.countrySelectSelected = 0
+		if m.countryFilter != EmptyFilter {
+			for i, c := range m.selectableCountries() {
+				if c == m.countryFilter {
+					m.countrySelectSelected = i
+					break
+				}
+			}
+		}
+		return m.navigateTo(viewCountrySelect), nil
+	}
+
+	sub := strings.ToLower(args[0])
+	switch sub {
+	case countrySubList, countrySubHelp:
+		m.countrySelectSelected = 0
+		if m.countryFilter != EmptyFilter {
+			for i, c := range m.selectableCountries() {
+				if c == m.countryFilter {
+					m.countrySelectSelected = i
+					break
+				}
+			}
+		}
+		return m.navigateTo(viewCountrySelect), nil
+	default:
+		return m.countryFilterCommand(args)
+	}
+}
+
 // sortCommand handles :sort <col>[,<col2>] [asc|desc].
 func (m *Model) sortCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
@@ -285,6 +317,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		if code == "" || code == "-" {
 			return m, nil
 		}
+		m.backStack = append(m.backStack, m.snapshot())
 		m.countryFilter = code
 		m.reviewStateFilter = domain.ReviewStateStored
 		m.message = fmt.Sprintf("showing stored patents from %s", code)
@@ -321,6 +354,22 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		return m.navigateTo(viewDateEdit), nil
 	case detailActionStatic:
 		return m, nil
+	case detailActionReviewState:
+		m.reviewStateSelected = 0
+		if m.current.ReviewState != "" {
+			for i, s := range m.selectableReviewStates() {
+				if s == m.current.ReviewState {
+					m.reviewStateSelected = i
+					break
+				}
+			}
+		}
+		return m.navigateTo(viewReviewStateSelect), nil
+	case detailActionTags:
+		if m.current.Number != "" {
+			return m.navigateTo(viewTagSelect).reloadAvailableTags(), nil
+		}
+		return m, nil
 	}
 	if strings.TrimSpace(field.value) == "" || field.value == m.text.T(TextValueUnknown) {
 		return m, nil
@@ -352,6 +401,51 @@ func (m *Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(TextDetailInventor), inventor)
 	return updated, cmd
 }
+
+// filterBySelectedClassification filters the patent list by the classification code selected in the classification popup.
+func (m *Model) filterBySelectedClassification() (tea.Model, tea.Cmd) {
+	classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
+	if err != nil || len(classifications) == 0 {
+		return m, nil
+	}
+	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
+	code := classifications[selected].Code
+
+	m.backStack = append(m.backStack, m.snapshot())
+	m.classFilters = []string{code}
+	m.classFilterOp = domain.FilterOpAnd
+	m.classFilter = code
+
+	// Apply review state filter if selected in detail popup
+	stateLabel := ""
+	if m.mode == viewClassificationDetail {
+		switch m.classificationDetailSelected {
+		case 1:
+			m.reviewStateFilter = domain.ReviewStateStored
+			stateLabel = " (stored)"
+		case 2:
+			m.reviewStateFilter = domain.ReviewStateUnderReview
+			stateLabel = " (under review)"
+		case 3:
+			m.reviewStateFilter = domain.ReviewStateIgnored
+			stateLabel = " (ignored)"
+		case 4:
+			m.reviewStateFilter = domain.ReviewStateCached
+			stateLabel = " (cached)"
+		default:
+			m.reviewStateFilter = reviewStateFilterNone // All states
+			stateLabel = " (all)"
+		}
+	}
+
+	m.setMode(viewList)
+	model, cmd := m.refreshList()
+	updated := model.(*Model)
+	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(TextDetailClassification), code+stateLabel)
+	return updated, cmd
+}
+
+
 
 // normalizeSortCol maps user-supplied column name aliases to canonical domain constants.
 func normalizeSortCol(col string) string {

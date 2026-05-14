@@ -334,6 +334,14 @@ type Classification struct {
 	Description  string
 }
 
+type ClassificationStats struct {
+	Total       int
+	Stored      int
+	UnderReview int
+	Ignored     int
+	Cached      int
+}
+
 type ResearchNote struct {
 	ID           int64
 	PatentNumber string

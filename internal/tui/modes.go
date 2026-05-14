@@ -20,6 +20,8 @@ var allViewModes = []viewMode{
 	viewAI,
 	viewHelp,
 	viewHelpPopup,
+	viewKeymap,
+	viewKeymapPopup,
 	viewPreview,
 	viewReview,
 	viewConfirmDelete,
@@ -112,9 +114,21 @@ var modeSpecs = map[viewMode]modeSpec{
 	viewHelp: {
 		title:      "Help",
 		themeColor: ColorThemeHelp,
+		helpHint:   "j/k: scroll · pgdn/pgup: page · /: search · esc: back",
 	},
 	viewHelpPopup: {
 		title:      "Help",
+		themeColor: ColorThemeHelp,
+		isOverlay:  true,
+		helpHint:   "j/k: scroll · /: search · esc: back",
+	},
+	viewKeymap: {
+		title:      "Keymap",
+		themeColor: ColorThemeHelp,
+		helpHint:   "j/k: scroll · pgdn/pgup: page · /: search · esc: back",
+	},
+	viewKeymapPopup: {
+		title:      "Keymap",
 		themeColor: ColorThemeHelp,
 		isOverlay:  true,
 		helpHint:   "j/k: scroll · /: search · esc: back",
@@ -139,7 +153,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Classification Detail",
 		themeColor: ColorThemeClassifications,
 		isOverlay:  true,
-		helpHint:   "enter: filter · esc: back",
+		helpHint:   "j/k: select count · enter: filter patents · esc: back",
 	},
 	viewInventors: {
 		title:      "Inventors",
@@ -240,6 +254,12 @@ var modeSpecs = map[viewMode]modeSpec{
 		themeColor: ColorThemeTags,
 		isOverlay:  true,
 		helpHint:   "j/k: move · space: toggle · enter: save & close · esc: cancel",
+	},
+	viewCountrySelect: {
+		title:      "Select Country",
+		themeColor: ColorThemeList,
+		isOverlay:  true,
+		helpHint:   "j/k: move · enter: filter by country · esc: back",
 	},
 }
 

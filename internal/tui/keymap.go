@@ -17,15 +17,17 @@ type KeyBinding struct {
 	Key     string
 	Label   string
 	Handler KeyHandler
-	DualUse bool // intentional global key shadow, suppress warning
+	DualUse bool    // intentional global key shadow, suppress warning
+	Section string  // Help section title (e.g., "Navigation", "Patents", "Views")
+	Help    TextKey // TextKey for the help description
 }
 
 type KeyMap map[string]KeyBinding
 
 var (
-	globalKeys = KeyMap{}
-	modeKeys   = map[viewMode]KeyMap{}
-	detailFieldLabels []detailFieldLabelReg
+	GlobalKeys        = KeyMap{}
+	ModeKeys          = map[viewMode]KeyMap{}
+	DetailFieldLabels []detailFieldLabelReg
 )
 
 type detailFieldLabelReg struct {
@@ -35,12 +37,12 @@ type detailFieldLabelReg struct {
 }
 
 func registerDetailField(jumpLabel string, textKey TextKey, optional bool) {
-	for _, r := range detailFieldLabels {
+	for _, r := range DetailFieldLabels {
 		if r.JumpLabel == jumpLabel {
 			panic(fmt.Sprintf("detail field jump label %q already registered for %q", jumpLabel, r.TextKey))
 		}
 	}
-	detailFieldLabels = append(detailFieldLabels, detailFieldLabelReg{
+	DetailFieldLabels = append(DetailFieldLabels, detailFieldLabelReg{
 		JumpLabel: jumpLabel,
 		TextKey:   textKey,
 		Optional:  optional,
@@ -49,7 +51,7 @@ func registerDetailField(jumpLabel string, textKey TextKey, optional bool) {
 
 func validateDetailFieldLabels() error {
 	var errs []error
-	for _, reg := range detailFieldLabels {
+	for _, reg := range DetailFieldLabels {
 		if reg.JumpLabel == "" {
 			continue
 		}
@@ -59,8 +61,8 @@ func validateDetailFieldLabels() error {
 
 // DetailFieldLabelRegistrations returns registered detail field jump labels for test validation.
 func DetailFieldLabelRegistrations() []detailFieldLabelReg {
-	r := make([]detailFieldLabelReg, len(detailFieldLabels))
-	copy(r, detailFieldLabels)
+	r := make([]detailFieldLabelReg, len(DetailFieldLabels))
+	copy(r, DetailFieldLabels)
 	return r
 }
 
@@ -80,15 +82,15 @@ type keymapCSVRow struct {
 
 func exportKeymapCSV(modePath, keyPath string) error {
 	var rows []keymapCSVRow
-	for k, kb := range globalKeys {
+	for k, kb := range GlobalKeys {
 		rows = append(rows, keymapCSVRow{Mode: keymapGlobalMode, Key: k, Label: kb.Label})
 	}
-	for m, km := range modeKeys {
+	for m, km := range ModeKeys {
 		for k, kb := range km {
 			rows = append(rows, keymapCSVRow{Mode: string(m), Key: k, Label: kb.Label})
 		}
 	}
-	for _, reg := range detailFieldLabels {
+	for _, reg := range DetailFieldLabels {
 		rows = append(rows, keymapCSVRow{Mode: keymapDetailMode, Key: reg.JumpLabel, Label: string(reg.TextKey)})
 	}
 
@@ -169,22 +171,22 @@ func writeCSV(path string, rows []keymapCSVRow, less func(i, j int) bool) error 
 	return nil
 }
 
-func registerKey(key string, modes []viewMode, label string, handler KeyHandler, dualUse bool) {
-	kb := KeyBinding{Key: key, Label: label, Handler: handler, DualUse: dualUse}
+func registerKey(key string, modes []viewMode, label string, handler KeyHandler, dualUse bool, section string, help TextKey) {
+	kb := KeyBinding{Key: key, Label: label, Handler: handler, DualUse: dualUse, Section: section, Help: help}
 	if modes == nil {
-		if _, dup := globalKeys[key]; dup {
+		if _, dup := GlobalKeys[key]; dup {
 			panic(fmt.Sprintf("global key collision: %q already registered", key))
 		}
-		globalKeys[key] = kb
+		GlobalKeys[key] = kb
 	} else {
 		for _, mode := range modes {
-			if modeKeys[mode] == nil {
-				modeKeys[mode] = KeyMap{}
+			if ModeKeys[mode] == nil {
+				ModeKeys[mode] = KeyMap{}
 			}
-			if _, dup := modeKeys[mode][key]; dup {
+			if _, dup := ModeKeys[mode][key]; dup {
 				panic(fmt.Sprintf("mode %q key collision: %q already registered", mode, key))
 			}
-			modeKeys[mode][key] = kb
+			ModeKeys[mode][key] = kb
 		}
 	}
 }
@@ -192,7 +194,7 @@ func registerKey(key string, modes []viewMode, label string, handler KeyHandler,
 // call at startup by init() to verify no collisions within any mode
 func validateKeyBindings() error {
 	var errs []error
-	for mode, km := range modeKeys {
+	for mode, km := range ModeKeys {
 		seen := map[string]string{}
 		for key, kb := range km {
 			if prev, ok := seen[key]; ok {
@@ -200,7 +202,7 @@ func validateKeyBindings() error {
 			}
 			seen[key] = kb.Label
 			if !kb.DualUse {
-				if gb, exists := globalKeys[key]; exists {
+				if gb, exists := GlobalKeys[key]; exists {
 					errs = append(errs, fmt.Errorf("key %q in mode %q (%q) shadows global binding (%q). Set DualUse=true if intentional.", key, mode, kb.Label, gb.Label))
 				}
 			}
@@ -212,10 +214,10 @@ func validateKeyBindings() error {
 func (m *Model) setMode(mode viewMode) {
 	m.mode = mode
 	m.activeKeys = make(KeyMap)
-	for k, v := range globalKeys {
+	for k, v := range GlobalKeys {
 		m.activeKeys[k] = v
 	}
-	for k, v := range modeKeys[mode] {
+	for k, v := range ModeKeys[mode] {
 		m.activeKeys[k] = v
 	}
 	if spec, ok := modeSpecs[mode]; ok && spec.onActivate != nil {
@@ -244,64 +246,66 @@ func init() {
 	registerDetailField(jumpLabelSource, TextDetailSource, false)
 	registerDetailField(jumpLabelStoredLocal, TextDetailStoredLocal, false)
 	registerDetailField(jumpLabelUpdated, TextDetailUpdated, false)
+	registerDetailField(jumpLabelCountry, TextDetailCountry, true)
 
-	registerKey(keyVimDown, nil, "Move down", nil, false)
-	registerKey(keyVimUp, nil, "Move up", nil, false)
-	registerKey(keyGoto, nil, "Go to (gg=top)", nil, false)
-	registerKey(keyBottom, nil, "Go to last", nil, false)
-	registerKey(keyBack, nil, "Go back", nil, false)
-	registerKey(keyQuit, nil, "Quit", nil, false)
-	registerKey(keyCommand, nil, "Command bar", nil, false)
-	registerKey(keySearch, nil, "Search", nil, false)
-	registerKey(keyHelp, nil, "Help", nil, false)
-	registerKey(keyText, nil, "Text view", nil, false)
-	registerKey(keyTag, nil, "Tag selector", nil, false)
-	registerKey(keyCites, nil, "Citations view", nil, false)
-	registerKey(keyCitedBy, nil, "Cited-by view", nil, false)
-	registerKey(keyFamily, nil, "Family view", nil, false)
-	registerKey(keyClassification, nil, "Classifications view", nil, false)
-	registerKey(keyNotes, nil, "Notes / search next / cancel", nil, false) // "n" shared by keyNotes/keyNo/keyNew
-	registerKey(keyRefs, nil, "References / refresh", nil, false)
-	registerKey(keyAI, nil, "AI view", nil, false)
-	registerKey(keyWeb, nil, "Open browser", nil, false)
-	registerKey(keyDelete, nil, "Delete", nil, false)
-	registerKey(keyReviewState, nil, "ReviewState", nil, false)
-	registerKey(keyOpen, nil, "Open / select", nil, false)
-	registerKey(keyFirstClaim, nil, "First claim", nil, false)
-	registerKey(keyEditSummary, nil, "Abstract / summary", nil, false)
-	registerKey(keyJump, nil, "Toggle jump mode", nil, false)
-	registerKey(keyProject, nil, "Project splash", nil, false)
-	registerKey(keyIDS, nil, "IDS view", nil, false)
-	registerKey(keyAddToIDS, nil, "Add to IDS", nil, false)
-	registerKey(keyNoteEdit, nil, "Note editor", nil, false)
-	registerKey(keyRefreshAll, nil, "Refresh all", nil, false)
-	registerKey(keyYes, nil, "Yes / store", nil, false)
-	registerKey(keyEvents, nil, "Project events", nil, false)
-	registerKey(keyInvoices, nil, "Project invoices / ignore", nil, false) // "i" shared by keyInvoices/keyIgnore/keyProjectInfo
-	registerKey(keyMarkPaid, nil, "Mark paid", nil, false)
-	registerKey(keyUnreview, nil, "Under review", nil, false)
+	registerKey(keyVimDown, nil, "Move down", nil, false, "Navigation", TextHelpMoveList)
+	registerKey(keyVimUp, nil, "Move up", nil, false, "Navigation", TextHelpMoveList)
+	registerKey(keyGoto, nil, "Go to (gg=top)", nil, false, "", "")
+	registerKey(keyBottom, nil, "Go to last", nil, false, "", "")
+	registerKey(keyBack, nil, "Go back", nil, false, "Navigation", TextHelpBackOrQuit)
+	registerKey(keyQuit, nil, "Quit", nil, false, "Navigation", TextHelpQuitApp)
+	registerKey(keyCommand, nil, "Command bar", nil, false, "Navigation", "")
+	registerKey(keySearch, nil, "Search", nil, false, "Navigation", TextHelpSearchHint)
+	registerKey(keyHelp, nil, "Help", nil, false, "Navigation", TextHelpShortcutShowHelp)
+	registerKey(keyText, nil, "Text view", nil, false, "Views", TextHelpJumpText)
+	registerKey(keyTag, nil, "Tag selector", nil, false, "Views", TextHelpJumpTags)
+	registerKey(keyCites, nil, "Citations view", nil, false, "Views", TextHelpJumpCitations)
+	registerKey(keyCitedBy, nil, "Cited-by view", nil, false, "Views", TextHelpJumpCitedBy)
+	registerKey(keyFamily, nil, "Family view", nil, false, "Views", TextHelpFamilyView)
+	registerKey(keyClassification, nil, "Classifications view", nil, false, "Views", TextHelpJumpClassification)
+	registerKey(keyNotes, nil, "Notes / search next / cancel", nil, false, "Views", TextHelpJumpNotes) // "n" shared by keyNotes/keyNo/keyNew
+	registerKey(keyRefs, nil, "References / refresh", nil, false, "Views", TextHelpJumpRefs)
+	registerKey(keyAI, nil, "AI view", nil, false, "Views", TextHelpJumpAI)
+	registerKey(keyWeb, nil, "Open browser", nil, false, "General", TextHelpOpenBrowser)
+	registerKey(keyDelete, nil, "Delete", nil, false, "Patents", TextHelpDeletePatent)
+	registerKey(keyReviewState, nil, "ReviewState", nil, false, "Patents", TextHelpCyclePatentReviewState)
+	registerKey(keyCountry, nil, "Country filter", nil, false, "Patents", TextHelpCountryFilter)
+	registerKey(keyOpen, nil, "Open / select", nil, false, "Navigation", TextHelpOpenSelected)
+	registerKey(keyFirstClaim, nil, "First claim", nil, false, "Views", "")
+	registerKey(keyEditSummary, nil, "Abstract / summary", nil, false, "Views", "")
+	registerKey(keyJump, nil, "Toggle jump mode", nil, false, "Navigation", TextNavJump)
+	registerKey(keyProject, nil, "Project splash", nil, false, "Navigation", TextHelpJumpProject)
+	registerKey(keyIDS, nil, "IDS view", nil, false, "Views", TextHelpProjectIDS)
+	registerKey(keyAddToIDS, nil, "Add to IDS", nil, false, "Patents", TextHelpProjectIDSAdd)
+	registerKey(keyNoteEdit, nil, "Note editor", nil, false, "Patents", TextHelpNote)
+	registerKey(keyRefreshAll, nil, "Refresh all", nil, false, "General", "")
+	registerKey(keyYes, nil, "Yes / store", nil, false, "General", "")
+	registerKey(keyEvents, nil, "Project events", nil, false, "Views", TextHelpProjectEvents)
+	registerKey(keyInvoices, nil, "Project invoices / ignore", nil, false, "Views", TextHelpProjectInvoices) // "i" shared by keyInvoices/keyIgnore/keyProjectInfo
+	registerKey(keyMarkPaid, nil, "Mark paid", nil, false, "General", TextHelpMarkPaid)
+	registerKey(keyUnreview, nil, "Under review", nil, false, "Patents", "")
 
 	// viewProjectInfo overrides
-	registerKey(keyEditAppStatus, []viewMode{viewProjectInfo}, "Edit summary status", nil, true)
-	registerKey(keyEditComment, []viewMode{viewProjectInfo}, "Edit comment", nil, true)
-	registerKey(keyEditProjectStatus, []viewMode{viewProjectInfo}, "Edit project status", nil, false)
+	registerKey(keyEditAppStatus, []viewMode{viewProjectInfo}, "Edit summary status", nil, true, "Project", TextHelpProjectSummaryStatus)
+	registerKey(keyEditComment, []viewMode{viewProjectInfo}, "Edit comment", nil, true, "Project", TextHelpProjectComment)
+	registerKey(keyEditProjectStatus, []viewMode{viewProjectInfo}, "Edit project status", nil, false, "Project", TextHelpProjectStatus)
 
 	// viewIDSEdit overrides
-	registerKey("s", []viewMode{viewIDSEdit}, "Cycle IDS status", nil, true)
-	registerKey("n", []viewMode{viewIDSEdit}, "Edit note", nil, true)
-	registerKey("k", []viewMode{viewIDSEdit}, "Edit kind code", nil, true)
-	registerKey("c", []viewMode{viewIDSEdit}, "Edit country code", nil, true)
-	registerKey("p", []viewMode{viewIDSEdit}, "Edit passages", nil, true)
-	registerKey("f", []viewMode{viewIDSEdit}, "Toggle in-full", nil, true)
+	registerKey("s", []viewMode{viewIDSEdit}, "Cycle IDS status", nil, true, "IDS", "")
+	registerKey("n", []viewMode{viewIDSEdit}, "Edit note", nil, true, "IDS", "")
+	registerKey("k", []viewMode{viewIDSEdit}, "Edit kind code", nil, true, "IDS", "")
+	registerKey("c", []viewMode{viewIDSEdit}, "Edit country code", nil, true, "IDS", "")
+	registerKey("p", []viewMode{viewIDSEdit}, "Edit passages", nil, true, "IDS", "")
+	registerKey("f", []viewMode{viewIDSEdit}, "Toggle in-full", nil, true, "IDS", "")
 
 	// viewTagSelect
-	registerKey(" ", []viewMode{viewTagSelect}, "Toggle tag", nil, true)
-	registerKey("a", []viewMode{viewTagSelect}, "Add tag", nil, true)
-	registerKey(keyEnter, []viewMode{viewTagSelect}, "Save & close", nil, false)
-	registerKey("ctrl+s", []viewMode{viewTagSelect}, "Save & close", nil, false)
+	registerKey(" ", []viewMode{viewTagSelect}, "Toggle tag", nil, true, "Tags", "")
+	registerKey("a", []viewMode{viewTagSelect}, "Add tag", nil, true, "Tags", "")
+	registerKey(keyEnter, []viewMode{viewTagSelect}, "Save & close", nil, false, "Tags", "")
+	registerKey("ctrl+s", []viewMode{viewTagSelect}, "Save & close", nil, false, "Tags", "")
 
 	// viewProjectTags
-	registerKey("r", []viewMode{viewProjectTags}, "Rename tag", nil, true)
+	registerKey("r", []viewMode{viewProjectTags}, "Rename tag", nil, true, "Tags", "")
 
 	if err := validateKeyBindings(); err != nil {
 		panic(fmt.Sprintf("key binding validation failed:\n%s", err))

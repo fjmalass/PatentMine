@@ -109,10 +109,11 @@ const (
 	TextHelpJumpText             TextKey = "help.jump.text"
 	TextHelpJumpNotes            TextKey = "help.jump.notes"
 	TextHelpJumpRefs             TextKey = "help.jump.refs"
-	TextHelpJumpAI               TextKey = "help.jump.ai"
-	TextHelpJumpWeb              TextKey = "help.jump.web"
-	TextHelpJumpProject          TextKey = "help.jump.project"
-	TextHelpProjectID            TextKey = "help.project.id"
+	TextHelpJumpAI                  TextKey = "help.jump.ai"
+	TextHelpJumpWeb                 TextKey = "help.jump.web"
+	TextHelpJumpTags                TextKey = "help.jump.tags"
+	TextHelpJumpProject             TextKey = "help.jump.project"
+	TextHelpProjectID               TextKey = "help.project.id"
 	TextHelpProjectList          TextKey = "help.project.list"
 	TextHelpProjectCreate        TextKey = "help.project.create"
 	TextHelpProjectSwitch        TextKey = "help.project.switch"
@@ -137,6 +138,7 @@ const (
 	TextHelpClass                TextKey = "help.class"
 	TextHelpInventorFilter       TextKey = "help.inventorfilter"
 	TextHelpReviewStateFilter TextKey = "help.filter_review_state"
+	TextHelpCountryFilter        TextKey = "help.filter.country"
 	TextHelpFamilyAdd            TextKey = "help.family.add"
 	TextHelpFamilyRemove         TextKey = "help.family.remove"
 	TextHelpFamilyView           TextKey = "help.family.view"
@@ -315,6 +317,7 @@ func EnglishText() TextCatalog {
 		TextHelpJumpRefs:                "Jump to references",
 		TextHelpJumpAI:                  "Jump to AI artifacts",
 		TextHelpJumpWeb:                 "Open in system browser",
+		TextHelpJumpTags:                "Jump to tag selector",
 		TextHelpJumpProject:             "Jump to project selection",
 		TextHelpProjectID:               "Print the current project ID and name as a status message.",
 		TextHelpProjectList:             "List all projects.",
@@ -341,6 +344,7 @@ func EnglishText() TextCatalog {
 		TextHelpClass:                   "Filter by classification prefix. Supports && (AND) and || (OR): H04N && G06F or H04N || G06F. Clear with :classfilter clear.",
 		TextHelpInventorFilter:          "Filter the patent list by inventor name. Clear with :inventorfilter clear.",
 		TextHelpReviewStateFilter: "Filter by review state: stored (default), ignored, under-review, all.",
+		TextHelpCountryFilter:      "Filter the patent list by country code, or list all codes.",
 		TextHelpFamilyAdd:               "Declare a parent or child relationship. Types: continuation, divisional, cip, pct.",
 		TextHelpFamilyRemove:            "Remove a family relationship with the specified patent.",
 		TextHelpFamilyView:              "Open the patent family overlay (parents and children).",

@@ -1061,6 +1061,26 @@ func TestEnterOnClassificationListOpensDetail(t *testing.T) {
 	}
 }
 
+func TestEnterOnClassificationDetailFilters(t *testing.T) {
+	model := &Model{
+		ctx:     t.Context(),
+		text:    EnglishText(),
+		repo:    classificationRepo{classifications: sampleClassifications(3)},
+		mode:    viewClassificationDetail,
+		current: domain.Patent{Number: "US10218760B2"},
+		width:   100,
+		height:  20,
+	}
+	updated, _ := model.Update(teaKey(keyEnter))
+	got := updated.(*Model)
+	if got.mode != viewList {
+		t.Fatalf("expected mode %q, got %q", viewList, got.mode)
+	}
+	if got.classFilter != "H04N21/430" {
+		t.Fatalf("expected class filter %q, got %q", "H04N21/430", got.classFilter)
+	}
+}
+
 func TestOpenKeyOnClassificationListOpensDetail(t *testing.T) {
 	model := &Model{
 		ctx:     t.Context(),
@@ -1385,6 +1405,10 @@ func (r classificationRepo) ListClassifications(context.Context, string, string)
 	return r.classifications, nil
 }
 
+func (r classificationRepo) GetClassificationStats(context.Context, string, string) (domain.ClassificationStats, error) {
+	return domain.ClassificationStats{Total: 10, Stored: 5, UnderReview: 3, Ignored: 2}, nil
+}
+
 type familyRepo struct {
 	stubRepo
 	edges   []domain.FamilyEdge
@@ -1616,6 +1640,9 @@ func (stubRepo) UpdateClassificationDescription(context.Context, string, string,
 func (stubRepo) DeletePatent(context.Context, string, string) error { return nil }
 func (stubRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
 	return nil, nil
+}
+func (stubRepo) GetClassificationStats(context.Context, string, string) (domain.ClassificationStats, error) {
+	return domain.ClassificationStats{}, nil
 }
 func (stubRepo) ListTextSections(context.Context, string, string) ([]domain.PatentTextSection, error) {
 	return nil, nil
