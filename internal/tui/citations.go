@@ -110,6 +110,14 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.patents = patents
+
+	all, err2 := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
+		ReviewStateFilter: reviewStateFilterNone,
+	})
+	if err2 == nil {
+		m.totalPatents = len(all)
+	}
+
 	m.listNumWidth = 6
 	for _, p := range m.patents {
 		w := lipgloss.Width(p.Number)

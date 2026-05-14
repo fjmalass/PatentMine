@@ -19,7 +19,7 @@ var validFamilyRelations = map[string]string{
 	domain.FamilyRelationContinuation: domain.FamilyRelationContinuation,
 	domain.FamilyRelationDivisional:   domain.FamilyRelationDivisional,
 	domain.FamilyRelationCIP:          domain.FamilyRelationCIP,
-	"continuation-in-part":            domain.FamilyRelationCIP,
+	domain.FamilyRelationCIPLong:      domain.FamilyRelationCIP,
 	domain.FamilyRelationPCT:          domain.FamilyRelationPCT,
 }
 
@@ -68,6 +68,12 @@ func (m *Model) buildFamilyTree() []familyNode {
 }
 
 const maxFamilyNodes = 250
+
+const (
+	familyActionParent = "parent"
+	familyActionChild  = "child"
+	familyActionRemove = "remove"
+)
 
 func familyDebugEnabled(logger *slog.Logger) bool {
 	return logger != nil && logger.Enabled(context.Background(), slog.LevelDebug)
@@ -680,7 +686,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 	target := strings.ToUpper(strings.TrimSpace(args[1]))
 
-	if action == "remove" {
+	if action == familyActionRemove {
 		parents, children := m.familyItems()
 		for _, e := range parents {
 			if e.ParentNumber == target {
@@ -708,7 +714,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if action != "parent" && action != "child" {
+	if action != familyActionParent && action != familyActionChild {
 		m.err = "usage: :family parent|child <number> [type] or :family remove <number>"
 		return m, nil
 	}
@@ -744,7 +750,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 
 	var parentNumber, childNumber string
-	if action == "parent" {
+	if action == familyActionParent {
 		parentNumber = target
 		childNumber = m.current.Number
 	} else {

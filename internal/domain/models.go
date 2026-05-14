@@ -59,10 +59,11 @@ const (
 )
 
 const (
-	FamilyRelationContinuation = "continuation"
-	FamilyRelationDivisional   = "divisional"
-	FamilyRelationCIP          = "cip"
-	FamilyRelationPCT          = "pct"
+	FamilyRelationContinuation    = "continuation"
+	FamilyRelationDivisional      = "divisional"
+	FamilyRelationCIP             = "cip"
+	FamilyRelationCIPLong         = "continuation-in-part"
+	FamilyRelationPCT             = "pct"
 )
 
 type FamilyEdge struct {

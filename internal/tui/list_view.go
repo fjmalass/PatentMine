@@ -169,21 +169,38 @@ func (m *Model) viewList() string {
 		return m.text.T(TextListEmpty) + "\n"
 	}
 	var b strings.Builder
+
+	window := pageWindow(m.selected, len(m.patents), m.pageSize())
+	status := pageStatus(m.text.T(TextValuePageStatus), window)
+	hasActiveFilter := m.reviewStateFilter != reviewStateFilterNone ||
+		m.filter != EmptyFilter || m.classFilter != EmptyFilter ||
+		m.countryFilter != EmptyFilter || m.tagFilter != EmptyFilter
+	if hasActiveFilter && m.totalPatents > 0 {
+		status += fmt.Sprintf("  (%d total)", m.totalPatents)
+	}
+
 	var activeFilters []string
+	if m.reviewStateFilter != EmptyFilter && m.reviewStateFilter != reviewStateFilterNone {
+		activeFilters = append(activeFilters, "state:"+m.reviewStateFilter)
+	}
 	if m.filter != EmptyFilter {
 		activeFilters = append(activeFilters, m.filter)
 	}
 	if m.classFilter != EmptyFilter {
 		activeFilters = append(activeFilters, "class:"+m.classFilter)
 	}
+	if m.countryFilter != EmptyFilter {
+		activeFilters = append(activeFilters, "country:"+m.countryFilter)
+	}
+	if m.tagFilter != EmptyFilter {
+		activeFilters = append(activeFilters, "tag:"+m.tagFilter)
+	}
 	if len(activeFilters) > 0 {
-		b.WriteString(m.styleLine(m.text.T(TextListFilter)+": "+strings.Join(activeFilters, " · ")) + "\n")
-		b.WriteString(m.styleLine("") + "\n")
+		status += "  · " + strings.Join(activeFilters, " · ")
 	}
 
-	window := pageWindow(m.selected, len(m.patents), m.pageSize())
-	status := pageStatus(m.text.T(TextValuePageStatus), window)
-	b.WriteString(m.styleLine(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(status)) + "\n")
+	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
+	b.WriteString(m.styleLine(subtleStyle.Render(status)) + "\n")
 	b.WriteString(m.styleLine("") + "\n")
 	idsByPatent := map[string]string{}
 	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {

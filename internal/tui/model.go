@@ -80,6 +80,7 @@ type Model struct {
 	ProjectID                  string
 	mode                       viewMode
 	patents                    []domain.Patent
+	totalPatents               int // unfiltered count for the current project
 	projects                   []domain.Project
 	selected                   int
 	projectSelected            int
@@ -250,8 +251,11 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 
 	patents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
 		ReviewStateFilter: domain.ReviewStateStored,
-		SortColumn:   EmptySortColumn,
-		SortOrder:    EmptySortOrder,
+		SortColumn:        EmptySortColumn,
+		SortOrder:         EmptySortOrder,
+	})
+	allPatents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
+		ReviewStateFilter: storage.ReviewStateFilterNone,
 	})
 	if logger == nil {
 		logger = slog.Default()
@@ -268,12 +272,13 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		spinner:         s,
 		ProjectID:       projectID,
 		mode:            viewSplash,
-		patents:         patents,
-		projectSelected: 0,
-		logger:          logger,
-		activityLog:     activityLog,
-		text:            EnglishText(),
-		reviewStateFilter:    domain.ReviewStateStored,
+		patents:           patents,
+		totalPatents:      len(allPatents),
+		projectSelected:   0,
+		logger:            logger,
+		activityLog:       activityLog,
+		text:              EnglishText(),
+		reviewStateFilter: domain.ReviewStateStored,
 		importCfg:       cfg,
 		version:                version,
 		projectTags:            []domain.TagWithCount{},

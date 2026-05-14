@@ -26,11 +26,12 @@ const (
 	FilterInventor       FilterType = "inventor"
 	FilterCountry        FilterType = "country"
 	FilterClear          FilterType = "clear"
+	FilterDefault        FilterType = "default"
 )
 
 var filterAliases = map[string]FilterType{
-	"review_state":  FilterReviewState,
-	"status":        FilterReviewState,
+	"review_state":   FilterReviewState,
+	"status":         FilterReviewState,
 	"classification": FilterClassification,
 	"class":          FilterClassification,
 	"cpc":            FilterClassification,
@@ -38,7 +39,8 @@ var filterAliases = map[string]FilterType{
 	"country":        FilterCountry,
 	"clear":          FilterClear,
 	"none":           FilterClear,
-	"reset":          FilterClear,
+	"default":        FilterDefault,
+	"reset":          FilterDefault,
 }
 
 var SupportedFilters = map[FilterType]bool{
@@ -51,11 +53,12 @@ var SupportedFilters = map[FilterType]bool{
 
 func SupportedFilterTypes() []string {
 	return []string{
+		"clear",
+		"default",
 		"review_state",
 		"class",
 		"inventor",
 		"country",
-		"clear",
 	}
 }
 
@@ -73,6 +76,11 @@ func ParseFilterType(s string) (FilterType, bool) {
 		return ft, true
 	}
 	return "", false
+}
+
+// isFilterClearArg reports whether args is empty or its first element is "clear" or "none".
+func isFilterClearArg(args []string) bool {
+	return len(args) == 0 || args[0] == "clear" || args[0] == "none"
 }
 
 // filterCommand is the unified :filter gateway.
@@ -99,8 +107,10 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		return m.inventorFilterCommand(args[1:])
 	case FilterCountry:
 		return m.countryFilterCommand(args[1:])
+	case FilterDefault:
+		return m.reviewStateFilterCommand([]string{domain.ReviewStateStored})
 	case FilterClear:
-		m.reviewStateFilter = domain.ReviewStateStored
+		m.reviewStateFilter = reviewStateFilterNone
 		m.classFilters = nil
 		m.classFilterOp = EmptyFilter
 		m.classFilter = EmptyFilter
@@ -119,9 +129,11 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 
 // reviewStateFilterCommand handles :filter review_state <stored|ignored|under-review|cached|none>.
 func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 {
-		m.err = "usage: :filter review_state <stored|ignored|under-review|cached|none>"
-		return m, nil
+	if isFilterClearArg(args) {
+		m.reviewStateFilter = reviewStateFilterNone
+		m.message = "review state filter cleared"
+		m.setMode(viewList)
+		return m.refreshList()
 	}
 	raw := strings.ToLower(args[0])
 	canonical, ok := validReviewStateFilters[raw]
@@ -141,7 +153,7 @@ func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 
 // classCommand handles :classfilter <cpc> [&& <cpc2> | || <cpc2>] and :classfilter clear.
 func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 || args[0] == "clear" {
+	if isFilterClearArg(args) {
 		m.classFilters = nil
 		m.classFilterOp = EmptyFilter
 		m.classFilter = EmptyFilter
@@ -172,7 +184,7 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 
 // inventorFilterCommand handles :inventorfilter <name> and :inventorfilter clear.
 func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 || args[0] == "clear" {
+	if isFilterClearArg(args) {
 		m.filter = EmptyFilter
 		m.message = "inventor filter cleared"
 	} else {
@@ -184,7 +196,7 @@ func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 || args[0] == "clear" {
+	if isFilterClearArg(args) {
 		m.countryFilter = EmptyFilter
 		m.message = "country filter cleared"
 		m.setMode(viewList)
@@ -444,8 +456,6 @@ func (m *Model) filterBySelectedClassification() (tea.Model, tea.Cmd) {
 	updated.message = fmt.Sprintf(updated.text.T(TextMessageFilteredBy), updated.text.T(TextDetailClassification), code+stateLabel)
 	return updated, cmd
 }
-
-
 
 // normalizeSortCol maps user-supplied column name aliases to canonical domain constants.
 func normalizeSortCol(col string) string {

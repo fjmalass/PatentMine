@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/logging"
 )
 
 var usptoBaseURL = "https://api.uspto.gov"
@@ -42,7 +43,7 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 		return domain.PatentBundle{}, fmt.Errorf("could not parse patent number: %s", patentNumber)
 	}
 
-	if os.Getenv("PATENT_DEBUG") == "1" {
+	if os.Getenv(logging.EnvDebug) == "1" {
 		fmt.Fprintf(os.Stderr, "\n[USPTO v%s] Importing %s (Search: %s)\n", USPTOImporterVersion, patentNumber, searchNum)
 	}
 
@@ -477,7 +478,7 @@ func usptoFetchOfficeActionCitations(client *http.Client, apiKey, appNum string,
 		return nil, err
 	}
 
-	if os.Getenv("PATENT_DEBUG") == "1" {
+	if os.Getenv(logging.EnvDebug) == "1" {
 		fmt.Fprintf(os.Stderr, "<<< USPTO OA RESP (%d): %s\n\n", resp.StatusCode, string(body))
 		logger.Debug("uspto.oa_response", "status", resp.StatusCode, "body", string(body))
 	}
@@ -571,13 +572,13 @@ func usptoGET(client *http.Client, apiKey, url string, dest any, logger *slog.Lo
 	for i := 0; i <= maxRetries; i++ {
 		if i > 0 {
 			logger.Warn("uspto.retry", "url", url, "attempt", i, "status", lastStatus)
-			if os.Getenv("PATENT_DEBUG") == "1" {
+			if os.Getenv(logging.EnvDebug) == "1" {
 				fmt.Fprintf(os.Stderr, "[USPTO] Rate limited (HTTP %d), retrying in 2s (Attempt %d/%d)...\n", lastStatus, i, maxRetries)
 			}
 			time.Sleep(2 * time.Second)
 		}
 
-		if os.Getenv("PATENT_DEBUG") == "1" {
+		if os.Getenv(logging.EnvDebug) == "1" {
 			fmt.Fprintf(os.Stderr, ">>> USPTO REQ: %s\n", url)
 		}
 
@@ -600,7 +601,7 @@ func usptoGET(client *http.Client, apiKey, url string, dest any, logger *slog.Lo
 			return fmt.Errorf("failed to read response body: %w", readErr)
 		}
 
-		if os.Getenv("PATENT_DEBUG") == "1" {
+		if os.Getenv(logging.EnvDebug) == "1" {
 			fmt.Fprintf(os.Stderr, "<<< USPTO RESP (%d): %s\n\n", resp.StatusCode, string(body))
 			logger.Debug("uspto.response", "status", resp.StatusCode, "body", string(body))
 		}

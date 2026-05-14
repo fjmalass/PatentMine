@@ -10,8 +10,11 @@ import (
 	"time"
 )
 
+// EnvDebug is the environment variable that enables debug-level logging and render tracing.
+const EnvDebug = "PATENT_DEBUG"
+
 func logLevel() slog.Level {
-	if os.Getenv("PATENT_DEBUG") == "1" {
+	if os.Getenv(EnvDebug) == "1" {
 		return slog.LevelDebug
 	}
 	return slog.LevelInfo

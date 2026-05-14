@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/domain"
+	"patentmine/internal/logging"
 )
 
 func (m *Model) View() string {
@@ -24,7 +25,7 @@ func (m *Model) View() string {
 		res = m.renderView()
 	}
 
-	if os.Getenv("PATENT_DEBUG") == "1" {
+	if os.Getenv(logging.EnvDebug) == "1" {
 		elapsed := time.Since(start)
 		m.logger.Debug("tui.render_frame", "mode", m.mode, "duration_ms", elapsed.Milliseconds())
 	}
