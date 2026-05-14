@@ -1248,6 +1248,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.isCitationView() {
 				return m.refreshVisibleCitationDetails()
 			}
+			if m.mode == viewFamily {
+				return m.pullFamilyCommand()
+			}
 		case keyAI:
 			m = m.navigateTo(viewAI)
 		case keyWeb:
@@ -1314,8 +1317,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyReviewState:
 			if m.isCitationView() {
-				m.citesReviewStateFilter = nextCitesReviewStateFilter(m.citesReviewStateFilter)
-				return m, nil
+				if m.visualMode {
+					m.citesReviewStateFilter = nextCitesReviewStateFilter(m.citesReviewStateFilter)
+					return m, nil
+				}
+				// Change status of selected citation
+				edge, ok, err := m.selectedCitationEdge()
+				if err != nil || !ok {
+					return m, nil
+				}
+				currentStatus := edge.ReviewState
+				m.reviewStateSelected = 0
+				for i, s := range m.selectableReviewStates() {
+					if s == currentStatus {
+						m.reviewStateSelected = i
+						break
+					}
+				}
+				return m.navigateTo(viewReviewStateSelect), nil
+			}
+			if m.mode == viewFamily {
+				nodes := m.buildFamilyTree()
+				if m.familySelected < 0 || m.familySelected >= len(nodes) {
+					return m, nil
+				}
+				node := nodes[m.familySelected]
+				currentStatus := ""
+				if p, ok := m.familyPatentCache[node.number]; ok {
+					currentStatus = p.ReviewState
+				} else if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, node.number); err == nil {
+					currentStatus = p.ReviewState
+				}
+
+				m.reviewStateSelected = 0
+				for i, s := range m.selectableReviewStates() {
+					if s == currentStatus {
+						m.reviewStateSelected = i
+						break
+					}
+				}
+				return m.navigateTo(viewReviewStateSelect), nil
 			}
 			// Pre-select current status in the list
 			currentStatus := ""
@@ -3763,10 +3804,7 @@ func (m *Model) displayVersion() string {
 }
 
 func (m *Model) navDefault() string {
-	if m.mode == viewList {
-		return fmt.Sprintf(m.text.T(TextNavList), keyVimDown, keyVimUp, keyColLeft, keyColRight, keyEnter, keyJump, keySort, keyCommand, keySearch, keyHelp, keyBack, keyQuit)
-	}
-	return fmt.Sprintf(m.text.T(TextNavDefault), keyVimDown, keyVimUp, keyEnter, keyJump, keySort, keyCommand, keySearch, keyHelp, keyBack, keyQuit)
+	return BuildHelperLine(m.activeKeys, m.text)
 }
 
 func (m *Model) viewList() string {
@@ -5024,9 +5062,11 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	}
 	next := statuses[m.reviewStateSelected]
 
+	prevMode := previousModeOr(m, viewList)
+
 	// Determine which patents to update
 	indices := m.selectedIndices()
-	if len(indices) == 0 && m.mode == viewDetail {
+	if len(indices) == 0 && prevMode == viewDetail {
 		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
 			m.err = err.Error()
 			return m.goBack()
@@ -5036,7 +5076,37 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		return m.goBack()
 	}
 
-	if len(indices) == 0 && m.mode == viewList {
+	if prevMode == viewCites || prevMode == viewCitedBy {
+		edge, ok, err := m.selectedCitationEdge()
+		if err != nil || !ok {
+			return m.goBack()
+		}
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
+			m.err = err.Error()
+			return m.goBack()
+		}
+		m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
+		m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
+		return m.goBack()
+	}
+
+	if prevMode == viewFamily {
+		nodes := m.buildFamilyTree()
+		if m.familySelected < 0 || m.familySelected >= len(nodes) {
+			return m.goBack()
+		}
+		node := nodes[m.familySelected]
+		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, node.number, next); err != nil {
+			m.err = err.Error()
+			return m.goBack()
+		}
+		m.message = fmt.Sprintf("%s → %s", node.number, next)
+		m.logActivity(ActivityPatentReviewState, node.number, next)
+		m.invalidateFamilyCaches()
+		return m.goBack()
+	}
+
+	if len(indices) == 0 && prevMode == viewList {
 		indices = []int{m.selected}
 	}
 

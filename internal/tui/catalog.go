@@ -413,14 +413,6 @@ func RenderContextHelp(text TextCatalog, mode viewMode) string {
 
 	b.WriteString(titleStyle.Render(text.T(TextHelpPopupTitle)+" · "+screenTitleForMode(mode)) + "\n")
 
-	if spec.helpHint != "" {
-		hintStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color(accentColor)).
-			Foreground(lipgloss.Color(ColorBlack)).
-			Padding(0, 1)
-		b.WriteString(hintStyle.Render(spec.helpHint) + "\n")
-	}
-
 	b.WriteString("\n")
 	b.WriteString(text.T(TextHelpScreen) + "\n\n")
 	writeHelpEntries(&b, contextHelpEntries(mode), text)
@@ -453,5 +445,69 @@ func writeHelpEntries(b *strings.Builder, entries []HelpEntry, text TextCatalog)
 			usage = e.Command
 		}
 		b.WriteString(fmt.Sprintf("  %-40s  %s\n", usage, text.T(e.Description)))
+	}
+}
+
+func BuildHelperLine(keys KeyMap, text TextCatalog) string {
+	// 1. Filter keys for those with ShowInHint == true
+	var hintKeys []KeyBinding
+	for _, kb := range keys {
+		if kb.ShowInHint {
+			hintKeys = append(hintKeys, kb)
+		}
+	}
+
+	// 2. Group keys by their Label
+	groups := make(map[string][]string)
+	var labels []string
+	for _, kb := range hintKeys {
+		if _, ok := groups[kb.Label]; !ok {
+			labels = append(labels, kb.Label)
+		}
+		// Avoid duplicate keys in same label group
+		found := false
+		for _, k := range groups[kb.Label] {
+			if k == kb.Key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			groups[kb.Label] = append(groups[kb.Label], kb.Key)
+		}
+	}
+
+	// 3. Sort the groups in a logical order
+	sort.Slice(labels, func(i, j int) bool {
+		wi, wj := labelWeight(labels[i]), labelWeight(labels[j])
+		if wi != wj {
+			return wi < wj
+		}
+		return labels[i] < labels[j]
+	})
+
+	// 4. Join groups with " · "
+	var parts []string
+	for _, label := range labels {
+		ks := groups[label]
+		sort.Strings(ks)
+		parts = append(parts, fmt.Sprintf("%s: %s", strings.Join(ks, "/"), label))
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+func labelWeight(l string) int {
+	switch l {
+	case "move":
+		return 1
+	case "open", "select", "save", "filter", "status":
+		return 2
+	case "refresh", "add", "rename":
+		return 3
+	case "help", "back", "quit":
+		return 4
+	default:
+		return 5
 	}
 }

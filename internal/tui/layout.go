@@ -235,8 +235,6 @@ func (m *Model) renderPopup(title, content string) string {
 }
 
 func (m *Model) renderPopupHeader(label string) string {
-	spec := mustModeSpec(m.mode)
-
 	// Use standard surface background instead of themed background
 	titleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(m.screenColor())).
@@ -261,11 +259,12 @@ func (m *Model) renderPopupHeader(label string) string {
 	}
 
 	// Hint style: regular weight, same background
-	if spec.helpHint != "" {
+	hint := BuildHelperLine(m.activeKeys, m.text)
+	if hint != "" {
 		hintStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color(ColorSubtle)).
 			Padding(0, 0)
-		res += "\n" + hintStyle.Render(spec.helpHint)
+		res += "\n" + hintStyle.Render(hint)
 	}
 
 	// Add a separator rule to separate header from payload

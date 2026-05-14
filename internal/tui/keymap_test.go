@@ -23,7 +23,7 @@ func TestExportKeymapCSV(t *testing.T) {
 		if !strings.Contains(content, "label") {
 			t.Errorf("expected CSV header in %s, got: %s", path, content)
 		}
-		if !strings.Contains(content, "Move down") {
+		if !strings.Contains(content, "move") {
 			t.Errorf("expected global key in %s, got: %s", path, content)
 		}
 	}

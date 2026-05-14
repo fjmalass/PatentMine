@@ -339,9 +339,6 @@ func TestOverlayModesHaveRenderableSpecs(t *testing.T) {
 		if spec.themeColor == "" {
 			t.Fatalf("overlay mode %q missing theme color", mode)
 		}
-		if spec.helpHint == "" {
-			t.Fatalf("overlay mode %q missing help hint", mode)
-		}
 	}
 }
 
