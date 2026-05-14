@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"patentmine/internal/domain"
 )
 
@@ -23,7 +25,7 @@ func screenTitleForMode(mode viewMode) string {
 	if spec, ok := lookupModeSpec(mode); ok && spec.title != "" {
 		return spec.title
 	}
-	return strings.Title(string(mode))
+	return cases.Title(language.Und, cases.NoLower).String(string(mode))
 }
 
 func (m *Model) screenSubtitle() string {

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"patentmine/internal/storage"
 )
 
@@ -232,7 +234,7 @@ func (m *Model) viewText() string {
 	var body strings.Builder
 	width := m.overlayWidth() - 4
 	for _, section := range sections {
-		body.WriteString(lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s %d]", strings.Title(section.SectionType), section.Ordinal)) + "\n")
+		body.WriteString(lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s %d]", cases.Title(language.Und, cases.NoLower).String(section.SectionType), section.Ordinal)) + "\n")
 		body.WriteString(wrapText(section.Text, width) + "\n\n")
 	}
 	if body.Len() == 0 {
