@@ -228,16 +228,14 @@ func (m *Model) viewCitations(relation string) string {
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			var cell string
-			if c.id == domain.SortColumnReviewState {
-				cell = m.citationReviewStateLabel(rowValues[c.id])
-			} else {
-				cell = m.truncate(rowValues[c.id], c.width)
-			}
-			row += m.pad(cell, c.width+padding)
+			row += m.pad(m.truncate(rowValues[c.id], c.width), c.width+padding)
 		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayContentWidth()) + "\n")
+		rowStyle := lipgloss.NewStyle()
+		if color, ok := ReviewStateColors[edge.ReviewState]; ok {
+			rowStyle = rowStyle.Foreground(lipgloss.Color(color))
+		}
+		body.WriteString(m.styleRowOverlay(i, selected, rowStyle.Render(row), m.overlayContentWidth()) + "\n")
 	}
 
 	return m.renderPopup(citationPopupTitle(), body.String())
