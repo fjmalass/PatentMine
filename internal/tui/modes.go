@@ -16,7 +16,7 @@ var allViewModes = []viewMode{
 	viewCites,
 	viewCitedBy,
 	viewClassifications,
-	viewText,
+	viewFullText,
 	viewNotes,
 	viewRefs,
 	viewAI,
@@ -108,7 +108,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		isOverlay:  true,
 		subtitle:   patentSubtitle,
 	},
-	viewText: {
+	viewFullText: {
 		title:      "Full Text",
 		themeColor: ColorThemeText,
 		isOverlay:  true,

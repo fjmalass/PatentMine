@@ -95,8 +95,8 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		m = m.navigateTo(viewCitedBy)
 	case commandClassification:
 		m = m.navigateTo(viewClassifications)
-	case commandText:
-		m = m.navigateTo(viewText)
+	case commandFullText:
+		m = m.navigateTo(viewFullText)
 	case commandRefs:
 		m = m.navigateTo(viewRefs)
 	case commandNotes:

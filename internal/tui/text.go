@@ -10,66 +10,66 @@ const (
 	TextHelpGlobal     TextKey = "help.global"
 	TextHelpPopupTitle TextKey = "help.popup.title"
 
-	TextDetailAssignee           TextKey = "detail.assignee"
-	TextDetailInventor           TextKey = "detail.inventor"
-	TextDetailInventors          TextKey = "detail.inventors"
-	TextDetailPublication        TextKey = "detail.publication"
-	TextDetailGrant              TextKey = "detail.grant"
-	TextDetailClassification     TextKey = "detail.classification"
-	TextDetailCountry            TextKey = "detail.country"
-	TextDetailExpiration         TextKey = "detail.expiration"
-	TextDetailReviewState TextKey = "detail.review_state"
-	TextDetailIDS                TextKey = "detail.ids"
-	TextDetailLatestAssignment   TextKey = "detail.latest_assignment"
-	TextDetailStoredLocal        TextKey = "detail.stored_local"
-	TextDetailUpdated            TextKey = "detail.updated"
-	TextDetailSource             TextKey = "detail.source"
-	TextDetailCitationCount      TextKey = "detail.citation_count"
-	TextDetailCitedByCount       TextKey = "detail.cited_by_count"
-	TextDetailFamilyParents      TextKey = "detail.family_parents"
-	TextDetailFamilyChildren     TextKey = "detail.family_children"
-	TextDetailNotes              TextKey = "detail.notes"
-	TextDetailTags               TextKey = "detail.tags"
-	TextDetailAbstract           TextKey = "detail.abstract"
-	TextDetailImportSource       TextKey = "detail.import_source"
-	TextDetailApplication        TextKey = "detail.application"
-	TextDetailPublicationLong    TextKey = "detail.publication_long"
-	TextDetailGrantLong          TextKey = "detail.grant_long"
-	TextDetailFirstClaim         TextKey = "detail.first_claim"
-	TextValueUnknown             TextKey = "value.unknown"
-	TextValuePending             TextKey = "value.pending"
-	TextValueEmpty               TextKey = "value.empty"
-	TextValuePageStatus          TextKey = "value.page_status"
-	TextValueOpenHint            TextKey = "value.open_hint"
-	TextValueReviewOpenHint      TextKey = "value.review_open_hint"
-	TextValueClassificationHint  TextKey = "value.classification_hint"
-	TextValueExpirationManual    TextKey = "value.expiration.manual"
-	TextValueExpirationImported  TextKey = "value.expiration.imported"
-	TextValueExpirationEstimated TextKey = "value.expiration.estimated"
-	TextValueSearchLabel         TextKey = "value.search_label"
-	TextValueProjectTag          TextKey = "value.project_tag"
-	TextValueBreadcrumbFormat    TextKey = "value.breadcrumb_format"
+	TextDetailAssignee            TextKey = "detail.assignee"
+	TextDetailInventor            TextKey = "detail.inventor"
+	TextDetailInventors           TextKey = "detail.inventors"
+	TextDetailPublication         TextKey = "detail.publication"
+	TextDetailGrant               TextKey = "detail.grant"
+	TextDetailClassification      TextKey = "detail.classification"
+	TextDetailCountry             TextKey = "detail.country"
+	TextDetailExpiration          TextKey = "detail.expiration"
+	TextDetailReviewState         TextKey = "detail.review_state"
+	TextDetailIDS                 TextKey = "detail.ids"
+	TextDetailLatestAssignment    TextKey = "detail.latest_assignment"
+	TextDetailStoredLocal         TextKey = "detail.stored_local"
+	TextDetailUpdated             TextKey = "detail.updated"
+	TextDetailSource              TextKey = "detail.source"
+	TextDetailCitationCount       TextKey = "detail.citation_count"
+	TextDetailCitedByCount        TextKey = "detail.cited_by_count"
+	TextDetailFamilyParents       TextKey = "detail.family_parents"
+	TextDetailFamilyChildren      TextKey = "detail.family_children"
+	TextDetailNotes               TextKey = "detail.notes"
+	TextDetailTags                TextKey = "detail.tags"
+	TextDetailAbstract            TextKey = "detail.abstract"
+	TextDetailImportSource        TextKey = "detail.import_source"
+	TextDetailApplication         TextKey = "detail.application"
+	TextDetailPublicationLong     TextKey = "detail.publication_long"
+	TextDetailGrantLong           TextKey = "detail.grant_long"
+	TextDetailFirstClaim          TextKey = "detail.first_claim"
+	TextValueUnknown              TextKey = "value.unknown"
+	TextValuePending              TextKey = "value.pending"
+	TextValueEmpty                TextKey = "value.empty"
+	TextValuePageStatus           TextKey = "value.page_status"
+	TextValueOpenHint             TextKey = "value.open_hint"
+	TextValueReviewOpenHint       TextKey = "value.review_open_hint"
+	TextValueClassificationHint   TextKey = "value.classification_hint"
+	TextValueExpirationManual     TextKey = "value.expiration.manual"
+	TextValueExpirationImported   TextKey = "value.expiration.imported"
+	TextValueExpirationEstimated  TextKey = "value.expiration.estimated"
+	TextValueSearchLabel          TextKey = "value.search_label"
+	TextValueProjectTag           TextKey = "value.project_tag"
+	TextValueBreadcrumbFormat     TextKey = "value.breadcrumb_format"
 	TextValueFilterReviewStateTag TextKey = "value.filter.review_state_tag"
-	TextValueFilterGeneralTag    TextKey = "value.filter.general_tag"
-	TextValueFilterSortTag       TextKey = "value.filter.sort_tag"
-	TextValueFilterRefsTag       TextKey = "value.filter.refs_tag"
-	TextValueFilterClassTag      TextKey = "value.filter.class_tag"
-	TextValueProjectSummaryLead  TextKey = "value.project_summary_lead"
-	TextNavDefault               TextKey = "nav.default"
-	TextNavList                  TextKey = "nav.list"
-	TextNavJump                  TextKey = "nav.jump"
-	TextDetailOpenHint           TextKey = "detail.open_hint"
-	TextListEmpty                TextKey = "list.empty"
-	TextListFilter               TextKey = "list.filter"
-	TextMessageFilteredBy        TextKey = "message.filtered_by"
-	TextMessageRefreshCitedBy    TextKey = "message.refresh_cited_by"
-	TextMessageRefreshCitations  TextKey = "message.refresh_citations"
-	TextMessageRefreshAll        TextKey = "message.refresh_all"
-	TextMessageBrowserOpened     TextKey = "message.browser_opened"
-	TextMessageBrowserNoPatent   TextKey = "message.browser_no_patent"
-	TextMessageBrowserUsage      TextKey = "message.browser_usage"
-	TextMessageBrowserEmpty      TextKey = "message.browser_empty"
-	TextMessageReviewUsage       TextKey = "message.review_usage"
+	TextValueFilterGeneralTag     TextKey = "value.filter.general_tag"
+	TextValueFilterSortTag        TextKey = "value.filter.sort_tag"
+	TextValueFilterRefsTag        TextKey = "value.filter.refs_tag"
+	TextValueFilterClassTag       TextKey = "value.filter.class_tag"
+	TextValueProjectSummaryLead   TextKey = "value.project_summary_lead"
+	TextNavDefault                TextKey = "nav.default"
+	TextNavList                   TextKey = "nav.list"
+	TextNavJump                   TextKey = "nav.jump"
+	TextDetailOpenHint            TextKey = "detail.open_hint"
+	TextListEmpty                 TextKey = "list.empty"
+	TextListFilter                TextKey = "list.filter"
+	TextMessageFilteredBy         TextKey = "message.filtered_by"
+	TextMessageRefreshCitedBy     TextKey = "message.refresh_cited_by"
+	TextMessageRefreshCitations   TextKey = "message.refresh_citations"
+	TextMessageRefreshAll         TextKey = "message.refresh_all"
+	TextMessageBrowserOpened      TextKey = "message.browser_opened"
+	TextMessageBrowserNoPatent    TextKey = "message.browser_no_patent"
+	TextMessageBrowserUsage       TextKey = "message.browser_usage"
+	TextMessageBrowserEmpty       TextKey = "message.browser_empty"
+	TextMessageReviewUsage        TextKey = "message.review_usage"
 
 	TextHelpFilterPatents        TextKey = "help.command.filter_patents"
 	TextHelpAddPatent            TextKey = "help.command.add_patent"
@@ -109,11 +109,11 @@ const (
 	TextHelpJumpText             TextKey = "help.jump.text"
 	TextHelpJumpNotes            TextKey = "help.jump.notes"
 	TextHelpJumpRefs             TextKey = "help.jump.refs"
-	TextHelpJumpAI                  TextKey = "help.jump.ai"
-	TextHelpJumpWeb                 TextKey = "help.jump.web"
-	TextHelpJumpTags                TextKey = "help.jump.tags"
-	TextHelpJumpProject             TextKey = "help.jump.project"
-	TextHelpProjectID               TextKey = "help.project.id"
+	TextHelpJumpAI               TextKey = "help.jump.ai"
+	TextHelpJumpWeb              TextKey = "help.jump.web"
+	TextHelpJumpTags             TextKey = "help.jump.tags"
+	TextHelpJumpProject          TextKey = "help.jump.project"
+	TextHelpProjectID            TextKey = "help.project.id"
 	TextHelpProjectList          TextKey = "help.project.list"
 	TextHelpProjectCreate        TextKey = "help.project.create"
 	TextHelpProjectSwitch        TextKey = "help.project.switch"
@@ -137,7 +137,7 @@ const (
 	TextHelpSort                 TextKey = "help.sort"
 	TextHelpClass                TextKey = "help.class"
 	TextHelpInventorFilter       TextKey = "help.inventorfilter"
-	TextHelpReviewStateFilter TextKey = "help.filter_review_state"
+	TextHelpReviewStateFilter    TextKey = "help.filter_review_state"
 	TextHelpCountryFilter        TextKey = "help.filter.country"
 	TextHelpFamilyAdd            TextKey = "help.family.add"
 	TextHelpFamilyRemove         TextKey = "help.family.remove"
@@ -153,10 +153,10 @@ const (
 	TextCitationLabeled          TextKey = "citation.labeled"
 	TextCitationNeverRefreshed   TextKey = "citation.never_refreshed"
 	TextReviewQueueEmpty         TextKey = "review_queue.empty"
-	TextReviewStateUnderReview TextKey = "review_state.under_review"
-	TextReviewStateStored      TextKey = "review_state.stored"
-	TextReviewStateIgnored     TextKey = "review_state.ignored"
-	TextReviewStateCached      TextKey = "review_state.cached"
+	TextReviewStateUnderReview   TextKey = "review_state.under_review"
+	TextReviewStateStored        TextKey = "review_state.stored"
+	TextReviewStateIgnored       TextKey = "review_state.ignored"
+	TextReviewStateCached        TextKey = "review_state.cached"
 	TextMessagePreviewLoaded     TextKey = "message.preview_loaded"
 	TextMessageStoredPatent      TextKey = "message.stored_patent"
 	TextMessageSkippedPatent     TextKey = "message.skipped_patent"
@@ -178,7 +178,7 @@ const (
 	TextHelpCyclePatentReviewState TextKey = "help.cycle_patent_review_state"
 
 	// Citation/review view
-	TextHelpReviewStateCycle TextKey = "help.review_state_cycle"
+	TextHelpReviewStateCycle        TextKey = "help.review_state_cycle"
 	TextHelpCitationRefreshSelected TextKey = "help.citation.refresh_selected"
 	TextHelpCitationRefreshAll      TextKey = "help.citation.refresh_all"
 
@@ -216,66 +216,66 @@ func EnglishText() TextCatalog {
 		TextHelpGlobal:     "Global",
 		TextHelpPopupTitle: "Help",
 
-		TextDetailAssignee:           "Assignee",
-		TextDetailInventor:           "Inventor",
-		TextDetailInventors:          "Inventors",
-		TextDetailPublication:        "Publication",
-		TextDetailGrant:              "Grant",
-		TextDetailClassification:     "Classification",
-		TextDetailCountry:            "Country",
-		TextDetailExpiration:         "Expiration",
-		TextDetailReviewState: "ReviewState",
-		TextDetailIDS:                "IDS",
-		TextDetailLatestAssignment:   "Latest Assignment",
-		TextDetailStoredLocal:        "Imported",
-		TextDetailUpdated:            "Updated",
-		TextDetailSource:             "Source",
-		TextDetailCitationCount:      "Citations",
-		TextDetailCitedByCount:       "Cited by",
-		TextDetailFamilyParents:      "Parents",
-		TextDetailFamilyChildren:     "Children",
-		TextDetailNotes:              "Notes",
-		TextDetailTags:               "Tags",
-		TextDetailAbstract:           "Abstract",
-		TextDetailImportSource:       "Via",
-		TextDetailApplication:        "Application",
-		TextDetailPublicationLong:    "Publication",
-		TextDetailGrantLong:          "Grant",
-		TextDetailFirstClaim:         "First Claim",
-		TextValueUnknown:             "unknown",
-		TextValuePending:             "pending",
-		TextValueEmpty:               "Empty",
-		TextValuePageStatus:          "Page %d/%d - items %d-%d of %d",
-		TextValueOpenHint:            "[%s] open/preview · [%s] save · [%s] ignore · [%s] under review · [%s] refresh · [%s/%s] page · [↓↑] scroll",
-		TextValueReviewOpenHint:      "[%s] open/preview · [%s] save · [%s] ignore · [%s] under review · [%s] refresh · [%s] browse · [%s/%s] page · [↓↑] scroll",
-		TextValueClassificationHint:  "[%s/%s] open detail · [%s] find · [%s] next · [%s/%s] page · [↓↑] scroll",
-		TextValueExpirationManual:    " (man.)",
-		TextValueExpirationImported:  " (import)",
-		TextValueExpirationEstimated: " (est.)",
-		TextValueSearchLabel:         "search: /",
-		TextValueProjectTag:          "PROJECT: %s (%s)",
-		TextValueBreadcrumbFormat:    "[%d] ‹ %s",
+		TextDetailAssignee:            "Assignee",
+		TextDetailInventor:            "Inventor",
+		TextDetailInventors:           "Inventors",
+		TextDetailPublication:         "Publication",
+		TextDetailGrant:               "Grant",
+		TextDetailClassification:      "Classification",
+		TextDetailCountry:             "Country",
+		TextDetailExpiration:          "Expiration",
+		TextDetailReviewState:         "ReviewState",
+		TextDetailIDS:                 "IDS",
+		TextDetailLatestAssignment:    "Latest Assignment",
+		TextDetailStoredLocal:         "Imported",
+		TextDetailUpdated:             "Updated",
+		TextDetailSource:              "Source",
+		TextDetailCitationCount:       "Citations",
+		TextDetailCitedByCount:        "Cited by",
+		TextDetailFamilyParents:       "Parents",
+		TextDetailFamilyChildren:      "Children",
+		TextDetailNotes:               "Notes",
+		TextDetailTags:                "Tags",
+		TextDetailAbstract:            "Abstract",
+		TextDetailImportSource:        "Via",
+		TextDetailApplication:         "Application",
+		TextDetailPublicationLong:     "Publication",
+		TextDetailGrantLong:           "Grant",
+		TextDetailFirstClaim:          "First Claim",
+		TextValueUnknown:              "unknown",
+		TextValuePending:              "pending",
+		TextValueEmpty:                "Empty",
+		TextValuePageStatus:           "Page %d/%d - items %d-%d of %d",
+		TextValueOpenHint:             "[%s] open/preview · [%s] save · [%s] ignore · [%s] under review · [%s] refresh · [%s/%s] page · [↓↑] scroll",
+		TextValueReviewOpenHint:       "[%s] open/preview · [%s] save · [%s] ignore · [%s] under review · [%s] refresh · [%s] browse · [%s/%s] page · [↓↑] scroll",
+		TextValueClassificationHint:   "[%s/%s] open detail · [%s] find · [%s] next · [%s/%s] page · [↓↑] scroll",
+		TextValueExpirationManual:     " (man.)",
+		TextValueExpirationImported:   " (import)",
+		TextValueExpirationEstimated:  " (est.)",
+		TextValueSearchLabel:          "search: /",
+		TextValueProjectTag:           "PROJECT: %s (%s)",
+		TextValueBreadcrumbFormat:     "[%d] ‹ %s",
 		TextValueFilterReviewStateTag: "review_state:",
-		TextValueFilterGeneralTag:    "filter:",
-		TextValueFilterSortTag:       "sort:",
-		TextValueFilterRefsTag:       "refs:",
-		TextValueFilterClassTag:      "class:",
-		TextValueProjectSummaryLead:  rowCursor,
-		TextNavDefault:               "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
-		TextNavList:                  "keys: [%s/%s/↓↑] rows · [%s/%s/←→] cols · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
-		TextNavJump:                  "jump: press a hint key to move focus, [esc] cancels",
-		TextDetailOpenHint:           "Enter filters patents by the selected detail value",
-		TextListEmpty:                "No patents found.",
-		TextListFilter:               "filter",
-		TextMessageFilteredBy:        "filtered by %s: %s",
-		TextMessageRefreshCitedBy:    "cited-by refreshed: %d records (was %d)",
-		TextMessageRefreshCitations:  "citations refreshed: %d records (was %d)",
-		TextMessageRefreshAll:        "refresh complete: citations %d (was %d), cited-by %d (was %d)",
-		TextMessageBrowserOpened:     "opened browser: %s",
-		TextMessageBrowserNoPatent:   "no patent selected for browser",
-		TextMessageBrowserUsage:      "usage: :browser [patent-number-or-url]",
-		TextMessageBrowserEmpty:      "empty patent number",
-		TextMessageReviewUsage:       "usage: :review ignored or :review under_review",
+		TextValueFilterGeneralTag:     "filter:",
+		TextValueFilterSortTag:        "sort:",
+		TextValueFilterRefsTag:        "refs:",
+		TextValueFilterClassTag:       "class:",
+		TextValueProjectSummaryLead:   rowCursor,
+		TextNavDefault:                "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
+		TextNavList:                   "keys: [%s/%s/↓↑] rows · [%s/%s/←→] cols · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
+		TextNavJump:                   "jump: press a hint key to move focus, [esc] cancels",
+		TextDetailOpenHint:            "Enter filters patents by the selected detail value",
+		TextListEmpty:                 "No patents found.",
+		TextListFilter:                "filter",
+		TextMessageFilteredBy:         "filtered by %s: %s",
+		TextMessageRefreshCitedBy:     "cited-by refreshed: %d records (was %d)",
+		TextMessageRefreshCitations:   "citations refreshed: %d records (was %d)",
+		TextMessageRefreshAll:         "refresh complete: citations %d (was %d), cited-by %d (was %d)",
+		TextMessageBrowserOpened:      "opened browser: %s",
+		TextMessageBrowserNoPatent:    "no patent selected for browser",
+		TextMessageBrowserUsage:       "usage: :browser [patent-number-or-url]",
+		TextMessageBrowserEmpty:       "empty patent number",
+		TextMessageReviewUsage:        "usage: :review ignored or :review under_review",
 
 		TextHelpFilterPatents:           "Filter the patent list.",
 		TextHelpAddPatent:               "Build the Google Patents URL and import that patent.",
@@ -344,8 +344,8 @@ func EnglishText() TextCatalog {
 		TextHelpSort:                    "Sort the list by column (number, title, date, status, assignee, inventor, class, expiration, updated). Comma-separate for secondary sort: status,expiration.",
 		TextHelpClass:                   "Filter by classification prefix. Supports && (AND) and || (OR): H04N && G06F or H04N || G06F. Clear with :classfilter clear.",
 		TextHelpInventorFilter:          "Filter the patent list by inventor name. Clear with :inventorfilter clear.",
-		TextHelpReviewStateFilter: "Filter by review state: stored (default), ignored, under-review, all.",
-		TextHelpCountryFilter:      "Filter the patent list by country code, or list all codes.",
+		TextHelpReviewStateFilter:       "Filter by review state: stored (default), ignored, under-review, all.",
+		TextHelpCountryFilter:           "Filter the patent list by country code, or list all codes.",
 		TextHelpFamilyAdd:               "Declare a parent or child relationship. Types: continuation, divisional, cip, pct.",
 		TextHelpFamilyRemove:            "Remove a family relationship with the specified patent.",
 		TextHelpFamilyView:              "Open the patent family overlay (parents and children).",
@@ -355,8 +355,8 @@ func EnglishText() TextCatalog {
 		TextHelpFamilyRemoveEdge:        "Remove the edge between the selected node and its tree-parent.",
 		TextHelpFamilyPull:              "Refresh the selected family member; on the current patent, pull and store the full family.",
 		TextHelpFamilyAddChild:          "Pre-fill :family child command in the input bar.",
-		TextHelpCyclePatentReviewState: "Open the review state selection popup for the selected patent(s).",
-		TextHelpReviewStateCycle: "Cycle the review state filter: stored → ignored → under-review → all.",
+		TextHelpCyclePatentReviewState:  "Open the review state selection popup for the selected patent(s).",
+		TextHelpReviewStateCycle:        "Cycle the review state filter: stored → ignored → under-review → all.",
 		TextHelpCitationRefreshSelected: "Re-fetch the selected citation from Google Patents (title, inventors, expiration).",
 		TextHelpCitationRefreshAll:      "Re-fetch all citations for the current patent from Google Patents.",
 		TextHelpProjectInfoKeys:         "Edit project fields inline: [s]=app status, [m]=summary, [c]=comment, [S]=project status.",
@@ -377,10 +377,10 @@ func EnglishText() TextCatalog {
 		TextCitationLabeled:             "labeled",
 		TextCitationNeverRefreshed:      "never refreshed",
 		TextReviewQueueEmpty:            "No references currently under review.",
-		TextReviewStateUnderReview: "under-review",
-		TextReviewStateStored:      "stored",
-		TextReviewStateIgnored:     "ignored",
-		TextReviewStateCached:      "cached",
+		TextReviewStateUnderReview:      "under-review",
+		TextReviewStateStored:           "stored",
+		TextReviewStateIgnored:          "ignored",
+		TextReviewStateCached:           "cached",
 		TextMessagePreviewLoaded:        "patent preview loaded",
 
 		TextMessageStoredPatent:      "stored patent: %s",

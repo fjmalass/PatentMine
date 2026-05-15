@@ -25,7 +25,7 @@ const (
 	viewCites                viewMode = "citations"
 	viewCitedBy              viewMode = "cited-by"
 	viewClassifications      viewMode = "classifications"
-	viewText                 viewMode = "full-text"
+	viewFullText             viewMode = "full-text"
 	viewNotes                viewMode = "notes"
 	viewRefs                 viewMode = "references"
 	viewAI                   viewMode = "ai"
@@ -124,6 +124,7 @@ type Model struct {
 	helpQuery                    string
 	helpSearchActive             bool
 	helpScroll                   int
+	fullTextScroll               int
 	activityLog                  *slog.Logger
 	importCfg                    config.Config
 	detailCache                  detailCache
@@ -455,6 +456,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == viewNoteEdit {
 			return m.handleViewNoteEditKey(msg)
 		}
+		if m.mode == viewFullText {
+			switch msg.String() {
+			case keyVimDown, keyArrowDown:
+				m.fullTextScroll++
+				return m, nil
+			case keyVimUp, keyArrowUp:
+				if m.fullTextScroll > 0 {
+					m.fullTextScroll--
+				}
+				return m, nil
+			case keyPgDown, keyCtrlF, keyCtrlD:
+				m.fullTextScroll += m.pageSize() - 4
+				return m, nil
+			case keyPgUp, keyCtrlB, keyCtrlU:
+				m.fullTextScroll -= m.pageSize() - 4
+				if m.fullTextScroll < 0 {
+					m.fullTextScroll = 0
+				}
+				return m, nil
+			case keyEsc, keyBack:
+				m.fullTextScroll = 0
+				return m.goBack()
+			}
+		}
 		if m.mode == viewHelp || m.mode == viewKeymap {
 			if m.helpSearchActive {
 				switch msg.String() {
@@ -463,13 +488,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.helpQuery = ""
 					m.helpScroll = 0
 					return m, nil
-				case "backspace", "ctrl+h":
+				case keyBackspace, keyCtrlH:
 					if len(m.helpQuery) > 0 {
 						m.helpQuery = m.helpQuery[:len(m.helpQuery)-1]
 						m.helpScroll = 0
 					}
 					return m, nil
-				case "enter":
+				case keyEnter:
 					m.helpSearchActive = false
 					return m, nil
 				default:
@@ -481,22 +506,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			switch msg.String() {
-			case "/":
+			case keySearch:
 				m.helpSearchActive = true
 				m.helpQuery = ""
 				return m, nil
-			case "j", "down":
+			case keyVimDown, keyArrowDown:
 				m.helpScroll++
 				return m, nil
-			case "k", "up":
+			case keyVimUp, keyArrowUp:
 				if m.helpScroll > 0 {
 					m.helpScroll--
 				}
 				return m, nil
-			case "pgdown", "ctrl+f", "ctrl+d":
+			case keyPgDown, keyCtrlF, keyCtrlD:
 				m.helpScroll += m.pageSize() - 4
 				return m, nil
-			case "pgup", "ctrl+b", "ctrl+u":
+			case keyPgUp, keyCtrlB, keyCtrlU:
 				m.helpScroll -= m.pageSize() - 4
 				if m.helpScroll < 0 {
 					m.helpScroll = 0
@@ -516,7 +541,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.listSearchActive = false
 				m.listSearchQuery = ""
 				return m, nil
-			case "backspace", "ctrl+h":
+			case keyBackspace, keyCtrlH:
 				if len(m.listSearchQuery) > 0 {
 					m.listSearchQuery = m.listSearchQuery[:len(m.listSearchQuery)-1]
 					if m.listSearchQuery != "" {
@@ -553,7 +578,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.popupSearchActive = false
 				m.popupSearchQuery = ""
 				return m, nil
-			case "backspace", "ctrl+h":
+			case keyBackspace, keyCtrlH:
 				if len(m.popupSearchQuery) > 0 {
 					m.popupSearchQuery = m.popupSearchQuery[:len(m.popupSearchQuery)-1]
 					if m.popupSearchQuery != "" {
@@ -716,10 +741,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			count := m.consumeCount(1)
 			return m.moveSelection(-count), nil
-		case keyCtrlF, "pgdown":
+		case keyCtrlF, keyPgDown:
 			m.countBuffer = EmptyCount
 			return m.moveSelection(m.pageSize()), nil
-		case keyCtrlD, "pgup":
+		case keyCtrlD, keyPgUp:
 			m.countBuffer = EmptyCount
 			return m.moveSelection(-m.pageSize()), nil
 		case keyGoto:
@@ -793,7 +818,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m = m.navigateTo(viewTagSelect).reloadAvailableTags()
 			}
 		case keyText:
-			m = m.navigateTo(viewText)
+			m = m.navigateTo(viewFullText)
 		case keyNarrow:
 			if m.mode == viewList && m.listSearchQuery != "" {
 				query := m.listSearchQuery

@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"patentmine/internal/storage"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	"patentmine/internal/storage"
 )
 
 func (m *Model) viewClaim() string {
@@ -73,7 +74,6 @@ func wrapIndentedText(text string, width int, indent string) string {
 	return strings.Join(lines, "\n")
 }
 
-
 func (m *Model) viewInventors() string {
 	inventors := m.current.Inventors
 	if len(inventors) == 0 {
@@ -117,23 +117,56 @@ func (m *Model) viewInventors() string {
 	return b.String()
 }
 
-func (m *Model) viewText() string {
+func (m *Model) viewFullText() string {
 	sections, err := m.repo.ListTextSections(m.ctx, m.ProjectID, m.current.Number)
 	if err != nil {
 		return m.renderPopup("Full Text", err.Error()+"\n")
 	}
-	var body strings.Builder
-	width := m.overlayWidth() - 4
-	for _, section := range sections {
-		body.WriteString(lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s %d]", cases.Title(language.Und, cases.NoLower).String(section.SectionType), section.Ordinal)) + "\n")
-		body.WriteString(wrapText(section.Text, width) + "\n\n")
-	}
-	if body.Len() == 0 {
+	if len(sections) == 0 {
 		return m.renderPopup("Full Text", "No text sections available. Re-import the patent to fetch full text.\n")
 	}
-	return m.renderPopup("Full Text · "+m.current.Number, body.String())
-}
 
+	width := m.overlayWidth() - 4
+	var allLines []string
+	for _, section := range sections {
+		header := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("[%s %d]", cases.Title(language.Und, cases.NoLower).String(section.SectionType), section.Ordinal))
+		allLines = append(allLines, header)
+		for _, l := range strings.Split(wrapText(section.Text, width), "\n") {
+			allLines = append(allLines, l)
+		}
+		allLines = append(allLines, "")
+	}
+
+	pageH := m.pageSize() - 4
+	if pageH < 1 {
+		pageH = 1
+	}
+	maxScroll := len(allLines) - pageH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.fullTextScroll > maxScroll {
+		m.fullTextScroll = maxScroll
+	}
+
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
+	currentPage := (m.fullTextScroll / pageH) + 1
+	totalPages := (len(allLines) + pageH - 1) / pageH
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	title := fmt.Sprintf("Full Text · %s %s", m.current.Number, subtle.Render(fmt.Sprintf("(Page %d/%d)", currentPage, totalPages)))
+
+	end := m.fullTextScroll + pageH
+	if end > len(allLines) {
+		end = len(allLines)
+	}
+	var body strings.Builder
+	for _, l := range allLines[m.fullTextScroll:end] {
+		body.WriteString(l + "\n")
+	}
+	return m.renderPopup(title, body.String())
+}
 
 func (m *Model) viewRefs() string {
 	refs, err := m.repo.ListReferences(m.ctx, m.ProjectID)

@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/domain"
 	"patentmine/internal/logging"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *Model) View() string {
@@ -111,8 +112,8 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewCitations(domain.RelationCitedBy)
 	case viewClassifications:
 		return m.viewClassifications()
-	case viewText:
-		return m.viewText()
+	case viewFullText:
+		return m.viewFullText()
 	case viewNotes:
 		return m.viewNotes()
 	case viewRefs:
