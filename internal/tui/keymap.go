@@ -265,7 +265,7 @@ func init() {
 	registerKey(keyFamily, nil, "Family view", nil, false, "Views", TextHelpFamilyView, false)
 	registerKey(keyClassification, nil, "Classifications view", nil, false, "Views", TextHelpJumpClassification, false)
 	registerKey(keyNotes, nil, "Notes / search next / cancel", nil, false, "Views", TextHelpJumpNotes, false) // "n" shared by keyNotes/keyNo/keyNew
-	registerKey(keyRefs, nil, "refresh", nil, false, "Views", TextHelpJumpRefs, true)
+	registerKey(keyRefresh, nil, "refresh", nil, false, "Views", TextHelpJumpRefs, true)
 	registerKey(keyAI, nil, "AI view", nil, false, "Views", TextHelpJumpAI, false)
 	registerKey(keyWeb, nil, "Open browser", nil, false, "General", TextHelpOpenBrowser, false)
 	registerKey(keyDelete, nil, "Delete", nil, false, "Patents", TextHelpDeletePatent, false)

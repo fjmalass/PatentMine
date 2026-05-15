@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"patentmine/internal/domain"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"patentmine/internal/domain"
 )
 
 func (m *Model) viewProjectTags() string {
@@ -162,6 +163,7 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
+	m.logger.Info("bulk tag apply started", "project", m.ProjectID, "patents", len(patentNums), "tags", len(m.availableTags))
 	count := 0
 	for _, num := range patentNums {
 		if num == sel.livePatent {
@@ -170,13 +172,22 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 		}
 		for _, tag := range m.availableTags {
 			if m.selectedPatentTags[tag.ID] {
-				_ = m.repo.ApplyTagToPatent(m.ctx, num, tag.ID)
+				if err := m.repo.ApplyTagToPatent(m.ctx, num, tag.ID); err != nil {
+					m.logger.Error("tag apply failed", "project", m.ProjectID, "patent", num, "tag", tag.Name, "error", err)
+				} else {
+					m.logActivity(ActivityTagApply, num, tag.Name)
+				}
 			} else {
-				_ = m.repo.RemoveTagFromPatent(m.ctx, num, tag.ID)
+				if err := m.repo.RemoveTagFromPatent(m.ctx, num, tag.ID); err != nil {
+					m.logger.Error("tag remove failed", "project", m.ProjectID, "patent", num, "tag", tag.Name, "error", err)
+				} else {
+					m.logActivity(ActivityTagRemove, num, tag.Name)
+				}
 			}
 		}
 		count++
 	}
+	m.logger.Info("bulk tag apply completed", "project", m.ProjectID, "patents", count)
 	if count > 1 {
 		m.message = fmt.Sprintf("tags updated for %d patents", count)
 	}
@@ -191,8 +202,8 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 
 type tagSearchable struct{ m *Model }
 
-func (s tagSearchable) ItemCount() int { return len(s.m.projectTags) }
-func (s tagSearchable) GetSelected() int { return s.m.projectTagsSelected }
+func (s tagSearchable) ItemCount() int    { return len(s.m.projectTags) }
+func (s tagSearchable) GetSelected() int  { return s.m.projectTagsSelected }
 func (s tagSearchable) SetSelected(i int) { s.m.projectTagsSelected = i }
 func (s tagSearchable) Match(i int, query string, ignoreCase bool) bool {
 	return containsMatch(s.m.projectTags[i].Name, query, ignoreCase)
@@ -201,8 +212,8 @@ func (s tagSearchable) MatchLabel(i int) string { return s.m.projectTags[i].Name
 
 type tagSelectSearchable struct{ m *Model }
 
-func (s tagSelectSearchable) ItemCount() int { return len(s.m.availableTags) }
-func (s tagSelectSearchable) GetSelected() int { return s.m.tagSelectSelected }
+func (s tagSelectSearchable) ItemCount() int    { return len(s.m.availableTags) }
+func (s tagSelectSearchable) GetSelected() int  { return s.m.tagSelectSelected }
 func (s tagSelectSearchable) SetSelected(i int) { s.m.tagSelectSelected = i }
 func (s tagSelectSearchable) Match(i int, query string, ignoreCase bool) bool {
 	return containsMatch(s.m.availableTags[i].Name, query, ignoreCase)
@@ -234,8 +245,11 @@ func (m *Model) handleViewProjectTagsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
 			tag := m.projectTags[m.projectTagsSelected]
 			if err := m.repo.DeleteTag(m.ctx, tag.ID); err != nil {
+				m.logger.Error("tag delete failed", "project", m.ProjectID, "tag", tag.Name, "error", err)
 				m.err = err.Error()
 			} else {
+				m.logger.Info("tag deleted", "project", m.ProjectID, "tag", tag.Name)
+				m.logActivity(ActivityTagDelete, tag.Name, "")
 				m.message = fmt.Sprintf("tag '%s' deleted", tag.Name)
 				m.reloadProjectTags()
 			}
@@ -274,14 +288,20 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if m.selectedPatentTags[tag.ID] {
 				if err := m.repo.RemoveTagFromPatent(m.ctx, liveNum, tag.ID); err != nil {
+					m.logger.Error("tag remove failed", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name, "error", err)
 					m.err = err.Error()
 				} else {
+					m.logger.Info("tag removed", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name)
+					m.logActivity(ActivityTagRemove, liveNum, tag.Name)
 					m.selectedPatentTags[tag.ID] = false
 				}
 			} else {
 				if err := m.repo.ApplyTagToPatent(m.ctx, liveNum, tag.ID); err != nil {
+					m.logger.Error("tag apply failed", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name, "error", err)
 					m.err = err.Error()
 				} else {
+					m.logger.Info("tag applied", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name)
+					m.logActivity(ActivityTagApply, liveNum, tag.Name)
 					m.selectedPatentTags[tag.ID] = true
 				}
 			}
@@ -294,4 +314,3 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-

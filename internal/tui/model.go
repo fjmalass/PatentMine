@@ -63,6 +63,7 @@ const (
 	bulkActionStore       bulkActionType = "store"
 	bulkActionIgnore      bulkActionType = "ignore"
 	bulkActionUnderReview bulkActionType = "under_review"
+	bulkActionDelete      bulkActionType = "delete"
 )
 
 type Model struct {
@@ -647,6 +648,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.removeSelectedFamilyEdge()
 			}
 			if m.mode == viewList && len(m.patents) > 0 {
+				if m.visualMode {
+					indices := m.selectedIndices()
+					if len(indices) > 1 {
+						m.bulkAction = bulkActionDelete
+						m.bulkActionIndices = indices
+						m.visualMode = false
+						return m.navigateTo(viewBulkConfirm), nil
+					}
+				}
 				m.setMode(viewConfirmDelete)
 				return m, nil
 			}
@@ -772,14 +782,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.skipPendingPatent()
 			}
 			m = m.navigateTo(viewNotes)
-		case keyRefs:
+		case keyRefresh:
 			if m.isCitationView() {
 				return m.refreshSelectedCitationDetail()
 			}
 			if m.mode == viewFamily {
 				return m.refreshSelectedFamilyMember()
 			}
-			m = m.navigateTo(viewRefs)
 		case keyRefreshAll:
 			if m.isCitationView() {
 				return m.refreshVisibleCitationDetails()

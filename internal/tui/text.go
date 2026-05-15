@@ -315,7 +315,7 @@ func EnglishText() TextCatalog {
 		TextHelpJumpClassification:      "Jump to classifications",
 		TextHelpJumpText:                "Jump to full text",
 		TextHelpJumpNotes:               "Jump to research notes",
-		TextHelpJumpRefs:                "Jump to references",
+		TextHelpJumpRefs:                "Refresh selected citation or family member",
 		TextHelpJumpAI:                  "Jump to AI artifacts",
 		TextHelpJumpWeb:                 "Open in system browser",
 		TextHelpJumpTags:                "Jump to tag selector",

@@ -36,7 +36,7 @@ const (
 	keyClassification    = "L"
 	keyFullText          = "T"
 	keyNotes             = "n"
-	keyRefs              = "ctrl+r"
+	keyRefresh           = "ctrl+r"
 	keyAI                = "a"
 	keyWeb               = "w"
 	keyJump              = "f"

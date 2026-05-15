@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) reviewCommand(args []string) (tea.Model, tea.Cmd) {
@@ -149,6 +150,10 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 		return m.goBack()
 	}
 
+	if m.bulkAction == bulkActionDelete {
+		return m.executeBulkDelete(indices)
+	}
+
 	var edges []domain.CitationEdge
 	var err error
 	if m.mode == viewReview {
@@ -171,6 +176,8 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 		status = domain.ReviewStateUnderReview
 	}
 
+	m.logger.Info("bulk citation action started", "project", m.ProjectID, "action", action, "status", status, "count", len(indices))
+
 	executedCount := 0
 	importCount := 0
 	for _, idx := range indices {
@@ -178,7 +185,9 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 			continue
 		}
 		edge := edges[idx]
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err == nil {
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err != nil {
+			m.logger.Error("bulk citation action failed", "project", m.ProjectID, "action", action, "patent", edge.TargetPatent, "error", err)
+		} else {
 			m.logActivity(ActivityBulkPrefix+string(action), edge.TargetPatent, "")
 			executedCount++
 
@@ -191,6 +200,7 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	m.logger.Info("bulk citation action completed", "project", m.ProjectID, "action", action, "requested", len(indices), "executed", executedCount)
 	m.message = fmt.Sprintf("performed bulk %s on %d items", action, executedCount)
 	m.visualMode = false
 	m.bulkActionIndices = nil
@@ -202,4 +212,54 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.spinner.Tick)
 	}
 	return model, tea.Batch(cmds...)
+}
+
+func (m *Model) executeBulkDelete(indices []int) (tea.Model, tea.Cmd) {
+	// Collect patent numbers to delete.
+	nums := make([]string, 0, len(indices))
+	for _, idx := range indices {
+		if idx >= 0 && idx < len(m.patents) {
+			nums = append(nums, m.patents[idx].Number)
+		}
+	}
+
+	m.logger.Info("bulk delete started", "project", m.ProjectID, "count", len(nums), "patents", nums)
+
+	// Remove IDS entries for each patent before soft-deleting.
+	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
+		numSet := make(map[string]bool, len(nums))
+		for _, n := range nums {
+			numSet[n] = true
+		}
+		for _, entry := range idsEntries {
+			if numSet[entry.PatentNumber] {
+				if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
+					m.logger.Error("bulk delete: IDS entry removal failed", "project", m.ProjectID, "patent", entry.PatentNumber, "ids_id", entry.ID, "error", err)
+				} else {
+					m.logger.Info("bulk delete: IDS entry removed", "project", m.ProjectID, "patent", entry.PatentNumber, "ids_id", entry.ID)
+					m.logActivity(ActivityIDSRemove, entry.PatentNumber, "bulk-delete")
+				}
+			}
+		}
+	} else {
+		m.logger.Error("bulk delete: failed to list IDS entries", "project", m.ProjectID, "error", err)
+	}
+
+	deleted := 0
+	for _, num := range nums {
+		if err := m.repo.DeletePatent(m.ctx, m.ProjectID, num); err != nil {
+			m.logger.Error("bulk delete: patent deletion failed", "project", m.ProjectID, "patent", num, "error", err)
+		} else {
+			m.logger.Info("bulk delete: patent deleted", "project", m.ProjectID, "patent", num)
+			m.logActivity(ActivityPatentDelete, num, fmt.Sprintf("bulk-%03d", len(nums)))
+			deleted++
+		}
+	}
+
+	m.logger.Info("bulk delete completed", "project", m.ProjectID, "requested", len(nums), "deleted", deleted)
+
+	m.bulkActionIndices = nil
+	m.visualMode = false
+	m.message = fmt.Sprintf("Deleted %d patent(s)", deleted)
+	return m.refreshList()
 }

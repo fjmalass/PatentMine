@@ -82,6 +82,10 @@ const (
 	ActivityRefAdd              = "ref.add"
 	ActivityBulkPrefix          = "bulk."
 	ActivityFamilyRefresh       = "family.refresh"
+	ActivityTagApply            = "tag.apply"
+	ActivityTagRemove           = "tag.remove"
+	ActivityTagDelete           = "tag.delete"
+	ActivityFilterCountry       = "filter.country"
 
 	// Import sources
 	ImportSourceUSPTO  = "uspto"

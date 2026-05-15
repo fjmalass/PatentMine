@@ -174,13 +174,13 @@ func (m *Model) viewRefs() string {
 		return err.Error() + "\n"
 	}
 	if len(refs) == 0 {
-		return m.renderPopup("References", "No reference entries.\n")
+		return m.renderPopup("Non Patent References", "No reference entries.\n")
 	}
 	var body strings.Builder
 	for _, ref := range refs {
 		body.WriteString(fmt.Sprintf("- %s\n", ref.CitationLabel))
 	}
-	return m.renderPopup("References", body.String())
+	return m.renderPopup("Non Patent References", body.String())
 }
 
 func (m *Model) viewAI() string {
