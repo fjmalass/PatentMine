@@ -144,7 +144,8 @@ type Model struct {
 	projectTags                  []domain.TagWithCount
 	availableTags                []domain.Tag
 	selectedPatentTags           map[int64]bool
-	tagLivePatent                string
+	activeSelection              selectionContext
+	dirty                        dirtyState
 	familyRefreshElapsed         string
 	overlayBackdropCache         string
 	overlayBackdropCacheKey      string
@@ -757,14 +758,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyColLeft, "left":
 			count := m.consumeCount(1)
-			if m.mode == viewList {
-				m.sortColumnIndex = clamp(m.sortColumnIndex-count, 0, len(m.listColumns())-1)
+			if cols, ok := m.tabularColumns(); ok {
+				m.sortColumnIndex = clamp(m.sortColumnIndex-count, 0, len(cols)-1)
 				return m, nil
 			}
 		case keyColRight, "right":
 			count := m.consumeCount(1)
-			if m.mode == viewList {
-				m.sortColumnIndex = clamp(m.sortColumnIndex+count, 0, len(m.listColumns())-1)
+			if cols, ok := m.tabularColumns(); ok {
+				m.sortColumnIndex = clamp(m.sortColumnIndex+count, 0, len(cols)-1)
 				return m, nil
 			}
 		case keyClassification: // "L"
@@ -785,29 +786,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.familySelected = familyCurrentIdx(m.buildFamilyTree())
 		case keyTag:
 			if m.mode == viewList && len(m.patents) > 0 {
-				firstIdx := m.selected
-				if m.visualMode && m.selectionStart < firstIdx {
-					firstIdx = m.selectionStart
-				}
-				m.current = m.patents[clamp(firstIdx, 0, len(m.patents)-1)]
+				m.current = m.patents[m.selected]
 			}
-			if m.isCitationView() && m.current.Number != "" {
-				prevMode := m.mode
-				sel := m.citationSelection()
-				firstIdx := sel
-				if m.visualMode && m.selectionStart < firstIdx {
-					firstIdx = m.selectionStart
-				}
-				m = m.navigateTo(viewTagSelect)
-				relation := domain.RelationCites
-				if prevMode == viewCitedBy {
-					relation = domain.RelationCitedBy
-				}
-				if edges, err := m.citationEdgesForRelation(relation); err == nil && len(edges) > 0 {
-					m.tagLivePatent = edges[clamp(firstIdx, 0, len(edges)-1)].TargetPatent
-				}
-				m = m.reloadAvailableTags()
-			} else if m.current.Number != "" {
+			m.activeSelection = m.captureSelection()
+			if m.activeSelection.livePatent != "" {
 				m = m.navigateTo(viewTagSelect).reloadAvailableTags()
 			}
 		case keyText:
@@ -897,14 +879,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case keySort:
-			if m.mode == viewList {
-				// Column mapping for sorting
-				cols := m.listColumns()
-				sortCols := make([]string, len(cols))
-				for i, c := range cols {
-					sortCols[i] = c.id
-				}
-				newCol := sortCols[clamp(m.sortColumnIndex, 0, len(sortCols)-1)]
+			if cols, ok := m.tabularColumns(); ok {
+				newCol := cols[clamp(m.sortColumnIndex, 0, len(cols)-1)].id
 				if m.sortColumn == newCol {
 					if m.sortOrder == domain.SortOrderAsc {
 						m.sortOrder = domain.SortOrderDesc
@@ -915,10 +891,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sortColumn = newCol
 					m.sortOrder = domain.SortOrderAsc
 				}
-				m.visualMode = false
-				return m.refreshList()
+				if m.mode == viewList {
+					m.visualMode = false
+					return m.refreshList()
+				}
+				return m, nil
 			}
 		case keyReviewState:
+			m.activeSelection = m.captureSelection()
 			if m.isCitationView() {
 				m.reviewStateSelected = 0
 				if !m.visualMode {

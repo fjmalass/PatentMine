@@ -39,45 +39,15 @@ func (m *Model) viewReviewStateSelect() string {
 }
 
 func (m *Model) reviewStateSelectTitle() string {
-	prevMode := previousModeOr(m, viewList)
-	switch {
-	case prevMode == viewDetail:
-		if m.current.Number != "" {
-			return "Change Status · " + m.current.Number
+	sel := m.activeSelection
+	if sel.IsMulti() {
+		if sel.kind == selKindCitation {
+			return fmt.Sprintf("Change Status · %d citations", sel.Count())
 		}
-	case prevMode == viewCites || prevMode == viewCitedBy:
-		if len(m.backStack) > 0 && m.backStack[len(m.backStack)-1].visualMode {
-			indices := m.citationIndicesFromSnapshot(prevMode)
-			return fmt.Sprintf("Change Status · %d citations", len(indices))
-		}
-		if edge, ok, err := m.selectedCitationEdge(); err == nil && ok {
-			return "Change Status · " + edge.TargetPatent
-		}
-	case prevMode == viewReview:
-		if edge, ok, err := m.selectedReviewCitationEdge(); err == nil && ok {
-			return "Change Status · " + edge.TargetPatent
-		}
-	case prevMode == viewFamily:
-		nodes := m.buildFamilyTree()
-		if m.familySelected >= 0 && m.familySelected < len(nodes) {
-			return "Change Status · " + nodes[m.familySelected].number
-		}
-	case prevMode == viewList:
-		if len(m.backStack) > 0 {
-			snap := m.backStack[len(m.backStack)-1]
-			if snap.visualMode {
-				start, end := snap.selectionStart, snap.selected
-				if start > end {
-					start, end = end, start
-				}
-				return fmt.Sprintf("Change Status · %d patents", end-start+1)
-			}
-			if snap.selected >= 0 && snap.selected < len(snap.patents) {
-				return "Change Status · " + snap.patents[snap.selected].Number
-			}
-		} else if m.selected >= 0 && m.selected < len(m.patents) {
-			return "Change Status · " + m.patents[m.selected].Number
-		}
+		return fmt.Sprintf("Change Status · %d patents", sel.Count())
+	}
+	if sel.livePatent != "" {
+		return "Change Status · " + sel.livePatent
 	}
 	return "Change Status"
 }
@@ -88,12 +58,14 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		return m.goBack()
 	}
 	next := statuses[m.reviewStateSelected]
-
+	sel := m.activeSelection
 	prevMode := previousModeOr(m, viewList)
 
+	// detail: also patches backStack so restored current has updated ReviewState
 	if prevMode == viewDetail {
 		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
 			m.err = err.Error()
+			m.activeSelection = selectionContext{}
 			return m.goBack()
 		}
 		m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
@@ -101,19 +73,36 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		if len(m.backStack) > 0 {
 			m.backStack[len(m.backStack)-1].current.ReviewState = next
 		}
+		m.activeSelection = selectionContext{}
+		m = m.markDirty(dirtyDetail | dirtyFamily)
 		return m.goBack()
 	}
 
-	if prevMode == viewCites || prevMode == viewCitedBy {
-		relation := domain.RelationCites
-		if prevMode == viewCitedBy {
-			relation = domain.RelationCitedBy
-		}
-		edges, err := m.citationEdgesForRelation(relation)
-		if err != nil || len(edges) == 0 {
+	// review queue: single edge with different resolution (multi-parent source)
+	if prevMode == viewReview {
+		edge, ok, err := m.selectedReviewCitationEdge()
+		if err != nil || !ok {
+			m.activeSelection = selectionContext{}
 			return m.goBack()
 		}
-		indices := m.citationIndicesFromSnapshot(prevMode)
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
+			m.err = err.Error()
+			m.activeSelection = selectionContext{}
+			return m.goBack()
+		}
+		m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
+		m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
+		m.activeSelection = selectionContext{}
+		m = m.markDirty(dirtyDetail)
+		return m.goBack()
+	}
+
+	if sel.kind == selKindCitation {
+		edges, indices, err := sel.CitationEdges(m)
+		if err != nil || len(edges) == 0 {
+			m.activeSelection = selectionContext{}
+			return m.goBack()
+		}
 		updatedCount := 0
 		for _, idx := range indices {
 			if idx < 0 || idx >= len(edges) {
@@ -132,73 +121,41 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		} else if updatedCount == 1 && len(indices) > 0 && indices[0] < len(edges) {
 			m.message = fmt.Sprintf("%s → %s", edges[indices[0]].TargetPatent, next)
 		}
+		m.activeSelection = selectionContext{}
 		m.visualMode = false
 		if len(m.backStack) > 0 {
 			m.backStack[len(m.backStack)-1].visualMode = false
 		}
+		m = m.markDirty(dirtyDetail)
 		return m.goBack()
 	}
 
-	if prevMode == viewFamily {
-		nodes := m.buildFamilyTree()
-		if m.familySelected < 0 || m.familySelected >= len(nodes) {
-			return m.goBack()
-		}
-		node := nodes[m.familySelected]
-		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, node.number, next); err != nil {
-			m.err = err.Error()
-			return m.goBack()
-		}
-		m.message = fmt.Sprintf("%s → %s", node.number, next)
-		m.logActivity(ActivityPatentReviewState, node.number, next)
-		m.invalidateFamilyCaches()
+	// patent kind: list, family, or single
+	patentNums, err := sel.PatentNumbers(m)
+	if err != nil || len(patentNums) == 0 {
+		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
-
-	if prevMode == viewReview {
-		edge, ok, err := m.selectedReviewCitationEdge()
-		if err != nil || !ok {
-			return m.goBack()
-		}
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
-			m.err = err.Error()
-			return m.goBack()
-		}
-		m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
-		m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
-		return m.goBack()
-	}
-
-	// viewList: activeSelectionIndex() returns 0 for overlay modes, so read
-	// selection from the pre-overlay backStack snapshot instead.
-	indices := m.listSelectionFromSnapshot()
-
 	updatedCount := 0
-	for _, idx := range indices {
-		if idx < 0 || idx >= len(m.patents) {
+	for _, num := range patentNums {
+		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, num, next); err != nil {
+			m.logger.Error("status selection update failed", "patent", num, "error", err)
 			continue
 		}
-		p := m.patents[idx]
-		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, p.Number, next); err != nil {
-			m.logger.Error("status selection update failed", "patent", p.Number, "error", err)
-			continue
-		}
-		m.patents[idx].ReviewState = next
-		m.logActivity(ActivityPatentReviewState, p.Number, next)
+		m.logActivity(ActivityPatentReviewState, num, next)
 		updatedCount++
 	}
-
 	if updatedCount > 1 {
 		m.message = fmt.Sprintf("updated status to %s for %d patents", next, updatedCount)
 	} else if updatedCount == 1 {
-		p := m.patents[indices[0]]
-		m.message = fmt.Sprintf("%s → %s", p.Number, next)
+		m.message = fmt.Sprintf("%s → %s", patentNums[0], next)
 	}
-
+	m.activeSelection = selectionContext{}
 	m.visualMode = false
 	if len(m.backStack) > 0 {
 		m.backStack[len(m.backStack)-1].visualMode = false
 	}
+	m = m.markDirty(dirtyDetail | dirtyFamily)
 	return m.goBack()
 }
 

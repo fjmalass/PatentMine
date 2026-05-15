@@ -3,6 +3,9 @@ package tui
 import (
 	"fmt"
 	"strconv"
+
+	"patentmine/internal/domain"
+	"patentmine/internal/storage"
 )
 
 func (m *Model) isInSelection(idx int) bool {
@@ -168,4 +171,134 @@ func (m *Model) goToClassification(index int) *Model {
 	}
 	m.classificationSelected = clamp(index-1, 0, len(classifications)-1)
 	return m
+}
+
+// selectionKind distinguishes patent-list selections from citation-edge selections.
+type selectionKind int8
+
+const (
+	selKindPatent   selectionKind = iota // indices → patent numbers
+	selKindCitation                       // indices → citation edge targets (lazy fetch)
+)
+
+// selectionContext captures selection state at action time so overlay apply
+// functions can resolve patent numbers without knowing the caller's view depth.
+// Patent kind: patentNums pre-resolved from m.patents or family nodes.
+// Citation kind: lazy — stores query params; edges fetched at apply time.
+type selectionContext struct {
+	kind       selectionKind
+	indices    []int  // sorted ascending
+	livePatent string // first-selected; already live-mutated (tag space-toggle target)
+	// patent kind:
+	patentNums []string
+	// citation kind:
+	parentNumber string
+	relation     string
+	sortColumn   string
+	sortOrder    string
+	reviewFilter string
+}
+
+func (s selectionContext) Count() int    { return len(s.indices) }
+func (s selectionContext) IsMulti() bool { return len(s.indices) > 1 }
+
+// PatentNumbers returns patent numbers for all selected items.
+// Citation kind: lazily fetches edges from repo.
+func (s selectionContext) PatentNumbers(m *Model) ([]string, error) {
+	if s.kind == selKindPatent {
+		return s.patentNums, nil
+	}
+	edges, err := s.resolveCitationEdges(m)
+	if err != nil {
+		return nil, err
+	}
+	nums := make([]string, 0, len(s.indices))
+	for _, idx := range s.indices {
+		if idx >= 0 && idx < len(edges) {
+			nums = append(nums, edges[idx].TargetPatent)
+		}
+	}
+	return nums, nil
+}
+
+// CitationEdges fetches citation edges and returns them with the stored indices.
+// Returns nil, nil, nil for patent-kind selections.
+func (s selectionContext) CitationEdges(m *Model) ([]domain.CitationEdge, []int, error) {
+	if s.kind != selKindCitation {
+		return nil, nil, nil
+	}
+	edges, err := s.resolveCitationEdges(m)
+	return edges, s.indices, err
+}
+
+func (s selectionContext) resolveCitationEdges(m *Model) ([]domain.CitationEdge, error) {
+	opts := storage.ListCitationsOptions{
+		SortColumn:        s.sortColumn,
+		SortOrder:         s.sortOrder,
+		ReviewStateFilter: s.reviewFilter,
+	}
+	return m.repo.ListCitations(m.ctx, m.ProjectID, s.parentNumber, s.relation, opts)
+}
+
+// captureSelection snapshots the current selection so overlay apply functions
+// can resolve patent numbers without knowing the caller's view or stack depth.
+func (m *Model) captureSelection() selectionContext {
+	switch {
+	case m.mode == viewList:
+		indices := m.selectedIndices()
+		nums := make([]string, 0, len(indices))
+		for _, idx := range indices {
+			if idx >= 0 && idx < len(m.patents) {
+				nums = append(nums, m.patents[idx].Number)
+			}
+		}
+		live := ""
+		if len(nums) > 0 {
+			live = nums[0]
+		}
+		return selectionContext{kind: selKindPatent, indices: indices, livePatent: live, patentNums: nums}
+
+	case m.isCitationView():
+		relation := domain.RelationCites
+		if m.mode == viewCitedBy {
+			relation = domain.RelationCitedBy
+		}
+		indices := m.selectedIndices()
+		live := ""
+		if edges, err := m.citationEdgesForRelation(relation); err == nil && len(edges) > 0 && len(indices) > 0 {
+			live = edges[clamp(indices[0], 0, len(edges)-1)].TargetPatent
+		}
+		return selectionContext{
+			kind:         selKindCitation,
+			indices:      indices,
+			livePatent:   live,
+			parentNumber: m.current.Number,
+			relation:     relation,
+			sortColumn:   m.sortColumn,
+			sortOrder:    m.sortOrder,
+			reviewFilter: m.citesReviewStateFilter,
+		}
+
+	case m.mode == viewFamily:
+		nodes := m.buildFamilyTree()
+		live := ""
+		if m.familySelected >= 0 && m.familySelected < len(nodes) {
+			live = nodes[m.familySelected].number
+		}
+		return selectionContext{
+			kind:       selKindPatent,
+			indices:    []int{m.familySelected},
+			livePatent: live,
+			patentNums: []string{live},
+		}
+
+	default: // viewDetail, viewReview, or any other — single current patent
+		live := m.current.Number
+		return selectionContext{
+			kind:       selKindPatent,
+			indices:    []int{0},
+			livePatent: live,
+			patentNums: []string{live},
+		}
+	}
 }

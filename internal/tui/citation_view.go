@@ -38,12 +38,12 @@ func (m *Model) citationColumns(available int) []listColumn {
 	titleWidth := max(citColMinTitle, available-fixed-pads)
 	return fitColumns(
 		[]listColumn{
-			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber},
+			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber, jumpLabel: jumpLabelPublication},
 			{label: colHeaderTitle, width: titleWidth, id: domain.SortColumnTitle},
-			{label: colHeaderInventor, width: citColInvWidth, id: domain.SortColumnInventor},
-			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration},
-			{label: colHeaderReview, width: citColStateWidth, id: domain.SortColumnReviewState},
-			{label: colHeaderTags, width: citColTagsWidth, id: domain.SortColumnTags},
+			{label: colHeaderInventor, width: citColInvWidth, id: domain.SortColumnInventor, jumpLabel: jumpLabelInventors},
+			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration, jumpLabel: jumpLabelExpiration},
+			{label: colHeaderReview, width: citColStateWidth, id: domain.SortColumnReviewState, jumpLabel: keyReviewState},
+			{label: colHeaderTags, width: citColTagsWidth, id: domain.SortColumnTags, jumpLabel: ksTags.jump},
 		},
 		available,
 		map[string]int{
@@ -65,16 +65,16 @@ func (m *Model) citationColumns(available int) []listColumn {
 	)
 }
 
-func (m *Model) reviewQueueColumns(available int) []listColumn {
+func (m *Model) reviewOverlayColumns(available int) []listColumn {
 	fixed := citColNumWidth + citColInvWidth + citColExpWidth + citColSourceWidth
 	pads := 4 * listColPad
 	titleWidth := max(citColMinTitle, available-fixed-pads)
 	return fitColumns(
 		[]listColumn{
-			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber},
+			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber, jumpLabel: jumpLabelPublication},
 			{label: colHeaderTitle, width: titleWidth, id: domain.SortColumnTitle},
-			{label: colHeaderInventor, width: citColInvWidth, id: domain.SortColumnInventor},
-			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration},
+			{label: colHeaderInventor, width: citColInvWidth, id: domain.SortColumnInventor, jumpLabel: jumpLabelInventors},
+			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration, jumpLabel: jumpLabelExpiration},
 			{label: colHeaderSource, width: citColSourceWidth, id: citationColSource},
 		},
 		available,
@@ -137,16 +137,56 @@ func (m *Model) viewCitations(relation string) string {
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", overlayIndexWidth)
 
+	if m.sortColumnIndex >= len(cols) {
+		m.sortColumnIndex = len(cols) - 1
+	}
 	for i, c := range cols {
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+
+		sortIndicator := ""
+		if m.sortColumn == c.id {
+			if m.sortOrder == domain.SortOrderDesc {
+				sortIndicator = " ▾"
+			} else {
+				sortIndicator = " ▴"
+			}
+		}
+		avail := c.width - lipgloss.Width(sortIndicator)
+		if avail < 1 {
+			avail = 1
+		}
+		displayLabel := c.label
+		if lipgloss.Width(c.label) > avail {
+			displayLabel = m.truncate(c.label, avail)
+		}
+		label := displayLabel + sortIndicator
+
+		if i == m.sortColumnIndex {
+			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
+		}
+
+		jumpColLabel := ""
+		if m.jumpMode {
+			jumpColLabel = c.jumpLabel
+		}
+		jumpColPrefix := ""
+		if jumpColLabel != "" {
+			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
+		}
+
+		colWidth := c.width
+		if jumpColLabel != "" {
+			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
+		}
+
 		padding := listColPad
 		if i == len(cols)-1 {
 			padding = 0
 		}
-		header += m.pad(c.label, c.width+padding)
+		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
 	}
 
-	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
-	body.WriteString("\n")
+	body.WriteString(header + "\n")
 
 	for i := window.Start; i < window.End; i++ {
 		prefix := "  "
@@ -222,22 +262,62 @@ func (m *Model) viewReviewQueue() string {
 	if m.hasJumpTargets() {
 		jumpPrefixWidth = listJumpWidth
 	}
-	cols := m.reviewQueueColumns(m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
+	cols := m.reviewOverlayColumns(m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
 	header := m.pad("  ", listRowPrefixWidth) +
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", overlayIndexWidth)
 
+	if m.sortColumnIndex >= len(cols) {
+		m.sortColumnIndex = len(cols) - 1
+	}
 	for i, c := range cols {
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+
+		sortIndicator := ""
+		if m.sortColumn == c.id {
+			if m.sortOrder == domain.SortOrderDesc {
+				sortIndicator = " ▾"
+			} else {
+				sortIndicator = " ▴"
+			}
+		}
+		avail := c.width - lipgloss.Width(sortIndicator)
+		if avail < 1 {
+			avail = 1
+		}
+		displayLabel := c.label
+		if lipgloss.Width(c.label) > avail {
+			displayLabel = m.truncate(c.label, avail)
+		}
+		label := displayLabel + sortIndicator
+
+		if i == m.sortColumnIndex {
+			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
+		}
+
+		jumpColLabel := ""
+		if m.jumpMode {
+			jumpColLabel = c.jumpLabel
+		}
+		jumpColPrefix := ""
+		if jumpColLabel != "" {
+			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
+		}
+
+		colWidth := c.width
+		if jumpColLabel != "" {
+			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
+		}
+
 		padding := listColPad
 		if i == len(cols)-1 {
 			padding = 0
 		}
-		header += m.pad(c.label, c.width+padding)
+		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
 	}
 
-	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true).Render(header))
-	body.WriteString("\n")
+	body.WriteString(header + "\n")
 
 	for i := window.Start; i < window.End; i++ {
 		prefix := "  "

@@ -418,6 +418,27 @@ func (m *Model) styleLine(content string) string {
 	return lipgloss.NewStyle().Width(m.width).Render(content)
 }
 
+// tabularColumns returns the column set for the current mode if it is a
+// sortable tabular view (list, citations, review overlay), else (nil, false).
+func (m *Model) tabularColumns() ([]listColumn, bool) {
+	jumpPW := 0
+	if m.hasJumpTargets() {
+		jumpPW = listJumpWidth
+	}
+	switch {
+	case m.mode == viewList:
+		return m.listColumns(), true
+	case m.isCitationView():
+		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPW + overlayIndexWidth)
+		return m.citationColumns(avail), true
+	case m.mode == viewReview:
+		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPW + overlayIndexWidth)
+		return m.reviewOverlayColumns(avail), true
+	default:
+		return nil, false
+	}
+}
+
 func (m *Model) moveSelection(delta int) *Model {
 	count := m.activeItemCount()
 	if count == 0 {

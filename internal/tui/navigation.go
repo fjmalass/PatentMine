@@ -144,6 +144,7 @@ func (m *Model) goBack() (tea.Model, tea.Cmd) {
 		last := m.backStack[len(m.backStack)-1]
 		m.backStack = m.backStack[:len(m.backStack)-1]
 		m = m.restore(last)
+		m = m.flushDirty()
 		if m.mode == viewList {
 			return m.refreshList()
 		}

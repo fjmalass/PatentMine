@@ -40,21 +40,29 @@ func (m *Model) jumpLabels() []jumpLabel {
 		if err != nil || len(edges) == 0 {
 			return nil
 		}
-		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.pageSize())
-		end := min(start+m.pageSize(), len(edges))
-		preferred := ksCitations.jump
-		if m.mode == viewCitedBy {
-			preferred = ksCitedBy.jump
+		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		cols := m.citationColumns(avail)
+		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.overlayPageSize())
+		end := min(start+m.overlayPageSize(), len(edges))
+		labels := make([]string, 0, len(cols)+(end-start))
+		for _, c := range cols {
+			labels = append(labels, c.jumpLabel)
 		}
-		return m.fallbackJumpLabels(end-start, []string{preferred})
+		return m.fallbackJumpLabels(len(cols)+(end-start), labels)
 	case m.mode == viewReview:
 		edges, err := m.currentReviewCitationEdges()
 		if err != nil || len(edges) == 0 {
 			return nil
 		}
-		start := pageStart(clamp(m.reviewSelected, 0, len(edges)-1), m.pageSize())
-		end := min(start+m.pageSize(), len(edges))
-		return m.fallbackJumpLabels(end-start, nil)
+		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		cols := m.reviewOverlayColumns(avail)
+		start := pageStart(clamp(m.reviewSelected, 0, len(edges)-1), m.overlayPageSize())
+		end := min(start+m.overlayPageSize(), len(edges))
+		labels := make([]string, 0, len(cols)+(end-start))
+		for _, c := range cols {
+			labels = append(labels, c.jumpLabel)
+		}
+		return m.fallbackJumpLabels(len(cols)+(end-start), labels)
 	case m.mode == viewFamily:
 		nodes := m.buildFamilyTree()
 		return m.fallbackJumpLabels(len(nodes), nil)
@@ -109,18 +117,34 @@ func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
 	case m.mode == viewDetail:
 		m.detailSelected = index
 	case m.isCitationView():
+		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		cols := m.citationColumns(avail)
+		colCount := len(cols)
+		if index < colCount {
+			m.sortColumnIndex = index
+			return m, nil
+		}
+		index -= colCount
 		edges, err := m.currentCitationEdges()
 		if err != nil || len(edges) == 0 {
 			return m, nil
 		}
-		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.pageSize())
+		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.overlayPageSize())
 		m.setCitationSelection(clamp(start+index, 0, len(edges)-1))
 	case m.mode == viewReview:
+		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		cols := m.reviewOverlayColumns(avail)
+		colCount := len(cols)
+		if index < colCount {
+			m.sortColumnIndex = index
+			return m, nil
+		}
+		index -= colCount
 		edges, err := m.currentReviewCitationEdges()
 		if err != nil || len(edges) == 0 {
 			return m, nil
 		}
-		start := pageStart(clamp(m.reviewSelected, 0, len(edges)-1), m.pageSize())
+		start := pageStart(clamp(m.reviewSelected, 0, len(edges)-1), m.overlayPageSize())
 		m.reviewSelected = clamp(start+index, 0, len(edges)-1)
 	case m.mode == viewFamily:
 		nodes := m.buildFamilyTree()
