@@ -410,6 +410,9 @@ func (m *Model) moveSelection(delta int) *Model {
 	}
 	current := m.activeSelectionIndex()
 	next := clamp(current+delta, 0, count-1)
+	if m.mode == viewDetail {
+		next = m.skipDetailSeparators(next, delta)
+	}
 	m.setActiveSelectionIndex(next)
 	return m
 }

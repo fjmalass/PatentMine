@@ -464,6 +464,23 @@ func formatStoredTime(value time.Time, fallback string) string {
 	return formatDatetime(value)
 }
 
+// skipDetailSeparators advances idx in the direction of delta until it lands on
+// a non-separator field, so j/k navigation in viewDetail skips visual dividers.
+func (m *Model) skipDetailSeparators(idx, delta int) int {
+	fields := m.detailFields()
+	if len(fields) == 0 {
+		return 0
+	}
+	dir := 1
+	if delta < 0 {
+		dir = -1
+	}
+	for idx >= 0 && idx < len(fields) && fields[idx].separator {
+		idx += dir
+	}
+	return clamp(idx, 0, len(fields)-1)
+}
+
 func formatElapsedHint(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("updated in %dms", d.Milliseconds())

@@ -35,21 +35,21 @@ const (
 	commandClassFilter        = "classfilter"
 	commandInventorFilter     = "inventorfilter"
 	// commandStatusFilter removed — use :filter review_state instead
-	commandFamily             = "family"
-	commandPurge              = "purge"
-	commandCompact            = "compact"
-	commandNote               = "note"
-	commandIDS                = "ids"
-	commandVersion            = "version"
-	commandKeymap             = "keymap"
-	commandExit               = "exit"
-	commandFamilyPull         = "pull"
-	commandTag                = "tag"
+	commandFamily     = "family"
+	commandPurge      = "purge"
+	commandCompact    = "compact"
+	commandNote       = "note"
+	commandIDS        = "ids"
+	commandVersion    = "version"
+	commandKeymap     = "keymap"
+	commandExit       = "exit"
+	commandFamilyPull = "pull"
+	commandTag        = "tag"
 
 	// :country subcommands
-	commandCountry           = "country"
-	countrySubList           = "list"
-	countrySubHelp           = "help"
+	commandCountry = "country"
+	countrySubList = "list"
+	countrySubHelp = "help"
 
 	// :tag subcommands
 	tagSubAdd    = "add"
@@ -90,15 +90,15 @@ const (
 	idsEditSubFull     = "full"
 
 	// :project export subcommands
-	exportSubIDS    = "ids"
+	exportSubIDS         = "ids"
 	exportSubReviewState = "review_state"
-	exportSubState  = "state"
+	exportSubState       = "state"
 
 	// :filter subcommands
 	filterSubReviewState = "review_state"
-	filterSubClass    = "class"
-	filterSubInventor = "inventor"
-	filterSubClear    = "clear"
+	filterSubClass       = "class"
+	filterSubInventor    = "inventor"
+	filterSubClear       = "clear"
 
 	// :family subcommands
 	familySubParent = "parent"
@@ -107,15 +107,15 @@ const (
 	familySubView   = "view"
 
 	// activity actions
-	activityPatentAdd      = "patent.add"
+	activityPatentAdd           = "patent.add"
 	activityPatentReviewState   = "patent.review_state"
 	activityPatentImport        = "patent.import"
 	activityCitationReviewState = "citation.review_state"
-	activityCitationStore  = "citation.store"
-	activityNoteAdd        = "note.add"
-	activityRefAdd         = "ref.add"
-	activityIDSAdd         = "ids.add"
-	activityIDSStatus      = "ids.status"
+	activityCitationStore       = "citation.store"
+	activityNoteAdd             = "note.add"
+	activityRefAdd              = "ref.add"
+	activityIDSAdd              = "ids.add"
+	activityIDSStatus           = "ids.status"
 
 	// export state aliases
 	exportStateAll         = "all"
@@ -167,7 +167,7 @@ const (
 	keyBottom            = "G"
 	keyCites             = "c"
 	keyCitedBy           = "b"
-	keyReviewState = "s"
+	keyReviewState       = "s"
 	keySort              = "."
 	keyColLeft           = "h"
 	keyColRight          = "l"
@@ -180,8 +180,8 @@ const (
 	keyJump              = "f"
 	keyFamily            = "F"
 	keyProject           = "P"
-	keyTag        = "T"
-	keyCountry    = "C"
+	keyTag               = "T"
+	keyCountry           = "C"
 	keyFirstClaim        = "1"
 	keyHelp              = "?"
 	keyYes               = "y"
@@ -291,21 +291,21 @@ const (
 	OverlayAbsoluteMinWidth = 20
 
 	// Activity actions
-	ActivityPatentImport   = "patent.import"
-	ActivityPatentDelete   = "patent.delete"
-	ActivityPatentReviewState = "patent.review_state"
-	ActivityPatentDate     = "patent.date"
-	ActivityPatentNumber   = "patent.number"
-	ActivityPatentRefresh  = "patent.refresh"
-	ActivityNoteAdd        = "note.add"
-	ActivityIDSAdd         = "ids.add"
-	ActivityIDSRemove      = "ids.remove"
-	ActivityIDSStatus      = "ids.status"
-	ActivityCitationStore  = "citation.store"
+	ActivityPatentImport        = "patent.import"
+	ActivityPatentDelete        = "patent.delete"
+	ActivityPatentReviewState   = "patent.review_state"
+	ActivityPatentDate          = "patent.date"
+	ActivityPatentNumber        = "patent.number"
+	ActivityPatentRefresh       = "patent.refresh"
+	ActivityNoteAdd             = "note.add"
+	ActivityIDSAdd              = "ids.add"
+	ActivityIDSRemove           = "ids.remove"
+	ActivityIDSStatus           = "ids.status"
+	ActivityCitationStore       = "citation.store"
 	ActivityCitationReviewState = "citation.review_state"
-	ActivityRefAdd         = "ref.add"
-	ActivityBulkPrefix     = "bulk."
-	ActivityFamilyRefresh  = "family.refresh"
+	ActivityRefAdd              = "ref.add"
+	ActivityBulkPrefix          = "bulk."
+	ActivityFamilyRefresh       = "family.refresh"
 
 	// Import sources
 	ImportSourceUSPTO  = "uspto"
@@ -370,7 +370,7 @@ var ReviewStateLabels = map[string]string{
 type classificationDetailRow int
 
 const (
-	classDetailRowTotal       classificationDetailRow = iota
+	classDetailRowTotal classificationDetailRow = iota
 	classDetailRowStored
 	classDetailRowUnderReview
 	classDetailRowIgnored
