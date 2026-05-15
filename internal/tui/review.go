@@ -140,7 +140,7 @@ func (m *Model) updateSelectedReviewCitationReviewState(status string, messageKe
 		m.reviewSelected = clamp(m.reviewSelected, 0, max(0, len(edges)-1))
 	}
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
-	m.visualMode = false
+	m.clearVisualMode()
 	return m, nil
 }
 
@@ -202,7 +202,7 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 
 	m.logger.Info("bulk citation action completed", "project", m.ProjectID, "action", action, "requested", len(indices), "executed", executedCount)
 	m.message = fmt.Sprintf("performed bulk %s on %d items", action, executedCount)
-	m.visualMode = false
+	m.clearVisualMode()
 	m.bulkActionIndices = nil
 
 	model, _ := m.goBack()
@@ -249,7 +249,8 @@ func (m *Model) executeBulkDelete(indices []int) (tea.Model, tea.Cmd) {
 	m.logger.Info("bulk delete completed", "project", m.ProjectID, "requested", len(nums), "deleted", deleted)
 
 	m.bulkActionIndices = nil
-	m.visualMode = false
+	m.clearVisualMode()
+	model, cmd := m.goBack()
 	m.message = fmt.Sprintf("Deleted %d patent(s)", deleted)
-	return m.refreshList()
+	return model, cmd
 }

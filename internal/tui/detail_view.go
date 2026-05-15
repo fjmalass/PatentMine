@@ -352,15 +352,15 @@ func latestCitationRefresh(edges []domain.CitationEdge) time.Time {
 	return latest
 }
 
-func (m *Model) jumpLabelForInventor(index int) string {
-	if index == 0 {
+func (m *Model) jumpLabelForInventor(idx int) string {
+	if idx == 0 {
 		return jumpLabelInventors
 	}
-	numberIndex := index
+	numberIndex := idx
 	if numberIndex >= 0 && numberIndex < len(inventorJumpNumberLabels) {
 		return string(inventorJumpNumberLabels[numberIndex])
 	}
-	return m.fallbackJumpLabels(index+1, []string{
+	return m.fallbackJumpLabels(idx+1, []string{
 		jumpLabelAssignee,
 		jumpLabelInventors,
 		jumpLabelPublication,
@@ -369,7 +369,7 @@ func (m *Model) jumpLabelForInventor(index int) string {
 		jumpLabelStoredLocal,
 		jumpLabelUpdated,
 		jumpLabelSource,
-	})[index].key
+	})[idx].key
 }
 
 func (m *Model) detailRow(label TextKey, value string, width int, leadWidth ...int) string {

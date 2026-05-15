@@ -25,7 +25,7 @@ func (m *Model) snapshot() navSnapshot {
 		mode:                         m.mode,
 		patents:                      patents,
 		projects:                     projects,
-		selected:                     m.selected,
+		patentSelected:                     m.patentSelected,
 		projectSelected:              m.projectSelected,
 		projectEventsSelected:        m.projectEventsSelected,
 		projectInvoicesSelected:      m.projectInvoicesSelected,
@@ -61,7 +61,7 @@ func (m *Model) snapshot() navSnapshot {
 		sortColumn2:                  m.sortColumn2,
 		sortOrder2:                   m.sortOrder2,
 		citesReviewStateFilter:       m.citesReviewStateFilter,
-		listNumWidth:                 m.listNumWidth,
+		numberColWidth:                 m.numberColWidth,
 		classificationQuery:          m.classificationQuery,
 		classificationSearchActive:   m.classificationSearchActive,
 		listSearchQuery:              m.listSearchQuery,
@@ -83,7 +83,7 @@ func (m *Model) effectiveWidth() int {
 func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.patents = snapshot.patents
 	m.projects = snapshot.projects
-	m.selected = snapshot.selected
+	m.patentSelected = snapshot.patentSelected
 	m.projectSelected = snapshot.projectSelected
 	m.projectEventsSelected = snapshot.projectEventsSelected
 	m.projectInvoicesSelected = snapshot.projectInvoicesSelected
@@ -111,7 +111,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.sortColumn2 = snapshot.sortColumn2
 	m.sortOrder2 = snapshot.sortOrder2
 	m.citesReviewStateFilter = snapshot.citesReviewStateFilter
-	m.listNumWidth = snapshot.listNumWidth
+	m.numberColWidth = snapshot.numberColWidth
 	m.classificationQuery = snapshot.classificationQuery
 	m.classificationSearchActive = snapshot.classificationSearchActive
 	m.listSearchQuery = snapshot.listSearchQuery

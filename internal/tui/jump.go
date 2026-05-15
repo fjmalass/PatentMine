@@ -21,7 +21,7 @@ func (m *Model) jumpTargetCount() int {
 func (m *Model) jumpLabels() []jumpLabel {
 	switch {
 	case m.mode == viewList:
-		window := pageWindow(m.selected, len(m.patents), m.pageSize())
+		window := pageWindow(m.patentSelected, len(m.patents), m.pageSize())
 		cols := m.listColumns()
 		labels := make([]string, 0, len(cols)+(window.End-window.Start))
 		for _, c := range cols {
@@ -71,12 +71,12 @@ func (m *Model) jumpLabels() []jumpLabel {
 	}
 }
 
-func (m *Model) jumpPrefix(index int) string {
+func (m *Model) jumpPrefix(idx int) string {
 	labels := m.jumpLabelsCache
-	if !m.jumpMode || index < 0 || index >= len(labels) {
+	if !m.jumpMode || idx < 0 || idx >= len(labels) {
 		return ""
 	}
-	label := labels[index]
+	label := labels[idx]
 	if label.key == "" {
 		return ""
 	}
@@ -108,10 +108,10 @@ func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		index -= colCount
-		window := pageWindow(m.selected, len(m.patents), m.pageSize())
+		window := pageWindow(m.patentSelected, len(m.patents), m.pageSize())
 		target := window.Start + index
 		if target < len(m.patents) {
-			m.selected = target
+			m.patentSelected = target
 			return m.openPatent(m.patents[target].Number)
 		}
 	case m.mode == viewDetail:

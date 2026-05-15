@@ -53,8 +53,8 @@ func (m *Model) searchFrom(s searchable, query string, next bool) *Model {
 type patentListSearchable struct{ m *Model }
 
 func (s patentListSearchable) ItemCount() int  { return len(s.m.patents) }
-func (s patentListSearchable) GetSelected() int { return s.m.selected }
-func (s patentListSearchable) SetSelected(idx int) { s.m.selected = idx }
+func (s patentListSearchable) GetSelected() int { return s.m.patentSelected }
+func (s patentListSearchable) SetSelected(idx int) { s.m.patentSelected = idx }
 func (s patentListSearchable) MatchLabel(idx int) string { return s.m.patents[idx].Number }
 func (s patentListSearchable) Match(idx int, query string, ignoreCase bool) bool {
 	p := s.m.patents[idx]

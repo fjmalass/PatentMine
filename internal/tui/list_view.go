@@ -9,17 +9,17 @@ import (
 	"patentmine/internal/storage"
 )
 
-func (m *Model) styleRow(index int, selected int, content string) string {
-	return m.styleRowW(index, selected, content, m.width)
+func (m *Model) styleRow(idx int, selected int, content string) string {
+	return m.styleRowW(idx, selected, content, m.width)
 }
 
-func (m *Model) styleRowW(index int, selected int, content string, targetWidth int) string {
+func (m *Model) styleRowW(idx int, selected int, content string, targetWidth int) string {
 	style := lipgloss.NewStyle()
-	if m.isInSelection(index) {
+	if m.isInSelection(idx) {
 		style = style.Background(lipgloss.Color(ColorSelection))
-	} else if index == selected {
+	} else if idx == selected {
 		style = style.Background(lipgloss.Color(ColorHighlight))
-	} else if index%2 != 0 {
+	} else if idx%2 != 0 {
 		style = style.Background(lipgloss.Color(ColorAltRow))
 	}
 	if targetWidth > 0 {
@@ -33,11 +33,11 @@ func (m *Model) styleRowW(index int, selected int, content string, targetWidth i
 
 // styleRowOverlay is like styleRowW but uses ColorSurface as the even-row base
 // so that all rows inside overlay popups have a consistent background.
-func (m *Model) styleRowOverlay(index int, selected int, content string, targetWidth int) string {
+func (m *Model) styleRowOverlay(idx int, selected int, content string, targetWidth int) string {
 	style := overlayBase()
-	if m.isInSelection(index) {
+	if m.isInSelection(idx) {
 		style = style.Background(lipgloss.Color(ColorSelection))
-	} else if index == selected {
+	} else if idx == selected {
 		if m.isPopupSearchMode() && m.popupSearchQuery != "" {
 			style = style.
 				Background(lipgloss.Color(ColorWarning)).
@@ -46,7 +46,7 @@ func (m *Model) styleRowOverlay(index int, selected int, content string, targetW
 		} else {
 			style = style.Background(lipgloss.Color(ColorHighlight))
 		}
-	} else if index%2 != 0 {
+	} else if idx%2 != 0 {
 		style = style.Background(lipgloss.Color(ColorAltRow))
 	}
 	if targetWidth > 0 {
@@ -124,7 +124,7 @@ func fitColumns(cols []listColumn, availableWidth int, minWidths map[string]int,
 }
 
 func (m *Model) listColumns() []listColumn {
-	numWidth := max(6, m.listNumWidth)
+	numWidth := max(6, m.numberColWidth)
 	titleWidth := 40
 	invWidth := 20
 	cpcWidth := 15
@@ -186,7 +186,7 @@ func (m *Model) viewList() string {
 	}
 	var b strings.Builder
 
-	window := pageWindow(m.selected, len(m.patents), m.pageSize())
+	window := pageWindow(m.patentSelected, len(m.patents), m.pageSize())
 	status := pageStatus(m.text.T(TextValuePageStatus), window)
 	if m.listFilter.IsActive() && m.totalPatents > 0 {
 		status += fmt.Sprintf("  (%d total)", m.totalPatents)
@@ -280,7 +280,7 @@ func (m *Model) viewList() string {
 	for i := window.Start; i < window.End; i++ {
 		p := m.patents[i]
 		prefix := rowNoCursor
-		if i == m.selected {
+		if i == m.patentSelected {
 			prefix = rowCursor
 		}
 
@@ -360,11 +360,11 @@ func (m *Model) viewList() string {
 			style = style.Foreground(lipgloss.Color(color))
 		}
 
-		if i == m.selected {
+		if i == m.patentSelected {
 			style = style.Bold(true)
 		}
 
-		b.WriteString(m.styleRow(i, m.selected, style.Render(row)) + "\n")
+		b.WriteString(m.styleRow(i, m.patentSelected, style.Render(row)) + "\n")
 	}
 	return b.String()
 }

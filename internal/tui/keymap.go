@@ -251,7 +251,7 @@ func init() {
 
 	registerKey(keyVimDown, nil, "move", nil, false, "Navigation", TextHelpMoveList, true)
 	registerKey(keyVimUp, nil, "move", nil, false, "Navigation", TextHelpMoveList, true)
-	registerKey(keyGoto, nil, "Go to (gg=top)", nil, false, "", "", false)
+	registerKey(keyGoto, nil, "Go to (gg=top, gv=reselect)", nil, false, "", "", false)
 	registerKey(keyBottom, nil, "Go to last", nil, false, "", "", false)
 	registerKey(keyBack, nil, "back", nil, false, "Navigation", TextHelpBackOrQuit, true)
 	registerKey(keyQuit, nil, "quit", nil, false, "Navigation", TextHelpQuitApp, true)

@@ -554,11 +554,11 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
-	if m.selected < 0 || m.selected >= len(m.patents) {
+	if m.patentSelected < 0 || m.patentSelected >= len(m.patents) {
 		m.setMode(viewList)
 		return m, nil
 	}
-	p := m.patents[m.selected]
+	p := m.patents[m.patentSelected]
 	if err := m.repo.DeletePatent(m.ctx, m.ProjectID, p.Number); err != nil {
 		m.err = err.Error()
 		m.setMode(viewList)

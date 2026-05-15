@@ -657,13 +657,13 @@ func TestListSearchTypingRestartsFromTop(t *testing.T) {
 		text:             EnglishText(),
 		mode:             viewList,
 		patents:          []domain.Patent{{Number: "CCC", Title: "Gamma"}, {Number: "BBB", Title: "Beta"}, {Number: "AAA", Title: "Alpha"}},
-		selected:         2,
+		patentSelected:         2,
 		listSearchActive: true,
 	}
 	updated, _ := model.Update(teaKey("B"))
 	got := updated.(*Model)
-	if got.selected != 1 {
-		t.Fatalf("expected edited list search to restart from top match, got selection %d", got.selected)
+	if got.patentSelected != 1 {
+		t.Fatalf("expected edited list search to restart from top match, got selection %d", got.patentSelected)
 	}
 }
 
@@ -673,7 +673,7 @@ func TestListSearchNextWorksAfterEnter(t *testing.T) {
 		text:             EnglishText(),
 		mode:             viewList,
 		patents:          []domain.Patent{{Number: "AAA"}, {Number: "AAB"}, {Number: "CCC"}},
-		selected:         0,
+		patentSelected:         0,
 		listSearchActive: true,
 		listSearchQuery:  "A",
 	}
@@ -684,8 +684,8 @@ func TestListSearchNextWorksAfterEnter(t *testing.T) {
 	}
 	updated, _ = got.Update(teaKey(keyNotes))
 	got = updated.(*Model)
-	if got.selected != 1 {
-		t.Fatalf("expected n to advance to next list match, got selection %d", got.selected)
+	if got.patentSelected != 1 {
+		t.Fatalf("expected n to advance to next list match, got selection %d", got.patentSelected)
 	}
 }
 
@@ -831,17 +831,17 @@ func TestQuitClearsListSearchBeforeExiting(t *testing.T) {
 }
 
 func TestNavigationStackGoesBackToPreviousView(t *testing.T) {
-	model := &Model{repo: stubRepo{}, mode: viewList, selected: 3}
+	model := &Model{repo: stubRepo{}, mode: viewList, patentSelected: 3}
 	model = model.navigateTo(viewDetail)
-	model.selected = 0
+	model.patentSelected = 0
 
 	updated, _ := model.goBack()
 	got := updated.(*Model)
 	if got.mode != viewList {
 		t.Fatalf("expected view %q, got %q", viewList, got.mode)
 	}
-	if got.selected != 3 {
-		t.Fatalf("expected selection to be restored, got %d", got.selected)
+	if got.patentSelected != 3 {
+		t.Fatalf("expected selection to be restored, got %d", got.patentSelected)
 	}
 }
 
@@ -857,8 +857,8 @@ func TestApplyJumpSelectsVisibleListTarget(t *testing.T) {
 	label := model.jumpLabelsCache[12]
 	updated, _ := model.applyJump(label.key)
 	got := updated.(*Model)
-	if got.selected != 2 {
-		t.Fatalf("expected list selection 2, got %d", got.selected)
+	if got.patentSelected != 2 {
+		t.Fatalf("expected list selection 2, got %d", got.patentSelected)
 	}
 }
 
@@ -1183,19 +1183,19 @@ func TestNumericPrefixMovesSelections(t *testing.T) {
 
 		mode:     viewList,
 		patents:  []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}},
-		selected: 0,
+		patentSelected: 0,
 	}
 	updated, _ := model.Update(teaKey("3"))
 	updated, _ = updated.Update(teaKey(keyVimDown))
 	got := updated.(*Model)
-	if got.selected != 3 {
-		t.Fatalf("expected 3j to move to row 4, got %d", got.selected)
+	if got.patentSelected != 3 {
+		t.Fatalf("expected 3j to move to row 4, got %d", got.patentSelected)
 	}
 	updated, _ = got.Update(teaKey("2"))
 	updated, _ = updated.Update(teaKey(keyVimUp))
 	got = updated.(*Model)
-	if got.selected != 1 {
-		t.Fatalf("expected 2k to move to row 2, got %d", got.selected)
+	if got.patentSelected != 1 {
+		t.Fatalf("expected 2k to move to row 2, got %d", got.patentSelected)
 	}
 }
 

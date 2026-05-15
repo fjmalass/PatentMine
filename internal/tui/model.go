@@ -76,13 +76,17 @@ type Model struct {
 	spinner                      spinner.Model
 	loading                      bool
 	loadingMsg                   string
+	lastVisualStart              int
+	lastVisualEnd                int
+	lastVisualValid              bool
+	lastVisualNumbers            []string // patent numbers at save time; nil for non-list views
 	cancel                       context.CancelFunc
 	ProjectID                    string
 	mode                         viewMode
 	patents                      []domain.Patent
 	totalPatents                 int // unfiltered count for the current project
 	projects                     []domain.Project
-	selected                     int
+	patentSelected               int
 	projectSelected              int
 	projectEventsSelected        int
 	projectInvoicesSelected      int
@@ -116,7 +120,7 @@ type Model struct {
 	sortColumn2                  string
 	sortOrder2                   string
 	citesReviewStateFilter       string // "" (all), "stored", "ignored", "under_review"
-	listNumWidth                 int
+	numberColWidth                 int
 	unpaidCounts                 map[string]int
 	familyTreeCache              []familyNode
 	familyTreeCacheFor           string
@@ -174,7 +178,7 @@ type navSnapshot struct {
 	mode                         viewMode
 	patents                      []domain.Patent
 	projects                     []domain.Project
-	selected                     int
+	patentSelected               int
 	projectSelected              int
 	projectEventsSelected        int
 	projectInvoicesSelected      int
@@ -203,7 +207,7 @@ type navSnapshot struct {
 	sortColumn2                  string
 	sortOrder2                   string
 	citesReviewStateFilter       string
-	listNumWidth                 int
+	numberColWidth                 int
 	classificationQuery          string
 	classificationSearchActive   bool
 	listSearchQuery              string
@@ -564,7 +568,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case keyEsc, keyBack:
 			if m.visualMode {
-				m.visualMode = false
+				m.clearVisualMode()
 				return m, nil
 			}
 			m.countBuffer = EmptyCount
@@ -641,7 +645,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.filterBySelectedDetail()
 			}
 			if m.mode == viewList && len(m.patents) > 0 {
-				return m.openPatent(m.patents[m.selected].Number)
+				return m.openPatent(m.patents[m.patentSelected].Number)
 			}
 		case keyDelete:
 			if m.mode == viewFamily {
@@ -653,7 +657,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if len(indices) > 1 {
 						m.bulkAction = bulkActionDelete
 						m.bulkActionIndices = indices
-						m.visualMode = false
+						m.clearVisualMode()
 						return m.navigateTo(viewBulkConfirm), nil
 					}
 				}
@@ -700,10 +704,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.jumpMode = !m.jumpMode
 			return m, nil
 		case keyVisual, keyVisualLine:
+			if m.countBuffer == "g" && msg.String() == keyVisual {
+				m.countBuffer = ""
+				return m.restoreVisualSelection(), nil
+			}
 			if m.mode == viewList || m.isCitationView() || m.mode == viewReview {
-				m.visualMode = !m.visualMode
 				if m.visualMode {
-					m.selectionStart = m.activeSelectionIndex()
+					m.clearVisualMode()
+				} else {
+					m.visualMode = true
+					cur := m.activeSelectionIndex()
+					m.selectionStart = cur
+					m.trackVisualEnd(cur)
 				}
 			}
 			return m, nil
@@ -728,7 +740,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyClassification: // "L"
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[m.selected]
+				m.current = m.patents[m.patentSelected]
 				m.populateDetailCache()
 			}
 			return m.navigateTo(viewClassifications), nil
@@ -738,13 +750,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.navigateTo(viewCitedBy)
 		case keyFamily:
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[m.selected]
+				m.current = m.patents[m.patentSelected]
 			}
 			m = m.navigateTo(viewFamily)
 			m.familySelected = familyCurrentIdx(m.buildFamilyTree())
 		case keyTag:
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[m.selected]
+				m.current = m.patents[m.patentSelected]
 			}
 			m.activeSelection = m.captureSelection()
 			if m.activeSelection.livePatent != "" {
@@ -752,7 +764,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyFullText:
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[m.selected]
+				m.current = m.patents[m.patentSelected]
 			}
 			m = m.navigateTo(viewFullText)
 		case keyNarrow:
@@ -807,7 +819,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.navigateTo(viewHelpPopup)
 		case keyNoteEdit:
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[clamp(m.selected, 0, len(m.patents)-1)]
+				m.current = m.patents[clamp(m.patentSelected, 0, len(m.patents)-1)]
 			}
 			if m.current.Number != "" {
 				m.noteTA.Reset()
@@ -820,7 +832,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyAddToIDS:
 			var targetNumber string
 			if m.mode == viewList && len(m.patents) > 0 {
-				targetNumber = m.patents[clamp(m.selected, 0, len(m.patents)-1)].Number
+				targetNumber = m.patents[clamp(m.patentSelected, 0, len(m.patents)-1)].Number
 			} else if m.mode == viewDetail && m.current.Number != "" {
 				targetNumber = m.current.Number
 			}
@@ -852,7 +864,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sortOrder = domain.SortOrderAsc
 				}
 				if m.mode == viewList {
-					m.visualMode = false
+					m.clearVisualMode()
 					return m.refreshList()
 				}
 				return m, nil
@@ -921,7 +933,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				currentStatus = m.current.ReviewState
 				m.detailSelected = m.indexJumpLabel(keyReviewState)
 			} else if m.mode == viewList && len(m.patents) > 0 {
-				currentStatus = m.patents[m.selected].ReviewState
+				currentStatus = m.patents[m.patentSelected].ReviewState
 			}
 			m.reviewStateSelected = 0
 			if currentStatus != "" {

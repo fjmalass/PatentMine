@@ -446,9 +446,9 @@ func (m *Model) viewPreview() string {
 // overlayBase returns a base lipgloss style with ColorSurface background
 // used by all overlay popup view functions for consistent text rendering.
 func (m *Model) viewConfirmDelete() string {
-	if m.selected < 0 || m.selected >= len(m.patents) {
+	if m.patentSelected < 0 || m.patentSelected >= len(m.patents) {
 		return ""
 	}
-	p := m.patents[m.selected]
+	p := m.patents[m.patentSelected]
 	return m.renderPopupHeader(fmt.Sprintf(m.text.T(TextDeleteConfirmPrompt), p.Number))
 }

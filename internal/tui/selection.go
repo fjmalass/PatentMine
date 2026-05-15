@@ -27,7 +27,7 @@ func (m *Model) activeSelectionIndex() int {
 	case m.mode == viewReview:
 		return m.reviewSelected
 	case m.mode == viewList:
-		return m.selected
+		return m.patentSelected
 	case m.mode == viewClassifications:
 		return m.classificationSelected
 	case m.mode == viewInventors:
@@ -69,7 +69,7 @@ func (m *Model) setActiveSelectionIndex(val int) {
 	case m.mode == viewReview:
 		m.reviewSelected = val
 	case m.mode == viewList:
-		m.selected = val
+		m.patentSelected = val
 	case m.mode == viewClassifications:
 		m.classificationSelected = val
 	case m.mode == viewInventors:
@@ -78,6 +78,30 @@ func (m *Model) setActiveSelectionIndex(val int) {
 		m.familySelected = val
 	case m.mode == viewDetail:
 		m.detailSelected = val
+	}
+	m.trackVisualEnd(val)
+}
+
+// trackVisualEnd saves the current visual range whenever the cursor moves.
+// Called from setActiveSelectionIndex so the save always happens in the correct view.
+func (m *Model) trackVisualEnd(val int) {
+	if !m.visualMode {
+		return
+	}
+	m.lastVisualStart = m.selectionStart
+	m.lastVisualEnd = val
+	m.lastVisualValid = true
+	if m.mode == viewList {
+		start, end := m.selectionStart, val
+		if start > end {
+			start, end = end, start
+		}
+		m.lastVisualNumbers = make([]string, 0, end-start+1)
+		for i := start; i <= end && i < len(m.patents); i++ {
+			m.lastVisualNumbers = append(m.lastVisualNumbers, m.patents[i].Number)
+		}
+	} else {
+		m.lastVisualNumbers = nil
 	}
 }
 
@@ -105,6 +129,60 @@ func (m *Model) activeItemCount() int {
 	}
 }
 
+// clearVisualMode exits visual mode. The last visual range was already tracked
+// by trackVisualEnd on each cursor movement, so no save is needed here.
+func (m *Model) clearVisualMode() {
+	m.visualMode = false
+}
+
+// restoreVisualSelection re-enters visual mode with the last saved selection (gv).
+// List view: resolves saved patent numbers to current indices (sort-agnostic).
+// Other views: restores raw indices.
+func (m *Model) restoreVisualSelection() *Model {
+	if !m.lastVisualValid {
+		return m
+	}
+	if m.mode != viewList && !m.isCitationView() && m.mode != viewReview {
+		return m
+	}
+	if m.mode == viewList && len(m.lastVisualNumbers) > 0 {
+		first, last := m.findVisualRange(m.lastVisualNumbers)
+		if first == -1 {
+			return m
+		}
+		m.visualMode = true
+		m.selectionStart = first
+		m.patentSelected = clamp(last, 0, len(m.patents)-1)
+		// Re-save with current positions so subsequent gv is idempotent.
+		m.lastVisualStart = first
+		m.lastVisualEnd = m.patentSelected
+	} else {
+		m.visualMode = true
+		m.selectionStart = m.lastVisualStart
+		m.setActiveSelectionIndex(m.lastVisualEnd)
+	}
+	return m
+}
+
+func (m *Model) findVisualRange(numbers []string) (first, last int) {
+	idx := make(map[string]int, len(m.patents))
+	for i, p := range m.patents {
+		idx[p.Number] = i
+	}
+	first, last = -1, -1
+	for _, num := range numbers {
+		if i, ok := idx[num]; ok {
+			if first == -1 || i < first {
+				first = i
+			}
+			if i > last {
+				last = i
+			}
+		}
+	}
+	return first, last
+}
+
 func (m *Model) pageSize() int {
 	if m.height <= 0 {
 		return 20
@@ -129,8 +207,8 @@ func clamp(value, low, high int) int {
 	return value
 }
 
-func rowIndexLabel(zeroBasedIndex int) string {
-	return fmt.Sprintf("%3d", zeroBasedIndex+1)
+func rowIndexLabel(idx int) string {
+	return fmt.Sprintf("%3d", idx+1)
 }
 
 func isCountKey(key string) bool {
@@ -155,21 +233,21 @@ func (m *Model) tryAccumulateCount(key string) {
 	}
 }
 
-func (m *Model) goToRow(index int) *Model {
-	if index <= 0 {
-		index = 1
+func (m *Model) goToRow(idx int) *Model {
+	if idx <= 0 {
+		idx = 1
 	}
-	target := index - 1
+	target := idx - 1
 	m.setActiveSelectionIndex(target)
 	return m
 }
 
-func (m *Model) goToClassification(index int) *Model {
+func (m *Model) goToClassification(idx int) *Model {
 	classifications, _ := m.repo.ListClassifications(m.ctx, m.ProjectID, m.current.Number)
 	if len(classifications) == 0 {
 		return m
 	}
-	m.classificationSelected = clamp(index-1, 0, len(classifications)-1)
+	m.classificationSelected = clamp(idx-1, 0, len(classifications)-1)
 	return m
 }
 
@@ -183,14 +261,14 @@ const (
 
 // selectionContext captures selection state at action time so overlay apply
 // functions can resolve patent numbers without knowing the caller's view depth.
-// Patent kind: patentNums pre-resolved from m.patents or family nodes.
+// Patent kind: patentNumbers pre-resolved from m.patents or family nodes.
 // Citation kind: lazy — stores query params; edges fetched at apply time.
 type selectionContext struct {
 	kind       selectionKind
 	indices    []int  // sorted ascending
 	livePatent string // first-selected; already live-mutated (tag space-toggle target)
 	// patent kind:
-	patentNums []string
+	patentNumbers []string
 	// citation kind:
 	parentNumber string
 	relation     string
@@ -206,7 +284,7 @@ func (s selectionContext) IsMulti() bool { return len(s.indices) > 1 }
 // Citation kind: lazily fetches edges from repo.
 func (s selectionContext) PatentNumbers(m *Model) ([]string, error) {
 	if s.kind == selKindPatent {
-		return s.patentNums, nil
+		return s.patentNumbers, nil
 	}
 	edges, err := s.resolveCitationEdges(m)
 	if err != nil {
@@ -256,7 +334,7 @@ func (m *Model) captureSelection() selectionContext {
 		if len(nums) > 0 {
 			live = nums[0]
 		}
-		return selectionContext{kind: selKindPatent, indices: indices, livePatent: live, patentNums: nums}
+		return selectionContext{kind: selKindPatent, indices: indices, livePatent: live, patentNumbers: nums}
 
 	case m.isCitationView():
 		relation := domain.RelationCites
@@ -289,7 +367,7 @@ func (m *Model) captureSelection() selectionContext {
 			kind:       selKindPatent,
 			indices:    []int{m.familySelected},
 			livePatent: live,
-			patentNums: []string{live},
+			patentNumbers: []string{live},
 		}
 
 	default: // viewDetail, viewReview, or any other — single current patent
@@ -298,7 +376,7 @@ func (m *Model) captureSelection() selectionContext {
 			kind:       selKindPatent,
 			indices:    []int{0},
 			livePatent: live,
-			patentNums: []string{live},
+			patentNumbers: []string{live},
 		}
 	}
 }

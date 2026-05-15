@@ -158,14 +158,14 @@ func (m *Model) reloadAvailableTags() *Model {
 // space-toggle; this propagates the same tag state to the rest.
 func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 	sel := m.activeSelection
-	patentNums, err := sel.PatentNumbers(m)
-	if err != nil || len(patentNums) == 0 {
+	patentNumbers, err := sel.PatentNumbers(m)
+	if err != nil || len(patentNumbers) == 0 {
 		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
-	m.logger.Info("bulk tag apply started", "project", m.ProjectID, "patents", len(patentNums), "tags", len(m.availableTags))
+	m.logger.Info("bulk tag apply started", "project", m.ProjectID, "patents", len(patentNumbers), "tags", len(m.availableTags))
 	count := 0
-	for _, num := range patentNums {
+	for _, num := range patentNumbers {
 		if num == sel.livePatent {
 			count++
 			continue // already applied live via space-toggle
@@ -192,7 +192,7 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("tags updated for %d patents", count)
 	}
 	m.activeSelection = selectionContext{}
-	m.visualMode = false
+	m.clearVisualMode()
 	if len(m.backStack) > 0 {
 		m.backStack[len(m.backStack)-1].visualMode = false
 	}

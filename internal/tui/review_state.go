@@ -129,7 +129,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 			m.message = fmt.Sprintf("%s → %s", edges[indices[0]].TargetPatent, next)
 		}
 		m.activeSelection = selectionContext{}
-		m.visualMode = false
+		m.clearVisualMode()
 		if len(m.backStack) > 0 {
 			m.backStack[len(m.backStack)-1].visualMode = false
 		}
@@ -138,14 +138,14 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	}
 
 	// patent kind: list, family, or single
-	patentNums, err := sel.PatentNumbers(m)
-	if err != nil || len(patentNums) == 0 {
+	patentNumbers, err := sel.PatentNumbers(m)
+	if err != nil || len(patentNumbers) == 0 {
 		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
-	m.logger.Info("bulk patent status update started", "project", m.ProjectID, "status", next, "count", len(patentNums))
+	m.logger.Info("bulk patent status update started", "project", m.ProjectID, "status", next, "count", len(patentNumbers))
 	updatedCount := 0
-	for _, num := range patentNums {
+	for _, num := range patentNumbers {
 		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, num, next); err != nil {
 			m.logger.Error("status selection update failed", "project", m.ProjectID, "patent", num, "status", next, "error", err)
 			continue
@@ -153,15 +153,15 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		m.logActivity(ActivityPatentReviewState, num, next)
 		updatedCount++
 	}
-	m.logger.Info("bulk patent status update completed", "project", m.ProjectID, "status", next, "requested", len(patentNums), "updated", updatedCount)
+	m.logger.Info("bulk patent status update completed", "project", m.ProjectID, "status", next, "requested", len(patentNumbers), "updated", updatedCount)
 	m.logActivity(ActivityBulkPrefix+ActivityPatentReviewState, next, fmt.Sprintf("%d", updatedCount))
 	if updatedCount > 1 {
 		m.message = fmt.Sprintf("updated status to %s for %d patents", next, updatedCount)
 	} else if updatedCount == 1 {
-		m.message = fmt.Sprintf("%s → %s", patentNums[0], next)
+		m.message = fmt.Sprintf("%s → %s", patentNumbers[0], next)
 	}
 	m.activeSelection = selectionContext{}
-	m.visualMode = false
+	m.clearVisualMode()
 	if len(m.backStack) > 0 {
 		m.backStack[len(m.backStack)-1].visualMode = false
 	}
@@ -176,7 +176,7 @@ func (m *Model) listSelectionFromSnapshot() []int {
 	if len(m.backStack) > 0 {
 		snap := m.backStack[len(m.backStack)-1]
 		if snap.visualMode {
-			start, end := snap.selectionStart, snap.selected
+			start, end := snap.selectionStart, snap.patentSelected
 			if start > end {
 				start, end = end, start
 			}
@@ -186,9 +186,9 @@ func (m *Model) listSelectionFromSnapshot() []int {
 			}
 			return res
 		}
-		return []int{snap.selected}
+		return []int{snap.patentSelected}
 	}
-	return []int{m.selected}
+	return []int{m.patentSelected}
 }
 
 func (m *Model) selectableCountries() []string {

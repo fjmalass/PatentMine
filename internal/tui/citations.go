@@ -142,15 +142,15 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 		m.totalPatents = len(all)
 	}
 
-	m.listNumWidth = 6
+	m.numberColWidth = 6
 	for _, p := range m.patents {
 		w := lipgloss.Width(p.Number)
-		if w > m.listNumWidth {
-			m.listNumWidth = w
+		if w > m.numberColWidth {
+			m.numberColWidth = w
 		}
 	}
-	if m.selected >= len(m.patents) {
-		m.selected = max(0, len(m.patents)-1)
+	if m.patentSelected >= len(m.patents) {
+		m.patentSelected = max(0, len(m.patents)-1)
 	}
 	if len(patents) > 0 && m.current.Number == "" {
 		m.current = patents[0]
@@ -222,7 +222,7 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	}
 	m.logActivity(ActivityCitationStore, edge.TargetPatent, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
-	m.visualMode = false
+	m.clearVisualMode()
 	return m, nil
 }
 
@@ -312,7 +312,7 @@ func (m *Model) updateSelectedCitationReviewState(status string, messageKey Text
 	m.logActivity(ActivityCitationReviewState, edge.TargetPatent, status)
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
 
-	m.visualMode = false
+	m.clearVisualMode()
 	return m, nil
 }
 
