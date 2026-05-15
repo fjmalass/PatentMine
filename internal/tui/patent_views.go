@@ -324,3 +324,85 @@ func (m *Model) handleViewDateEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.dateInput, cmd = m.dateInput.Update(msg)
 	return m, cmd
 }
+
+func (m *Model) handleViewFullTextKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		m.fullTextScroll++
+		return m, nil
+	case keyVimUp, keyArrowUp:
+		if m.fullTextScroll > 0 {
+			m.fullTextScroll--
+		}
+		return m, nil
+	case keyPgDown, keyCtrlF, keyCtrlD:
+		m.fullTextScroll += m.pageSize() - 4
+		return m, nil
+	case keyPgUp, keyCtrlB, keyCtrlU:
+		m.fullTextScroll -= m.pageSize() - 4
+		if m.fullTextScroll < 0 {
+			m.fullTextScroll = 0
+		}
+		return m, nil
+	case keyEsc, keyBack:
+		m.fullTextScroll = 0
+		return m.goBack()
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.helpSearchActive {
+		switch msg.String() {
+		case keyEsc, keyBack:
+			m.helpSearchActive = false
+			m.helpQuery = ""
+			m.helpScroll = 0
+			return m, nil
+		case keyBackspace, keyCtrlH:
+			if len(m.helpQuery) > 0 {
+				m.helpQuery = m.helpQuery[:len(m.helpQuery)-1]
+				m.helpScroll = 0
+			}
+			return m, nil
+		case keyEnter:
+			m.helpSearchActive = false
+			return m, nil
+		default:
+			if len(msg.String()) == 1 {
+				m.helpQuery += msg.String()
+				m.helpScroll = 0
+			}
+			return m, nil
+		}
+	}
+	switch msg.String() {
+	case keySearch:
+		m.helpSearchActive = true
+		m.helpQuery = ""
+		return m, nil
+	case keyVimDown, keyArrowDown:
+		m.helpScroll++
+		return m, nil
+	case keyVimUp, keyArrowUp:
+		if m.helpScroll > 0 {
+			m.helpScroll--
+		}
+		return m, nil
+	case keyPgDown, keyCtrlF, keyCtrlD:
+		m.helpScroll += m.pageSize() - 4
+		return m, nil
+	case keyPgUp, keyCtrlB, keyCtrlU:
+		m.helpScroll -= m.pageSize() - 4
+		if m.helpScroll < 0 {
+			m.helpScroll = 0
+		}
+		return m, nil
+	case keyEsc, keyBack:
+		m.helpQuery = ""
+		m.helpSearchActive = false
+		m.helpScroll = 0
+		return m.goBack()
+	}
+	return m, nil
+}

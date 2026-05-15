@@ -457,82 +457,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleViewNoteEditKey(msg)
 		}
 		if m.mode == viewFullText {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				m.fullTextScroll++
-				return m, nil
-			case keyVimUp, keyArrowUp:
-				if m.fullTextScroll > 0 {
-					m.fullTextScroll--
-				}
-				return m, nil
-			case keyPgDown, keyCtrlF, keyCtrlD:
-				m.fullTextScroll += m.pageSize() - 4
-				return m, nil
-			case keyPgUp, keyCtrlB, keyCtrlU:
-				m.fullTextScroll -= m.pageSize() - 4
-				if m.fullTextScroll < 0 {
-					m.fullTextScroll = 0
-				}
-				return m, nil
-			case keyEsc, keyBack:
-				m.fullTextScroll = 0
-				return m.goBack()
-			}
+			return m.handleViewFullTextKey(msg)
 		}
 		if m.mode == viewHelp || m.mode == viewKeymap {
-			if m.helpSearchActive {
-				switch msg.String() {
-				case keyEsc, keyBack:
-					m.helpSearchActive = false
-					m.helpQuery = ""
-					m.helpScroll = 0
-					return m, nil
-				case keyBackspace, keyCtrlH:
-					if len(m.helpQuery) > 0 {
-						m.helpQuery = m.helpQuery[:len(m.helpQuery)-1]
-						m.helpScroll = 0
-					}
-					return m, nil
-				case keyEnter:
-					m.helpSearchActive = false
-					return m, nil
-				default:
-					if len(msg.String()) == 1 {
-						m.helpQuery += msg.String()
-						m.helpScroll = 0
-					}
-					return m, nil
-				}
-			}
-			switch msg.String() {
-			case keySearch:
-				m.helpSearchActive = true
-				m.helpQuery = ""
-				return m, nil
-			case keyVimDown, keyArrowDown:
-				m.helpScroll++
-				return m, nil
-			case keyVimUp, keyArrowUp:
-				if m.helpScroll > 0 {
-					m.helpScroll--
-				}
-				return m, nil
-			case keyPgDown, keyCtrlF, keyCtrlD:
-				m.helpScroll += m.pageSize() - 4
-				return m, nil
-			case keyPgUp, keyCtrlB, keyCtrlU:
-				m.helpScroll -= m.pageSize() - 4
-				if m.helpScroll < 0 {
-					m.helpScroll = 0
-				}
-				return m, nil
-			case keyEsc, keyBack:
-				m.helpQuery = ""
-				m.helpSearchActive = false
-				m.helpScroll = 0
-				return m.goBack()
-			}
+			return m.handleViewHelpKey(msg)
 		}
 
 		if m.mode == viewList && m.listSearchActive {
@@ -618,11 +546,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewDetail && m.current.Number != "" {
 				m.detailSelected = m.indexJumpLabel(jumpLabelAbstract)
 				return m.navigateTo(viewAbstract), nil
-			}
-		case keyText:
-			if m.mode == viewDetail {
-				m.detailSelected = m.indexJumpLabel(ksTags.jump)
-				return m, nil
 			}
 		default:
 			if isCountKey(msg.String()) {
@@ -817,7 +740,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeSelection.livePatent != "" {
 				m = m.navigateTo(viewTagSelect).reloadAvailableTags()
 			}
-		case keyText:
+		case keyFullText:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.selected]
+			}
 			m = m.navigateTo(viewFullText)
 		case keyNarrow:
 			if m.mode == viewList && m.listSearchQuery != "" {

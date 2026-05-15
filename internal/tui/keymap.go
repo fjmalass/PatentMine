@@ -258,7 +258,7 @@ func init() {
 	registerKey(keyCommand, nil, "command", nil, false, "Navigation", "", true)
 	registerKey(keySearch, nil, "search", nil, false, "Navigation", TextHelpSearchHint, true)
 	registerKey(keyHelp, nil, "help", nil, false, "Navigation", TextHelpShortcutShowHelp, true)
-	registerKey(keyText, nil, "Text view", nil, false, "Views", TextHelpJumpText, false)
+	registerKey(keyFullText, nil, "Text view", nil, false, "Views", TextHelpJumpText, false)
 	registerKey(keyTag, nil, "Tag selector", nil, false, "Views", TextHelpJumpTags, false)
 	registerKey(keyCites, nil, "Citations view", nil, false, "Views", TextHelpJumpCitations, false)
 	registerKey(keyCitedBy, nil, "Cited-by view", nil, false, "Views", TextHelpJumpCitedBy, false)
