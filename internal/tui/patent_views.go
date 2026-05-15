@@ -99,7 +99,6 @@ func (m *Model) viewInventors() string {
 	}
 
 	rowWidth := max(40, m.overlayWidth()-6)
-	indexWidth := 4
 	countWidth := 6 // "(NNN)"
 
 	var b strings.Builder
@@ -111,8 +110,8 @@ func (m *Model) viewInventors() string {
 		}
 		cnt := countFor(inventor)
 		countCol := fmt.Sprintf("(%d)", cnt)
-		nameWidth := max(10, rowWidth-len(prefix)-indexWidth-countWidth-1)
-		row := prefix + m.pad(rowIndexLabel(i), indexWidth) + m.pad(m.truncate(inventor, nameWidth), nameWidth) + " " + m.pad(countCol, countWidth)
+		nameWidth := max(10, rowWidth-len(prefix)-overlayIndexWidth-countWidth-1)
+		row := prefix + m.pad(rowIndexLabel(i), overlayIndexWidth) + m.pad(m.truncate(inventor, nameWidth), nameWidth) + " " + m.pad(countCol, countWidth)
 		b.WriteString(m.styleRowOverlay(i, selected, row, rowWidth) + "\n")
 	}
 	return b.String()

@@ -65,7 +65,22 @@ type listColumn struct {
 	jumpLabel string
 }
 
-const listColumnIDS = domain.SortColumnIDS
+const (
+	listColumnIDS = domain.SortColumnIDS
+	listColPad    = 2 // gap between adjacent columns in all list/overlay views
+
+	colHeaderNumber         = "Number"
+	colHeaderTitle          = "Title"
+	colHeaderInventor       = "Inventor"
+	colHeaderClassification = "Classification"
+	colHeaderExpires        = "Expires"
+	colHeaderReview         = "Review"
+	colHeaderUpdated        = "Updated"
+	colHeaderNotes          = "Notes"
+	colHeaderTags           = "Tags"
+	colHeaderIDS            = "IDS"
+	colHeaderSource         = "Source"
+)
 
 func fitColumns(cols []listColumn, available int, minWidths map[string]int, shrinkOrder []string) []listColumn {
 	if len(cols) == 0 || available <= 0 {
@@ -120,16 +135,16 @@ func (m *Model) listColumns() []listColumn {
 	tagsWidth := 10
 
 	return []listColumn{
-		{"Number", numWidth, domain.SortColumnNumber, jumpLabelPublication},
-		{"Title", titleWidth, domain.SortColumnTitle, ""},
-		{"Inventor", invWidth, domain.SortColumnInventor, jumpLabelInventors},
-		{"Classification", cpcWidth, domain.SortColumnCPC, jumpLabelClassification},
-		{"Expires", expWidth, domain.SortColumnExpiration, jumpLabelExpiration},
-		{"ReviewState", reviewStateWidth, domain.SortColumnReviewState, keyReviewState},
-		{"Updated", updatedWidth, domain.SortColumnUpdated, jumpLabelUpdated},
-		{"Notes", notesWidth, domain.SortColumnNotes, ksNotes.jump},
-		{"Tags", tagsWidth, domain.SortColumnTags, ksTags.jump},
-		{"IDS", idsWidth, listColumnIDS, keyIDS},
+		{colHeaderNumber, numWidth, domain.SortColumnNumber, jumpLabelPublication},
+		{colHeaderTitle, titleWidth, domain.SortColumnTitle, ""},
+		{colHeaderInventor, invWidth, domain.SortColumnInventor, jumpLabelInventors},
+		{colHeaderClassification, cpcWidth, domain.SortColumnCPC, jumpLabelClassification},
+		{colHeaderExpires, expWidth, domain.SortColumnExpiration, jumpLabelExpiration},
+		{colHeaderReview, reviewStateWidth, domain.SortColumnReviewState, keyReviewState},
+		{colHeaderUpdated, updatedWidth, domain.SortColumnUpdated, jumpLabelUpdated},
+		{colHeaderNotes, notesWidth, domain.SortColumnNotes, ksNotes.jump},
+		{colHeaderTags, tagsWidth, domain.SortColumnTags, ksTags.jump},
+		{colHeaderIDS, idsWidth, listColumnIDS, keyIDS},
 	}
 }
 
@@ -252,7 +267,7 @@ func (m *Model) viewList() string {
 			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
 		}
 
-		padding := 2
+		padding := listColPad
 		if i == len(cols)-1 {
 			padding = 0
 		}
@@ -332,7 +347,7 @@ func (m *Model) viewList() string {
 			}
 			val = m.truncate(val, c.width)
 
-			padding := 2
+			padding := listColPad
 			if j == len(cols)-1 {
 				padding = 0
 			}

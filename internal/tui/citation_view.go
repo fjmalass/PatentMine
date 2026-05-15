@@ -10,60 +10,88 @@ import (
 )
 
 const (
-	citationColExpires = "expires" // not a domain sort column; citation-overlay specific
-	citationColSource  = "source"
-	citationIndexWidth = 4
+	citationColSource = "source"
+	overlayIndexWidth = 4 // index column width shared across all overlay list views
+	overlayPad        = 4 // left+right inner padding consumed by renderPopup border
+	listJumpWidth     = 2 // width reserved for jump-mode hint prefix (e.g. "a ")
+	listRowPrefixWidth = 2 // width of "  " / "> " row cursor prefix
+
+	citColNumWidth    = 16
+	citColInvWidth    = 20
+	citColExpWidth    = 12
+	citColStateWidth  = 10
+	citColSourceWidth = 16
+	citColTagsWidth   = 10
+
+	citColMinNum    = 12
+	citColMinTitle  = 20
+	citColMinInv    = 10
+	citColMinExp    = 10
+	citColMinState  = 8
+	citColMinSource = 12
+	citColMinTags   = 8
 )
 
 func (m *Model) citationColumns(available int) []listColumn {
-	numWidth := 16
-	invWidth := 20
-	expWidth := 12
-	stateWidth := 10
-	titleWidth := max(20, available-numWidth-invWidth-expWidth-stateWidth-8)
+	fixed := citColNumWidth + citColInvWidth + citColExpWidth + citColStateWidth + citColTagsWidth
+	pads := 5 * listColPad // 5 non-last cols each get listColPad gap
+	titleWidth := max(citColMinTitle, available-fixed-pads)
 	return fitColumns(
 		[]listColumn{
-			{label: "Number", width: numWidth, id: domain.SortColumnNumber},
-			{label: "Title", width: titleWidth, id: domain.SortColumnTitle},
-			{label: "Inventor", width: invWidth, id: domain.SortColumnInventor},
-			{label: "Expires", width: expWidth, id: citationColExpires},
-			{label: "ReviewState", width: stateWidth, id: domain.SortColumnReviewState},
+			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber},
+			{label: colHeaderTitle, width: titleWidth, id: domain.SortColumnTitle},
+			{label: colHeaderInventor, width: citColInvWidth, id: domain.SortColumnInventor},
+			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration},
+			{label: colHeaderReview, width: citColStateWidth, id: domain.SortColumnReviewState},
+			{label: colHeaderTags, width: citColTagsWidth, id: domain.SortColumnTags},
 		},
 		available,
 		map[string]int{
-			domain.SortColumnNumber:      12,
-			domain.SortColumnTitle:       18,
-			domain.SortColumnInventor:    10,
-			citationColExpires:           10,
-			domain.SortColumnReviewState: 8,
+			domain.SortColumnNumber:      citColMinNum,
+			domain.SortColumnTitle:       citColMinTitle,
+			domain.SortColumnInventor:    citColMinInv,
+			domain.SortColumnExpiration:  citColMinExp,
+			domain.SortColumnReviewState: citColMinState,
+			domain.SortColumnTags:        citColMinTags,
 		},
-		[]string{domain.SortColumnTitle, domain.SortColumnInventor, domain.SortColumnNumber, domain.SortColumnReviewState, citationColExpires},
+		[]string{
+			domain.SortColumnTitle,
+			domain.SortColumnInventor,
+			domain.SortColumnNumber,
+			domain.SortColumnReviewState,
+			domain.SortColumnTags,
+			domain.SortColumnExpiration,
+		},
 	)
 }
 
 func (m *Model) reviewQueueColumns(available int) []listColumn {
-	numWidth    := 16
-	invWidth    := 20
-	expWidth    := 12
-	sourceWidth := 16
-	titleWidth  := max(20, available-numWidth-invWidth-expWidth-sourceWidth-8)
+	fixed := citColNumWidth + citColInvWidth + citColExpWidth + citColSourceWidth
+	pads := 4 * listColPad
+	titleWidth := max(citColMinTitle, available-fixed-pads)
 	return fitColumns(
 		[]listColumn{
-			{label: "Number", width: numWidth, id: domain.SortColumnNumber},
-			{label: "Title", width: titleWidth, id: domain.SortColumnTitle},
-			{label: "Inventor", width: invWidth, id: domain.SortColumnInventor},
-			{label: "Expires", width: expWidth, id: citationColExpires},
-			{label: "Source", width: sourceWidth, id: citationColSource},
+			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber},
+			{label: colHeaderTitle, width: titleWidth, id: domain.SortColumnTitle},
+			{label: colHeaderInventor, width: citColInvWidth, id: domain.SortColumnInventor},
+			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration},
+			{label: colHeaderSource, width: citColSourceWidth, id: citationColSource},
 		},
 		available,
 		map[string]int{
-			domain.SortColumnNumber:   12,
-			domain.SortColumnTitle:    18,
-			domain.SortColumnInventor: 10,
-			citationColExpires:        10,
-			citationColSource:         12,
+			domain.SortColumnNumber:    citColMinNum,
+			domain.SortColumnTitle:     citColMinTitle,
+			domain.SortColumnInventor:  citColMinInv,
+			domain.SortColumnExpiration: citColMinExp,
+			citationColSource:          citColMinSource,
 		},
-		[]string{domain.SortColumnTitle, domain.SortColumnInventor, citationColSource, domain.SortColumnNumber, citationColExpires},
+		[]string{
+			domain.SortColumnTitle,
+			domain.SortColumnInventor,
+			citationColSource,
+			domain.SortColumnNumber,
+			domain.SortColumnExpiration,
+		},
 	)
 }
 
@@ -92,22 +120,25 @@ func (m *Model) viewCitations(relation string) string {
 	selected := clamp(m.citationSelection(), 0, len(edges)-1)
 	m.setCitationSelection(selected)
 	window := pageWindow(selected, len(edges), m.overlayPageSize())
+
+	tagsByPatent, _ := m.repo.ListPatentTagsForProject(m.ctx, m.ProjectID)
+
 	var body strings.Builder
 	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	body.WriteString("\n\n")
 
 	jumpPrefixWidth := 0
 	if m.hasJumpTargets() {
-		jumpPrefixWidth = 2
+		jumpPrefixWidth = listJumpWidth
 	}
-	cols := m.citationColumns(m.overlayWidth() - 4 - (2 + jumpPrefixWidth + citationIndexWidth))
+	cols := m.citationColumns(m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
-	header := m.pad("  ", 2) +
+	header := m.pad("  ", listRowPrefixWidth) +
 		m.pad("", jumpPrefixWidth) +
-		m.pad("#", citationIndexWidth)
+		m.pad("#", overlayIndexWidth)
 
 	for i, c := range cols {
-		padding := 2
+		padding := listColPad
 		if i == len(cols)-1 {
 			padding = 0
 		}
@@ -133,18 +164,39 @@ func (m *Model) viewCitations(relation string) string {
 		if expDate == "" {
 			expDate = "-"
 		}
+		tagsLabel := "-"
+		if tags, ok := tagsByPatent[edge.TargetPatent]; ok {
+			tagsLabel = formatTags(tags)
+		}
 
-		row := m.pad(prefix, 2) +
+		rowValues := map[string]string{
+			domain.SortColumnNumber:      edge.TargetPatent,
+			domain.SortColumnTitle:       edge.TargetTitle,
+			domain.SortColumnInventor:    formatInventorsShort(edge.TargetInventors),
+			domain.SortColumnExpiration:  expDate,
+			domain.SortColumnReviewState: edge.ReviewState,
+			domain.SortColumnTags:        tagsLabel,
+		}
+
+		row := m.pad(prefix, listRowPrefixWidth) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
-			m.pad(rowIndexLabel(i), citationIndexWidth)
+			m.pad(rowIndexLabel(i), overlayIndexWidth)
 
-		row += m.pad(m.truncate(edge.TargetPatent, cols[0].width), cols[0].width+2)
-		row += m.pad(m.truncate(edge.TargetTitle, cols[1].width), cols[1].width+2)
-		row += m.pad(m.truncate(formatInventorsShort(edge.TargetInventors), cols[2].width), cols[2].width+2)
-		row += m.pad(m.truncate(expDate, cols[3].width), cols[3].width+2)
-		row += m.pad(m.citationReviewStateLabel(edge.ReviewState), cols[4].width)
+		for j, c := range cols {
+			padding := listColPad
+			if j == len(cols)-1 {
+				padding = 0
+			}
+			var cell string
+			if c.id == domain.SortColumnReviewState {
+				cell = m.citationReviewStateLabel(rowValues[c.id])
+			} else {
+				cell = m.truncate(rowValues[c.id], c.width)
+			}
+			row += m.pad(cell, c.width+padding)
+		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-4) + "\n")
+		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-overlayPad) + "\n")
 	}
 
 	return m.renderPopup(citationPopupTitle(), body.String())
@@ -168,16 +220,16 @@ func (m *Model) viewReviewQueue() string {
 
 	jumpPrefixWidth := 0
 	if m.hasJumpTargets() {
-		jumpPrefixWidth = 2
+		jumpPrefixWidth = listJumpWidth
 	}
-	cols := m.reviewQueueColumns(m.overlayWidth() - 4 - (2 + jumpPrefixWidth + citationIndexWidth))
+	cols := m.reviewQueueColumns(m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
-	header := m.pad("  ", 2) +
+	header := m.pad("  ", listRowPrefixWidth) +
 		m.pad("", jumpPrefixWidth) +
-		m.pad("#", citationIndexWidth)
+		m.pad("#", overlayIndexWidth)
 
 	for i, c := range cols {
-		padding := 2
+		padding := listColPad
 		if i == len(cols)-1 {
 			padding = 0
 		}
@@ -204,17 +256,27 @@ func (m *Model) viewReviewQueue() string {
 			expDate = "-"
 		}
 
-		row := m.pad(prefix, 2) +
+		rowValues := map[string]string{
+			domain.SortColumnNumber:    edge.TargetPatent,
+			domain.SortColumnTitle:     edge.TargetTitle,
+			domain.SortColumnInventor:  formatInventorsShort(edge.TargetInventors),
+			domain.SortColumnExpiration: expDate,
+			citationColSource:          edge.SourcePatent,
+		}
+
+		row := m.pad(prefix, listRowPrefixWidth) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
-			m.pad(rowIndexLabel(i), citationIndexWidth)
+			m.pad(rowIndexLabel(i), overlayIndexWidth)
 
-		row += m.pad(m.truncate(edge.TargetPatent, cols[0].width), cols[0].width+2)
-		row += m.pad(m.truncate(edge.TargetTitle, cols[1].width), cols[1].width+2)
-		row += m.pad(m.truncate(formatInventorsShort(edge.TargetInventors), cols[2].width), cols[2].width+2)
-		row += m.pad(m.truncate(expDate, cols[3].width), cols[3].width+2)
-		row += m.pad(m.truncate(edge.SourcePatent, cols[4].width), cols[4].width)
+		for j, c := range cols {
+			padding := listColPad
+			if j == len(cols)-1 {
+				padding = 0
+			}
+			row += m.pad(m.truncate(rowValues[c.id], c.width), c.width+padding)
+		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-4) + "\n")
+		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-overlayPad) + "\n")
 	}
 	return m.renderPopup("Review Queue", body.String())
 }

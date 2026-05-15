@@ -29,12 +29,11 @@ func (m *Model) viewClassifications() string {
 	body.WriteString("\n\n")
 
 	rowWidth := max(44, m.overlayWidth()-6)
-	indexWidth := 4
 	codeWidth := 18
-	descriptionWidth := max(20, rowWidth-indexWidth-codeWidth-2)
+	descriptionWidth := max(20, rowWidth-overlayIndexWidth-codeWidth-2)
 
 	header := m.pad("  ", 2) +
-		m.pad("#", indexWidth) +
+		m.pad("#", overlayIndexWidth) +
 		m.pad("Code", codeWidth) +
 		m.pad("Description", descriptionWidth)
 
@@ -48,7 +47,7 @@ func (m *Model) viewClassifications() string {
 			prefix = "> "
 		}
 		row := m.pad(prefix, 2) +
-			m.pad(rowIndexLabel(i), indexWidth) +
+			m.pad(rowIndexLabel(i), overlayIndexWidth) +
 			m.pad(cls.Code, codeWidth) +
 			m.pad(m.truncate(cls.Description, descriptionWidth), descriptionWidth)
 		body.WriteString(m.styleRowOverlay(i, selected, row, rowWidth) + "\n")
