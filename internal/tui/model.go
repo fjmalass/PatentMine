@@ -900,14 +900,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyReviewState:
 			m.activeSelection = m.captureSelection()
 			if m.isCitationView() {
+				// Pre-select the review state of the first edge in the selection so
+				// the picker opens with the cursor already on the current value.
+				// In visual mode "first" is the lower bound of the selection range.
 				m.reviewStateSelected = 0
-				if !m.visualMode {
-					if edge, ok, err := m.selectedCitationEdge(); err == nil && ok {
-						for i, s := range m.selectableReviewStates() {
-							if s == edge.ReviewState {
-								m.reviewStateSelected = i
-								break
-							}
+				if edges, err := m.currentCitationEdges(); err == nil && len(edges) > 0 {
+					firstIdx := m.citationSelection()
+					if m.visualMode && m.selectionStart < firstIdx {
+						firstIdx = m.selectionStart
+					}
+					firstIdx = clamp(firstIdx, 0, len(edges)-1)
+					for i, s := range m.selectableReviewStates() {
+						if s == edges[firstIdx].ReviewState {
+							m.reviewStateSelected = i
+							break
 						}
 					}
 				}
