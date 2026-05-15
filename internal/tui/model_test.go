@@ -634,7 +634,7 @@ func TestSlashInClassificationPopupStartsSearchImmediately(t *testing.T) {
 	if got.input.Focused() {
 		t.Fatal("expected popup search to avoid focusing command input")
 	}
-	if !strings.Contains(got.viewClassifications(), "search:/") {
+	if !strings.Contains(got.viewClassifications(), "search: /") {
 		t.Fatalf("expected search badge in popup title, got %q", got.viewClassifications())
 	}
 }
@@ -1033,11 +1033,11 @@ func TestEnterOnDetailCountryFiltersStoredPatentsByCountry(t *testing.T) {
 	if got.mode != viewList {
 		t.Fatalf("expected mode %q, got %q", viewList, got.mode)
 	}
-	if got.countryFilter != domain.PatentCountryUS {
-		t.Fatalf("expected country filter %q, got %q", domain.PatentCountryUS, got.countryFilter)
+	if got.listFilter.Country != domain.PatentCountryUS {
+		t.Fatalf("expected country filter %q, got %q", domain.PatentCountryUS, got.listFilter.Country)
 	}
-	if got.reviewStateFilter != domain.ReviewStateStored {
-		t.Fatalf("expected stored review state filter, got %q", got.reviewStateFilter)
+	if got.listFilter.ReviewState != domain.ReviewStateStored {
+		t.Fatalf("expected stored review state filter, got %q", got.listFilter.ReviewState)
 	}
 }
 
@@ -1073,8 +1073,8 @@ func TestEnterOnClassificationDetailFilters(t *testing.T) {
 	if got.mode != viewList {
 		t.Fatalf("expected mode %q, got %q", viewList, got.mode)
 	}
-	if got.classFilter != "H04N21/430" {
-		t.Fatalf("expected class filter %q, got %q", "H04N21/430", got.classFilter)
+	if got.listFilter.Class != "H04N21/430" {
+		t.Fatalf("expected class filter %q, got %q", "H04N21/430", got.listFilter.Class)
 	}
 }
 
@@ -1208,7 +1208,7 @@ func TestNumericPrefixGoesToAbsoluteRow(t *testing.T) {
 		mode:    viewClassifications,
 		current: domain.Patent{Number: "US10218760B2"},
 	}
-	updated, _ := model.Update(teaKey(keyFirstClaim))
+	updated, _ := model.Update(teaKey("1"))
 	updated, _ = updated.Update(teaKey("0"))
 	updated, _ = updated.Update(teaKey(keyGoto))
 	got := updated.(*Model)

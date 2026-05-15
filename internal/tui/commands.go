@@ -46,6 +46,9 @@ func ParseCommand(input string) Command {
 	case aliasTagHelp:
 		name = commandTag
 		args = append([]string{tagSubHelp}, args...)
+	case aliasTagFilter:
+		name = commandTag
+		args = append([]string{tagSubFilter}, args...)
 	case aliasCountry:
 		name = commandCountry
 	}

@@ -141,20 +141,20 @@ func (m *Model) viewFullText() string {
 	if pageH < 1 {
 		pageH = 1
 	}
-	maxScroll := len(allLines) - pageH
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if m.fullTextScroll > maxScroll {
-		m.fullTextScroll = maxScroll
-	}
-
-	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
-	currentPage := (m.fullTextScroll / pageH) + 1
 	totalPages := (len(allLines) + pageH - 1) / pageH
 	if totalPages < 1 {
 		totalPages = 1
 	}
+	maxScroll := (totalPages - 1) * pageH
+	if m.fullTextScroll > maxScroll {
+		m.fullTextScroll = maxScroll
+	}
+	if m.fullTextScroll < 0 {
+		m.fullTextScroll = 0
+	}
+
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
+	currentPage := (m.fullTextScroll / pageH) + 1
 	title := fmt.Sprintf("Full Text · %s %s", m.current.Number, subtle.Render(fmt.Sprintf("(Page %d/%d)", currentPage, totalPages)))
 
 	end := m.fullTextScroll + pageH

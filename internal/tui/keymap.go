@@ -309,6 +309,9 @@ func init() {
 	// viewProjectTags
 	registerKey(keyUnreview, []viewMode{viewProjectTags}, "rename", nil, true, "Tags", "", true)
 
+	// viewFamily overrides
+	registerKey(keyPlus, []viewMode{viewFamily}, "add child", nil, true, "Family", TextHelpFamilyAddChild, true)
+
 	if err := validateKeyBindings(); err != nil {
 		panic(fmt.Sprintf("key binding validation failed:\n%s", err))
 	}

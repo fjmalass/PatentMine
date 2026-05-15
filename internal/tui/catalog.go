@@ -87,7 +87,6 @@ func buildAllHelpSections() []HelpSection {
 				{Command: ":family remove <num>", Description: TextHelpFamilyRemove},
 				{Command: ":family pull", Description: TextHelpFamilyPull},
 				{Key: "D (in family view)", Description: TextHelpFamilyRemoveEdge},
-				{Key: "+", Description: TextHelpFamilyAddChild},
 			},
 		},
 		{

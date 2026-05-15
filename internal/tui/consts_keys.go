@@ -4,6 +4,7 @@ const (
 	keyEnter             = "enter"
 	keyEsc               = "esc"
 	keySpace             = " "
+	keyPlus              = "+"
 	keyCtrlC             = "ctrl+c"
 	keyCtrlF             = "ctrl+f"
 	keyCtrlD             = "ctrl+d"

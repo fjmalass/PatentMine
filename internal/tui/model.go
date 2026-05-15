@@ -935,7 +935,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m.navigateTo(viewCountrySelect), nil
-		case "+":
+		case keyPlus:
 			if m.mode == viewFamily {
 				m.input.Focus()
 				m.input.SetValue(":family child ")
