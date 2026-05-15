@@ -82,8 +82,9 @@ const (
 	colHeaderSource         = "Source"
 )
 
-func fitColumns(cols []listColumn, available int, minWidths map[string]int, shrinkOrder []string) []listColumn {
-	if len(cols) == 0 || available <= 0 {
+// fitColumns shrinks columns to fit within availableWidth (total pixels for all column widths + inter-column gaps combined).
+func fitColumns(cols []listColumn, availableWidth int, minWidths map[string]int, shrinkOrder []string) []listColumn {
+	if len(cols) == 0 || availableWidth <= 0 {
 		return cols
 	}
 
@@ -99,7 +100,7 @@ func fitColumns(cols []listColumn, available int, minWidths map[string]int, shri
 		return total
 	}
 
-	for totalWidth(fitted) > available {
+	for totalWidth(fitted) > availableWidth {
 		shrunk := false
 		for _, id := range shrinkOrder {
 			for i := range fitted {
@@ -148,8 +149,8 @@ func (m *Model) listColumns() []listColumn {
 	}
 }
 
-func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
-	if len(cols) == 0 || available <= 0 {
+func (m *Model) fitListColumns(cols []listColumn, availableWidth int) []listColumn {
+	if len(cols) == 0 || availableWidth <= 0 {
 		return cols
 	}
 	minWidths := map[string]int{
@@ -176,7 +177,7 @@ func (m *Model) fitListColumns(cols []listColumn, available int) []listColumn {
 		domain.SortColumnNotes,
 		domain.SortColumnTags,
 	}
-	return fitColumns(cols, available, minWidths, shrinkOrder)
+	return fitColumns(cols, availableWidth, minWidths, shrinkOrder)
 }
 
 func (m *Model) viewList() string {

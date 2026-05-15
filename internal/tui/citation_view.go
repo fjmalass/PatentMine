@@ -33,10 +33,10 @@ const (
 	citColMinTags   = 8
 )
 
-func (m *Model) citationColumns(available int) []listColumn {
+func (m *Model) citationColumns(availableWidth int) []listColumn {
 	fixed := citColNumWidth + citColInvWidth + citColExpWidth + citColStateWidth + citColTagsWidth
 	pads := 5 * listColPad // 5 non-last cols each get listColPad gap
-	titleWidth := max(citColMinTitle, available-fixed-pads)
+	titleWidth := max(citColMinTitle, availableWidth-fixed-pads)
 	return fitColumns(
 		[]listColumn{
 			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber, jumpLabel: jumpLabelPublication},
@@ -46,7 +46,7 @@ func (m *Model) citationColumns(available int) []listColumn {
 			{label: colHeaderReview, width: citColStateWidth, id: domain.SortColumnReviewState, jumpLabel: keyReviewState},
 			{label: colHeaderTags, width: citColTagsWidth, id: domain.SortColumnTags, jumpLabel: ksTags.jump},
 		},
-		available,
+		availableWidth,
 		map[string]int{
 			domain.SortColumnNumber:      citColMinNum,
 			domain.SortColumnTitle:       citColMinTitle,
@@ -66,10 +66,10 @@ func (m *Model) citationColumns(available int) []listColumn {
 	)
 }
 
-func (m *Model) reviewOverlayColumns(available int) []listColumn {
+func (m *Model) reviewOverlayColumns(availableWidth int) []listColumn {
 	fixed := citColNumWidth + citColInvWidth + citColExpWidth + citColSourceWidth
 	pads := 4 * listColPad
-	titleWidth := max(citColMinTitle, available-fixed-pads)
+	titleWidth := max(citColMinTitle, availableWidth-fixed-pads)
 	return fitColumns(
 		[]listColumn{
 			{label: colHeaderNumber, width: citColNumWidth, id: domain.SortColumnNumber, jumpLabel: jumpLabelPublication},
@@ -78,7 +78,7 @@ func (m *Model) reviewOverlayColumns(available int) []listColumn {
 			{label: colHeaderExpires, width: citColExpWidth, id: domain.SortColumnExpiration, jumpLabel: jumpLabelExpiration},
 			{label: colHeaderSource, width: citColSourceWidth, id: citationColSource},
 		},
-		available,
+		availableWidth,
 		map[string]int{
 			domain.SortColumnNumber:    citColMinNum,
 			domain.SortColumnTitle:     citColMinTitle,
