@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -275,4 +276,19 @@ func (m *Model) viewHelpPopup() string {
 
 func (m *Model) viewKeymapPopup() string {
 	return RenderContextHelp(m.text, m.activeMode())
+}
+
+func (m *Model) handleViewDateEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyEnter:
+		val := m.dateInput.Value()
+		m.dateInput.Blur()
+		return m.patentDateCommand([]string{m.editDateType, val})
+	case keyEsc, keyBack:
+		m.dateInput.Blur()
+		return m.goBack()
+	}
+	var cmd tea.Cmd
+	m.dateInput, cmd = m.dateInput.Update(msg)
+	return m, cmd
 }

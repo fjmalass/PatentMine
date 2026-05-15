@@ -42,9 +42,9 @@ func (m *Model) jumpLabels() []jumpLabel {
 		}
 		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.pageSize())
 		end := min(start+m.pageSize(), len(edges))
-		preferred := jumpLabelCitation
+		preferred := ksCitations.jump
 		if m.mode == viewCitedBy {
-			preferred = jumpLabelCitedBy
+			preferred = ksCitedBy.jump
 		}
 		return m.fallbackJumpLabels(end-start, []string{preferred})
 	case m.mode == viewReview:

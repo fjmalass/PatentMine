@@ -957,6 +957,10 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		query += ` and p.country_code = ?`
 		args = append(args, strings.ToUpper(strings.TrimSpace(opts.CountryFilter)))
 	}
+	if strings.TrimSpace(opts.TagFilter) != "" {
+		query += ` and p.number in (select pt.patent_number from patent_tags pt join tags t on pt.tag_id = t.id where t.project_id = ? and lower(t.name) = lower(?))`
+		args = append(args, projectID, strings.TrimSpace(opts.TagFilter))
+	}
 
 	if len(opts.ClassFilters) > 0 {
 		if strings.EqualFold(opts.ClassFilterOp, domain.FilterOpOr) {

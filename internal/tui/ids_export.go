@@ -13,6 +13,13 @@ import (
 	"patentmine/internal/domain"
 )
 
+func IDSPassagesText(e domain.IDSEntry) string {
+	if e.InFull {
+		return IDSIconInFull + " In full"
+	}
+	return e.RelevantPassages
+}
+
 type idsExportReference struct {
 	Entry   domain.IDSEntry
 	Patent  domain.Patent
@@ -159,7 +166,7 @@ func renderIDSMarkdown(projectName, projectID string, meta domain.IDSMetadata, r
 					kind = "—"
 				}
 				patentee := patentPatentee(ref.Patent)
-				passages := domain.IDSPassagesText(ref.Entry)
+				passages := IDSPassagesText(ref.Entry)
 				if passages == "" {
 					passages = "—"
 				}
@@ -184,7 +191,7 @@ func renderIDSMarkdown(projectName, projectID string, meta domain.IDSMetadata, r
 					kind = "—"
 				}
 				patentee := patentPatentee(ref.Patent)
-				passages := domain.IDSPassagesText(ref.Entry)
+				passages := IDSPassagesText(ref.Entry)
 				if passages == "" {
 					passages = "—"
 				}
@@ -216,7 +223,7 @@ func renderIDSMarkdown(projectName, projectID string, meta domain.IDSMetadata, r
 				if publisher == "" {
 					publisher = "—"
 				}
-				passages := domain.IDSPassagesText(ref.Entry)
+				passages := IDSPassagesText(ref.Entry)
 				if passages == "" {
 					passages = "—"
 				}
@@ -371,7 +378,7 @@ func writeIDSUSSection(pdf *gofpdf.Fpdf, refs []idsExportReference, usableW floa
 			ref.Entry.KindCode,
 			formatIDSDate(patentDisplayDate(ref.Patent)),
 			patentPatentee(ref.Patent),
-			domain.IDSPassagesText(ref.Entry),
+			IDSPassagesText(ref.Entry),
 		}
 		maxY = drawRow(pdf, 15, startY, colW, cells, 4.5, "1", "L")
 		pdf.SetY(maxY)
@@ -409,7 +416,7 @@ func writeIDSForeignSection(pdf *gofpdf.Fpdf, refs []idsExportReference, usableW
 			ref.Entry.KindCode,
 			formatIDSDate(patentDisplayDate(ref.Patent)),
 			patentPatentee(ref.Patent),
-			domain.IDSPassagesText(ref.Entry),
+			IDSPassagesText(ref.Entry),
 		}
 		maxY = drawRow(pdf, 15, startY, colW, cells, 4.5, "1", "L")
 		pdf.SetY(maxY)
@@ -449,7 +456,7 @@ func writeIDSNPLSection(pdf *gofpdf.Fpdf, refs []idsExportReference, usableW flo
 			"",
 			fmt.Sprintf("%d", i+1),
 			strings.TrimSpace(citation.String()),
-			domain.IDSPassagesText(ref.Entry),
+			IDSPassagesText(ref.Entry),
 		}
 		maxY = drawRow(pdf, 15, startY, colW, cells, 4.5, "1", "L")
 		pdf.SetY(maxY)

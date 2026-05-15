@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	"patentmine/internal/domain"
+
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
-	"patentmine/internal/domain"
 )
 
 func (m *Model) activeMode() viewMode {
@@ -164,9 +165,6 @@ func (m *Model) renderScreenHeader() string {
 
 	if m.isCitationView() && m.citesReviewStateFilter != "" {
 		label := m.citesReviewStateFilter
-		if label == domain.ReviewStateUnderReview {
-			label = "under-review"
-		}
 		filters = append(filters, m.text.T(TextValueFilterRefsTag)+label)
 	}
 	if m.listFilter.Class != EmptyFilter {

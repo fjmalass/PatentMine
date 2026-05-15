@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -26,7 +25,7 @@ const (
 	viewCites                viewMode = "citations"
 	viewCitedBy              viewMode = "cited-by"
 	viewClassifications      viewMode = "classifications"
-	viewText                 viewMode = "full text"
+	viewText                 viewMode = "full-text"
 	viewNotes                viewMode = "notes"
 	viewRefs                 viewMode = "references"
 	viewAI                   viewMode = "ai"
@@ -52,7 +51,7 @@ const (
 	viewClaim                viewMode = "view-claim"
 	viewUSPTOKeyWarning      viewMode = "uspto-key-warning"
 	viewBulkConfirm          viewMode = "bulk-confirm"
-	viewReviewStateSelect         viewMode = "status-select"
+	viewReviewStateSelect    viewMode = "status-select"
 	viewProjectTags          viewMode = "project-tags"
 	viewTagSelect            viewMode = "tag-select"
 	viewCountrySelect        viewMode = "country-select"
@@ -67,89 +66,89 @@ const (
 )
 
 type Model struct {
-	ctx                        context.Context
-	repo                       storage.Repository
-	input                      textinput.Model
-	dateInput                  textinput.Model
-	editDateType               string // "app", "pub", "grant"
-	noteTA                     textarea.Model
-	spinner                    spinner.Model
-	loading                    bool
-	loadingMsg                 string
-	cancel                     context.CancelFunc
-	ProjectID                  string
-	mode                       viewMode
-	patents                    []domain.Patent
-	totalPatents               int // unfiltered count for the current project
-	projects                   []domain.Project
-	selected                   int
-	projectSelected            int
-	projectEventsSelected      int
-	projectInvoicesSelected    int
-	projectIDSSelected         int
-	detailSelected             int
-	citesSelected              int
-	citedBySelected            int
-	reviewSelected             int
-	classificationSelected     int
+	ctx                          context.Context
+	repo                         storage.Repository
+	input                        textinput.Model
+	dateInput                    textinput.Model
+	editDateType                 string // "app", "pub", "grant"
+	noteTA                       textarea.Model
+	spinner                      spinner.Model
+	loading                      bool
+	loadingMsg                   string
+	cancel                       context.CancelFunc
+	ProjectID                    string
+	mode                         viewMode
+	patents                      []domain.Patent
+	totalPatents                 int // unfiltered count for the current project
+	projects                     []domain.Project
+	selected                     int
+	projectSelected              int
+	projectEventsSelected        int
+	projectInvoicesSelected      int
+	projectIDSSelected           int
+	detailSelected               int
+	citesSelected                int
+	citedBySelected              int
+	reviewSelected               int
+	classificationSelected       int
 	classificationDetailSelected classificationDetailRow
-	inventorSelected           int
-	familySelected             int
-	visualMode                 bool
-	selectionStart             int
-	current                    domain.Patent
-	pendingBundle              domain.PatentBundle
-	pendingCitation            domain.CitationEdge
-	reviewState               string
-	listFilter                 PatentFilter
-	message                    string
-	err                        string
-	logger                     *slog.Logger
-	text                       TextCatalog
-	width                      int
-	height                     int
-	backStack                  []navSnapshot
-	jumpMode                   bool
-	countBuffer                string
-	sortColumn                 string
-	sortOrder                  string
-	sortColumn2                string
-	sortOrder2                 string
-	citesReviewStateFilter     string // "" (all), "stored", "ignored", "under_review"
-	listNumWidth               int
-	unpaidCounts               map[string]int
-	familyTreeCache            []familyNode
-	familyTreeCacheFor         string
-	familyPatentCache          map[string]domain.Patent
-	familyPatentCacheMisses    map[string]bool
-	helpQuery                  string
-	helpSearchActive           bool
-	helpScroll                 int
-	activityLog                *slog.Logger
-	importCfg                  config.Config
-	detailCache                detailCache
-	jumpLabelsCache            []jumpLabel
-	bulkAction                 bulkActionType
-	bulkActionIndices          []int
-	sortColumnIndex            int
-	classificationQuery        string
-	classificationSearchActive bool
-	listSearchQuery            string
-	listSearchActive           bool
-	popupSearchQuery           string
-	popupSearchActive          bool
-	reviewStateSelected             int
-	countrySelectSelected           int
-	projectTagsSelected        int
-	tagSelectSelected          int
-	projectTags                []domain.TagWithCount
-	availableTags              []domain.Tag
-	selectedPatentTags         map[int64]bool
-	familyRefreshElapsed       string
-	overlayBackdropCache       string
-	overlayBackdropCacheKey    string
-	version                    string
-	activeKeys                 KeyMap
+	inventorSelected             int
+	familySelected               int
+	visualMode                   bool
+	selectionStart               int
+	current                      domain.Patent
+	pendingBundle                domain.PatentBundle
+	pendingCitation              domain.CitationEdge
+	reviewState                  string
+	listFilter                   PatentFilter
+	message                      string
+	err                          string
+	logger                       *slog.Logger
+	text                         TextCatalog
+	width                        int
+	height                       int
+	backStack                    []navSnapshot
+	jumpMode                     bool
+	countBuffer                  string
+	sortColumn                   string
+	sortOrder                    string
+	sortColumn2                  string
+	sortOrder2                   string
+	citesReviewStateFilter       string // "" (all), "stored", "ignored", "under_review"
+	listNumWidth                 int
+	unpaidCounts                 map[string]int
+	familyTreeCache              []familyNode
+	familyTreeCacheFor           string
+	familyPatentCache            map[string]domain.Patent
+	familyPatentCacheMisses      map[string]bool
+	helpQuery                    string
+	helpSearchActive             bool
+	helpScroll                   int
+	activityLog                  *slog.Logger
+	importCfg                    config.Config
+	detailCache                  detailCache
+	jumpLabelsCache              []jumpLabel
+	bulkAction                   bulkActionType
+	bulkActionIndices            []int
+	sortColumnIndex              int
+	classificationQuery          string
+	classificationSearchActive   bool
+	listSearchQuery              string
+	listSearchActive             bool
+	popupSearchQuery             string
+	popupSearchActive            bool
+	reviewStateSelected          int
+	countrySelectSelected        int
+	projectTagsSelected          int
+	tagSelectSelected            int
+	projectTags                  []domain.TagWithCount
+	availableTags                []domain.Tag
+	selectedPatentTags           map[int64]bool
+	familyRefreshElapsed         string
+	overlayBackdropCache         string
+	overlayBackdropCacheKey      string
+	version                      string
+	activeKeys                   KeyMap
 }
 
 type detailCache struct {
@@ -168,47 +167,47 @@ type detailCache struct {
 }
 
 type navSnapshot struct {
-	mode                       viewMode
-	patents                    []domain.Patent
-	projects                   []domain.Project
-	selected                   int
-	projectSelected            int
-	projectEventsSelected      int
-	projectInvoicesSelected    int
-	projectIDSSelected         int
-	detailSelected             int
-	citesSelected              int
-	citedBySelected            int
-	reviewSelected             int
-	classificationSelected     int
+	mode                         viewMode
+	patents                      []domain.Patent
+	projects                     []domain.Project
+	selected                     int
+	projectSelected              int
+	projectEventsSelected        int
+	projectInvoicesSelected      int
+	projectIDSSelected           int
+	detailSelected               int
+	citesSelected                int
+	citedBySelected              int
+	reviewSelected               int
+	classificationSelected       int
 	classificationDetailSelected classificationDetailRow
-	inventorSelected           int
-	familySelected             int
-	visualMode                 bool
-	selectionStart             int
-	current                    domain.Patent
-	pendingBundle              domain.PatentBundle
-	pendingCitation            domain.CitationEdge
-	reviewState                string
-	listFilter                 PatentFilter
-	message                    string
-	err                        string
-	countBuffer                string
-	ProjectID                  string
-	sortColumn                 string
-	sortOrder                  string
-	sortColumn2                string
-	sortOrder2                 string
-	citesReviewStateFilter     string
-	listNumWidth               int
-	classificationQuery        string
-	classificationSearchActive bool
-	listSearchQuery            string
-	listSearchActive           bool
-	popupSearchQuery           string
-	popupSearchActive          bool
-	reviewStateSelected             int
-	width                      int
+	inventorSelected             int
+	familySelected               int
+	visualMode                   bool
+	selectionStart               int
+	current                      domain.Patent
+	pendingBundle                domain.PatentBundle
+	pendingCitation              domain.CitationEdge
+	reviewState                  string
+	listFilter                   PatentFilter
+	message                      string
+	err                          string
+	countBuffer                  string
+	ProjectID                    string
+	sortColumn                   string
+	sortOrder                    string
+	sortColumn2                  string
+	sortOrder2                   string
+	citesReviewStateFilter       string
+	listNumWidth                 int
+	classificationQuery          string
+	classificationSearchActive   bool
+	listSearchQuery              string
+	listSearchActive             bool
+	popupSearchQuery             string
+	popupSearchActive            bool
+	reviewStateSelected          int
+	width                        int
 }
 
 func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, activityLog *slog.Logger, cfg config.Config, version string) *Model {
@@ -252,26 +251,26 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		activityLog = slog.Default()
 	}
 	model := &Model{
-		ctx:             ctx,
-		repo:            repo,
-		input:           input,
-		dateInput:       di,
-		noteTA:          ta,
-		spinner:         s,
-		ProjectID:       projectID,
-		mode:            viewSplash,
-		patents:           patents,
-		totalPatents:      len(allPatents),
-		projectSelected:   0,
-		logger:            logger,
-		activityLog:       activityLog,
-		text:              EnglishText(),
-		listFilter:        defaultPatentFilter(),
-		importCfg:       cfg,
-		version:                version,
-		projectTags:            []domain.TagWithCount{},
-		availableTags:          []domain.Tag{},
-		selectedPatentTags:     make(map[int64]bool),
+		ctx:                ctx,
+		repo:               repo,
+		input:              input,
+		dateInput:          di,
+		noteTA:             ta,
+		spinner:            s,
+		ProjectID:          projectID,
+		mode:               viewSplash,
+		patents:            patents,
+		totalPatents:       len(allPatents),
+		projectSelected:    0,
+		logger:             logger,
+		activityLog:        activityLog,
+		text:               EnglishText(),
+		listFilter:         defaultPatentFilter(),
+		importCfg:          cfg,
+		version:            version,
+		projectTags:        []domain.TagWithCount{},
+		availableTags:      []domain.Tag{},
+		selectedPatentTags: make(map[int64]bool),
 	}
 
 	if model.importCfg.ImportSource == config.ImportSourceUSPTO && model.importCfg.USPTO.APIKey == "" {
@@ -291,7 +290,6 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 	}
 	return model
 }
-
 
 type classificationEnrichedMsg struct {
 	Number string
@@ -416,342 +414,44 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.mode == viewDateEdit {
-			switch msg.String() {
-			case keyEnter:
-				val := m.dateInput.Value()
-				m.dateInput.Blur()
-				return m.patentDateCommand([]string{m.editDateType, val})
-			case keyEsc, keyBack:
-				m.dateInput.Blur()
-				return m.goBack()
-			}
-			var cmd tea.Cmd
-			m.dateInput, cmd = m.dateInput.Update(msg)
-			return m, cmd
+			return m.handleViewDateEditKey(msg)
 		}
 
 		if m.mode == viewReviewStateSelect {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				m.reviewStateSelected = clamp(m.reviewStateSelected+1, 0, len(m.selectableReviewStates())-1)
-			case keyVimUp, keyArrowUp:
-				m.reviewStateSelected = clamp(m.reviewStateSelected-1, 0, len(m.selectableReviewStates())-1)
-			case keyEnter:
-				return m.applyReviewStateSelection()
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewReviewStateSelectKey(msg)
 		}
 
 		if m.mode == viewCountrySelect {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				m.countrySelectSelected = clamp(m.countrySelectSelected+1, 0, len(m.selectableCountries())-1)
-			case keyVimUp, keyArrowUp:
-				m.countrySelectSelected = clamp(m.countrySelectSelected-1, 0, len(m.selectableCountries())-1)
-			case keyEnter:
-				return m.applyCountrySelection()
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewCountrySelectKey(msg)
 		}
 
 		// Mode-specific key handlers
 		if m.mode == viewSplash {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				m.projectSelected = clamp(m.projectSelected+1, 0, len(m.projects)-1)
-			case keyVimUp, keyArrowUp:
-				m.projectSelected = clamp(m.projectSelected-1, 0, len(m.projects)-1)
-			case keyEnter:
-				if len(m.projects) > 0 {
-					m.ProjectID = m.projects[m.projectSelected].ID
-					m.saveLastProject()
-					m.setMode(viewList)
-					return m.refreshList()
-				}
-			case keyEvents:
-				if len(m.projects) > 0 {
-					m.ProjectID = m.projects[m.projectSelected].ID
-				}
-				m.projectEventsSelected = 0
-				m.setMode(viewProjectEvents)
-				return m, nil
-			case keyInvoices:
-				if len(m.projects) > 0 {
-					m.ProjectID = m.projects[m.projectSelected].ID
-				}
-				m.projectInvoicesSelected = 0
-				m.setMode(viewProjectInvoices)
-				return m, nil
-			case keyIDS:
-				if len(m.projects) > 0 {
-					m.ProjectID = m.projects[m.projectSelected].ID
-				}
-				m.projectIDSSelected = 0
-				m.setMode(viewProjectIDS)
-				return m, nil
-			case keyNew:
-				m.input.Focus()
-				m.input.SetValue(":project create ")
-				return m, nil
-			case keyQuit:
-				return m, tea.Quit
-			case keyEsc:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewSplashKey(msg)
 		}
 		if m.mode == viewProjectInfo {
-			switch msg.String() {
-			case keyEsc, keyBack, keyProjectInfo:
-				return m.goBack()
-			case keyEditAppStatus:
-				m.input.Focus()
-				m.input.SetValue(":project summary-status ")
-				return m, nil
-			case keyEditSummary:
-				m.input.Focus()
-				m.input.SetValue(":project summary ")
-				return m, nil
-			case keyEditComment:
-				m.input.Focus()
-				m.input.SetValue(":project comment ")
-				return m, nil
-			case keyEditProjectStatus:
-				m.input.Focus()
-				m.input.SetValue(":project status ")
-				return m, nil
-			}
-			return m, nil
+			return m.handleViewProjectInfoKey(msg)
 		}
 		if m.mode == viewIDSEdit {
-			switch msg.String() {
-			case keyEsc, keyBack:
-				return m.goBack()
-			case "s":
-				return m.cycleCurrentPatentIDSStatus()
-			case "n":
-				entry := m.idsEntryForPatent(m.current.Number)
-				if entry != nil {
-					m.input.Focus()
-					m.input.SetValue(":ids note " + entry.Notes)
-					m.input.CursorEnd()
-				}
-			case "k":
-				entry := m.idsEntryForPatent(m.current.Number)
-				if entry != nil {
-					m.input.Focus()
-					m.input.SetValue(":ids kind " + entry.KindCode)
-					m.input.CursorEnd()
-				}
-			case "c":
-				entry := m.idsEntryForPatent(m.current.Number)
-				if entry != nil {
-					m.input.Focus()
-					m.input.SetValue(":ids country " + entry.CountryCode)
-					m.input.CursorEnd()
-				}
-			case "p":
-				entry := m.idsEntryForPatent(m.current.Number)
-				if entry != nil {
-					m.input.Focus()
-					m.input.SetValue(":ids passages " + entry.RelevantPassages)
-					m.input.CursorEnd()
-				}
-			case "f":
-				return m.idsEditCommand([]string{idsEditSubFull})
-			case keyDelete:
-				entry := m.idsEntryForPatent(m.current.Number)
-				if entry != nil {
-					if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
-						m.err = err.Error()
-					} else {
-						m.populateDetailCache()
-						m.message = "IDS entry removed"
-						return m.goBack()
-					}
-				}
-			}
-			return m, nil
+			return m.handleViewIDSEditKey(msg)
 		}
 		if m.mode == viewProjectEvents {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
-				m.projectEventsSelected = clamp(m.projectEventsSelected+1, 0, len(events)-1)
-			case keyVimUp, keyArrowUp:
-				m.projectEventsSelected = clamp(m.projectEventsSelected-1, 0, 0)
-			case keyDelete:
-				events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
-				if m.projectEventsSelected >= 0 && m.projectEventsSelected < len(events) {
-					_ = m.repo.DeleteProjectEvent(m.ctx, events[m.projectEventsSelected].ID)
-					m.projectEventsSelected = 0
-					m.message = "event deleted"
-				}
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewProjectEventsKey(msg)
 		}
 		if m.mode == viewProjectInvoices {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
-				m.projectInvoicesSelected = clamp(m.projectInvoicesSelected+1, 0, len(invoices)-1)
-			case keyVimUp, keyArrowUp:
-				m.projectInvoicesSelected = clamp(m.projectInvoicesSelected-1, 0, 0)
-			case keyDelete:
-				invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
-				if m.projectInvoicesSelected >= 0 && m.projectInvoicesSelected < len(invoices) {
-					_ = m.repo.DeleteProjectInvoice(m.ctx, invoices[m.projectInvoicesSelected].ID)
-					m.projectInvoicesSelected = 0
-					m.message = "invoice deleted"
-					m = m.reloadProjects()
-				}
-			case keyMarkPaid:
-				invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
-				if m.projectInvoicesSelected >= 0 && m.projectInvoicesSelected < len(invoices) {
-					inv := invoices[m.projectInvoicesSelected]
-					inv.Status = domain.InvoiceStatusPaid
-					_ = m.repo.UpdateProjectInvoice(m.ctx, inv)
-					m.message = "marked as paid"
-					m = m.reloadProjects()
-				}
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewProjectInvoicesKey(msg)
 		}
 		if m.mode == viewProjectIDS {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-				m.projectIDSSelected = clamp(m.projectIDSSelected+1, 0, len(ids)-1)
-			case keyVimUp, keyArrowUp:
-				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-				m.projectIDSSelected = clamp(m.projectIDSSelected-1, 0, max(0, len(ids)-1))
-			case "s":
-				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
-					entry := ids[m.projectIDSSelected]
-					next := nextIDSStatus(entry.Status)
-					if next == "" {
-						if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
-							m.err = err.Error()
-						} else {
-							m.projectIDSSelected = clamp(m.projectIDSSelected, 0, max(0, len(ids)-2))
-							m.logActivity(ActivityIDSRemove, entry.PatentNumber, "")
-							m.message = "IDS entry removed"
-						}
-					} else if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
-						m.err = err.Error()
-					} else {
-						m.logActivity(ActivityIDSStatus, entry.PatentNumber, string(next))
-						m.message = "IDS status: " + string(next)
-					}
-				}
-			case keyDelete:
-				ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-				if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
-					_ = m.repo.DeleteIDSEntry(m.ctx, ids[m.projectIDSSelected].ID)
-					m.projectIDSSelected = 0
-					m.message = "IDS entry removed"
-				}
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewProjectIDSKey(msg)
 		}
 		if m.mode == viewProjectTags {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				m.projectTagsSelected = clamp(m.projectTagsSelected+1, 0, len(m.projectTags)-1)
-			case keyVimUp, keyArrowUp:
-				m.projectTagsSelected = clamp(m.projectTagsSelected-1, 0, max(0, len(m.projectTags)-1))
-			case keyDelete:
-				if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
-					tag := m.projectTags[m.projectTagsSelected]
-					if err := m.repo.DeleteTag(m.ctx, tag.ID); err != nil {
-						m.err = err.Error()
-					} else {
-						m.message = fmt.Sprintf("tag '%s' deleted", tag.Name)
-						m.reloadProjectTags()
-					}
-				}
-			case "r":
-				if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
-					tag := m.projectTags[m.projectTagsSelected]
-					m.input.Focus()
-					m.input.SetValue(fmt.Sprintf(":tag rename %s ", tag.Name))
-					return m, nil
-				}
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewProjectTagsKey(msg)
 		}
 		if m.mode == viewTagSelect {
-			switch msg.String() {
-			case keyVimDown, keyArrowDown:
-				m.tagSelectSelected = clamp(m.tagSelectSelected+1, 0, len(m.availableTags)-1)
-			case keyVimUp, keyArrowUp:
-				m.tagSelectSelected = clamp(m.tagSelectSelected-1, 0, max(0, len(m.availableTags)-1))
-			case " ":
-				if m.tagSelectSelected >= 0 && m.tagSelectSelected < len(m.availableTags) {
-					tag := m.availableTags[m.tagSelectSelected]
-					if m.selectedPatentTags[tag.ID] {
-						if err := m.repo.RemoveTagFromPatent(m.ctx, m.current.Number, tag.ID); err != nil {
-							m.err = err.Error()
-						} else {
-							m.selectedPatentTags[tag.ID] = false
-						}
-					} else {
-						if err := m.repo.ApplyTagToPatent(m.ctx, m.current.Number, tag.ID); err != nil {
-							m.err = err.Error()
-						} else {
-							m.selectedPatentTags[tag.ID] = true
-						}
-					}
-				}
-			case keyEnter, "ctrl+s":
-				m, cmd := m.goBack()
-				m.(*Model).populateDetailCache()
-				return m, cmd
-			case keyEsc, keyBack:
-				return m.goBack()
-			}
-			return m, nil
+			return m.handleViewTagSelectKey(msg)
 		}
 		if m.mode == viewNoteEdit {
-			switch msg.String() {
-			case keyCtrlS:
-				body := strings.TrimSpace(m.noteTA.Value())
-				if body != "" {
-					stamp := time.Now().Format("2006-01-02 15:04")
-					body = fmt.Sprintf("[%s]\n%s", stamp, body)
-
-					if _, err := m.repo.AddNote(m.ctx, m.ProjectID, m.current.Number, body); err != nil {
-						m.err = err.Error()
-					} else {
-						m.logActivity(ActivityNoteAdd, m.current.Number, "")
-						m.message = "note saved"
-					}
-				}
-				m.noteTA.Reset()
-				m.noteTA.Blur()
-				return m.goBack()
-			case keyEsc:
-				m.noteTA.Reset()
-				m.noteTA.Blur()
-				return m.goBack()
-			default:
-				var cmd tea.Cmd
-				m.noteTA, cmd = m.noteTA.Update(msg)
-				return m, cmd
-			}
+			return m.handleViewNoteEditKey(msg)
 		}
 		if m.mode == viewHelp || m.mode == viewKeymap {
 			if m.helpSearchActive {
@@ -825,6 +525,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case keyEnter:
 				m.listSearchActive = false
 				return m, nil
+			case keyNarrow:
+				// narrow: promote search query to a persistent text filter
+				query := m.listSearchQuery
+				m.listSearchActive = false
+				m.listSearchQuery = ""
+				if query != "" {
+					m.listFilter.Text = query
+					m.message = "filter: " + query
+					return m.refreshList()
+				}
+				return m, nil
 			default:
 				if len(msg.String()) == 1 {
 					m.listSearchQuery += msg.String()
@@ -883,7 +594,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyText:
 			if m.mode == viewDetail {
-				m.detailSelected = m.indexJumpLabel(jumpLabelTags)
+				m.detailSelected = m.indexJumpLabel(ksTags.jump)
 				return m, nil
 			}
 		default:
@@ -1028,7 +739,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.countBuffer = EmptyCount
 			m.jumpMode = !m.jumpMode
 			return m, nil
-		case "v", "V":
+		case keyVisual, keyVisualLine:
 			if m.mode == viewList || m.isCitationView() || m.mode == viewReview {
 				m.visualMode = !m.visualMode
 				if m.visualMode {
@@ -1036,7 +747,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case "%":
+		case keyVisualAll:
 			if m.mode == viewList || m.isCitationView() || m.mode == viewReview {
 				m.visualMode = true
 				m.selectionStart = 0
@@ -1080,6 +791,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyText:
 			m = m.navigateTo(viewText)
+		case keyNarrow:
+			if m.mode == viewList && m.listSearchQuery != "" {
+				query := m.listSearchQuery
+				m.listSearchQuery = ""
+				m.listFilter.Text = query
+				m.message = "filter: " + query
+				return m.refreshList()
+			}
 		case keyNotes: // which is "n"
 			if m.isPopupSearchMode() && m.popupSearchQuery != "" {
 				return m.popupSearchNext(), nil
@@ -1297,28 +1016,3 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

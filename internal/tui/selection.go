@@ -146,6 +146,12 @@ func (m *Model) consumeCount(defaultValue int) int {
 	return count
 }
 
+func (m *Model) tryAccumulateCount(key string) {
+	if isCountKey(key) && !(key == "0" && m.countBuffer == "") {
+		m.countBuffer += key
+	}
+}
+
 func (m *Model) goToRow(index int) *Model {
 	if index <= 0 {
 		index = 1

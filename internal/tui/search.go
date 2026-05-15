@@ -5,65 +5,115 @@ import (
 	"strings"
 )
 
-func (m *Model) listSearchNext() *Model {
-	return m.listSearchFrom(true)
-}
-
-func (m *Model) listSearchFirst() *Model {
-	return m.listSearchFrom(false)
-}
-
-func (m *Model) listSearchFrom(next bool) *Model {
-	if m.listSearchQuery == "" {
-		return m
-	}
-	if len(m.patents) == 0 {
-		return m
-	}
-
-	query := m.listSearchQuery
-	ignoreCase := strings.ToLower(query) == query
-
-	start := 0
-	if next {
-		start = m.selected + 1
-	}
-	for i := 0; i < len(m.patents); i++ {
-		idx := (start + i) % len(m.patents)
-		p := m.patents[idx]
-
-		match := containsMatch(p.Number, query, ignoreCase) ||
-			containsMatch(p.Title, query, ignoreCase) ||
-			containsMatch(p.Abstract, query, ignoreCase) ||
-			containsMatch(p.Assignee, query, ignoreCase) ||
-			containsMatch(p.ClassificationLabel, query, ignoreCase)
-
-		if !match {
-			for _, inv := range p.Inventors {
-				if containsMatch(inv, query, ignoreCase) {
-					match = true
-					break
-				}
-			}
-		}
-
-		if match {
-			m.selected = idx
-			m.message = fmt.Sprintf("found match: %s", p.Number)
-			return m
-		}
-	}
-	m.message = "no matches found for: " + m.listSearchQuery
-	return m
-}
-
-type popupSearchable interface {
+// searchable is the generic interface for any navigable list that supports
+// incremental search. Implement it to get wrap-around smart-case search for free.
+type searchable interface {
 	ItemCount() int
 	Match(idx int, query string, ignoreCase bool) bool
 	SetSelected(idx int)
 	GetSelected() int
 	MatchLabel(idx int) string
 }
+
+// searchFrom is the single implementation of wrap-around smart-case search.
+// It is shared by list search, popup search, and any future paginated view.
+func (m *Model) searchFrom(s searchable, query string, next bool) *Model {
+	if query == "" || s == nil {
+		return m
+	}
+	count := s.ItemCount()
+	if count == 0 {
+		return m
+	}
+
+	ignoreCase := strings.ToLower(query) == query
+	start := 0
+	if next {
+		start = s.GetSelected() + 1
+	}
+
+	for i := 0; i < count; i++ {
+		idx := (start + i) % count
+		if s.Match(idx, query, ignoreCase) {
+			s.SetSelected(idx)
+			if label := s.MatchLabel(idx); label != "" {
+				m.message = fmt.Sprintf("found match: %s", label)
+			} else {
+				m.message = "found match"
+			}
+			return m
+		}
+	}
+	m.message = "no matches found for: " + query
+	return m
+}
+
+// — Patent list ——————————————————————————————————————————————————————————————
+
+type patentListSearchable struct{ m *Model }
+
+func (s patentListSearchable) ItemCount() int  { return len(s.m.patents) }
+func (s patentListSearchable) GetSelected() int { return s.m.selected }
+func (s patentListSearchable) SetSelected(idx int) { s.m.selected = idx }
+func (s patentListSearchable) MatchLabel(idx int) string { return s.m.patents[idx].Number }
+func (s patentListSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	p := s.m.patents[idx]
+	if containsMatch(p.Number, query, ignoreCase) ||
+		containsMatch(p.Title, query, ignoreCase) ||
+		containsMatch(p.Abstract, query, ignoreCase) ||
+		containsMatch(p.Assignee, query, ignoreCase) ||
+		containsMatch(p.ClassificationLabel, query, ignoreCase) {
+		return true
+	}
+	for _, inv := range p.Inventors {
+		if containsMatch(inv, query, ignoreCase) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) listSearchNext() *Model {
+	return m.searchFrom(patentListSearchable{m}, m.listSearchQuery, true)
+}
+
+func (m *Model) listSearchFirst() *Model {
+	return m.searchFrom(patentListSearchable{m}, m.listSearchQuery, false)
+}
+
+// — Popup / overlay ——————————————————————————————————————————————————————————
+
+func (m *Model) currentPopupSearchable() searchable {
+	switch m.mode {
+	case viewClassifications:
+		return classificationSearchable{m}
+	case viewInventors:
+		return inventorSearchable{m}
+	case viewProjectEvents:
+		return eventSearchable{m}
+	case viewProjectInvoices:
+		return invoiceSearchable{m}
+	case viewProjectIDS:
+		return idsSearchable{m}
+	case viewProjectTags:
+		return tagSearchable{m}
+	case viewTagSelect:
+		return tagSelectSearchable{m}
+	case viewFamily:
+		return familySearchable{m}
+	}
+	return nil
+}
+
+func (m *Model) popupSearchNext() *Model {
+	return m.searchFrom(m.currentPopupSearchable(), m.popupSearchQuery, true)
+}
+
+func (m *Model) popupSearchFirst() *Model {
+	return m.searchFrom(m.currentPopupSearchable(), m.popupSearchQuery, false)
+}
+
+// — Searchable implementations ————————————————————————————————————————————————
 
 type classificationSearchable struct{ m *Model }
 
@@ -163,71 +213,6 @@ func (s familySearchable) MatchLabel(idx int) string {
 		return ""
 	}
 	return nodes[idx].number
-}
-
-func (m *Model) popupSearchNext() *Model {
-	return m.popupSearchFrom(true)
-}
-
-func (m *Model) popupSearchFirst() *Model {
-	return m.popupSearchFrom(false)
-}
-
-func (m *Model) popupSearchFrom(next bool) *Model {
-	if m.popupSearchQuery == "" {
-		return m
-	}
-
-	var s popupSearchable
-	switch m.mode {
-	case viewClassifications:
-		s = classificationSearchable{m}
-	case viewInventors:
-		s = inventorSearchable{m}
-	case viewProjectEvents:
-		s = eventSearchable{m}
-	case viewProjectInvoices:
-		s = invoiceSearchable{m}
-	case viewProjectIDS:
-		s = idsSearchable{m}
-	case viewProjectTags:
-		s = tagSearchable{m}
-	case viewTagSelect:
-		s = tagSelectSearchable{m}
-	case viewFamily:
-		s = familySearchable{m}
-	default:
-		return m
-	}
-
-	count := s.ItemCount()
-	if count == 0 {
-		return m
-	}
-
-	query := m.popupSearchQuery
-	ignoreCase := strings.ToLower(query) == query
-	start := 0
-	if next {
-		start = s.GetSelected() + 1
-	}
-
-	for i := 0; i < count; i++ {
-		idx := (start + i) % count
-		if s.Match(idx, query, ignoreCase) {
-			s.SetSelected(idx)
-			label := s.MatchLabel(idx)
-			if label != "" {
-				m.message = fmt.Sprintf("found match: %s", label)
-			} else {
-				m.message = "found match"
-			}
-			return m
-		}
-	}
-
-	m.message = "no matches found for: " + query
-	return m
 }
 
 func containsMatch(s, query string, ignoreCase bool) bool {

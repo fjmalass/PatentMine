@@ -442,7 +442,7 @@ func TestListViewShowsColumnShortcutLabelsInJumpMode(t *testing.T) {
 		height:   20,
 	}
 	got := model.viewList()
-	for _, key := range []string{jumpLabelPublication, jumpLabelInventors, jumpLabelClassification, jumpLabelExpiration, keyReviewState, jumpLabelUpdated, jumpLabelNotes} {
+	for _, key := range []string{jumpLabelPublication, jumpLabelInventors, jumpLabelClassification, jumpLabelExpiration, keyReviewState, jumpLabelUpdated, ksNotes.jump} {
 		if !strings.Contains(got, key+" ") {
 			t.Fatalf("expected list header to show shortcut %q, got %q", key, got)
 		}

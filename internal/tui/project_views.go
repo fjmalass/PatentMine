@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"patentmine/internal/domain"
-
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"patentmine/internal/domain"
 )
 
 func (m *Model) viewSplash() string {
@@ -323,7 +323,7 @@ func (m *Model) viewProjectIDS() string {
 			if notes == "" {
 				notes = "—"
 			}
-			passages := domain.IDSPassagesText(e)
+			passages := IDSPassagesText(e)
 			if len(passages) > passW {
 				passages = passages[:passW-3] + "..."
 			}
@@ -506,11 +506,11 @@ func (m *Model) viewIDSEdit() string {
 
 	inFullVal := dimStyle.Render("—")
 	if entry.InFull {
-		inFullVal = base.Foreground(lipgloss.Color(ColorLime)).Bold(true).Render(domain.IDSIconInFull + " Yes")
+		inFullVal = base.Foreground(lipgloss.Color(ColorLime)).Bold(true).Render(IDSIconInFull + " Yes")
 	}
 	row("In Full", inFullVal)
 
-	passagesVal := domain.IDSPassagesText(*entry)
+	passagesVal := IDSPassagesText(*entry)
 	if passagesVal == "" {
 		passagesVal = dimStyle.Render("—")
 	} else {
@@ -537,4 +537,223 @@ func (m *Model) center(s string) string {
 	}
 	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, s,
 		lipgloss.WithWhitespaceBackground(lipgloss.Color(ColorSurface)))
+}
+
+func (m *Model) handleViewSplashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		m.projectSelected = clamp(m.projectSelected+m.consumeCount(1), 0, len(m.projects)-1)
+	case keyVimUp, keyArrowUp:
+		m.projectSelected = max(0, m.projectSelected-m.consumeCount(1))
+	case keyEnter:
+		if len(m.projects) > 0 {
+			m.ProjectID = m.projects[m.projectSelected].ID
+			m.saveLastProject()
+			m.setMode(viewList)
+			return m.refreshList()
+		}
+	case keyEvents:
+		if len(m.projects) > 0 {
+			m.ProjectID = m.projects[m.projectSelected].ID
+		}
+		m.projectEventsSelected = 0
+		m.setMode(viewProjectEvents)
+		return m, nil
+	case keyInvoices:
+		if len(m.projects) > 0 {
+			m.ProjectID = m.projects[m.projectSelected].ID
+		}
+		m.projectInvoicesSelected = 0
+		m.setMode(viewProjectInvoices)
+		return m, nil
+	case keyIDS:
+		if len(m.projects) > 0 {
+			m.ProjectID = m.projects[m.projectSelected].ID
+		}
+		m.projectIDSSelected = 0
+		m.setMode(viewProjectIDS)
+		return m, nil
+	case keyNew:
+		m.input.Focus()
+		m.input.SetValue(":project create ")
+		return m, nil
+	case keyQuit:
+		return m, tea.Quit
+	case keyEsc:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewProjectInfoKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyEsc, keyBack, keyProjectInfo:
+		return m.goBack()
+	case keyEditAppStatus:
+		m.input.Focus()
+		m.input.SetValue(":project summary-status ")
+		return m, nil
+	case keyEditSummary:
+		m.input.Focus()
+		m.input.SetValue(":project summary ")
+		return m, nil
+	case keyEditComment:
+		m.input.Focus()
+		m.input.SetValue(":project comment ")
+		return m, nil
+	case keyEditProjectStatus:
+		m.input.Focus()
+		m.input.SetValue(":project status ")
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewIDSEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyEsc, keyBack:
+		return m.goBack()
+	case "s":
+		return m.cycleCurrentPatentIDSStatus()
+	case "n":
+		entry := m.idsEntryForPatent(m.current.Number)
+		if entry != nil {
+			m.input.Focus()
+			m.input.SetValue(":ids note " + entry.Notes)
+			m.input.CursorEnd()
+		}
+	case "k":
+		entry := m.idsEntryForPatent(m.current.Number)
+		if entry != nil {
+			m.input.Focus()
+			m.input.SetValue(":ids kind " + entry.KindCode)
+			m.input.CursorEnd()
+		}
+	case "c":
+		entry := m.idsEntryForPatent(m.current.Number)
+		if entry != nil {
+			m.input.Focus()
+			m.input.SetValue(":ids country " + entry.CountryCode)
+			m.input.CursorEnd()
+		}
+	case "p":
+		entry := m.idsEntryForPatent(m.current.Number)
+		if entry != nil {
+			m.input.Focus()
+			m.input.SetValue(":ids passages " + entry.RelevantPassages)
+			m.input.CursorEnd()
+		}
+	case "f":
+		return m.idsEditCommand([]string{idsEditSubFull})
+	case keyDelete:
+		entry := m.idsEntryForPatent(m.current.Number)
+		if entry != nil {
+			if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
+				m.err = err.Error()
+			} else {
+				m.populateDetailCache()
+				m.message = "IDS entry removed"
+				return m.goBack()
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewProjectEventsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+		m.projectEventsSelected = clamp(m.projectEventsSelected+m.consumeCount(1), 0, len(events)-1)
+	case keyVimUp, keyArrowUp:
+		m.projectEventsSelected = max(0, m.projectEventsSelected-m.consumeCount(1))
+	case keyDelete:
+		events, _ := m.repo.ListProjectEvents(m.ctx, m.ProjectID)
+		if m.projectEventsSelected >= 0 && m.projectEventsSelected < len(events) {
+			_ = m.repo.DeleteProjectEvent(m.ctx, events[m.projectEventsSelected].ID)
+			m.projectEventsSelected = 0
+			m.message = "event deleted"
+		}
+	case keyEsc, keyBack:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewProjectInvoicesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+		m.projectInvoicesSelected = clamp(m.projectInvoicesSelected+m.consumeCount(1), 0, len(invoices)-1)
+	case keyVimUp, keyArrowUp:
+		m.projectInvoicesSelected = max(0, m.projectInvoicesSelected-m.consumeCount(1))
+	case keyDelete:
+		invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+		if m.projectInvoicesSelected >= 0 && m.projectInvoicesSelected < len(invoices) {
+			_ = m.repo.DeleteProjectInvoice(m.ctx, invoices[m.projectInvoicesSelected].ID)
+			m.projectInvoicesSelected = 0
+			m.message = "invoice deleted"
+			m = m.reloadProjects()
+		}
+	case keyMarkPaid:
+		invoices, _ := m.repo.ListProjectInvoices(m.ctx, m.ProjectID)
+		if m.projectInvoicesSelected >= 0 && m.projectInvoicesSelected < len(invoices) {
+			inv := invoices[m.projectInvoicesSelected]
+			inv.Status = domain.InvoiceStatusPaid
+			_ = m.repo.UpdateProjectInvoice(m.ctx, inv)
+			m.message = "marked as paid"
+			m = m.reloadProjects()
+		}
+	case keyEsc, keyBack:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewProjectIDSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+		m.projectIDSSelected = clamp(m.projectIDSSelected+m.consumeCount(1), 0, len(ids)-1)
+	case keyVimUp, keyArrowUp:
+		m.projectIDSSelected = max(0, m.projectIDSSelected-m.consumeCount(1))
+	case "s":
+		ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+		if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
+			entry := ids[m.projectIDSSelected]
+			next := nextIDSStatus(entry.Status)
+			if next == "" {
+				if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
+					m.err = err.Error()
+				} else {
+					m.projectIDSSelected = clamp(m.projectIDSSelected, 0, max(0, len(ids)-2))
+					m.logActivity(ActivityIDSRemove, entry.PatentNumber, "")
+					m.message = "IDS entry removed"
+				}
+			} else if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
+				m.err = err.Error()
+			} else {
+				m.logActivity(ActivityIDSStatus, entry.PatentNumber, string(next))
+				m.message = "IDS status: " + string(next)
+			}
+		}
+	case keyDelete:
+		ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
+		if m.projectIDSSelected >= 0 && m.projectIDSSelected < len(ids) {
+			_ = m.repo.DeleteIDSEntry(m.ctx, ids[m.projectIDSSelected].ID)
+			m.projectIDSSelected = 0
+			m.message = "IDS entry removed"
+		}
+	case keyEsc, keyBack:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
 }

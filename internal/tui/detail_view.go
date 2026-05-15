@@ -178,8 +178,8 @@ func (m *Model) detailFields() []detailField {
 	}
 
 	fields = append(fields,
-		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(cache.CitationCount, p.ExpectedCitations, cache.CitationRefreshedAt), jumpLabel: jumpLabelCitationCount, action: detailActionCitations},
-		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(cache.CitedByCount, p.ExpectedCitedBy, cache.CitedByRefreshedAt), jumpLabel: jumpLabelCitedByCount, action: detailActionCitedBy},
+		detailField{label: TextDetailCitationCount, value: m.formatCitationSummary(cache.CitationCount, p.ExpectedCitations, cache.CitationRefreshedAt), jumpLabel: ksCitations.jump, action: detailActionCitations},
+		detailField{label: TextDetailCitedByCount, value: m.formatCitationSummary(cache.CitedByCount, p.ExpectedCitedBy, cache.CitedByRefreshedAt), jumpLabel: ksCitedBy.jump, action: detailActionCitedBy},
 	)
 
 	notesValue := m.text.T(TextValueEmpty)
@@ -228,7 +228,7 @@ func (m *Model) detailFields() []detailField {
 
 		fields = append(fields,
 			detailField{separator: true},
-			detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags), jumpLabel: jumpLabelTags, action: detailActionTags},
+			detailField{label: TextDetailTags, value: formatTags(m.detailCache.Tags), jumpLabel: ksTags.jump, action: detailActionTags},
 		)
 
 		// Add Status and IDS
@@ -296,7 +296,7 @@ func (m *Model) detailFields() []detailField {
 			label:        TextDetailNotes,
 			value:        notesValue,
 			displayValue: notesDisplay,
-			jumpLabel:    jumpLabelNotes,
+			jumpLabel:    ksNotes.jump,
 			action:       detailActionNotes,
 		},
 	)

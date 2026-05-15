@@ -252,7 +252,7 @@ func EnglishText() TextCatalog {
 		TextValueExpirationManual:    " (man.)",
 		TextValueExpirationImported:  " (import)",
 		TextValueExpirationEstimated: " (est.)",
-		TextValueSearchLabel:         " search:/",
+		TextValueSearchLabel:         "search: /",
 		TextValueProjectTag:          "PROJECT: %s (%s)",
 		TextValueBreadcrumbFormat:    "[%d] ‹ %s",
 		TextValueFilterReviewStateTag: "review_state:",

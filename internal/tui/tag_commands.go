@@ -2,8 +2,9 @@ package tui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) tagCommand(args []string) (tea.Model, tea.Cmd) {
@@ -87,19 +88,8 @@ func (m *Model) tagCommand(args []string) (tea.Model, tea.Cmd) {
 			m.message = fmt.Sprintf("tag '%s' color set to '%s'", name, color)
 			m.reloadProjectTags()
 		}
-	case tagSubFilter:
-		if len(args) < 2 {
-			m.listFilter.Tag = EmptyFilter
-			m.message = "tag filter cleared"
-			m.setMode(viewList)
-			return m.refreshList()
-		}
-		m.listFilter.Tag = args[1]
-		m.message = fmt.Sprintf("filtering by tag: %s", m.listFilter.Tag)
-		m.setMode(viewList)
-		return m.refreshList()
 	case tagSubHelp:
-		m.message = "Tag Commands: list (tl), add (ta) <name> [color], delete (td) <name>, rename (tr) <old> <new>, color (tc) <name> <color>, filter (tf) <name>"
+		m.message = "Tag Commands: list (tl), add (ta) <name> [color], delete (td) <name>, rename (tr) <old> <new>, color (tc) <name> <color>. Re: use :filter tag <name>"
 	default:
 		m.err = "unknown tag subcommand: " + sub
 	}

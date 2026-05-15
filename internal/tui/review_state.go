@@ -264,3 +264,35 @@ func (m *Model) applyCountrySelection() (tea.Model, tea.Cmd) {
 	m.setMode(viewList)
 	return m.refreshList()
 }
+
+func (m *Model) handleViewReviewStateSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		m.reviewStateSelected = clamp(m.reviewStateSelected+m.consumeCount(1), 0, len(m.selectableReviewStates())-1)
+	case keyVimUp, keyArrowUp:
+		m.reviewStateSelected = max(0, m.reviewStateSelected-m.consumeCount(1))
+	case keyEnter:
+		return m.applyReviewStateSelection()
+	case keyEsc, keyBack:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewCountrySelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		m.countrySelectSelected = clamp(m.countrySelectSelected+m.consumeCount(1), 0, len(m.selectableCountries())-1)
+	case keyVimUp, keyArrowUp:
+		m.countrySelectSelected = max(0, m.countrySelectSelected-m.consumeCount(1))
+	case keyEnter:
+		return m.applyCountrySelection()
+	case keyEsc, keyBack:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
+}

@@ -2,13 +2,15 @@ package sqlite
 
 import (
 	"context"
+	"strings"
+
 	"patentmine/internal/domain"
 )
 
 func (r *Repository) CreateTag(ctx context.Context, projectID, name, color string) (int64, error) {
 	now := nowString()
 	res, err := r.db.ExecContext(ctx, `insert into tags (project_id, name, color, created_at) values (?, ?, ?, ?)`,
-		projectID, name, color, now)
+		projectID, strings.ToLower(strings.TrimSpace(name)), color, now)
 	if err != nil {
 		return 0, err
 	}
@@ -77,7 +79,7 @@ func (r *Repository) DeleteTag(ctx context.Context, tagID int64) error {
 }
 
 func (r *Repository) RenameTag(ctx context.Context, tagID int64, newName string) error {
-	_, err := r.db.ExecContext(ctx, `update tags set name = ? where id = ?`, newName, tagID)
+	_, err := r.db.ExecContext(ctx, `update tags set name = ? where id = ?`, strings.ToLower(strings.TrimSpace(newName)), tagID)
 	return err
 }
 
@@ -90,7 +92,7 @@ func (r *Repository) GetTagByName(ctx context.Context, projectID, name string) (
 	var t domain.Tag
 	var createdAt string
 	err := r.db.QueryRowContext(ctx, `select id, project_id, name, color, created_at from tags where project_id = ? and name = ?`,
-		projectID, name).Scan(&t.ID, &t.ProjectID, &t.Name, &t.Color, &createdAt)
+		projectID, strings.ToLower(strings.TrimSpace(name))).Scan(&t.ID, &t.ProjectID, &t.Name, &t.Color, &createdAt)
 	if err != nil {
 		return domain.Tag{}, err
 	}

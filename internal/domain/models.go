@@ -59,11 +59,11 @@ const (
 )
 
 const (
-	FamilyRelationContinuation    = "continuation"
-	FamilyRelationDivisional      = "divisional"
-	FamilyRelationCIP             = "cip"
-	FamilyRelationCIPLong         = "continuation-in-part"
-	FamilyRelationPCT             = "pct"
+	FamilyRelationContinuation = "continuation"
+	FamilyRelationDivisional   = "divisional"
+	FamilyRelationCIP          = "cip"
+	FamilyRelationCIPLong      = "continuation-in-part"
+	FamilyRelationPCT          = "pct"
 )
 
 type FamilyEdge struct {
@@ -82,18 +82,18 @@ const (
 )
 
 const (
-	SortColumnNumber     = "number"
-	SortColumnTitle      = "title"
-	SortColumnDate       = "date"
+	SortColumnNumber      = "number"
+	SortColumnTitle       = "title"
+	SortColumnDate        = "date"
 	SortColumnReviewState = "review_state"
-	SortColumnAssignee   = "assignee"
-	SortColumnInventor   = "inventor"
-	SortColumnClass      = "class"
-	SortColumnCPC        = "cpc"
-	SortColumnExpiration = "expiration"
-	SortColumnUpdated    = "updated"
-	SortColumnNotes      = "notes"
-	SortColumnIDS        = "ids"
+	SortColumnAssignee    = "assignee"
+	SortColumnInventor    = "inventor"
+	SortColumnClass       = "class"
+	SortColumnCPC         = "cpc"
+	SortColumnExpiration  = "expiration"
+	SortColumnUpdated     = "updated"
+	SortColumnNotes       = "notes"
+	SortColumnIDS         = "ids"
 
 	SortOrderAsc  = "asc"
 	SortOrderDesc = "desc"
@@ -274,32 +274,32 @@ const (
 )
 
 type Patent struct {
-	Number              string
-	CountryCode         string
-	Title               string
-	Abstract            string
-	Assignee            string
-	Inventors           []string
-	PublicationDate     string
-	GrantDate           string
-	ExpirationDate      string
-	ExpirationSource    string
-	SourceGoogleURL     string
-	ImportSource        string
-	StoredAt            time.Time
-	UpdatedAt           time.Time
+	Number               string
+	CountryCode          string
+	Title                string
+	Abstract             string
+	Assignee             string
+	Inventors            []string
+	PublicationDate      string
+	GrantDate            string
+	ExpirationDate       string
+	ExpirationSource     string
+	SourceGoogleURL      string
+	ImportSource         string
+	StoredAt             time.Time
+	UpdatedAt            time.Time
 	ReviewStateChangedAt time.Time
 	ReviewState          string
 	ClassificationLabel  string
-	LatestAssignment    string
-	ExpectedCitations   int // Total backward count reported by source (-1 if unknown)
-	ExpectedCitedBy     int // Total forward count reported by source (-1 if unknown)
-	NotesCount          int
-	ApplicationNumber   string
-	ApplicationDate     string
-	PublicationNumber   string
-	GrantNumber         string
-	FirstClaim          string
+	LatestAssignment     string
+	ExpectedCitations    int // Total backward count reported by source (-1 if unknown)
+	ExpectedCitedBy      int // Total forward count reported by source (-1 if unknown)
+	NotesCount           int
+	ApplicationNumber    string
+	ApplicationDate      string
+	PublicationNumber    string
+	GrantNumber          string
+	FirstClaim           string
 }
 
 type PatentTextSection struct {
@@ -378,9 +378,6 @@ type AIAnalysis struct {
 	CreatedAt            time.Time
 }
 
-// IDSIconInFull is the icon shown when an IDS entry is cited in its entirety.
-const IDSIconInFull = "⊛"
-
 type IDSEntry struct {
 	ID               int64
 	ProjectID        string
@@ -399,14 +396,6 @@ type IDSEntry struct {
 	AddedAt          time.Time
 }
 
-// IDSPassagesText returns the display text for the relevant passages column.
-// When InFull is set it returns the icon + "In full", ignoring RelevantPassages.
-func IDSPassagesText(e IDSEntry) string {
-	if e.InFull {
-		return IDSIconInFull + " In full"
-	}
-	return e.RelevantPassages
-}
 
 // IDSPassagesFormatGuide is the one-line hint shown when editing passages.
 const IDSPassagesFormatGuide = "p. 5 · pp. 12-15 · col. 2 · cols. 3-4 · l. 10 · ll. 50-62 · para. [0014] · paras. [0014]-[0020] · FIG. 2 · FIGS. 4A-4C · Sec. 3.1"

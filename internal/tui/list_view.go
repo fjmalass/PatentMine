@@ -127,8 +127,8 @@ func (m *Model) listColumns() []listColumn {
 		{"Expires", expWidth, domain.SortColumnExpiration, jumpLabelExpiration},
 		{"ReviewState", reviewStateWidth, domain.SortColumnReviewState, keyReviewState},
 		{"Updated", updatedWidth, domain.SortColumnUpdated, jumpLabelUpdated},
-		{"Notes", notesWidth, domain.SortColumnNotes, jumpLabelNotes},
-		{"Tags", tagsWidth, domain.SortColumnTags, ""},
+		{"Notes", notesWidth, domain.SortColumnNotes, ksNotes.jump},
+		{"Tags", tagsWidth, domain.SortColumnTags, ksTags.jump},
 		{"IDS", idsWidth, listColumnIDS, keyIDS},
 	}
 }

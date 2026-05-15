@@ -60,6 +60,17 @@ const (
 	tagSubFilter = "filter"
 	tagSubHelp   = "help"
 
+	// short tag aliases
+	aliasTagAdd    = "ta" // :tag add
+	aliasTagList   = "tl" // :tag list
+	aliasTagDelete = "td" // :tag delete
+	aliasTagRename = "tr" // :tag rename
+	aliasTagColor  = "tc" // :tag color
+	aliasTagFilter = "tf" // :tag filter
+	aliasTagHelp   = "th" // :tag help
+
+	aliasCountry = "co"
+
 	// :project subcommands
 	projectSubID            = "id"
 	projectSubList          = "list"
@@ -172,17 +183,21 @@ const (
 	keyColLeft           = "h"
 	keyColRight          = "l"
 	keyClassification    = "L"
-	keyText              = "t"
+	keyText              = "T"
 	keyNotes             = "n"
 	keyRefs              = "ctrl+r"
 	keyAI                = "a"
 	keyWeb               = "w"
 	keyJump              = "f"
+	keyNarrow            = "#"
+	keyVisual            = "v"
+	keyVisualLine        = "V"
+	keyVisualAll         = "%"
 	keyFamily            = "F"
 	keyProject           = "P"
-	keyTag               = "T"
+	keyTag               = "t"
 	keyCountry           = "C"
-	keyFirstClaim        = "1"
+	keyFirstClaim        = "@"
 	keyHelp              = "?"
 	keyYes               = "y"
 	keyNo                = "n"
@@ -204,8 +219,10 @@ const (
 
 	defaultPDFDir = "pdfs"
 
-	jumpFallbackLabels = "asdfghjklqwertyuiopzxcvbnm"
+	jumpFallbackLabels = "abcdefgimopqrstvwz"
 
+	// Detail view field jump labels — pressed after [f] to jump to a specific field.
+	// Fields that have both a key binding and a jump label use keySpec vars (below).
 	jumpLabelAssignee         = "a"
 	jumpLabelInventors        = "i"
 	jumpLabelApplication      = "A"
@@ -218,16 +235,10 @@ const (
 	jumpLabelStoredLocal      = "l"
 	jumpLabelUpdated          = "u"
 	jumpLabelSource           = "h"
-	jumpLabelCitation         = "c"
-	jumpLabelCitedBy          = "b"
-	jumpLabelCitationCount    = "c"
-	jumpLabelCitedByCount     = "b"
 	jumpLabelFamilyParents    = "P"
 	jumpLabelFamilyChildren   = "C"
-	jumpLabelNotes            = "n"
 	jumpLabelLatestAssignment = "L"
 	jumpLabelImportSource     = "v"
-	jumpLabelTags             = "t"
 	jumpLabelCountry          = "o"
 
 	inventorJumpNumberLabels = "123456789"
@@ -323,6 +334,23 @@ const (
 	ColorFamilyPCT          = "81"  // SteelBlue/Cyan
 )
 
+// keySpec pairs a normal-mode keyboard shortcut with its jump-mode hint label.
+// key  = letter pressed in normal mode to trigger the action
+// jump = letter shown as a hint when jump mode (f) is active
+// Use ks*.key in switch statements; ks*.jump when assigning to detailField or listColumn.
+type keySpec struct {
+	key  string
+	jump string
+}
+
+// Features that have both a normal-mode key binding and a jump-mode hint label.
+var (
+	ksNotes     = keySpec{key: keyNotes, jump: keyNotes}
+	ksCitations = keySpec{key: keyCites, jump: keyCites}
+	ksCitedBy   = keySpec{key: keyCitedBy, jump: keyCitedBy}
+	ksTags      = keySpec{key: keyTag, jump: keyTag}
+)
+
 const (
 	noteDetailSnippetCount = 10
 	noteTextareaHeight     = 8
@@ -331,6 +359,8 @@ const (
 
 	idsNoteMaxLen   = 25
 	idsNoteTruncLen = 22
+
+	IDSIconInFull = "⊛" // icon shown when an IDS entry is cited in its entirety
 
 	FamilyNodeStatusIconUnloadedCircle = "◌"
 	FamilyNodeStatusIconUnloadedDots   = "…"

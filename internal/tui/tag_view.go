@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/domain"
 )
@@ -66,8 +67,20 @@ func (m *Model) viewTagSelect() string {
 	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
 
+	title := "Tags · " + m.current.Number
+	if len(m.backStack) > 0 {
+		snap := m.backStack[len(m.backStack)-1]
+		if snap.visualMode {
+			start, end := snap.selectionStart, snap.selected
+			if start > end {
+				start, end = end, start
+			}
+			title = fmt.Sprintf("Tags · %d patents", end-start+1)
+		}
+	}
+
 	var b strings.Builder
-	b.WriteString(m.renderPopupHeader(fmt.Sprintf("Tags for %s", m.current.Number)))
+	b.WriteString(m.renderPopupHeader(title))
 
 	if len(tags) == 0 {
 		b.WriteString(dimStyle.Render("No tags defined. Create one with :tag add <name>"))
@@ -143,6 +156,42 @@ func (m *Model) reloadAvailableTags() *Model {
 	return m
 }
 
+// applyTagsToSelection applies the current selectedPatentTags state to all
+// patents in the visual selection (or just m.current for single-patent mode).
+// Space-toggles have already been applied live for m.current; this propagates
+// the same tag state to every other patent in the range.
+func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
+	indices := m.listSelectionFromSnapshot()
+
+	updatedCount := 0
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(m.patents) {
+			continue
+		}
+		patentNum := m.patents[idx].Number
+		if patentNum == m.current.Number {
+			updatedCount++
+			continue // already applied live via space-toggle
+		}
+		for _, tag := range m.availableTags {
+			if m.selectedPatentTags[tag.ID] {
+				_ = m.repo.ApplyTagToPatent(m.ctx, patentNum, tag.ID)
+			} else {
+				_ = m.repo.RemoveTagFromPatent(m.ctx, patentNum, tag.ID)
+			}
+		}
+		updatedCount++
+	}
+
+	if updatedCount > 1 {
+		m.message = fmt.Sprintf("tags updated for %d patents", updatedCount)
+	}
+
+	m.visualMode = false
+	m.populateDetailCache()
+	return m.goBack()
+}
+
 type tagSearchable struct{ m *Model }
 
 func (s tagSearchable) ItemCount() int { return len(s.m.projectTags) }
@@ -176,5 +225,71 @@ func formatTags(tags []domain.Tag) string {
 		names = append(names, t.Name)
 	}
 	return strings.Join(names, ",")
+}
+
+func (m *Model) handleViewProjectTagsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		m.projectTagsSelected = clamp(m.projectTagsSelected+m.consumeCount(1), 0, len(m.projectTags)-1)
+	case keyVimUp, keyArrowUp:
+		m.projectTagsSelected = max(0, m.projectTagsSelected-m.consumeCount(1))
+	case keyDelete:
+		if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
+			tag := m.projectTags[m.projectTagsSelected]
+			if err := m.repo.DeleteTag(m.ctx, tag.ID); err != nil {
+				m.err = err.Error()
+			} else {
+				m.message = fmt.Sprintf("tag '%s' deleted", tag.Name)
+				m.reloadProjectTags()
+			}
+		}
+	case "r":
+		if m.projectTagsSelected >= 0 && m.projectTagsSelected < len(m.projectTags) {
+			tag := m.projectTags[m.projectTagsSelected]
+			m.input.Focus()
+			m.input.SetValue(fmt.Sprintf(":tag rename %s ", tag.Name))
+			return m, nil
+		}
+	case keyAddToIDS:
+		m.input.Focus()
+		m.input.SetValue(":tag add ")
+		return m, nil
+	case keyEsc, keyBack:
+		return m.goBack()
+	default:
+		m.tryAccumulateCount(msg.String())
+	}
+	return m, nil
+}
+
+func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case keyVimDown, keyArrowDown:
+		m.tagSelectSelected = clamp(m.tagSelectSelected+m.consumeCount(1), 0, len(m.availableTags)-1)
+	case keyVimUp, keyArrowUp:
+		m.tagSelectSelected = max(0, m.tagSelectSelected-m.consumeCount(1))
+	case " ":
+		if m.tagSelectSelected >= 0 && m.tagSelectSelected < len(m.availableTags) {
+			tag := m.availableTags[m.tagSelectSelected]
+			if m.selectedPatentTags[tag.ID] {
+				if err := m.repo.RemoveTagFromPatent(m.ctx, m.current.Number, tag.ID); err != nil {
+					m.err = err.Error()
+				} else {
+					m.selectedPatentTags[tag.ID] = false
+				}
+			} else {
+				if err := m.repo.ApplyTagToPatent(m.ctx, m.current.Number, tag.ID); err != nil {
+					m.err = err.Error()
+				} else {
+					m.selectedPatentTags[tag.ID] = true
+				}
+			}
+		}
+	case keyEnter, keyCtrlS:
+		return m.applyTagsToSelection()
+	case keyEsc, keyBack:
+		return m.goBack()
+	}
+	return m, nil
 }
 

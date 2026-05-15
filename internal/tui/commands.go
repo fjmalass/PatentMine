@@ -28,28 +28,25 @@ func ParseCommand(input string) Command {
 
 	// Short aliases
 	switch name {
-	case "ta":
+	case aliasTagAdd:
 		name = commandTag
 		args = append([]string{tagSubAdd}, args...)
-	case "tl":
+	case aliasTagList:
 		name = commandTag
 		args = append([]string{tagSubList}, args...)
-	case "td":
+	case aliasTagDelete:
 		name = commandTag
 		args = append([]string{tagSubDelete}, args...)
-	case "tr":
+	case aliasTagRename:
 		name = commandTag
 		args = append([]string{tagSubRename}, args...)
-	case "tc":
+	case aliasTagColor:
 		name = commandTag
 		args = append([]string{tagSubColor}, args...)
-	case "tf":
-		name = commandTag
-		args = append([]string{tagSubFilter}, args...)
-	case "th":
+	case aliasTagHelp:
 		name = commandTag
 		args = append([]string{tagSubHelp}, args...)
-	case "co":
+	case aliasCountry:
 		name = commandCountry
 	}
 

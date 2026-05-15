@@ -209,7 +209,7 @@ The patent list defaults to **stored** patents only.
 ```
 :filter status stored        ← default
 :filter status ignored
-:filter status under-review
+:filter status under_review
 :filter status cached        ← patents fetched as citation background data
 :filter status none          ← show everything
 ```

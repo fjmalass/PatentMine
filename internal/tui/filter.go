@@ -76,7 +76,6 @@ var validReviewStateFilters = map[string]string{
 	domain.ReviewStateIgnored:     domain.ReviewStateIgnored,
 	domain.ReviewStateUnderReview: domain.ReviewStateUnderReview,
 	domain.ReviewStateCached:      domain.ReviewStateCached,
-	"under-review":                domain.ReviewStateUnderReview,
 	reviewStateFilterNone:         reviewStateFilterNone,
 }
 
@@ -87,6 +86,7 @@ const (
 	FilterClassification FilterType = "classification"
 	FilterInventor       FilterType = "inventor"
 	FilterCountry        FilterType = "country"
+	FilterTag            FilterType = "tag"
 	FilterClear          FilterType = "clear"
 	FilterDefault        FilterType = "default"
 )
@@ -95,10 +95,10 @@ var filterAliases = map[string]FilterType{
 	"review_state":   FilterReviewState,
 	"status":         FilterReviewState,
 	"classification": FilterClassification,
-	"class":          FilterClassification,
 	"cpc":            FilterClassification,
 	"inventor":       FilterInventor,
 	"country":        FilterCountry,
+	"tag":            FilterTag,
 	"clear":          FilterClear,
 	"none":           FilterClear,
 	"default":        FilterDefault,
@@ -110,6 +110,7 @@ var SupportedFilters = map[FilterType]bool{
 	FilterClassification: true,
 	FilterInventor:       true,
 	FilterCountry:        true,
+	FilterTag:            true,
 	FilterClear:          true,
 }
 
@@ -118,9 +119,10 @@ func SupportedFilterTypes() []string {
 		"clear",
 		"default",
 		"review_state",
-		"class",
+		"classification",
 		"inventor",
 		"country",
+		"tag",
 	}
 }
 
@@ -169,6 +171,8 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 		return m.inventorFilterCommand(args[1:])
 	case FilterCountry:
 		return m.countryFilterCommand(args[1:])
+	case FilterTag:
+		return m.tagFilterCommand(args[1:])
 	case FilterDefault:
 		return m.reviewStateFilterCommand([]string{domain.ReviewStateStored})
 	case FilterClear:
@@ -246,6 +250,18 @@ func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	} else {
 		m.listFilter.Text = strings.Join(args, " ")
 		m.message = "filtering by inventor: " + m.listFilter.Text
+	}
+	m.setMode(viewList)
+	return m.refreshList()
+}
+
+func (m *Model) tagFilterCommand(args []string) (tea.Model, tea.Cmd) {
+	if isFilterClearArg(args) {
+		m.listFilter.Tag = EmptyFilter
+		m.message = "tag filter cleared"
+	} else {
+		m.listFilter.Tag = strings.Join(args, " ")
+		m.message = "filtering by tag: " + m.listFilter.Tag
 	}
 	m.setMode(viewList)
 	return m.refreshList()

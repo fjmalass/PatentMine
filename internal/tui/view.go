@@ -64,6 +64,9 @@ func (m *Model) renderView() string {
 		} else {
 			b.WriteString(lineStyle.Render(m.navDefault()) + "\n")
 		}
+	} else if m.listSearchActive {
+		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorWarning)).Italic(true)
+		b.WriteString(lineStyle.Render(searchStyle.Render("search: /"+m.listSearchQuery+"█")) + "\n")
 	} else if m.jumpMode {
 		prefix := ""
 		if m.visualMode {
