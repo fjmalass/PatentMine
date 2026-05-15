@@ -293,21 +293,21 @@ func init() {
 	registerKey(keyEditProjectStatus, []viewMode{viewProjectInfo}, "Edit project status", nil, false, "Project", TextHelpProjectStatus, false)
 
 	// viewIDSEdit overrides
-	registerKey("s", []viewMode{viewIDSEdit}, "status", nil, true, "IDS", "", true)
-	registerKey("n", []viewMode{viewIDSEdit}, "Edit note", nil, true, "IDS", "", false)
-	registerKey("k", []viewMode{viewIDSEdit}, "Edit kind code", nil, true, "IDS", "", false)
-	registerKey("c", []viewMode{viewIDSEdit}, "Edit country code", nil, true, "IDS", "", false)
-	registerKey("p", []viewMode{viewIDSEdit}, "Edit passages", nil, true, "IDS", "", false)
-	registerKey("f", []viewMode{viewIDSEdit}, "Toggle in-full", nil, true, "IDS", "", false)
+	registerKey(keyEditAppStatus, []viewMode{viewIDSEdit}, "status", nil, true, "IDS", "", true)
+	registerKey(keyNotes, []viewMode{viewIDSEdit}, "Edit note", nil, true, "IDS", "", false)
+	registerKey(keyVimUp, []viewMode{viewIDSEdit}, "Edit kind code", nil, true, "IDS", "", false)
+	registerKey(keyEditComment, []viewMode{viewIDSEdit}, "Edit country code", nil, true, "IDS", "", false)
+	registerKey(keyMarkPaid, []viewMode{viewIDSEdit}, "Edit passages", nil, true, "IDS", "", false)
+	registerKey(keyJump, []viewMode{viewIDSEdit}, "Toggle in-full", nil, true, "IDS", "", false)
 
 	// viewTagSelect
-	registerKey(" ", []viewMode{viewTagSelect}, "select", nil, true, "Tags", "", true)
-	registerKey("a", []viewMode{viewTagSelect}, "add", nil, true, "Tags", "", true)
+	registerKey(keySpace, []viewMode{viewTagSelect}, "select", nil, true, "Tags", "", true)
+	registerKey(keyAI, []viewMode{viewTagSelect}, "add", nil, true, "Tags", "", true)
 	registerKey(keyEnter, []viewMode{viewTagSelect}, "save", nil, false, "Tags", "", true)
-	registerKey("ctrl+s", []viewMode{viewTagSelect}, "save", nil, false, "Tags", "", true)
+	registerKey(keyCtrlS, []viewMode{viewTagSelect}, "save", nil, false, "Tags", "", true)
 
 	// viewProjectTags
-	registerKey("r", []viewMode{viewProjectTags}, "rename", nil, true, "Tags", "", true)
+	registerKey(keyUnreview, []viewMode{viewProjectTags}, "rename", nil, true, "Tags", "", true)
 
 	if err := validateKeyBindings(); err != nil {
 		panic(fmt.Sprintf("key binding validation failed:\n%s", err))

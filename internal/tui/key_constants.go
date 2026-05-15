@@ -3,6 +3,7 @@ package tui
 const (
 	keyEnter             = "enter"
 	keyEsc               = "esc"
+	keySpace             = " "
 	keyCtrlC             = "ctrl+c"
 	keyCtrlF             = "ctrl+f"
 	keyCtrlD             = "ctrl+d"
