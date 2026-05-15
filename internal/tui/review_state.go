@@ -46,7 +46,15 @@ func (m *Model) reviewStateSelectTitle() string {
 			return "Change Status · " + m.current.Number
 		}
 	case prevMode == viewCites || prevMode == viewCitedBy:
+		if len(m.backStack) > 0 && m.backStack[len(m.backStack)-1].visualMode {
+			indices := m.citationIndicesFromSnapshot(prevMode)
+			return fmt.Sprintf("Change Status · %d citations", len(indices))
+		}
 		if edge, ok, err := m.selectedCitationEdge(); err == nil && ok {
+			return "Change Status · " + edge.TargetPatent
+		}
+	case prevMode == viewReview:
+		if edge, ok, err := m.selectedReviewCitationEdge(); err == nil && ok {
 			return "Change Status · " + edge.TargetPatent
 		}
 	case prevMode == viewFamily:
@@ -90,20 +98,44 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
 		m.logActivity(ActivityPatentReviewState, m.current.Number, next)
+		if len(m.backStack) > 0 {
+			m.backStack[len(m.backStack)-1].current.ReviewState = next
+		}
 		return m.goBack()
 	}
 
 	if prevMode == viewCites || prevMode == viewCitedBy {
-		edge, ok, err := m.selectedCitationEdge()
-		if err != nil || !ok {
+		relation := domain.RelationCites
+		if prevMode == viewCitedBy {
+			relation = domain.RelationCitedBy
+		}
+		edges, err := m.citationEdgesForRelation(relation)
+		if err != nil || len(edges) == 0 {
 			return m.goBack()
 		}
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
-			m.err = err.Error()
-			return m.goBack()
+		indices := m.citationIndicesFromSnapshot(prevMode)
+		updatedCount := 0
+		for _, idx := range indices {
+			if idx < 0 || idx >= len(edges) {
+				continue
+			}
+			edge := edges[idx]
+			if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
+				m.logger.Error("citation status update failed", "patent", edge.TargetPatent, "error", err)
+				continue
+			}
+			m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
+			updatedCount++
 		}
-		m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
-		m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
+		if updatedCount > 1 {
+			m.message = fmt.Sprintf("updated status to %s for %d citations", next, updatedCount)
+		} else if updatedCount == 1 && len(indices) > 0 && indices[0] < len(edges) {
+			m.message = fmt.Sprintf("%s → %s", edges[indices[0]].TargetPatent, next)
+		}
+		m.visualMode = false
+		if len(m.backStack) > 0 {
+			m.backStack[len(m.backStack)-1].visualMode = false
+		}
 		return m.goBack()
 	}
 
@@ -120,6 +152,20 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("%s → %s", node.number, next)
 		m.logActivity(ActivityPatentReviewState, node.number, next)
 		m.invalidateFamilyCaches()
+		return m.goBack()
+	}
+
+	if prevMode == viewReview {
+		edge, ok, err := m.selectedReviewCitationEdge()
+		if err != nil || !ok {
+			return m.goBack()
+		}
+		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
+			m.err = err.Error()
+			return m.goBack()
+		}
+		m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
+		m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
 		return m.goBack()
 	}
 
@@ -150,6 +196,9 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	}
 
 	m.visualMode = false
+	if len(m.backStack) > 0 {
+		m.backStack[len(m.backStack)-1].visualMode = false
+	}
 	return m.goBack()
 }
 

@@ -28,6 +28,41 @@ func (m *Model) setCitationSelection(val int) {
 	}
 }
 
+func (m *Model) citationEdgesForRelation(relation string) ([]domain.CitationEdge, error) {
+	if m.current.Number == EmptyFilter {
+		return nil, nil
+	}
+	opts := storage.ListCitationsOptions{
+		SortColumn:        m.sortColumn,
+		SortOrder:         m.sortOrder,
+		ReviewStateFilter: m.citesReviewStateFilter,
+	}
+	return m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
+}
+
+func (m *Model) citationIndicesFromSnapshot(prevMode viewMode) []int {
+	if len(m.backStack) == 0 {
+		return []int{m.citationSelection()}
+	}
+	snap := m.backStack[len(m.backStack)-1]
+	end := snap.citesSelected
+	if prevMode == viewCitedBy {
+		end = snap.citedBySelected
+	}
+	if snap.visualMode {
+		start := snap.selectionStart
+		if start > end {
+			start, end = end, start
+		}
+		res := make([]int, 0, end-start+1)
+		for i := start; i <= end; i++ {
+			res = append(res, i)
+		}
+		return res
+	}
+	return []int{end}
+}
+
 func (m *Model) currentCitationEdges() ([]domain.CitationEdge, error) {
 	if m.current.Number == EmptyFilter {
 		return nil, nil

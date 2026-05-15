@@ -144,6 +144,7 @@ type Model struct {
 	projectTags                  []domain.TagWithCount
 	availableTags                []domain.Tag
 	selectedPatentTags           map[int64]bool
+	tagLivePatent                string
 	familyRefreshElapsed         string
 	overlayBackdropCache         string
 	overlayBackdropCacheKey      string
@@ -784,9 +785,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.familySelected = familyCurrentIdx(m.buildFamilyTree())
 		case keyTag:
 			if m.mode == viewList && len(m.patents) > 0 {
-				m.current = m.patents[m.selected]
+				firstIdx := m.selected
+				if m.visualMode && m.selectionStart < firstIdx {
+					firstIdx = m.selectionStart
+				}
+				m.current = m.patents[clamp(firstIdx, 0, len(m.patents)-1)]
 			}
-			if m.current.Number != "" {
+			if m.isCitationView() && m.current.Number != "" {
+				prevMode := m.mode
+				sel := m.citationSelection()
+				firstIdx := sel
+				if m.visualMode && m.selectionStart < firstIdx {
+					firstIdx = m.selectionStart
+				}
+				m = m.navigateTo(viewTagSelect)
+				relation := domain.RelationCites
+				if prevMode == viewCitedBy {
+					relation = domain.RelationCitedBy
+				}
+				if edges, err := m.citationEdgesForRelation(relation); err == nil && len(edges) > 0 {
+					m.tagLivePatent = edges[clamp(firstIdx, 0, len(edges)-1)].TargetPatent
+				}
+				m = m.reloadAvailableTags()
+			} else if m.current.Number != "" {
 				m = m.navigateTo(viewTagSelect).reloadAvailableTags()
 			}
 		case keyText:
@@ -899,21 +920,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyReviewState:
 			if m.isCitationView() {
-				if m.visualMode {
-					m.citesReviewStateFilter = nextCitesReviewStateFilter(m.citesReviewStateFilter)
-					return m, nil
-				}
-				// Change status of selected citation
-				edge, ok, err := m.selectedCitationEdge()
-				if err != nil || !ok {
-					return m, nil
-				}
-				currentStatus := edge.ReviewState
 				m.reviewStateSelected = 0
-				for i, s := range m.selectableReviewStates() {
-					if s == currentStatus {
-						m.reviewStateSelected = i
-						break
+				if !m.visualMode {
+					if edge, ok, err := m.selectedCitationEdge(); err == nil && ok {
+						for i, s := range m.selectableReviewStates() {
+							if s == edge.ReviewState {
+								m.reviewStateSelected = i
+								break
+							}
+						}
 					}
 				}
 				return m.navigateTo(viewReviewStateSelect), nil
@@ -936,6 +951,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if s == currentStatus {
 						m.reviewStateSelected = i
 						break
+					}
+				}
+				return m.navigateTo(viewReviewStateSelect), nil
+			}
+			if m.mode == viewReview {
+				edge, ok, err := m.selectedReviewCitationEdge()
+				if err == nil && ok {
+					currentStatus := edge.ReviewState
+					m.reviewStateSelected = 0
+					for i, s := range m.selectableReviewStates() {
+						if s == currentStatus {
+							m.reviewStateSelected = i
+							break
+						}
 					}
 				}
 				return m.navigateTo(viewReviewStateSelect), nil

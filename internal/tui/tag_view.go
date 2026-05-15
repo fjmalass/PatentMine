@@ -143,10 +143,13 @@ func (m *Model) reloadAvailableTags() *Model {
 		m.availableTags[i] = t.Tag
 	}
 
-	// Also load current patent's tags
 	m.selectedPatentTags = make(map[int64]bool)
-	if m.current.Number != "" {
-		pTags, err := m.repo.GetPatentTags(m.ctx, m.current.Number)
+	preloadNum := m.current.Number
+	if m.tagLivePatent != "" {
+		preloadNum = m.tagLivePatent
+	}
+	if preloadNum != "" {
+		pTags, err := m.repo.GetPatentTags(m.ctx, preloadNum)
 		if err == nil {
 			for _, pt := range pTags {
 				m.selectedPatentTags[pt.ID] = true
@@ -157,12 +160,53 @@ func (m *Model) reloadAvailableTags() *Model {
 }
 
 // applyTagsToSelection applies the current selectedPatentTags state to all
-// patents in the visual selection (or just m.current for single-patent mode).
-// Space-toggles have already been applied live for m.current; this propagates
-// the same tag state to every other patent in the range.
+// patents in the visual selection (or just the first selected for single mode).
+// Space-toggles have already been applied live for the first selected; this
+// propagates the same tag state to every other patent in the range.
 func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
-	indices := m.listSelectionFromSnapshot()
+	prevMode := previousModeOr(m, viewList)
 
+	if prevMode == viewCites || prevMode == viewCitedBy {
+		relation := domain.RelationCites
+		if prevMode == viewCitedBy {
+			relation = domain.RelationCitedBy
+		}
+		edges, err := m.citationEdgesForRelation(relation)
+		if err != nil || len(edges) == 0 {
+			m.tagLivePatent = ""
+			m.visualMode = false
+			return m.goBack()
+		}
+		indices := m.citationIndicesFromSnapshot(prevMode)
+		updatedCount := 0
+		for _, idx := range indices {
+			if idx < 0 || idx >= len(edges) {
+				continue
+			}
+			patentNum := edges[idx].TargetPatent
+			if patentNum == m.tagLivePatent {
+				updatedCount++
+				continue // already applied live via space-toggle
+			}
+			for _, tag := range m.availableTags {
+				if m.selectedPatentTags[tag.ID] {
+					_ = m.repo.ApplyTagToPatent(m.ctx, patentNum, tag.ID)
+				} else {
+					_ = m.repo.RemoveTagFromPatent(m.ctx, patentNum, tag.ID)
+				}
+			}
+			updatedCount++
+		}
+		if updatedCount > 1 {
+			m.message = fmt.Sprintf("tags updated for %d patents", updatedCount)
+		}
+		m.tagLivePatent = ""
+		m.visualMode = false
+		m.populateDetailCache()
+		return m.goBack()
+	}
+
+	indices := m.listSelectionFromSnapshot()
 	updatedCount := 0
 	for _, idx := range indices {
 		if idx < 0 || idx >= len(m.patents) {
@@ -182,11 +226,10 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 		}
 		updatedCount++
 	}
-
 	if updatedCount > 1 {
 		m.message = fmt.Sprintf("tags updated for %d patents", updatedCount)
 	}
-
+	m.tagLivePatent = ""
 	m.visualMode = false
 	m.populateDetailCache()
 	return m.goBack()
@@ -271,14 +314,18 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		if m.tagSelectSelected >= 0 && m.tagSelectSelected < len(m.availableTags) {
 			tag := m.availableTags[m.tagSelectSelected]
+			liveNum := m.current.Number
+			if m.tagLivePatent != "" {
+				liveNum = m.tagLivePatent
+			}
 			if m.selectedPatentTags[tag.ID] {
-				if err := m.repo.RemoveTagFromPatent(m.ctx, m.current.Number, tag.ID); err != nil {
+				if err := m.repo.RemoveTagFromPatent(m.ctx, liveNum, tag.ID); err != nil {
 					m.err = err.Error()
 				} else {
 					m.selectedPatentTags[tag.ID] = false
 				}
 			} else {
-				if err := m.repo.ApplyTagToPatent(m.ctx, m.current.Number, tag.ID); err != nil {
+				if err := m.repo.ApplyTagToPatent(m.ctx, liveNum, tag.ID); err != nil {
 					m.err = err.Error()
 				} else {
 					m.selectedPatentTags[tag.ID] = true
@@ -288,6 +335,7 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyEnter, keyCtrlS:
 		return m.applyTagsToSelection()
 	case keyEsc, keyBack:
+		m.tagLivePatent = ""
 		return m.goBack()
 	}
 	return m, nil
