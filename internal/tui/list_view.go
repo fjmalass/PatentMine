@@ -224,7 +224,7 @@ func (m *Model) viewList() string {
 		m.sortColumnIndex = len(cols) - 1
 	}
 
-	header := m.pad("  ", 2) +
+	header := m.pad(rowNoCursor, 2) +
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", idxWidth+2)
 
@@ -278,9 +278,9 @@ func (m *Model) viewList() string {
 
 	for i := window.Start; i < window.End; i++ {
 		p := m.patents[i]
-		prefix := "  "
+		prefix := rowNoCursor
 		if i == m.selected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 
 		jumpRowPrefix := ""
@@ -429,10 +429,10 @@ func (m *Model) tabularColumns() ([]listColumn, bool) {
 	case m.mode == viewList:
 		return m.listColumns(), true
 	case m.isCitationView():
-		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPW + overlayIndexWidth)
+		avail := m.overlayContentWidth() - (listRowPrefixWidth + jumpPW + overlayIndexWidth)
 		return m.citationColumns(avail), true
 	case m.mode == viewReview:
-		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPW + overlayIndexWidth)
+		avail := m.overlayContentWidth() - (listRowPrefixWidth + jumpPW + overlayIndexWidth)
 		return m.reviewOverlayColumns(avail), true
 	default:
 		return nil, false

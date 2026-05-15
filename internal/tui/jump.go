@@ -40,7 +40,7 @@ func (m *Model) jumpLabels() []jumpLabel {
 		if err != nil || len(edges) == 0 {
 			return nil
 		}
-		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		avail := m.overlayContentWidth() - (listRowPrefixWidth + overlayIndexWidth)
 		cols := m.citationColumns(avail)
 		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.overlayPageSize())
 		end := min(start+m.overlayPageSize(), len(edges))
@@ -54,7 +54,7 @@ func (m *Model) jumpLabels() []jumpLabel {
 		if err != nil || len(edges) == 0 {
 			return nil
 		}
-		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		avail := m.overlayContentWidth() - (listRowPrefixWidth + overlayIndexWidth)
 		cols := m.reviewOverlayColumns(avail)
 		start := pageStart(clamp(m.reviewSelected, 0, len(edges)-1), m.overlayPageSize())
 		end := min(start+m.overlayPageSize(), len(edges))
@@ -117,7 +117,7 @@ func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
 	case m.mode == viewDetail:
 		m.detailSelected = index
 	case m.isCitationView():
-		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		avail := m.overlayContentWidth() - (listRowPrefixWidth + overlayIndexWidth)
 		cols := m.citationColumns(avail)
 		colCount := len(cols)
 		if index < colCount {
@@ -132,7 +132,7 @@ func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
 		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.overlayPageSize())
 		m.setCitationSelection(clamp(start+index, 0, len(edges)-1))
 	case m.mode == viewReview:
-		avail := m.overlayWidth() - overlayPad - (listRowPrefixWidth + overlayIndexWidth)
+		avail := m.overlayContentWidth() - (listRowPrefixWidth + overlayIndexWidth)
 		cols := m.reviewOverlayColumns(avail)
 		colCount := len(cols)
 		if index < colCount {

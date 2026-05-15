@@ -46,9 +46,9 @@ func (m *Model) viewDetail() string {
 			groupIndex++
 			continue
 		}
-		prefix := "  "
+		prefix := rowNoCursor
 		if i == selected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 		value := field.value
 		if field.displayValue != "" {

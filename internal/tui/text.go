@@ -260,7 +260,7 @@ func EnglishText() TextCatalog {
 		TextValueFilterSortTag:       "sort:",
 		TextValueFilterRefsTag:       "refs:",
 		TextValueFilterClassTag:      "class:",
-		TextValueProjectSummaryLead:  "> ",
+		TextValueProjectSummaryLead:  rowCursor,
 		TextNavDefault:               "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavList:                  "keys: [%s/%s/↓↑] rows · [%s/%s/←→] cols · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavJump:                  "jump: press a hint key to move focus, [esc] cancels",

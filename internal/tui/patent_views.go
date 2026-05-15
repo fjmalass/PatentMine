@@ -98,15 +98,15 @@ func (m *Model) viewInventors() string {
 		return n
 	}
 
-	rowWidth := max(40, m.overlayWidth()-6)
+	rowWidth := max(40, m.overlayContentWidth())
 	countWidth := 6 // "(NNN)"
 
 	var b strings.Builder
 	b.WriteString(m.renderPopupHeader("Inventors · " + m.current.Number))
 	for i, inventor := range inventors {
-		prefix := "  "
+		prefix := rowNoCursor
 		if i == selected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 		cnt := countFor(inventor)
 		countCol := fmt.Sprintf("(%d)", cnt)

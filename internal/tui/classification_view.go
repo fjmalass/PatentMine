@@ -28,11 +28,11 @@ func (m *Model) viewClassifications() string {
 	body.WriteString(overlayBase().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
 	body.WriteString("\n\n")
 
-	rowWidth := max(44, m.overlayWidth()-6)
+	rowWidth := max(44, m.overlayContentWidth())
 	codeWidth := 18
 	descriptionWidth := max(20, rowWidth-overlayIndexWidth-codeWidth-2)
 
-	header := m.pad("  ", 2) +
+	header := m.pad(rowNoCursor, 2) +
 		m.pad("#", overlayIndexWidth) +
 		m.pad("Code", codeWidth) +
 		m.pad("Description", descriptionWidth)
@@ -42,9 +42,9 @@ func (m *Model) viewClassifications() string {
 
 	for i := window.Start; i < window.End; i++ {
 		cls := classifications[i]
-		prefix := "  "
+		prefix := rowNoCursor
 		if i == selected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 		row := m.pad(prefix, 2) +
 			m.pad(rowIndexLabel(i), overlayIndexWidth) +
@@ -94,9 +94,9 @@ func (m *Model) viewClassificationDetail() string {
 	body.WriteString(boldStyle.Render("Patents in Project:") + "\n")
 
 	renderCount := func(row classificationDetailRow, val int, style lipgloss.Style) {
-		prefix := "  "
+		prefix := rowNoCursor
 		if row == m.classificationDetailSelected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 		line := fmt.Sprintf("%-13s %d", classDetailRowLabel[row]+":", val)
 		if row == m.classificationDetailSelected {

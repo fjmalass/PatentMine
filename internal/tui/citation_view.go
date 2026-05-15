@@ -11,10 +11,11 @@ import (
 
 const (
 	citationColSource = "source"
-	overlayIndexWidth = 4 // index column width shared across all overlay list views
-	overlayPad        = 4 // left+right inner padding consumed by renderPopup border
-	listJumpWidth     = 2 // width reserved for jump-mode hint prefix (e.g. "a ")
-	listRowPrefixWidth = 2 // width of "  " / "> " row cursor prefix
+	overlayIndexWidth  = 4  // index column width shared across all overlay list views
+	listJumpWidth      = 2  // width reserved for jump-mode hint prefix (e.g. "a ")
+	listRowPrefixWidth = 2  // width of rowNoCursor / rowCursor
+	rowCursor          = "> "
+	rowNoCursor        = "  "
 
 	citColNumWidth    = 16
 	citColInvWidth    = 20
@@ -131,9 +132,9 @@ func (m *Model) viewCitations(relation string) string {
 	if m.hasJumpTargets() {
 		jumpPrefixWidth = listJumpWidth
 	}
-	cols := m.citationColumns(m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
+	cols := m.citationColumns(m.overlayContentWidth() - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
-	header := m.pad("  ", listRowPrefixWidth) +
+	header := m.pad(rowNoCursor, listRowPrefixWidth) +
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", overlayIndexWidth)
 
@@ -189,9 +190,9 @@ func (m *Model) viewCitations(relation string) string {
 	body.WriteString(header + "\n")
 
 	for i := window.Start; i < window.End; i++ {
-		prefix := "  "
+		prefix := rowNoCursor
 		if i == selected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 
 		jumpPrefix := m.jumpPrefix(i - window.Start)
@@ -236,7 +237,7 @@ func (m *Model) viewCitations(relation string) string {
 			row += m.pad(cell, c.width+padding)
 		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-overlayPad) + "\n")
+		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayContentWidth()) + "\n")
 	}
 
 	return m.renderPopup(citationPopupTitle(), body.String())
@@ -262,9 +263,9 @@ func (m *Model) viewReviewQueue() string {
 	if m.hasJumpTargets() {
 		jumpPrefixWidth = listJumpWidth
 	}
-	cols := m.reviewOverlayColumns(m.overlayWidth() - overlayPad - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
+	cols := m.reviewOverlayColumns(m.overlayContentWidth() - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
-	header := m.pad("  ", listRowPrefixWidth) +
+	header := m.pad(rowNoCursor, listRowPrefixWidth) +
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", overlayIndexWidth)
 
@@ -320,9 +321,9 @@ func (m *Model) viewReviewQueue() string {
 	body.WriteString(header + "\n")
 
 	for i := window.Start; i < window.End; i++ {
-		prefix := "  "
+		prefix := rowNoCursor
 		if i == selected {
-			prefix = "> "
+			prefix = rowCursor
 		}
 
 		jumpPrefix := m.jumpPrefix(i - window.Start)
@@ -356,7 +357,7 @@ func (m *Model) viewReviewQueue() string {
 			row += m.pad(m.truncate(rowValues[c.id], c.width), c.width+padding)
 		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-overlayPad) + "\n")
+		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayContentWidth()) + "\n")
 	}
 	return m.renderPopup("Review Queue", body.String())
 }

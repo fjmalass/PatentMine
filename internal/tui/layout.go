@@ -253,17 +253,14 @@ func (m *Model) renderPopupHeader(label string) string {
 	}
 
 	// Add a separator rule to separate header from payload
-	popupWidth := m.overlayWidth() - 4
-	if popupWidth < 20 {
-		popupWidth = 20
-	}
+	popupWidth := max(20, m.overlayContentWidth())
 	rule := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(ColorSubtle)).
 		Render(strings.Repeat("─", popupWidth))
 
 	// Ensure all lines in the header have the correct background and width
 	headerLines := strings.Split(res+"\n"+rule, "\n")
-	style := lipgloss.NewStyle().Width(m.overlayWidth() - 4)
+	style := lipgloss.NewStyle().Width(m.overlayContentWidth())
 
 	var final strings.Builder
 	for i, line := range headerLines {

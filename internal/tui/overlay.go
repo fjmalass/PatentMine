@@ -131,3 +131,10 @@ func (m *Model) overlayWidth() int {
 	}
 	return width
 }
+
+// overlayContentWidth returns the usable text width inside the popup produced
+// by previewOverlay. Width(overlayWidth()) in lipgloss v1.x sets the total
+// outer width; border (2) + horizontal padding (4) = 6 consumed.
+func (m *Model) overlayContentWidth() int {
+	return m.overlayWidth() - 6
+}

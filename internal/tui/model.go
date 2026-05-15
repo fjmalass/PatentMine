@@ -802,7 +802,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "filter: " + query
 				return m.refreshList()
 			}
-		case keyNotes: // which is "n"
+		case keyNotes: // which is "N"
 			if m.isPopupSearchMode() && m.popupSearchQuery != "" {
 				return m.popupSearchNext(), nil
 			}

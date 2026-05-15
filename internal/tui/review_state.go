@@ -22,9 +22,9 @@ func (m *Model) viewReviewStateSelect() string {
 	var body strings.Builder
 	statuses := m.selectableReviewStates()
 	for i, s := range statuses {
-		cursor := "  "
+		cursor := rowNoCursor
 		if i == m.reviewStateSelected {
-			cursor = "> "
+			cursor = rowCursor
 		}
 		style := overlayBase()
 		if color, ok := ReviewStateColors[s]; ok {
@@ -207,9 +207,9 @@ func (m *Model) viewCountrySelect() string {
 	activeCode := m.listFilter.Country
 
 	for i, c := range countries {
-		cursor := "  "
+		cursor := rowNoCursor
 		if i == m.countrySelectSelected {
-			cursor = "> "
+			cursor = rowCursor
 		}
 		style := base
 		label := c
