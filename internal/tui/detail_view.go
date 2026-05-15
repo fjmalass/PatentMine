@@ -441,24 +441,27 @@ func (m *Model) formatExpiration(p domain.Patent) string {
 	return label
 }
 
+const recentTimeThreshold = 24 * time.Hour
+
+func formatDatetime(value time.Time) string {
+	if time.Since(value) < recentTimeThreshold {
+		return value.Local().Format("2006-01-02 15:04")
+	}
+	return value.Local().Format("2006-01-02")
+}
+
 func formatCitationTime(value time.Time, fallback string) string {
 	if value.IsZero() {
 		return fallback
 	}
-	return value.Local().Format("2006-01-02 15:04")
+	return formatDatetime(value)
 }
-
-const storedTimeThreshold = 48 * time.Hour
 
 func formatStoredTime(value time.Time, fallback string) string {
 	if value.IsZero() {
 		return fallback
 	}
-	local := value.Local()
-	if time.Since(value) < storedTimeThreshold {
-		return local.Format("2006-01-02 15:04")
-	}
-	return local.Format("2006-01-02")
+	return formatDatetime(value)
 }
 
 func formatElapsedHint(d time.Duration) string {

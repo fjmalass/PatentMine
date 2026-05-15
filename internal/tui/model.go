@@ -727,10 +727,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode == viewNoteEdit {
 			switch msg.String() {
-			case "ctrl+s":
+			case keyCtrlS:
 				body := strings.TrimSpace(m.noteTA.Value())
 				if body != "" {
-					// Automatic date stamping
 					stamp := time.Now().Format("2006-01-02 15:04")
 					body = fmt.Sprintf("[%s]\n%s", stamp, body)
 

@@ -279,6 +279,7 @@ func init() {
 	registerKey(keyIDS, nil, "IDS view", nil, false, "Views", TextHelpProjectIDS, false)
 	registerKey(keyAddToIDS, nil, "add", nil, false, "Patents", TextHelpProjectIDSAdd, true)
 	registerKey(keyNoteEdit, nil, "note", nil, false, "Patents", TextHelpNote, true)
+	registerKey(keyCtrlS, []viewMode{viewNoteEdit}, "save", nil, false, "Note", TextHelpNoteSave, true)
 	registerKey(keyRefreshAll, nil, "refresh", nil, false, "General", "", true)
 	registerKey(keyYes, nil, "save", nil, false, "General", "", true)
 	registerKey(keyEvents, nil, "Project events", nil, false, "Views", TextHelpProjectEvents, false)

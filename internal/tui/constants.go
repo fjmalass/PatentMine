@@ -152,6 +152,7 @@ const (
 	keyCtrlC             = "ctrl+c"
 	keyCtrlF             = "ctrl+f"
 	keyCtrlD             = "ctrl+d"
+	keyCtrlS             = "ctrl+s"
 	keyBack              = "q"
 	keyQuit              = "Q"
 	keyCommand           = ":"
