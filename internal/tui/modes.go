@@ -1,10 +1,13 @@
 package tui
 
+import "strings"
+
 type modeSpec struct {
 	title      string
 	themeColor string
 	isOverlay  bool
 	onActivate func(*Model)
+	subtitle   func(*Model) string
 }
 
 var allViewModes = []viewMode{
@@ -45,6 +48,22 @@ var allViewModes = []viewMode{
 	viewCountrySelect,
 }
 
+// patentSubtitle returns "Title · Number" for overlay views, or just "Number" when no title.
+func patentSubtitle(m *Model) string {
+	if m.current.Number == "" {
+		return ""
+	}
+	if t := strings.TrimSpace(m.current.Title); t != "" {
+		return t + " · " + m.current.Number
+	}
+	return m.current.Number
+}
+
+// patentTitleOnly returns just the patent title (viewDetail: number is already prominent).
+func patentTitleOnly(m *Model) string {
+	return strings.TrimSpace(m.current.Title)
+}
+
 var modeSpecs = map[viewMode]modeSpec{
 	viewList: {
 		title:      "Patent List",
@@ -53,6 +72,7 @@ var modeSpecs = map[viewMode]modeSpec{
 	viewDetail: {
 		title:      "Detail",
 		themeColor: ColorThemeDetail,
+		subtitle:   patentTitleOnly,
 		onActivate: func(m *Model) {
 			if m.current.Number == "" || m.repo == nil {
 				return
@@ -74,26 +94,31 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Citations",
 		themeColor: ColorThemeCitations,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewCitedBy: {
 		title:      "Cited By",
 		themeColor: ColorThemeCitedBy,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewClassifications: {
 		title:      "Classifications",
 		themeColor: ColorThemeClassifications,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewText: {
 		title:      "Full Text",
 		themeColor: ColorThemeText,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewNotes: {
 		title:      "Notes",
 		themeColor: ColorThemeNotes,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewRefs: {
 		title:      "References",
@@ -127,6 +152,7 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Reference Preview",
 		themeColor: ColorThemePreview,
 		isOverlay:  true,
+		subtitle:   func(m *Model) string { return m.pendingBundle.Patent.Title },
 	},
 	viewReview: {
 		title:      "Review Queue",
@@ -141,16 +167,19 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Classification Detail",
 		themeColor: ColorThemeClassifications,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewInventors: {
 		title:      "Inventors",
 		themeColor: ColorThemeDetail,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewFamily: {
 		title:      "Patent Family",
 		themeColor: ColorThemeFamily,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewSplash: {
 		title:      "Splash",
@@ -180,26 +209,31 @@ var modeSpecs = map[viewMode]modeSpec{
 		title:      "Note",
 		themeColor: ColorThemeNotes,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewIDSEdit: {
 		title:      "IDS Entry",
 		themeColor: ColorThemeIDS,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewDateEdit: {
 		title:      "Edit Date",
 		themeColor: ColorThemeDetail,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewAbstract: {
 		title:      "Abstract",
 		themeColor: ColorThemeDetail,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewClaim: {
 		title:      "Claim 1",
 		themeColor: ColorThemeDetail,
 		isOverlay:  true,
+		subtitle:   patentSubtitle,
 	},
 	viewUSPTOKeyWarning: {
 		title:      "USPTO API Key Missing",

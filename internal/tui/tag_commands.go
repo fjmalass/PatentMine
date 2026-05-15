@@ -89,13 +89,13 @@ func (m *Model) tagCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 	case tagSubFilter:
 		if len(args) < 2 {
-			m.tagFilter = EmptyFilter
+			m.listFilter.Tag = EmptyFilter
 			m.message = "tag filter cleared"
 			m.setMode(viewList)
 			return m.refreshList()
 		}
-		m.tagFilter = args[1]
-		m.message = fmt.Sprintf("filtering by tag: %s", m.tagFilter)
+		m.listFilter.Tag = args[1]
+		m.message = fmt.Sprintf("filtering by tag: %s", m.listFilter.Tag)
 		m.setMode(viewList)
 		return m.refreshList()
 	case tagSubHelp:

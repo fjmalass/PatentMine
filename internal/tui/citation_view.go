@@ -13,6 +13,12 @@ func (m *Model) viewCitations(relation string) string {
 	if m.current.Number == EmptyFilter {
 		return m.renderPopup("Citations", "Open a patent first.\n")
 	}
+	citationPopupTitle := func() string {
+		if relation == domain.RelationCitedBy {
+			return "Cited By · " + m.current.Number
+		}
+		return "Citations · " + m.current.Number
+	}
 	opts := storage.ListCitationsOptions{
 		SortColumn:        m.sortColumn,
 		SortOrder:         m.sortOrder,
@@ -20,10 +26,10 @@ func (m *Model) viewCitations(relation string) string {
 	}
 	edges, err := m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 	if err != nil {
-		return m.renderPopup("Citations", err.Error()+"\n")
+		return m.renderPopup(citationPopupTitle(), err.Error()+"\n")
 	}
 	if len(edges) == 0 {
-		return m.renderPopup("Citations", m.text.T(TextCitationsEmpty)+"\n")
+		return m.renderPopup(citationPopupTitle(), m.text.T(TextCitationsEmpty)+"\n")
 	}
 	selected := clamp(m.citationSelection(), 0, len(edges)-1)
 	m.setCitationSelection(selected)
@@ -108,11 +114,7 @@ func (m *Model) viewCitations(relation string) string {
 		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayWidth()-4) + "\n")
 	}
 
-	title := "Citations"
-	if relation == domain.RelationCitedBy {
-		title = "Cited By"
-	}
-	return m.renderPopup(title+" · "+m.current.Number, body.String())
+	return m.renderPopup(citationPopupTitle(), body.String())
 }
 
 func (m *Model) viewReviewQueue() string {

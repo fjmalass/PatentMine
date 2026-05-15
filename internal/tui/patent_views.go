@@ -160,24 +160,24 @@ func (m *Model) viewClassificationDetail() string {
 
 	body.WriteString(boldStyle.Render("Patents in Project:") + "\n")
 
-	renderCount := func(idx int, label string, val int, style lipgloss.Style) {
+	renderCount := func(row classificationDetailRow, val int, style lipgloss.Style) {
 		prefix := "  "
-		if idx == m.classificationDetailSelected {
+		if row == m.classificationDetailSelected {
 			prefix = "> "
 		}
-		line := fmt.Sprintf("%-13s %d", label+":", val)
-		if idx == m.classificationDetailSelected {
+		line := fmt.Sprintf("%-13s %d", classDetailRowLabel[row]+":", val)
+		if row == m.classificationDetailSelected {
 			body.WriteString(style.Bold(true).Render(prefix+line) + "\n")
 		} else {
 			body.WriteString(style.Render(prefix+line) + "\n")
 		}
 	}
 
-	renderCount(0, "Total", stats.Total, base)
-	renderCount(1, "Stored", stats.Stored, base.Foreground(lipgloss.Color(ColorSuccess)))
-	renderCount(2, "Under Review", stats.UnderReview, base.Foreground(lipgloss.Color(ColorWarning)))
-	renderCount(3, "Ignored", stats.Ignored, base.Foreground(lipgloss.Color(ColorDim)))
-	renderCount(4, "Cached", stats.Cached, base)
+	renderCount(classDetailRowTotal, stats.Total, base)
+	renderCount(classDetailRowStored, stats.Stored, base.Foreground(lipgloss.Color(ColorSuccess)))
+	renderCount(classDetailRowUnderReview, stats.UnderReview, base.Foreground(lipgloss.Color(ColorWarning)))
+	renderCount(classDetailRowIgnored, stats.Ignored, base.Foreground(lipgloss.Color(ColorDim)))
+	renderCount(classDetailRowCached, stats.Cached, base)
 
 	return m.renderPopup(fmt.Sprintf("Classification · %s", cls.Code), body.String())
 }

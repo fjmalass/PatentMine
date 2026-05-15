@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/domain"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *Model) viewSplash() string {
@@ -175,12 +176,12 @@ func (m *Model) viewProjectEvents() string {
 			if ref == "" {
 				ref = "—"
 			}
+			const evNotesW = 30
 			notes := e.Notes
-			if len(notes) > 30 {
-				notes = notes[:27] + "..."
-			}
 			if notes == "" {
 				notes = "—"
+			} else {
+				notes = m.truncate(notes, evNotesW)
 			}
 
 			b.WriteString(prefix + eventStyle.Render(fmt.Sprintf("%-26s", label)) + rowStyle.Render(fmt.Sprintf("%-12s %-12s %-14s %s", date, due, ref, notes)))
@@ -240,12 +241,12 @@ func (m *Model) viewProjectInvoices() string {
 				prefix = "→ "
 			}
 
+			const invFirmW, invNotesW = 16, 20
 			notes := inv.Notes
-			if len(notes) > 20 {
-				notes = notes[:17] + "..."
-			}
 			if notes == "" {
 				notes = "—"
+			} else {
+				notes = m.truncate(notes, invNotesW-3) + "..."
 			}
 			date := inv.InvoiceDate
 			if date == "" {
@@ -254,9 +255,8 @@ func (m *Model) viewProjectInvoices() string {
 			firm := inv.FirmName
 			if firm == "" {
 				firm = "—"
-			}
-			if len(firm) > 14 {
-				firm = firm[:12] + ".."
+			} else {
+				firm = m.truncate(firm, invFirmW-2) + ".."
 			}
 
 			b.WriteString(prefix + amtStyle.Render(fmt.Sprintf("%-12s", inv.Amount+" "+inv.Currency)) + rowStyle.Render(fmt.Sprintf("%-10s %-14s %-16s %-12s %s", dirLabel, statusLabel, firm, date, notes)))

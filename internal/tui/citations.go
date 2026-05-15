@@ -89,23 +89,12 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 	if m.repo == nil {
 		return m, nil
 	}
-	opts := storage.ListPatentsOptions{
-		Filter:            m.filter,
-		CountryFilter:     m.countryFilter,
-		ReviewStateFilter: m.reviewStateFilter,
-		ClassFilters:      m.classFilters,
-		ClassFilterOp:     m.classFilterOp,
-		TagFilter:         m.tagFilter,
-		SortColumn:        m.sortColumn,
-		SortOrder:         m.sortOrder,
-		SortColumn2:       m.sortColumn2,
-		SortOrder2:        m.sortOrder2,
-	}
+	opts := m.listFilter.toStorageOpts(m.sortColumn, m.sortOrder, m.sortColumn2, m.sortOrder2)
 	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, opts)
 	if err != nil {
 		m.err = err.Error()
 		if m.logger != nil {
-			m.logger.Error("list patents failed", "filter", m.filter, "error", err)
+			m.logger.Error("list patents failed", "filter", m.listFilter.Text, "error", err)
 		}
 		return m, nil
 	}

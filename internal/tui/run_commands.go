@@ -41,9 +41,9 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		}
 		if len(command.Args) > 0 && command.Args[0] != "clear" {
 			m.backStack = append(m.backStack, m.snapshot())
-			m.filter = command.Args[0]
+			m.listFilter.Text = command.Args[0]
 		} else {
-			m.filter = EmptyFilter
+			m.listFilter.Text = EmptyFilter
 		}
 		m.setMode(viewList)
 		return m.refreshList()

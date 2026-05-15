@@ -358,6 +358,41 @@ var ReviewStateColors = map[string]string{
 	domain.ReviewStateCached:      ColorDim,
 }
 
+var ReviewStateLabels = map[string]string{
+	domain.ReviewStateStored:      "stored",
+	domain.ReviewStateUnderReview: "under review",
+	domain.ReviewStateIgnored:     "ignored",
+	domain.ReviewStateCached:      "cached",
+	reviewStateFilterNone:         "all",
+}
+
+type classificationDetailRow int
+
+const (
+	classDetailRowTotal       classificationDetailRow = iota
+	classDetailRowStored
+	classDetailRowUnderReview
+	classDetailRowIgnored
+	classDetailRowCached
+	classDetailRowCount // sentinel — number of rows
+)
+
+var classDetailRowReviewState = map[classificationDetailRow]string{
+	classDetailRowTotal:       reviewStateFilterNone,
+	classDetailRowStored:      domain.ReviewStateStored,
+	classDetailRowUnderReview: domain.ReviewStateUnderReview,
+	classDetailRowIgnored:     domain.ReviewStateIgnored,
+	classDetailRowCached:      domain.ReviewStateCached,
+}
+
+var classDetailRowLabel = map[classificationDetailRow]string{
+	classDetailRowTotal:       "Total",
+	classDetailRowStored:      "Stored",
+	classDetailRowUnderReview: "Under Review",
+	classDetailRowIgnored:     "Ignored",
+	classDetailRowCached:      "Cached",
+}
+
 var SummaryStatusColors = map[string]string{
 	domain.ProjectSummaryStatusWorkInProgress:   ColorWarning,
 	domain.ProjectSummaryStatusProvisionalFiled: ColorCyan,

@@ -29,23 +29,8 @@ func screenTitleForMode(mode viewMode) string {
 }
 
 func (m *Model) screenSubtitle() string {
-	active := m.mode
-	switch active {
-	case viewDetail, viewCites, viewCitedBy, viewClassifications, viewClassificationDetail, viewInventors, viewFamily, viewText, viewNotes, viewNoteEdit, viewIDSEdit, viewDateEdit, viewAbstract, viewClaim:
-		if m.current.Number != "" {
-			suffix := ""
-			if active != viewDetail {
-				suffix = " · " + m.current.Number
-			}
-			if strings.TrimSpace(m.current.Title) != "" {
-				return m.current.Title + suffix
-			}
-			return m.current.Number
-		}
-	case viewPreview:
-		if m.pendingBundle.Patent.Title != "" {
-			return m.pendingBundle.Patent.Title
-		}
+	if spec, ok := lookupModeSpec(m.mode); ok && spec.subtitle != nil {
+		return spec.subtitle(m)
 	}
 	return ""
 }
@@ -152,17 +137,17 @@ func (m *Model) renderScreenHeader() string {
 	// status:X only shown when user has changed from the default (stored).
 	// The default stored-only view is implied and omitted to reduce noise.
 	var filters []string
-	if m.reviewStateFilter != "" && m.reviewStateFilter != domain.ReviewStateStored {
-		filters = append(filters, m.text.T(TextValueFilterReviewStateTag)+m.reviewStateFilter)
+	if m.listFilter.ReviewState != "" && m.listFilter.ReviewState != domain.ReviewStateStored {
+		filters = append(filters, m.text.T(TextValueFilterReviewStateTag)+m.listFilter.ReviewState)
 	}
-	if m.filter != EmptyFilter {
-		filters = append(filters, fmt.Sprintf("%s%s", m.text.T(TextValueFilterGeneralTag), m.filter))
+	if m.listFilter.Text != EmptyFilter {
+		filters = append(filters, fmt.Sprintf("%s%s", m.text.T(TextValueFilterGeneralTag), m.listFilter.Text))
 	}
-	if m.countryFilter != EmptyFilter {
-		filters = append(filters, "country:"+m.countryFilter)
+	if m.listFilter.Country != EmptyFilter {
+		filters = append(filters, "country:"+m.listFilter.Country)
 	}
-	if m.tagFilter != EmptyFilter {
-		filters = append(filters, "tag:"+m.tagFilter)
+	if m.listFilter.Tag != EmptyFilter {
+		filters = append(filters, "tag:"+m.listFilter.Tag)
 	}
 	if m.sortColumn != "" {
 		sort := fmt.Sprintf("%s%s %s", m.text.T(TextValueFilterSortTag), m.sortColumn, m.sortOrder)
@@ -184,12 +169,12 @@ func (m *Model) renderScreenHeader() string {
 		}
 		filters = append(filters, m.text.T(TextValueFilterRefsTag)+label)
 	}
-	if m.classFilter != EmptyFilter {
+	if m.listFilter.Class != EmptyFilter {
 		classStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDepth))
 		b.WriteString(" ")
 		b.WriteString(subtle.Render("·"))
 		b.WriteString(" ")
-		b.WriteString(classStyle.Render(m.text.T(TextValueFilterClassTag) + m.classFilter))
+		b.WriteString(classStyle.Render(m.text.T(TextValueFilterClassTag) + m.listFilter.Class))
 	}
 
 	if subtitle := strings.TrimSpace(m.screenSubtitle()); subtitle != "" {

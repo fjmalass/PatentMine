@@ -5,9 +5,71 @@ import (
 	"strings"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/storage"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// PatentFilter holds all filters applied to the patent list view.
+// The zero value is not valid — use defaultPatentFilter() for the startup default.
+type PatentFilter struct {
+	Text        string   // free-text / inventor search
+	ReviewState string   // domain.ReviewStateStored (default), reviewStateFilterNone (all), etc.
+	Class       string   // derived display label, e.g. "H04L && G06F"
+	Classes     []string // individual CPC codes
+	ClassOp     string   // domain.FilterOpAnd | domain.FilterOpOr
+	Tag         string
+	Country     string
+}
+
+// defaultPatentFilter returns the startup filter (stored patents only).
+func defaultPatentFilter() PatentFilter {
+	return PatentFilter{ReviewState: domain.ReviewStateStored}
+}
+
+// IsActive reports whether any filter is set (used to decide whether to show "(N total)").
+func (f *PatentFilter) IsActive() bool {
+	return f.ReviewState != reviewStateFilterNone ||
+		f.Text != EmptyFilter || f.Class != EmptyFilter ||
+		f.Tag != EmptyFilter || f.Country != EmptyFilter
+}
+
+// Labels returns human-readable labels for every active filter.
+func (f *PatentFilter) Labels() []string {
+	var labels []string
+	if f.ReviewState != EmptyFilter && f.ReviewState != reviewStateFilterNone {
+		labels = append(labels, "state:"+f.ReviewState)
+	}
+	if f.Text != EmptyFilter {
+		labels = append(labels, f.Text)
+	}
+	if f.Class != EmptyFilter {
+		labels = append(labels, "class:"+f.Class)
+	}
+	if f.Country != EmptyFilter {
+		labels = append(labels, "country:"+f.Country)
+	}
+	if f.Tag != EmptyFilter {
+		labels = append(labels, "tag:"+f.Tag)
+	}
+	return labels
+}
+
+// toStorageOpts converts the filter into storage query options, merging sort parameters.
+func (f *PatentFilter) toStorageOpts(sortColumn, sortOrder, sortColumn2, sortOrder2 string) storage.ListPatentsOptions {
+	return storage.ListPatentsOptions{
+		Filter:            f.Text,
+		ReviewStateFilter: f.ReviewState,
+		ClassFilters:      f.Classes,
+		ClassFilterOp:     f.ClassOp,
+		TagFilter:         f.Tag,
+		CountryFilter:     f.Country,
+		SortColumn:        sortColumn,
+		SortOrder:         sortOrder,
+		SortColumn2:       sortColumn2,
+		SortOrder2:        sortOrder2,
+	}
+}
 
 var validReviewStateFilters = map[string]string{
 	domain.ReviewStateStored:      domain.ReviewStateStored,
@@ -110,13 +172,7 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	case FilterDefault:
 		return m.reviewStateFilterCommand([]string{domain.ReviewStateStored})
 	case FilterClear:
-		m.reviewStateFilter = reviewStateFilterNone
-		m.classFilters = nil
-		m.classFilterOp = EmptyFilter
-		m.classFilter = EmptyFilter
-		m.countryFilter = EmptyFilter
-		m.tagFilter = EmptyFilter
-		m.filter = EmptyFilter
+		m.listFilter = PatentFilter{ReviewState: reviewStateFilterNone}
 		m.message = "all filters cleared"
 		m.setMode(viewList)
 		return m.refreshList()
@@ -130,7 +186,7 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 // reviewStateFilterCommand handles :filter review_state <stored|ignored|under-review|cached|none>.
 func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
-		m.reviewStateFilter = reviewStateFilterNone
+		m.listFilter.ReviewState = reviewStateFilterNone
 		m.message = "review state filter cleared"
 		m.setMode(viewList)
 		return m.refreshList()
@@ -141,7 +197,7 @@ func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = fmt.Sprintf("unknown review state %q — valid values: stored, ignored, under-review, cached, none", raw)
 		return m, nil
 	}
-	m.reviewStateFilter = canonical
+	m.listFilter.ReviewState = canonical
 	m.setMode(viewList)
 	if canonical == reviewStateFilterNone {
 		m.message = "showing all patents (no review state filter)"
@@ -154,10 +210,10 @@ func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 // classCommand handles :classfilter <cpc> [&& <cpc2> | || <cpc2>] and :classfilter clear.
 func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
-		m.classFilters = nil
-		m.classFilterOp = EmptyFilter
-		m.classFilter = EmptyFilter
-		m.filter = EmptyFilter
+		m.listFilter.Classes = nil
+		m.listFilter.ClassOp = EmptyFilter
+		m.listFilter.Class = EmptyFilter
+		m.listFilter.Text = EmptyFilter
 		m.message = "all filters cleared"
 	} else {
 		raw := strings.ToUpper(strings.Join(args, " "))
@@ -169,14 +225,14 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 		} else {
 			parts = splitTrim(raw, "&&")
 		}
-		m.classFilters = parts
-		m.classFilterOp = op
+		m.listFilter.Classes = parts
+		m.listFilter.ClassOp = op
 		if op == domain.FilterOpOr {
-			m.classFilter = strings.Join(parts, " || ")
+			m.listFilter.Class = strings.Join(parts, " || ")
 		} else {
-			m.classFilter = strings.Join(parts, " && ")
+			m.listFilter.Class = strings.Join(parts, " && ")
 		}
-		m.message = "filtering by classification: " + m.classFilter
+		m.message = "filtering by classification: " + m.listFilter.Class
 	}
 	m.setMode(viewList)
 	return m.refreshList()
@@ -185,11 +241,11 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 // inventorFilterCommand handles :inventorfilter <name> and :inventorfilter clear.
 func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
-		m.filter = EmptyFilter
+		m.listFilter.Text = EmptyFilter
 		m.message = "inventor filter cleared"
 	} else {
-		m.filter = strings.Join(args, " ")
-		m.message = "filtering by inventor: " + m.filter
+		m.listFilter.Text = strings.Join(args, " ")
+		m.message = "filtering by inventor: " + m.listFilter.Text
 	}
 	m.setMode(viewList)
 	return m.refreshList()
@@ -197,7 +253,7 @@ func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 
 func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
-		m.countryFilter = EmptyFilter
+		m.listFilter.Country = EmptyFilter
 		m.message = "country filter cleared"
 		m.setMode(viewList)
 		return m.refreshList()
@@ -214,7 +270,7 @@ func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = fmt.Sprintf("unknown country %q — valid values: %s", code, strings.Join(domain.PatentCountryCodes, ", "))
 		return m, nil
 	}
-	m.countryFilter = code
+	m.listFilter.Country = code
 	m.message = "filtering by country: " + code
 	m.setMode(viewList)
 	return m.refreshList()
@@ -223,9 +279,9 @@ func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 func (m *Model) countryCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		m.countrySelectSelected = 0
-		if m.countryFilter != EmptyFilter {
+		if m.listFilter.Country != EmptyFilter {
 			for i, c := range m.selectableCountries() {
-				if c == m.countryFilter {
+				if c == m.listFilter.Country {
 					m.countrySelectSelected = i
 					break
 				}
@@ -238,9 +294,9 @@ func (m *Model) countryCommand(args []string) (tea.Model, tea.Cmd) {
 	switch sub {
 	case countrySubList, countrySubHelp:
 		m.countrySelectSelected = 0
-		if m.countryFilter != EmptyFilter {
+		if m.listFilter.Country != EmptyFilter {
 			for i, c := range m.selectableCountries() {
-				if c == m.countryFilter {
+				if c == m.listFilter.Country {
 					m.countrySelectSelected = i
 					break
 				}
@@ -330,8 +386,8 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.backStack = append(m.backStack, m.snapshot())
-		m.countryFilter = code
-		m.reviewStateFilter = domain.ReviewStateStored
+		m.listFilter.Country = code
+		m.listFilter.ReviewState = domain.ReviewStateStored
 		m.message = fmt.Sprintf("showing stored patents from %s", code)
 		m.setMode(viewList)
 		return m.refreshList()
@@ -387,7 +443,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.backStack = append(m.backStack, m.snapshot())
-	m.filter = field.value
+	m.listFilter.Text = field.value
 	m.setMode(viewList)
 	model, cmd := m.refreshList()
 	updated := model.(*Model)
@@ -406,7 +462,7 @@ func (m *Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 	inventor := inventors[selected]
 
 	m.backStack = append(m.backStack, m.snapshot())
-	m.filter = inventor
+	m.listFilter.Text = inventor
 	m.setMode(viewList)
 	model, cmd := m.refreshList()
 	updated := model.(*Model)
@@ -424,30 +480,18 @@ func (m *Model) filterBySelectedClassification() (tea.Model, tea.Cmd) {
 	code := classifications[selected].Code
 
 	m.backStack = append(m.backStack, m.snapshot())
-	m.classFilters = []string{code}
-	m.classFilterOp = domain.FilterOpAnd
-	m.classFilter = code
+	m.listFilter.Classes = []string{code}
+	m.listFilter.ClassOp = domain.FilterOpAnd
+	m.listFilter.Class = code
 
-	// Apply review state filter if selected in detail popup
 	stateLabel := ""
 	if m.mode == viewClassificationDetail {
-		switch m.classificationDetailSelected {
-		case 1:
-			m.reviewStateFilter = domain.ReviewStateStored
-			stateLabel = " (stored)"
-		case 2:
-			m.reviewStateFilter = domain.ReviewStateUnderReview
-			stateLabel = " (under review)"
-		case 3:
-			m.reviewStateFilter = domain.ReviewStateIgnored
-			stateLabel = " (ignored)"
-		case 4:
-			m.reviewStateFilter = domain.ReviewStateCached
-			stateLabel = " (cached)"
-		default:
-			m.reviewStateFilter = reviewStateFilterNone // All states
-			stateLabel = " (all)"
+		state, ok := classDetailRowReviewState[m.classificationDetailSelected]
+		if !ok {
+			state = reviewStateFilterNone
 		}
+		m.listFilter.ReviewState = state
+		stateLabel = " (" + ReviewStateLabels[m.listFilter.ReviewState] + ")"
 	}
 
 	m.setMode(viewList)

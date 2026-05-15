@@ -185,6 +185,9 @@ func (m *Model) viewDateEdit() string {
 	case domain.LifecycleTypeExp:
 		title = "Edit Expiration Date"
 	}
+	if m.current.Number != "" {
+		title += " · " + m.current.Number
+	}
 	return m.renderPopup(title, m.dateInput.View())
 }
 

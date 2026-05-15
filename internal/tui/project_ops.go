@@ -798,7 +798,7 @@ var exportStateAliases = map[string]string{
 }
 
 func (m *Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
-	reviewStateFilter := m.reviewStateFilter
+	reviewStateFilter := m.listFilter.ReviewState
 	filenameArgs := args
 
 	if len(args) > 0 {

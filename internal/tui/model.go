@@ -92,7 +92,7 @@ type Model struct {
 	citedBySelected            int
 	reviewSelected             int
 	classificationSelected     int
-	classificationDetailSelected int
+	classificationDetailSelected classificationDetailRow
 	inventorSelected           int
 	familySelected             int
 	visualMode                 bool
@@ -101,7 +101,7 @@ type Model struct {
 	pendingBundle              domain.PatentBundle
 	pendingCitation            domain.CitationEdge
 	reviewState               string
-	filter                     string
+	listFilter                 PatentFilter
 	message                    string
 	err                        string
 	logger                     *slog.Logger
@@ -115,13 +115,7 @@ type Model struct {
 	sortOrder                  string
 	sortColumn2                string
 	sortOrder2                 string
-	classFilters               []string
-	classFilterOp              string
-	classFilter                string // display label derived from classFilters
-	tagFilter                  string
-	countryFilter              string
-	reviewStateFilter               string // domain.ReviewStateStored (default), "ignored", "under_review", reviewStateFilterNone
-	citesReviewStateFilter          string // "" (all), "stored", "ignored", "under_review"
+	citesReviewStateFilter     string // "" (all), "stored", "ignored", "under_review"
 	listNumWidth               int
 	unpaidCounts               map[string]int
 	familyTreeCache            []familyNode
@@ -187,7 +181,7 @@ type navSnapshot struct {
 	citedBySelected            int
 	reviewSelected             int
 	classificationSelected     int
-	classificationDetailSelected int
+	classificationDetailSelected classificationDetailRow
 	inventorSelected           int
 	familySelected             int
 	visualMode                 bool
@@ -195,8 +189,8 @@ type navSnapshot struct {
 	current                    domain.Patent
 	pendingBundle              domain.PatentBundle
 	pendingCitation            domain.CitationEdge
-	reviewState               string
-	filter                     string
+	reviewState                string
+	listFilter                 PatentFilter
 	message                    string
 	err                        string
 	countBuffer                string
@@ -205,13 +199,7 @@ type navSnapshot struct {
 	sortOrder                  string
 	sortColumn2                string
 	sortOrder2                 string
-	classFilters               []string
-	classFilterOp              string
-	classFilter                string
-	tagFilter                  string
-	countryFilter              string
-	reviewStateFilter               string
-	citesReviewStateFilter          string
+	citesReviewStateFilter     string
 	listNumWidth               int
 	classificationQuery        string
 	classificationSearchActive bool
@@ -278,7 +266,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		logger:            logger,
 		activityLog:       activityLog,
 		text:              EnglishText(),
-		reviewStateFilter: domain.ReviewStateStored,
+		listFilter:        defaultPatentFilter(),
 		importCfg:       cfg,
 		version:                version,
 		projectTags:            []domain.TagWithCount{},
@@ -1004,14 +992,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyVimDown, keyArrowDown:
 			if m.mode == viewClassificationDetail {
-				m.classificationDetailSelected = clamp(m.classificationDetailSelected+1, 0, 4)
+				m.classificationDetailSelected = classificationDetailRow(clamp(int(m.classificationDetailSelected)+1, 0, int(classDetailRowCount-1)))
 				return m, nil
 			}
 			count := m.consumeCount(1)
 			return m.moveSelection(count), nil
 		case keyVimUp, keyArrowUp:
 			if m.mode == viewClassificationDetail {
-				m.classificationDetailSelected = clamp(m.classificationDetailSelected-1, 0, 4)
+				m.classificationDetailSelected = classificationDetailRow(clamp(int(m.classificationDetailSelected)-1, 0, int(classDetailRowCount-1)))
 				return m, nil
 			}
 			count := m.consumeCount(1)
@@ -1254,9 +1242,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.navigateTo(viewReviewStateSelect), nil
 		case keyCountry:
 			m.countrySelectSelected = 0
-			if m.countryFilter != EmptyFilter {
+			if m.listFilter.Country != EmptyFilter {
 				for i, c := range m.selectableCountries() {
-					if c == m.countryFilter {
+					if c == m.listFilter.Country {
 						m.countrySelectSelected = i
 						break
 					}

@@ -43,7 +43,15 @@ func (m *Model) snapshot() navSnapshot {
 		pendingBundle:                m.pendingBundle,
 		pendingCitation:              m.pendingCitation,
 		reviewState:                  m.reviewState,
-		filter:                       m.filter,
+		listFilter: PatentFilter{
+			Text:        m.listFilter.Text,
+			ReviewState: m.listFilter.ReviewState,
+			Class:       m.listFilter.Class,
+			Classes:     append([]string(nil), m.listFilter.Classes...),
+			ClassOp:     m.listFilter.ClassOp,
+			Tag:         m.listFilter.Tag,
+			Country:     m.listFilter.Country,
+		},
 		message:                      m.message,
 		err:                          m.err,
 		countBuffer:                  m.countBuffer,
@@ -52,12 +60,6 @@ func (m *Model) snapshot() navSnapshot {
 		sortOrder:                    m.sortOrder,
 		sortColumn2:                  m.sortColumn2,
 		sortOrder2:                   m.sortOrder2,
-		classFilters:                 append([]string(nil), m.classFilters...),
-		classFilterOp:                m.classFilterOp,
-		classFilter:                  m.classFilter,
-		tagFilter:                    m.tagFilter,
-		countryFilter:                m.countryFilter,
-		reviewStateFilter:            m.reviewStateFilter,
 		citesReviewStateFilter:       m.citesReviewStateFilter,
 		listNumWidth:                 m.listNumWidth,
 		classificationQuery:          m.classificationQuery,
@@ -99,7 +101,7 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.pendingBundle = snapshot.pendingBundle
 	m.pendingCitation = snapshot.pendingCitation
 	m.reviewState = snapshot.reviewState
-	m.filter = snapshot.filter
+	m.listFilter = snapshot.listFilter
 	m.message = snapshot.message
 	m.err = snapshot.err
 	m.countBuffer = snapshot.countBuffer
@@ -108,12 +110,6 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.sortOrder = snapshot.sortOrder
 	m.sortColumn2 = snapshot.sortColumn2
 	m.sortOrder2 = snapshot.sortOrder2
-	m.classFilters = snapshot.classFilters
-	m.classFilterOp = snapshot.classFilterOp
-	m.classFilter = snapshot.classFilter
-	m.tagFilter = snapshot.tagFilter
-	m.countryFilter = snapshot.countryFilter
-	m.reviewStateFilter = snapshot.reviewStateFilter
 	m.citesReviewStateFilter = snapshot.citesReviewStateFilter
 	m.listNumWidth = snapshot.listNumWidth
 	m.classificationQuery = snapshot.classificationQuery
@@ -153,8 +149,8 @@ func (m *Model) goBack() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.mode == viewList && m.filter != EmptyFilter {
-		m.filter = EmptyFilter
+	if m.mode == viewList && m.listFilter.Text != EmptyFilter {
+		m.listFilter.Text = EmptyFilter
 		return m.refreshList()
 	}
 	if m.mode != viewList {

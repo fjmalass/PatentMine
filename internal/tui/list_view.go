@@ -172,31 +172,11 @@ func (m *Model) viewList() string {
 
 	window := pageWindow(m.selected, len(m.patents), m.pageSize())
 	status := pageStatus(m.text.T(TextValuePageStatus), window)
-	hasActiveFilter := m.reviewStateFilter != reviewStateFilterNone ||
-		m.filter != EmptyFilter || m.classFilter != EmptyFilter ||
-		m.countryFilter != EmptyFilter || m.tagFilter != EmptyFilter
-	if hasActiveFilter && m.totalPatents > 0 {
+	if m.listFilter.IsActive() && m.totalPatents > 0 {
 		status += fmt.Sprintf("  (%d total)", m.totalPatents)
 	}
-
-	var activeFilters []string
-	if m.reviewStateFilter != EmptyFilter && m.reviewStateFilter != reviewStateFilterNone {
-		activeFilters = append(activeFilters, "state:"+m.reviewStateFilter)
-	}
-	if m.filter != EmptyFilter {
-		activeFilters = append(activeFilters, m.filter)
-	}
-	if m.classFilter != EmptyFilter {
-		activeFilters = append(activeFilters, "class:"+m.classFilter)
-	}
-	if m.countryFilter != EmptyFilter {
-		activeFilters = append(activeFilters, "country:"+m.countryFilter)
-	}
-	if m.tagFilter != EmptyFilter {
-		activeFilters = append(activeFilters, "tag:"+m.tagFilter)
-	}
-	if len(activeFilters) > 0 {
-		status += "  · " + strings.Join(activeFilters, " · ")
+	if labels := m.listFilter.Labels(); len(labels) > 0 {
+		status += "  · " + strings.Join(labels, " · ")
 	}
 
 	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))

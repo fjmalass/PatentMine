@@ -198,7 +198,7 @@ func (m *Model) viewCountrySelect() string {
 	countries := m.selectableCountries()
 	counts := m.countryCounts()
 	base := overlayBase()
-	activeCode := m.countryFilter
+	activeCode := m.listFilter.Country
 
 	for i, c := range countries {
 		cursor := "  "
@@ -254,10 +254,10 @@ func (m *Model) applyCountrySelection() (tea.Model, tea.Cmd) {
 	code := countries[m.countrySelectSelected]
 
 	if code == "(clear)" {
-		m.countryFilter = EmptyFilter
+		m.listFilter.Country = EmptyFilter
 		m.message = "country filter cleared"
 	} else {
-		m.countryFilter = code
+		m.listFilter.Country = code
 		m.message = "filtering by country: " + code
 	}
 
