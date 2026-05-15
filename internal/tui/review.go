@@ -225,24 +225,14 @@ func (m *Model) executeBulkDelete(indices []int) (tea.Model, tea.Cmd) {
 
 	m.logger.Info("bulk delete started", "project", m.ProjectID, "count", len(nums), "patents", nums)
 
-	// Remove IDS entries for each patent before soft-deleting.
-	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
-		numSet := make(map[string]bool, len(nums))
-		for _, n := range nums {
-			numSet[n] = true
+	// Remove IDS entries for all patents in one query.
+	if removed, err := m.repo.DeleteIDSEntriesForPatents(m.ctx, m.ProjectID, nums); err != nil {
+		m.logger.Error("bulk delete: IDS removal failed", "project", m.ProjectID, "error", err)
+	} else if removed > 0 {
+		m.logger.Info("bulk delete: IDS entries removed", "project", m.ProjectID, "count", removed)
+		for _, num := range nums {
+			m.logActivity(ActivityIDSRemove, num, "bulk-delete")
 		}
-		for _, entry := range idsEntries {
-			if numSet[entry.PatentNumber] {
-				if err := m.repo.DeleteIDSEntry(m.ctx, entry.ID); err != nil {
-					m.logger.Error("bulk delete: IDS entry removal failed", "project", m.ProjectID, "patent", entry.PatentNumber, "ids_id", entry.ID, "error", err)
-				} else {
-					m.logger.Info("bulk delete: IDS entry removed", "project", m.ProjectID, "patent", entry.PatentNumber, "ids_id", entry.ID)
-					m.logActivity(ActivityIDSRemove, entry.PatentNumber, "bulk-delete")
-				}
-			}
-		}
-	} else {
-		m.logger.Error("bulk delete: failed to list IDS entries", "project", m.ProjectID, "error", err)
 	}
 
 	deleted := 0

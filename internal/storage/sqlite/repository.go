@@ -1753,6 +1753,29 @@ func (r *Repository) DeleteIDSEntry(ctx context.Context, id int64) error {
 	return err
 }
 
+func (r *Repository) DeleteIDSEntriesForPatents(ctx context.Context, projectID string, patentNumbers []string) (int, error) {
+	if len(patentNumbers) == 0 {
+		return 0, nil
+	}
+	r.logger.Info("repository.delete_ids_entries_for_patents", "project", projectID, "count", len(patentNumbers))
+	placeholders := strings.Repeat("?,", len(patentNumbers))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, 1+len(patentNumbers))
+	args = append(args, projectID)
+	for _, n := range patentNumbers {
+		args = append(args, n)
+	}
+	res, err := r.db.ExecContext(ctx,
+		fmt.Sprintf(`delete from project_ids where project_id = ? and patent_number in (%s)`, placeholders),
+		args...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func (r *Repository) AddIDSNPLEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
 	r.logger.Info("repository.add_ids_npl_entry", "project", entry.ProjectID, "author", entry.NPLAuthor)
 	now := nowString()

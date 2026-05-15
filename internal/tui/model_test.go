@@ -1551,6 +1551,24 @@ func (r *idsMutationRepo) DeleteIDSEntry(_ context.Context, id int64) error {
 	return nil
 }
 
+func (r *idsMutationRepo) DeleteIDSEntriesForPatents(_ context.Context, _ string, nums []string) (int, error) {
+	set := make(map[string]bool, len(nums))
+	for _, n := range nums {
+		set[n] = true
+	}
+	filtered := r.entries[:0]
+	removed := 0
+	for _, entry := range r.entries {
+		if set[entry.PatentNumber] {
+			removed++
+		} else {
+			filtered = append(filtered, entry)
+		}
+	}
+	r.entries = filtered
+	return removed, nil
+}
+
 func (r *idsMutationRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
 	return domain.IDSMetadata{}, nil
 }
@@ -1700,7 +1718,8 @@ func (stubRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, erro
 }
 func (stubRepo) UpdateIDSEntryStatus(context.Context, int64, domain.IDSStatus) error { return nil }
 func (stubRepo) UpdateIDSEntry(context.Context, domain.IDSEntry) error               { return nil }
-func (stubRepo) DeleteIDSEntry(context.Context, int64) error                         { return nil }
+func (stubRepo) DeleteIDSEntry(context.Context, int64) error                              { return nil }
+func (stubRepo) DeleteIDSEntriesForPatents(context.Context, string, []string) (int, error) { return 0, nil }
 func (stubRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
 	return domain.IDSMetadata{}, nil
 }
