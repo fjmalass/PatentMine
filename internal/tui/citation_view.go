@@ -219,24 +219,30 @@ func (m *Model) viewCitations(relation string) string {
 			domain.SortColumnTags:        tagsLabel,
 		}
 
-		rowStyle := lipgloss.NewStyle()
+		rowStyle := m.overlayRowStyle(i, selected)
 		if color, ok := ReviewStateColors[edge.ReviewState]; ok {
-			rowStyle = rowStyle.Foreground(lipgloss.Color(color))
+			if !m.isInSelection(i) && !(i == selected && m.isPopupSearchMode() && m.popupSearchQuery != "") {
+				rowStyle = rowStyle.Foreground(lipgloss.Color(color))
+			}
 		}
 
-		row := rowStyle.Render(m.pad(prefix, listRowPrefixWidth)) +
+		row := m.pad(prefix, listRowPrefixWidth) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
-			rowStyle.Render(m.pad(rowIndexLabel(i), overlayIndexWidth))
+			m.pad(rowIndexLabel(i), overlayIndexWidth)
 
 		for j, c := range cols {
 			padding := listColPad
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			row += m.renderCell(rowValues[c.id], c.width, padding, rowStyle, m.popupSearchQuery)
+			row += m.renderCell(rowValues[c.id], c.width, padding, m.popupSearchQuery)
 		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayContentWidth()) + "\n")
+		w := m.overlayContentWidth()
+		if rw := lipgloss.Width(row); rw < w {
+			row += strings.Repeat(" ", w-rw)
+		}
+		body.WriteString(rowStyle.Render(row) + "\n")
 	}
 
 	return m.renderPopup(citationPopupTitle(), body.String())

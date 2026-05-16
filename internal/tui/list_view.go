@@ -32,24 +32,10 @@ func (m *Model) styleRowW(idx int, selected int, content string, targetWidth int
 	return style.Render(content)
 }
 
-// styleRowOverlay is like styleRowW but uses ColorSurface as the even-row base
-// so that all rows inside overlay popups have a consistent background.
+// styleRowOverlay is like styleRowW but uses ColorSurface as the even-row base.
+// Delegates style selection to overlayRowStyle so the logic is shared.
 func (m *Model) styleRowOverlay(idx int, selected int, content string, targetWidth int) string {
-	style := overlayBase()
-	if m.isInSelection(idx) {
-		style = style.Background(lipgloss.Color(ColorSelection))
-	} else if idx == selected {
-		if m.isPopupSearchMode() && m.popupSearchQuery != "" {
-			style = style.
-				Background(lipgloss.Color(ColorWarning)).
-				Foreground(lipgloss.Color(ColorBlack)).
-				Bold(true)
-		} else {
-			style = style.Background(lipgloss.Color(ColorHighlight))
-		}
-	} else if idx%2 != 0 {
-		style = style.Background(lipgloss.Color(ColorAltRow))
-	}
+	style := m.overlayRowStyle(idx, selected)
 	if targetWidth > 0 {
 		cw := lipgloss.Width(content)
 		if cw < targetWidth {
@@ -334,21 +320,26 @@ func (m *Model) viewList() string {
 			rowValues[listColumnIDS] = idsStatus
 		}
 
-		// Row style determined upfront so it can be re-applied per cell,
-		// preventing highlight \033[m resets from bleeding into adjacent columns.
+		// Full row style (FG + bold + BG) computed upfront and applied ONCE to the
+		// entire plain-text row so alternating backgrounds cover every character,
+		// including trailing spaces.  highlightTerm uses targeted resets (\033[22;24m)
+		// that preserve FG/BG, so highlights don't punch holes in the background.
 		rowStyle := lipgloss.NewStyle()
 		if color, ok := ReviewStateColors[p.ReviewState]; ok {
 			rowStyle = rowStyle.Foreground(lipgloss.Color(color))
 		}
-		if i == m.patentSelected {
-			rowStyle = rowStyle.Bold(true)
+		if m.isInSelection(i) {
+			rowStyle = rowStyle.Background(lipgloss.Color(ColorSelection))
+		} else if i == m.patentSelected {
+			rowStyle = rowStyle.Bold(true).Background(lipgloss.Color(ColorHighlight))
+		} else if i%2 != 0 {
+			rowStyle = rowStyle.Background(lipgloss.Color(ColorAltRow))
 		}
 
 		idxLabel := fmt.Sprintf("%*d", idxWidth, i+1)
-		// Prefix and index get rowStyle; jumpRowPrefix keeps its own ANSI styling.
-		row := rowStyle.Render(m.pad(prefix, 2)) +
+		row := m.pad(prefix, 2) +
 			m.pad(jumpRowPrefix, jumpPrefixWidth) +
-			rowStyle.Render(m.pad(idxLabel, idxWidth+2))
+			m.pad(idxLabel, idxWidth+2)
 
 		for j, c := range cols {
 			val := rowValues[c.id]
@@ -365,23 +356,49 @@ func (m *Model) viewList() string {
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			row += m.renderCell(val, colWidth, padding, rowStyle, m.listFilter.FreeFormSearch)
+			row += m.renderCell(val, colWidth, padding, m.listFilter.FreeFormSearch)
 		}
 
-		b.WriteString(m.styleRow(i, m.patentSelected, row) + "\n")
+		// Pad to full width inside the style so BG covers trailing spaces too.
+		if rw := lipgloss.Width(row); rw < m.width {
+			row += strings.Repeat(" ", m.width-rw)
+		}
+		b.WriteString(rowStyle.Render(row) + "\n")
 	}
 	return b.String()
 }
 
-// renderCell truncates val to cellWidth, applies optional search highlight,
-// renders with rowStyle (re-applied fresh per cell so highlight resets don't
-// bleed across columns), then pads the result to cellWidth+padding.
-func (m *Model) renderCell(val string, cellWidth, padding int, rowStyle lipgloss.Style, query string) string {
+// renderCell truncates val to cellWidth, applies optional search highlight
+// (using targeted ANSI resets that preserve surrounding FG/BG), then pads.
+// No style is applied here — the caller wraps the whole row in one Render()
+// so background/foreground cover the entire row including trailing spaces.
+func (m *Model) renderCell(val string, cellWidth, padding int, query string) string {
 	val = m.truncate(val, cellWidth)
 	if query != "" {
 		val = highlightTerm(val, query)
 	}
-	return m.pad(rowStyle.Render(val), cellWidth+padding)
+	return m.pad(val, cellWidth+padding)
+}
+
+// overlayRowStyle returns the full lipgloss.Style for one row inside an overlay
+// popup (background + optional foreground/bold for selection and search state).
+func (m *Model) overlayRowStyle(idx, selected int) lipgloss.Style {
+	style := overlayBase()
+	if m.isInSelection(idx) {
+		style = style.Background(lipgloss.Color(ColorSelection))
+	} else if idx == selected {
+		if m.isPopupSearchMode() && m.popupSearchQuery != "" {
+			style = style.
+				Background(lipgloss.Color(ColorWarning)).
+				Foreground(lipgloss.Color(ColorBlack)).
+				Bold(true)
+		} else {
+			style = style.Background(lipgloss.Color(ColorHighlight))
+		}
+	} else if idx%2 != 0 {
+		style = style.Background(lipgloss.Color(ColorAltRow))
+	}
+	return style
 }
 
 func (m *Model) pad(s string, width int) string {

@@ -3,8 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // searchable is the generic interface for any navigable list that supports
@@ -226,6 +224,9 @@ func containsMatch(s, query string, ignoreCase bool) bool {
 
 // highlightTerm bolds and underlines the first occurrence of query in s using
 // the same smart-case logic as containsMatch. Returns s unchanged if no match.
+//
+// Uses targeted SGR resets (\033[22;24m = no-bold + no-underline) instead of
+// the full reset \033[m, so surrounding foreground/background survive intact.
 func highlightTerm(s, query string) string {
 	if query == "" || s == "" {
 		return s
@@ -240,6 +241,5 @@ func highlightTerm(s, query string) string {
 	if idx < 0 {
 		return s
 	}
-	hl := lipgloss.NewStyle().Bold(true).Underline(true)
-	return s[:idx] + hl.Render(s[idx:idx+len(query)]) + s[idx+len(query):]
+	return s[:idx] + "\033[1;4m" + s[idx:idx+len(query)] + "\033[22;24m" + s[idx+len(query):]
 }
