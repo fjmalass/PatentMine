@@ -31,19 +31,17 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		}
 		if m.mode == viewList {
 			if len(command.Args) > 0 && command.Args[0] != "clear" {
-				m.listSearchQuery = command.Args[0]
-				m.listSearchActive = true
-				return m.listSearchFirst(), nil
+				m.listFilter.FreeFormSearch = command.Args[0]
+			} else {
+				m.listFilter.FreeFormSearch = EmptyFilter
 			}
-			m.listSearchActive = false
-			m.listSearchQuery = ""
-			return m, nil
+			return m.refreshList()
 		}
 		if len(command.Args) > 0 && command.Args[0] != "clear" {
 			m.backStack = append(m.backStack, m.snapshot())
-			m.listFilter.Text = command.Args[0]
+			m.listFilter.FreeFormSearch = command.Args[0]
 		} else {
-			m.listFilter.Text = EmptyFilter
+			m.listFilter.FreeFormSearch = EmptyFilter
 		}
 		m.setMode(viewList)
 		return m.refreshList()

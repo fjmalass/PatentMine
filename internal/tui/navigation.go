@@ -44,13 +44,15 @@ func (m *Model) snapshot() navSnapshot {
 		pendingCitation:              m.pendingCitation,
 		reviewState:                  m.reviewState,
 		listFilter: PatentFilter{
-			Text:        m.listFilter.Text,
+			FreeFormSearch: m.listFilter.FreeFormSearch,
 			ReviewState: m.listFilter.ReviewState,
-			Class:       m.listFilter.Class,
-			Classes:     append([]string(nil), m.listFilter.Classes...),
-			ClassOp:     m.listFilter.ClassOp,
+			Classification: m.listFilter.Classification,
+			Classifications: append([]string(nil), m.listFilter.Classifications...),
+			ClassificationOp: m.listFilter.ClassificationOp,
 			Tag:         m.listFilter.Tag,
 			Country:     m.listFilter.Country,
+			Title:       m.listFilter.Title,
+			TitleTerms:  append([]string(nil), m.listFilter.TitleTerms...),
 		},
 		message:                      m.message,
 		err:                          m.err,
@@ -150,8 +152,8 @@ func (m *Model) goBack() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.mode == viewList && m.listFilter.Text != EmptyFilter {
-		m.listFilter.Text = EmptyFilter
+	if m.mode == viewList && m.listFilter.FreeFormSearch != EmptyFilter {
+		m.listFilter.FreeFormSearch = EmptyFilter
 		return m.refreshList()
 	}
 	if m.mode != viewList {

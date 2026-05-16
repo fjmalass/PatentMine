@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/domain"
@@ -639,15 +640,18 @@ func TestSlashInClassificationPopupStartsSearchImmediately(t *testing.T) {
 	}
 }
 
-func TestSlashInListStartsInlineSearchImmediately(t *testing.T) {
-	model := &Model{repo: stubRepo{}, text: EnglishText(), mode: viewList, patents: []domain.Patent{{Number: "US1"}}}
+func TestSlashInListFocusesInputForFreeformSearch(t *testing.T) {
+	model := &Model{repo: stubRepo{}, text: EnglishText(), mode: viewList, patents: []domain.Patent{{Number: "US1"}}, input: textinput.New()}
 	updated, _ := model.Update(teaKey(keySearch))
 	got := updated.(*Model)
-	if !got.listSearchActive {
-		t.Fatal("expected list search to activate")
+	if !got.input.Focused() {
+		t.Fatal("expected input to be focused for freeform search")
 	}
-	if got.input.Focused() {
-		t.Fatal("expected list search to avoid focusing command input")
+	if got.input.Value() != keySearch {
+		t.Fatalf("expected input pre-filled with %q, got %q", keySearch, got.input.Value())
+	}
+	if got.listSearchActive {
+		t.Fatal("expected no in-list search mode for freeform search")
 	}
 }
 
@@ -1073,8 +1077,8 @@ func TestEnterOnClassificationDetailFilters(t *testing.T) {
 	if got.mode != viewList {
 		t.Fatalf("expected mode %q, got %q", viewList, got.mode)
 	}
-	if got.listFilter.Class != "H04N21/430" {
-		t.Fatalf("expected class filter %q, got %q", "H04N21/430", got.listFilter.Class)
+	if got.listFilter.Classification != "H04N21/430" {
+		t.Fatalf("expected class filter %q, got %q", "H04N21/430", got.listFilter.Classification)
 	}
 }
 

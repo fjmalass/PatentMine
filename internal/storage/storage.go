@@ -11,16 +11,17 @@ const (
 )
 
 type ListPatentsOptions struct {
-	Filter           string
-	CountryFilter    string
-	ReviewStateFilter string // "stored" (default), "ignored", "under_review", "all"
-	ClassFilters     []string // CPC prefix filters
-	ClassFilterOp    string   // "and" (default) or "or"
-	TagFilter        string
-	SortColumn       string
-	SortOrder        string
-	SortColumn2      string
-	SortOrder2       string
+	Filter                 string
+	CountryFilter          string
+	ReviewStateFilter      string   // "stored" (default), "ignored", "under_review", "all"
+	ClassificationFilters  []string // CPC prefix filters
+	ClassificationFilterOp string   // "and" (default) or "or"
+	TagFilter              string
+	TitleFilters           []string // AND of partial-match terms, smart-case
+	SortColumn             string
+	SortOrder              string
+	SortColumn2            string
+	SortOrder2             string
 }
 
 type ListCitationsOptions struct {

@@ -491,7 +491,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.listSearchActive = false
 				m.listSearchQuery = ""
 				if query != "" {
-					m.listFilter.Text = query
+					m.listFilter.FreeFormSearch = query
 					m.message = "filter: " + query
 					return m.refreshList()
 				}
@@ -595,8 +595,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyCommand, keySearch:
 			m.countBuffer = EmptyCount
 			if msg.String() == keySearch && m.mode == viewList {
-				m.listSearchActive = true
-				m.listSearchQuery = ""
+				m.input.Focus()
+				m.input.SetValue(keySearch)
 				return m, nil
 			}
 			if msg.String() == keySearch && m.isPopupSearchMode() {
@@ -771,7 +771,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewList && m.listSearchQuery != "" {
 				query := m.listSearchQuery
 				m.listSearchQuery = ""
-				m.listFilter.Text = query
+				m.listFilter.FreeFormSearch = query
 				m.message = "filter: " + query
 				return m.refreshList()
 			}

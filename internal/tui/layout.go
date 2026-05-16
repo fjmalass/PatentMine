@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"patentmine/internal/domain"
-
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -133,46 +131,6 @@ func (m *Model) renderScreenHeader() string {
 			b.WriteString("  ")
 			b.WriteString(subtle.Render(fmt.Sprintf(m.text.T(TextValueBreadcrumbFormat), depth, trail)))
 		}
-	}
-
-	// status:X only shown when user has changed from the default (stored).
-	// The default stored-only view is implied and omitted to reduce noise.
-	var filters []string
-	if m.listFilter.ReviewState != "" && m.listFilter.ReviewState != domain.ReviewStateStored {
-		filters = append(filters, m.text.T(TextValueFilterReviewStateTag)+m.listFilter.ReviewState)
-	}
-	if m.listFilter.Text != EmptyFilter {
-		filters = append(filters, fmt.Sprintf("%s%s", m.text.T(TextValueFilterGeneralTag), m.listFilter.Text))
-	}
-	if m.listFilter.Country != EmptyFilter {
-		filters = append(filters, "country:"+m.listFilter.Country)
-	}
-	if m.listFilter.Tag != EmptyFilter {
-		filters = append(filters, "tag:"+m.listFilter.Tag)
-	}
-	if m.sortColumn != "" {
-		sort := fmt.Sprintf("%s%s %s", m.text.T(TextValueFilterSortTag), m.sortColumn, m.sortOrder)
-		if m.sortColumn2 != "" {
-			sort += "," + m.sortColumn2
-		}
-		filters = append(filters, sort)
-	}
-
-	if len(filters) > 0 {
-		b.WriteString(" ")
-		b.WriteString(subtle.Render("· " + strings.Join(filters, ", ")))
-	}
-
-	if m.isCitationView() && m.citesReviewStateFilter != "" {
-		label := m.citesReviewStateFilter
-		filters = append(filters, m.text.T(TextValueFilterRefsTag)+label)
-	}
-	if m.listFilter.Class != EmptyFilter {
-		classStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDepth))
-		b.WriteString(" ")
-		b.WriteString(subtle.Render("·"))
-		b.WriteString(" ")
-		b.WriteString(classStyle.Render(m.text.T(TextValueFilterClassTag) + m.listFilter.Class))
 	}
 
 	if subtitle := strings.TrimSpace(m.screenSubtitle()); subtitle != "" {

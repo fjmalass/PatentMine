@@ -12,7 +12,7 @@ type pageWindowInfo struct {
 
 func pageWindow(selected, total, pageSize int) pageWindowInfo {
 	if total <= 0 {
-		return pageWindowInfo{}
+		return pageWindowInfo{Page: 1, Pages: 1}
 	}
 	if pageSize <= 0 {
 		pageSize = total
@@ -37,5 +37,8 @@ func pageStart(selected, pageSize int) int {
 }
 
 func pageStatus(format string, window pageWindowInfo) string {
+	if window.Total == 0 {
+		return fmt.Sprintf("Page 1/1 - items 0 of 0")
+	}
 	return fmt.Sprintf(format, window.Page, window.Pages, window.Start+1, window.End, window.Total)
 }

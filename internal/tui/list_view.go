@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *Model) styleRow(idx int, selected int, content string) string {
@@ -181,9 +182,6 @@ func (m *Model) fitListColumns(cols []listColumn, availableWidth int) []listColu
 }
 
 func (m *Model) viewList() string {
-	if len(m.patents) == 0 {
-		return m.text.T(TextListEmpty) + "\n"
-	}
 	var b strings.Builder
 
 	window := pageWindow(m.patentSelected, len(m.patents), m.pageSize())
@@ -191,13 +189,20 @@ func (m *Model) viewList() string {
 	if m.listFilter.IsActive() && m.totalPatents > 0 {
 		status += fmt.Sprintf("  (%d total)", m.totalPatents)
 	}
-	if labels := m.listFilter.Labels(); len(labels) > 0 {
+	f := &m.listFilter
+	if labels := f.activeFilterLabels(); len(labels) > 0 {
 		status += "  · " + strings.Join(labels, " · ")
 	}
 
 	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
 	b.WriteString(m.styleLine(subtleStyle.Render(status)) + "\n")
 	b.WriteString(m.styleLine("") + "\n")
+
+	if len(m.patents) == 0 {
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorDim)).Italic(true)
+		b.WriteString(m.styleLine(dimStyle.Render(m.text.T(TextListEmpty))) + "\n")
+		return b.String()
+	}
 	idsByPatent := map[string]string{}
 	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
 		for _, entry := range idsEntries {
@@ -329,15 +334,25 @@ func (m *Model) viewList() string {
 			rowValues[listColumnIDS] = idsStatus
 		}
 
+		// Row style determined upfront so it can be re-applied per cell,
+		// preventing highlight \033[m resets from bleeding into adjacent columns.
+		rowStyle := lipgloss.NewStyle()
+		if color, ok := ReviewStateColors[p.ReviewState]; ok {
+			rowStyle = rowStyle.Foreground(lipgloss.Color(color))
+		}
+		if i == m.patentSelected {
+			rowStyle = rowStyle.Bold(true)
+		}
+
 		idxLabel := fmt.Sprintf("%*d", idxWidth, i+1)
-		row := m.pad(prefix, 2) +
+		// Prefix and index get rowStyle; jumpRowPrefix keeps its own ANSI styling.
+		row := rowStyle.Render(m.pad(prefix, 2)) +
 			m.pad(jumpRowPrefix, jumpPrefixWidth) +
-			m.pad(idxLabel, idxWidth+2)
+			rowStyle.Render(m.pad(idxLabel, idxWidth+2))
 
 		for j, c := range cols {
 			val := rowValues[c.id]
 
-			// Use the same width calculation as the header for alignment
 			colWidth := c.width
 			jumpColLabel := ""
 			if m.jumpMode && j < len(m.jumpLabelsCache) {
@@ -346,27 +361,27 @@ func (m *Model) viewList() string {
 			if jumpColLabel != "" {
 				colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+c.label))
 			}
-			val = m.truncate(val, c.width)
-
 			padding := listColPad
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			row += m.pad(val, colWidth+padding)
+			row += m.renderCell(val, colWidth, padding, rowStyle, m.listFilter.FreeFormSearch)
 		}
 
-		style := lipgloss.NewStyle()
-		if color, ok := ReviewStateColors[p.ReviewState]; ok {
-			style = style.Foreground(lipgloss.Color(color))
-		}
-
-		if i == m.patentSelected {
-			style = style.Bold(true)
-		}
-
-		b.WriteString(m.styleRow(i, m.patentSelected, style.Render(row)) + "\n")
+		b.WriteString(m.styleRow(i, m.patentSelected, row) + "\n")
 	}
 	return b.String()
+}
+
+// renderCell truncates val to cellWidth, applies optional search highlight,
+// renders with rowStyle (re-applied fresh per cell so highlight resets don't
+// bleed across columns), then pads the result to cellWidth+padding.
+func (m *Model) renderCell(val string, cellWidth, padding int, rowStyle lipgloss.Style, query string) string {
+	val = m.truncate(val, cellWidth)
+	if query != "" {
+		val = highlightTerm(val, query)
+	}
+	return m.pad(rowStyle.Render(val), cellWidth+padding)
 }
 
 func (m *Model) pad(s string, width int) string {

@@ -49,11 +49,6 @@ const (
 	TextValueSearchLabel          TextKey = "value.search_label"
 	TextValueProjectTag           TextKey = "value.project_tag"
 	TextValueBreadcrumbFormat     TextKey = "value.breadcrumb_format"
-	TextValueFilterReviewStateTag TextKey = "value.filter.review_state_tag"
-	TextValueFilterGeneralTag     TextKey = "value.filter.general_tag"
-	TextValueFilterSortTag        TextKey = "value.filter.sort_tag"
-	TextValueFilterRefsTag        TextKey = "value.filter.refs_tag"
-	TextValueFilterClassTag       TextKey = "value.filter.class_tag"
 	TextValueProjectSummaryLead   TextKey = "value.project_summary_lead"
 	TextNavDefault                TextKey = "nav.default"
 	TextNavList                   TextKey = "nav.list"
@@ -255,11 +250,6 @@ func EnglishText() TextCatalog {
 		TextValueSearchLabel:          "search: /",
 		TextValueProjectTag:           "PROJECT: %s (%s)",
 		TextValueBreadcrumbFormat:     "[%d] ‹ %s",
-		TextValueFilterReviewStateTag: "review_state:",
-		TextValueFilterGeneralTag:     "filter:",
-		TextValueFilterSortTag:        "sort:",
-		TextValueFilterRefsTag:        "refs:",
-		TextValueFilterClassTag:       "class:",
 		TextValueProjectSummaryLead:   rowCursor,
 		TextNavDefault:                "keys: [%s/%s/↓↑] move · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",
 		TextNavList:                   "keys: [%s/%s/↓↑] rows · [%s/%s/←→] cols · [%s] open · [%s] jump · [%s] sort · [%s] cmd · [%s] find · [%s] help · [%s] back · [%s] quit",

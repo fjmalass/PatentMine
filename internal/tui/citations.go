@@ -3,10 +3,11 @@ package tui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *Model) isCitationView() bool {
@@ -129,7 +130,7 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 	if err != nil {
 		m.err = err.Error()
 		if m.logger != nil {
-			m.logger.Error("list patents failed", "filter", m.listFilter.Text, "error", err)
+			m.logger.Error("list patents failed", "filter", m.listFilter.FreeFormSearch, "error", err)
 		}
 		return m, nil
 	}
@@ -315,4 +316,3 @@ func (m *Model) updateSelectedCitationReviewState(status string, messageKey Text
 	m.clearVisualMode()
 	return m, nil
 }
-

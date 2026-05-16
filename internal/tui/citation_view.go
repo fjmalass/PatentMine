@@ -219,23 +219,24 @@ func (m *Model) viewCitations(relation string) string {
 			domain.SortColumnTags:        tagsLabel,
 		}
 
-		row := m.pad(prefix, listRowPrefixWidth) +
+		rowStyle := lipgloss.NewStyle()
+		if color, ok := ReviewStateColors[edge.ReviewState]; ok {
+			rowStyle = rowStyle.Foreground(lipgloss.Color(color))
+		}
+
+		row := rowStyle.Render(m.pad(prefix, listRowPrefixWidth)) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
-			m.pad(rowIndexLabel(i), overlayIndexWidth)
+			rowStyle.Render(m.pad(rowIndexLabel(i), overlayIndexWidth))
 
 		for j, c := range cols {
 			padding := listColPad
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			row += m.pad(m.truncate(rowValues[c.id], c.width), c.width+padding)
+			row += m.renderCell(rowValues[c.id], c.width, padding, rowStyle, m.popupSearchQuery)
 		}
 
-		rowStyle := lipgloss.NewStyle()
-		if color, ok := ReviewStateColors[edge.ReviewState]; ok {
-			rowStyle = rowStyle.Foreground(lipgloss.Color(color))
-		}
-		body.WriteString(m.styleRowOverlay(i, selected, rowStyle.Render(row), m.overlayContentWidth()) + "\n")
+		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayContentWidth()) + "\n")
 	}
 
 	return m.renderPopup(citationPopupTitle(), body.String())

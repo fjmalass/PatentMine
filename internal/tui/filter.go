@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"patentmine/internal/domain"
@@ -13,13 +14,15 @@ import (
 // PatentFilter holds all filters applied to the patent list view.
 // The zero value is not valid — use defaultPatentFilter() for the startup default.
 type PatentFilter struct {
-	Text        string   // free-text / inventor search
+	FreeFormSearch string   // free-text / inventor search
 	ReviewState string   // domain.ReviewStateStored (default), reviewStateFilterNone (all), etc.
-	Class       string   // derived display label, e.g. "H04L && G06F"
-	Classes     []string // individual CPC codes
-	ClassOp     string   // domain.FilterOpAnd | domain.FilterOpOr
+	Classification string   // derived display label, e.g. "H04L && G06F"
+	Classifications []string // individual CPC codes
+	ClassificationOp string   // domain.FilterOpAnd | domain.FilterOpOr
 	Tag         string
 	Country     string
+	Title       string   // display label, e.g. "foo && bar"
+	TitleTerms  []string // individual AND terms, smart-case partial match
 }
 
 // defaultPatentFilter returns the startup filter (stored patents only).
@@ -30,21 +33,21 @@ func defaultPatentFilter() PatentFilter {
 // IsActive reports whether any filter is set (used to decide whether to show "(N total)").
 func (f *PatentFilter) IsActive() bool {
 	return f.ReviewState != reviewStateFilterNone ||
-		f.Text != EmptyFilter || f.Class != EmptyFilter ||
+		f.FreeFormSearch != EmptyFilter || f.Classification != EmptyFilter ||
 		f.Tag != EmptyFilter || f.Country != EmptyFilter
 }
 
-// Labels returns human-readable labels for every active filter.
-func (f *PatentFilter) Labels() []string {
+// activeFilterLabels returns all human-readable filter labels for the current view.
+func (f *PatentFilter) activeFilterLabels() []string {
 	var labels []string
 	if f.ReviewState != EmptyFilter && f.ReviewState != reviewStateFilterNone {
 		labels = append(labels, "state:"+f.ReviewState)
 	}
-	if f.Text != EmptyFilter {
-		labels = append(labels, f.Text)
+	if f.FreeFormSearch != EmptyFilter {
+		labels = append(labels, "search:"+f.FreeFormSearch)
 	}
-	if f.Class != EmptyFilter {
-		labels = append(labels, "class:"+f.Class)
+	if f.Classification != EmptyFilter {
+		labels = append(labels, "classification:"+f.Classification)
 	}
 	if f.Country != EmptyFilter {
 		labels = append(labels, "country:"+f.Country)
@@ -52,22 +55,36 @@ func (f *PatentFilter) Labels() []string {
 	if f.Tag != EmptyFilter {
 		labels = append(labels, "tag:"+f.Tag)
 	}
+	if f.Title != EmptyFilter {
+		labels = append(labels, "title:"+f.Title)
+	}
+	// if m.sortColumn != "" {
+	// 	s := "sort:" + m.sortColumn + " " + m.sortOrder
+	// 	if m.sortColumn2 != "" {
+	// 		s += "," + m.sortColumn2
+	// 	}
+	// 	labels = append(labels, s)
+	// }
+	// if m.isCitationView() && m.citesReviewStateFilter != "" {
+	// 	labels = append(labels, "refs:"+m.citesReviewStateFilter)
+	// }
 	return labels
 }
 
 // toStorageOpts converts the filter into storage query options, merging sort parameters.
 func (f *PatentFilter) toStorageOpts(sortColumn, sortOrder, sortColumn2, sortOrder2 string) storage.ListPatentsOptions {
 	return storage.ListPatentsOptions{
-		Filter:            f.Text,
-		ReviewStateFilter: f.ReviewState,
-		ClassFilters:      f.Classes,
-		ClassFilterOp:     f.ClassOp,
-		TagFilter:         f.Tag,
-		CountryFilter:     f.Country,
-		SortColumn:        sortColumn,
-		SortOrder:         sortOrder,
-		SortColumn2:       sortColumn2,
-		SortOrder2:        sortOrder2,
+		Filter:                 f.FreeFormSearch,
+		ReviewStateFilter:      f.ReviewState,
+		ClassificationFilters:  f.Classifications,
+		ClassificationFilterOp: f.ClassificationOp,
+		TagFilter:              f.Tag,
+		CountryFilter:          f.Country,
+		SortColumn:             sortColumn,
+		SortOrder:              sortOrder,
+		SortColumn2:            sortColumn2,
+		SortOrder2:             sortOrder2,
+		TitleFilters:           f.TitleTerms,
 	}
 }
 
@@ -87,6 +104,7 @@ const (
 	FilterInventor       FilterType = "inventor"
 	FilterCountry        FilterType = "country"
 	FilterTag            FilterType = "tag"
+	FilterTitle          FilterType = "title"
 	FilterClear          FilterType = "clear"
 	FilterDefault        FilterType = "default"
 )
@@ -98,6 +116,7 @@ var filterAliases = map[string]FilterType{
 	"cpc":            FilterClassification,
 	"inventor":       FilterInventor,
 	"country":        FilterCountry,
+	"title":          FilterTitle,
 	"tag":            FilterTag,
 	"clear":          FilterClear,
 	"none":           FilterClear,
@@ -112,6 +131,7 @@ var SupportedFilters = map[FilterType]bool{
 	FilterCountry:        true,
 	FilterTag:            true,
 	FilterClear:          true,
+	FilterTitle:          true, // not yet implmeented
 }
 
 func SupportedFilterTypes() []string {
@@ -123,6 +143,7 @@ func SupportedFilterTypes() []string {
 		"inventor",
 		"country",
 		"tag",
+		"tiltle",
 	}
 }
 
@@ -149,7 +170,7 @@ func isFilterClearArg(args []string) bool {
 
 // filterCommand is the unified :filter gateway.
 // :filter review_state <stored|ignored|under-review|none>
-// :filter class <cpc> [&& <cpc2> | || <cpc2>]
+// :filter classification <cpc> [&& <cpc2> | || <cpc2>]
 // :filter inventor <name>
 // :filter clear  — resets all filters to defaults
 func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
@@ -166,25 +187,32 @@ func (m *Model) filterCommand(args []string) (tea.Model, tea.Cmd) {
 	case FilterReviewState:
 		return m.reviewStateFilterCommand(args[1:])
 	case FilterClassification:
-		return m.classCommand(args[1:])
+		return m.classificationFilterCommand(args[1:])
 	case FilterInventor:
 		return m.inventorFilterCommand(args[1:])
 	case FilterCountry:
 		return m.countryFilterCommand(args[1:])
 	case FilterTag:
 		return m.tagFilterCommand(args[1:])
+	case FilterTitle:
+		return m.titleFilterCommand(args[1:])
 	case FilterDefault:
+		m.listFilter = PatentFilter{ReviewState: reviewStateFilterNone}
 		return m.reviewStateFilterCommand([]string{domain.ReviewStateStored})
 	case FilterClear:
-		m.listFilter = PatentFilter{ReviewState: reviewStateFilterNone}
-		m.message = "all filters cleared"
-		m.setMode(viewList)
-		return m.refreshList()
+		return m.clearFilterCommand()
 	default:
 		m.err = fmt.Sprintf("internal error: unhandled filter type: '%s', only [%s] supported",
 			args[0], SupportedFilterTypesString())
 		return m, nil
 	}
+}
+
+func (m *Model) clearFilterCommand() (tea.Model, tea.Cmd) {
+	m.listFilter = PatentFilter{ReviewState: reviewStateFilterNone}
+	m.message = "all filters cleared"
+	m.setMode(viewList)
+	return m.refreshList()
 }
 
 // reviewStateFilterCommand handles :filter review_state <stored|ignored|under-review|cached|none>.
@@ -211,13 +239,13 @@ func (m *Model) reviewStateFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	return m.refreshList()
 }
 
-// classCommand handles :classfilter <cpc> [&& <cpc2> | || <cpc2>] and :classfilter clear.
-func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
+// classificationFilterCommand handles :classfilter <cpc> [&& <cpc2> | || <cpc2>] and :classfilter clear.
+func (m *Model) classificationFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
-		m.listFilter.Classes = nil
-		m.listFilter.ClassOp = EmptyFilter
-		m.listFilter.Class = EmptyFilter
-		m.listFilter.Text = EmptyFilter
+		m.listFilter.Classifications = nil
+		m.listFilter.ClassificationOp = EmptyFilter
+		m.listFilter.Classification = EmptyFilter
+		m.listFilter.FreeFormSearch = EmptyFilter
 		m.message = "all filters cleared"
 	} else {
 		raw := strings.ToUpper(strings.Join(args, " "))
@@ -229,14 +257,14 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 		} else {
 			parts = splitTrim(raw, "&&")
 		}
-		m.listFilter.Classes = parts
-		m.listFilter.ClassOp = op
+		m.listFilter.Classifications = parts
+		m.listFilter.ClassificationOp = op
 		if op == domain.FilterOpOr {
-			m.listFilter.Class = strings.Join(parts, " || ")
+			m.listFilter.Classification = strings.Join(parts, " || ")
 		} else {
-			m.listFilter.Class = strings.Join(parts, " && ")
+			m.listFilter.Classification = strings.Join(parts, " && ")
 		}
-		m.message = "filtering by classification: " + m.listFilter.Class
+		m.message = "filtering by classification: " + m.listFilter.Classification
 	}
 	m.setMode(viewList)
 	return m.refreshList()
@@ -245,11 +273,11 @@ func (m *Model) classCommand(args []string) (tea.Model, tea.Cmd) {
 // inventorFilterCommand handles :inventorfilter <name> and :inventorfilter clear.
 func (m *Model) inventorFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
-		m.listFilter.Text = EmptyFilter
+		m.listFilter.FreeFormSearch = EmptyFilter
 		m.message = "inventor filter cleared"
 	} else {
-		m.listFilter.Text = strings.Join(args, " ")
-		m.message = "filtering by inventor: " + m.listFilter.Text
+		m.listFilter.FreeFormSearch = strings.Join(args, " ")
+		m.message = "filtering by inventor: " + m.listFilter.FreeFormSearch
 	}
 	m.setMode(viewList)
 	return m.refreshList()
@@ -259,10 +287,31 @@ func (m *Model) tagFilterCommand(args []string) (tea.Model, tea.Cmd) {
 	if isFilterClearArg(args) {
 		m.listFilter.Tag = EmptyFilter
 		m.message = "tag filter cleared"
-	} else {
-		m.listFilter.Tag = strings.Join(args, " ")
-		m.message = "filtering by tag: " + m.listFilter.Tag
+		m.setMode(viewList)
+		return m.refreshList()
 	}
+	m.listFilter.Tag = strings.Join(args, " ")
+	m.message = "filtering by tag: " + m.listFilter.Tag
+	m.setMode(viewList)
+	return m.refreshList()
+}
+
+func (m *Model) titleFilterCommand(args []string) (tea.Model, tea.Cmd) {
+	if isFilterClearArg(args) {
+		m.listFilter.Title = EmptyFilter
+		m.listFilter.TitleTerms = nil
+		m.message = "title filter cleared"
+		m.setMode(viewList)
+		return m.refreshList()
+	}
+	raw := strings.Join(args, " ")
+	terms := splitTrim(raw, "&&")
+	if len(terms) == 0 {
+		terms = []string{raw}
+	}
+	m.listFilter.TitleTerms = terms
+	m.listFilter.Title = strings.Join(terms, " && ")
+	m.message = "filtering by title: " + m.listFilter.Title
 	m.setMode(viewList)
 	return m.refreshList()
 }
@@ -275,14 +324,7 @@ func (m *Model) countryFilterCommand(args []string) (tea.Model, tea.Cmd) {
 		return m.refreshList()
 	}
 	code := strings.ToUpper(strings.TrimSpace(args[0]))
-	valid := false
-	for _, supported := range domain.PatentCountryCodes {
-		if code == supported {
-			valid = true
-			break
-		}
-	}
-	if !valid {
+	if !slices.Contains(domain.PatentCountryCodes, code) {
 		m.err = fmt.Sprintf("unknown country %q — valid values: %s", code, strings.Join(domain.PatentCountryCodes, ", "))
 		return m, nil
 	}
@@ -459,7 +501,7 @@ func (m *Model) filterBySelectedDetail() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.backStack = append(m.backStack, m.snapshot())
-	m.listFilter.Text = field.value
+	m.listFilter.FreeFormSearch = field.value
 	m.setMode(viewList)
 	model, cmd := m.refreshList()
 	updated := model.(*Model)
@@ -478,7 +520,7 @@ func (m *Model) filterBySelectedInventor() (tea.Model, tea.Cmd) {
 	inventor := inventors[selected]
 
 	m.backStack = append(m.backStack, m.snapshot())
-	m.listFilter.Text = inventor
+	m.listFilter.FreeFormSearch = inventor
 	m.setMode(viewList)
 	model, cmd := m.refreshList()
 	updated := model.(*Model)
@@ -496,9 +538,9 @@ func (m *Model) filterBySelectedClassification() (tea.Model, tea.Cmd) {
 	code := classifications[selected].Code
 
 	m.backStack = append(m.backStack, m.snapshot())
-	m.listFilter.Classes = []string{code}
-	m.listFilter.ClassOp = domain.FilterOpAnd
-	m.listFilter.Class = code
+	m.listFilter.Classifications = []string{code}
+	m.listFilter.ClassificationOp = domain.FilterOpAnd
+	m.listFilter.Classification = code
 
 	stateLabel := ""
 	if m.mode == viewClassificationDetail {

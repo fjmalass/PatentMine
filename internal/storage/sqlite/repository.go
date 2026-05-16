@@ -962,19 +962,33 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		args = append(args, projectID, strings.TrimSpace(opts.TagFilter))
 	}
 
-	if len(opts.ClassFilters) > 0 {
-		if strings.EqualFold(opts.ClassFilterOp, domain.FilterOpOr) {
-			conds := make([]string, len(opts.ClassFilters))
-			for i, f := range opts.ClassFilters {
+	if len(opts.ClassificationFilters) > 0 {
+		if strings.EqualFold(opts.ClassificationFilterOp, domain.FilterOpOr) {
+			conds := make([]string, len(opts.ClassificationFilters))
+			for i, f := range opts.ClassificationFilters {
 				conds[i] = "code like ?"
 				args = append(args, strings.ToUpper(strings.TrimSpace(f))+"%")
 			}
 			query += ` and p.number in (select patent_number from patent_classifications where ` + strings.Join(conds, " or ") + `)`
 		} else {
-			for _, f := range opts.ClassFilters {
+			for _, f := range opts.ClassificationFilters {
 				query += ` and p.number in (select patent_number from patent_classifications where code like ?)`
 				args = append(args, strings.ToUpper(strings.TrimSpace(f))+"%")
 			}
+		}
+	}
+
+	for _, term := range opts.TitleFilters {
+		t := strings.TrimSpace(term)
+		if t == "" {
+			continue
+		}
+		if t == strings.ToLower(t) {
+			query += ` and lower(p.title) like ?`
+			args = append(args, "%"+strings.ToLower(t)+"%")
+		} else {
+			query += ` and instr(p.title, ?) > 0`
+			args = append(args, t)
 		}
 	}
 
