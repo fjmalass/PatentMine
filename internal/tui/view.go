@@ -128,8 +128,8 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewKeymap()
 	case viewKeymapPopup:
 		return m.viewKeymapPopup()
-	case viewPreview:
-		return m.viewPreview()
+	case viewPopupPatentDetail:
+		return m.viewPopupPatentDetail()
 	case viewReview:
 		return m.viewReviewQueue()
 	case viewConfirmDelete:
@@ -231,7 +231,7 @@ func (m *Model) isPopupMode() bool {
 		m.mode == viewKeymapPopup ||
 		m.mode == viewBulkConfirm ||
 		m.mode == viewConfirmDelete ||
-		m.mode == viewPreview
+		m.mode == viewPopupPatentDetail
 }
 
 func (m *Model) isPopupSearchMode() bool {

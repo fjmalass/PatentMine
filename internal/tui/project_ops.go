@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"patentmine/internal/changes"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
 )
@@ -29,6 +30,10 @@ func (m *Model) saveLastProject() {
 // subject is the primary identifier (patent number, invoice id, etc.) or "".
 // note is optional free-text annotation.
 func (m *Model) logActivity(action, subject, note string) {
+	m.logActivityFrom(action, subject, note, "")
+}
+
+func (m *Model) logActivityFrom(action, subject, note, from string) {
 	if m.activityLog == nil {
 		return
 	}
@@ -38,6 +43,9 @@ func (m *Model) logActivity(action, subject, note string) {
 	}
 	if note != "" {
 		args = append(args, "note", note)
+	}
+	if from != "" {
+		args = append(args, "from", from)
 	}
 	m.activityLog.Info("activity", args...)
 }
@@ -220,6 +228,7 @@ func (m *Model) idsEditCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = "no IDS entry for this patent; add one first"
 		return m, nil
 	}
+	before := *entry
 	value := strings.Join(args[1:], " ")
 	switch args[0] {
 	case idsEditSubNote:
@@ -241,11 +250,9 @@ func (m *Model) idsEditCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = "unknown ids field: " + args[0] + ". Use: note, kind, country, passages, full"
 		return m, nil
 	}
-	if err := m.repo.UpdateIDSEntry(m.ctx, *entry); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.EditIDS(before, *entry)) {
 		return m, nil
 	}
-	m.populateDetailCache()
 	m.message = "IDS " + args[0] + " updated"
 	return m, nil
 }

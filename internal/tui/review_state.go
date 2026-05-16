@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"patentmine/internal/changes"
 	"patentmine/internal/domain"
 )
 
@@ -61,22 +62,24 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	sel := m.activeSelection
 	prevMode := previousModeOr(m, viewList)
 
-	// detail: also patches backStack so restored current has updated ReviewState
-	if prevMode == viewDetail {
-		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, m.current.Number, next); err != nil {
-			m.logger.Error("review state update failed", "project", m.ProjectID, "patent", m.current.Number, "status", next, "error", err)
-			m.err = err.Error()
-			m.activeSelection = selectionContext{}
-			return m.goBack()
-		}
-		m.logger.Info("review state updated", "project", m.ProjectID, "patent", m.current.Number, "status", next)
-		m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
-		m.logActivity(ActivityPatentReviewState, m.current.Number, next)
-		if len(m.backStack) > 0 {
-			m.backStack[len(m.backStack)-1].current.ReviewState = next
+	// popup patent detail: move the citation edge and the target patent
+	// together so the list column stays in sync.
+	if prevMode == viewPopupPatentDetail {
+		edge := m.pendingCitation
+		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, next, true)) {
+			m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
+			m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, next, edge.SourcePatent)
 		}
 		m.activeSelection = selectionContext{}
-		m = m.markDirty(dirtyDetail | dirtyFamily)
+		return m.goBack()
+	}
+
+	if prevMode == viewDetail {
+		if m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{m.current.Number}, next)) {
+			m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
+			m.logActivity(ActivityPatentReviewState, m.current.Number, next)
+		}
+		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
 
@@ -87,53 +90,41 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 			m.activeSelection = selectionContext{}
 			return m.goBack()
 		}
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
-			m.logger.Error("citation review state update failed", "project", m.ProjectID, "patent", edge.TargetPatent, "status", next, "error", err)
-			m.err = err.Error()
-			m.activeSelection = selectionContext{}
-			return m.goBack()
+		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, next, false)) {
+			m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
+			m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, next, edge.SourcePatent)
 		}
-		m.logger.Info("citation review state updated", "project", m.ProjectID, "patent", edge.TargetPatent, "status", next)
-		m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
-		m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
 		m.activeSelection = selectionContext{}
-		m = m.markDirty(dirtyDetail)
 		return m.goBack()
 	}
 
 	if sel.kind == selKindCitation {
 		edges, indices, err := sel.CitationEdges(m)
-		if err != nil || len(edges) == 0 {
+		if err != nil {
 			m.activeSelection = selectionContext{}
 			return m.goBack()
 		}
-		m.logger.Info("bulk citation status update started", "project", m.ProjectID, "status", next, "count", len(indices))
-		updatedCount := 0
-		for _, idx := range indices {
-			if idx < 0 || idx >= len(edges) {
-				continue
-			}
-			edge := edges[idx]
-			if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, next); err != nil {
-				m.logger.Error("citation status update failed", "project", m.ProjectID, "patent", edge.TargetPatent, "status", next, "error", err)
-				continue
-			}
-			m.logActivity(ActivityCitationReviewState, edge.TargetPatent, next)
-			updatedCount++
+		selected := edgesAtIndices(edges, indices)
+		if len(selected) == 0 {
+			m.activeSelection = selectionContext{}
+			return m.goBack()
 		}
-		m.logger.Info("bulk citation status update completed", "project", m.ProjectID, "status", next, "requested", len(indices), "updated", updatedCount)
-		m.logActivity(ActivityBulkPrefix+ActivityCitationReviewState, next, fmt.Sprintf("%d", updatedCount))
-		if updatedCount > 1 {
-			m.message = fmt.Sprintf("updated status to %s for %d citations", next, updatedCount)
-		} else if updatedCount == 1 && len(indices) > 0 && indices[0] < len(edges) {
-			m.message = fmt.Sprintf("%s → %s", edges[indices[0]].TargetPatent, next)
+		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, selected, next, false)) {
+			for _, e := range selected {
+				m.logActivityFrom(ActivityCitationReviewState, e.TargetPatent, next, e.SourcePatent)
+			}
+			m.logActivity(ActivityBulkPrefix+ActivityCitationReviewState, next, fmt.Sprintf("%d", len(selected)))
+			if len(selected) > 1 {
+				m.message = fmt.Sprintf("updated status to %s for %d citations", next, len(selected))
+			} else {
+				m.message = fmt.Sprintf("%s → %s", selected[0].TargetPatent, next)
+			}
 		}
 		m.activeSelection = selectionContext{}
 		m.clearVisualMode()
 		if len(m.backStack) > 0 {
 			m.backStack[len(m.backStack)-1].visualMode = false
 		}
-		m = m.markDirty(dirtyDetail)
 		return m.goBack()
 	}
 
@@ -143,29 +134,22 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
-	m.logger.Info("bulk patent status update started", "project", m.ProjectID, "status", next, "count", len(patentNumbers))
-	updatedCount := 0
-	for _, num := range patentNumbers {
-		if err := m.repo.UpdatePatentReviewState(m.ctx, m.ProjectID, num, next); err != nil {
-			m.logger.Error("status selection update failed", "project", m.ProjectID, "patent", num, "status", next, "error", err)
-			continue
+	if m.applyChange(changes.SetPatentReviewState(m.ProjectID, patentNumbers, next)) {
+		for _, num := range patentNumbers {
+			m.logActivity(ActivityPatentReviewState, num, next)
 		}
-		m.logActivity(ActivityPatentReviewState, num, next)
-		updatedCount++
-	}
-	m.logger.Info("bulk patent status update completed", "project", m.ProjectID, "status", next, "requested", len(patentNumbers), "updated", updatedCount)
-	m.logActivity(ActivityBulkPrefix+ActivityPatentReviewState, next, fmt.Sprintf("%d", updatedCount))
-	if updatedCount > 1 {
-		m.message = fmt.Sprintf("updated status to %s for %d patents", next, updatedCount)
-	} else if updatedCount == 1 {
-		m.message = fmt.Sprintf("%s → %s", patentNumbers[0], next)
+		m.logActivity(ActivityBulkPrefix+ActivityPatentReviewState, next, fmt.Sprintf("%d", len(patentNumbers)))
+		if len(patentNumbers) > 1 {
+			m.message = fmt.Sprintf("updated status to %s for %d patents", next, len(patentNumbers))
+		} else {
+			m.message = fmt.Sprintf("%s → %s", patentNumbers[0], next)
+		}
 	}
 	m.activeSelection = selectionContext{}
 	m.clearVisualMode()
 	if len(m.backStack) > 0 {
 		m.backStack[len(m.backStack)-1].visualMode = false
 	}
-	m = m.markDirty(dirtyDetail | dirtyFamily)
 	return m.goBack()
 }
 
@@ -248,15 +232,8 @@ func (m *Model) viewCountrySelect() string {
 }
 
 func (m *Model) viewBulkConfirm() string {
-	count := len(m.bulkActionIndices)
-
 	if m.bulkAction == bulkActionDelete {
-		nums := make([]string, 0, count)
-		for _, idx := range m.bulkActionIndices {
-			if idx < len(m.patents) {
-				nums = append(nums, m.patents[idx].Number)
-			}
-		}
+		nums := m.bulkActionNumbers
 		shown := nums
 		extra := 0
 		if len(shown) > 10 {
@@ -270,6 +247,7 @@ func (m *Model) viewBulkConfirm() string {
 		return m.renderPopup("Confirm Delete", content)
 	}
 
+	count := len(m.bulkActionEdges)
 	var actionVerb string
 	switch m.bulkAction {
 	case bulkActionStore:

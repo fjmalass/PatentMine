@@ -37,6 +37,8 @@ const (
 	keyFullText          = "T"
 	keyNotes             = "n"
 	keyRefresh           = "ctrl+r"
+	keyUndo              = "u"
+	keyRedo              = "U"
 	keyAI                = "a"
 	keyWeb               = "w"
 	keyJump              = "f"

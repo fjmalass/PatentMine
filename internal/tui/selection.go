@@ -34,7 +34,7 @@ func (m *Model) activeSelectionIndex() int {
 		return m.inventorSelected
 	case m.mode == viewFamily:
 		return m.familySelected
-	case m.mode == viewDetail:
+	case m.mode == viewDetail, m.mode == viewPopupPatentDetail:
 		return m.detailSelected
 	default:
 		return 0
@@ -79,7 +79,7 @@ func (m *Model) setActiveSelectionIndex(val int) {
 		m.inventorSelected = val
 	case m.mode == viewFamily:
 		m.familySelected = val
-	case m.mode == viewDetail:
+	case m.mode == viewDetail, m.mode == viewPopupPatentDetail:
 		m.detailSelected = val
 	}
 	m.trackVisualEnd(val)
@@ -125,7 +125,7 @@ func (m *Model) activeItemCount() int {
 		return len(m.current.Inventors)
 	case m.mode == viewFamily:
 		return len(m.buildFamilyTree())
-	case m.mode == viewDetail:
+	case m.mode == viewDetail, m.mode == viewPopupPatentDetail:
 		return len(m.detailFields())
 	default:
 		return 0

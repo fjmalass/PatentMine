@@ -40,6 +40,7 @@ const (
 	commandExit       = "exit"
 	commandFamilyPull = "pull"
 	commandTag        = "tag"
+	commandRec        = "rec"
 
 	// :country subcommands
 	commandCountry = "country"

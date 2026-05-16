@@ -4,11 +4,25 @@ import (
 	"fmt"
 	"strings"
 
+	"patentmine/internal/changes"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// edgesAtIndices resolves selection indices to citation edges, dropping any
+// out-of-range index. Resolving at selection time keeps a later bulk action
+// bound to the rows the user actually picked, even if sort/filter changes.
+func edgesAtIndices(edges []domain.CitationEdge, indices []int) []domain.CitationEdge {
+	out := make([]domain.CitationEdge, 0, len(indices))
+	for _, idx := range indices {
+		if idx >= 0 && idx < len(edges) {
+			out = append(out, edges[idx])
+		}
+	}
+	return out
+}
 
 func (m *Model) reviewCommand(args []string) (tea.Model, tea.Cmd) {
 	if len(args) != 1 {
@@ -82,7 +96,11 @@ func (m *Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
 	m.pendingBundle = bundle
 	m.pendingCitation = edge
-	m.setMode(viewPreview)
+	m.current = bundle.Patent
+	m.current.ReviewState = edge.ReviewState // popup shows citation edge state, matching list column
+	m.detailSelected = 0
+	m.populateDetailCache()
+	m.setMode(viewPopupPatentDetail)
 	m.message = fmt.Sprintf(m.text.T(TextMessagePreviewLoaded), bundle.Patent.Number)
 	return m, nil
 }
@@ -96,7 +114,7 @@ func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 
 	if len(indices) > 1 {
 		m.bulkAction = bulkActionStore
-		m.bulkActionIndices = indices
+		m.bulkActionEdges = edgesAtIndices(edges, indices)
 		return m.navigateTo(viewBulkConfirm), nil
 	}
 
@@ -105,8 +123,7 @@ func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedReviewCitation()
 	}
-	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, domain.ReviewStateStored); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored, false)) {
 		return m, nil
 	}
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
@@ -121,7 +138,7 @@ func (m *Model) updateSelectedReviewCitationReviewState(status string, messageKe
 	}
 
 	if len(indices) > 1 {
-		m.bulkActionIndices = indices
+		m.bulkActionEdges = edgesAtIndices(edges, indices)
 		if status == domain.ReviewStateIgnored {
 			m.bulkAction = bulkActionIgnore
 		} else {
@@ -131,8 +148,7 @@ func (m *Model) updateSelectedReviewCitationReviewState(status string, messageKe
 	}
 
 	edge := edges[indices[0]]
-	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status, false)) {
 		return m, nil
 	}
 	if status != m.reviewState {
@@ -145,29 +161,15 @@ func (m *Model) updateSelectedReviewCitationReviewState(status string, messageKe
 }
 
 func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
-	indices := m.bulkActionIndices
-	if len(indices) == 0 {
-		return m.goBack()
-	}
-
 	if m.bulkAction == bulkActionDelete {
-		return m.executeBulkDelete(indices)
+		return m.executeBulkDelete(m.bulkActionNumbers)
 	}
 
-	var edges []domain.CitationEdge
-	var err error
-	if m.mode == viewReview {
-		edges, err = m.currentReviewCitationEdges()
-	} else {
-		edges, err = m.currentCitationEdges()
-	}
-
-	if err != nil || len(edges) == 0 {
-		m.err = "bulk action failed: " + err.Error()
+	edges := m.bulkActionEdges
+	if len(edges) == 0 {
 		return m.goBack()
 	}
 
-	var cmds []tea.Cmd
 	action := m.bulkAction
 	status := domain.ReviewStateStored
 	if action == bulkActionIgnore {
@@ -176,34 +178,31 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 		status = domain.ReviewStateUnderReview
 	}
 
-	m.logger.Info("bulk citation action started", "project", m.ProjectID, "action", action, "status", status, "count", len(indices))
+	m.logger.Info("bulk citation action started", "project", m.ProjectID, "action", action, "status", status, "count", len(edges))
 
-	executedCount := 0
+	// One transaction: all edges move together or none do.
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, edges, status, false)) {
+		m.clearVisualMode()
+		m.bulkActionEdges = nil
+		return m.goBack()
+	}
+
+	var cmds []tea.Cmd
 	importCount := 0
-	for _, idx := range indices {
-		if idx < 0 || idx >= len(edges) {
-			continue
-		}
-		edge := edges[idx]
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err != nil {
-			m.logger.Error("bulk citation action failed", "project", m.ProjectID, "action", action, "patent", edge.TargetPatent, "error", err)
-		} else {
-			m.logActivity(ActivityBulkPrefix+string(action), edge.TargetPatent, "")
-			executedCount++
-
-			if action == bulkActionStore {
-				if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
-					cmds = append(cmds, m.importCitationDetailsCommand(edge))
-					importCount++
-				}
+	for _, edge := range edges {
+		m.logActivityFrom(ActivityBulkPrefix+string(action), edge.TargetPatent, "", edge.SourcePatent)
+		if action == bulkActionStore {
+			if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
+				cmds = append(cmds, m.importCitationDetailsCommand(edge))
+				importCount++
 			}
 		}
 	}
 
-	m.logger.Info("bulk citation action completed", "project", m.ProjectID, "action", action, "requested", len(indices), "executed", executedCount)
-	m.message = fmt.Sprintf("performed bulk %s on %d items", action, executedCount)
+	m.logger.Info("bulk citation action completed", "project", m.ProjectID, "action", action, "count", len(edges))
+	m.message = fmt.Sprintf("performed bulk %s on %d items", action, len(edges))
 	m.clearVisualMode()
-	m.bulkActionIndices = nil
+	m.bulkActionEdges = nil
 
 	model, _ := m.goBack()
 	if importCount > 0 {
@@ -214,43 +213,32 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmds...)
 }
 
-func (m *Model) executeBulkDelete(indices []int) (tea.Model, tea.Cmd) {
-	// Collect patent numbers to delete.
-	nums := make([]string, 0, len(indices))
-	for _, idx := range indices {
-		if idx >= 0 && idx < len(m.patents) {
-			nums = append(nums, m.patents[idx].Number)
+func (m *Model) executeBulkDelete(nums []string) (tea.Model, tea.Cmd) {
+	finish := func(msg string) (tea.Model, tea.Cmd) {
+		m.bulkActionNumbers = nil
+		m.clearVisualMode()
+		// pop the viewBulkConfirm snapshot (always pushed from viewList)
+		if len(m.backStack) > 0 {
+			m.backStack = m.backStack[:len(m.backStack)-1]
 		}
+		if msg != "" {
+			m.message = msg
+		}
+		m.setMode(viewList)
+		return m.refreshList()
+	}
+
+	if len(nums) == 0 {
+		return finish("")
 	}
 
 	m.logger.Info("bulk delete started", "project", m.ProjectID, "count", len(nums), "patents", nums)
-
-	// Remove IDS entries for all patents in one query.
-	if removed, err := m.repo.DeleteIDSEntriesForPatents(m.ctx, m.ProjectID, nums); err != nil {
-		m.logger.Error("bulk delete: IDS removal failed", "project", m.ProjectID, "error", err)
-	} else if removed > 0 {
-		m.logger.Info("bulk delete: IDS entries removed", "project", m.ProjectID, "count", removed)
-		for _, num := range nums {
-			m.logActivity(ActivityIDSRemove, num, "bulk-delete")
-		}
+	if !m.applyChange(changes.DeletePatents(m.ProjectID, nums)) {
+		return finish("")
 	}
-
-	deleted := 0
 	for _, num := range nums {
-		if err := m.repo.DeletePatent(m.ctx, m.ProjectID, num); err != nil {
-			m.logger.Error("bulk delete: patent deletion failed", "project", m.ProjectID, "patent", num, "error", err)
-		} else {
-			m.logger.Info("bulk delete: patent deleted", "project", m.ProjectID, "patent", num)
-			m.logActivity(ActivityPatentDelete, num, fmt.Sprintf("bulk-%03d", len(nums)))
-			deleted++
-		}
+		m.logActivity(ActivityPatentDelete, num, fmt.Sprintf("bulk-%03d", len(nums)))
 	}
-
-	m.logger.Info("bulk delete completed", "project", m.ProjectID, "requested", len(nums), "deleted", deleted)
-
-	m.bulkActionIndices = nil
-	m.clearVisualMode()
-	model, cmd := m.goBack()
-	m.message = fmt.Sprintf("Deleted %d patent(s)", deleted)
-	return model, cmd
+	m.logger.Info("bulk delete completed", "project", m.ProjectID, "count", len(nums))
+	return finish(fmt.Sprintf("Deleted %d patent(s)", len(nums)))
 }

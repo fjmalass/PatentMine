@@ -335,52 +335,18 @@ func (m *Model) previewStorePrompt() string {
 	return fmt.Sprintf(m.text.T(TextPreviewStorePrompt), keyYes, keyIgnore, keyUnreview, keyNo, keyEsc)
 }
 
-func (m *Model) viewPreview() string {
-	base := overlayBase()
-
-	p := m.pendingBundle.Patent
+func (m *Model) viewPopupPatentDetail() string {
+	p := m.current
 	if p.Number == "" {
-		return base.Render(m.text.T(TextValueUnknown)) + "\n"
+		return overlayBase().Render(m.text.T(TextValueUnknown)) + "\n"
 	}
-	var b strings.Builder
-	b.WriteString(m.renderPopupHeader(m.text.T(TextPreviewTitle)))
-
-	b.WriteString(base.Bold(true).Render(p.Number) + "\n")
-	b.WriteString(base.Render(p.Title) + "\n\n")
-
-	// Calculate max label width for alignment
-	previewLabels := []TextKey{TextDetailAssignee, TextDetailPublication, TextDetailGrant, TextDetailExpiration}
-	if len(p.Inventors) == 0 {
-		previewLabels = append(previewLabels, TextDetailInventors)
-	} else {
-		previewLabels = append(previewLabels, TextDetailInventor)
-	}
-	maxW := 0
-	for _, l := range previewLabels {
-		w := lipgloss.Width(m.text.T(l) + ":")
-		if w > maxW {
-			maxW = w
-		}
-	}
-
-	b.WriteString(m.detailRow(TextDetailAssignee, p.Assignee, maxW) + "\n")
-	if len(p.Inventors) == 0 {
-		b.WriteString(m.detailRow(TextDetailInventors, "", maxW) + "\n")
-	} else {
-		for i, inventor := range p.Inventors {
-			b.WriteString(m.detailRow(TextDetailInventor, fmt.Sprintf("%d. %s", i+1, inventor), maxW) + "\n")
-		}
-	}
-	b.WriteString(m.detailRow(TextDetailPublication, p.PublicationDate, maxW) + "\n")
-	b.WriteString(m.detailRow(TextDetailGrant, p.GrantDate, maxW) + "\n")
-	b.WriteString(m.detailRow(TextDetailExpiration, m.formatExpiration(p), maxW) + "\n")
-	b.WriteString("\n")
-	if strings.TrimSpace(p.Abstract) == "" {
-		b.WriteString(base.Render(m.text.T(TextPreviewNoAbstract)) + "\n")
-	} else {
-		b.WriteString(base.Render(p.Abstract) + "\n")
-	}
-	return b.String()
+	w := m.overlayContentWidth()
+	style := lipgloss.NewStyle().Width(w)
+	var body strings.Builder
+	body.WriteString(style.Bold(true).Render(p.Number) + "\n")
+	body.WriteString(style.Render(p.Title) + "\n\n")
+	body.WriteString(m.renderDetailFields(m.detailFields(), w, false))
+	return m.renderPopup(m.text.T(TextPreviewTitle), body.String())
 }
 
 // overlayBase returns a base lipgloss style with ColorSurface background

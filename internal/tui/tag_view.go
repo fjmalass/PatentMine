@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"patentmine/internal/changes"
 	"patentmine/internal/domain"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -163,40 +164,42 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
-	m.logger.Info("bulk tag apply started", "project", m.ProjectID, "patents", len(patentNumbers), "tags", len(m.availableTags))
-	count := 0
+	// livePatent was already updated live via space-toggle; propagate the same
+	// tag state to the rest of the selection.
+	targets := make([]string, 0, len(patentNumbers))
 	for _, num := range patentNumbers {
-		if num == sel.livePatent {
-			count++
-			continue // already applied live via space-toggle
+		if num != sel.livePatent {
+			targets = append(targets, num)
 		}
+	}
+	if len(targets) > 0 {
+		desired := make(map[int64]bool, len(m.availableTags))
 		for _, tag := range m.availableTags {
-			if m.selectedPatentTags[tag.ID] {
-				if err := m.repo.ApplyTagToPatent(m.ctx, num, tag.ID); err != nil {
-					m.logger.Error("tag apply failed", "project", m.ProjectID, "patent", num, "tag", tag.Name, "error", err)
-				} else {
-					m.logActivity(ActivityTagApply, num, tag.Name)
-				}
-			} else {
-				if err := m.repo.RemoveTagFromPatent(m.ctx, num, tag.ID); err != nil {
-					m.logger.Error("tag remove failed", "project", m.ProjectID, "patent", num, "tag", tag.Name, "error", err)
-				} else {
-					m.logActivity(ActivityTagRemove, num, tag.Name)
+			desired[tag.ID] = m.selectedPatentTags[tag.ID]
+		}
+		if m.applyChange(changes.ApplyTags(m.ProjectID, targets, desired)) {
+			for _, num := range targets {
+				for _, tag := range m.availableTags {
+					if desired[tag.ID] {
+						m.logActivity(ActivityTagApply, num, tag.Name)
+					} else {
+						m.logActivity(ActivityTagRemove, num, tag.Name)
+					}
 				}
 			}
 		}
-		count++
 	}
-	m.logger.Info("bulk tag apply completed", "project", m.ProjectID, "patents", count)
-	if count > 1 {
-		m.message = fmt.Sprintf("tags updated for %d patents", count)
+	if len(patentNumbers) > 1 {
+		m.message = fmt.Sprintf("tags updated for %d patents", len(patentNumbers))
 	}
 	m.activeSelection = selectionContext{}
 	m.clearVisualMode()
 	if len(m.backStack) > 0 {
 		m.backStack[len(m.backStack)-1].visualMode = false
 	}
-	m = m.markDirty(dirtyDetail | dirtyProjectTags)
+	// Refresh the views behind the overlay even when only livePatent was
+	// selected — its space-toggle changes flushed during the overlay turn.
+	m.markDirty(dirtyDetail | dirtyProjectTags)
 	return m.goBack()
 }
 
@@ -286,23 +289,13 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if liveNum == "" {
 				liveNum = m.current.Number
 			}
-			if m.selectedPatentTags[tag.ID] {
-				if err := m.repo.RemoveTagFromPatent(m.ctx, liveNum, tag.ID); err != nil {
-					m.logger.Error("tag remove failed", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name, "error", err)
-					m.err = err.Error()
-				} else {
-					m.logger.Info("tag removed", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name)
-					m.logActivity(ActivityTagRemove, liveNum, tag.Name)
-					m.selectedPatentTags[tag.ID] = false
-				}
-			} else {
-				if err := m.repo.ApplyTagToPatent(m.ctx, liveNum, tag.ID); err != nil {
-					m.logger.Error("tag apply failed", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name, "error", err)
-					m.err = err.Error()
-				} else {
-					m.logger.Info("tag applied", "project", m.ProjectID, "patent", liveNum, "tag", tag.Name)
+			want := !m.selectedPatentTags[tag.ID]
+			if m.applyChange(changes.ApplyTags(m.ProjectID, []string{liveNum}, map[int64]bool{tag.ID: want})) {
+				m.selectedPatentTags[tag.ID] = want
+				if want {
 					m.logActivity(ActivityTagApply, liveNum, tag.Name)
-					m.selectedPatentTags[tag.ID] = true
+				} else {
+					m.logActivity(ActivityTagRemove, liveNum, tag.Name)
 				}
 			}
 		}
@@ -310,6 +303,8 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.applyTagsToSelection()
 	case keyEsc, keyBack:
 		m.activeSelection = selectionContext{}
+		// Refresh views behind the overlay: space-toggles mutated the DB.
+		m.markDirty(dirtyDetail | dirtyProjectTags)
 		return m.goBack()
 	}
 	return m, nil

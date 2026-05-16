@@ -12,37 +12,26 @@ import (
 
 func (m *Model) viewDetail() string {
 	p := m.current
-	style := lipgloss.NewStyle().
-		Width(m.width)
+	style := lipgloss.NewStyle().Width(m.width)
 	var b strings.Builder
 	b.WriteString(style.Bold(true).Render(p.Number) + "\n")
 	b.WriteString(style.Render(p.Title) + "\n\n")
-	fields := m.detailFields()
+	b.WriteString(m.renderDetailFields(m.detailFields(), m.width, true))
+	return b.String()
+}
 
-	// Calculate max label width per group for alignment
-	groupWidths := []int{}
-	currentMax := 0
-	for _, f := range fields {
-		if f.separator {
-			groupWidths = append(groupWidths, currentMax)
-			currentMax = 0
-		} else {
-			w := lipgloss.Width(m.text.T(f.label) + ":")
-			if w > currentMax {
-				currentMax = w
-			}
-		}
-	}
-	groupWidths = append(groupWidths, currentMax)
-
+// renderDetailFields renders a detail field list at the given width.
+// withJump includes jump-mode prefixes (used in full-screen viewDetail; omitted in popup).
+func (m *Model) renderDetailFields(fields []detailField, width int, withJump bool) string {
+	groupWidths := m.detailGroupWidths(fields)
 	selected := clamp(m.detailSelected, 0, max(0, len(fields)-1))
+	style := lipgloss.NewStyle().Width(width)
+	sep := lipgloss.NewStyle().Width(width).Foreground(lipgloss.Color(ColorDim)).Render(strings.Repeat(sepRuleChar, width))
 	groupIndex := 0
-	ruleStyle := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorDim))
-	separator := ruleStyle.Render(strings.Repeat(sepRuleChar, m.width))
-
+	var b strings.Builder
 	for i, field := range fields {
 		if field.separator {
-			b.WriteString(separator + "\n")
+			b.WriteString(sep + "\n")
 			groupIndex++
 			continue
 		}
@@ -54,12 +43,31 @@ func (m *Model) viewDetail() string {
 		if field.displayValue != "" {
 			value = field.displayValue
 		}
-		lead := prefix + m.jumpPrefix(i)
+		lead := prefix
+		if withJump {
+			lead += m.jumpPrefix(i)
+		}
 		b.WriteString(style.Render(lead+m.detailRow(field.label, value, groupWidths[groupIndex], lipgloss.Width(lead))) + "\n")
 	}
-	b.WriteString(separator + "\n")
-
+	b.WriteString(sep + "\n")
 	return b.String()
+}
+
+func (m *Model) detailGroupWidths(fields []detailField) []int {
+	var widths []int
+	currentMax := 0
+	for _, f := range fields {
+		if f.separator {
+			widths = append(widths, currentMax)
+			currentMax = 0
+		} else {
+			w := lipgloss.Width(m.text.T(f.label) + ":")
+			if w > currentMax {
+				currentMax = w
+			}
+		}
+	}
+	return append(widths, currentMax)
 }
 
 type detailField struct {

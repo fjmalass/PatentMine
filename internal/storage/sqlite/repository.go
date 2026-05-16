@@ -613,10 +613,12 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 		status = domain.ReviewStateStored
 	}
 	now := nowString()
-	if _, err := tx.ExecContext(ctx, `insert into project_patents (project_id, patent_number, review_state, created_at)
+	upsertPatentSQL := fmt.Sprintf(`insert into project_patents (project_id, patent_number, review_state, created_at)
 		values (?, ?, ?, ?)
 		on conflict(project_id, patent_number) do update set
-			review_state = case when excluded.review_state = 'stored' then 'stored' else project_patents.review_state end`,
+			review_state = case when excluded.review_state = '%s' then '%s' else project_patents.review_state end`,
+		domain.ReviewStateStored, domain.ReviewStateStored)
+	if _, err := tx.ExecContext(ctx, upsertPatentSQL,
 		projectID, bundle.Patent.Number, status, now); err != nil {
 		r.logger.Error("repository.project_patent_association failed", "project", projectID, "patent", bundle.Patent.Number, "error", err)
 		return err
@@ -640,7 +642,7 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, b
 		edge.ProjectID = projectID
 		var exists int
 		// Check if either parent or child is stored as a citation or patent in this project
-		if err := tx.QueryRowContext(ctx, `select count(*) from project_patents where project_id = ? and patent_number in (?, ?) and review_state != 'ignored'`,
+		if err := tx.QueryRowContext(ctx, "select count(*) from project_patents where project_id = ? and patent_number in (?, ?) and review_state != '"+domain.ReviewStateIgnored+"'",
 			projectID, edge.ParentNumber, edge.ChildNumber).Scan(&exists); err != nil || exists == 0 {
 			continue // neither side known yet — skip
 		}
@@ -922,19 +924,16 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	var reviewStateClause string
 	switch strings.ToLower(opts.ReviewStateFilter) {
 	case domain.ReviewStateIgnored:
-		// deleted project patents + citation references marked ignored
-		reviewStateClause = `(pp.review_state = 'ignored' or p.number in (select target_patent from citation_edges where project_id = ? and review_state = 'ignored'))`
+		reviewStateClause = "(pp.review_state = '" + domain.ReviewStateIgnored + "' or p.number in (select target_patent from citation_edges where project_id = ? and review_state = '" + domain.ReviewStateIgnored + "'))"
 		args = append(args, projectID)
 	case domain.ReviewStateUnderReview:
-		// citation references marked under review
-		reviewStateClause = `p.number in (select target_patent from citation_edges where project_id = ? and review_state = 'under_review')`
-		args = append(args, projectID)
+		reviewStateClause = "pp.review_state = '" + domain.ReviewStateUnderReview + "'"
 	case domain.ReviewStateCached:
-		reviewStateClause = `pp.review_state = 'cached'`
+		reviewStateClause = "pp.review_state = '" + domain.ReviewStateCached + "'"
 	case storage.ReviewStateFilterNone:
-		reviewStateClause = `1=1`
+		reviewStateClause = "1=1"
 	default: // "" or "stored"
-		reviewStateClause = fmt.Sprintf("pp.review_state = '%s'", domain.ReviewStateStored)
+		reviewStateClause = "pp.review_state = '" + domain.ReviewStateStored + "'"
 	}
 	query := `
 		select
@@ -1134,6 +1133,74 @@ func (r *Repository) UpdatePatentReviewState(ctx context.Context, projectID stri
 	r.logger.Info("repository.update_patent_review_state", "project", projectID, "patent", number, "review_state", reviewState)
 	_, err := r.db.ExecContext(ctx, `update project_patents set review_state = ?, review_state_changed_at = ? where project_id = ? and patent_number = ?`, reviewState, nowString(), projectID, number)
 	return err
+}
+
+func (r *Repository) UpdateCitationReviewStates(ctx context.Context, projectID string, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
+	if len(updates) == 0 {
+		return nil, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	now := nowString()
+	prior := make([]storage.CitationStateUpdate, 0, len(updates))
+	for _, u := range updates {
+		var prev string
+		err := tx.QueryRowContext(ctx,
+			`select review_state from citation_edges where project_id = ? and source_patent = ? and target_patent = ? and relation_type = ?`,
+			projectID, u.Edge.SourcePatent, u.Edge.TargetPatent, u.Edge.RelationType).Scan(&prev)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
+		prior = append(prior, storage.CitationStateUpdate{Edge: u.Edge, ReviewState: prev})
+		if _, err := tx.ExecContext(ctx,
+			`update citation_edges set review_state = ?, labeled_at = ? where project_id = ? and source_patent = ? and target_patent = ? and relation_type = ?`,
+			u.ReviewState, now, projectID, u.Edge.SourcePatent, u.Edge.TargetPatent, u.Edge.RelationType); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	r.logger.Info("repository.update_citation_review_states", "project", projectID, "count", len(updates))
+	return prior, nil
+}
+
+func (r *Repository) UpdatePatentReviewStates(ctx context.Context, projectID string, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
+	if len(updates) == 0 {
+		return nil, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	now := nowString()
+	prior := make([]storage.PatentStateUpdate, 0, len(updates))
+	for _, u := range updates {
+		var prev string
+		err := tx.QueryRowContext(ctx,
+			`select review_state from project_patents where project_id = ? and patent_number = ?`,
+			projectID, u.Number).Scan(&prev)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
+		prior = append(prior, storage.PatentStateUpdate{Number: u.Number, ReviewState: prev})
+		if _, err := tx.ExecContext(ctx,
+			`update project_patents set review_state = ?, review_state_changed_at = ? where project_id = ? and patent_number = ?`,
+			u.ReviewState, now, projectID, u.Number); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	r.logger.Info("repository.update_patent_review_states", "project", projectID, "count", len(updates))
+	return prior, nil
 }
 
 func (r *Repository) UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error {

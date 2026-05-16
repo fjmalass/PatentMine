@@ -30,6 +30,18 @@ type ListCitationsOptions struct {
 	SortOrder         string
 }
 
+// CitationStateUpdate pairs a citation edge with a target review state.
+type CitationStateUpdate struct {
+	Edge        domain.CitationEdge
+	ReviewState string
+}
+
+// PatentStateUpdate pairs a patent number with a target review state.
+type PatentStateUpdate struct {
+	Number      string
+	ReviewState string
+}
+
 type Repository interface {
 	Close() error
 	Setup(ctx context.Context) error
@@ -51,6 +63,12 @@ type Repository interface {
 	ListCitationsByReviewState(ctx context.Context, projectID string, reviewState string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
 	UpdateCitationReviewState(ctx context.Context, projectID string, edge domain.CitationEdge, reviewState string) error
 	UpdatePatentReviewState(ctx context.Context, projectID string, number string, reviewState string) error
+	// UpdateCitationReviewStates applies all updates in one transaction and
+	// returns the prior states (same edges) so the operation can be reversed.
+	UpdateCitationReviewStates(ctx context.Context, projectID string, updates []CitationStateUpdate) ([]CitationStateUpdate, error)
+	// UpdatePatentReviewStates applies all updates in one transaction and
+	// returns the prior states (same patents) so the operation can be reversed.
+	UpdatePatentReviewStates(ctx context.Context, projectID string, updates []PatentStateUpdate) ([]PatentStateUpdate, error)
 	UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error
 	UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error
 	UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error

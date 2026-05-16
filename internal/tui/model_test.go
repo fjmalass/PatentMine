@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
+	"patentmine/internal/changes"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
 )
@@ -396,6 +397,7 @@ func TestPatentDateCommandClosesPopupAndMarksExpirationManual(t *testing.T) {
 	model := &Model{
 		ctx:          t.Context(),
 		repo:         repo,
+		history:      changes.NewHistory(repo),
 		text:         EnglishText(),
 		mode:         viewDateEdit,
 		ProjectID:    "default",
@@ -405,7 +407,9 @@ func TestPatentDateCommandClosesPopupAndMarksExpirationManual(t *testing.T) {
 	}
 
 	updated, _ := model.patentDateCommand([]string{domain.LifecycleTypeExp, "2037-02-26"})
-	got := updated.(*Model)
+	// patentDateCommand defers the on-screen refresh to flushDirty, which
+	// Update() runs at the end of every turn.
+	got := updated.(*Model).flushDirty()
 	if repo.updatedType != domain.LifecycleTypeExp || repo.updatedValue != "2037-02-26" {
 		t.Fatalf("expected expiration update, got type=%q value=%q", repo.updatedType, repo.updatedValue)
 	}
@@ -1276,14 +1280,14 @@ func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
 	}
 	updated, _ := model.Update(teaKey(keyEnter))
 	got := updated.(*Model)
-	if got.mode != viewPreview {
-		t.Fatalf("expected mode %q, got %q", viewPreview, got.mode)
+	if got.mode != viewPopupPatentDetail {
+		t.Fatalf("expected mode %q, got %q", viewPopupPatentDetail, got.mode)
 	}
 	if got.pendingBundle.Patent.Number != "US1000001B2" {
 		t.Fatalf("expected pending preview patent, got %+v", got.pendingBundle.Patent)
 	}
-	if view := got.View(); !strings.Contains(view, "Reference preview") || !strings.Contains(view, "US1000001B2") {
-		t.Fatalf("expected preview overlay content, got %q", view)
+	if view := got.View(); !strings.Contains(view, "US1000001B2") {
+		t.Fatalf("expected patent detail overlay content, got %q", view)
 	}
 }
 
@@ -1651,6 +1655,20 @@ func (stubRepo) UpdateCitationReviewState(context.Context, string, domain.Citati
 	return nil
 }
 func (stubRepo) UpdatePatentReviewState(context.Context, string, string, string) error { return nil }
+func (stubRepo) UpdateCitationReviewStates(_ context.Context, _ string, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
+	prior := make([]storage.CitationStateUpdate, len(updates))
+	for i, u := range updates {
+		prior[i] = storage.CitationStateUpdate{Edge: u.Edge}
+	}
+	return prior, nil
+}
+func (stubRepo) UpdatePatentReviewStates(_ context.Context, _ string, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
+	prior := make([]storage.PatentStateUpdate, len(updates))
+	for i, u := range updates {
+		prior[i] = storage.PatentStateUpdate{Number: u.Number}
+	}
+	return prior, nil
+}
 func (stubRepo) UpdatePatentDate(context.Context, string, string, string) error   { return nil }
 func (stubRepo) UpdatePatentNumber(context.Context, string, string, string) error { return nil }
 func (stubRepo) UpdateClassificationDescription(context.Context, string, string, string, string) error {

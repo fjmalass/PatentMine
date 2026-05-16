@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/ai"
+	"patentmine/internal/changes"
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/importer"
@@ -101,6 +102,8 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		m = m.navigateTo(viewNotes)
 	case commandDate:
 		return m.patentDateCommand(command.Args)
+	case commandRec:
+		return m.recCommand(command.Args)
 	case commandNum:
 		return m.patentNumberCommand(command.Args)
 	case commandSummarize:
@@ -252,18 +255,11 @@ func (m *Model) patentDateCommand(args []string) (tea.Model, tea.Cmd) {
 	// Normalize 2019/05/19 to 2019-05-19
 	value = strings.ReplaceAll(value, "/", "-")
 
-	if err := m.repo.UpdatePatentDate(m.ctx, m.current.Number, dateType, value); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.SetPatentDate(m.current.Number, dateType, value)) {
 		return m, nil
 	}
 	m.logActivity(ActivityPatentDate, m.current.Number, fmt.Sprintf("%s: %s", dateType, value))
 	m.message = fmt.Sprintf("updated %s date: %s", dateType, value)
-
-	// Refresh current patent from DB
-	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, m.current.Number); err == nil {
-		m.current = p
-		m.populateDetailCache()
-	}
 
 	if m.mode == viewDateEdit {
 		m.dateInput.Blur()

@@ -359,7 +359,7 @@ func EnglishText() TextCatalog {
 		TextHelpSplashIDS:               "Open IDS for the selected project.",
 		TextCitationsEmpty:              "No citation records.",
 		TextCitationsOpenFailed:         "patent is not stored and could not be imported",
-		TextPreviewTitle:                "Reference preview",
+		TextPreviewTitle:                "Patent preview",
 		TextPreviewStorePrompt:          "[%s] save · [%s] ignore · [%s] under review · [%s] skip · [%s] back",
 		TextPreviewNoAbstract:           "No abstract parsed.",
 		TextCitationCreated:             "created",

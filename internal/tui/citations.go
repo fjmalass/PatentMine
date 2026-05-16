@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"patentmine/internal/changes"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
 
@@ -105,8 +106,14 @@ func (m *Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
 }
 
 func (m *Model) refreshList() (tea.Model, tea.Cmd) {
+	return m.reloadPatents(), nil
+}
+
+// reloadPatents re-reads the patent list from the DB applying the current
+// filter and sort, re-anchoring the cursor to the same patent number.
+func (m *Model) reloadPatents() *Model {
 	if m.repo == nil {
-		return m, nil
+		return m
 	}
 	// Capture selected patent number before re-fetch so sort/filter changes
 	// re-resolve the cursor to the same patent rather than the same index.
@@ -121,7 +128,7 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 		if m.logger != nil {
 			m.logger.Error("list patents failed", "filter", m.listFilter.FreeFormSearch, "error", err)
 		}
-		return m, nil
+		return m
 	}
 	m.patents = patents
 
@@ -153,7 +160,7 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 	if len(patents) > 0 && m.current.Number == "" {
 		m.current = patents[0]
 	}
-	return m, nil
+	return m
 }
 
 func (m *Model) openSelectedCitation() (tea.Model, tea.Cmd) {
@@ -179,7 +186,11 @@ func (m *Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
 	m.pendingBundle = bundle
 	m.pendingCitation = edge
-	m.setMode(viewPreview)
+	m.current = bundle.Patent
+	m.current.ReviewState = edge.ReviewState // popup shows citation edge state, matching list column
+	m.detailSelected = 0
+	m.populateDetailCache()
+	m.setMode(viewPopupPatentDetail)
 	m.message = fmt.Sprintf(m.text.T(TextMessagePreviewLoaded), bundle.Patent.Number)
 	return m, nil
 }
@@ -205,7 +216,7 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 
 	if len(indices) > 1 {
 		m.bulkAction = bulkActionStore
-		m.bulkActionIndices = indices
+		m.bulkActionEdges = edgesAtIndices(edges, indices)
 		return m.navigateTo(viewBulkConfirm), nil
 	}
 
@@ -214,11 +225,10 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedCitation()
 	}
-	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, domain.ReviewStateStored); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored, false)) {
 		return m, nil
 	}
-	m.logActivity(ActivityCitationStore, edge.TargetPatent, "")
+	m.logActivityFrom(ActivityCitationStore, edge.TargetPatent, "", m.current.Number)
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
 	m.clearVisualMode()
 	return m, nil
@@ -270,8 +280,7 @@ func (m *Model) skipPendingPatent() (tea.Model, tea.Cmd) {
 func (m *Model) updatePendingCitation(reviewState string, messageKey TextKey) (tea.Model, tea.Cmd) {
 	number := m.pendingBundle.Patent.Number
 	if m.pendingCitation.TargetPatent != "" {
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, m.pendingCitation, reviewState); err != nil {
-			m.err = err.Error()
+		if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{m.pendingCitation}, reviewState, false)) {
 			return m, nil
 		}
 	}
@@ -293,7 +302,7 @@ func (m *Model) updateSelectedCitationReviewState(status string, messageKey Text
 	}
 
 	if len(indices) > 1 {
-		m.bulkActionIndices = indices
+		m.bulkActionEdges = edgesAtIndices(edges, indices)
 		if status == domain.ReviewStateIgnored {
 			m.bulkAction = bulkActionIgnore
 		} else {
@@ -303,11 +312,10 @@ func (m *Model) updateSelectedCitationReviewState(status string, messageKey Text
 	}
 
 	edge := edges[indices[0]]
-	if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, edge, status); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status, false)) {
 		return m, nil
 	}
-	m.logActivity(ActivityCitationReviewState, edge.TargetPatent, status)
+	m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, status, m.current.Number)
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
 
 	m.clearVisualMode()

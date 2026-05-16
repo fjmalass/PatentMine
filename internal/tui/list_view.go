@@ -490,7 +490,7 @@ func (m *Model) moveSelection(delta int) *Model {
 	}
 	current := m.activeSelectionIndex()
 	next := clamp(current+delta, 0, count-1)
-	if m.mode == viewDetail {
+	if m.mode == viewDetail || m.mode == viewPopupPatentDetail {
 		next = m.skipDetailSeparators(next, delta)
 	}
 	m.setActiveSelectionIndex(next)

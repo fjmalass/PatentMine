@@ -82,8 +82,8 @@ func (m *Model) browserURL(args []string) (string, error) {
 			return "", errors.New(m.text.T(TextMessageBrowserNoPatent))
 		}
 		return m.patentBrowserURL(edge.TargetPatent)
-	case m.mode == viewPreview:
-		return m.patentURL(m.pendingBundle.Patent)
+	case m.mode == viewPopupPatentDetail:
+		return m.patentURL(m.current)
 	case m.mode == viewList && len(m.patents) > 0:
 		return m.patentURL(m.patents[clamp(m.patentSelected, 0, len(m.patents)-1)])
 	default:

@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"patentmine/internal/changes"
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
@@ -33,7 +34,7 @@ const (
 	viewHelpPopup            viewMode = "help-popup"
 	viewKeymap               viewMode = "keymap"
 	viewKeymapPopup          viewMode = "keymap-popup"
-	viewPreview              viewMode = "preview"
+	viewPopupPatentDetail    viewMode = "popup-patent-detail"
 	viewReview               viewMode = "review"
 	viewConfirmDelete        viewMode = "confirm-delete"
 	viewClassificationDetail viewMode = "classification-detail"
@@ -136,7 +137,8 @@ type Model struct {
 	detailCache                  detailCache
 	jumpLabelsCache              []jumpLabel
 	bulkAction                   bulkActionType
-	bulkActionIndices            []int
+	bulkActionEdges              []domain.CitationEdge // citation bulk: stable edge IDs captured at selection
+	bulkActionNumbers            []string              // patent bulk: stable patent numbers captured at selection
 	sortColumnIndex              int
 	classificationQuery          string
 	classificationSearchActive   bool
@@ -152,6 +154,7 @@ type Model struct {
 	availableTags                []domain.Tag
 	selectedPatentTags           map[int64]bool
 	activeSelection              selectionContext
+	history                      *changes.History
 	dirty                        dirtyState
 	familyRefreshElapsed         string
 	overlayBackdropCache         string
@@ -281,6 +284,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 		projectTags:        []domain.TagWithCount{},
 		availableTags:      []domain.Tag{},
 		selectedPatentTags: make(map[int64]bool),
+		history:            changes.NewHistory(repo),
 	}
 
 	if model.importCfg.ImportSource == config.ImportSourceUSPTO && model.importCfg.USPTO.APIKey == "" {
@@ -327,7 +331,18 @@ func (m *Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update handles a message and then flushes any cache invalidations a change
+// applied during the turn — so screen and DB never drift, no matter which
+// branch the handler returned from.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.dispatch(msg)
+	if mm, ok := model.(*Model); ok {
+		return mm.flushDirty(), cmd
+	}
+	return model, cmd
+}
+
+func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.repo == nil {
 		return m, nil
 	}
@@ -608,7 +623,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case keyEnter, keyOpen:
 			m.countBuffer = EmptyCount
-			if m.mode == viewPreview {
+			if m.mode == viewPopupPatentDetail {
 				return m.storePendingPatent()
 			}
 			if m.mode == viewHelpPopup || m.mode == viewKeymapPopup {
@@ -640,7 +655,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewReview {
 				return m.openSelectedReviewCitation()
 			}
-			if m.mode == viewDetail {
+			if m.mode == viewDetail || m.mode == viewPopupPatentDetail {
 				return m.filterBySelectedDetail()
 			}
 			if m.mode == viewList && len(m.patents) > 0 {
@@ -655,7 +670,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					indices := m.selectedIndices()
 					if len(indices) > 1 {
 						m.bulkAction = bulkActionDelete
-						m.bulkActionIndices = indices
+						nums := make([]string, 0, len(indices))
+						for _, idx := range indices {
+							if idx >= 0 && idx < len(m.patents) {
+								nums = append(nums, m.patents[idx].Number)
+							}
+						}
+						m.bulkActionNumbers = nums
 						m.clearVisualMode()
 						return m.navigateTo(viewBulkConfirm), nil
 					}
@@ -782,14 +803,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.listSearchNext(), nil
 			}
 			if m.mode == viewBulkConfirm {
-				m.bulkActionIndices = nil
+				m.bulkActionEdges = nil
+				m.bulkActionNumbers = nil
 				return m.goBack()
 			}
 			if m.mode == viewConfirmDelete {
 				m.setMode(viewList)
 				return m, nil
 			}
-			if m.mode == viewPreview {
+			if m.mode == viewPopupPatentDetail {
 				return m.skipPendingPatent()
 			}
 			m = m.navigateTo(viewNotes)
@@ -811,6 +833,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.navigateTo(viewAI)
 		case keyWeb:
 			return m.openBrowser(nil)
+		case keyUndo:
+			return m.undoLastChange()
+		case keyRedo:
+			return m.redoChange()
 		case keyHelp:
 			if m.mode == viewHelpPopup || m.mode == viewKeymapPopup {
 				return m.goBack()
@@ -928,7 +954,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Pre-select current status in the list
 			currentStatus := ""
-			if m.mode == viewDetail {
+			if m.mode == viewDetail || m.mode == viewPopupPatentDetail {
 				currentStatus = m.current.ReviewState
 				m.detailSelected = m.indexJumpLabel(keyReviewState)
 			} else if m.mode == viewList && len(m.patents) > 0 {
@@ -968,7 +994,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
 			}
-			if m.mode == viewPreview {
+			if m.mode == viewPopupPatentDetail {
 				return m.storePendingPatent()
 			}
 			if m.isCitationView() {
@@ -978,7 +1004,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.storeSelectedReviewCitation()
 			}
 		case keyIgnore:
-			if m.mode == viewPreview {
+			if m.mode == viewPopupPatentDetail {
 				return m.updatePendingCitation(domain.ReviewStateIgnored, TextMessageIgnoredPatent)
 			}
 			if m.isCitationView() {
@@ -989,7 +1015,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.navigateTo(viewProjectInfo), nil
 		case keyUnreview:
-			if m.mode == viewPreview {
+			if m.mode == viewPopupPatentDetail {
 				return m.updatePendingCitation(domain.ReviewStateUnderReview, TextMessageUnderReviewPatent)
 			}
 			if m.isCitationView() {

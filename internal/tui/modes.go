@@ -24,7 +24,7 @@ var allViewModes = []viewMode{
 	viewHelpPopup,
 	viewKeymap,
 	viewKeymapPopup,
-	viewPreview,
+	viewPopupPatentDetail,
 	viewReview,
 	viewConfirmDelete,
 	viewClassificationDetail,
@@ -148,11 +148,11 @@ var modeSpecs = map[viewMode]modeSpec{
 		themeColor: ColorThemeHelp,
 		isOverlay:  true,
 	},
-	viewPreview: {
-		title:      "Reference Preview",
+	viewPopupPatentDetail: {
+		title:      "Patent Detail",
 		themeColor: ColorThemePreview,
 		isOverlay:  true,
-		subtitle:   func(m *Model) string { return m.pendingBundle.Patent.Title },
+		subtitle:   func(m *Model) string { return m.current.Title },
 	},
 	viewReview: {
 		title:      "Review Queue",

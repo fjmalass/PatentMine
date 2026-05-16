@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"patentmine/internal/changes"
 )
 
 func (m *Model) viewNoteEdit() string {
@@ -72,9 +73,7 @@ func (m *Model) handleViewNoteEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if body != "" {
 			stamp := time.Now().Format(dateFmtDateTime)
 			body = fmt.Sprintf("[%s]\n%s", stamp, body)
-			if _, err := m.repo.AddNote(m.ctx, m.ProjectID, m.current.Number, body); err != nil {
-				m.err = err.Error()
-			} else {
+			if m.applyChange(changes.AddNote(m.ProjectID, m.current.Number, body)) {
 				m.logActivity(ActivityNoteAdd, m.current.Number, "")
 				m.message = "note saved"
 			}
