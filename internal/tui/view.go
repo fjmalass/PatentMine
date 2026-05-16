@@ -67,7 +67,7 @@ func (m *Model) renderView() string {
 		}
 	} else if m.listSearchActive {
 		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorWarning)).Italic(true)
-		b.WriteString(lineStyle.Render(searchStyle.Render("search: /"+m.listSearchQuery+"█")) + "\n")
+		b.WriteString(lineStyle.Render(searchStyle.Render(" search: /"+m.listSearchQuery+"█")) + "\n")
 	} else if m.jumpMode {
 		prefix := ""
 		if m.visualMode {
@@ -240,5 +240,6 @@ func (m *Model) isPopupSearchMode() bool {
 		m.mode == viewProjectEvents ||
 		m.mode == viewProjectInvoices ||
 		m.mode == viewProjectIDS ||
-		m.mode == viewFamily
+		m.mode == viewFamily ||
+		m.isCitationView()
 }

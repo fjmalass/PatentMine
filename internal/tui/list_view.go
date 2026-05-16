@@ -220,53 +220,7 @@ func (m *Model) viewList() string {
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", idxWidth+2)
 
-	for i, c := range cols {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
-
-		sortIndicator := ""
-		if m.sortColumn == c.id {
-			if m.sortOrder == domain.SortOrderDesc {
-				sortIndicator = " ▾"
-			} else {
-				sortIndicator = " ▴"
-			}
-		}
-		avail := c.width - lipgloss.Width(sortIndicator)
-		if avail < 1 {
-			avail = 1
-		}
-		displayLabel := c.label
-		if lipgloss.Width(c.label) > avail {
-			displayLabel = m.truncate(c.label, avail)
-		}
-		label := displayLabel + sortIndicator
-
-		if i == m.sortColumnIndex {
-			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
-		}
-
-		jumpColLabel := ""
-		if m.jumpMode {
-			jumpColLabel = c.jumpLabel
-		}
-		jumpColPrefix := ""
-		if jumpColLabel != "" {
-			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
-		}
-
-		colWidth := c.width
-		if jumpColLabel != "" {
-			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
-		}
-
-		padding := listColPad
-		if i == len(cols)-1 {
-			padding = 0
-		}
-		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
-	}
-
-	b.WriteString(m.styleLine(header) + "\n")
+	b.WriteString(m.styleLine(m.renderTableHeader(header, cols)) + "\n")
 
 	for i := window.Start; i < window.End; i++ {
 		p := m.patents[i]
@@ -356,7 +310,11 @@ func (m *Model) viewList() string {
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			row += m.renderCell(val, colWidth, padding, m.listFilter.FreeFormSearch)
+			highlightQuery := m.listFilter.FreeFormSearch
+			if m.listSearchActive && m.listSearchQuery != "" {
+				highlightQuery = m.listSearchQuery
+			}
+			row += m.renderCell(val, colWidth, padding, highlightQuery)
 		}
 
 		// Pad to full width inside the style so BG covers trailing spaces too.
@@ -366,6 +324,59 @@ func (m *Model) viewList() string {
 		b.WriteString(rowStyle.Render(row) + "\n")
 	}
 	return b.String()
+}
+
+// renderTableHeader builds a styled header row from prefix + columns.
+// Handles sort indicators, active-sort highlighting, and jump-mode prefixes.
+// Shared by viewList, viewCitations, and viewReviewQueue.
+func (m *Model) renderTableHeader(prefix string, cols []listColumn) string {
+	header := prefix
+	for i, c := range cols {
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
+
+		sortIndicator := ""
+		if m.sortColumn == c.id {
+			if m.sortOrder == domain.SortOrderDesc {
+				sortIndicator = " ▾"
+			} else {
+				sortIndicator = " ▴"
+			}
+		}
+		avail := c.width - lipgloss.Width(sortIndicator)
+		if avail < 1 {
+			avail = 1
+		}
+		displayLabel := c.label
+		if lipgloss.Width(c.label) > avail {
+			displayLabel = m.truncate(c.label, avail)
+		}
+		label := displayLabel + sortIndicator
+
+		if i == m.sortColumnIndex {
+			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
+		}
+
+		jumpColLabel := ""
+		if m.jumpMode {
+			jumpColLabel = c.jumpLabel
+		}
+		jumpColPrefix := ""
+		if jumpColLabel != "" {
+			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
+		}
+
+		colWidth := c.width
+		if jumpColLabel != "" {
+			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
+		}
+
+		padding := listColPad
+		if i == len(cols)-1 {
+			padding = 0
+		}
+		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
+	}
+	return header
 }
 
 // renderCell truncates val to cellWidth, applies optional search highlight

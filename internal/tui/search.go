@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"patentmine/internal/domain"
 )
 
 // searchable is the generic interface for any navigable list that supports
@@ -101,6 +103,8 @@ func (m *Model) currentPopupSearchable() searchable {
 		return tagSelectSearchable{m}
 	case viewFamily:
 		return familySearchable{m}
+	case viewCites, viewCitedBy:
+		return citationSearchable{m}
 	}
 	return nil
 }
@@ -213,6 +217,48 @@ func (s familySearchable) MatchLabel(idx int) string {
 		return ""
 	}
 	return nodes[idx].number
+}
+
+type citationSearchable struct{ m *Model }
+
+func (s citationSearchable) filteredEdges() []domain.CitationEdge {
+	edges, _ := s.m.currentCitationEdges()
+	if s.m.citesTextFilter != "" {
+		edges = s.m.filterCitationEdges(edges, s.m.citesTextFilter)
+	}
+	return edges
+}
+func (s citationSearchable) ItemCount() int { return len(s.filteredEdges()) }
+func (s citationSearchable) GetSelected() int { return s.m.citationLocalIdx }
+func (s citationSearchable) SetSelected(idx int) {
+	edges := s.filteredEdges()
+	s.m.citationLocalIdx = idx
+	if idx >= 0 && idx < len(edges) {
+		s.m.citationKey = edges[idx].TargetPatent
+	}
+}
+func (s citationSearchable) MatchLabel(idx int) string {
+	edges := s.filteredEdges()
+	if idx < 0 || idx >= len(edges) {
+		return ""
+	}
+	return edges[idx].TargetPatent
+}
+func (s citationSearchable) Match(idx int, query string, ignoreCase bool) bool {
+	edges := s.filteredEdges()
+	if idx < 0 || idx >= len(edges) {
+		return false
+	}
+	e := edges[idx]
+	if containsMatch(e.TargetPatent, query, ignoreCase) || containsMatch(e.TargetTitle, query, ignoreCase) {
+		return true
+	}
+	for _, inv := range e.TargetInventors {
+		if containsMatch(inv, query, ignoreCase) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsMatch(s, query string, ignoreCase bool) bool {

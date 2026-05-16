@@ -31,8 +31,9 @@ func (m *Model) snapshot() navSnapshot {
 		projectInvoicesSelected:      m.projectInvoicesSelected,
 		projectIDSSelected:           m.projectIDSSelected,
 		detailSelected:               m.detailSelected,
-		citesSelected:                m.citesSelected,
-		citedBySelected:              m.citedBySelected,
+		citationLocalIdx:             m.citationLocalIdx,
+		citationKey:                  m.citationKey,
+		citesTextFilter:              m.citesTextFilter,
 		reviewSelected:               m.reviewSelected,
 		classificationSelected:       m.classificationSelected,
 		inventorSelected:             m.inventorSelected,
@@ -91,8 +92,9 @@ func (m *Model) restore(snapshot navSnapshot) *Model {
 	m.projectInvoicesSelected = snapshot.projectInvoicesSelected
 	m.projectIDSSelected = snapshot.projectIDSSelected
 	m.detailSelected = snapshot.detailSelected
-	m.citesSelected = snapshot.citesSelected
-	m.citedBySelected = snapshot.citedBySelected
+	m.citationLocalIdx = snapshot.citationLocalIdx
+	m.citationKey = snapshot.citationKey
+	m.citesTextFilter = snapshot.citesTextFilter
 	m.reviewSelected = snapshot.reviewSelected
 	m.classificationSelected = snapshot.classificationSelected
 	m.inventorSelected = snapshot.inventorSelected
@@ -140,6 +142,10 @@ func (m *Model) goBack() (tea.Model, tea.Cmd) {
 	if m.mode == viewList && m.listSearchActive {
 		m.listSearchActive = false
 		m.listSearchQuery = ""
+		return m, nil
+	}
+	if m.isCitationView() && m.citesTextFilter != "" {
+		m.citesTextFilter = ""
 		return m, nil
 	}
 	if len(m.backStack) > 0 {

@@ -14,15 +14,15 @@ import (
 // PatentFilter holds all filters applied to the patent list view.
 // The zero value is not valid — use defaultPatentFilter() for the startup default.
 type PatentFilter struct {
-	FreeFormSearch string   // free-text / inventor search
-	ReviewState string   // domain.ReviewStateStored (default), reviewStateFilterNone (all), etc.
-	Classification string   // derived display label, e.g. "H04L && G06F"
-	Classifications []string // individual CPC codes
+	FreeFormSearch   string   // free-text / inventor search
+	ReviewState      string   // domain.ReviewStateStored (default), reviewStateFilterNone (all), etc.
+	Classification   string   // derived display label, e.g. "H04L && G06F"
+	Classifications  []string // individual CPC codes
 	ClassificationOp string   // domain.FilterOpAnd | domain.FilterOpOr
-	Tag         string
-	Country     string
-	Title       string   // display label, e.g. "foo && bar"
-	TitleTerms  []string // individual AND terms, smart-case partial match
+	Tag              string
+	Country          string
+	Title            string   // display label, e.g. "foo && bar"
+	TitleTerms       []string // individual AND terms, smart-case partial match
 }
 
 // defaultPatentFilter returns the startup filter (stored patents only).
@@ -44,7 +44,7 @@ func (f *PatentFilter) activeFilterLabels() []string {
 		labels = append(labels, "state:"+f.ReviewState)
 	}
 	if f.FreeFormSearch != EmptyFilter {
-		labels = append(labels, "search:"+f.FreeFormSearch)
+		labels = append(labels, TextValueSearchLabel+f.FreeFormSearch)
 	}
 	if f.Classification != EmptyFilter {
 		labels = append(labels, "classification:"+f.Classification)

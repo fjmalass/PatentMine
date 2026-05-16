@@ -115,17 +115,39 @@ func (m *Model) viewCitations(relation string) string {
 	if err != nil {
 		return m.renderPopup(citationPopupTitle(), err.Error()+"\n")
 	}
+	// Apply committed text filter (set via Enter in search mode, cleared via Esc).
+	if m.citesTextFilter != "" {
+		edges = m.filterCitationEdges(edges, m.citesTextFilter)
+	}
 	if len(edges) == 0 {
 		return m.renderPopup(citationPopupTitle(), m.text.T(TextCitationsEmpty)+"\n")
 	}
-	selected := clamp(m.citationSelection(), 0, len(edges)-1)
-	m.setCitationSelection(selected)
+	// Re-resolve cursor from patent key so sort/filter changes don't shift
+	// the cursor to a different patent.
+	if m.citationKey != "" {
+		for i, e := range edges {
+			if e.TargetPatent == m.citationKey {
+				m.citationLocalIdx = i
+				break
+			}
+		}
+	}
+	selected := clamp(m.citationLocalIdx, 0, len(edges)-1)
+	m.citationLocalIdx = selected
+	m.citationKey = edges[selected].TargetPatent
 	window := pageWindow(selected, len(edges), m.overlayPageSize())
 
 	tagsByPatent, _ := m.repo.ListPatentTagsForProject(m.ctx, m.ProjectID)
 
+	status := pageStatus(m.text.T(TextValuePageStatus), window)
+	if m.citesTextFilter != "" {
+		status += "  · search:" + m.citesTextFilter
+	} else if m.popupSearchActive && m.popupSearchQuery != "" {
+		status += "  · /" + m.popupSearchQuery
+	}
+
 	var body strings.Builder
-	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	body.WriteString(overlayBase().Foreground(lipgloss.Color(ColorSubtle)).Render(status))
 	body.WriteString("\n\n")
 
 	jumpPrefixWidth := 0
@@ -134,60 +156,13 @@ func (m *Model) viewCitations(relation string) string {
 	}
 	cols := m.citationColumns(m.overlayContentWidth() - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
-	header := m.pad(rowNoCursor, listRowPrefixWidth) +
-		m.pad("", jumpPrefixWidth) +
-		m.pad("#", overlayIndexWidth)
-
 	if m.sortColumnIndex >= len(cols) {
 		m.sortColumnIndex = len(cols) - 1
 	}
-	for i, c := range cols {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
-
-		sortIndicator := ""
-		if m.sortColumn == c.id {
-			if m.sortOrder == domain.SortOrderDesc {
-				sortIndicator = " ▾"
-			} else {
-				sortIndicator = " ▴"
-			}
-		}
-		avail := c.width - lipgloss.Width(sortIndicator)
-		if avail < 1 {
-			avail = 1
-		}
-		displayLabel := c.label
-		if lipgloss.Width(c.label) > avail {
-			displayLabel = m.truncate(c.label, avail)
-		}
-		label := displayLabel + sortIndicator
-
-		if i == m.sortColumnIndex {
-			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
-		}
-
-		jumpColLabel := ""
-		if m.jumpMode {
-			jumpColLabel = c.jumpLabel
-		}
-		jumpColPrefix := ""
-		if jumpColLabel != "" {
-			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
-		}
-
-		colWidth := c.width
-		if jumpColLabel != "" {
-			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
-		}
-
-		padding := listColPad
-		if i == len(cols)-1 {
-			padding = 0
-		}
-		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
-	}
-
-	body.WriteString(header + "\n")
+	headerPrefix := m.pad(rowNoCursor, listRowPrefixWidth) +
+		m.pad("", jumpPrefixWidth) +
+		m.pad("#", overlayIndexWidth)
+	body.WriteString(m.renderTableHeader(headerPrefix, cols) + "\n")
 
 	for i := window.Start; i < window.End; i++ {
 		prefix := rowNoCursor
@@ -270,60 +245,13 @@ func (m *Model) viewReviewQueue() string {
 	}
 	cols := m.reviewOverlayColumns(m.overlayContentWidth() - (listRowPrefixWidth + jumpPrefixWidth + overlayIndexWidth))
 
-	header := m.pad(rowNoCursor, listRowPrefixWidth) +
-		m.pad("", jumpPrefixWidth) +
-		m.pad("#", overlayIndexWidth)
-
 	if m.sortColumnIndex >= len(cols) {
 		m.sortColumnIndex = len(cols) - 1
 	}
-	for i, c := range cols {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Underline(true)
-
-		sortIndicator := ""
-		if m.sortColumn == c.id {
-			if m.sortOrder == domain.SortOrderDesc {
-				sortIndicator = " ▾"
-			} else {
-				sortIndicator = " ▴"
-			}
-		}
-		avail := c.width - lipgloss.Width(sortIndicator)
-		if avail < 1 {
-			avail = 1
-		}
-		displayLabel := c.label
-		if lipgloss.Width(c.label) > avail {
-			displayLabel = m.truncate(c.label, avail)
-		}
-		label := displayLabel + sortIndicator
-
-		if i == m.sortColumnIndex {
-			style = style.Foreground(lipgloss.Color(ColorYellow)).Underline(true).Bold(true)
-		}
-
-		jumpColLabel := ""
-		if m.jumpMode {
-			jumpColLabel = c.jumpLabel
-		}
-		jumpColPrefix := ""
-		if jumpColLabel != "" {
-			jumpColPrefix = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ColorYellow)).Render(jumpColLabel) + " "
-		}
-
-		colWidth := c.width
-		if jumpColLabel != "" {
-			colWidth = max(colWidth, lipgloss.Width(jumpColLabel+" "+label))
-		}
-
-		padding := listColPad
-		if i == len(cols)-1 {
-			padding = 0
-		}
-		header += m.pad(jumpColPrefix+style.Render(label), colWidth+padding)
-	}
-
-	body.WriteString(header + "\n")
+	headerPrefix := m.pad(rowNoCursor, listRowPrefixWidth) +
+		m.pad("", jumpPrefixWidth) +
+		m.pad("#", overlayIndexWidth)
+	body.WriteString(m.renderTableHeader(headerPrefix, cols) + "\n")
 
 	for i := window.Start; i < window.End; i++ {
 		prefix := rowNoCursor
@@ -343,13 +271,14 @@ func (m *Model) viewReviewQueue() string {
 		}
 
 		rowValues := map[string]string{
-			domain.SortColumnNumber:    edge.TargetPatent,
-			domain.SortColumnTitle:     edge.TargetTitle,
-			domain.SortColumnInventor:  formatInventorsShort(edge.TargetInventors),
+			domain.SortColumnNumber:     edge.TargetPatent,
+			domain.SortColumnTitle:      edge.TargetTitle,
+			domain.SortColumnInventor:   formatInventorsShort(edge.TargetInventors),
 			domain.SortColumnExpiration: expDate,
-			citationColSource:          edge.SourcePatent,
+			citationColSource:           edge.SourcePatent,
 		}
 
+		rowStyle := m.overlayRowStyle(i, selected)
 		row := m.pad(prefix, listRowPrefixWidth) +
 			m.pad(jumpPrefix, jumpPrefixWidth) +
 			m.pad(rowIndexLabel(i), overlayIndexWidth)
@@ -359,10 +288,14 @@ func (m *Model) viewReviewQueue() string {
 			if j == len(cols)-1 {
 				padding = 0
 			}
-			row += m.pad(m.truncate(rowValues[c.id], c.width), c.width+padding)
+			row += m.renderCell(rowValues[c.id], c.width, padding, m.popupSearchQuery)
 		}
 
-		body.WriteString(m.styleRowOverlay(i, selected, row, m.overlayContentWidth()) + "\n")
+		w := m.overlayContentWidth()
+		if rw := lipgloss.Width(row); rw < w {
+			row += strings.Repeat(" ", w-rw)
+		}
+		body.WriteString(rowStyle.Render(row) + "\n")
 	}
 	return m.renderPopup("Review Queue", body.String())
 }

@@ -233,8 +233,6 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	currentNumber := m.current.Number
 	text := m.text
 	currentMode := m.mode
-	citedBySelected := m.citedBySelected
-	citesSelected := m.citesSelected
 	logger := m.logger
 	currentStatus := m.current.ReviewState
 
@@ -285,15 +283,14 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			switch target {
 			case refreshTargetCitedBy, domain.RelationCitedBy:
 				msg.mode = viewCitedBy
-				msg.citedBySelected = 0
+				msg.citationLocalIdx = 0
 				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitedBy), len(afterCitedBy), len(beforeCitedBy)) + familySuffix
 			case refreshTargetCitations, domain.RelationCites:
 				msg.mode = viewCites
-				msg.citesSelected = 0
+				msg.citationLocalIdx = 0
 				msg.message = fmt.Sprintf(text.T(TextMessageRefreshCitations), len(afterCites), len(beforeCites)) + familySuffix
 			default:
-				msg.citedBySelected = clamp(citedBySelected, 0, max(0, len(afterCitedBy)-1))
-				msg.citesSelected = clamp(citesSelected, 0, max(0, len(afterCites)-1))
+				msg.citationLocalIdx = 0
 				msg.message = fmt.Sprintf(text.T(TextMessageRefreshAll), len(afterCites), len(beforeCites), len(afterCitedBy), len(beforeCitedBy)) + familySuffix
 			}
 
@@ -400,7 +397,7 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 		m.err = "no citations visible"
 		return m, nil
 	}
-	sel := clamp(m.citationSelection(), 0, len(edges)-1)
+	sel := clamp(m.citationLocalIdx, 0, len(edges)-1)
 	edge := edges[sel]
 
 	ctx, cancel := context.WithCancel(m.ctx)

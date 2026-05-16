@@ -23,7 +23,7 @@ func (m *Model) isInSelection(idx int) bool {
 func (m *Model) activeSelectionIndex() int {
 	switch {
 	case m.isCitationView():
-		return m.citationSelection()
+		return m.citationLocalIdx
 	case m.mode == viewReview:
 		return m.reviewSelected
 	case m.mode == viewList:
@@ -65,7 +65,10 @@ func (m *Model) setActiveSelectionIndex(val int) {
 	val = clamp(val, 0, count-1)
 	switch {
 	case m.isCitationView():
-		m.setCitationSelection(val)
+		m.citationLocalIdx = val
+		if edges, err := m.currentCitationEdges(); err == nil && val >= 0 && val < len(edges) {
+			m.citationKey = edges[val].TargetPatent
+		}
 	case m.mode == viewReview:
 		m.reviewSelected = val
 	case m.mode == viewList:

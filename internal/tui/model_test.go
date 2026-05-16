@@ -640,18 +640,18 @@ func TestSlashInClassificationPopupStartsSearchImmediately(t *testing.T) {
 	}
 }
 
-func TestSlashInListFocusesInputForFreeformSearch(t *testing.T) {
+func TestSlashInListStartsInlineSearch(t *testing.T) {
 	model := &Model{repo: stubRepo{}, text: EnglishText(), mode: viewList, patents: []domain.Patent{{Number: "US1"}}, input: textinput.New()}
 	updated, _ := model.Update(teaKey(keySearch))
 	got := updated.(*Model)
-	if !got.input.Focused() {
-		t.Fatal("expected input to be focused for freeform search")
+	if !got.listSearchActive {
+		t.Fatal("expected listSearchActive after /")
 	}
-	if got.input.Value() != keySearch {
-		t.Fatalf("expected input pre-filled with %q, got %q", keySearch, got.input.Value())
+	if got.listSearchQuery != "" {
+		t.Fatalf("expected empty listSearchQuery, got %q", got.listSearchQuery)
 	}
-	if got.listSearchActive {
-		t.Fatal("expected no in-list search mode for freeform search")
+	if got.input.Focused() {
+		t.Fatal("expected input NOT focused for inline search")
 	}
 }
 
@@ -1313,7 +1313,7 @@ func TestVisibleCitationEdgesReturnsCurrentPage(t *testing.T) {
 		repo:          citationRepo{edges: sampleCitationEdges(12)},
 		mode:          viewCites,
 		current:       domain.Patent{Number: "US10218760B2"},
-		citesSelected: 7,
+		citationLocalIdx: 7,
 		height:        12,
 	}
 	edges, err := model.visibleCitationEdges()

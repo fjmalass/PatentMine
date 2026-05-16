@@ -42,7 +42,7 @@ func (m *Model) jumpLabels() []jumpLabel {
 		}
 		avail := m.overlayContentWidth() - (listRowPrefixWidth + overlayIndexWidth)
 		cols := m.citationColumns(avail)
-		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.overlayPageSize())
+		start := pageStart(clamp(m.citationLocalIdx, 0, len(edges)-1), m.overlayPageSize())
 		end := min(start+m.overlayPageSize(), len(edges))
 		labels := make([]string, 0, len(cols)+(end-start))
 		for _, c := range cols {
@@ -129,8 +129,8 @@ func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
 		if err != nil || len(edges) == 0 {
 			return m, nil
 		}
-		start := pageStart(clamp(m.citationSelection(), 0, len(edges)-1), m.overlayPageSize())
-		m.setCitationSelection(clamp(start+index, 0, len(edges)-1))
+		start := pageStart(clamp(m.citationLocalIdx, 0, len(edges)-1), m.overlayPageSize())
+		m.citationLocalIdx = clamp(start+index, 0, len(edges)-1)
 	case m.mode == viewReview:
 		avail := m.overlayContentWidth() - (listRowPrefixWidth + overlayIndexWidth)
 		cols := m.reviewOverlayColumns(avail)

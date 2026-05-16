@@ -24,8 +24,13 @@ func (m *Model) viewClassifications() string {
 	m.classificationSelected = selected
 	window := pageWindow(selected, len(classifications), m.overlayPageSize())
 
+	status := pageStatus(m.text.T(TextValuePageStatus), window)
+	if m.popupSearchActive && m.popupSearchQuery != "" {
+		status += "  · /" + m.popupSearchQuery
+	}
+
 	var body strings.Builder
-	body.WriteString(overlayBase().Foreground(lipgloss.Color(ColorSubtle)).Render(pageStatus(m.text.T(TextValuePageStatus), window)))
+	body.WriteString(overlayBase().Foreground(lipgloss.Color(ColorSubtle)).Render(status))
 	body.WriteString("\n\n")
 
 	rowWidth := max(44, m.overlayContentWidth())
@@ -48,9 +53,12 @@ func (m *Model) viewClassifications() string {
 		}
 		row := m.pad(prefix, 2) +
 			m.pad(rowIndexLabel(i), overlayIndexWidth) +
-			m.pad(cls.Code, codeWidth) +
-			m.pad(m.truncate(cls.Description, descriptionWidth), descriptionWidth)
-		body.WriteString(m.styleRowOverlay(i, selected, row, rowWidth) + "\n")
+			m.renderCell(cls.Code, codeWidth, listColPad, m.popupSearchQuery) +
+			m.renderCell(cls.Description, descriptionWidth, 0, m.popupSearchQuery)
+		if rw := lipgloss.Width(row); rw < rowWidth {
+			row += strings.Repeat(" ", rowWidth-rw)
+		}
+		body.WriteString(m.overlayRowStyle(i, selected).Render(row) + "\n")
 	}
 	return m.renderPopup("Classifications · "+m.current.Number, body.String())
 }

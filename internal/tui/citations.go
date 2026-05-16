@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/storage"
@@ -14,20 +15,6 @@ func (m *Model) isCitationView() bool {
 	return m.mode == viewCites || m.mode == viewCitedBy
 }
 
-func (m *Model) citationSelection() int {
-	if m.mode == viewCitedBy {
-		return m.citedBySelected
-	}
-	return m.citesSelected
-}
-
-func (m *Model) setCitationSelection(val int) {
-	if m.mode == viewCitedBy {
-		m.citedBySelected = val
-	} else {
-		m.citesSelected = val
-	}
-}
 
 func (m *Model) citationEdgesForRelation(relation string) ([]domain.CitationEdge, error) {
 	if m.current.Number == EmptyFilter {
@@ -41,27 +28,23 @@ func (m *Model) citationEdgesForRelation(relation string) ([]domain.CitationEdge
 	return m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 }
 
-func (m *Model) citationIndicesFromSnapshot(prevMode viewMode) []int {
-	if len(m.backStack) == 0 {
-		return []int{m.citationSelection()}
-	}
-	snap := m.backStack[len(m.backStack)-1]
-	end := snap.citesSelected
-	if prevMode == viewCitedBy {
-		end = snap.citedBySelected
-	}
-	if snap.visualMode {
-		start := snap.selectionStart
-		if start > end {
-			start, end = end, start
+
+func (m *Model) filterCitationEdges(edges []domain.CitationEdge, query string) []domain.CitationEdge {
+	ignoreCase := strings.ToLower(query) == query
+	out := edges[:0:len(edges)]
+	for _, e := range edges {
+		if containsMatch(e.TargetPatent, query, ignoreCase) || containsMatch(e.TargetTitle, query, ignoreCase) {
+			out = append(out, e)
+			continue
 		}
-		res := make([]int, 0, end-start+1)
-		for i := start; i <= end; i++ {
-			res = append(res, i)
+		for _, inv := range e.TargetInventors {
+			if containsMatch(inv, query, ignoreCase) {
+				out = append(out, e)
+				break
+			}
 		}
-		return res
 	}
-	return []int{end}
+	return out
 }
 
 func (m *Model) currentCitationEdges() ([]domain.CitationEdge, error) {
@@ -87,7 +70,7 @@ func (m *Model) visibleCitationEdges() ([]domain.CitationEdge, error) {
 	switch {
 	case m.isCitationView():
 		edges, err = m.currentCitationEdges()
-		selected = m.citationSelection()
+		selected = m.citationLocalIdx
 	case m.mode == viewReview:
 		edges, err = m.currentReviewCitationEdges()
 		selected = m.reviewSelected
@@ -125,6 +108,12 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 	if m.repo == nil {
 		return m, nil
 	}
+	// Capture selected patent number before re-fetch so sort/filter changes
+	// re-resolve the cursor to the same patent rather than the same index.
+	anchorNumber := ""
+	if m.patentSelected >= 0 && m.patentSelected < len(m.patents) {
+		anchorNumber = m.patents[m.patentSelected].Number
+	}
 	opts := m.listFilter.toStorageOpts(m.sortColumn, m.sortOrder, m.sortColumn2, m.sortOrder2)
 	patents, err := m.repo.ListPatents(m.ctx, m.ProjectID, opts)
 	if err != nil {
@@ -148,6 +137,14 @@ func (m *Model) refreshList() (tea.Model, tea.Cmd) {
 		w := lipgloss.Width(p.Number)
 		if w > m.numberColWidth {
 			m.numberColWidth = w
+		}
+	}
+	if anchorNumber != "" {
+		for i, p := range m.patents {
+			if p.Number == anchorNumber {
+				m.patentSelected = i
+				break
+			}
 		}
 	}
 	if m.patentSelected >= len(m.patents) {
@@ -195,7 +192,7 @@ func (m *Model) selectedCitationEdge() (domain.CitationEdge, bool, error) {
 	if len(edges) == 0 {
 		return domain.CitationEdge{}, false, nil
 	}
-	selected := clamp(m.citationSelection(), 0, len(edges)-1)
+	selected := clamp(m.citationLocalIdx, 0, len(edges)-1)
 	return edges[selected], true, nil
 }
 

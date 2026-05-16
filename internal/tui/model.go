@@ -92,8 +92,9 @@ type Model struct {
 	projectInvoicesSelected      int
 	projectIDSSelected           int
 	detailSelected               int
-	citesSelected                int
-	citedBySelected              int
+	citationLocalIdx             int
+	citationKey               string
+	citesTextFilter              string
 	reviewSelected               int
 	classificationSelected       int
 	classificationDetailSelected classificationDetailRow
@@ -184,8 +185,9 @@ type navSnapshot struct {
 	projectInvoicesSelected      int
 	projectIDSSelected           int
 	detailSelected               int
-	citesSelected                int
-	citedBySelected              int
+	citationLocalIdx             int
+	citationKey               string
+	citesTextFilter              string
 	reviewSelected               int
 	classificationSelected       int
 	classificationDetailSelected classificationDetailRow
@@ -308,9 +310,8 @@ type refreshResultMsg struct {
 	message         string
 	patent          domain.Patent
 	mode            viewMode
-	citesSelected   int
-	citedBySelected int
-	familySelected  int
+	citationLocalIdx int
+	familySelected   int
 	elapsed         time.Duration
 	withDetails     bool
 	action          string
@@ -357,8 +358,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current = msg.patent
 		m.populateDetailCache()
 		m.setMode(msg.mode)
-		m.citesSelected = msg.citesSelected
-		m.citedBySelected = msg.citedBySelected
+		m.citationLocalIdx = msg.citationLocalIdx
 		m.familySelected = msg.familySelected
 		m.message = msg.message
 		if msg.action == ActivityFamilyRefresh && msg.elapsed > 0 {
@@ -483,16 +483,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case keyEnter:
-				m.listSearchActive = false
-				return m, nil
-			case keyNarrow:
-				// narrow: promote search query to a persistent text filter
 				query := m.listSearchQuery
 				m.listSearchActive = false
 				m.listSearchQuery = ""
 				if query != "" {
 					m.listFilter.FreeFormSearch = query
-					m.message = "filter: " + query
 					return m.refreshList()
 				}
 				return m, nil
@@ -520,6 +515,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case keyEnter:
+				if m.isCitationView() {
+					m.citesTextFilter = m.popupSearchQuery
+					m.popupSearchQuery = ""
+				}
 				m.popupSearchActive = false
 				return m, nil
 			default:
@@ -595,8 +594,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyCommand, keySearch:
 			m.countBuffer = EmptyCount
 			if msg.String() == keySearch && m.mode == viewList {
-				m.input.Focus()
-				m.input.SetValue(keySearch)
+				m.listSearchActive = true
+				m.listSearchQuery = ""
 				return m, nil
 			}
 			if msg.String() == keySearch && m.isPopupSearchMode() {
@@ -877,7 +876,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// In visual mode "first" is the lower bound of the selection range.
 				m.reviewStateSelected = 0
 				if edges, err := m.currentCitationEdges(); err == nil && len(edges) > 0 {
-					firstIdx := m.citationSelection()
+					firstIdx := m.citationLocalIdx
 					if m.visualMode && m.selectionStart < firstIdx {
 						firstIdx = m.selectionStart
 					}
