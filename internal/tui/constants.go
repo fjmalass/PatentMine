@@ -18,6 +18,35 @@ const (
 	EmptyError      = ""
 	EmptyCount      = ""
 
+	filterLabelState          = "state: "
+	filterLabelSearch         = "search: "
+	filterLabelClassification = "classification: "
+	filterLabelCountry        = "country: "
+	filterLabelTag            = "tag: "
+	filterLabelTitle          = "title: "
+
+	// UI separators
+	sepBullet            = " · "  // inline separator used in titles and headers
+	sepFilterBar         = "  · " // status-bar prefix before filter labels
+	sepBreadcrumb        = " › "
+	sepBreadcrumbEllipsis = "… › "
+	sepRuleChar          = "─"
+
+	// Date format layouts (Go reference time)
+	dateFmtDate     = "2006-01-02"
+	dateFmtDateTime = "2006-01-02 15:04"
+	dateFmtYear     = "2006"
+
+	// Mode indicator labels
+	visualModeLabel = " VISUAL "
+
+	// Input char limits
+	commandInputCharLimit = 512
+	dateInputCharLimit    = 10
+
+	// Breadcrumb limit
+	maxBreadcrumbs = 3
+
 	ColorTheme        = "39"  // Blue
 	ColorAccent       = "205" // Pink/Magenta
 	ColorAccentFamily = "213" // Bright Pink (family tree root)

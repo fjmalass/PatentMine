@@ -88,7 +88,7 @@ func (m *Model) renderScreenHeader() string {
 			badge := lipgloss.NewStyle().
 				Foreground(lipgloss.Color(color)).
 				Bold(true).
-				Render(" · " + label)
+				Render(sepBullet + label)
 			b.WriteString(badge)
 		}
 		break
@@ -99,7 +99,7 @@ func (m *Model) renderScreenHeader() string {
 		warn := lipgloss.NewStyle().
 			Foreground(lipgloss.Color(ColorWarning)).
 			Bold(true).
-			Render(fmt.Sprintf(" · %d unpaid", count))
+			Render(fmt.Sprintf(sepBullet+"%d unpaid", count))
 		b.WriteString(warn)
 	}
 
@@ -121,13 +121,12 @@ func (m *Model) renderScreenHeader() string {
 			parts = append(parts, m.current.Number)
 		}
 		if len(parts) > 0 {
-			const maxCrumbs = 3
 			ellipsis := ""
-			if len(parts) > maxCrumbs {
-				parts = parts[len(parts)-maxCrumbs:]
-				ellipsis = "… › "
+			if len(parts) > maxBreadcrumbs {
+				parts = parts[len(parts)-maxBreadcrumbs:]
+				ellipsis = sepBreadcrumbEllipsis
 			}
-			trail := ellipsis + strings.Join(parts, " › ")
+			trail := ellipsis + strings.Join(parts, sepBreadcrumb)
 			b.WriteString("  ")
 			b.WriteString(subtle.Render(fmt.Sprintf(m.text.T(TextValueBreadcrumbFormat), depth, trail)))
 		}
@@ -214,7 +213,7 @@ func (m *Model) renderPopupHeader(label string) string {
 	popupWidth := max(20, m.overlayContentWidth())
 	rule := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(ColorSubtle)).
-		Render(strings.Repeat("─", popupWidth))
+		Render(strings.Repeat(sepRuleChar, popupWidth))
 
 	// Ensure all lines in the header have the correct background and width
 	headerLines := strings.Split(res+"\n"+rule, "\n")

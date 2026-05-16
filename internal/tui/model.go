@@ -224,7 +224,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 	input := textinput.New()
 	input.Placeholder = ":add US11611785B2, :open US11611785B2, /machine learning"
 	input.Prompt = EmptyPrompt
-	input.CharLimit = 512
+	input.CharLimit = commandInputCharLimit
 
 	ta := textarea.New()
 	ta.Placeholder = "Write your research note..."
@@ -235,7 +235,7 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 
 	di := textinput.New()
 	di.Placeholder = "YYYY-MM-DD"
-	di.CharLimit = 10
+	di.CharLimit = dateInputCharLimit
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot

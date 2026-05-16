@@ -38,7 +38,7 @@ func (m *Model) viewDetail() string {
 	selected := clamp(m.detailSelected, 0, max(0, len(fields)-1))
 	groupIndex := 0
 	ruleStyle := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorDim))
-	separator := ruleStyle.Render(strings.Repeat("─", m.width))
+	separator := ruleStyle.Render(strings.Repeat(sepRuleChar, m.width))
 
 	for i, field := range fields {
 		if field.separator {
@@ -445,9 +445,9 @@ const recentTimeThreshold = 24 * time.Hour
 
 func formatDatetime(value time.Time) string {
 	if time.Since(value) < recentTimeThreshold {
-		return value.Local().Format("2006-01-02 15:04")
+		return value.Local().Format(dateFmtDateTime)
 	}
-	return value.Local().Format("2006-01-02")
+	return value.Local().Format(dateFmtDate)
 }
 
 func formatCitationTime(value time.Time, fallback string) string {

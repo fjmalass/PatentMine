@@ -42,12 +42,12 @@ func (m *Model) reviewStateSelectTitle() string {
 	sel := m.activeSelection
 	if sel.IsMulti() {
 		if sel.kind == selKindCitation {
-			return fmt.Sprintf("Change Status · %d citations", sel.Count())
+			return fmt.Sprintf("Change Status"+sepBullet+"%d citations", sel.Count())
 		}
-		return fmt.Sprintf("Change Status · %d patents", sel.Count())
+		return fmt.Sprintf("Change Status"+sepBullet+"%d patents", sel.Count())
 	}
 	if sel.livePatent != "" {
-		return "Change Status · " + sel.livePatent
+		return "Change Status" + sepBullet + sel.livePatent
 	}
 	return "Change Status"
 }

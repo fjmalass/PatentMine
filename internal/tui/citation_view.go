@@ -141,9 +141,9 @@ func (m *Model) viewCitations(relation string) string {
 
 	status := pageStatus(m.text.T(TextValuePageStatus), window)
 	if m.citesTextFilter != "" {
-		status += "  · search:" + m.citesTextFilter
+		status += sepFilterBar + filterLabelSearch + m.citesTextFilter
 	} else if m.popupSearchActive && m.popupSearchQuery != "" {
-		status += "  · /" + m.popupSearchQuery
+		status += sepFilterBar + "/" + m.popupSearchQuery
 	}
 
 	var body strings.Builder

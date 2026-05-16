@@ -410,7 +410,7 @@ func RenderContextHelp(text TextCatalog, mode viewMode) string {
 		Bold(true).
 		Padding(0, 1)
 
-	b.WriteString(titleStyle.Render(text.T(TextHelpPopupTitle)+" · "+screenTitleForMode(mode)) + "\n")
+	b.WriteString(titleStyle.Render(text.T(TextHelpPopupTitle)+sepBullet+screenTitleForMode(mode)) + "\n")
 
 	b.WriteString("\n")
 	b.WriteString(text.T(TextHelpScreen) + "\n\n")
@@ -485,7 +485,6 @@ func BuildHelperLine(keys KeyMap, text TextCatalog) string {
 		return labels[i] < labels[j]
 	})
 
-	// 4. Join groups with " · "
 	var parts []string
 	for _, label := range labels {
 		ks := groups[label]
@@ -493,7 +492,7 @@ func BuildHelperLine(keys KeyMap, text TextCatalog) string {
 		parts = append(parts, fmt.Sprintf("%s: %s", strings.Join(ks, "/"), label))
 	}
 
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, sepBullet)
 }
 
 func labelWeight(l string) int {

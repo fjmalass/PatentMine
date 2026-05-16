@@ -28,7 +28,7 @@ func (m *Model) viewSplash() string {
 	b.WriteString(m.center(subStyle.Render("Local Patent Research & Intelligence")))
 	b.WriteString("\n")
 	b.WriteString(m.center(subStyle.Render("Version " + m.displayVersion())))
-	separator := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorSubtle)).Render(strings.Repeat("─", m.width))
+	separator := lipgloss.NewStyle().Width(m.width).Foreground(lipgloss.Color(ColorSubtle)).Render(strings.Repeat(sepRuleChar, m.width))
 
 	b.WriteString("\n\n" + separator + "\n\n")
 
@@ -54,7 +54,7 @@ func (m *Model) viewSplash() string {
 				prefix = "→ "
 			}
 
-			updated := p.UpdatedAt.Format("2006-01-02")
+			updated := p.UpdatedAt.Format(dateFmtDate)
 
 			summaryLabel := p.SummaryStatus
 			if label, ok := SummaryStatusLabels[p.SummaryStatus]; ok {
@@ -335,7 +335,7 @@ func (m *Model) viewProjectIDS() string {
 				statusStr = string(domain.IDSStatusPending)
 			}
 			statusRendered := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Render(fmt.Sprintf("%-11s", statusStr))
-			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s", e.PatentNumber)) + " " + statusRendered + " " + rowStyle.Render(fmt.Sprintf("%-10s %-*s %s", e.AddedAt.Format("2006-01-02"), noteW, notes, passages)))
+			b.WriteString(prefix + numStyle.Render(fmt.Sprintf("%-3d", i+1)) + " " + rowStyle.Render(fmt.Sprintf("%-16s", e.PatentNumber)) + " " + statusRendered + " " + rowStyle.Render(fmt.Sprintf("%-10s %-*s %s", e.AddedAt.Format(dateFmtDate), noteW, notes, passages)))
 			b.WriteString("\n")
 		}
 	}
@@ -378,7 +378,7 @@ func (m *Model) viewProjectInfo() string {
 			base.Foreground(lipgloss.Color(color)).Bold(true).Render(label) + "\n")
 	}
 
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Updated:")) + valueStyle.Render(proj.UpdatedAt.Format("2006-01-02")) + "\n")
+	body.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Updated:")) + valueStyle.Render(proj.UpdatedAt.Format(dateFmtDate)) + "\n")
 
 	if proj.Summary != "" {
 		body.WriteString("\n" + dimStyle.Render(proj.Summary) + "\n")

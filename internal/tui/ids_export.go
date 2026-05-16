@@ -40,7 +40,7 @@ func (m *Model) idsExportCommand(args []string) (tea.Model, tea.Cmd) {
 	meta, _ := m.repo.GetIDSMetadata(m.ctx, m.ProjectID)
 
 	projectName := m.projectNameForExport()
-	filename := fmt.Sprintf("%s_IDS_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format("2006-01-02"))
+	filename := fmt.Sprintf("%s_IDS_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format(dateFmtDate))
 	if len(args) > 0 {
 		filename = args[0]
 	}
@@ -124,7 +124,7 @@ func renderIDSMarkdown(projectName, projectID string, meta domain.IDSMetadata, r
 	var buf strings.Builder
 	buf.WriteString("# Information Disclosure Statement\n\n")
 	buf.WriteString(fmt.Sprintf("**Project:** %s (%s)  \n", projectName, projectID))
-	buf.WriteString(fmt.Sprintf("**Date:** %s  \n\n", now.Format("2006-01-02")))
+	buf.WriteString(fmt.Sprintf("**Date:** %s  \n\n", now.Format(dateFmtDate)))
 
 	if meta.AppNumber != "" || meta.FirstInventor != "" {
 		buf.WriteString("## Application Information\n\n")

@@ -48,7 +48,7 @@ func (m *Model) viewProjectTags() string {
 			}
 
 			usage := fmt.Sprintf("%d", t.PatentCount)
-			created := t.CreatedAt.Format("2006-01-02")
+			created := t.CreatedAt.Format(dateFmtDate)
 
 			b.WriteString(rowStyle.Render(prefix))
 			b.WriteString(rowStyle.Render(fmt.Sprintf("%-3d ", i+1)))

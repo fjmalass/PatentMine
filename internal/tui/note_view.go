@@ -20,12 +20,12 @@ func (m *Model) viewNoteEdit() string {
 		year = p.PublicationDate[:4]
 	}
 
-	title := "Note · " + p.Number
+	title := "Note" + sepBullet + p.Number
 	if inv := formatInventorsShort(p.Inventors); inv != "-" {
-		title += " · " + inv
+		title += sepBullet + inv
 	}
 	if year != "" {
-		title += " · " + year
+		title += sepBullet + year
 	}
 	b.WriteString(m.renderPopupHeader(title))
 	b.WriteString(m.noteTA.View())
@@ -47,14 +47,14 @@ func (m *Model) viewNotes() string {
 		body.WriteString("\n")
 	} else {
 		for _, note := range notes {
-			year := note.CreatedAt.Format("2006")
+			year := note.CreatedAt.Format(dateFmtYear)
 			name := markdownHeadingSummary(note.Body)
 			if len(name) > 48 {
 				name = name[:48] + "…"
 			}
 			header := year
 			if name != "" {
-				header += " · " + name
+				header += sepBullet + name
 			}
 			body.WriteString(subtleStyle.Render(header))
 			body.WriteString("\n")
@@ -62,7 +62,7 @@ func (m *Model) viewNotes() string {
 			body.WriteString("\n\n")
 		}
 	}
-	return m.renderPopup("Notes · "+m.current.Number, body.String())
+	return m.renderPopup("Notes"+sepBullet+m.current.Number, body.String())
 }
 
 func (m *Model) handleViewNoteEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -70,7 +70,7 @@ func (m *Model) handleViewNoteEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyCtrlS:
 		body := strings.TrimSpace(m.noteTA.Value())
 		if body != "" {
-			stamp := time.Now().Format("2006-01-02 15:04")
+			stamp := time.Now().Format(dateFmtDateTime)
 			body = fmt.Sprintf("[%s]\n%s", stamp, body)
 			if _, err := m.repo.AddNote(m.ctx, m.ProjectID, m.current.Number, body); err != nil {
 				m.err = err.Error()

@@ -67,25 +67,25 @@ func (m *Model) renderView() string {
 		}
 	} else if m.listSearchActive {
 		searchStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorWarning)).Italic(true)
-		b.WriteString(lineStyle.Render(searchStyle.Render(" search: /"+m.listSearchQuery+"█")) + "\n")
+		b.WriteString(lineStyle.Render(searchStyle.Render(m.text.T(TextValueSearchLabel)+m.listSearchQuery+"█")) + "\n")
 	} else if m.jumpMode {
 		prefix := ""
 		if m.visualMode {
-			prefix = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(" VISUAL ") + " "
+			prefix = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(visualModeLabel) + " "
 		}
 		b.WriteString(lineStyle.Render(prefix+m.text.T(TextNavJump)) + "\n")
 	} else {
 		prefix := ""
 		if m.visualMode {
-			prefix = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(" VISUAL ") + " "
+			prefix = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color(ColorSelection)).Foreground(lipgloss.Color(ColorWhite)).Render(visualModeLabel) + " "
 		}
 		b.WriteString(lineStyle.Render(prefix+m.navDefault()) + "\n")
 	}
-	b.WriteString(ruleStyle.Render(strings.Repeat("─", m.width)) + "\n")
+	b.WriteString(ruleStyle.Render(strings.Repeat(sepRuleChar, m.width)) + "\n")
 	b.WriteString(m.renderModeBody(mode))
 
 	if m.err != "" || m.message != "" {
-		b.WriteString("\n" + ruleStyle.Render(strings.Repeat("─", m.width)) + "\n")
+		b.WriteString("\n" + ruleStyle.Render(strings.Repeat(sepRuleChar, m.width)) + "\n")
 		if m.err != "" {
 			errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorError))
 			b.WriteString(lineStyle.Render(errStyle.Render(m.err)) + "\n")
@@ -190,7 +190,7 @@ func (m *Model) viewDateEdit() string {
 		title = "Edit Expiration Date"
 	}
 	if m.current.Number != "" {
-		title += " · " + m.current.Number
+		title += sepBullet + m.current.Number
 	}
 	return m.renderPopup(title, m.dateInput.View())
 }

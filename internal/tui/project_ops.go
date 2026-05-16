@@ -94,7 +94,7 @@ func markdownHeadingSummary(body string) string {
 		}
 	}
 	if len(headings) > 0 {
-		return strings.Join(headings, " · ")
+		return strings.Join(headings, sepBullet)
 	}
 	for _, line := range strings.SplitAfter(body, "\n") {
 		line = strings.TrimSpace(line)
@@ -118,7 +118,7 @@ func (m *Model) recentNotesSnippet(number string) string {
 	}
 	for i := 0; i < limit; i++ {
 		note := notes[i]
-		b.WriteString(subtleStyle.Render(note.CreatedAt.Format("2006-01-02 15:04")))
+		b.WriteString(subtleStyle.Render(note.CreatedAt.Format(dateFmtDateTime)))
 		b.WriteString("  ")
 		body := note.Body
 		if idx := strings.Index(body, "\n"); idx >= 0 {
@@ -679,7 +679,7 @@ func (m *Model) projectNameForExport() string {
 
 func (m *Model) reviewStateExportCommand(args []string) (tea.Model, tea.Cmd) {
 	projectName := m.projectNameForExport()
-	filename := fmt.Sprintf("%s_status_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format("2006-01-02"))
+	filename := fmt.Sprintf("%s_status_%s.md", strings.ReplaceAll(projectName, " ", "_"), time.Now().Format(dateFmtDate))
 	if len(args) > 0 {
 		filename = args[0]
 	}
@@ -713,7 +713,7 @@ func (m *Model) reviewStateExportCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		buf.WriteString(fmt.Sprintf("**Stage:** %s  \n", label))
 	}
-	buf.WriteString(fmt.Sprintf("**Updated:** %s  \n", proj.UpdatedAt.Format("2006-01-02")))
+	buf.WriteString(fmt.Sprintf("**Updated:** %s  \n", proj.UpdatedAt.Format(dateFmtDate)))
 	if proj.Summary != "" {
 		buf.WriteString(fmt.Sprintf("\n> %s\n", proj.Summary))
 	}
@@ -814,7 +814,7 @@ func (m *Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
 
 	projectName := m.projectNameForExport()
 	stateLabel := reviewStateFilter
-	filename := fmt.Sprintf("%s_state_%s_%s.md", strings.ReplaceAll(projectName, " ", "_"), stateLabel, time.Now().Format("2006-01-02"))
+	filename := fmt.Sprintf("%s_state_%s_%s.md", strings.ReplaceAll(projectName, " ", "_"), stateLabel, time.Now().Format(dateFmtDate))
 	if len(filenameArgs) > 0 {
 		filename = filenameArgs[0]
 	}
@@ -828,7 +828,7 @@ func (m *Model) stateExportCommand(args []string) (tea.Model, tea.Cmd) {
 	var buf strings.Builder
 	buf.WriteString(fmt.Sprintf("# Patent List: %s\n\n", projectName))
 	buf.WriteString(fmt.Sprintf("**State filter:** %s  \n", stateLabel))
-	buf.WriteString(fmt.Sprintf("**Date:** %s  \n", time.Now().Format("2006-01-02")))
+	buf.WriteString(fmt.Sprintf("**Date:** %s  \n", time.Now().Format(dateFmtDate)))
 	buf.WriteString(fmt.Sprintf("**Count:** %d  \n\n", len(patents)))
 
 	if len(patents) == 0 {

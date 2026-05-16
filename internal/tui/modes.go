@@ -54,7 +54,7 @@ func patentSubtitle(m *Model) string {
 		return ""
 	}
 	if t := strings.TrimSpace(m.current.Title); t != "" {
-		return t + " · " + m.current.Number
+		return t + sepBullet + m.current.Number
 	}
 	return m.current.Number
 }

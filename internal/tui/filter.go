@@ -41,22 +41,22 @@ func (f *PatentFilter) IsActive() bool {
 func (f *PatentFilter) activeFilterLabels() []string {
 	var labels []string
 	if f.ReviewState != EmptyFilter && f.ReviewState != reviewStateFilterNone {
-		labels = append(labels, "state:"+f.ReviewState)
+		labels = append(labels, filterLabelState+f.ReviewState)
 	}
 	if f.FreeFormSearch != EmptyFilter {
-		labels = append(labels, TextValueSearchLabel+f.FreeFormSearch)
+		labels = append(labels, filterLabelSearch+f.FreeFormSearch)
 	}
 	if f.Classification != EmptyFilter {
-		labels = append(labels, "classification:"+f.Classification)
+		labels = append(labels, filterLabelClassification+f.Classification)
 	}
 	if f.Country != EmptyFilter {
-		labels = append(labels, "country:"+f.Country)
+		labels = append(labels, filterLabelCountry+f.Country)
 	}
 	if f.Tag != EmptyFilter {
-		labels = append(labels, "tag:"+f.Tag)
+		labels = append(labels, filterLabelTag+f.Tag)
 	}
 	if f.Title != EmptyFilter {
-		labels = append(labels, "title:"+f.Title)
+		labels = append(labels, filterLabelTitle+f.Title)
 	}
 	// if m.sortColumn != "" {
 	// 	s := "sort:" + m.sortColumn + " " + m.sortOrder

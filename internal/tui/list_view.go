@@ -177,7 +177,7 @@ func (m *Model) viewList() string {
 	}
 	f := &m.listFilter
 	if labels := f.activeFilterLabels(); len(labels) > 0 {
-		status += "  · " + strings.Join(labels, " · ")
+		status += sepFilterBar + strings.Join(labels, sepBullet)
 	}
 
 	subtleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle))
@@ -216,7 +216,7 @@ func (m *Model) viewList() string {
 		m.sortColumnIndex = len(cols) - 1
 	}
 
-	header := m.pad(rowNoCursor, 2) +
+	header := m.pad(rowNoCursor, listRowPrefixWidth) +
 		m.pad("", jumpPrefixWidth) +
 		m.pad("#", idxWidth+2)
 

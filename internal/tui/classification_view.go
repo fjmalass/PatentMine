@@ -26,7 +26,7 @@ func (m *Model) viewClassifications() string {
 
 	status := pageStatus(m.text.T(TextValuePageStatus), window)
 	if m.popupSearchActive && m.popupSearchQuery != "" {
-		status += "  · /" + m.popupSearchQuery
+		status += sepFilterBar + "/" + m.popupSearchQuery
 	}
 
 	var body strings.Builder
@@ -37,7 +37,7 @@ func (m *Model) viewClassifications() string {
 	codeWidth := 18
 	descriptionWidth := max(20, rowWidth-overlayIndexWidth-codeWidth-2)
 
-	header := m.pad(rowNoCursor, 2) +
+	header := m.pad(rowNoCursor, listRowPrefixWidth) +
 		m.pad("#", overlayIndexWidth) +
 		m.pad("Code", codeWidth) +
 		m.pad("Description", descriptionWidth)
@@ -51,7 +51,7 @@ func (m *Model) viewClassifications() string {
 		if i == selected {
 			prefix = rowCursor
 		}
-		row := m.pad(prefix, 2) +
+		row := m.pad(prefix, listRowPrefixWidth) +
 			m.pad(rowIndexLabel(i), overlayIndexWidth) +
 			m.renderCell(cls.Code, codeWidth, listColPad, m.popupSearchQuery) +
 			m.renderCell(cls.Description, descriptionWidth, 0, m.popupSearchQuery)
@@ -120,5 +120,5 @@ func (m *Model) viewClassificationDetail() string {
 	renderCount(classDetailRowIgnored, stats.Ignored, base.Foreground(lipgloss.Color(ColorDim)))
 	renderCount(classDetailRowCached, stats.Cached, base)
 
-	return m.renderPopup(fmt.Sprintf("Classification · %s", cls.Code), body.String())
+	return m.renderPopup(fmt.Sprintf("Classification"+sepBullet+"%s", cls.Code), body.String())
 }

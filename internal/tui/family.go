@@ -361,7 +361,7 @@ func (m *Model) viewFamilyOverlay() string {
 	var body strings.Builder
 	statusLine := subtle.Render(pageStatus(m.text.T(TextValuePageStatus), window))
 	if m.familyRefreshElapsed != "" {
-		statusLine += subtle.Render(" · ") + base.Foreground(lipgloss.Color(ColorDim)).Italic(true).Render(m.familyRefreshElapsed)
+		statusLine += subtle.Render(sepBullet) + base.Foreground(lipgloss.Color(ColorDim)).Italic(true).Render(m.familyRefreshElapsed)
 	}
 	body.WriteString(statusLine + "\n\n")
 
@@ -444,7 +444,7 @@ func (m *Model) viewFamilyOverlay() string {
 
 	if selectedPatent, ok := m.selectedFamilyPatent(nodes[sel]); ok {
 		body.WriteString("\n")
-		body.WriteString(subtle.Render(strings.Repeat("─", max(24, m.overlayWidth()-6))) + "\n")
+		body.WriteString(subtle.Render(strings.Repeat(sepRuleChar, max(24, m.overlayWidth()-6))) + "\n")
 		body.WriteString("\n")
 
 		labelStyle := base.Foreground(lipgloss.Color(ColorSubtle))
