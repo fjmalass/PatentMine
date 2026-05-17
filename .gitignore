@@ -1,0 +1,10 @@
+/patentmine
+/db/
+/logs/
+/pdfs/
+/backups/
+/build/
+
+.claude
+.gemeni
+.agents
