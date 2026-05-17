@@ -152,11 +152,7 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 	case commandPurge:
 		return m.purgeCommand(command.Args)
 	case commandCompact:
-		if err := m.repo.Compact(m.ctx); err != nil {
-			m.err = err.Error()
-			return m, nil
-		}
-		m.message = "database compacted"
+		return m.compactCommand()
 	case commandNote:
 		if len(command.Args) == 0 {
 			m.err = fmt.Sprintf("usage: :%s <text>", commandNote)

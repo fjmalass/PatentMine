@@ -187,7 +187,6 @@ func (m *Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 	m.pendingBundle = bundle
 	m.pendingCitation = edge
 	m.current = bundle.Patent
-	m.current.ReviewState = edge.ReviewState // popup shows citation edge state, matching list column
 	m.detailSelected = 0
 	m.populateDetailCache()
 	m.setMode(viewPopupPatentDetail)
@@ -225,7 +224,7 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedCitation()
 	}
-	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored, false)) {
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored)) {
 		return m, nil
 	}
 	m.logActivityFrom(ActivityCitationStore, edge.TargetPatent, "", m.current.Number)
@@ -254,7 +253,7 @@ func (m *Model) storePendingCitationPatent(next string) bool {
 		m.markDirty(dirtyList | dirtyDetail)
 	}
 	if m.pendingCitation.TargetPatent != "" {
-		return m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{m.pendingCitation}, next, true))
+		return m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{m.pendingCitation}, next))
 	}
 	return m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{number}, next))
 }
@@ -295,10 +294,8 @@ func (m *Model) skipPendingPatent() (tea.Model, tea.Cmd) {
 
 func (m *Model) updatePendingCitation(reviewState string, messageKey TextKey) (tea.Model, tea.Cmd) {
 	number := m.pendingBundle.Patent.Number
-	if m.pendingCitation.TargetPatent != "" {
-		if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{m.pendingCitation}, reviewState, false)) {
-			return m, nil
-		}
+	if !m.storePendingCitationPatent(reviewState) {
+		return m, nil
 	}
 	m.pendingBundle = domain.PatentBundle{}
 	m.pendingCitation = domain.CitationEdge{}
@@ -328,7 +325,7 @@ func (m *Model) updateSelectedCitationReviewState(status string, messageKey Text
 	}
 
 	edge := edges[indices[0]]
-	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status, false)) {
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status)) {
 		return m, nil
 	}
 	m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, status, m.current.Number)

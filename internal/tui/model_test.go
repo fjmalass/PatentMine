@@ -1764,5 +1764,5 @@ func (stubRepo) UpdateTagColor(context.Context, int64, string) error            
 func (stubRepo) GetTagByName(context.Context, string, string) (domain.Tag, error)             { return domain.Tag{}, nil }
 func (stubRepo) ApplyTagToPatent(context.Context, string, int64) error                        { return nil }
 func (stubRepo) RemoveTagFromPatent(context.Context, string, int64) error                     { return nil }
-func (stubRepo) GetPatentTags(context.Context, string) ([]domain.Tag, error)                  { return nil, nil }
+func (stubRepo) GetPatentTags(context.Context, string, string) ([]domain.Tag, error)          { return nil, nil }
 func (stubRepo) ListPatentTagsForProject(context.Context, string) (map[string][]domain.Tag, error) { return nil, nil }

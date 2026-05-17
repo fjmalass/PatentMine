@@ -523,7 +523,7 @@ func (r *Repository) CreateProject(ctx context.Context, p domain.Project) error 
 	return nil
 }
 
-func (r *Repository) GetProject(ctx context.Context, id string) (domain.Project, error) {
+func (r *Repository) GetProject(ctx context.Context, id domain.ProjectID) (domain.Project, error) {
 	var p domain.Project
 	var createdAt, updatedAt string
 	err := r.db.QueryRowContext(ctx, `select id, name, status, summary_status, summary, comments, created_at, updated_at from projects where id = ?`, id).
@@ -565,13 +565,13 @@ func (r *Repository) UpdateProject(ctx context.Context, p domain.Project) error 
 	return err
 }
 
-func (r *Repository) DeleteProject(ctx context.Context, id string) error {
+func (r *Repository) DeleteProject(ctx context.Context, id domain.ProjectID) error {
 	// For now, simple delete. In a real app we might want to clean up related data or use soft-delete.
 	_, err := r.db.ExecContext(ctx, `delete from projects where id = ?`, id)
 	return err
 }
 
-func (r *Repository) AddPatentToProject(ctx context.Context, projectID, patentNumber string) error {
+func (r *Repository) AddPatentToProject(ctx context.Context, projectID domain.ProjectID, patentNumber domain.PatentNumber) error {
 	now := nowString()
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -589,7 +589,7 @@ func (r *Repository) AddPatentToProject(ctx context.Context, projectID, patentNu
 	return tx.Commit()
 }
 
-func (r *Repository) RemovePatentFromProject(ctx context.Context, projectID, patentNumber string) error {
+func (r *Repository) RemovePatentFromProject(ctx context.Context, projectID domain.ProjectID, patentNumber domain.PatentNumber) error {
 	_, err := r.db.ExecContext(ctx, `delete from project_patents where project_id = ? and patent_number = ?`, projectID, patentNumber)
 	return err
 }
@@ -598,7 +598,7 @@ func (r *Repository) RemovePatentFromProject(ctx context.Context, projectID, pat
 // references the patent number (across all projects) and then the patents
 // record itself, all in one transaction. After this the patent is fully gone
 // from the database — no project_patents row, no review_state.
-func (r *Repository) DeletePatentCompletely(ctx context.Context, number string) error {
+func (r *Repository) DeletePatentCompletely(ctx context.Context, number domain.PatentNumber) error {
 	r.logger.Info("repository.delete_patent_completely", "patent", number)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -631,7 +631,7 @@ func (r *Repository) DeletePatentCompletely(ctx context.Context, number string) 
 	return tx.Commit()
 }
 
-func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, bundle domain.PatentBundle) error {
+func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID domain.ProjectID, bundle domain.PatentBundle) error {
 	r.logger.Info("repository.upsert_bundle", "project", projectID, "patent", bundle.Patent.Number)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -720,7 +720,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 		createdAt = time.Now().UTC()
 	}
 	if strings.TrimSpace(p.CountryCode) == "" {
-		p.CountryCode = domain.PatentCountryFromNumber(p.Number)
+		p.CountryCode = domain.PatentCountryFromNumber(string(p.Number))
 	}
 	_, err = tx.ExecContext(ctx, `insert into patents
 		(number, country_code, title, abstract, assignee, inventors_json, publication_date, grant_date, expiration_date, expiration_source, source_google_url, import_source, created_at, latest_assignment, updated_at, expected_citations, expected_cited_by, application_number, application_date, publication_number, grant_number, first_claim)
@@ -750,7 +750,7 @@ func upsertPatent(ctx context.Context, tx *sql.Tx, p domain.Patent, logger *slog
 	return err
 }
 
-func replaceTexts(ctx context.Context, tx *sql.Tx, number string, sections []domain.PatentTextSection, logger *slog.Logger) error {
+func replaceTexts(ctx context.Context, tx *sql.Tx, number domain.PatentNumber, sections []domain.PatentTextSection, logger *slog.Logger) error {
 	if _, err := tx.ExecContext(ctx, `delete from patent_text_sections where patent_number = ?`, number); err != nil {
 		return err
 	}
@@ -763,7 +763,7 @@ func replaceTexts(ctx context.Context, tx *sql.Tx, number string, sections []dom
 	return nil
 }
 
-func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number string, edges []domain.CitationEdge, logger *slog.Logger) error {
+func replaceCitations(ctx context.Context, tx *sql.Tx, projectID domain.ProjectID, number domain.PatentNumber, edges []domain.CitationEdge, logger *slog.Logger) error {
 	if len(edges) == 0 {
 		return nil
 	}
@@ -791,7 +791,7 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID string, number 
 	return nil
 }
 
-func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, classifications []domain.Classification, logger *slog.Logger) error {
+func replaceClassifications(ctx context.Context, tx *sql.Tx, number domain.PatentNumber, classifications []domain.Classification, logger *slog.Logger) error {
 	if _, err := tx.ExecContext(ctx, `delete from patent_classifications where patent_number = ?`, number); err != nil {
 		return err
 	}
@@ -835,7 +835,7 @@ func replaceClassifications(ctx context.Context, tx *sql.Tx, number string, clas
 	return nil
 }
 
-func (r *Repository) GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error) {
+func (r *Repository) GetPatent(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) (domain.Patent, error) {
 	startedAt := time.Now()
 	row := r.db.QueryRowContext(ctx, `
 		select
@@ -860,10 +860,10 @@ func (r *Repository) GetPatent(ctx context.Context, projectID string, number str
 	return patent, err
 }
 
-func (r *Repository) ListFamilyPatents(ctx context.Context, projectID string, numbers []string) (map[string]domain.Patent, error) {
+func (r *Repository) ListFamilyPatents(ctx context.Context, projectID domain.ProjectID, numbers []domain.PatentNumber) (map[domain.PatentNumber]domain.Patent, error) {
 	startedAt := time.Now()
 	if len(numbers) == 0 {
-		return map[string]domain.Patent{}, nil
+		return map[domain.PatentNumber]domain.Patent{}, nil
 	}
 	placeholders := make([]string, len(numbers))
 	args := make([]any, 0, len(numbers)+1)
@@ -892,7 +892,7 @@ func (r *Repository) ListFamilyPatents(ctx context.Context, projectID string, nu
 	}
 	defer rows.Close()
 
-	out := make(map[string]domain.Patent, len(numbers))
+	out := make(map[domain.PatentNumber]domain.Patent, len(numbers))
 	for rows.Next() {
 		var p domain.Patent
 		if err := rows.Scan(
@@ -954,7 +954,7 @@ func sortExpr(col, direction string) string {
 	return ""
 }
 
-func (r *Repository) ListPatents(ctx context.Context, projectID string, opts storage.ListPatentsOptions) ([]domain.Patent, error) {
+func (r *Repository) ListPatents(ctx context.Context, projectID domain.ProjectID, opts storage.ListPatentsOptions) ([]domain.Patent, error) {
 	args := []any{projectID}
 	// reviewStateClause is appended after the base WHERE; subqueries that reference project_id
 	// need an extra projectID arg inserted immediately after the base projectID arg.
@@ -967,7 +967,10 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 		reviewStateClause = "pp.review_state = '" + domain.ReviewStateUnderReview + "'"
 	case domain.ReviewStateCached:
 		reviewStateClause = "pp.review_state = '" + domain.ReviewStateCached + "'"
+	case domain.ReviewStateDeleted:
+		reviewStateClause = "pp.review_state = '" + domain.ReviewStateDeleted + "'"
 	case storage.ReviewStateFilterNone:
+		// "none" means no filter at all — soft-deleted tombstones included.
 		reviewStateClause = "1=1"
 	default: // "" or "stored"
 		reviewStateClause = "pp.review_state = '" + domain.ReviewStateStored + "'"
@@ -1057,7 +1060,7 @@ func (r *Repository) ListPatents(ctx context.Context, projectID string, opts sto
 	return scanPatents(rows)
 }
 
-func (r *Repository) ListCitations(ctx context.Context, projectID string, number, relationType string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (r *Repository) ListCitations(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, relationType string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	query := `
 		select 
 			ce.source_patent, ce.target_patent, ce.relation_type, ce.review_state, ce.created_at, ce.refreshed_at, ce.labeled_at,
@@ -1098,7 +1101,7 @@ func (r *Repository) ListCitations(ctx context.Context, projectID string, number
 	return scanCitationEdges(rows)
 }
 
-func (r *Repository) ListCitationsByReviewState(ctx context.Context, projectID string, status string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (r *Repository) ListCitationsByReviewState(ctx context.Context, projectID domain.ProjectID, status string, opts storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	query := `
 		select 
 			ce.source_patent, ce.target_patent, ce.relation_type, ce.review_state, ce.created_at, ce.refreshed_at, ce.labeled_at,
@@ -1159,20 +1162,20 @@ func scanCitationEdges(rows *sql.Rows) ([]domain.CitationEdge, error) {
 	return out, rows.Err()
 }
 
-func (r *Repository) UpdateCitationReviewState(ctx context.Context, projectID string, edge domain.CitationEdge, reviewState string) error {
+func (r *Repository) UpdateCitationReviewState(ctx context.Context, projectID domain.ProjectID, edge domain.CitationEdge, reviewState string) error {
 	r.logger.Info("repository.update_citation_review_state", "project", projectID, "source", edge.SourcePatent, "target", edge.TargetPatent, "review_state", reviewState)
 	_, err := r.db.ExecContext(ctx, `update citation_edges set review_state = ?, labeled_at = ? where project_id = ? and source_patent = ? and target_patent = ? and relation_type = ?`,
 		reviewState, nowString(), projectID, edge.SourcePatent, edge.TargetPatent, edge.RelationType)
 	return err
 }
 
-func (r *Repository) UpdatePatentReviewState(ctx context.Context, projectID string, number string, reviewState string) error {
+func (r *Repository) UpdatePatentReviewState(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, reviewState string) error {
 	r.logger.Info("repository.update_patent_review_state", "project", projectID, "patent", number, "review_state", reviewState)
 	_, err := r.db.ExecContext(ctx, `update project_patents set review_state = ?, review_state_changed_at = ? where project_id = ? and patent_number = ?`, reviewState, nowString(), projectID, number)
 	return err
 }
 
-func (r *Repository) UpdateCitationReviewStates(ctx context.Context, projectID string, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
+func (r *Repository) UpdateCitationReviewStates(ctx context.Context, projectID domain.ProjectID, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
 	if len(updates) == 0 {
 		return nil, nil
 	}
@@ -1206,7 +1209,7 @@ func (r *Repository) UpdateCitationReviewStates(ctx context.Context, projectID s
 	return prior, nil
 }
 
-func (r *Repository) UpdatePatentReviewStates(ctx context.Context, projectID string, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
+func (r *Repository) UpdatePatentReviewStates(ctx context.Context, projectID domain.ProjectID, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
 	if len(updates) == 0 {
 		return nil, nil
 	}
@@ -1240,7 +1243,7 @@ func (r *Repository) UpdatePatentReviewStates(ctx context.Context, projectID str
 	return prior, nil
 }
 
-func (r *Repository) UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error {
+func (r *Repository) UpdatePatentDate(ctx context.Context, number domain.PatentNumber, dateType string, value string) error {
 	var column string
 	switch dateType {
 	case domain.LifecycleTypeApp:
@@ -1264,7 +1267,7 @@ func (r *Repository) UpdatePatentDate(ctx context.Context, number string, dateTy
 	return err
 }
 
-func (r *Repository) UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error {
+func (r *Repository) UpdatePatentNumber(ctx context.Context, number domain.PatentNumber, numType string, value string) error {
 	var column string
 	switch numType {
 	case domain.LifecycleTypeApp:
@@ -1281,7 +1284,7 @@ func (r *Repository) UpdatePatentNumber(ctx context.Context, number string, numT
 	return err
 }
 
-func (r *Repository) UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error {
+func (r *Repository) UpdateClassificationDescription(ctx context.Context, projectID domain.ProjectID, system, code, description string) error {
 	r.logger.Debug("repository.update_classification_description", "system", system, "code", code)
 	cls := domain.ParseClassification(code)
 	if cls.System != "" {
@@ -1295,12 +1298,12 @@ func (r *Repository) UpdateClassificationDescription(ctx context.Context, projec
 	return err
 }
 
-func (r *Repository) DeletePatent(ctx context.Context, projectID string, number string) error {
+func (r *Repository) DeletePatent(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) error {
 	r.logger.Info("repository.delete_patent", "project", projectID, "patent", number)
 	return r.UpdatePatentReviewState(ctx, projectID, number, domain.ReviewStateIgnored)
 }
 
-func (r *Repository) ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error) {
+func (r *Repository) ListClassifications(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.Classification, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		select c.patent_number, c.system, c.code,
 			coalesce(d.section, ''), coalesce(d.class, ''), coalesce(d.subclass, ''),
@@ -1324,7 +1327,7 @@ func (r *Repository) ListClassifications(ctx context.Context, projectID string, 
 	return out, rows.Err()
 }
 
-func (r *Repository) GetClassificationStats(ctx context.Context, projectID string, code string) (domain.ClassificationStats, error) {
+func (r *Repository) GetClassificationStats(ctx context.Context, projectID domain.ProjectID, code string) (domain.ClassificationStats, error) {
 	query := `
 		SELECT review_state, count(*)
 		FROM project_patents
@@ -1358,7 +1361,7 @@ func (r *Repository) GetClassificationStats(ctx context.Context, projectID strin
 	}
 	return stats, rows.Err()
 }
-func (r *Repository) ListTextSections(ctx context.Context, projectID string, number string) ([]domain.PatentTextSection, error) {
+func (r *Repository) ListTextSections(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.PatentTextSection, error) {
 	rows, err := r.db.QueryContext(ctx, `select patent_number, section_type, ordinal, text from patent_text_sections where patent_number = ? order by section_type, ordinal`, number)
 	if err != nil {
 		return nil, err
@@ -1375,7 +1378,7 @@ func (r *Repository) ListTextSections(ctx context.Context, projectID string, num
 	return out, rows.Err()
 }
 
-func (r *Repository) AddNote(ctx context.Context, projectID string, number, body string) (domain.ResearchNote, error) {
+func (r *Repository) AddNote(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, body string) (domain.ResearchNote, error) {
 	r.logger.Info("repository.add_note", "project", projectID, "patent", number)
 	created := nowString()
 	res, err := r.db.ExecContext(ctx, `insert into research_notes (project_id, patent_number, body, created_at) values (?, ?, ?, ?)`, projectID, number, body, created)
@@ -1387,7 +1390,7 @@ func (r *Repository) AddNote(ctx context.Context, projectID string, number, body
 	return domain.ResearchNote{ID: id, PatentNumber: number, Body: body, CreatedAt: parseTime(created)}, nil
 }
 
-func (r *Repository) ListNotes(ctx context.Context, projectID string, number string) ([]domain.ResearchNote, error) {
+func (r *Repository) ListNotes(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.ResearchNote, error) {
 	rows, err := r.db.QueryContext(ctx, `select id, patent_number, body, created_at from research_notes where project_id = ? and patent_number = ? order by created_at desc`, projectID, number)
 	if err != nil {
 		return nil, err
@@ -1406,7 +1409,7 @@ func (r *Repository) ListNotes(ctx context.Context, projectID string, number str
 	return out, rows.Err()
 }
 
-func (r *Repository) AddReference(ctx context.Context, projectID string, number, label string) (domain.ReferenceEntry, error) {
+func (r *Repository) AddReference(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, label string) (domain.ReferenceEntry, error) {
 	r.logger.Info("repository.add_reference", "project", projectID, "patent", number, "label", label)
 	created := nowString()
 	_, err := r.db.ExecContext(ctx, `insert into reference_entries (project_id, patent_number, citation_label, created_at)
@@ -1419,7 +1422,7 @@ func (r *Repository) AddReference(ctx context.Context, projectID string, number,
 	return domain.ReferenceEntry{PatentNumber: number, CitationLabel: label, CreatedAt: parseTime(created)}, nil
 }
 
-func (r *Repository) ListReferences(ctx context.Context, projectID string) ([]domain.ReferenceEntry, error) {
+func (r *Repository) ListReferences(ctx context.Context, projectID domain.ProjectID) ([]domain.ReferenceEntry, error) {
 	rows, err := r.db.QueryContext(ctx, `select id, patent_number, citation_label, created_at from reference_entries where project_id = ? order by created_at, patent_number`, projectID)
 	if err != nil {
 		return nil, err
@@ -1438,7 +1441,7 @@ func (r *Repository) ListReferences(ctx context.Context, projectID string) ([]do
 	return out, rows.Err()
 }
 
-func (r *Repository) AddAIAnalysis(ctx context.Context, projectID string, analysis domain.AIAnalysis) (domain.AIAnalysis, error) {
+func (r *Repository) AddAIAnalysis(ctx context.Context, projectID domain.ProjectID, analysis domain.AIAnalysis) (domain.AIAnalysis, error) {
 	r.logger.Info("repository.add_ai_analysis", "project", projectID, "patent", analysis.PatentNumber, "type", analysis.AnalysisType)
 	analysis.CreatedAt = time.Now().UTC()
 	res, err := r.db.ExecContext(ctx, `insert into ai_analyses (project_id, patent_number, analysis_type, compared_patent_number, provider, body, created_at) values (?, ?, ?, ?, ?, ?, ?)`,
@@ -1451,7 +1454,7 @@ func (r *Repository) AddAIAnalysis(ctx context.Context, projectID string, analys
 	return analysis, nil
 }
 
-func (r *Repository) ListAIAnalyses(ctx context.Context, projectID string, number string) ([]domain.AIAnalysis, error) {
+func (r *Repository) ListAIAnalyses(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.AIAnalysis, error) {
 	rows, err := r.db.QueryContext(ctx, `select id, patent_number, analysis_type, compared_patent_number, provider, body, created_at from ai_analyses where project_id = ? and patent_number = ? order by created_at desc`, projectID, number)
 	if err != nil {
 		return nil, err
@@ -1491,7 +1494,7 @@ func scanPatent(row interface{ Scan(...any) error }) (domain.Patent, error) {
 		return domain.Patent{}, err
 	}
 	if p.CountryCode == "" {
-		p.CountryCode = domain.PatentCountryFromNumber(p.Number)
+		p.CountryCode = domain.PatentCountryFromNumber(string(p.Number))
 	}
 	p.ExpirationSource = expirationSource.String
 	if createdAt.Valid {
@@ -1527,12 +1530,12 @@ func scanPatents(rows *sql.Rows) ([]domain.Patent, error) {
 
 func CitationLabel(p domain.Patent) string {
 	if p.Title == "" {
-		return p.Number
+		return string(p.Number)
 	}
 	return fmt.Sprintf("%s, %s", p.Number, p.Title)
 }
 
-func firstNonEmpty(values ...string) string {
+func firstNonEmpty[T ~string](values ...T) T {
 	for _, value := range values {
 		if value != "" {
 			return value
@@ -1601,7 +1604,7 @@ func (r *Repository) AddProjectEvent(ctx context.Context, e domain.ProjectEvent)
 	return e, nil
 }
 
-func (r *Repository) ListProjectEvents(ctx context.Context, projectID string) ([]domain.ProjectEvent, error) {
+func (r *Repository) ListProjectEvents(ctx context.Context, projectID domain.ProjectID) ([]domain.ProjectEvent, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select id, project_id, event_type, event_date, due_date, reference, notes, created_at from project_events where project_id = ? order by event_date desc, created_at desc`,
 		projectID)
@@ -1649,7 +1652,7 @@ func (r *Repository) AddProjectInvoice(ctx context.Context, inv domain.ProjectIn
 	return inv, nil
 }
 
-func (r *Repository) ListProjectInvoices(ctx context.Context, projectID string) ([]domain.ProjectInvoice, error) {
+func (r *Repository) ListProjectInvoices(ctx context.Context, projectID domain.ProjectID) ([]domain.ProjectInvoice, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select id, project_id, direction, firm_name, invoice_number, amount, currency, invoice_date, due_date, paid_date, status, description, notes, created_at from project_invoices where project_id = ? order by invoice_date desc, created_at desc`,
 		projectID)
@@ -1684,16 +1687,16 @@ func (r *Repository) DeleteProjectInvoice(ctx context.Context, id int64) error {
 	return err
 }
 
-func (r *Repository) CountUnpaidInvoicesByProject(ctx context.Context) (map[string]int, error) {
+func (r *Repository) CountUnpaidInvoicesByProject(ctx context.Context) (map[domain.ProjectID]int, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select project_id, count(*) from project_invoices where status != 'paid' group by project_id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[string]int)
+	out := make(map[domain.ProjectID]int)
 	for rows.Next() {
-		var projectID string
+		var projectID domain.ProjectID
 		var count int
 		if err := rows.Scan(&projectID, &count); err != nil {
 			return nil, err
@@ -1713,7 +1716,7 @@ func (r *Repository) AddFamilyEdge(ctx context.Context, edge domain.FamilyEdge) 
 	return err
 }
 
-func (r *Repository) ListFamilyEdges(ctx context.Context, projectID, number string) (parents []domain.FamilyEdge, children []domain.FamilyEdge, err error) {
+func (r *Repository) ListFamilyEdges(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) (parents []domain.FamilyEdge, children []domain.FamilyEdge, err error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select project_id, parent_number, child_number, relation_type, created_at
 		 from patent_family
@@ -1740,7 +1743,7 @@ func (r *Repository) ListFamilyEdges(ctx context.Context, projectID, number stri
 	return parents, children, rows.Err()
 }
 
-func (r *Repository) RemoveFamilyEdge(ctx context.Context, projectID, parentNumber, childNumber string) error {
+func (r *Repository) RemoveFamilyEdge(ctx context.Context, projectID domain.ProjectID, parentNumber, childNumber domain.PatentNumber) error {
 	r.logger.Info("repository.remove_family_edge", "project", projectID, "parent", parentNumber, "child", childNumber)
 	_, err := r.db.ExecContext(ctx,
 		`delete from patent_family where project_id = ? and parent_number = ? and child_number = ?`,
@@ -1748,7 +1751,7 @@ func (r *Repository) RemoveFamilyEdge(ctx context.Context, projectID, parentNumb
 	return err
 }
 
-func (r *Repository) ListAllFamilyEdges(ctx context.Context, projectID string) ([]domain.FamilyEdge, error) {
+func (r *Repository) ListAllFamilyEdges(ctx context.Context, projectID domain.ProjectID) ([]domain.FamilyEdge, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select project_id, parent_number, child_number, relation_type, created_at from patent_family where project_id = ? order by created_at asc`,
 		projectID)
@@ -1768,7 +1771,7 @@ func (r *Repository) ListAllFamilyEdges(ctx context.Context, projectID string) (
 	return out, rows.Err()
 }
 
-func (r *Repository) PurgeIgnored(ctx context.Context, projectID string) (int, error) {
+func (r *Repository) PurgeIgnored(ctx context.Context, projectID domain.ProjectID) (int, error) {
 	r.logger.Info("repository.purge_ignored", "project", projectID)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1826,7 +1829,7 @@ func (r *Repository) AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (do
 	return entry, nil
 }
 
-func (r *Repository) ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
+func (r *Repository) ListIDSEntries(ctx context.Context, projectID domain.ProjectID) ([]domain.IDSEntry, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select id, project_id, patent_number, coalesce(kind_code,''), coalesce(country_code,''), coalesce(in_full,0), coalesce(relevant_passages,''), notes, status, added_at from project_ids where project_id = ? order by added_at desc`,
 		projectID)
@@ -1871,7 +1874,7 @@ func (r *Repository) DeleteIDSEntry(ctx context.Context, id int64) error {
 	return err
 }
 
-func (r *Repository) DeleteIDSEntriesForPatents(ctx context.Context, projectID string, patentNumbers []string) (int, error) {
+func (r *Repository) DeleteIDSEntriesForPatents(ctx context.Context, projectID domain.ProjectID, patentNumbers []domain.PatentNumber) (int, error) {
 	if len(patentNumbers) == 0 {
 		return 0, nil
 	}
@@ -1913,7 +1916,7 @@ func (r *Repository) AddIDSNPLEntry(ctx context.Context, entry domain.IDSEntry) 
 	return entry, nil
 }
 
-func (r *Repository) ListIDSNPLEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error) {
+func (r *Repository) ListIDSNPLEntries(ctx context.Context, projectID domain.ProjectID) ([]domain.IDSEntry, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`select id, project_id, npl_author, npl_title, npl_date, npl_publisher, relevant_passages, notes, status, added_at from project_ids_npl where project_id = ? order by added_at desc`,
 		projectID)
@@ -1943,7 +1946,7 @@ func (r *Repository) DeleteIDSNPLEntry(ctx context.Context, id int64) error {
 	return err
 }
 
-func (r *Repository) GetIDSMetadata(ctx context.Context, projectID string) (domain.IDSMetadata, error) {
+func (r *Repository) GetIDSMetadata(ctx context.Context, projectID domain.ProjectID) (domain.IDSMetadata, error) {
 	var m domain.IDSMetadata
 	var updatedAt string
 	err := r.db.QueryRowContext(ctx,

@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -566,21 +565,10 @@ func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	p := m.patents[m.patentSelected]
-	if !m.applyChange(changes.RemovePatents([]string{p.Number})) {
+	if !m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{p.Number}, domain.ReviewStateDeleted)) {
 		m.setMode(viewList)
 		return m, nil
 	}
-
-	// Delete PDF if it exists
-	pdfPath := filepath.Join(defaultPDFDir, p.Number+".pdf")
-	if _, err := os.Stat(pdfPath); err == nil {
-		if err := os.Remove(pdfPath); err != nil {
-			m.logger.Error("failed to delete pdf", "path", pdfPath, "error", err)
-		} else {
-			m.logger.Info("deleted pdf", "path", pdfPath)
-		}
-	}
-
 	m.logActivity(ActivityPatentDelete, p.Number, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageDeletedPatent), p.Number)
 	m.setMode(viewList)

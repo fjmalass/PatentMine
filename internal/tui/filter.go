@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -93,6 +95,7 @@ var validReviewStateFilters = map[string]string{
 	domain.ReviewStateIgnored:     domain.ReviewStateIgnored,
 	domain.ReviewStateUnderReview: domain.ReviewStateUnderReview,
 	domain.ReviewStateCached:      domain.ReviewStateCached,
+	domain.ReviewStateDeleted:     domain.ReviewStateDeleted,
 	reviewStateFilterNone:         reviewStateFilterNone,
 }
 
@@ -612,5 +615,35 @@ func (m *Model) purgeCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.message = fmt.Sprintf("purged %d ignored records, database compacted", n)
+	return m.refreshList()
+}
+
+// compactCommand purges soft-deleted patents for good: it hard-deletes every
+// patent in the project marked review_state='deleted', removes the cached PDF,
+// then VACUUMs. Irreversible — the soft-delete tombstone is the recoverable stage.
+func (m *Model) compactCommand() (tea.Model, tea.Cmd) {
+	deleted, err := m.repo.ListPatents(m.ctx, m.ProjectID, storage.ListPatentsOptions{
+		ReviewStateFilter: domain.ReviewStateDeleted,
+	})
+	if err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	for _, p := range deleted {
+		if err := m.repo.DeletePatentCompletely(m.ctx, p.Number); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+		pdfPath := filepath.Join(defaultPDFDir, p.Number+".pdf")
+		if removeErr := os.Remove(pdfPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			m.logger.Error("compact: failed to delete pdf", "path", pdfPath, "error", removeErr)
+		}
+	}
+	if err := m.repo.Compact(m.ctx); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.logger.Info("compact done", "project", m.ProjectID, "purged", len(deleted))
+	m.message = fmt.Sprintf("compacted: purged %d deleted patent(s)", len(deleted))
 	return m.refreshList()
 }

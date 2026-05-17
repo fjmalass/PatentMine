@@ -144,7 +144,7 @@ func (m *Model) reloadAvailableTags() *Model {
 		preloadNum = m.current.Number
 	}
 	if preloadNum != "" {
-		pTags, err := m.repo.GetPatentTags(m.ctx, preloadNum)
+		pTags, err := m.repo.GetPatentTags(m.ctx, m.ProjectID, preloadNum)
 		if err == nil {
 			for _, pt := range pTags {
 				m.selectedPatentTags[pt.ID] = true

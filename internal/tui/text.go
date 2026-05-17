@@ -382,10 +382,10 @@ func EnglishText() TextCatalog {
 		TextMessageUnderReviewPatent: "marked under review: %s",
 		TextMessageDeletedPatent:     "deleted patent: %s",
 
-		TextDeleteConfirmPrompt: "Are you sure you want to delete patent %s and its PDF? (y/n)",
+		TextDeleteConfirmPrompt: "Delete patent %s? It is hidden from lists until :compact purges it. (y/n)",
 
 		TextHelpPurge:      "Purge all ignored patents from the project and vacuum the database.",
-		TextHelpCompact:    "Compact (vacuum) the SQLite database to reclaim space.",
+		TextHelpCompact:    "Purge soft-deleted patents for good and vacuum the database.",
 		TextHelpNote:       "Log a research note for the current patent.",
 		TextHelpNoteSave:   "Save note and return (date/time stamped automatically).",
 		TextHelpExit:       "Quit the application.",

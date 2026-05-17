@@ -2,7 +2,6 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"patentmine/internal/domain"
 )
 
 func (m *Model) navigateTo(mode viewMode) *Model {
@@ -18,13 +17,18 @@ func (m *Model) navigateTo(mode viewMode) *Model {
 }
 
 func (m *Model) snapshot() navSnapshot {
-	patents := m.patents
-	projects := make([]domain.Project, len(m.projects))
-	copy(projects, m.projects)
+	selectedPatentNumber := ""
+	if m.patentSelected >= 0 && m.patentSelected < len(m.patents) {
+		selectedPatentNumber = m.patents[m.patentSelected].Number
+	}
+	selectedProjectID := ""
+	if m.projectSelected >= 0 && m.projectSelected < len(m.projects) {
+		selectedProjectID = m.projects[m.projectSelected].ID
+	}
 	return navSnapshot{
 		mode:                         m.mode,
-		patents:                      patents,
-		projects:                     projects,
+		selectedPatentNumber:         selectedPatentNumber,
+		selectedProjectID:            selectedProjectID,
 		patentSelected:                     m.patentSelected,
 		projectSelected:              m.projectSelected,
 		projectEventsSelected:        m.projectEventsSelected,
@@ -83,11 +87,27 @@ func (m *Model) effectiveWidth() int {
 	return m.width
 }
 
+// findListIndex returns the position of id among count items, reading each
+// item's id with idAt. When id is not found — the item was removed, or the
+// list has not loaded yet — it falls back to prevIndex clamped to the list;
+// an empty list keeps prevIndex so a later list reload can place the cursor.
+func findListIndex(id string, prevIndex, count int, idAt func(int) string) int {
+	if id != "" {
+		for i := 0; i < count; i++ {
+			if idAt(i) == id {
+				return i
+			}
+		}
+	}
+	if count == 0 {
+		return prevIndex
+	}
+	return clamp(prevIndex, 0, count-1)
+}
+
 func (m *Model) restore(snapshot navSnapshot) *Model {
-	m.patents = snapshot.patents
-	m.projects = snapshot.projects
-	m.patentSelected = snapshot.patentSelected
-	m.projectSelected = snapshot.projectSelected
+	m.patentSelected = findListIndex(snapshot.selectedPatentNumber, snapshot.patentSelected, len(m.patents), func(i int) string { return m.patents[i].Number })
+	m.projectSelected = findListIndex(snapshot.selectedProjectID, snapshot.projectSelected, len(m.projects), func(i int) string { return m.projects[i].ID })
 	m.projectEventsSelected = snapshot.projectEventsSelected
 	m.projectInvoicesSelected = snapshot.projectInvoicesSelected
 	m.projectIDSSelected = snapshot.projectIDSSelected

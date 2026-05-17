@@ -78,6 +78,10 @@ type Model struct {
 	spinner                      spinner.Model
 	loading                      bool
 	loadingMsg                   string
+	// pendingDetails counts outstanding async citation-detail imports. The
+	// throbber stays up and the patent list keeps refreshing until it hits 0,
+	// so a bulk import of N patents is not cut short by the first result.
+	pendingDetails int
 	lastVisualStart              int
 	lastVisualEnd                int
 	lastVisualValid              bool
@@ -181,8 +185,8 @@ type detailCache struct {
 
 type navSnapshot struct {
 	mode                         viewMode
-	patents                      []domain.Patent
-	projects                     []domain.Project
+	selectedPatentNumber         string
+	selectedProjectID            string
 	patentSelected               int
 	projectSelected              int
 	projectEventsSelected        int
@@ -390,14 +394,23 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return updated, listCmd
 	case refreshDetailsResultMsg:
-		m.loading = false
-		m.cancel = nil
+		// One async import finished. Keep the throbber up until the whole batch
+		// drains; reload the list every time so each imported patent appears as
+		// soon as it lands rather than only the ones present before the batch.
+		if m.pendingDetails > 0 {
+			m.pendingDetails--
+		}
+		if m.pendingDetails <= 0 {
+			m.pendingDetails = 0
+			m.loading = false
+			m.cancel = nil
+		}
 		if msg.err != nil {
 			m.err = msg.err.Error()
-			return m, nil
+		} else if msg.message != "" {
+			m.message = msg.message
 		}
-		m.message = msg.message
-		return m, nil
+		return m.refreshList()
 	case browserOpenedMsg:
 		m.message = fmt.Sprintf(m.text.T(TextMessageBrowserOpened), msg.URL)
 		m.err = ""
@@ -769,8 +782,16 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.navigateTo(viewClassifications), nil
 		case keyCites:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.patentSelected]
+				m.populateDetailCache()
+			}
 			m = m.navigateTo(viewCites)
 		case keyCitedBy:
+			if m.mode == viewList && len(m.patents) > 0 {
+				m.current = m.patents[m.patentSelected]
+				m.populateDetailCache()
+			}
 			m = m.navigateTo(viewCitedBy)
 		case keyFamily:
 			if m.mode == viewList && len(m.patents) > 0 {

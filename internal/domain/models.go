@@ -67,9 +67,9 @@ const (
 )
 
 type FamilyEdge struct {
-	ProjectID    string
-	ParentNumber string
-	ChildNumber  string
+	ProjectID    ProjectID
+	ParentNumber PatentNumber
+	ChildNumber  PatentNumber
 	RelationType string
 	CreatedAt    time.Time
 }
@@ -79,6 +79,9 @@ const (
 	ReviewStateStored      = "stored"
 	ReviewStateIgnored     = "ignored"
 	ReviewStateCached      = "cached"
+	// ReviewStateDeleted is a soft-delete tombstone: the patent is hidden from
+	// every list except an explicit deleted filter, and purged for good by :compact.
+	ReviewStateDeleted = "deleted"
 )
 
 const (
@@ -215,7 +218,7 @@ func PatentCountryFromNumber(number string) string {
 
 type ProjectInvoice struct {
 	ID            int64
-	ProjectID     string
+	ProjectID     ProjectID
 	Direction     string
 	FirmName      string
 	InvoiceNumber string
@@ -258,7 +261,7 @@ const (
 
 type ProjectEvent struct {
 	ID        int64
-	ProjectID string
+	ProjectID ProjectID
 	EventType string
 	EventDate string
 	DueDate   string
@@ -274,7 +277,7 @@ const (
 )
 
 type Patent struct {
-	Number               string
+	Number               PatentNumber
 	CountryCode          string
 	Title                string
 	Abstract             string
@@ -303,15 +306,15 @@ type Patent struct {
 }
 
 type PatentTextSection struct {
-	PatentNumber string
+	PatentNumber PatentNumber
 	SectionType  string
 	Ordinal      int
 	Text         string
 }
 
 type CitationEdge struct {
-	SourcePatent         string
-	TargetPatent         string
+	SourcePatent         PatentNumber
+	TargetPatent         PatentNumber
 	RelationType         string
 	ReviewState          string
 	CreatedAt            time.Time
@@ -324,7 +327,7 @@ type CitationEdge struct {
 }
 
 type Classification struct {
-	PatentNumber string
+	PatentNumber PatentNumber
 	System       string
 	Code         string
 	Section      string
@@ -345,20 +348,20 @@ type ClassificationStats struct {
 
 type ResearchNote struct {
 	ID           int64
-	PatentNumber string
+	PatentNumber PatentNumber
 	Body         string
 	CreatedAt    time.Time
 }
 
 type ReferenceEntry struct {
 	ID            int64
-	PatentNumber  string
+	PatentNumber  PatentNumber
 	CitationLabel string
 	CreatedAt     time.Time
 }
 
 type Project struct {
-	ID            string
+	ID            ProjectID
 	Name          string
 	Status        string
 	SummaryStatus string
@@ -370,9 +373,9 @@ type Project struct {
 
 type AIAnalysis struct {
 	ID                   int64
-	PatentNumber         string
+	PatentNumber         PatentNumber
 	AnalysisType         string
-	ComparedPatentNumber string
+	ComparedPatentNumber PatentNumber
 	Provider             string
 	Body                 string
 	CreatedAt            time.Time
@@ -380,8 +383,8 @@ type AIAnalysis struct {
 
 type IDSEntry struct {
 	ID               int64
-	ProjectID        string
-	PatentNumber     string
+	ProjectID        ProjectID
+	PatentNumber     PatentNumber
 	KindCode         string // see IDSKindCode* constants
 	CountryCode      string // see IDSCountry* constants
 	IsNPL            bool   // non-patent literature
@@ -436,7 +439,7 @@ func ValidateIDSPassages(s string) error {
 }
 
 type IDSMetadata struct {
-	ProjectID      string
+	ProjectID      ProjectID
 	AppNumber      string
 	FilingDate     string
 	FirstInventor  string

@@ -410,7 +410,7 @@ func (m *Model) populateDetailCache() {
 	parents, children, _ := m.repo.ListFamilyEdges(m.ctx, m.ProjectID, p.Number)
 	notes, _ := m.repo.ListNotes(m.ctx, m.ProjectID, p.Number)
 	ids, _ := m.repo.ListIDSEntries(m.ctx, m.ProjectID)
-	tags, _ := m.repo.GetPatentTags(m.ctx, p.Number)
+	tags, _ := m.repo.GetPatentTags(m.ctx, m.ProjectID, p.Number)
 
 	m.detailCache = detailCache{
 		Number:              p.Number,

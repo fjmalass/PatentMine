@@ -97,7 +97,6 @@ func (m *Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	m.pendingBundle = bundle
 	m.pendingCitation = edge
 	m.current = bundle.Patent
-	m.current.ReviewState = edge.ReviewState // popup shows citation edge state, matching list column
 	m.detailSelected = 0
 	m.populateDetailCache()
 	m.setMode(viewPopupPatentDetail)
@@ -123,7 +122,7 @@ func (m *Model) storeSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 		return m.openSelectedReviewCitation()
 	}
-	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored, false)) {
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored)) {
 		return m, nil
 	}
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
@@ -148,7 +147,7 @@ func (m *Model) updateSelectedReviewCitationReviewState(status string, messageKe
 	}
 
 	edge := edges[indices[0]]
-	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status, false)) {
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status)) {
 		return m, nil
 	}
 	if status != m.reviewState {
@@ -180,8 +179,10 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 
 	m.logger.Info("bulk citation action started", "project", m.ProjectID, "action", action, "status", status, "count", len(edges))
 
-	// One transaction: all edges move together or none do.
-	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, edges, status, false)) {
+	// One transaction: all edges move together or none do. Each target patent
+	// already in the project moves with its edge; a bulk store additionally
+	// imports targets that are not yet project members.
+	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, edges, status)) {
 		m.clearVisualMode()
 		m.bulkActionEdges = nil
 		return m.goBack()
@@ -208,6 +209,7 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 	if importCount > 0 {
 		m.loading = true
 		m.loadingMsg = fmt.Sprintf("downloading %d patents...", importCount)
+		m.pendingDetails += importCount
 		cmds = append(cmds, m.spinner.Tick)
 	}
 	return model, tea.Batch(cmds...)
@@ -233,7 +235,7 @@ func (m *Model) executeBulkDelete(nums []string) (tea.Model, tea.Cmd) {
 	}
 
 	m.logger.Info("bulk delete started", "project", m.ProjectID, "count", len(nums), "patents", nums)
-	if !m.applyChange(changes.RemovePatents(nums)) {
+	if !m.applyChange(changes.SetPatentReviewState(m.ProjectID, nums, domain.ReviewStateDeleted)) {
 		return finish("")
 	}
 	for _, num := range nums {

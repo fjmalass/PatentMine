@@ -38,7 +38,7 @@ type CitationStateUpdate struct {
 
 // PatentStateUpdate pairs a patent number with a target review state.
 type PatentStateUpdate struct {
-	Number      string
+	Number      domain.PatentNumber
 	ReviewState string
 }
 
@@ -48,54 +48,54 @@ type Repository interface {
 
 	// Project Management
 	CreateProject(ctx context.Context, p domain.Project) error
-	GetProject(ctx context.Context, id string) (domain.Project, error)
+	GetProject(ctx context.Context, id domain.ProjectID) (domain.Project, error)
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 	UpdateProject(ctx context.Context, p domain.Project) error
-	DeleteProject(ctx context.Context, id string) error
-	AddPatentToProject(ctx context.Context, projectID, patentNumber string) error
-	RemovePatentFromProject(ctx context.Context, projectID, patentNumber string) error
+	DeleteProject(ctx context.Context, id domain.ProjectID) error
+	AddPatentToProject(ctx context.Context, projectID domain.ProjectID, patentNumber domain.PatentNumber) error
+	RemovePatentFromProject(ctx context.Context, projectID domain.ProjectID, patentNumber domain.PatentNumber) error
 
-	UpsertPatentBundle(ctx context.Context, projectID string, bundle domain.PatentBundle) error
-	GetPatent(ctx context.Context, projectID string, number string) (domain.Patent, error)
-	ListFamilyPatents(ctx context.Context, projectID string, numbers []string) (map[string]domain.Patent, error)
-	ListPatents(ctx context.Context, projectID string, opts ListPatentsOptions) ([]domain.Patent, error)
-	ListCitations(ctx context.Context, projectID string, number, relationType string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
-	ListCitationsByReviewState(ctx context.Context, projectID string, reviewState string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
-	UpdateCitationReviewState(ctx context.Context, projectID string, edge domain.CitationEdge, reviewState string) error
-	UpdatePatentReviewState(ctx context.Context, projectID string, number string, reviewState string) error
+	UpsertPatentBundle(ctx context.Context, projectID domain.ProjectID, bundle domain.PatentBundle) error
+	GetPatent(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) (domain.Patent, error)
+	ListFamilyPatents(ctx context.Context, projectID domain.ProjectID, numbers []domain.PatentNumber) (map[domain.PatentNumber]domain.Patent, error)
+	ListPatents(ctx context.Context, projectID domain.ProjectID, opts ListPatentsOptions) ([]domain.Patent, error)
+	ListCitations(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, relationType string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
+	ListCitationsByReviewState(ctx context.Context, projectID domain.ProjectID, reviewState string, opts ListCitationsOptions) ([]domain.CitationEdge, error)
+	UpdateCitationReviewState(ctx context.Context, projectID domain.ProjectID, edge domain.CitationEdge, reviewState string) error
+	UpdatePatentReviewState(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, reviewState string) error
 	// UpdateCitationReviewStates applies all updates in one transaction and
 	// returns the prior states (same edges) so the operation can be reversed.
-	UpdateCitationReviewStates(ctx context.Context, projectID string, updates []CitationStateUpdate) ([]CitationStateUpdate, error)
+	UpdateCitationReviewStates(ctx context.Context, projectID domain.ProjectID, updates []CitationStateUpdate) ([]CitationStateUpdate, error)
 	// UpdatePatentReviewStates applies all updates in one transaction and
 	// returns the prior states (same patents) so the operation can be reversed.
-	UpdatePatentReviewStates(ctx context.Context, projectID string, updates []PatentStateUpdate) ([]PatentStateUpdate, error)
-	UpdatePatentDate(ctx context.Context, number string, dateType string, value string) error
-	UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error
-	UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error
-	DeletePatent(ctx context.Context, projectID string, number string) error
+	UpdatePatentReviewStates(ctx context.Context, projectID domain.ProjectID, updates []PatentStateUpdate) ([]PatentStateUpdate, error)
+	UpdatePatentDate(ctx context.Context, number domain.PatentNumber, dateType string, value string) error
+	UpdatePatentNumber(ctx context.Context, number domain.PatentNumber, numType string, value string) error
+	UpdateClassificationDescription(ctx context.Context, projectID domain.ProjectID, system, code, description string) error
+	DeletePatent(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) error
 	// DeletePatentCompletely hard-deletes a patent and every row that
 	// references it (across all projects), then the patents record itself.
-	DeletePatentCompletely(ctx context.Context, number string) error
-	ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error)
-	GetClassificationStats(ctx context.Context, projectID string, code string) (domain.ClassificationStats, error)
-	ListTextSections(ctx context.Context, projectID string, number string) ([]domain.PatentTextSection, error)
-	AddNote(ctx context.Context, projectID string, number, body string) (domain.ResearchNote, error)
-	ListNotes(ctx context.Context, projectID string, number string) ([]domain.ResearchNote, error)
-	AddReference(ctx context.Context, projectID string, number, label string) (domain.ReferenceEntry, error)
-	ListReferences(ctx context.Context, projectID string) ([]domain.ReferenceEntry, error)
-	AddAIAnalysis(ctx context.Context, projectID string, analysis domain.AIAnalysis) (domain.AIAnalysis, error)
-	ListAIAnalyses(ctx context.Context, projectID string, number string) ([]domain.AIAnalysis, error)
+	DeletePatentCompletely(ctx context.Context, number domain.PatentNumber) error
+	ListClassifications(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.Classification, error)
+	GetClassificationStats(ctx context.Context, projectID domain.ProjectID, code string) (domain.ClassificationStats, error)
+	ListTextSections(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.PatentTextSection, error)
+	AddNote(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, body string) (domain.ResearchNote, error)
+	ListNotes(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.ResearchNote, error)
+	AddReference(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, label string) (domain.ReferenceEntry, error)
+	ListReferences(ctx context.Context, projectID domain.ProjectID) ([]domain.ReferenceEntry, error)
+	AddAIAnalysis(ctx context.Context, projectID domain.ProjectID, analysis domain.AIAnalysis) (domain.AIAnalysis, error)
+	ListAIAnalyses(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) ([]domain.AIAnalysis, error)
 
 	// Project lifecycle events
 	AddProjectEvent(ctx context.Context, e domain.ProjectEvent) (domain.ProjectEvent, error)
-	ListProjectEvents(ctx context.Context, projectID string) ([]domain.ProjectEvent, error)
+	ListProjectEvents(ctx context.Context, projectID domain.ProjectID) ([]domain.ProjectEvent, error)
 	DeleteProjectEvent(ctx context.Context, id int64) error
 
 	// Patent family relationships
 	AddFamilyEdge(ctx context.Context, edge domain.FamilyEdge) error
-	ListFamilyEdges(ctx context.Context, projectID, number string) (parents []domain.FamilyEdge, children []domain.FamilyEdge, err error)
-	ListAllFamilyEdges(ctx context.Context, projectID string) ([]domain.FamilyEdge, error)
-	RemoveFamilyEdge(ctx context.Context, projectID, parentNumber, childNumber string) error
+	ListFamilyEdges(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) (parents []domain.FamilyEdge, children []domain.FamilyEdge, err error)
+	ListAllFamilyEdges(ctx context.Context, projectID domain.ProjectID) ([]domain.FamilyEdge, error)
+	RemoveFamilyEdge(ctx context.Context, projectID domain.ProjectID, parentNumber, childNumber domain.PatentNumber) error
 
 	// Settings
 	GetSetting(ctx context.Context, key string) (string, error)
@@ -103,37 +103,37 @@ type Repository interface {
 
 	// Project invoices
 	AddProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) (domain.ProjectInvoice, error)
-	ListProjectInvoices(ctx context.Context, projectID string) ([]domain.ProjectInvoice, error)
+	ListProjectInvoices(ctx context.Context, projectID domain.ProjectID) ([]domain.ProjectInvoice, error)
 	UpdateProjectInvoice(ctx context.Context, inv domain.ProjectInvoice) error
 	DeleteProjectInvoice(ctx context.Context, id int64) error
-	CountUnpaidInvoicesByProject(ctx context.Context) (map[string]int, error)
+	CountUnpaidInvoicesByProject(ctx context.Context) (map[domain.ProjectID]int, error)
 
 	// IDS (Information Disclosure Statement)
 	AddIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)
-	ListIDSEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error)
+	ListIDSEntries(ctx context.Context, projectID domain.ProjectID) ([]domain.IDSEntry, error)
 	DeleteIDSEntry(ctx context.Context, id int64) error
-	DeleteIDSEntriesForPatents(ctx context.Context, projectID string, patentNumbers []string) (int, error)
+	DeleteIDSEntriesForPatents(ctx context.Context, projectID domain.ProjectID, patentNumbers []domain.PatentNumber) (int, error)
 	UpdateIDSEntryStatus(ctx context.Context, id int64, status domain.IDSStatus) error
 	UpdateIDSEntry(ctx context.Context, entry domain.IDSEntry) error
-	GetIDSMetadata(ctx context.Context, projectID string) (domain.IDSMetadata, error)
+	GetIDSMetadata(ctx context.Context, projectID domain.ProjectID) (domain.IDSMetadata, error)
 	SaveIDSMetadata(ctx context.Context, meta domain.IDSMetadata) error
 	AddIDSNPLEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)
-	ListIDSNPLEntries(ctx context.Context, projectID string) ([]domain.IDSEntry, error)
+	ListIDSNPLEntries(ctx context.Context, projectID domain.ProjectID) ([]domain.IDSEntry, error)
 	DeleteIDSNPLEntry(ctx context.Context, id int64) error
 
 	// Tagging
-	CreateTag(ctx context.Context, projectID, name, color string) (int64, error)
-	ListTagsWithCounts(ctx context.Context, projectID string) ([]domain.TagWithCount, error)
+	CreateTag(ctx context.Context, projectID domain.ProjectID, name, color string) (int64, error)
+	ListTagsWithCounts(ctx context.Context, projectID domain.ProjectID) ([]domain.TagWithCount, error)
 	DeleteTag(ctx context.Context, tagID int64) error
 	RenameTag(ctx context.Context, tagID int64, newName string) error
 	UpdateTagColor(ctx context.Context, tagID int64, color string) error
-	GetTagByName(ctx context.Context, projectID, name string) (domain.Tag, error)
-	ApplyTagToPatent(ctx context.Context, patentNumber string, tagID int64) error
-	RemoveTagFromPatent(ctx context.Context, patentNumber string, tagID int64) error
-	GetPatentTags(ctx context.Context, patentNumber string) ([]domain.Tag, error)
-	ListPatentTagsForProject(ctx context.Context, projectID string) (map[string][]domain.Tag, error)
+	GetTagByName(ctx context.Context, projectID domain.ProjectID, name string) (domain.Tag, error)
+	ApplyTagToPatent(ctx context.Context, patentNumber domain.PatentNumber, tagID int64) error
+	RemoveTagFromPatent(ctx context.Context, patentNumber domain.PatentNumber, tagID int64) error
+	GetPatentTags(ctx context.Context, projectID domain.ProjectID, patentNumber domain.PatentNumber) ([]domain.Tag, error)
+	ListPatentTagsForProject(ctx context.Context, projectID domain.ProjectID) (map[domain.PatentNumber][]domain.Tag, error)
 
 	// Maintenance
-	PurgeIgnored(ctx context.Context, projectID string) (int, error)
+	PurgeIgnored(ctx context.Context, projectID domain.ProjectID) (int, error)
 	Compact(ctx context.Context) error
 }

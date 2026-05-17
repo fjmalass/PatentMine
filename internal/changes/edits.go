@@ -10,13 +10,13 @@ import (
 
 // addNote appends a research note to a patent.
 type addNote struct {
-	ProjectID string
-	Number    string
+	ProjectID domain.ProjectID
+	Number    domain.PatentNumber
 	Body      string
 	NoteID    int64 `json:"-"` // set by run
 }
 
-func AddNote(projectID, number, body string) Change {
+func AddNote(projectID domain.ProjectID, number domain.PatentNumber, body string) Change {
 	return &addNote{ProjectID: projectID, Number: number, Body: body}
 }
 
@@ -43,14 +43,14 @@ type tagState struct {
 
 // applyTags brings a set of patents to a desired tag membership.
 type applyTags struct {
-	ProjectID string
-	Patents   []string
+	ProjectID domain.ProjectID
+	Patents   []domain.PatentNumber
 	Desired   []tagState
 }
 
 // ApplyTags builds a change that, for every patent, applies each tag whose
 // desired value is true and removes each tag whose desired value is false.
-func ApplyTags(projectID string, patents []string, desired map[int64]bool) Change {
+func ApplyTags(projectID domain.ProjectID, patents []domain.PatentNumber, desired map[int64]bool) Change {
 	ds := make([]tagState, 0, len(desired))
 	for id, on := range desired {
 		ds = append(ds, tagState{TagID: id, Apply: on})
@@ -84,12 +84,12 @@ func (c *applyTags) kind() string    { return kindApplyTags }
 
 // setPatentDate edits one of a patent's lifecycle dates.
 type setPatentDate struct {
-	Number   string
+	Number   domain.PatentNumber
 	DateType string
 	Value    string
 }
 
-func SetPatentDate(number, dateType, value string) Change {
+func SetPatentDate(number domain.PatentNumber, dateType, value string) Change {
 	return &setPatentDate{Number: number, DateType: dateType, Value: value}
 }
 
@@ -125,11 +125,11 @@ func (c *editIDS) kind() string    { return kindEditIDS }
 // deletePatents soft-deletes patents (review state → ignored) and removes
 // their IDS entries, all atomically per stage.
 type deletePatents struct {
-	ProjectID string
-	Numbers   []string
+	ProjectID domain.ProjectID
+	Numbers   []domain.PatentNumber
 }
 
-func DeletePatents(projectID string, numbers []string) Change {
+func DeletePatents(projectID domain.ProjectID, numbers []domain.PatentNumber) Change {
 	return &deletePatents{ProjectID: projectID, Numbers: numbers}
 }
 
@@ -155,10 +155,10 @@ func (c *deletePatents) kind() string    { return kindDeletePatents }
 // the patent is removed and then the patents record itself, so the patent is
 // fully gone — no project_patents row, no review_state, regardless of project.
 type removePatents struct {
-	Numbers []string
+	Numbers []domain.PatentNumber
 }
 
-func RemovePatents(numbers []string) Change {
+func RemovePatents(numbers []domain.PatentNumber) Change {
 	return &removePatents{Numbers: numbers}
 }
 

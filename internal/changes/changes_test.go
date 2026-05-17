@@ -97,7 +97,7 @@ func TestCitationReviewReversePerEdge(t *testing.T) {
 	h := NewHistory(repo)
 	ctx := context.Background()
 
-	if _, err := h.Apply(ctx, SetCitationReviewState("p", []domain.CitationEdge{e1, e2}, "ignored", false)); err != nil {
+	if _, err := h.Apply(ctx, SetCitationReviewState("p", []domain.CitationEdge{e1, e2}, "ignored")); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if _, _, err := h.Undo(ctx); err != nil {
@@ -113,7 +113,7 @@ func TestApplyFailureLeavesHistoryEmpty(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failCit = true
 	h := NewHistory(repo)
-	if _, err := h.Apply(context.Background(), SetCitationReviewState("p", []domain.CitationEdge{{SourcePatent: "A", TargetPatent: "B"}}, "ignored", false)); err == nil {
+	if _, err := h.Apply(context.Background(), SetCitationReviewState("p", []domain.CitationEdge{{SourcePatent: "A", TargetPatent: "B"}}, "ignored")); err == nil {
 		t.Fatal("expected apply to fail")
 	}
 	if h.CanUndo() {
@@ -151,7 +151,7 @@ func TestRecordingSaveAndReplay(t *testing.T) {
 	if _, err := h.Apply(ctx, SetPatentReviewState("p", []string{"US1"}, "ignored")); err != nil {
 		t.Fatalf("apply patent: %v", err)
 	}
-	if _, err := h.Apply(ctx, SetCitationReviewState("p", []domain.CitationEdge{e}, "ignored", false)); err != nil {
+	if _, err := h.Apply(ctx, SetCitationReviewState("p", []domain.CitationEdge{e}, "ignored")); err != nil {
 		t.Fatalf("apply citation: %v", err)
 	}
 	h.StopRecording()

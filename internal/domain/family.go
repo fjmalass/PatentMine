@@ -6,7 +6,7 @@ import (
 
 // FamilyTreeNode represents a node in a patent family graph.
 type FamilyTreeNode struct {
-	Number       string
+	Number       PatentNumber
 	Depth        int    // relative to the "current" node if applicable, or absolute from roots
 	RelationType string // relation from parent to this node
 	ParentIdx    int    // index of parent in the flat list, -1 if root
@@ -16,20 +16,20 @@ const MaxFamilyTreeNodes = 250
 
 // FamilyGraph represents a processed patent family graph.
 type FamilyGraph struct {
-	Target    string
+	Target    PatentNumber
 	Nodes     []FamilyTreeNode
-	Reachable map[string]bool
-	Depths    map[string]int
+	Reachable map[PatentNumber]bool
+	Depths    map[PatentNumber]int
 }
 
 // BuildFamilyGraph processes a connected component of the family tree containing the target patent.
-func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
+func BuildFamilyGraph(target PatentNumber, allEdges []FamilyEdge) *FamilyGraph {
 	if len(allEdges) == 0 || target == "" {
 		return &FamilyGraph{Target: target}
 	}
 
-	parentToChildren := map[string][]FamilyEdge{}
-	childToParents := map[string][]FamilyEdge{}
+	parentToChildren := map[PatentNumber][]FamilyEdge{}
+	childToParents := map[PatentNumber][]FamilyEdge{}
 
 	for _, e := range allEdges {
 		parentToChildren[e.ParentNumber] = append(parentToChildren[e.ParentNumber], e)
@@ -37,8 +37,8 @@ func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
 	}
 
 	// 1. Find reachable nodes (connected component containing 'target')
-	reachable := map[string]bool{target: true}
-	q := []string{target}
+	reachable := map[PatentNumber]bool{target: true}
+	q := []PatentNumber{target}
 	for i := 0; i < len(q); i++ {
 		if len(reachable) >= MaxFamilyTreeNodes {
 			break
@@ -59,8 +59,8 @@ func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
 	}
 
 	// 2. Compute depths (shortest path from roots or target)
-	depths := make(map[string]int, len(reachable))
-	inDegree := make(map[string]int, len(reachable))
+	depths := make(map[PatentNumber]int, len(reachable))
+	inDegree := make(map[PatentNumber]int, len(reachable))
 
 	for node := range reachable {
 		for _, e := range childToParents[node] {
@@ -70,7 +70,7 @@ func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
 		}
 	}
 
-	var roots []string
+	var roots []PatentNumber
 	for node := range reachable {
 		if inDegree[node] == 0 {
 			roots = append(roots, node)
@@ -83,9 +83,9 @@ func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
 		depths[target] = 0
 	}
 
-	queue := make([]string, len(roots))
+	queue := make([]PatentNumber, len(roots))
 	copy(queue, roots)
-	visitedDepths := make(map[string]bool, len(reachable))
+	visitedDepths := make(map[PatentNumber]bool, len(reachable))
 	for _, r := range roots {
 		visitedDepths[r] = true
 	}
@@ -109,10 +109,10 @@ func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
 
 	// 3. Build visual tree (each node appears exactly once)
 	var nodes []FamilyTreeNode
-	visited := map[string]bool{}
+	visited := map[PatentNumber]bool{}
 
-	var dfs func(number, relType string, parentIdx int)
-	dfs = func(number, relType string, parentIdx int) {
+	var dfs func(number PatentNumber, relType string, parentIdx int)
+	dfs = func(number PatentNumber, relType string, parentIdx int) {
 		if len(nodes) >= MaxFamilyTreeNodes || visited[number] {
 			return
 		}
@@ -145,8 +145,8 @@ func BuildFamilyGraph(target string, allEdges []FamilyEdge) *FamilyGraph {
 		}
 	}
 
-	canReachTarget := map[string]bool{target: true}
-	work := []string{target}
+	canReachTarget := map[PatentNumber]bool{target: true}
+	work := []PatentNumber{target}
 	for len(work) > 0 {
 		n := work[0]
 		work = work[1:]

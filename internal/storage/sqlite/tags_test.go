@@ -63,7 +63,7 @@ func TestTagCRUD(t *testing.T) {
 	}
 
 	// Get for patent
-	patentTags, err := repo.GetPatentTags(ctx, patentNum)
+	patentTags, err := repo.GetPatentTags(ctx, projectID, patentNum)
 	if err != nil {
 		t.Fatalf("failed to get patent tags: %v", err)
 	}

@@ -92,7 +92,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 			m.activeSelection = selectionContext{}
 			return m.goBack()
 		}
-		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, next, false)) {
+		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, next)) {
 			m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
 			m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, next, edge.SourcePatent)
 		}
@@ -111,7 +111,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 			m.activeSelection = selectionContext{}
 			return m.goBack()
 		}
-		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, selected, next, false)) {
+		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, selected, next)) {
 			for _, e := range selected {
 				m.logActivityFrom(ActivityCitationReviewState, e.TargetPatent, next, e.SourcePatent)
 			}
@@ -245,7 +245,7 @@ func (m *Model) viewBulkConfirm() string {
 		if extra > 0 {
 			content += fmt.Sprintf("\n…and %d more", extra)
 		}
-		content += "\n\nPatents and all their data will be permanently removed.\n\n(y/n)"
+		content += "\n\nHidden from lists until :compact purges them.\n\n(y/n)"
 		return m.renderPopup("Confirm Delete", content)
 	}
 
