@@ -245,7 +245,7 @@ func (m *Model) viewBulkConfirm() string {
 		if extra > 0 {
 			content += fmt.Sprintf("\n…and %d more", extra)
 		}
-		content += "\n\nIDS entries for these patents will be removed.\nFamily edges are preserved (soft-delete only).\n\n(y/n)"
+		content += "\n\nPatents and all their data will be permanently removed.\n\n(y/n)"
 		return m.renderPopup("Confirm Delete", content)
 	}
 

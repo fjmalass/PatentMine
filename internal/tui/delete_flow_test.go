@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"patentmine/internal/changes"
@@ -78,6 +79,81 @@ func TestListDeleteRemovesPatentFromListAndDB(t *testing.T) {
 	for _, p := range all {
 		if p.Number == target {
 			t.Fatalf("deleted patent %s still in DB (project_patents row not removed)", target)
+		}
+	}
+}
+
+// TestVisualBulkDeleteRemovesPatentsFromListAndDB drives the visual-selection
+// delete flow (v -> j -> D -> y) and asserts the selected patents are hard-deleted
+// from both m.patents and the DB — matching single-delete semantics.
+func TestVisualBulkDeleteRemovesPatentsFromListAndDB(t *testing.T) {
+	ctx := context.Background()
+	repo, err := sqlite.Open(":memory:", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	if err := repo.Setup(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	const seeded = 25
+	for i := 0; i < seeded; i++ {
+		num := fmt.Sprintf("US%04d", i)
+		if err := repo.UpsertPatentBundle(ctx, "default", domain.PatentBundle{
+			Patent: domain.Patent{Number: num, Title: "Patent " + num},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	m := &Model{
+		ctx:        ctx,
+		repo:       repo,
+		history:    changes.NewHistory(repo),
+		logger:     slog.Default(),
+		ProjectID:  "default",
+		mode:       viewList,
+		text:       EnglishText(),
+		listFilter: defaultPatentFilter(),
+	}
+	m = m.reloadPatents()
+	if len(m.patents) != seeded {
+		t.Fatalf("seed: expected %d patents, got %d", seeded, len(m.patents))
+	}
+	targets := []string{m.patents[0].Number, m.patents[1].Number}
+
+	updated, _ := m.Update(teaKey(keyVisual))
+	updated, _ = updated.(*Model).Update(teaKey(keyVimDown))
+	updated, _ = updated.(*Model).Update(teaKey(keyDelete))
+	if updated.(*Model).mode != viewBulkConfirm {
+		t.Fatalf("visual D did not enter bulk-confirm, got %q", updated.(*Model).mode)
+	}
+	updated, _ = updated.(*Model).Update(teaKey(keyYes))
+	got := updated.(*Model)
+
+	if len(got.patents) != seeded-2 {
+		t.Fatalf("expected %d patents after bulk delete, got %d", seeded-2, len(got.patents))
+	}
+	for _, p := range got.patents {
+		for _, target := range targets {
+			if p.Number == target {
+				t.Fatalf("bulk-deleted patent %s still present in list", target)
+			}
+		}
+	}
+
+	all, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{
+		ReviewStateFilter: storage.ReviewStateFilterNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range all {
+		for _, target := range targets {
+			if p.Number == target {
+				t.Fatalf("bulk-deleted patent %s still in DB", target)
+			}
 		}
 	}
 }

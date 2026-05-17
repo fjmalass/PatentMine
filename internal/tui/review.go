@@ -233,7 +233,7 @@ func (m *Model) executeBulkDelete(nums []string) (tea.Model, tea.Cmd) {
 	}
 
 	m.logger.Info("bulk delete started", "project", m.ProjectID, "count", len(nums), "patents", nums)
-	if !m.applyChange(changes.DeletePatents(m.ProjectID, nums)) {
+	if !m.applyChange(changes.RemovePatents(nums)) {
 		return finish("")
 	}
 	for _, num := range nums {
