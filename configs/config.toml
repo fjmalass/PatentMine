@@ -1,4 +1,0 @@
-import_source = "uspto"
-
-[uspto]
-api_key_file = "~/.ssh/uspto_odp_key"
