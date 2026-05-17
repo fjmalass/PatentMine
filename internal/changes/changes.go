@@ -48,17 +48,39 @@ var (
 	ErrNotReversible = errors.New("this change cannot be undone")
 )
 
-// History applies changes and tracks them for undo/redo. It also keeps an
-// ordered log of every change actually run — the session recording.
+// History applies changes and tracks them for undo/redo. While a recording is
+// active it also appends every change actually run to an ordered log that can
+// be saved and replayed.
 type History struct {
-	repo storage.Repository
-	undo []Change
-	redo []Change
-	log  []Change
+	repo      storage.Repository
+	undo      []Change
+	redo      []Change
+	recording bool
+	recLog    []Change
 }
 
 func NewHistory(repo storage.Repository) *History {
 	return &History{repo: repo}
+}
+
+// StartRecording begins a fresh recording, discarding any previous one.
+func (h *History) StartRecording() { h.recording = true; h.recLog = nil }
+
+// StopRecording ends the recording. The captured log is kept so it can still
+// be saved after stopping.
+func (h *History) StopRecording() { h.recording = false }
+
+// IsRecording reports whether changes are currently being captured.
+func (h *History) IsRecording() bool { return h.recording }
+
+// RecordingLen is the number of changes captured in the current recording.
+func (h *History) RecordingLen() int { return len(h.recLog) }
+
+// record appends c to the recording log when a recording is active.
+func (h *History) record(c Change) {
+	if h.recording {
+		h.recLog = append(h.recLog, c)
+	}
 }
 
 // Apply runs the change, then records it so it can be undone. A fresh apply
@@ -69,7 +91,7 @@ func (h *History) Apply(ctx context.Context, c Change) (Scope, error) {
 	}
 	h.undo = append(h.undo, c)
 	h.redo = h.redo[:0]
-	h.log = append(h.log, c)
+	h.record(c)
 	return c.affects(), nil
 }
 
@@ -109,7 +131,7 @@ func (h *History) Undo(ctx context.Context) (Scope, string, error) {
 	}
 	h.undo = h.undo[:len(h.undo)-1]
 	h.redo = append(h.redo, c)
-	h.log = append(h.log, rev)
+	h.record(rev)
 	return c.affects() | rev.affects(), c.label(), nil
 }
 
@@ -124,12 +146,9 @@ func (h *History) Redo(ctx context.Context) (Scope, string, error) {
 	}
 	h.redo = h.redo[:len(h.redo)-1]
 	h.undo = append(h.undo, c)
-	h.log = append(h.log, c)
+	h.record(c)
 	return c.affects(), c.label(), nil
 }
-
-// RecordingLen is the number of changes run so far this session.
-func (h *History) RecordingLen() int { return len(h.log) }
 
 func plural(n int, word string) string {
 	if n == 1 {

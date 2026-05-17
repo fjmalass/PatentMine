@@ -107,6 +107,12 @@ const (
 	filterSubInventor    = "inventor"
 	filterSubClear       = "clear"
 
+	// :rec subcommands
+	recSubStart = "start"
+	recSubStop  = "stop"
+	recSubPlay  = "play"
+	recSubList  = "list"
+
 	// :family subcommands
 	familySubParent = "parent"
 	familySubChild  = "child"

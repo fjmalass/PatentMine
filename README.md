@@ -147,6 +147,8 @@ All filters share the `:filter` command.
 - `[w]`: Open in browser.
 - `[D]`: Delete patent.
 - `[A]`: Add to IDS.
+- `[u]`: Undo the last change.
+- `[U]`: Redo the last undone change.
 - `[?]`: Show help.
 - `[q]`: Quit or back.
 
@@ -269,6 +271,54 @@ Sort by two columns (primary, then secondary):
 ```
 
 Supported columns: `number`, `title`, `date`, `status`, `assignee`, `inventor`, `class`, `expiration`. Patents with no expiration date sort last.
+
+## Undo, Redo & Recordings
+
+Every data change — review-state updates (single and bulk), tag edits, notes,
+date edits, IDS edits, deletes — is applied through a single change layer. That
+layer makes the screen and the database stay in sync, and it powers undo/redo
+and recordings.
+
+### Undo / Redo
+
+- `[u]`: Undo the last change.
+- `[U]`: Redo the last undone change.
+
+Review-state changes and IDS edits are fully reversible. Some changes (notes,
+tags, date edits, deletes) cannot be undone; pressing `[u]` on one reports
+`this change cannot be undone` rather than guessing.
+
+Bulk actions are one transaction — they undo as a single step.
+
+### Recordings
+
+A recording captures every change you apply so the exact sequence can be
+replayed later, against any project.
+
+```
+:rec start              begin capturing changes
+:rec stop [path]        stop capturing and write the recording to a file
+:rec play [path]        replay a saved recording
+:rec list               show saved recordings
+```
+
+Recordings live under the **`recordings/`** root directory (created at startup
+alongside `db/` and `logs/`). When `path` is omitted, `:rec stop` and `:rec
+play` use a dated file in that root:
+
+```
+recordings/recording-YYYY-MM-DD.json
+```
+
+So `:rec stop` with no argument saves today's recording, and `:rec play` with
+no argument replays it.
+
+While a recording is active, a red `● REC` badge appears in the header bar.
+Run `:rec` with no arguments to open a popup showing recording status and how
+to stop it.
+
+Replaying a recording re-applies each change in order; if a change fails it
+stops and reports how many were applied.
 
 ## Activity Log
 

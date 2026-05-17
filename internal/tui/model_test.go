@@ -1675,6 +1675,7 @@ func (stubRepo) UpdateClassificationDescription(context.Context, string, string,
 	return nil
 }
 func (stubRepo) DeletePatent(context.Context, string, string) error { return nil }
+func (stubRepo) DeletePatentCompletely(context.Context, string) error { return nil }
 func (stubRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
 	return nil, nil
 }

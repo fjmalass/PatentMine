@@ -32,7 +32,7 @@ func main() {
 	}
 
 	// Ensure directories exist
-	for _, dir := range []string{tui.DefaultDBDir, tui.DefaultLogDir} {
+	for _, dir := range []string{tui.DefaultDBDir, tui.DefaultLogDir, tui.DefaultRecordingDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			exit(fmt.Errorf("failed to create %s directory: %w", dir, err))
 		}

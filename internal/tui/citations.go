@@ -234,22 +234,38 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) storePendingPatent() (tea.Model, tea.Cmd) {
-	if m.pendingBundle.Patent.Number == "" {
-		return m, nil
-	}
-	m.pendingBundle.Patent.ReviewState = domain.ReviewStateStored
-	if err := m.repo.UpsertPatentBundle(m.ctx, m.ProjectID, m.pendingBundle); err != nil {
-		m.err = err.Error()
-		return m, nil
-	}
+// storePendingCitationPatent is the single path for committing a review-state
+// decision made on the citation popup. It imports the cited patent into the
+// project when it is not a member yet — that upsert is what creates the
+// project_patents row the review state lives on — then moves the citation edge
+// and the patent to next. Returns false (with m.err set) on failure.
+func (m *Model) storePendingCitationPatent(next string) bool {
 	number := m.pendingBundle.Patent.Number
-	m.logActivity(ActivityPatentImport, number, string(m.importCfg.ImportSource))
-	if m.pendingCitation.TargetPatent != "" {
-		if err := m.repo.UpdateCitationReviewState(m.ctx, m.ProjectID, m.pendingCitation, domain.ReviewStateStored); err != nil {
+	if number == "" {
+		return false
+	}
+	if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, number); err != nil {
+		m.pendingBundle.Patent.ReviewState = next
+		if err := m.repo.UpsertPatentBundle(m.ctx, m.ProjectID, m.pendingBundle); err != nil {
 			m.err = err.Error()
-			return m, nil
+			return false
 		}
+		m.logActivity(ActivityPatentImport, number, string(m.importCfg.ImportSource))
+		m.markDirty(dirtyList | dirtyDetail)
+	}
+	if m.pendingCitation.TargetPatent != "" {
+		return m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{m.pendingCitation}, next, true))
+	}
+	return m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{number}, next))
+}
+
+func (m *Model) storePendingPatent() (tea.Model, tea.Cmd) {
+	number := m.pendingBundle.Patent.Number
+	if number == "" {
+		return m, nil
+	}
+	if !m.storePendingCitationPatent(domain.ReviewStateStored) {
+		return m, nil
 	}
 	m.pendingBundle = domain.PatentBundle{}
 	m.pendingCitation = domain.CitationEdge{}

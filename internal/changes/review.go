@@ -68,7 +68,7 @@ func (c *citationReview) reverse() Change {
 
 func (c *citationReview) affects() Scope { return ScopeList | ScopeDetail }
 func (c *citationReview) label() string  { return "review " + plural(len(c.Updates), "citation") }
-func (c *citationReview) kind() string   { return "citationReview" }
+func (c *citationReview) kind() string   { return kindCitationReview }
 
 // patentReview sets the review state of one or more patents.
 type patentReview struct {
@@ -104,4 +104,4 @@ func (c *patentReview) reverse() Change {
 
 func (c *patentReview) affects() Scope { return ScopeList | ScopeDetail | ScopeFamily }
 func (c *patentReview) label() string  { return "review " + plural(len(c.Updates), "patent") }
-func (c *patentReview) kind() string   { return "patentReview" }
+func (c *patentReview) kind() string   { return kindPatentReview }

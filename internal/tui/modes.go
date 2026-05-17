@@ -46,6 +46,7 @@ var allViewModes = []viewMode{
 	viewProjectTags,
 	viewTagSelect,
 	viewCountrySelect,
+	viewRecordingInfo,
 }
 
 // patentSubtitle returns "Title · Number" for overlay views, or just "Number" when no title.
@@ -263,6 +264,11 @@ var modeSpecs = map[viewMode]modeSpec{
 	viewCountrySelect: {
 		title:      "Select Country",
 		themeColor: ColorThemeList,
+		isOverlay:  true,
+	},
+	viewRecordingInfo: {
+		title:      "Recording",
+		themeColor: ColorThemeReview,
 		isOverlay:  true,
 	},
 }

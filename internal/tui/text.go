@@ -198,6 +198,9 @@ const (
 	TextHelpNoteSave   TextKey = "help.note_save"
 	TextHelpExit       TextKey = "help.exit"
 	TextHelpSearchHint TextKey = "help.search_hint"
+	TextHelpUndo       TextKey = "help.undo"
+	TextHelpRedo       TextKey = "help.redo"
+	TextHelpRec        TextKey = "help.rec"
 )
 
 type TextCatalog map[TextKey]string
@@ -387,6 +390,9 @@ func EnglishText() TextCatalog {
 		TextHelpNoteSave:   "Save note and return (date/time stamped automatically).",
 		TextHelpExit:       "Quit the application.",
 		TextHelpSearchHint: "[/] to search (smart-case) · [q/esc] to close",
+		TextHelpUndo:       "Undo the last change (review state, IDS edit).",
+		TextHelpRedo:       "Redo the last undone change.",
+		TextHelpRec:        "Record applied changes to a file and replay them later.",
 	}
 }
 

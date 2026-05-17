@@ -594,6 +594,43 @@ func (r *Repository) RemovePatentFromProject(ctx context.Context, projectID, pat
 	return err
 }
 
+// DeletePatentCompletely hard-deletes a patent: it removes every row that
+// references the patent number (across all projects) and then the patents
+// record itself, all in one transaction. After this the patent is fully gone
+// from the database — no project_patents row, no review_state.
+func (r *Repository) DeletePatentCompletely(ctx context.Context, number string) error {
+	r.logger.Info("repository.delete_patent_completely", "patent", number)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Child rows first so the patents-row delete does not trip a foreign key.
+	stmts := []struct {
+		sql  string
+		args []any
+	}{
+		{`delete from patent_tags where patent_number = ?`, []any{number}},
+		{`delete from patent_classifications where patent_number = ?`, []any{number}},
+		{`delete from patent_text_sections where patent_number = ?`, []any{number}},
+		{`delete from citation_edges where source_patent = ? or target_patent = ?`, []any{number, number}},
+		{`delete from research_notes where patent_number = ?`, []any{number}},
+		{`delete from reference_entries where patent_number = ?`, []any{number}},
+		{`delete from ai_analyses where patent_number = ?`, []any{number}},
+		{`delete from patent_family where parent_number = ? or child_number = ?`, []any{number, number}},
+		{`delete from project_ids where patent_number = ?`, []any{number}},
+		{`delete from project_patents where patent_number = ?`, []any{number}},
+		{`delete from patents where number = ?`, []any{number}},
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s.sql, s.args...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID string, bundle domain.PatentBundle) error {
 	r.logger.Info("repository.upsert_bundle", "project", projectID, "patent", bundle.Patent.Number)
 	tx, err := r.db.BeginTx(ctx, nil)

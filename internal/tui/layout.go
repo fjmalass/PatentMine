@@ -144,6 +144,14 @@ func (m *Model) renderScreenHeader() string {
 		b.WriteString(subtle.Render(m.loadingMsg))
 	}
 
+	if m.history != nil && m.history.IsRecording() {
+		b.WriteString("  ")
+		b.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ColorError)).
+			Bold(true).
+			Render(recBadgeLabel))
+	}
+
 	// Project Summary
 	for _, p := range m.projects {
 		if p.ID == m.ProjectID && p.Summary != "" {

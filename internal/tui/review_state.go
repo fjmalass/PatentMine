@@ -63,12 +63,14 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	prevMode := previousModeOr(m, viewList)
 
 	// popup patent detail: move the citation edge and the target patent
-	// together so the list column stays in sync.
+	// together so the list column stays in sync. Shares storePendingCitationPatent
+	// with the Enter-to-store path so the two cannot drift apart.
 	if prevMode == viewPopupPatentDetail {
-		edge := m.pendingCitation
-		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, next, true)) {
-			m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
-			m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, next, edge.SourcePatent)
+		number := m.pendingBundle.Patent.Number
+		source := m.pendingCitation.SourcePatent
+		if m.storePendingCitationPatent(next) {
+			m.message = fmt.Sprintf("%s → %s", number, next)
+			m.logActivityFrom(ActivityCitationReviewState, number, next, source)
 		}
 		m.activeSelection = selectionContext{}
 		return m.goBack()
@@ -243,7 +245,7 @@ func (m *Model) viewBulkConfirm() string {
 		if extra > 0 {
 			content += fmt.Sprintf("\n…and %d more", extra)
 		}
-		content += "\n\nIDS entries for these patents will be removed.\nFamily edges are preserved (soft-delete only)."
+		content += "\n\nIDS entries for these patents will be removed.\nFamily edges are preserved (soft-delete only).\n\n(y/n)"
 		return m.renderPopup("Confirm Delete", content)
 	}
 
@@ -288,9 +290,10 @@ func (m *Model) handleViewReviewStateSelectKey(msg tea.KeyMsg) (tea.Model, tea.C
 		m.reviewStateSelected = clamp(m.reviewStateSelected+m.consumeCount(1), 0, len(m.selectableReviewStates())-1)
 	case keyVimUp, keyArrowUp:
 		m.reviewStateSelected = max(0, m.reviewStateSelected-m.consumeCount(1))
-	case keyEnter:
+	case keyEnter, keyBack:
+		// Enter and q both commit the highlighted state; only esc cancels.
 		return m.applyReviewStateSelection()
-	case keyEsc, keyBack:
+	case keyEsc:
 		return m.goBack()
 	default:
 		m.tryAccumulateCount(msg.String())

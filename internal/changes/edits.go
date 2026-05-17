@@ -33,7 +33,7 @@ func (c *addNote) run(ctx context.Context, repo storage.Repository) error {
 func (c *addNote) reverse() Change { return nil }
 func (c *addNote) affects() Scope  { return ScopeDetail }
 func (c *addNote) label() string   { return "add note" }
-func (c *addNote) kind() string    { return "addNote" }
+func (c *addNote) kind() string    { return kindAddNote }
 
 // tagState is the desired membership of one tag.
 type tagState struct {
@@ -80,7 +80,7 @@ func (c *applyTags) run(ctx context.Context, repo storage.Repository) error {
 func (c *applyTags) reverse() Change { return nil }
 func (c *applyTags) affects() Scope  { return ScopeDetail | ScopeTags }
 func (c *applyTags) label() string   { return "tag " + plural(len(c.Patents), "patent") }
-func (c *applyTags) kind() string    { return "applyTags" }
+func (c *applyTags) kind() string    { return kindApplyTags }
 
 // setPatentDate edits one of a patent's lifecycle dates.
 type setPatentDate struct {
@@ -101,7 +101,7 @@ func (c *setPatentDate) run(ctx context.Context, repo storage.Repository) error 
 func (c *setPatentDate) reverse() Change { return nil }
 func (c *setPatentDate) affects() Scope  { return ScopeDetail | ScopeList }
 func (c *setPatentDate) label() string   { return "edit date" }
-func (c *setPatentDate) kind() string    { return "setPatentDate" }
+func (c *setPatentDate) kind() string    { return kindSetPatentDate }
 
 // editIDS replaces an IDS entry with an edited copy.
 type editIDS struct {
@@ -120,7 +120,7 @@ func (c *editIDS) run(ctx context.Context, repo storage.Repository) error {
 func (c *editIDS) reverse() Change { return &editIDS{Before: c.After, After: c.Before} }
 func (c *editIDS) affects() Scope  { return ScopeDetail }
 func (c *editIDS) label() string   { return "edit IDS entry" }
-func (c *editIDS) kind() string    { return "editIDS" }
+func (c *editIDS) kind() string    { return kindEditIDS }
 
 // deletePatents soft-deletes patents (review state → ignored) and removes
 // their IDS entries, all atomically per stage.
@@ -149,4 +149,30 @@ func (c *deletePatents) run(ctx context.Context, repo storage.Repository) error 
 func (c *deletePatents) reverse() Change { return nil }
 func (c *deletePatents) affects() Scope  { return ScopeList }
 func (c *deletePatents) label() string   { return "delete " + plural(len(c.Numbers), "patent") }
-func (c *deletePatents) kind() string    { return "deletePatents" }
+func (c *deletePatents) kind() string    { return kindDeletePatents }
+
+// removePatents hard-deletes patents from the database: every row referencing
+// the patent is removed and then the patents record itself, so the patent is
+// fully gone — no project_patents row, no review_state, regardless of project.
+type removePatents struct {
+	Numbers []string
+}
+
+func RemovePatents(numbers []string) Change {
+	return &removePatents{Numbers: numbers}
+}
+
+func (c *removePatents) run(ctx context.Context, repo storage.Repository) error {
+	for _, n := range c.Numbers {
+		if err := repo.DeletePatentCompletely(ctx, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reverse is nil: a hard-deleted patent record is not recoverable.
+func (c *removePatents) reverse() Change { return nil }
+func (c *removePatents) affects() Scope  { return ScopeList }
+func (c *removePatents) label() string   { return "remove " + plural(len(c.Numbers), "patent") }
+func (c *removePatents) kind() string    { return kindRemovePatents }

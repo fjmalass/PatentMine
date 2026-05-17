@@ -2,12 +2,61 @@ package sqlite
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/importer"
 	"patentmine/internal/storage"
 )
+
+func TestDeletePatentCompletelyRemovesPatentAndChildren(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepo(t)
+	bundle, err := importer.LoadFixture("../../../fixtures/US11611785B2.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
+		t.Fatal(err)
+	}
+	num := bundle.Patent.Number
+
+	if err := repo.DeletePatentCompletely(ctx, num); err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct{ table, col string }{
+		{"patents", "number"},
+		{"project_patents", "patent_number"},
+		{"patent_classifications", "patent_number"},
+		{"patent_text_sections", "patent_number"},
+		{"research_notes", "patent_number"},
+		{"reference_entries", "patent_number"},
+		{"ai_analyses", "patent_number"},
+		{"project_ids", "patent_number"},
+		{"patent_tags", "patent_number"},
+	}
+	for _, c := range checks {
+		var n int
+		q := fmt.Sprintf("select count(*) from %s where %s = ?", c.table, c.col)
+		if err := repo.db.QueryRowContext(ctx, q, num).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", c.table, err)
+		}
+		if n != 0 {
+			t.Fatalf("%s still has %d row(s) for %s after complete delete", c.table, n, num)
+		}
+	}
+	var edges int
+	if err := repo.db.QueryRowContext(ctx,
+		`select count(*) from citation_edges where source_patent = ? or target_patent = ?`,
+		num, num).Scan(&edges); err != nil {
+		t.Fatal(err)
+	}
+	if edges != 0 {
+		t.Fatalf("citation_edges still has %d row(s) for %s after complete delete", edges, num)
+	}
+}
 
 func TestRepositorySetupAndSeedIdempotency(t *testing.T) {
 	ctx := context.Background()

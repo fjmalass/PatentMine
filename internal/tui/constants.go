@@ -39,6 +39,7 @@ const (
 
 	// Mode indicator labels
 	visualModeLabel = " VISUAL "
+	recBadgeLabel   = "● REC"
 
 	// Input char limits
 	commandInputCharLimit = 512
@@ -175,6 +176,7 @@ const (
 	DefaultActivityPath = "logs/activity.jsonl"
 	DefaultDBDir        = "db"
 	DefaultLogDir       = "logs"
+	DefaultRecordingDir = "recordings"
 
 	DefaultProjectID     = "default"
 	SettingLastProjectID = "last_project_id"

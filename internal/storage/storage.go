@@ -73,6 +73,9 @@ type Repository interface {
 	UpdatePatentNumber(ctx context.Context, number string, numType string, value string) error
 	UpdateClassificationDescription(ctx context.Context, projectID string, system, code, description string) error
 	DeletePatent(ctx context.Context, projectID string, number string) error
+	// DeletePatentCompletely hard-deletes a patent and every row that
+	// references it (across all projects), then the patents record itself.
+	DeletePatentCompletely(ctx context.Context, number string) error
 	ListClassifications(ctx context.Context, projectID string, number string) ([]domain.Classification, error)
 	GetClassificationStats(ctx context.Context, projectID string, code string) (domain.ClassificationStats, error)
 	ListTextSections(ctx context.Context, projectID string, number string) ([]domain.PatentTextSection, error)

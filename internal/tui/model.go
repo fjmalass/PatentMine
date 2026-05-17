@@ -56,6 +56,7 @@ const (
 	viewProjectTags          viewMode = "project-tags"
 	viewTagSelect            viewMode = "tag-select"
 	viewCountrySelect        viewMode = "country-select"
+	viewRecordingInfo        viewMode = "recording-info"
 )
 
 type bulkActionType string
@@ -631,6 +632,9 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.mode == viewConfirmDelete {
 				return m.deleteSelectedPatent()
+			}
+			if m.mode == viewBulkConfirm {
+				return m.executeBulkAction()
 			}
 			if m.mode == viewClassificationDetail {
 				return m.filterBySelectedClassification()

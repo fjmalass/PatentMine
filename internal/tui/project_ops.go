@@ -566,8 +566,7 @@ func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	p := m.patents[m.patentSelected]
-	if err := m.repo.DeletePatent(m.ctx, m.ProjectID, p.Number); err != nil {
-		m.err = err.Error()
+	if !m.applyChange(changes.RemovePatents([]string{p.Number})) {
 		m.setMode(viewList)
 		return m, nil
 	}
@@ -585,7 +584,7 @@ func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 	m.logActivity(ActivityPatentDelete, p.Number, "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageDeletedPatent), p.Number)
 	m.setMode(viewList)
-	return m.refreshList()
+	return m, nil
 }
 
 func (m *Model) idsCommand(args []string) (tea.Model, tea.Cmd) {

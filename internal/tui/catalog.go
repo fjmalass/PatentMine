@@ -122,6 +122,7 @@ func buildAllHelpSections() []HelpSection {
 			Title: "General",
 			Entries: []HelpEntry{
 				{Command: ":help", Description: TextHelpShowHelp},
+				{Command: ":rec start|stop|play|list", Description: TextHelpRec},
 				{Command: ":version", Description: TextHelpShowVersion},
 				{Command: ":browser", Description: TextHelpOpenBrowser},
 				{Command: ":note <text>", Description: TextHelpNote},

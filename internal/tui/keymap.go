@@ -286,6 +286,8 @@ func init() {
 	registerKey(keyInvoices, nil, "ignore", nil, false, "Views", TextHelpProjectInvoices, true) // "i" shared by keyInvoices/keyIgnore/keyProjectInfo
 	registerKey(keyMarkPaid, nil, "Mark paid", nil, false, "General", TextHelpMarkPaid, false)
 	registerKey(keyUnreview, nil, "review", nil, false, "Patents", "", true)
+	registerKey(keyUndo, nil, "undo", nil, false, "General", TextHelpUndo, false)
+	registerKey(keyRedo, nil, "redo", nil, false, "General", TextHelpRedo, false)
 
 	// viewProjectInfo overrides
 	registerKey(keyEditAppStatus, []viewMode{viewProjectInfo}, "status", nil, true, "Project", TextHelpProjectSummaryStatus, true)

@@ -172,6 +172,8 @@ func (m *Model) renderModeBody(mode viewMode) string {
 		return m.viewProjectTags()
 	case viewTagSelect:
 		return m.viewTagSelect()
+	case viewRecordingInfo:
+		return m.viewRecordingInfo()
 	default:
 		return ""
 	}

@@ -147,11 +147,16 @@ func TestRecordingSaveAndReplay(t *testing.T) {
 	h := NewHistory(repo)
 	ctx := context.Background()
 
+	h.StartRecording()
 	if _, err := h.Apply(ctx, SetPatentReviewState("p", []string{"US1"}, "ignored")); err != nil {
 		t.Fatalf("apply patent: %v", err)
 	}
 	if _, err := h.Apply(ctx, SetCitationReviewState("p", []domain.CitationEdge{e}, "ignored", false)); err != nil {
 		t.Fatalf("apply citation: %v", err)
+	}
+	h.StopRecording()
+	if h.RecordingLen() != 2 {
+		t.Fatalf("expected 2 changes captured, got %d", h.RecordingLen())
 	}
 
 	path := filepath.Join(t.TempDir(), "rec.json")
@@ -172,6 +177,22 @@ func TestRecordingSaveAndReplay(t *testing.T) {
 	}
 	if fresh.patStates["US1"] != "ignored" || fresh.citStates[edgeKey(e)] != "ignored" {
 		t.Fatalf("replay did not reproduce end state: pat=%v cit=%v", fresh.patStates, fresh.citStates)
+	}
+}
+
+func TestRecordingCapturesOnlyWhileActive(t *testing.T) {
+	h := NewHistory(newFakeRepo())
+	ctx := context.Background()
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US1"}, "ignored"))
+	if h.RecordingLen() != 0 {
+		t.Fatal("change applied before StartRecording must not be captured")
+	}
+	h.StartRecording()
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US2"}, "ignored"))
+	h.StopRecording()
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US3"}, "ignored"))
+	if h.RecordingLen() != 1 {
+		t.Fatalf("expected exactly 1 captured change, got %d", h.RecordingLen())
 	}
 }
 
