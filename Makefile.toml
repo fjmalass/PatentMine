@@ -1,0 +1,70 @@
+# cargo-make task runner for the PatentMine Go project.
+# Run tasks with: cargo make <task>
+
+[config]
+# Skip cargo-make's built-in Rust-oriented tasks; this is a Go project.
+skip_core_tasks = true
+default_to_workspace = false
+
+[env]
+BINARY = "./cmd/patentmine"
+
+[tasks.build]
+description = "Compile all packages."
+command = "go"
+args = ["build", "./..."]
+
+[tasks.fmt]
+description = "Format all Go source."
+command = "gofmt"
+args = ["-w", "."]
+
+[tasks.fmt-check]
+description = "Fail if any Go source is unformatted."
+script = '''
+unformatted="$(gofmt -l .)"
+if [ -n "$unformatted" ]; then
+  echo "unformatted files:"
+  echo "$unformatted"
+  exit 1
+fi
+'''
+
+[tasks.vet]
+description = "Run go vet."
+command = "go"
+args = ["vet", "./..."]
+
+[tasks.lint]
+description = "Run golangci-lint."
+command = "golangci-lint"
+args = ["run"]
+
+[tasks.test]
+description = "Run all unit tests."
+command = "go"
+args = ["test", "./..."]
+
+[tasks.run-daemon]
+description = "Start the engine daemon."
+command = "go"
+args = ["run", "${BINARY}", "serve"]
+
+[tasks.run-tui]
+description = "Launch the terminal UI."
+command = "go"
+args = ["run", "${BINARY}", "tui"]
+
+[tasks.run-api]
+description = "Start the web API server."
+command = "go"
+args = ["run", "${BINARY}", "api"]
+
+[tasks.migrate]
+description = "Apply database migrations (wired up in Phase 2)."
+command = "go"
+args = ["run", "${BINARY}", "migrate"]
+
+[tasks.ci]
+description = "Full check: formatting, vet, lint, tests."
+dependencies = ["fmt-check", "vet", "lint", "test"]

@@ -1,0 +1,24 @@
+package domain
+
+import "time"
+
+// ProjectID is the stable identifier of a project. A distinct type (not a bare
+// string) keeps it from being mixed up with patent numbers or other IDs.
+type ProjectID string
+
+// Project groups patents for a body of work — typically one patent-office
+// filing for which an IDS will be generated.
+type Project struct {
+	ID        ProjectID `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Membership links one patent to one project and carries its workflow state.
+// A patent in several projects has one Membership per project.
+type Membership struct {
+	Patent  PatentNumber    `json:"patent"`
+	Project ProjectID       `json:"project"`
+	State   MembershipState `json:"state"`
+	AddedAt time.Time       `json:"added_at"`
+}

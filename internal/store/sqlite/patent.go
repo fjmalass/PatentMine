@@ -1,0 +1,219 @@
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"patentmine/internal/domain"
+	"patentmine/internal/store"
+)
+
+// patentColumns is the column list, p-aliased, in scanPatent's order.
+const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assignee,
+	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
+	p.grant_date, p.fetched_at`
+
+// SavePatent inserts or updates a patent by its number.
+func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) error {
+	if p.Number.IsZero() {
+		return errors.New("store/sqlite: cannot save patent with empty number")
+	}
+	if !p.FetchState.Valid() {
+		return fmt.Errorf("store/sqlite: invalid fetch state %q", p.FetchState)
+	}
+	inventors, err := json.Marshal(p.Inventors)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: encode inventors: %w", err)
+	}
+	_, err = r.writer.ExecContext(ctx, `
+		INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
+			inventors, fetch_state, source, application_date, publication_date,
+			grant_date, fetched_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(number) DO UPDATE SET
+			country=excluded.country, serial=excluded.serial, kind=excluded.kind,
+			title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
+			inventors=excluded.inventors, fetch_state=excluded.fetch_state,
+			source=excluded.source, application_date=excluded.application_date,
+			publication_date=excluded.publication_date, grant_date=excluded.grant_date,
+			fetched_at=excluded.fetched_at`,
+		p.Number.Normalized(), p.Number.Country, p.Number.Serial, p.Number.Kind,
+		p.Title, p.Abstract, p.Assignee, string(inventors),
+		string(p.FetchState), string(p.Source),
+		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
+		encodeTime(p.GrantDate), encodeTime(p.FetchedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
+	}
+	return nil
+}
+
+// Patent returns one patent, or store.ErrNotFound.
+func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error) {
+	row := r.reader.QueryRowContext(ctx,
+		`SELECT `+patentColumns+` FROM patent p WHERE p.number = ?`, n.Normalized())
+	p, err := scanPatent(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Patent{}, store.ErrNotFound
+	}
+	if err != nil {
+		return domain.Patent{}, fmt.Errorf("store/sqlite: get patent %s: %w", n, err)
+	}
+	return p, nil
+}
+
+// ListPatents returns one page of patents matching q.
+func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.Patent, error) {
+	where, args := patentFilter(q)
+	limit := q.Limit
+	if limit <= 0 {
+		limit = store.DefaultPageSize
+	}
+	query := `SELECT ` + patentColumns + ` FROM patent p` + where +
+		` ORDER BY p.number LIMIT ? OFFSET ?`
+	args = append(args, limit, max(q.Offset, 0))
+
+	rows, err := r.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list patents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Patent
+	for rows.Next() {
+		p, err := scanPatent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan patent: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: list patents: %w", err)
+	}
+	return out, nil
+}
+
+// CountPatents returns the total rows matching q, ignoring its paging.
+func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (int, error) {
+	where, args := patentFilter(q)
+	var n int
+	if err := r.reader.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM patent p`+where, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("store/sqlite: count patents: %w", err)
+	}
+	return n, nil
+}
+
+// patentFilter builds the shared FROM-suffix (JOIN + WHERE) for list and count.
+func patentFilter(q store.PatentQuery) (string, []any) {
+	var sb strings.Builder
+	var args []any
+	if q.Project != "" {
+		sb.WriteString(" JOIN membership m ON m.patent_number = p.number AND m.project_id = ?")
+		args = append(args, string(q.Project))
+	}
+	var conds []string
+	if q.Project != "" && q.State != "" {
+		conds = append(conds, "m.state = ?")
+		args = append(args, string(q.State))
+	}
+	if q.Search != "" {
+		conds = append(conds, "(p.number LIKE ? OR p.title LIKE ?)")
+		like := "%" + q.Search + "%"
+		args = append(args, like, like)
+	}
+	if len(conds) > 0 {
+		sb.WriteString(" WHERE ")
+		sb.WriteString(strings.Join(conds, " AND "))
+	}
+	return sb.String(), args
+}
+
+// scanPatent reads one patent row in patentColumns order.
+func scanPatent(s rowScanner) (domain.Patent, error) {
+	var (
+		p                                domain.Patent
+		country, serial, kind            string
+		inventors, fetchState, source    string
+		appDate, pubDate, grant, fetched string
+	)
+	if err := s.Scan(&country, &serial, &kind, &p.Title, &p.Abstract, &p.Assignee,
+		&inventors, &fetchState, &source, &appDate, &pubDate, &grant, &fetched); err != nil {
+		return domain.Patent{}, err
+	}
+	p.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
+	p.FetchState = domain.FetchState(fetchState)
+	p.Source = domain.Source(source)
+	if err := json.Unmarshal([]byte(inventors), &p.Inventors); err != nil {
+		return domain.Patent{}, fmt.Errorf("decode inventors: %w", err)
+	}
+	var err error
+	if p.ApplicationDate, err = decodeTime(appDate); err != nil {
+		return domain.Patent{}, err
+	}
+	if p.PublicationDate, err = decodeTime(pubDate); err != nil {
+		return domain.Patent{}, err
+	}
+	if p.GrantDate, err = decodeTime(grant); err != nil {
+		return domain.Patent{}, err
+	}
+	if p.FetchedAt, err = decodeTime(fetched); err != nil {
+		return domain.Patent{}, err
+	}
+	return p, nil
+}
+
+// SaveRelation inserts a family-graph edge; an existing edge is left untouched.
+func (r *Repo) SaveRelation(ctx context.Context, rel domain.Relation) error {
+	if rel.From.IsZero() || rel.To.IsZero() {
+		return errors.New("store/sqlite: relation endpoints must be non-empty")
+	}
+	if !rel.Kind.Valid() {
+		return fmt.Errorf("store/sqlite: invalid relation kind %q", rel.Kind)
+	}
+	_, err := r.writer.ExecContext(ctx,
+		`INSERT INTO relation (from_number, to_number, kind) VALUES (?,?,?)
+		 ON CONFLICT(from_number, to_number, kind) DO NOTHING`,
+		rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save relation: %w", err)
+	}
+	return nil
+}
+
+// Relations returns edges of the given kind originating at n.
+func (r *Repo) Relations(ctx context.Context, n domain.PatentNumber, kind domain.RelationKind) ([]domain.Relation, error) {
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT from_number, to_number, kind FROM relation
+		 WHERE from_number = ? AND kind = ? ORDER BY to_number`,
+		n.Normalized(), string(kind))
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list relations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Relation
+	for rows.Next() {
+		var from, to, k string
+		if err := rows.Scan(&from, &to, &k); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan relation: %w", err)
+		}
+		fromNum, err := domain.ParsePatentNumber(from)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: relation from %q: %w", from, err)
+		}
+		toNum, err := domain.ParsePatentNumber(to)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: relation to %q: %w", to, err)
+		}
+		out = append(out, domain.Relation{From: fromNum, To: toNum, Kind: domain.RelationKind(k)})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: list relations: %w", err)
+	}
+	return out, nil
+}
