@@ -197,6 +197,18 @@ func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	return nil
 }
 
+// DeletePatent permanently removes a patent and all associated data.
+func (e *Engine) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
+	defer e.observeDuration("engine.delete_patent", time.Now(), &err)
+	if err := e.repo.DeletePatent(ctx, n); err != nil {
+		e.log(ctx, slog.LevelError, "delete patent failed", slog.String("number", n.String()), slog.String("error", err.Error()))
+		return err
+	}
+	e.log(ctx, slog.LevelInfo, "patent deleted", slog.String("number", n.String()))
+	e.announceChange()
+	return nil
+}
+
 // Projects returns every project.
 func (e *Engine) Projects(ctx context.Context) (projects []domain.Project, err error) {
 	defer e.observeDuration("engine.projects", time.Now(), &err)

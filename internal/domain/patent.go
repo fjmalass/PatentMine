@@ -5,6 +5,16 @@ import (
 	"time"
 )
 
+// SortColumn names a column that patent listings can be ordered by.
+type SortColumn string
+
+const (
+	SortByNumber   SortColumn = "number"
+	SortByTitle    SortColumn = "title"
+	SortByInventor SortColumn = "inventor"
+	SortByExpires  SortColumn = "expires"
+)
+
 // Source identifies where a patent record was ingested from.
 type Source string
 
@@ -85,6 +95,9 @@ type PatentRow struct {
 	Number          PatentNumber    `json:"number"`
 	DisplayNumber   PatentNumber    `json:"display_number"`
 	Title           string          `json:"title"`
+	Inventors       []string        `json:"inventors"`
+	ExpirationDate  time.Time       `json:"expiration_date"`
+	Tags            []string        `json:"tags"`
 	FetchState      FetchState      `json:"fetch_state"`
 	MembershipState MembershipState `json:"membership_state,omitempty"`
 }

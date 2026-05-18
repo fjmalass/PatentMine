@@ -13,6 +13,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -94,6 +95,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.MarkDeleted:        (*App).cmdMarkDeleted,
 	command.TagAdd:             (*App).cmdTagAdd,
 	command.TagRemove:          (*App).cmdTagRemove,
+	command.PatentDelete:       (*App).cmdPatentDelete,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -117,8 +119,9 @@ type App struct {
 	reader          keys.Reader
 	saveLastProject func(domain.ProjectID) error
 
-	panes    []pane.Pane
-	overlays []overlay.Overlay
+	panes      []pane.Pane
+	overlays   []overlay.Overlay
+	confirmCmd tea.Cmd // pending action awaiting confirmation
 
 	status        string
 	statusErr     bool
@@ -210,6 +213,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.broadcast(pane.ResizeMsg{Width: m.Width, Height: max(m.Height-statusRows, 1)})
 	case tea.KeyMsg:
 		return a.handleKey(m)
+	case overlay.ConfirmAcceptMsg:
+		a.popOverlay()
+		cmd := a.confirmCmd
+		a.confirmCmd = nil
+		return a, cmd
+	case overlay.ConfirmRejectMsg:
+		a.popOverlay()
+		a.confirmCmd = nil
+		return a, nil
 	case overlay.PromptSubmitMsg:
 		a.popOverlay()
 		return a.executeTypedCommand(m.Input)
@@ -475,6 +487,34 @@ func (a *App) cmdTagRemove(inv invocation) (tea.Model, tea.Cmd) {
 	})
 }
 
+func (a *App) cmdPatentDelete(invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	var msg string
+	var confirmCmd tea.Cmd
+	if len(numbers) == 1 {
+		msg = "Delete " + numbers[0].String() + "? This cannot be undone."
+		confirmCmd = pane.DeletePatentCmd(a.client, numbers[0])
+	} else {
+		msg = fmt.Sprintf("Delete %d patents? This cannot be undone.", len(numbers))
+		cmds := make([]tea.Cmd, 0, len(numbers))
+		for _, n := range numbers {
+			cmds = append(cmds, pane.DeletePatentCmd(a.client, n))
+		}
+		confirmCmd = tea.Batch(cmds...)
+	}
+	a.confirmCmd = confirmCmd
+	a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
+	return a, nil
+}
+
 // cmdProjectCreate opens a name-entry overlay, or — given a typed name — creates
 // the project directly.
 func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
@@ -666,21 +706,37 @@ func (a *App) runMembershipState(target domain.MembershipState) (tea.Model, tea.
 	})
 }
 
+func (a *App) focusedSelections() []domain.PatentNumber {
+	if ms, ok := a.focusedPane().(pane.MultiSelector); ok {
+		if sels := ms.Selections(); len(sels) >= 2 {
+			return sels
+		}
+	}
+	if number, ok := a.focusedPane().Selection(); ok {
+		return []domain.PatentNumber{number}
+	}
+	return nil
+}
+
 func (a *App) runProjectAction(action func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
-		return a, nil
-	}
-	number, ok := a.focusedPane().Selection()
-	if !ok {
-		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
 	if a.client == nil {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	return a, action(a.activeProject.ID, number)
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	cmds := make([]tea.Cmd, 0, len(numbers))
+	for _, n := range numbers {
+		cmds = append(cmds, action(a.activeProject.ID, n))
+	}
+	return a, tea.Batch(cmds...)
 }
 
 func (a *App) syncPaneProject(_ pane.Pane) tea.Cmd {
@@ -987,10 +1043,16 @@ func (a *App) statusText() string {
 	if a.activeProject != nil {
 		versionText += "   [project " + a.activeProject.Name + "]"
 	}
-	if pending := a.reader.Pending(); pending != "" {
-		return a.status + versionText + "   [" + pending + "]"
+	visual := ""
+	if ms, ok := a.focusedPane().(pane.MultiSelector); ok {
+		if sels := ms.Selections(); len(sels) > 0 {
+			visual = fmt.Sprintf("   [VISUAL %d]", len(sels))
+		}
 	}
-	return a.status + versionText
+	if pending := a.reader.Pending(); pending != "" {
+		return a.status + versionText + visual + "   [" + pending + "]"
+	}
+	return a.status + versionText + visual
 }
 
 // compositeOverlay draws the focused overlay centred over the dimmed screen.

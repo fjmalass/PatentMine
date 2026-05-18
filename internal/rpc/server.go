@@ -40,6 +40,7 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodPing:            s.ping,
 		proto.MethodPatentGet:       s.patentGet,
 		proto.MethodPatentList:      s.patentList,
+		proto.MethodPatentDelete:    s.patentDelete,
 		proto.MethodProjectList:     s.projectList,
 		proto.MethodProjectCreate:   s.projectCreate,
 		proto.MethodMembershipAdd:   s.membershipAdd,
@@ -258,11 +259,13 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, err
 	}
 	patents, total, err := s.engine.ListPatents(ctx, store.PatentQuery{
-		Project: domain.ProjectID(p.Project),
-		State:   domain.MembershipState(p.State),
-		Search:  p.Search,
-		Limit:   p.Limit,
-		Offset:  p.Offset,
+		Project:       p.Project,
+		State:         p.State,
+		Search:        p.Search,
+		Limit:         p.Limit,
+		Offset:        p.Offset,
+		SortColumn:    p.SortColumn,
+		SortAscending: p.SortAscending,
 	})
 	if err != nil {
 		return nil, err
@@ -288,6 +291,17 @@ func (s *Server) projectCreate(ctx context.Context, raw json.RawMessage) (any, e
 		return nil, err
 	}
 	return proto.ProjectResult{Project: project}, nil
+}
+
+func (s *Server) patentDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentDeleteParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeletePatent(ctx, p.Number); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
 }
 
 func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, error) {

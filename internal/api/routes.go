@@ -108,8 +108,8 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	params := proto.PatentListParams{
-		Project: q.Get("project"),
-		State:   q.Get("state"),
+		Project: domain.ProjectID(q.Get("project")),
+		State:   domain.MembershipState(q.Get("state")),
 		Search:  q.Get("search"),
 		Limit:   limit,
 		Offset:  offset,

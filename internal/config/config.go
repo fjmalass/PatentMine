@@ -20,13 +20,20 @@ const (
 	dirPerm        = 0o755
 )
 
+// Path is a filesystem path, typed to prevent accidental assignment of plain
+// strings to path fields.
+type Path string
+
+// String implements fmt.Stringer.
+func (p Path) String() string { return string(p) }
+
 // Config holds the resolved paths the process needs.
 type Config struct {
-	HomeDir    string // Base directory; created if absent.
-	DBPath     string // SQLite database file.
-	LogsDir    string // Runtime logs and activity directory.
-	PIDPath    string // Daemon pid file.
-	SocketPath string // Unix domain socket for the daemon.
+	HomeDir    Path // Base directory; created if absent.
+	DBPath     Path // SQLite database file.
+	LogsDir    Path // Runtime logs and activity directory.
+	PIDPath    Path // Daemon pid file.
+	SocketPath Path // Unix domain socket for the daemon.
 }
 
 // Load resolves the configuration, creating the home directory if needed.
@@ -48,10 +55,10 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: create logs dir %q: %w", logsDir, err)
 	}
 	return Config{
-		HomeDir:    home,
-		DBPath:     filepath.Join(home, dbFileName),
-		LogsDir:    logsDir,
-		PIDPath:    filepath.Join(home, pidFileName),
-		SocketPath: filepath.Join(home, socketFileName),
+		HomeDir:    Path(home),
+		DBPath:     Path(filepath.Join(home, dbFileName)),
+		LogsDir:    Path(logsDir),
+		PIDPath:    Path(filepath.Join(home, pidFileName)),
+		SocketPath: Path(filepath.Join(home, socketFileName)),
 	}, nil
 }

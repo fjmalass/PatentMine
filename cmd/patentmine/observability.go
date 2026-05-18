@@ -10,5 +10,5 @@ import (
 )
 
 func openObservability(cfg config.Config, component string) (*observability.Runtime, error) {
-	return observability.Open(cfg.LogsDir, component, appversion.String())
+	return observability.Open(string(cfg.LogsDir), component, appversion.String())
 }

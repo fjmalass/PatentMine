@@ -42,6 +42,11 @@ const (
 	StatusTagged               Key = "status.tagged"
 	StatusUntagFailed          Key = "status.untag_failed"
 	StatusUntagged             Key = "status.untagged"
+	StatusDeleteFailed         Key = "status.delete_failed"
+	StatusDeleted              Key = "status.deleted"
+	StatusBatchDeleted         Key = "status.batch_deleted"
+	StatusBatchSetState        Key = "status.batch_set_state"
+	StatusBatchAdded           Key = "status.batch_added"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -115,6 +120,11 @@ var cmdStrings = map[string][2]string{
 	"patent.mark-under-review": {"Mark under review", "Set the selected patent to under review."},
 	"patent.mark-ignored":      {"Mark ignored", "Set the selected patent to ignored."},
 	"patent.mark-deleted":      {"Mark deleted", "Soft-delete the selected patent from the project."},
+	"patent.delete":            {"Delete patent", "Permanently remove the selected patent from the database."},
+	"select.visual":            {"Visual select", "Toggle visual mode at the cursor to begin range selection."},
+	"select.clear":             {"Clear selection", "Exit visual mode and clear the selection range."},
+	"col.next":                 {"Next column", "Move the sort indicator to the next column."},
+	"col.prev":                 {"Prev column", "Move the sort indicator to the previous column."},
 	"patent.add-to-project":    {"Add to project", "Add the selected patent to the active project."},
 	"patent.tag":               {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":             {"Untag patent", "Remove a tag from the selected patent within the active project."},
@@ -165,6 +175,11 @@ var englishNamed = map[Key]string{
 	StatusTagged:               "tagged %s as %q in %s",
 	StatusUntagFailed:          "untag failed: %s",
 	StatusUntagged:             "removed tag %q from %s",
+	StatusDeleteFailed:         "delete failed: %s",
+	StatusDeleted:              "deleted %s",
+	StatusBatchDeleted:         "deleted %d patents",
+	StatusBatchSetState:        "set %d patents to %s in %s",
+	StatusBatchAdded:           "added %d patents to %s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",

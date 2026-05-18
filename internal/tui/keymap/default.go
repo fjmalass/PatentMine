@@ -65,6 +65,7 @@ func patentActions() map[string]command.ID {
 		"r": command.MarkUnderReview,
 		"i": command.MarkIgnored,
 		"x": command.MarkDeleted,
+		"D": command.PatentDelete,
 		"a": command.AddToProject,
 		"f": command.IngestFamily,
 		"F": command.FetchPatent,
@@ -87,14 +88,17 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
-			"enter": command.OpenDetail,
-			"l":     command.OpenDetail,
-			"right": command.OpenDetail,
-			"c":     command.OpenCitations,
-			"b":     command.OpenCitedBy,
-			"p":     command.OpenProjects,
-			"/":     command.OpenSearch,
+			"enter":  command.OpenDetail,
+			"l":      command.OpenDetail,
+			"left":   command.ColPrev,
+			"right":  command.ColNext,
+			"c":      command.OpenCitations,
+			"b":      command.OpenCitedBy,
+			"p":      command.OpenProjects,
+			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,
+			"v":      command.SelectVisual,
+			"esc":    command.SelectClear,
 		})
 
 	detail := NewLayer("detail", false).
@@ -113,12 +117,14 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
-			"enter": command.OpenDetail,
-			"l":     command.OpenDetail,
-			"right": command.OpenDetail,
-			"p":     command.OpenProjects,
-			"/":     command.OpenSearch,
+			"enter":  command.OpenDetail,
+			"l":      command.OpenDetail,
+			"right":  command.OpenDetail,
+			"p":      command.OpenProjects,
+			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,
+			"v":      command.SelectVisual,
+			"esc":    command.SelectClear,
 		})
 
 	projects := NewLayer("projects", false).

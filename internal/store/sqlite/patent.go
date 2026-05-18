@@ -19,13 +19,20 @@ const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assig
 	p.grant_date, p.fetched_at, p.display_number,
 	p.first_claim, p.expiration_date, p.expiration_source, p.source_url`
 
-// patentRowColumns returns the lightweight listing column set in scanPatentRow's
-// order, optionally including a project membership state.
-func patentRowColumns(includeMembership bool) string {
-	if includeMembership {
-		return `p.country, p.serial, p.kind, p.display_number, p.title, p.fetch_state, m.state`
+// patentRowColumns returns the SELECT column list for scanPatentRow and any
+// args those columns need (the tag subquery binds the project ID).
+// When project is non-empty the membership state and project tags are included.
+func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
+	const tagsSubq = `COALESCE((SELECT json_group_array(t.name) FROM patent_tag pt ` +
+		`JOIN tag t ON t.id = pt.tag_id ` +
+		`WHERE pt.patent_number = p.number AND t.project_id = ?), '[]')`
+	if project != "" {
+		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
+			`p.inventors, p.expiration_date, p.fetch_state, m.state, ` + tagsSubq,
+			[]any{string(project)}
 	}
-	return `p.country, p.serial, p.kind, p.display_number, p.title, p.fetch_state, ''`
+	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
+		`p.inventors, p.expiration_date, p.fetch_state, '', '[]'`, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -73,6 +80,40 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	return nil
 }
 
+// DeletePatent permanently removes a patent and all its associated documents,
+// relations, and memberships.
+func (r *Repo) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
+	defer r.observeDuration("delete_patent", time.Now(), &err)
+	num := n.Normalized()
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete patent %s: begin tx: %w", n, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// relation has no FK cascade — clear both sides.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM relation WHERE from_number = ? OR to_number = ?`, num, num); err != nil {
+		return fmt.Errorf("store/sqlite: delete patent %s: relations: %w", n, err)
+	}
+	// membership has no FK cascade.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM membership WHERE patent_number = ?`, num); err != nil {
+		return fmt.Errorf("store/sqlite: delete patent %s: memberships: %w", n, err)
+	}
+	// deleting the patent row cascades to document and patent_tag.
+	res, err := tx.ExecContext(ctx, `DELETE FROM patent WHERE number = ?`, num)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete patent %s: %w", n, err)
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return store.ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: delete patent %s: commit: %w", n, err)
+	}
+	return nil
+}
+
 // Patent returns one patent, or store.ErrNotFound.
 func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (patent domain.Patent, err error) {
 	defer r.observeDuration("patent", time.Now(), &err)
@@ -97,13 +138,15 @@ func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (patent domain
 // ListPatents returns one page of lightweight listing rows matching q.
 func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []domain.PatentRow, err error) {
 	defer r.observeDuration("list_patents", time.Now(), &err)
-	where, args := patentFilter(q)
+	cols, colArgs := patentRowColumns(q.Project)
+	where, whereArgs := patentFilter(q)
 	limit := q.Limit
 	if limit <= 0 {
 		limit = store.DefaultPageSize
 	}
-	query := `SELECT ` + patentRowColumns(q.Project != "") + ` FROM patent p` + where +
-		` ORDER BY p.number LIMIT ? OFFSET ?`
+	query := `SELECT ` + cols + ` FROM patent p` + where +
+		` ORDER BY ` + patentSortExpr(q.SortColumn, q.SortAscending) + ` LIMIT ? OFFSET ?`
+	args := append(colArgs, whereArgs...)
 	args = append(args, limit, max(q.Offset, 0))
 
 	rows, err := r.reader.QueryContext(ctx, query, args...)
@@ -129,11 +172,14 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 // scanPatentRow reads one lightweight listing row.
 func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	var (
-		row                          domain.PatentRow
-		country, serial, kind, shown string
-		fetchState, membershipState  string
+		row                           domain.PatentRow
+		country, serial, kind, shown  string
+		inventorsJSON, expirationDate string
+		fetchState, membershipState   string
+		tagsJSON                      string
 	)
-	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title, &fetchState, &membershipState); err != nil {
+	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
+		&inventorsJSON, &expirationDate, &fetchState, &membershipState, &tagsJSON); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -146,7 +192,38 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		}
 		row.DisplayNumber = display
 	}
+	if err := json.Unmarshal([]byte(inventorsJSON), &row.Inventors); err != nil {
+		row.Inventors = nil
+	}
+	if t, err := decodeTime(expirationDate); err == nil {
+		row.ExpirationDate = t
+	}
+	if err := json.Unmarshal([]byte(tagsJSON), &row.Tags); err != nil {
+		row.Tags = nil
+	}
 	return row, nil
+}
+
+// patentSortExpr returns an ORDER BY expression for the given sort column and
+// direction. An empty col always returns number ASC (the default stable order).
+func patentSortExpr(col domain.SortColumn, asc bool) string {
+	if col == "" {
+		return "p.number ASC"
+	}
+	dir := "ASC"
+	if !asc {
+		dir = "DESC"
+	}
+	switch col {
+	case domain.SortByTitle:
+		return "p.title " + dir
+	case domain.SortByInventor:
+		return "json_extract(p.inventors, '$[0]') " + dir
+	case domain.SortByExpires:
+		return "p.expiration_date " + dir
+	default:
+		return "p.number " + dir
+	}
 }
 
 // CountPatents returns the total rows matching q, ignoring its paging.

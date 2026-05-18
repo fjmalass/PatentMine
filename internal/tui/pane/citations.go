@@ -30,11 +30,13 @@ type Citations struct {
 	kind     domain.RelationKind
 	handlers map[command.ID]cmdHandler
 
-	relations []domain.Relation
-	page      render.Paginator
-	loading   bool
-	loadErr   string
-	loadID    uint64
+	relations    []domain.Relation
+	page         render.Paginator
+	loading      bool
+	loadErr      string
+	loadID       uint64
+	visualMode   bool
+	visualAnchor int
 }
 
 // NewCitations builds a family-edge pane for one patent and relation kind.
@@ -54,7 +56,9 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		command.NavPageUp:   func(int) tea.Cmd { c.page.PageUp(); return nil },
 		command.NavTop:      func(int) tea.Cmd { c.page.Top(); return nil },
 		command.NavBottom:   func(int) tea.Cmd { c.page.Bottom(); return nil },
-		command.Refresh:     func(int) tea.Cmd { c.loading = true; return c.load() },
+		command.Refresh:      func(int) tea.Cmd { c.loading = true; return c.load() },
+		command.SelectVisual: func(int) tea.Cmd { return c.toggleVisual() },
+		command.SelectClear:  func(int) tea.Cmd { c.clearVisual(); return nil },
 		command.IngestFamily: func(int) tea.Cmd {
 			return c.ingestSelected(ingestFamilyDepth)
 		},
@@ -124,8 +128,46 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		c.loadErr = ""
 		c.relations = m.relations
 		c.page.SetTotal(len(c.relations))
+		c.clearVisual()
 	}
 	return c, nil
+}
+
+func (c *Citations) toggleVisual() tea.Cmd {
+	if c.visualMode {
+		c.clearVisual()
+		return nil
+	}
+	c.visualMode, c.visualAnchor = true, c.page.Cursor()
+	return nil
+}
+
+func (c *Citations) clearVisual() {
+	c.visualMode = false
+	c.visualAnchor = 0
+}
+
+func (c *Citations) inVisualRange(i int) bool {
+	lo := min(c.visualAnchor, c.page.Cursor())
+	hi := max(c.visualAnchor, c.page.Cursor())
+	return i >= lo && i <= hi
+}
+
+// Selections implements MultiSelector.
+func (c *Citations) Selections() []domain.PatentNumber {
+	if !c.visualMode || len(c.relations) == 0 {
+		return nil
+	}
+	lo := max(min(c.visualAnchor, c.page.Cursor()), 0)
+	hi := min(max(c.visualAnchor, c.page.Cursor()), len(c.relations)-1)
+	if lo > hi {
+		return nil
+	}
+	out := make([]domain.PatentNumber, 0, hi-lo+1)
+	for i := lo; i <= hi; i++ {
+		out = append(out, c.relations[i].To)
+	}
+	return out
 }
 
 // Selection implements Pane: the highlighted neighbour patent.
@@ -155,9 +197,12 @@ func (c *Citations) View(w, h int) string {
 	for i := start; i < end; i++ {
 		line := "  " + c.relations[i].To.String()
 		b.WriteByte('\n')
-		if i == c.page.Cursor() {
+		switch {
+		case i == c.page.Cursor():
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
-		} else {
+		case c.visualMode && c.inVisualRange(i):
+			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
+		default:
 			b.WriteString(c.theme.Row.Render(line))
 		}
 	}

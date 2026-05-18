@@ -29,6 +29,10 @@ type PatentQuery struct {
 	Limit int
 	// Offset is the number of rows to skip.
 	Offset int
+	// SortColumn names the column to order by; zero falls back to number order.
+	SortColumn domain.SortColumn
+	// SortAscending, when true, sorts ascending; false sorts descending.
+	SortAscending bool
 }
 
 // Repository is the persistence contract. Every method takes a context so the
@@ -37,6 +41,9 @@ type PatentQuery struct {
 type Repository interface {
 	// SavePatent inserts or updates a patent by its number.
 	SavePatent(ctx context.Context, p domain.Patent) error
+	// DeletePatent permanently removes a patent and all its associated
+	// documents, relations, and memberships.
+	DeletePatent(ctx context.Context, n domain.PatentNumber) error
 	// Patent returns one patent, or ErrNotFound.
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
 	// ListPatents returns one page of lightweight listing rows matching q.

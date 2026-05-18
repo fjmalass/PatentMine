@@ -53,6 +53,12 @@ type Pane interface {
 	Selection() (domain.PatentNumber, bool)
 }
 
+// MultiSelector is implemented by panes that support visual range selection.
+// App checks for this interface before falling back to single Selection().
+type MultiSelector interface {
+	Selections() []domain.PatentNumber
+}
+
 // JumpProvider is implemented by panes that support jump mode — a quick scroll
 // straight to a labelled field in a long, scrolling pane. The App opens the
 // jump overlay from JumpAnchors and calls JumpTo with the chosen line.

@@ -123,6 +123,20 @@ func RemoveTagCmd(client *rpc.Client, project domain.ProjectID, number domain.Pa
 	}
 }
 
+// DeletePatentCmd permanently removes a patent from the database.
+func DeletePatentCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodPatentDelete,
+			proto.PatentDeleteParams{Number: number}, &res); err != nil {
+			return StatusMsg{Key: text.StatusDeleteFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusDeleted, Args: []any{number.String()}}
+	}
+}
+
 // CreateProjectCmd creates a project with the given name.
 func CreateProjectCmd(client *rpc.Client, name string) tea.Cmd {
 	return func() tea.Msg {

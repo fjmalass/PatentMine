@@ -42,11 +42,11 @@ func runServe(_ []string) int {
 	reportPaths(os.Stdout, cfg)
 	telemetry.Logger.InfoContext(ctx, "daemon starting",
 		slog.String("build_version", appversion.String()),
-		slog.String("db_path", cfg.DBPath),
-		slog.String("socket_path", cfg.SocketPath),
-		slog.String("logs_dir", cfg.LogsDir))
+		slog.String("db_path", string(cfg.DBPath)),
+		slog.String("socket_path", string(cfg.SocketPath)),
+		slog.String("logs_dir", string(cfg.LogsDir)))
 
-	repo, err := sqlite.OpenWithMetrics(ctx, cfg.DBPath, telemetry.Metrics)
+	repo, err := sqlite.OpenWithMetrics(ctx, string(cfg.DBPath), telemetry.Metrics)
 	if err != nil {
 		telemetry.Logger.ErrorContext(ctx, "open sqlite failed", slog.String("error", err.Error()))
 		return fail(err)
@@ -61,25 +61,25 @@ func runServe(_ []string) int {
 	defer eng.Close()
 
 	if err := writePIDFile(cfg.PIDPath); err != nil {
-		telemetry.Logger.ErrorContext(ctx, "write pid file failed", slog.String("pid_path", cfg.PIDPath), slog.String("error", err.Error()))
+		telemetry.Logger.ErrorContext(ctx, "write pid file failed", slog.String("pid_path", string(cfg.PIDPath)), slog.String("error", err.Error()))
 		return fail(err)
 	}
-	defer func() { _ = os.Remove(cfg.PIDPath) }()
+	defer func() { _ = os.Remove(string(cfg.PIDPath)) }()
 
 	// Clear a socket left behind by a previous run before binding.
-	if err := os.Remove(cfg.SocketPath); err != nil && !os.IsNotExist(err) {
-		telemetry.Logger.ErrorContext(ctx, "remove stale socket failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
+	if err := os.Remove(string(cfg.SocketPath)); err != nil && !os.IsNotExist(err) {
+		telemetry.Logger.ErrorContext(ctx, "remove stale socket failed", slog.String("socket_path", string(cfg.SocketPath)), slog.String("error", err.Error()))
 		return fail(err)
 	}
-	ln, err := net.Listen("unix", cfg.SocketPath)
+	ln, err := net.Listen("unix", string(cfg.SocketPath))
 	if err != nil {
-		telemetry.Logger.ErrorContext(ctx, "listen failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
+		telemetry.Logger.ErrorContext(ctx, "listen failed", slog.String("socket_path", string(cfg.SocketPath)), slog.String("error", err.Error()))
 		return fail(err)
 	}
-	defer func() { _ = os.Remove(cfg.SocketPath) }()
+	defer func() { _ = os.Remove(string(cfg.SocketPath)) }()
 
 	fmt.Printf("patentmine daemon %s listening on %s\n", appversion.String(), cfg.SocketPath)
-	telemetry.Logger.InfoContext(ctx, "daemon listening", slog.String("socket_path", cfg.SocketPath))
+	telemetry.Logger.InfoContext(ctx, "daemon listening", slog.String("socket_path", string(cfg.SocketPath)))
 	if err := rpc.NewServer(eng).Serve(ctx, ln); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "rpc server stopped with error", slog.String("error", err.Error()))
 		return fail(err)
@@ -89,15 +89,12 @@ func runServe(_ []string) int {
 	return 0
 }
 
-// buildEngine assembles the ingest pipeline and the engine. The default source
-// registry is file-only; web sources are added once their parsers land.
+// buildEngine assembles the ingest pipeline and the engine.
 func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, telemetry *observability.Runtime) (*engine.Engine, error) {
-	patentsDir := filepath.Join(cfg.HomeDir, patentsDirName)
+	patentsDir := filepath.Join(string(cfg.HomeDir), patentsDirName)
 	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
 		return nil, err
 	}
-	// Sources are consulted in order: the local file cache first, then Google
-	// Patents. A source with no record for a number is skipped to the next.
 	registry := ingest.NewRegistry(
 		ingest.NewFileSource(patentsDir),
 		ingest.NewGoogleSource(),
@@ -116,6 +113,6 @@ func fail(err error) int {
 	return 1
 }
 
-func writePIDFile(path string) error {
-	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
+func writePIDFile(path config.Path) error {
+	return os.WriteFile(string(path), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 }

@@ -20,6 +20,7 @@ const (
 	MethodPing            Method = "ping"
 	MethodPatentGet       Method = "patent.get"
 	MethodPatentList      Method = "patent.list"
+	MethodPatentDelete    Method = "patent.delete"
 	MethodProjectList     Method = "project.list"
 	MethodProjectCreate   Method = "project.create"
 	MethodMembershipAdd   Method = "membership.add"
@@ -95,6 +96,11 @@ type PingResult struct {
 	Version string `json:"version"`
 }
 
+// PatentDeleteParams identifies the patent to permanently remove.
+type PatentDeleteParams struct {
+	Number domain.PatentNumber `json:"number"`
+}
+
 // PatentGetParams selects a single patent. Project, when set, scopes the
 // project-relative fields of the result — review state and tags — to that
 // project; the patent record itself is project-independent.
@@ -114,11 +120,13 @@ type PatentResult struct {
 
 // PatentListParams selects and paginates a patent listing.
 type PatentListParams struct {
-	Project string `json:"project,omitempty"`
-	State   string `json:"state,omitempty"`
-	Search  string `json:"search,omitempty"`
-	Limit   int    `json:"limit,omitempty"`
-	Offset  int    `json:"offset,omitempty"`
+	Project       domain.ProjectID      `json:"project,omitempty"`
+	State         domain.MembershipState `json:"state,omitempty"`
+	Search        string                `json:"search,omitempty"`
+	Limit         int                   `json:"limit,omitempty"`
+	Offset        int                   `json:"offset,omitempty"`
+	SortColumn    domain.SortColumn     `json:"sort_column,omitempty"`
+	SortAscending bool                  `json:"sort_ascending,omitempty"`
 }
 
 // PatentListResult carries one page of patents plus the unpaged total.

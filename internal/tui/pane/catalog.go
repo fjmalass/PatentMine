@@ -2,6 +2,7 @@ package pane
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -13,11 +14,29 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-// column widths for a catalog row.
+// column widths for the catalog table.
 const (
-	colNumber = 16
-	colState  = 13
+	colNumber   = 16
+	colInventor = 18
+	colExpires  = 10
+	colTags     = 14
+	colState    = 13
 )
+
+// sortCols is the ordered set of sort columns, left-to-right.
+var sortCols = []domain.SortColumn{
+	domain.SortByNumber,
+	domain.SortByTitle,
+	domain.SortByInventor,
+	domain.SortByExpires,
+}
+
+// catCol is one catalog column descriptor.
+type catCol struct {
+	label   string
+	sortKey domain.SortColumn // zero = not sortable
+	width   int
+}
 
 // catalogLoadedMsg delivers a finished patent.list result.
 type catalogLoadedMsg struct {
@@ -36,36 +55,41 @@ type Catalog struct {
 
 	activeProject *domain.Project
 
-	patents    []domain.PatentRow
-	page       render.Paginator
-	loadedBase int
-	loading    bool
-	loadErr    string
-	loadID     uint64
+	patents       []domain.PatentRow
+	page          render.Paginator
+	loadedBase    int
+	loading       bool
+	loadErr       string
+	loadID        uint64
+	visualMode    bool
+	visualAnchor  int
+	sortColIdx    int
+	sortAscending bool
 }
 
 // NewCatalog builds an empty catalog pane bound to a daemon client.
 func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 	c := &Catalog{
-		client:  client,
-		theme:   theme,
-		page:    render.NewPaginator(10),
-		loading: true,
+		client:        client,
+		theme:         theme,
+		page:          render.NewPaginator(10),
+		loading:       true,
+		sortAscending: true,
 	}
 	c.handlers = map[command.ID]cmdHandler{
-		command.NavDown:     func(r int) tea.Cmd { return c.move(func() { c.page.MoveDown(r) }) },
-		command.NavUp:       func(r int) tea.Cmd { return c.move(func() { c.page.MoveUp(r) }) },
-		command.NavPageDown: func(int) tea.Cmd { return c.move(c.page.PageDown) },
-		command.NavPageUp:   func(int) tea.Cmd { return c.move(c.page.PageUp) },
-		command.NavTop:      func(int) tea.Cmd { return c.move(c.page.Top) },
-		command.NavBottom:   func(int) tea.Cmd { return c.move(c.page.Bottom) },
-		command.Refresh:     func(int) tea.Cmd { c.loading = true; return c.load() },
-		command.IngestFamily: func(int) tea.Cmd {
-			return c.ingestSelected(ingestFamilyDepth)
-		},
-		command.FetchPatent: func(int) tea.Cmd {
-			return c.ingestSelected(ingestPatentDepth)
-		},
+		command.NavDown:      func(r int) tea.Cmd { return c.move(func() { c.page.MoveDown(r) }) },
+		command.NavUp:        func(r int) tea.Cmd { return c.move(func() { c.page.MoveUp(r) }) },
+		command.NavPageDown:  func(int) tea.Cmd { return c.move(c.page.PageDown) },
+		command.NavPageUp:    func(int) tea.Cmd { return c.move(c.page.PageUp) },
+		command.NavTop:       func(int) tea.Cmd { return c.move(c.page.Top) },
+		command.NavBottom:    func(int) tea.Cmd { return c.move(c.page.Bottom) },
+		command.Refresh:      func(int) tea.Cmd { c.loading = true; return c.load() },
+		command.SelectVisual: func(int) tea.Cmd { return c.toggleVisual() },
+		command.SelectClear:  func(int) tea.Cmd { c.clearVisual(); return nil },
+		command.IngestFamily: func(int) tea.Cmd { return c.ingestSelected(ingestFamilyDepth) },
+		command.FetchPatent:  func(int) tea.Cmd { return c.ingestSelected(ingestPatentDepth) },
+		command.ColNext:      func(int) tea.Cmd { return c.sortNext() },
+		command.ColPrev:      func(int) tea.Cmd { return c.sortPrev() },
 	}
 	return c
 }
@@ -86,16 +110,24 @@ func (c *Catalog) load() tea.Cmd {
 	c.loadID = requestID
 	offset := c.page.Offset()
 	limit := c.page.PageSize()
+	sortCol := sortCols[c.sortColIdx]
+	sortAsc := c.sortAscending
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.PatentListResult
-		var project string
+		var project domain.ProjectID
 		if c.activeProject != nil {
-			project = string(c.activeProject.ID)
+			project = c.activeProject.ID
 		}
 		err := client.Call(ctx, proto.MethodPatentList,
-			proto.PatentListParams{Project: project, Limit: limit, Offset: offset}, &res)
+			proto.PatentListParams{
+				Project:       project,
+				Limit:         limit,
+				Offset:        offset,
+				SortColumn:    sortCol,
+				SortAscending: sortAsc,
+			}, &res)
 		return catalogLoadedMsg{
 			requestID: requestID,
 			offset:    offset,
@@ -104,6 +136,28 @@ func (c *Catalog) load() tea.Cmd {
 			err:       err,
 		}
 	}
+}
+
+// sortNext moves the active sort column right and reloads.
+func (c *Catalog) sortNext() tea.Cmd {
+	if c.sortColIdx >= len(sortCols)-1 {
+		return nil
+	}
+	c.sortColIdx++
+	c.sortAscending = true
+	c.loading = true
+	return c.load()
+}
+
+// sortPrev moves the active sort column left and reloads.
+func (c *Catalog) sortPrev() tea.Cmd {
+	if c.sortColIdx <= 0 {
+		return nil
+	}
+	c.sortColIdx--
+	c.sortAscending = true
+	c.loading = true
+	return c.load()
 }
 
 // Command implements Pane.
@@ -158,6 +212,7 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.page.Top()
 			c.loadedBase = 0
 			c.loading = true
+			c.clearVisual()
 			return c, c.load()
 		}
 	case catalogLoadedMsg:
@@ -173,12 +228,52 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		c.patents = m.patents
 		c.loadedBase = m.offset
 		c.page.SetTotal(m.total)
+		c.clearVisual()
 		if c.page.Offset() != m.offset {
 			c.loading = true
 			return c, c.load()
 		}
 	}
 	return c, nil
+}
+
+func (c *Catalog) toggleVisual() tea.Cmd {
+	if c.visualMode {
+		c.clearVisual()
+		return nil
+	}
+	c.visualMode, c.visualAnchor = true, c.page.Cursor()
+	return nil
+}
+
+func (c *Catalog) clearVisual() {
+	c.visualMode = false
+	c.visualAnchor = 0
+}
+
+func (c *Catalog) inVisualRange(absolute int) bool {
+	lo := min(c.visualAnchor, c.page.Cursor())
+	hi := max(c.visualAnchor, c.page.Cursor())
+	return absolute >= lo && absolute <= hi
+}
+
+// Selections implements MultiSelector.
+func (c *Catalog) Selections() []domain.PatentNumber {
+	if !c.visualMode || len(c.patents) == 0 {
+		return nil
+	}
+	lo := min(c.visualAnchor, c.page.Cursor())
+	hi := max(c.visualAnchor, c.page.Cursor())
+	lo = max(lo, c.loadedBase)
+	hi = min(hi, c.loadedBase+len(c.patents)-1)
+	if lo > hi {
+		return nil
+	}
+	out := make([]domain.PatentNumber, 0, hi-lo+1)
+	for abs := lo; abs <= hi; abs++ {
+		out = append(out, c.patents[abs-c.loadedBase].Number)
+	}
+	return out
 }
 
 // Selection implements Pane.
@@ -190,8 +285,22 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 	return c.patents[cur].Number, true
 }
 
-// View implements Pane. It sets the page size from the available height so the
-// visible window always fills the body.
+// catColumns returns the column layout, computing the title width from bodyWidth.
+func (c *Catalog) catColumns(bodyWidth int) []catCol {
+	// 5 one-space gaps between 6 columns
+	fixedW := colNumber + colInventor + colExpires + colTags + colState + 5
+	titleW := max(bodyWidth-fixedW, 12)
+	return []catCol{
+		{"NUMBER",         domain.SortByNumber,   colNumber},
+		{"TITLE",          domain.SortByTitle,    titleW},
+		{"INVENTOR",       domain.SortByInventor, colInventor},
+		{"EXPIRES",        domain.SortByExpires,  colExpires},
+		{"TAGS",           "",                    colTags},
+		{c.stateHeading(), "",                    colState},
+	}
+}
+
+// View implements Pane.
 func (c *Catalog) View(w, h int) string {
 	switch {
 	case c.loading:
@@ -205,18 +314,67 @@ func (c *Catalog) View(w, h int) string {
 		return c.theme.Dim.Render("no patents yet — select a number and press f to ingest its family")
 	}
 
+	c.page.SetPageSize(max(h-1, 1))
+	cols := c.catColumns(w)
+	activeSortKey := sortCols[c.sortColIdx]
+
 	var b strings.Builder
-	b.WriteString(c.theme.Header.Render(catalogRow("NUMBER", c.stateHeading(), "TITLE", w)))
+	b.WriteString(c.renderCatHeader(cols, activeSortKey))
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
-		line := catalogRow(numberToShowRow(p).String(), c.stateText(p), p.Title, w)
+		line := c.renderCatRow(p, cols)
 		b.WriteByte('\n')
-		if absolute == c.page.Cursor() {
+		switch {
+		case absolute == c.page.Cursor():
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
-		} else {
+		case c.visualMode && c.inVisualRange(absolute):
+			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
+		default:
 			b.WriteString(c.theme.Row.Render(line))
 		}
+	}
+	return b.String()
+}
+
+// renderCatHeader builds the column header row with sort indicators.
+func (c *Catalog) renderCatHeader(cols []catCol, activeSortKey domain.SortColumn) string {
+	var b strings.Builder
+	for i, col := range cols {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		label := col.label
+		if col.sortKey == activeSortKey {
+			if c.sortAscending {
+				label += " ▴"
+			} else {
+				label += " ▾"
+			}
+			b.WriteString(c.theme.SortActive.Render(render.Pad(render.Truncate(label, col.width), col.width)))
+		} else {
+			b.WriteString(c.theme.Header.Render(render.Pad(render.Truncate(label, col.width), col.width)))
+		}
+	}
+	return b.String()
+}
+
+// renderCatRow formats one patent row across all columns.
+func (c *Catalog) renderCatRow(p domain.PatentRow, cols []catCol) string {
+	vals := [6]string{
+		numberToShowRow(p).String(),
+		p.Title,
+		formatInventorsShort(p.Inventors),
+		formatExpires(p.ExpirationDate),
+		formatTags(p.Tags),
+		c.stateText(p),
+	}
+	var b strings.Builder
+	for i, col := range cols {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(render.Pad(render.Truncate(vals[i], col.width), col.width))
 	}
 	return b.String()
 }
@@ -250,17 +408,37 @@ func sameProject(a, b *domain.Project) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.CreatedAt.Equal(b.CreatedAt)
 }
 
-// catalogRow formats one fixed-width catalog line.
-func catalogRow(number, state, title string, w int) string {
-	titleW := max(w-colNumber-colState-2, 0)
-	return render.Pad(number, colNumber) + " " +
-		render.Pad(state, colState) + " " +
-		render.Truncate(title, titleW)
-}
-
 func numberToShowRow(row domain.PatentRow) domain.PatentNumber {
 	if !row.DisplayNumber.IsZero() {
 		return row.DisplayNumber
 	}
 	return row.Number
+}
+
+// formatInventorsShort returns the first inventor's name, appending "et al."
+// when there are multiple inventors.
+func formatInventorsShort(inventors []string) string {
+	if len(inventors) == 0 {
+		return "-"
+	}
+	if len(inventors) == 1 {
+		return inventors[0]
+	}
+	return inventors[0] + " et al."
+}
+
+// formatExpires formats an expiration date for display; returns "-" when zero.
+func formatExpires(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("2006-01-02")
+}
+
+// formatTags formats a patent's tag list for display; returns "-" when empty.
+func formatTags(tags []string) string {
+	if len(tags) == 0 {
+		return "-"
+	}
+	return strings.Join(tags, " ")
 }

@@ -24,6 +24,10 @@ const (
 	OpenSearch    ID = "search.open"
 	OpenCommand   ID = "command.open"
 	JumpMode      ID = "view.jump"
+	SelectVisual  ID = "select.visual"
+	SelectClear   ID = "select.clear"
+	ColNext       ID = "col.next"
+	ColPrev       ID = "col.prev"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
@@ -49,6 +53,9 @@ const (
 	// Tagging. Both act on the selected patent within the active project.
 	TagAdd    ID = "patent.tag"
 	TagRemove ID = "patent.untag"
+
+	// PatentDelete permanently removes a patent from the database.
+	PatentDelete ID = "patent.delete"
 
 	// Ingestion.
 	IngestFamily ID = "ingest.family"
@@ -94,6 +101,10 @@ func Default() (*Registry, error) {
 		Command{ID: OpenSearch, Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
 		Command{ID: OpenCommand, Kind: KindView},
 		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Context{ContextDetail}},
+		Command{ID: SelectVisual, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: SelectClear, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: ColNext, Kind: KindView, Scopes: []Context{ContextCatalog}},
+		Command{ID: ColPrev, Kind: KindView, Scopes: []Context{ContextCatalog}},
 		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
@@ -114,6 +125,7 @@ func Default() (*Registry, error) {
 		Command{ID: MarkIgnored, Name: "state.ignored", Aliases: []string{"ignored"}, Usage: ":state.ignored", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
 		Command{ID: MarkDeleted, Name: "state.deleted", Aliases: []string{"deleted"}, Usage: ":state.deleted", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
 		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
+		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
 		Command{ID: TagAdd, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagAssign, Scopes: patentScopes},
 		Command{ID: TagRemove, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodTagRemove, Scopes: patentScopes},
 

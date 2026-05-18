@@ -29,13 +29,13 @@ func runTUI(_ []string) int {
 		return fail(err)
 	}
 	defer func() { _ = telemetry.Close() }()
-	telemetry.Logger.Info("tui starting", slog.String("socket_path", cfg.SocketPath))
+	telemetry.Logger.Info("tui starting", slog.String("socket_path", string(cfg.SocketPath)))
 	fmt.Fprintf(os.Stderr, "patentmine tui %s\n", appversion.String())
 	reportPaths(os.Stderr, cfg)
 
-	client, err := rpc.Dial(cfg.SocketPath)
+	client, err := rpc.Dial(string(cfg.SocketPath))
 	if err != nil {
-		telemetry.Logger.Error("dial daemon failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
+		telemetry.Logger.Error("dial daemon failed", slog.String("socket_path", string(cfg.SocketPath)), slog.String("error", err.Error()))
 		fmt.Fprintf(os.Stderr, "patentmine: cannot reach the daemon at %s\n", cfg.SocketPath)
 		fmt.Fprintln(os.Stderr, "start it first in another terminal:  patentmine serve")
 		return 1
