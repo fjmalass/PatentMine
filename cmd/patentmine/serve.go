@@ -17,6 +17,7 @@ import (
 	"patentmine/internal/observability"
 	"patentmine/internal/rpc"
 	"patentmine/internal/store/sqlite"
+	appversion "patentmine/internal/version"
 )
 
 // patentsDirName holds local JSON patent files consulted before web sources.
@@ -37,7 +38,9 @@ func runServe(_ []string) int {
 		return fail(err)
 	}
 	defer func() { _ = telemetry.Close() }()
+	fmt.Printf("patentmine daemon %s starting\n", appversion.String())
 	telemetry.Logger.InfoContext(ctx, "daemon starting",
+		slog.String("build_version", appversion.String()),
 		slog.String("db_path", cfg.DBPath),
 		slog.String("socket_path", cfg.SocketPath),
 		slog.String("logs_dir", cfg.LogsDir))
@@ -74,7 +77,7 @@ func runServe(_ []string) int {
 	}
 	defer func() { _ = os.Remove(cfg.SocketPath) }()
 
-	fmt.Printf("patentmine daemon listening on %s\n", cfg.SocketPath)
+	fmt.Printf("patentmine daemon %s listening on %s\n", appversion.String(), cfg.SocketPath)
 	telemetry.Logger.InfoContext(ctx, "daemon listening", slog.String("socket_path", cfg.SocketPath))
 	if err := rpc.NewServer(eng).Serve(ctx, ln); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "rpc server stopped with error", slog.String("error", err.Error()))

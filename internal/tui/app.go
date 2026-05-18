@@ -5,9 +5,11 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -21,10 +23,14 @@ import (
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
 	"patentmine/internal/tui/render"
+	appversion "patentmine/internal/version"
 )
 
 // reservedRows is the header + status lines the App draws around a pane body.
 const reservedRows = 2
+
+// pingTimeout bounds the startup version probe.
+const pingTimeout = 5 * time.Second
 
 // overlay box sizing.
 const (
@@ -39,6 +45,12 @@ type busEventMsg struct{ event proto.Event }
 
 // eventsClosedMsg signals that the daemon event stream ended.
 type eventsClosedMsg struct{}
+
+// pingLoadedMsg carries the daemon's reported build version.
+type pingLoadedMsg struct {
+	version string
+	err     error
+}
 
 // App is the bubbletea root model.
 type App struct {
@@ -55,6 +67,8 @@ type App struct {
 	statusErr bool
 	width     int
 	height    int
+	tuiVersion    string
+	daemonVersion string
 }
 
 // New builds the App with the catalog as the initial pane.
@@ -67,12 +81,18 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		theme:    theme,
 		panes:    []pane.Pane{pane.NewCatalog(client, theme)},
 		status:   "ready — press ? for help",
+		tuiVersion:    appversion.String(),
+		daemonVersion: "connecting",
 	}
 }
 
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.panes[0].Init(), a.listen())
+	cmds := []tea.Cmd{a.panes[0].Init(), a.fetchPing()}
+	if a.client != nil {
+		cmds = append(cmds, a.listen())
+	}
+	return tea.Batch(cmds...)
 }
 
 // listen waits for one daemon event and delivers it as a message.
@@ -87,6 +107,21 @@ func (a *App) listen() tea.Cmd {
 	}
 }
 
+// fetchPing asks the daemon which build version it is running.
+func (a *App) fetchPing() tea.Cmd {
+	if a.client == nil {
+		return nil
+	}
+	client := a.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		defer cancel()
+		var res proto.PingResult
+		err := client.Call(ctx, proto.MethodPing, nil, &res)
+		return pingLoadedMsg{version: res.Version, err: err}
+	}
+}
+
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
@@ -97,6 +132,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleKey(m)
 	case pane.StatusMsg:
 		a.status, a.statusErr = m.Text, m.Error
+		return a, nil
+	case pingLoadedMsg:
+		if m.err != nil {
+			a.daemonVersion = "unavailable"
+			return a, nil
+		}
+		a.daemonVersion = m.version
 		return a, nil
 	case busEventMsg:
 		return a, tea.Batch(a.handleEvent(m.event), a.listen())
@@ -288,10 +330,11 @@ func (a *App) View() string {
 
 // statusText appends the chord reader's pending input, Vim-style.
 func (a *App) statusText() string {
+	versionText := "   [tui " + a.tuiVersion + " | daemon " + a.daemonVersion + "]"
 	if pending := a.reader.Pending(); pending != "" {
-		return a.status + "   [" + pending + "]"
+		return a.status + versionText + "   [" + pending + "]"
 	}
-	return a.status
+	return a.status + versionText
 }
 
 // compositeOverlay draws the focused overlay centred over the dimmed screen.

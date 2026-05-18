@@ -82,3 +82,14 @@ func TestAppBackPopsPaneStack(t *testing.T) {
 		t.Fatalf("'q' should close the overlay, overlays = %d", len(app.overlays))
 	}
 }
+
+func TestStatusTextIncludesTUIAndDaemonVersions(t *testing.T) {
+	app := newTestApp(t)
+	app.daemonVersion = "daemon-v1"
+	text := app.statusText()
+	for _, want := range []string{"tui ", "daemon daemon-v1"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("status text %q missing %q", text, want)
+		}
+	}
+}

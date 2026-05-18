@@ -6,8 +6,9 @@ package main
 import (
 	"patentmine/internal/config"
 	"patentmine/internal/observability"
+	appversion "patentmine/internal/version"
 )
 
 func openObservability(cfg config.Config, component string) (*observability.Runtime, error) {
-	return observability.Open(cfg.LogsDir, component)
+	return observability.Open(cfg.LogsDir, component, appversion.String())
 }

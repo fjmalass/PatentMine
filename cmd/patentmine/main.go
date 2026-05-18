@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	appversion "patentmine/internal/version"
 )
 
 const usageText = `patentmine — patent tracking
@@ -16,6 +18,7 @@ usage:
   patentmine api       start the web API server
   patentmine migrate   apply database migrations
   patentmine paths     print resolved runtime paths
+  patentmine version   print the build version
 `
 
 func main() {
@@ -42,6 +45,9 @@ func run(args []string) int {
 		return runMigrate(args[1:])
 	case "paths":
 		return runPaths(args[1:])
+	case "version":
+		fmt.Println(appversion.String())
+		return 0
 	case "help", "-h", "--help":
 		fmt.Print(usageText)
 		return 0

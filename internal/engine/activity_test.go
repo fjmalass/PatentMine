@@ -17,7 +17,7 @@ import (
 
 func TestEngineWritesSemanticActivityRecords(t *testing.T) {
 	logsDir := filepath.Join(t.TempDir(), "logs")
-	obs, err := observability.Open(logsDir, "test")
+	obs, err := observability.Open(logsDir, "test", "test-version")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

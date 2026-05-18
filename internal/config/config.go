@@ -43,10 +43,14 @@ func Load() (Config, error) {
 	if err := os.MkdirAll(home, dirPerm); err != nil {
 		return Config{}, fmt.Errorf("config: create home %q: %w", home, err)
 	}
+	logsDir := filepath.Join(home, logsDirName)
+	if err := os.MkdirAll(logsDir, dirPerm); err != nil {
+		return Config{}, fmt.Errorf("config: create logs dir %q: %w", logsDir, err)
+	}
 	return Config{
 		HomeDir:    home,
 		DBPath:     filepath.Join(home, dbFileName),
-		LogsDir:    filepath.Join(home, logsDirName),
+		LogsDir:    logsDir,
 		PIDPath:    filepath.Join(home, pidFileName),
 		SocketPath: filepath.Join(home, socketFileName),
 	}, nil

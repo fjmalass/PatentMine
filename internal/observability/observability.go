@@ -29,6 +29,7 @@ const (
 type Runtime struct {
 	Logger   *slog.Logger
 	Activity *Recorder
+	Version  string
 
 	logFile      *os.File
 	activityFile *os.File
@@ -60,7 +61,7 @@ type Recorder struct {
 }
 
 // Open creates dated log and activity files under logsDir.
-func Open(logsDir, component string) (*Runtime, error) {
+func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("observability: create logs dir %q: %w", logsDir, err)
 	}
@@ -79,10 +80,12 @@ func Open(logsDir, component string) (*Runtime, error) {
 		slog.String("service", "patentmine"),
 		slog.String("component", component),
 		slog.String("date", date),
+		slog.String("version", buildVersion),
 	)
 	return &Runtime{
 		Logger:       logger,
 		Activity:     &Recorder{component: component, w: activityFile},
+		Version:      buildVersion,
 		logFile:      logFile,
 		activityFile: activityFile,
 	}, nil

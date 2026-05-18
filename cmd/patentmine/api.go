@@ -12,6 +12,7 @@ import (
 	"patentmine/internal/command"
 	"patentmine/internal/config"
 	"patentmine/internal/rpc"
+	appversion "patentmine/internal/version"
 )
 
 const (
@@ -56,7 +57,7 @@ func runAPI(_ []string) int {
 		addr = defaultAPIAddr
 	}
 
-	fmt.Printf("patentmine web API listening on http://%s\n", addr)
+	fmt.Printf("patentmine api %s listening on http://%s\n", appversion.String(), addr)
 	telemetry.Logger.InfoContext(ctx, "api listening", slog.String("addr", addr))
 	if err := api.NewServer(client, registry).ListenAndServe(ctx, addr); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "api serve failed", slog.String("error", err.Error()))

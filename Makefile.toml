@@ -8,12 +8,16 @@ default_to_workspace = false
 
 [env]
 BINARY = "./cmd/patentmine"
-DAEMON_LOG = "/tmp/patentmine-daemon.log"
 
 [tasks.build]
 description = "Compile all packages."
-command = "go"
-args = ["build", "./..."]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go build -ldflags "$ldflags" ./...
+'''
 
 [tasks.fmt]
 description = "Format all Go source."
@@ -48,29 +52,49 @@ args = ["test", "./..."]
 
 [tasks.run-daemon]
 description = "Start the engine daemon in the foreground."
-command = "go"
-args = ["run", "${BINARY}", "serve"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go run -ldflags "$ldflags" ${BINARY} serve
+'''
 
 [tasks.stop-daemon]
 description = "Stop the engine daemon if it is running."
-command = "go"
-args = ["run", "${BINARY}", "stop"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go run -ldflags "$ldflags" ${BINARY} stop
+'''
 
 [tasks.start-daemon]
 description = "Start the engine daemon in the background."
 script = '''
-socket="$(go run ${BINARY} paths | awk -F= '/^SOCKET=/{print $2}')"
-nohup go run ${BINARY} serve > "${DAEMON_LOG}" 2>&1 &
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+socket="$(echo "$paths" | awk -F= '/^SOCKET=/{print $2}')"
+logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
+date_tag="$(date +%F)"
+stdout_log="$logs_dir/daemon-stdout-$date_tag.log"
+nohup go run -ldflags "$ldflags" ${BINARY} serve >> "$stdout_log" 2>&1 &
 for _ in $(seq 1 50); do
   if [ -S "$socket" ]; then
     echo "patentmine daemon started ($socket)"
-    echo "log: ${DAEMON_LOG}"
+    echo "stdout log: $stdout_log"
+    echo "structured log: $logs_dir/log-$date_tag.jsonl"
+    echo "activity log: $logs_dir/activity-$date_tag.jsonl"
     exit 0
   fi
   sleep 0.1
 done
 echo "patentmine daemon did not create socket: $socket"
-echo "check log: ${DAEMON_LOG}"
+echo "check stdout log: $stdout_log"
 exit 1
 '''
 
@@ -81,19 +105,34 @@ dependencies = ["stop-daemon", "start-daemon"]
 [tasks.run-tui]
 description = "Restart the daemon, then launch the terminal UI."
 dependencies = ["restart-daemon"]
-command = "go"
-args = ["run", "${BINARY}", "tui"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go run -ldflags "$ldflags" ${BINARY} tui
+'''
 
 [tasks.run-api]
 description = "Restart the daemon, then start the web API server."
 dependencies = ["restart-daemon"]
-command = "go"
-args = ["run", "${BINARY}", "api"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go run -ldflags "$ldflags" ${BINARY} api
+'''
 
 [tasks.migrate]
 description = "Apply database migrations (wired up in Phase 2)."
-command = "go"
-args = ["run", "${BINARY}", "migrate"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go run -ldflags "$ldflags" ${BINARY} migrate
+'''
 
 [tasks.ci]
 description = "Full check: formatting, vet, lint, tests."

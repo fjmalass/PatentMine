@@ -13,6 +13,7 @@ import (
 	"patentmine/internal/engine"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
+	appversion "patentmine/internal/version"
 )
 
 // ErrBadParams marks a request whose params failed to decode.
@@ -168,7 +169,7 @@ func decodeParams[T any](raw json.RawMessage) (T, error) {
 // --- handlers ---
 
 func (s *Server) ping(context.Context, json.RawMessage) (any, error) {
-	return proto.PingResult{Pong: true, Version: proto.Version}, nil
+	return proto.PingResult{Pong: true, Version: appversion.String()}, nil
 }
 
 func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error) {

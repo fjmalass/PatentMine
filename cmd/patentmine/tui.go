@@ -12,6 +12,7 @@ import (
 	"patentmine/internal/rpc"
 	"patentmine/internal/tui"
 	"patentmine/internal/tui/keymap"
+	appversion "patentmine/internal/version"
 )
 
 // runTUI launches the terminal client. It is a thin frontend: it connects to
@@ -27,6 +28,7 @@ func runTUI(_ []string) int {
 	}
 	defer func() { _ = telemetry.Close() }()
 	telemetry.Logger.Info("tui starting", slog.String("socket_path", cfg.SocketPath))
+	fmt.Fprintf(os.Stderr, "patentmine tui %s\n", appversion.String())
 
 	client, err := rpc.Dial(cfg.SocketPath)
 	if err != nil {

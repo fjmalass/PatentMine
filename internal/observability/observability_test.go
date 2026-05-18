@@ -14,7 +14,7 @@ import (
 
 func TestOpenCreatesDatedLogAndActivityFiles(t *testing.T) {
 	logsDir := filepath.Join(t.TempDir(), "logs")
-	obs, err := Open(logsDir, "daemon")
+	obs, err := Open(logsDir, "daemon", "test-version")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -43,6 +43,7 @@ func TestOpenCreatesDatedLogAndActivityFiles(t *testing.T) {
 		t.Fatalf("ReadFile log: %v", err)
 	}
 	if !strings.Contains(string(logBody), `"component":"daemon"`) ||
+		!strings.Contains(string(logBody), `"version":"test-version"`) ||
 		!strings.Contains(string(logBody), `"date":"`+date+`"`) {
 		t.Fatalf("log body missing component/date tags: %s", logBody)
 	}
