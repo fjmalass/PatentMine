@@ -2,12 +2,16 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"patentmine/internal/proto"
 )
+
+// ErrQueueFull reports that no ingest slot is available right now.
+var ErrQueueFull = errors.New("engine: ingest queue full")
 
 // JobID identifies a background job for progress reporting and cancellation.
 type JobID string
@@ -92,7 +96,7 @@ func (p *workerPool) run(qj queuedJob) {
 
 // submit enqueues a job and returns its id. The job's context is a child of
 // the pool's base context, so a daemon shutdown cancels every running job.
-func (p *workerPool) submit(job Job) JobID {
+func (p *workerPool) submit(job Job) (JobID, error) {
 	id := JobID(fmt.Sprintf("job-%d", p.seq.Add(1)))
 	ctx, cancel := context.WithCancel(p.baseCtx)
 
@@ -100,8 +104,16 @@ func (p *workerPool) submit(job Job) JobID {
 	p.cancels[id] = cancel
 	p.mu.Unlock()
 
-	p.queue <- queuedJob{id: id, ctx: ctx, job: job}
-	return id
+	select {
+	case p.queue <- queuedJob{id: id, ctx: ctx, job: job}:
+		return id, nil
+	default:
+		cancel()
+		p.mu.Lock()
+		delete(p.cancels, id)
+		p.mu.Unlock()
+		return "", ErrQueueFull
+	}
 }
 
 // cancel stops a running or queued job. It reports whether the id was known.

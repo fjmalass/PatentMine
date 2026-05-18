@@ -92,7 +92,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = m.Width, m.Height
-		return a, nil
+		return a, a.broadcast(pane.ResizeMsg{Width: m.Width, Height: max(m.Height-reservedRows, 1)})
 	case tea.KeyMsg:
 		return a.handleKey(m)
 	case pane.StatusMsg:

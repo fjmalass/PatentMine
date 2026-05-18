@@ -14,6 +14,7 @@ import (
 
 // citationsLoadedMsg delivers a finished patent.relations result.
 type citationsLoadedMsg struct {
+	requestID uint64
 	relations []domain.Relation
 	err       error
 }
@@ -31,6 +32,7 @@ type Citations struct {
 	page      render.Paginator
 	loading   bool
 	loadErr   string
+	loadID    uint64
 }
 
 // NewCitations builds a family-edge pane for one patent and relation kind.
@@ -58,13 +60,15 @@ func (c *Citations) Init() tea.Cmd { return c.load() }
 
 func (c *Citations) load() tea.Cmd {
 	client, root, kind := c.client, c.root, c.kind
+	requestID := nextAsyncID()
+	c.loadID = requestID
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.RelationsResult
 		err := client.Call(ctx, proto.MethodRelations,
 			proto.RelationsParams{Number: root, Kind: string(kind)}, &res)
-		return citationsLoadedMsg{relations: res.Relations, err: err}
+		return citationsLoadedMsg{requestID: requestID, relations: res.Relations, err: err}
 	}
 }
 
@@ -102,6 +106,9 @@ func (c *Citations) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
 // Update implements Pane.
 func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	if m, ok := msg.(citationsLoadedMsg); ok {
+		if m.requestID != c.loadID {
+			return c, nil
+		}
 		c.loading = false
 		if m.err != nil {
 			c.loadErr = m.err.Error()

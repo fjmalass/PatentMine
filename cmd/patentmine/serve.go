@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"patentmine/internal/config"
@@ -42,6 +43,11 @@ func runServe(_ []string) int {
 	}
 	defer eng.Close()
 
+	if err := writePIDFile(cfg.PIDPath); err != nil {
+		return fail(err)
+	}
+	defer func() { _ = os.Remove(cfg.PIDPath) }()
+
 	// Clear a socket left behind by a previous run before binding.
 	if err := os.Remove(cfg.SocketPath); err != nil && !os.IsNotExist(err) {
 		return fail(err)
@@ -76,4 +82,8 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo) (*en
 func fail(err error) int {
 	fmt.Fprintln(os.Stderr, "patentmine:", err)
 	return 1
+}
+
+func writePIDFile(path string) error {
+	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 }

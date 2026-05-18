@@ -3,6 +3,7 @@ package pane
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,12 @@ const callTimeout = 15 * time.Second
 // callContext returns a context bounded by callTimeout.
 func callContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), callTimeout)
+}
+
+var asyncSeq atomic.Uint64
+
+func nextAsyncID() uint64 {
+	return asyncSeq.Add(1)
 }
 
 // ingestFamilyCmd starts a family-graph ingest for number and reports the

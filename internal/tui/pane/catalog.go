@@ -12,11 +12,6 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-// catalogFetchLimit is how many patents the catalog pane pulls per load. The
-// Paginator pages the display; the daemon also supports query-side paging when
-// the catalog grows past this.
-const catalogFetchLimit = 500
-
 // column widths for a catalog row.
 const (
 	colNumber = 16
@@ -25,8 +20,11 @@ const (
 
 // catalogLoadedMsg delivers a finished patent.list result.
 type catalogLoadedMsg struct {
-	patents []domain.Patent
-	err     error
+	requestID uint64
+	offset    int
+	total     int
+	patents   []domain.PatentRow
+	err       error
 }
 
 // Catalog is the main patent list pane.
@@ -34,10 +32,12 @@ type Catalog struct {
 	client *rpc.Client
 	theme  render.Theme
 
-	patents []domain.Patent
-	page    render.Paginator
-	loading bool
-	loadErr string
+	patents    []domain.PatentRow
+	page       render.Paginator
+	loadedBase int
+	loading    bool
+	loadErr    string
+	loadID     uint64
 }
 
 // NewCatalog builds an empty catalog pane bound to a daemon client.
@@ -62,18 +62,29 @@ func (c *Catalog) Init() tea.Cmd { return c.load() }
 // load fetches the patent list from the daemon.
 func (c *Catalog) load() tea.Cmd {
 	client := c.client
+	requestID := nextAsyncID()
+	c.loadID = requestID
+	offset := c.page.Offset()
+	limit := c.page.PageSize()
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.PatentListResult
 		err := client.Call(ctx, proto.MethodPatentList,
-			proto.PatentListParams{Limit: catalogFetchLimit}, &res)
-		return catalogLoadedMsg{patents: res.Patents, err: err}
+			proto.PatentListParams{Limit: limit, Offset: offset}, &res)
+		return catalogLoadedMsg{
+			requestID: requestID,
+			offset:    offset,
+			total:     res.Total,
+			patents:   res.Patents,
+			err:       err,
+		}
 	}
 }
 
 // Command implements Pane.
 func (c *Catalog) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
+	before := c.page.Offset()
 	switch id {
 	case command.NavDown:
 		c.page.MoveDown(repeat)
@@ -102,12 +113,30 @@ func (c *Catalog) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
 	case command.OpenSearch:
 		return c, status("search prompt is not yet wired", false)
 	}
+	if c.page.Offset() != before {
+		c.loading = true
+		return c, c.load()
+	}
 	return c, nil
 }
 
 // Update implements Pane.
 func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
-	if m, ok := msg.(catalogLoadedMsg); ok {
+	switch m := msg.(type) {
+	case ResizeMsg:
+		pageSize := max(m.Height-1, 1)
+		if pageSize != c.page.PageSize() {
+			before := c.page.Offset()
+			c.page.SetPageSize(pageSize)
+			if before != c.page.Offset() || len(c.patents) != c.page.PageSize() {
+				c.loading = true
+				return c, c.load()
+			}
+		}
+	case catalogLoadedMsg:
+		if m.requestID != c.loadID {
+			return c, nil
+		}
 		c.loading = false
 		if m.err != nil {
 			c.loadErr = m.err.Error()
@@ -115,14 +144,19 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		c.loadErr = ""
 		c.patents = m.patents
-		c.page.SetTotal(len(c.patents))
+		c.loadedBase = m.offset
+		c.page.SetTotal(m.total)
+		if c.page.Offset() != m.offset {
+			c.loading = true
+			return c, c.load()
+		}
 	}
 	return c, nil
 }
 
 // Selection implements Pane.
 func (c *Catalog) Selection() (domain.PatentNumber, bool) {
-	cur := c.page.Cursor()
+	cur := c.page.Cursor() - c.loadedBase
 	if cur < 0 || cur >= len(c.patents) {
 		return domain.PatentNumber{}, false
 	}
@@ -137,20 +171,18 @@ func (c *Catalog) View(w, h int) string {
 		return c.theme.Dim.Render("loading patents…")
 	case c.loadErr != "":
 		return c.theme.Error.Render("error: " + c.loadErr)
-	case len(c.patents) == 0:
+	case c.page.Total() == 0:
 		return c.theme.Dim.Render("no patents yet — select a number and press f to ingest its family")
 	}
-	c.page.SetPageSize(max(h-1, 1))
 
 	var b strings.Builder
 	b.WriteString(c.theme.Header.Render(catalogRow("NUMBER", "STATE", "TITLE", w)))
 
-	start, end := c.page.Window()
-	for i := start; i < end; i++ {
-		p := c.patents[i]
-		line := catalogRow(numberToShow(p).String(), string(p.FetchState), p.Title, w)
+	for i, p := range c.patents {
+		absolute := c.loadedBase + i
+		line := catalogRow(numberToShowRow(p).String(), string(p.FetchState), p.Title, w)
 		b.WriteByte('\n')
-		if i == c.page.Cursor() {
+		if absolute == c.page.Cursor() {
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
 		} else {
 			b.WriteString(c.theme.Row.Render(line))
@@ -165,4 +197,11 @@ func catalogRow(number, state, title string, w int) string {
 	return render.Pad(number, colNumber) + " " +
 		render.Pad(state, colState) + " " +
 		render.Truncate(title, titleW)
+}
+
+func numberToShowRow(row domain.PatentRow) domain.PatentNumber {
+	if !row.DisplayNumber.IsZero() {
+		return row.DisplayNumber
+	}
+	return row.Number
 }

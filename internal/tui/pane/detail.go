@@ -18,8 +18,9 @@ const detailDateLayout = "2006-01-02"
 
 // detailLoadedMsg delivers a finished patent.get result.
 type detailLoadedMsg struct {
-	patent domain.Patent
-	err    error
+	requestID uint64
+	patent    domain.Patent
+	err       error
 }
 
 // Detail shows one patent's full record.
@@ -31,6 +32,7 @@ type Detail struct {
 	patent  domain.Patent
 	loading bool
 	loadErr string
+	loadID  uint64
 }
 
 // NewDetail builds a detail pane for one patent number.
@@ -50,13 +52,15 @@ func (d *Detail) Init() tea.Cmd { return d.load() }
 // load fetches the patent record from the daemon.
 func (d *Detail) load() tea.Cmd {
 	client, number := d.client, d.number
+	requestID := nextAsyncID()
+	d.loadID = requestID
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.PatentResult
 		err := client.Call(ctx, proto.MethodPatentGet,
 			proto.PatentGetParams{Number: number}, &res)
-		return detailLoadedMsg{patent: res.Patent, err: err}
+		return detailLoadedMsg{requestID: requestID, patent: res.Patent, err: err}
 	}
 }
 
@@ -78,6 +82,9 @@ func (d *Detail) Command(id command.ID, _ int) (Pane, tea.Cmd) {
 // Update implements Pane.
 func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	if m, ok := msg.(detailLoadedMsg); ok {
+		if m.requestID != d.loadID {
+			return d, nil
+		}
 		d.loading = false
 		if m.err != nil {
 			d.loadErr = m.err.Error()

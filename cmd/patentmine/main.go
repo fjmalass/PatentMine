@@ -11,9 +11,11 @@ const usageText = `patentmine — patent tracking
 
 usage:
   patentmine serve     start the engine daemon
+  patentmine stop      stop the engine daemon
   patentmine tui       launch the terminal UI
   patentmine api       start the web API server
   patentmine migrate   apply database migrations
+  patentmine paths     print resolved runtime paths
 `
 
 func main() {
@@ -30,12 +32,16 @@ func run(args []string) int {
 	switch args[0] {
 	case "serve":
 		return runServe(args[1:])
+	case "stop":
+		return runStop(args[1:])
 	case "tui":
 		return runTUI(args[1:])
 	case "api":
 		return runAPI(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
+	case "paths":
+		return runPaths(args[1:])
 	case "help", "-h", "--help":
 		fmt.Print(usageText)
 		return 0

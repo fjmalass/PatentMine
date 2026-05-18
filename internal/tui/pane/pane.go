@@ -11,6 +11,13 @@ import (
 	"patentmine/internal/domain"
 )
 
+// ResizeMsg reports the body area available to a pane after the app reserves
+// its header and status lines.
+type ResizeMsg struct {
+	Width  int
+	Height int
+}
+
 // Pane is one screen of the TUI.
 type Pane interface {
 	// Context reports the keymap context the pane uses, so the App can pick

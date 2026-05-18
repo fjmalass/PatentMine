@@ -17,6 +17,9 @@ const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assig
 	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
 	p.grant_date, p.fetched_at, p.display_number`
 
+// patentRowColumns is the lightweight listing column set in scanPatentRow's order.
+const patentRowColumns = `p.country, p.serial, p.kind, p.display_number, p.title, p.fetch_state`
+
 // SavePatent inserts or updates a patent by its number.
 func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) error {
 	if p.Number.IsZero() {
@@ -77,14 +80,14 @@ func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent
 	return p, nil
 }
 
-// ListPatents returns one page of patents matching q.
-func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.Patent, error) {
+// ListPatents returns one page of lightweight listing rows matching q.
+func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.PatentRow, error) {
 	where, args := patentFilter(q)
 	limit := q.Limit
 	if limit <= 0 {
 		limit = store.DefaultPageSize
 	}
-	query := `SELECT ` + patentColumns + ` FROM patent p` + where +
+	query := `SELECT ` + patentRowColumns + ` FROM patent p` + where +
 		` ORDER BY p.number LIMIT ? OFFSET ?`
 	args = append(args, limit, max(q.Offset, 0))
 
@@ -94,11 +97,11 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.P
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []domain.Patent
+	var out []domain.PatentRow
 	for rows.Next() {
-		p, err := scanPatent(rows)
+		p, err := scanPatentRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("store/sqlite: scan patent: %w", err)
+			return nil, fmt.Errorf("store/sqlite: scan patent row: %w", err)
 		}
 		out = append(out, p)
 	}
@@ -106,6 +109,28 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.P
 		return nil, fmt.Errorf("store/sqlite: list patents: %w", err)
 	}
 	return out, nil
+}
+
+// scanPatentRow reads one lightweight listing row.
+func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
+	var (
+		row                            domain.PatentRow
+		country, serial, kind, shown   string
+		fetchState                     string
+	)
+	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title, &fetchState); err != nil {
+		return domain.PatentRow{}, err
+	}
+	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
+	row.FetchState = domain.FetchState(fetchState)
+	if shown != "" {
+		display, err := domain.ParsePatentNumber(shown)
+		if err != nil {
+			return domain.PatentRow{}, fmt.Errorf("decode display number %q: %w", shown, err)
+		}
+		row.DisplayNumber = display
+	}
+	return row, nil
 }
 
 // CountPatents returns the total rows matching q, ignoring its paging.

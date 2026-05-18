@@ -146,6 +146,8 @@ func codeFor(err error) int {
 		return proto.CodeNotFound
 	case errors.Is(err, ErrBadParams):
 		return proto.CodeBadParams
+	case errors.Is(err, engine.ErrQueueFull):
+		return proto.CodeBusy
 	default:
 		return proto.CodeInternal
 	}

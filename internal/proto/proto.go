@@ -47,6 +47,7 @@ const (
 	CodeBadParams  = -32602
 	CodeInternal   = -32603
 	CodeNotFound   = -32000
+	CodeBusy       = -32001
 )
 
 // Request is one JSON-RPC call from a client to the daemon.
@@ -110,8 +111,8 @@ type PatentListParams struct {
 
 // PatentListResult carries one page of patents plus the unpaged total.
 type PatentListResult struct {
-	Patents []domain.Patent `json:"patents"`
-	Total   int             `json:"total"`
+	Patents []domain.PatentRow `json:"patents"`
+	Total   int                `json:"total"`
 }
 
 // ProjectListResult carries every project.

@@ -78,8 +78,8 @@ func (e *Engine) recordNumber(ctx context.Context, n domain.PatentNumber) (domai
 	return domain.PatentNumber{}, err
 }
 
-// ListPatents returns one page of patents and the unpaged total.
-func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.Patent, int, error) {
+// ListPatents returns one page of lightweight listing rows and the unpaged total.
+func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.PatentRow, int, error) {
 	patents, err := e.repo.ListPatents(ctx, q)
 	if err != nil {
 		return nil, 0, err
@@ -175,7 +175,7 @@ func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (JobID, 
 	if root.IsZero() {
 		return "", errors.New("engine: ingest root must not be empty")
 	}
-	return e.pool.submit(e.ingest(root, depth)), nil
+	return e.pool.submit(e.ingest(root, depth))
 }
 
 // Relations returns family-graph edges of one kind from a patent.

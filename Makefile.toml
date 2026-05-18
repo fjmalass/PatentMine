@@ -8,6 +8,7 @@ default_to_workspace = false
 
 [env]
 BINARY = "./cmd/patentmine"
+DAEMON_LOG = "/tmp/patentmine-daemon.log"
 
 [tasks.build]
 description = "Compile all packages."
@@ -46,17 +47,46 @@ command = "go"
 args = ["test", "./..."]
 
 [tasks.run-daemon]
-description = "Start the engine daemon."
+description = "Start the engine daemon in the foreground."
 command = "go"
 args = ["run", "${BINARY}", "serve"]
 
+[tasks.stop-daemon]
+description = "Stop the engine daemon if it is running."
+command = "go"
+args = ["run", "${BINARY}", "stop"]
+
+[tasks.start-daemon]
+description = "Start the engine daemon in the background."
+script = '''
+socket="$(go run ${BINARY} paths | awk -F= '/^SOCKET=/{print $2}')"
+nohup go run ${BINARY} serve > "${DAEMON_LOG}" 2>&1 &
+for _ in $(seq 1 50); do
+  if [ -S "$socket" ]; then
+    echo "patentmine daemon started ($socket)"
+    echo "log: ${DAEMON_LOG}"
+    exit 0
+  fi
+  sleep 0.1
+done
+echo "patentmine daemon did not create socket: $socket"
+echo "check log: ${DAEMON_LOG}"
+exit 1
+'''
+
+[tasks.restart-daemon]
+description = "Restart the engine daemon in the background."
+dependencies = ["stop-daemon", "start-daemon"]
+
 [tasks.run-tui]
-description = "Launch the terminal UI."
+description = "Restart the daemon, then launch the terminal UI."
+dependencies = ["restart-daemon"]
 command = "go"
 args = ["run", "${BINARY}", "tui"]
 
 [tasks.run-api]
-description = "Start the web API server."
+description = "Restart the daemon, then start the web API server."
+dependencies = ["restart-daemon"]
 command = "go"
 args = ["run", "${BINARY}", "api"]
 

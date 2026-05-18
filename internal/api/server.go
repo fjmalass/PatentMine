@@ -84,6 +84,8 @@ func writeError(w http.ResponseWriter, err error) {
 			status = http.StatusNotFound
 		case proto.CodeBadParams, proto.CodeParse, proto.CodeInvalidReq:
 			status = http.StatusBadRequest
+		case proto.CodeBusy:
+			status = http.StatusServiceUnavailable
 		}
 	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})

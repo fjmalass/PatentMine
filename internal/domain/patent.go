@@ -66,6 +66,16 @@ type Patent struct {
 	Documents []Document `json:"documents"`
 }
 
+// PatentRow is the lightweight listing shape used by paged views. It keeps the
+// record key and display number separate so list UIs stay cheap without losing
+// the application/publication/grant distinction.
+type PatentRow struct {
+	Number       PatentNumber `json:"number"`
+	DisplayNumber PatentNumber `json:"display_number"`
+	Title        string       `json:"title"`
+	FetchState   FetchState   `json:"fetch_state"`
+}
+
 // IsStub reports whether only a reference exists, without the full body.
 func (p Patent) IsStub() bool {
 	return p.FetchState == FetchStub

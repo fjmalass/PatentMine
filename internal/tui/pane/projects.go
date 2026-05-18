@@ -15,6 +15,7 @@ import (
 
 // projectsLoadedMsg delivers a finished project.list result.
 type projectsLoadedMsg struct {
+	requestID uint64
 	projects []domain.Project
 	err      error
 }
@@ -28,6 +29,7 @@ type Projects struct {
 	page     render.Paginator
 	loading  bool
 	loadErr  string
+	loadID   uint64
 }
 
 // NewProjects builds an empty projects pane.
@@ -51,12 +53,14 @@ func (p *Projects) Init() tea.Cmd { return p.load() }
 
 func (p *Projects) load() tea.Cmd {
 	client := p.client
+	requestID := nextAsyncID()
+	p.loadID = requestID
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.ProjectListResult
 		err := client.Call(ctx, proto.MethodProjectList, nil, &res)
-		return projectsLoadedMsg{projects: res.Projects, err: err}
+		return projectsLoadedMsg{requestID: requestID, projects: res.Projects, err: err}
 	}
 }
 
@@ -128,6 +132,9 @@ func (p *Projects) exportCmd() tea.Cmd {
 // Update implements Pane.
 func (p *Projects) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	if m, ok := msg.(projectsLoadedMsg); ok {
+		if m.requestID != p.loadID {
+			return p, nil
+		}
 		p.loading = false
 		if m.err != nil {
 			p.loadErr = m.err.Error()
