@@ -94,6 +94,35 @@ func SetMembershipStateCmd(client *rpc.Client, project domain.ProjectID, number 
 	}
 }
 
+// AssignTagCmd tags a patent within the active project, creating the tag when
+// the project does not have it yet.
+func AssignTagCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodTagAssign,
+			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusTagged, Args: []any{number.String(), name, string(project)}}
+	}
+}
+
+// RemoveTagCmd removes a tag from a patent within the active project.
+func RemoveTagCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodTagRemove,
+			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusUntagFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusUntagged, Args: []any{name, number.String()}}
+	}
+}
+
 // CreateProjectCmd creates a project with the given name.
 func CreateProjectCmd(client *rpc.Client, name string) tea.Cmd {
 	return func() tea.Msg {

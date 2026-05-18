@@ -64,6 +64,36 @@ func TestPaginatorPageMoves(t *testing.T) {
 	}
 }
 
+func TestPaginatorScrollTo(t *testing.T) {
+	p := NewPaginator(5)
+	p.SetTotal(20)
+
+	// A target with room below it leads the window.
+	p.ScrollTo(8)
+	if p.Cursor() != 8 {
+		t.Fatalf("cursor = %d, want 8", p.Cursor())
+	}
+	if start, end := p.Window(); start != 8 || end != 13 {
+		t.Fatalf("window = [%d,%d), want [8,13)", start, end)
+	}
+	// A target near the end clamps the window to the list end.
+	p.ScrollTo(18)
+	if start, end := p.Window(); start != 15 || end != 20 {
+		t.Fatalf("window = [%d,%d), want [15,20)", start, end)
+	}
+	// A negative target clamps to the first row.
+	p.ScrollTo(-3)
+	if p.Cursor() != 0 {
+		t.Fatalf("cursor = %d, want 0 after clamping", p.Cursor())
+	}
+	// ScrollTo on an empty list is a no-op.
+	p.SetTotal(0)
+	p.ScrollTo(5)
+	if start, end := p.Window(); start != 0 || end != 0 {
+		t.Fatalf("window = [%d,%d), want [0,0) on an empty list", start, end)
+	}
+}
+
 func TestPaginatorEmptyList(t *testing.T) {
 	p := NewPaginator(10)
 	p.SetTotal(0)

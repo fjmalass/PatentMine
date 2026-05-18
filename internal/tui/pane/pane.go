@@ -12,6 +12,7 @@ import (
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/text"
+	"patentmine/internal/tui/render"
 )
 
 // ResizeMsg reports the body area available to a pane after the app reserves
@@ -50,6 +51,16 @@ type Pane interface {
 	// Selection reports the highlighted patent, when the pane has one. The App
 	// uses it to open detail/citation views for the current row.
 	Selection() (domain.PatentNumber, bool)
+}
+
+// JumpProvider is implemented by panes that support jump mode — a quick scroll
+// straight to a labelled field in a long, scrolling pane. The App opens the
+// jump overlay from JumpAnchors and calls JumpTo with the chosen line.
+type JumpProvider interface {
+	// JumpAnchors returns the pane's current jump targets, in display order.
+	JumpAnchors() []render.JumpAnchor
+	// JumpTo scrolls the pane so the given body line leads the view.
+	JumpTo(line int)
 }
 
 // cmdHandler carries out one command for a pane, repeated the given count. The

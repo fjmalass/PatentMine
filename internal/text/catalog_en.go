@@ -38,6 +38,10 @@ const (
 	StatusProjectNameEmpty     Key = "status.project_name_empty"
 	StatusImportFailed         Key = "status.import_failed"
 	StatusImported             Key = "status.imported"
+	StatusTagFailed            Key = "status.tag_failed"
+	StatusTagged               Key = "status.tagged"
+	StatusUntagFailed          Key = "status.untag_failed"
+	StatusUntagged             Key = "status.untagged"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -54,6 +58,7 @@ const (
 	HintClearActive     Key = "hint.clear_active"
 	HintExportIDS       Key = "hint.export_ids"
 	HintIngest          Key = "hint.ingest"
+	HintJump            Key = "hint.jump"
 	HintHelp            Key = "hint.help"
 	HintQuit            Key = "hint.quit"
 	HintMove            Key = "hint.move"
@@ -98,6 +103,7 @@ var cmdStrings = map[string][2]string{
 	"view.refresh":             {"Refresh", "Reload the current pane from the daemon."},
 	"search.open":              {"Command palette", "Open the command palette."},
 	"command.open":             {"Command prompt", "Open the command prompt."},
+	"view.jump":                {"Jump to field", "Jump straight to a labelled field in the detail view."},
 	"app.quit":                 {"Quit", "Quit the application."},
 	"app.help":                 {"Help", "Show the help screen."},
 	"patent.list":              {"List patents", "List stored patents."},
@@ -110,6 +116,8 @@ var cmdStrings = map[string][2]string{
 	"patent.mark-ignored":      {"Mark ignored", "Set the selected patent to ignored."},
 	"patent.mark-deleted":      {"Mark deleted", "Soft-delete the selected patent from the project."},
 	"patent.add-to-project":    {"Add to project", "Add the selected patent to the active project."},
+	"patent.tag":               {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
+	"patent.untag":             {"Untag patent", "Remove a tag from the selected patent within the active project."},
 	"ingest.family":            {"Ingest family", "Crawl the selected patent's family graph."},
 	"patent.fetch":             {"Fetch patent", "Fetch the selected patent's record from the web."},
 	"patent.import":            {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
@@ -153,6 +161,10 @@ var englishNamed = map[Key]string{
 	StatusProjectNameEmpty:     "project name cannot be empty",
 	StatusImportFailed:         "import failed: %s",
 	StatusImported:             "imported %s",
+	StatusTagFailed:            "tag failed: %s",
+	StatusTagged:               "tagged %s as %q in %s",
+	StatusUntagFailed:          "untag failed: %s",
+	StatusUntagged:             "removed tag %q from %s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",
@@ -168,6 +180,7 @@ var englishNamed = map[Key]string{
 	HintClearActive:     "clear active",
 	HintExportIDS:       "export IDS",
 	HintIngest:          "ingest",
+	HintJump:            "jump",
 	HintHelp:            "help",
 	HintQuit:            "quit",
 	HintMove:            "move",

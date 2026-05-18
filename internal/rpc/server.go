@@ -44,6 +44,8 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodProjectCreate:   s.projectCreate,
 		proto.MethodMembershipAdd:   s.membershipAdd,
 		proto.MethodMembershipState: s.membershipState,
+		proto.MethodTagAssign:       s.tagAssign,
+		proto.MethodTagRemove:       s.tagRemove,
 		proto.MethodIngestFamily:    s.ingestFamily,
 		proto.MethodIngestCancel:    s.ingestCancel,
 		proto.MethodImportFile:      s.importFile,
@@ -230,7 +232,24 @@ func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error
 	if err != nil {
 		return nil, err
 	}
-	return proto.PatentResult{Patent: patent}, nil
+	result := proto.PatentResult{Patent: patent}
+	// State and tags are project-scoped; populate them only when the caller
+	// named a project, leaving them empty for a project-independent lookup.
+	if p.Project != "" {
+		state, ok, err := s.engine.MembershipStateOf(ctx, p.Project, p.Number)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result.State = state
+		}
+		tags, err := s.engine.PatentTags(ctx, p.Project, p.Number)
+		if err != nil {
+			return nil, err
+		}
+		result.Tags = tags
+	}
+	return result, nil
 }
 
 func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -292,6 +311,28 @@ func (s *Server) membershipState(ctx context.Context, raw json.RawMessage) (any,
 		return nil, fmt.Errorf("%w: %v", ErrBadParams, err)
 	}
 	if err := s.engine.SetMembershipState(ctx, p.Project, p.Patent, state); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) tagAssign(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.AssignTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) tagRemove(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.RemoveTag(ctx, p.Project, p.Patent, p.Name); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil

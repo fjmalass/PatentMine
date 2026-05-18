@@ -76,6 +76,19 @@ type Repository interface {
 	// Memberships returns every membership of a project.
 	Memberships(ctx context.Context, project domain.ProjectID) ([]domain.Membership, error)
 
+	// CreateTag returns the project's tag of the given name, creating it when
+	// the project does not have it yet. The name is matched as stored.
+	CreateTag(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error)
+	// ProjectTags returns every tag of a project, ordered by name.
+	ProjectTags(ctx context.Context, project domain.ProjectID) ([]domain.Tag, error)
+	// TagPatent assigns a tag to a patent; an existing assignment is left as is.
+	TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) error
+	// UntagPatent removes a tag from a patent; a missing assignment is a no-op.
+	UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) error
+	// PatentTags returns the tags a patent carries within a project, ordered by
+	// name.
+	PatentTags(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) ([]domain.Tag, error)
+
 	// Close releases all database resources.
 	Close() error
 }

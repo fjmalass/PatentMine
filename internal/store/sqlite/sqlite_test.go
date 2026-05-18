@@ -248,3 +248,65 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		t.Fatalf("data lost after reopen: %v", err)
 	}
 }
+
+func TestTagStore(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	// Tags and assignments need an existing project and patent (foreign keys).
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	patent := samplePatent("US11611785B2")
+	if err := repo.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	// CreateTag is idempotent on (project, name): a second call returns the row.
+	tag, err := repo.CreateTag(ctx, project.ID, "prior-art")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	again, err := repo.CreateTag(ctx, project.ID, "prior-art")
+	if err != nil {
+		t.Fatalf("CreateTag (repeat): %v", err)
+	}
+	if again.ID != tag.ID {
+		t.Fatalf("CreateTag not idempotent: id %d then %d", tag.ID, again.ID)
+	}
+
+	// A tag assigned to a patent reads back through PatentTags.
+	if err := repo.TagPatent(ctx, tag.ID, patent.Number); err != nil {
+		t.Fatalf("TagPatent: %v", err)
+	}
+	if err := repo.TagPatent(ctx, tag.ID, patent.Number); err != nil {
+		t.Fatalf("TagPatent (repeat): %v", err) // a duplicate assignment is a no-op
+	}
+	tags, err := repo.PatentTags(ctx, project.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("PatentTags: %v", err)
+	}
+	if len(tags) != 1 || tags[0].Name != "prior-art" {
+		t.Fatalf("PatentTags = %v, want one prior-art tag", tags)
+	}
+
+	// Removing the tag clears the assignment but keeps the tag itself.
+	if err := repo.UntagPatent(ctx, tag.ID, patent.Number); err != nil {
+		t.Fatalf("UntagPatent: %v", err)
+	}
+	tags, err = repo.PatentTags(ctx, project.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("PatentTags after untag: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Fatalf("PatentTags = %v, want empty after untag", tags)
+	}
+	all, err := repo.ProjectTags(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ProjectTags: %v", err)
+	}
+	if len(all) != 1 || all[0].Name != "prior-art" {
+		t.Fatalf("ProjectTags = %v, want one prior-art tag", all)
+	}
+}

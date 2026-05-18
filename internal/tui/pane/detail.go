@@ -17,10 +17,13 @@ import (
 // detailDateLayout formats dates in the detail view.
 const detailDateLayout = "2006-01-02"
 
-// detailLoadedMsg delivers a finished patent.get result.
+// detailLoadedMsg delivers a finished patent.get result. state and tags are
+// project-scoped and empty when the detail pane has no project.
 type detailLoadedMsg struct {
 	requestID uint64
 	patent    domain.Patent
+	state     domain.MembershipState
+	tags      []domain.Tag
 	err       error
 }
 
@@ -43,22 +46,29 @@ type Detail struct {
 	client   *rpc.Client
 	theme    render.Theme
 	number   domain.PatentNumber
+	project  domain.ProjectID
 	handlers map[command.ID]cmdHandler
 
 	patent    domain.Patent
+	state     domain.MembershipState
+	tags      []domain.Tag
 	relCounts map[domain.RelationKind]int
+	anchors   []render.JumpAnchor // jump targets, rebuilt on every body render
 	page      render.Paginator
 	loading   bool
 	loadErr   string
 	loadID    uint64
 }
 
-// NewDetail builds a detail pane for one patent number.
-func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber) *Detail {
+// NewDetail builds a detail pane for one patent number. project, when set,
+// scopes the pane's review state and tags; pass "" for a project-independent
+// view.
+func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber, project domain.ProjectID) *Detail {
 	d := &Detail{
 		client:    client,
 		theme:     theme,
 		number:    number,
+		project:   project,
 		relCounts: map[domain.RelationKind]int{},
 		page:      render.NewPaginator(10),
 		loading:   true,
@@ -95,9 +105,10 @@ func (d *Detail) reload() tea.Cmd {
 	return tea.Batch(d.load(), d.loadRelations())
 }
 
-// load fetches the patent record from the daemon.
+// load fetches the patent record from the daemon, scoped to the pane's project
+// so the reply carries the patent's review state and tags.
 func (d *Detail) load() tea.Cmd {
-	client, number := d.client, d.number
+	client, number, project := d.client, d.number, d.project
 	requestID := nextAsyncID()
 	d.loadID = requestID
 	return func() tea.Msg {
@@ -105,8 +116,14 @@ func (d *Detail) load() tea.Cmd {
 		defer cancel()
 		var res proto.PatentResult
 		err := client.Call(ctx, proto.MethodPatentGet,
-			proto.PatentGetParams{Number: number}, &res)
-		return detailLoadedMsg{requestID: requestID, patent: res.Patent, err: err}
+			proto.PatentGetParams{Number: number, Project: project}, &res)
+		return detailLoadedMsg{
+			requestID: requestID,
+			patent:    res.Patent,
+			state:     res.State,
+			tags:      res.Tags,
+			err:       err,
+		}
 	}
 }
 
@@ -153,10 +170,24 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		d.loadErr = ""
 		d.patent = m.patent
+		d.state = m.state
+		d.tags = m.tags
 		d.page.Top()
 	case detailRelationsMsg:
 		if m.requestID == d.loadID {
 			d.relCounts = m.counts
+		}
+	case ProjectChangedMsg:
+		// The pane's project scopes its review state and tags; a change means
+		// the project-relative fields must be re-fetched.
+		var project domain.ProjectID
+		if m.Project != nil {
+			project = m.Project.ID
+		}
+		if project != d.project {
+			d.project = project
+			d.loading = true
+			return d, d.reload()
 		}
 	}
 	return d, nil
@@ -183,23 +214,40 @@ func (d *Detail) View(w, h int) string {
 	return strings.Join(lines[start:end], "\n")
 }
 
-// body renders the full, unwindowed detail record.
+// body renders the full, unwindowed detail record. It also rebuilds the jump
+// anchors, recording the line each labelled field lands on so jump mode can
+// scroll straight to it.
 func (d *Detail) body(w int) string {
 	p := d.patent
+	d.anchors = d.anchors[:0]
 	var b strings.Builder
 	d.field(&b, w, "Shown as", numberToShow(p).String())
 	d.field(&b, w, "Record key", p.Number.String())
 	d.field(&b, w, "Title", p.Title)
+	d.addAnchor(&b, 'a', "Assignee", 0)
 	d.field(&b, w, "Assignee", p.Assignee)
+	d.addAnchor(&b, 'i', "Inventors", 0)
 	d.field(&b, w, "Inventors", strings.Join(p.Inventors, ", "))
 	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
 	d.field(&b, w, "Fetch state", string(p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
 	d.field(&b, w, "Source URL", p.SourceURL)
+	d.addAnchor(&b, 'e', "Expiration", 0)
 	d.field(&b, w, "Expiration", expirationText(p))
+
+	// Project-scoped fields. Review state and tags describe the patent within
+	// one project, so they appear only when the pane has an active project.
+	if d.project != "" {
+		b.WriteByte('\n')
+		d.addAnchor(&b, 'r', "Review state", 0)
+		d.field(&b, w, "Review state", reviewStateText(d.state))
+		d.addAnchor(&b, 't', "Tags", 0)
+		d.field(&b, w, "Tags", tagsText(d.tags))
+	}
 
 	// Family-graph edge counts. The dedicated panes (c/b) list the edges.
 	b.WriteByte('\n')
+	d.addAnchor(&b, 'x', "Citations", 0)
 	d.field(&b, w, "Citations", fmt.Sprintf("%d", d.relCounts[domain.RelationCites]))
 	d.field(&b, w, "Cited by", fmt.Sprintf("%d", d.relCounts[domain.RelationCitedBy]))
 	d.field(&b, w, "Parents", fmt.Sprintf("%d", d.relCounts[domain.RelationParent]))
@@ -207,6 +255,7 @@ func (d *Detail) body(w int) string {
 
 	// Every life-stage document — the application stays visible here even once
 	// the patent has published.
+	d.addAnchor(&b, 'd', "Documents", 1)
 	b.WriteByte('\n')
 	b.WriteString(d.theme.Header.Render("Documents"))
 	b.WriteByte('\n')
@@ -221,10 +270,30 @@ func (d *Detail) body(w int) string {
 		b.WriteByte('\n')
 	}
 
+	d.addAnchor(&b, 'c', "First claim", 1)
 	d.section(&b, w, "First claim", p.FirstClaim)
+	d.addAnchor(&b, 'b', "Abstract", 1)
 	d.section(&b, w, "Abstract", p.Abstract)
 	return strings.TrimRight(b.String(), "\n")
 }
+
+// addAnchor records a jump anchor for the next labelled line b will write.
+// lineDelta offsets the recorded line past a leading blank or heading: 0 for a
+// plain field, 1 for a section whose heading follows a spacer line.
+func (d *Detail) addAnchor(b *strings.Builder, key rune, label string, lineDelta int) {
+	d.anchors = append(d.anchors, render.JumpAnchor{
+		Key:   key,
+		Label: label,
+		Line:  strings.Count(b.String(), "\n") + lineDelta,
+	})
+}
+
+// JumpAnchors implements pane.JumpProvider: the jump targets of the last render.
+func (d *Detail) JumpAnchors() []render.JumpAnchor { return d.anchors }
+
+// JumpTo implements pane.JumpProvider, scrolling the body so line leads the
+// visible window.
+func (d *Detail) JumpTo(line int) { d.page.ScrollTo(line) }
 
 // numberToShow returns the record's display number, falling back to the
 // record key when no documents set one.
@@ -285,6 +354,28 @@ func wrapText(s string, width int) []string {
 		lines = append(lines, line.String())
 	}
 	return lines
+}
+
+// reviewStateText renders a patent's review state within the pane's project,
+// or a note when the patent is not a member of that project.
+func reviewStateText(state domain.MembershipState) string {
+	if state == "" {
+		return "not in project"
+	}
+	return string(state)
+}
+
+// tagsText renders a patent's tags as a comma-separated list, or a dash when
+// it carries none.
+func tagsText(tags []domain.Tag) string {
+	if len(tags) == 0 {
+		return "—"
+	}
+	names := make([]string, len(tags))
+	for i, t := range tags {
+		names[i] = t.Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // countryOrDash returns the country code, or a dash when it is blank.

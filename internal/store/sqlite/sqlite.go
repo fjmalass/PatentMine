@@ -4,10 +4,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"embed"
+	_ "embed"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
@@ -16,8 +14,8 @@ import (
 	"patentmine/internal/store"
 )
 
-//go:embed migrations/*.sql
-var migrationFS embed.FS
+//go:embed schema.sql
+var schemaSQL string
 
 const (
 	driverName     = "sqlite"
@@ -68,7 +66,7 @@ func OpenWithMetrics(ctx context.Context, path string, metrics *observability.Me
 	reader.SetMaxOpenConns(maxReaderConns)
 
 	r := &Repo{writer: writer, reader: reader, metrics: metrics}
-	if err := r.migrate(ctx); err != nil {
+	if err := r.initSchema(ctx); err != nil {
 		_ = r.Close()
 		return nil, err
 	}
@@ -85,68 +83,9 @@ func (r *Repo) Close() error {
 	return rerr
 }
 
-// migrate applies every embedded migration file not yet recorded, in name
-// order, each inside its own transaction.
-func (r *Repo) migrate(ctx context.Context) error {
-	if _, err := r.writer.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS schema_migration (
-			version    TEXT PRIMARY KEY,
-			applied_at TEXT NOT NULL
-		)`); err != nil {
-		return fmt.Errorf("store/sqlite: create migration table: %w", err)
-	}
-
-	entries, err := migrationFS.ReadDir("migrations")
-	if err != nil {
-		return fmt.Errorf("store/sqlite: read migrations: %w", err)
-	}
-	var files []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			files = append(files, e.Name())
-		}
-	}
-	sort.Strings(files)
-
-	for _, name := range files {
-		var applied int
-		if err := r.writer.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM schema_migration WHERE version = ?`, name,
-		).Scan(&applied); err != nil {
-			return fmt.Errorf("store/sqlite: check migration %s: %w", name, err)
-		}
-		if applied > 0 {
-			continue
-		}
-		body, err := migrationFS.ReadFile("migrations/" + name)
-		if err != nil {
-			return fmt.Errorf("store/sqlite: read migration %s: %w", name, err)
-		}
-		if err := r.applyMigration(ctx, name, string(body)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (r *Repo) applyMigration(ctx context.Context, name, body string) error {
-	tx, err := r.writer.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("store/sqlite: begin migration %s: %w", name, err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.ExecContext(ctx, body); err != nil {
-		return fmt.Errorf("store/sqlite: run migration %s: %w", name, err)
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO schema_migration (version, applied_at) VALUES (?, ?)`,
-		name, encodeTime(time.Now()),
-	); err != nil {
-		return fmt.Errorf("store/sqlite: record migration %s: %w", name, err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store/sqlite: commit migration %s: %w", name, err)
+func (r *Repo) initSchema(ctx context.Context) error {
+	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
+		return fmt.Errorf("store/sqlite: init schema: %w", err)
 	}
 	return nil
 }

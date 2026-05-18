@@ -16,7 +16,6 @@ usage:
   patentmine stop      stop the engine daemon
   patentmine tui       launch the terminal UI
   patentmine api       start the web API server
-  patentmine migrate   apply database migrations
   patentmine paths     print resolved runtime paths
   patentmine version   print the build version
 `
@@ -41,8 +40,6 @@ func run(args []string) int {
 		return runTUI(args[1:])
 	case "api":
 		return runAPI(args[1:])
-	case "migrate":
-		return runMigrate(args[1:])
 	case "paths":
 		return runPaths(args[1:])
 	case "version":

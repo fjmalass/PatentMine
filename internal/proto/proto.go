@@ -24,6 +24,8 @@ const (
 	MethodProjectCreate   Method = "project.create"
 	MethodMembershipAdd   Method = "membership.add"
 	MethodMembershipState Method = "membership.set_state"
+	MethodTagAssign       Method = "tag.assign"
+	MethodTagRemove       Method = "tag.remove"
 	MethodIngestFamily    Method = "ingest.family"
 	MethodIngestCancel    Method = "ingest.cancel"
 	MethodImportFile      Method = "import.file"
@@ -93,14 +95,21 @@ type PingResult struct {
 	Version string `json:"version"`
 }
 
-// PatentGetParams selects a single patent.
+// PatentGetParams selects a single patent. Project, when set, scopes the
+// project-relative fields of the result — review state and tags — to that
+// project; the patent record itself is project-independent.
 type PatentGetParams struct {
-	Number domain.PatentNumber `json:"number"`
+	Number  domain.PatentNumber `json:"number"`
+	Project domain.ProjectID    `json:"project,omitempty"`
 }
 
-// PatentResult carries one patent.
+// PatentResult carries one patent. State and Tags are populated only when the
+// request named a project the patent is a member of, and are empty otherwise:
+// they describe the (patent, project) pair, not the patent.
 type PatentResult struct {
-	Patent domain.Patent `json:"patent"`
+	Patent domain.Patent          `json:"patent"`
+	State  domain.MembershipState `json:"state,omitempty"`
+	Tags   []domain.Tag           `json:"tags,omitempty"`
 }
 
 // PatentListParams selects and paginates a patent listing.
@@ -144,6 +153,14 @@ type MembershipStateParams struct {
 	Project domain.ProjectID    `json:"project"`
 	Patent  domain.PatentNumber `json:"patent"`
 	State   string              `json:"state"`
+}
+
+// TagParams names a tag to assign to, or remove from, a patent within a
+// project. On assign an unknown name creates the tag.
+type TagParams struct {
+	Project domain.ProjectID    `json:"project"`
+	Patent  domain.PatentNumber `json:"patent"`
+	Name    string              `json:"name"`
 }
 
 // IngestFamilyParams starts a family-graph crawl rooted at one patent. Depth 0

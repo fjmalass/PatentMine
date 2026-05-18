@@ -3,6 +3,17 @@
 // holds application state — panes embed these values.
 package render
 
+// JumpAnchor is one labelled scroll target in a long pane: jump mode lists the
+// anchors, and selecting one scrolls the pane straight to that line.
+type JumpAnchor struct {
+	// Key is the single key that selects this anchor in jump mode.
+	Key rune
+	// Label is the human-readable name shown in the jump overlay.
+	Label string
+	// Line is the 0-based body line the anchor scrolls to.
+	Line int
+}
+
 // Paginator tracks a cursor over a list and the visible window around it. Every
 // list pane embeds one instead of re-deriving scroll arithmetic, so paging
 // behaves identically across the catalog, citations, and project views.
@@ -81,6 +92,19 @@ func (p *Paginator) Top() {
 func (p *Paginator) Bottom() {
 	p.cursor = p.total - 1
 	p.clamp()
+}
+
+// ScrollTo scrolls the window so index leads the visible rows, keeping the
+// cursor on index. The offset is clamped so the window never runs past the
+// list end — jump targets near the bottom still fill the page.
+func (p *Paginator) ScrollTo(index int) {
+	if p.total == 0 {
+		p.cursor, p.offset = 0, 0
+		return
+	}
+	p.cursor = min(max(index, 0), p.total-1)
+	maxOffset := max(p.total-p.pageSize, 0)
+	p.offset = min(max(index, 0), maxOffset)
 }
 
 func (p *Paginator) move(delta int) {

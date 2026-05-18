@@ -397,3 +397,86 @@ func TestEngineRelationsRejectsInvalidKind(t *testing.T) {
 		t.Fatal("Relations with an invalid kind should fail")
 	}
 }
+
+func TestEngineMembershipStateOf(t *testing.T) {
+	eng, _ := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	patent := domain.Patent{
+		Number:     domain.MustParsePatentNumber("US11611785B2"),
+		FetchState: domain.FetchCached,
+	}
+	if err := eng.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// A patent that is not yet a member reports ok=false, not an error.
+	if _, ok, err := eng.MembershipStateOf(ctx, project.ID, patent.Number); err != nil || ok {
+		t.Fatalf("MembershipStateOf before add = (ok %v, err %v), want ok false", ok, err)
+	}
+	if err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+		t.Fatalf("AddToProject: %v", err)
+	}
+	state, ok, err := eng.MembershipStateOf(ctx, project.ID, patent.Number)
+	if err != nil || !ok || state != domain.MembershipStored {
+		t.Fatalf("MembershipStateOf = (%q, %v, %v), want (stored, true, nil)", state, ok, err)
+	}
+	// With no project named the call is a quiet no-op.
+	if _, ok, err := eng.MembershipStateOf(ctx, "", patent.Number); err != nil || ok {
+		t.Fatalf("MembershipStateOf with no project = (ok %v, err %v), want ok false", ok, err)
+	}
+}
+
+func TestEngineTagging(t *testing.T) {
+	eng, _ := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	patent := domain.Patent{
+		Number:     domain.MustParsePatentNumber("US11611785B2"),
+		FetchState: domain.FetchCached,
+	}
+	if err := eng.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// AssignTag creates the named tag and links it to the patent.
+	if err := eng.AssignTag(ctx, project.ID, patent.Number, "key-reference"); err != nil {
+		t.Fatalf("AssignTag: %v", err)
+	}
+	tags, err := eng.PatentTags(ctx, project.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("PatentTags: %v", err)
+	}
+	if len(tags) != 1 || tags[0].Name != "key-reference" {
+		t.Fatalf("PatentTags = %v, want one key-reference tag", tags)
+	}
+
+	// RemoveTag matches the name case-insensitively.
+	if err := eng.RemoveTag(ctx, project.ID, patent.Number, "KEY-REFERENCE"); err != nil {
+		t.Fatalf("RemoveTag: %v", err)
+	}
+	tags, err = eng.PatentTags(ctx, project.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("PatentTags after remove: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Fatalf("PatentTags = %v, want empty after remove", tags)
+	}
+
+	// Removing a tag the patent does not carry is an error.
+	if err := eng.RemoveTag(ctx, project.ID, patent.Number, "missing"); err == nil {
+		t.Fatal("RemoveTag of an unassigned tag should fail")
+	}
+	// A blank name is rejected on assign.
+	if err := eng.AssignTag(ctx, project.ID, patent.Number, "  "); err == nil {
+		t.Fatal("AssignTag with a blank name should fail")
+	}
+}

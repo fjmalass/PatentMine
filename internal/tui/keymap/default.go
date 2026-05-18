@@ -102,6 +102,7 @@ func Default() *Keymaps {
 			"b":      command.OpenCitedBy,
 			"p":      command.OpenProjects,
 			"/":      command.OpenSearch,
+			";":      command.JumpMode,
 			"ctrl+r": command.Refresh,
 		})
 

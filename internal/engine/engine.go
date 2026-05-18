@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"patentmine/internal/domain"
@@ -315,6 +316,118 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 	})
 	e.announceChange()
 	return nil
+}
+
+// MembershipStateOf returns a patent's workflow state in a project. ok is
+// false when no project is named or the patent is not one of its members —
+// review state is a property of the (patent, project) pair, not the patent.
+func (e *Engine) MembershipStateOf(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (state domain.MembershipState, ok bool, err error) {
+	defer e.observeDuration("engine.membership_state_of", time.Now(), &err)
+	if project == "" {
+		return "", false, nil
+	}
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return "", false, err
+	}
+	m, err := e.repo.Membership(ctx, project, record)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return m.State, true, nil
+}
+
+// PatentTags returns the tags a patent carries within a project. It is empty
+// when no project is named: tags, like membership, are project-scoped.
+func (e *Engine) PatentTags(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (tags []domain.Tag, err error) {
+	defer e.observeDuration("engine.patent_tags", time.Now(), &err)
+	if project == "" {
+		return nil, nil
+	}
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return nil, err
+	}
+	return e.repo.PatentTags(ctx, project, record)
+}
+
+// AssignTag tags a patent within a project, creating the named tag when the
+// project does not have it yet. The patent may be given by any of its document
+// numbers; it is resolved to the record before the tag is assigned.
+func (e *Engine) AssignTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+	defer e.observeDuration("engine.assign_tag", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if project == "" {
+		return errors.New("engine: tag needs a project")
+	}
+	if name == "" {
+		return errors.New("engine: tag name must not be empty")
+	}
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return err
+	}
+	tag, err := e.repo.CreateTag(ctx, project, name)
+	if err != nil {
+		e.log(ctx, slog.LevelError, "create tag failed", slog.String("project_id", string(project)), slog.String("name", name), slog.String("error", err.Error()))
+		return err
+	}
+	if err := e.repo.TagPatent(ctx, tag.ID, record); err != nil {
+		e.log(ctx, slog.LevelError, "tag patent failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
+		return err
+	}
+	e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", name))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "tag.assign",
+		Entity:   "tag",
+		EntityID: string(project) + "/" + record.String(),
+		Status:   "committed",
+		After:    map[string]any{"tag": name, "tag_id": tag.ID},
+		Metadata: map[string]any{"requested_number": patent.String()},
+	})
+	e.announceChange()
+	return nil
+}
+
+// RemoveTag removes a tag from a patent within a project. It reports an error
+// when the patent does not carry a tag of that name.
+func (e *Engine) RemoveTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+	defer e.observeDuration("engine.remove_tag", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if project == "" {
+		return errors.New("engine: tag needs a project")
+	}
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return err
+	}
+	tags, err := e.repo.PatentTags(ctx, project, record)
+	if err != nil {
+		return err
+	}
+	for _, t := range tags {
+		if !strings.EqualFold(t.Name, name) {
+			continue
+		}
+		if err := e.repo.UntagPatent(ctx, t.ID, record); err != nil {
+			e.log(ctx, slog.LevelError, "untag patent failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
+			return err
+		}
+		e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
+		e.recordActivity(ctx, observability.Record{
+			Action:   "tag.remove",
+			Entity:   "tag",
+			EntityID: string(project) + "/" + record.String(),
+			Status:   "committed",
+			After:    map[string]any{"tag": t.Name, "tag_id": t.ID},
+		})
+		e.announceChange()
+		return nil
+	}
+	return fmt.Errorf("engine: patent %s has no tag %q", record, name)
 }
 
 // StartFamilyIngest enqueues a family-graph crawl and returns its job id. A

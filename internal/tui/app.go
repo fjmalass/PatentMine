@@ -76,6 +76,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.Help:               (*App).cmdHelp,
 	command.OpenSearch:         (*App).cmdOpenSearch,
 	command.OpenCommand:        (*App).cmdOpenCommand,
+	command.JumpMode:           (*App).cmdJumpMode,
 	command.CloseOverlay:       (*App).cmdCloseOverlay,
 	command.Back:               (*App).cmdBack,
 	command.OpenDetail:         (*App).cmdOpenDetail,
@@ -91,6 +92,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.MarkUnderReview:    (*App).cmdMarkUnderReview,
 	command.MarkIgnored:        (*App).cmdMarkIgnored,
 	command.MarkDeleted:        (*App).cmdMarkDeleted,
+	command.TagAdd:             (*App).cmdTagAdd,
+	command.TagRemove:          (*App).cmdTagRemove,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -100,6 +103,8 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.ProjectActivate: true,
 	command.ProjectCreate:   true,
 	command.Import:          true,
+	command.TagAdd:          true,
+	command.TagRemove:       true,
 }
 
 // App is the bubbletea root model.
@@ -214,6 +219,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
 		return a.handleTextSubmit(m)
+	case overlay.JumpSelectMsg:
+		a.popOverlay()
+		if provider, ok := a.focusedPane().(pane.JumpProvider); ok {
+			provider.JumpTo(m.Line)
+		}
+		return a, nil
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		return a, nil
@@ -340,6 +351,25 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 	return a.openPrompt(overlay.PromptDirect)
 }
 
+// cmdJumpMode opens the jump overlay for the focused pane, when that pane
+// offers jump anchors. It is a no-op when an overlay is already open, the pane
+// does not support jump mode, or the pane has not yet rendered any anchors.
+func (a *App) cmdJumpMode(invocation) (tea.Model, tea.Cmd) {
+	if len(a.overlays) > 0 {
+		return a, nil
+	}
+	provider, ok := a.focusedPane().(pane.JumpProvider)
+	if !ok {
+		return a, nil
+	}
+	anchors := provider.JumpAnchors()
+	if len(anchors) == 0 {
+		return a, nil
+	}
+	a.overlays = append(a.overlays, overlay.NewJump(a.theme, anchors))
+	return a, nil
+}
+
 func (a *App) cmdCloseOverlay(invocation) (tea.Model, tea.Cmd) {
 	a.popOverlay()
 	return a, nil
@@ -420,6 +450,29 @@ func (a *App) cmdAddToProject(inv invocation) (tea.Model, tea.Cmd) {
 	default:
 		return a.usageError(command.AddToProject)
 	}
+}
+
+// cmdTagAdd tags the selected patent within the active project. The tag name
+// is the typed argument; it may contain spaces.
+func (a *App) cmdTagAdd(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.TagAdd)
+	}
+	name := strings.Join(inv.args, " ")
+	return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.AssignTagCmd(a.client, project, patent, name)
+	})
+}
+
+// cmdTagRemove removes a tag from the selected patent within the active project.
+func (a *App) cmdTagRemove(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.TagRemove)
+	}
+	name := strings.Join(inv.args, " ")
+	return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.RemoveTagCmd(a.client, project, patent, name)
+	})
 }
 
 // cmdProjectCreate opens a name-entry overlay, or — given a typed name — creates
@@ -510,14 +563,19 @@ func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(p.Init(), a.syncPaneProject(p))
 }
 
-// openDetail pushes a detail pane for the focused pane's selected patent.
+// openDetail pushes a detail pane for the focused pane's selected patent. The
+// active project, when set, scopes the detail's review state and tags.
 func (a *App) openDetail() (tea.Model, tea.Cmd) {
 	number, ok := a.focusedPane().Selection()
 	if !ok {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	return a.pushPane(pane.NewDetail(a.client, a.theme, number))
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project))
 }
 
 // openCitations pushes a family-edge pane for the focused pane's selected
@@ -797,6 +855,7 @@ func (a *App) helperLine(ctx command.Context) string {
 		return a.joinHints(
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.JumpMode, text.HintJump),
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
