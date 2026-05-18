@@ -5,6 +5,7 @@ package proto
 
 import (
 	"encoding/json"
+	"time"
 
 	"patentmine/internal/domain"
 )
@@ -27,6 +28,7 @@ const (
 	MethodIngestCancel    Method = "ingest.cancel"
 	MethodRelations       Method = "patent.relations"
 	MethodIDSExport       Method = "ids.export"
+	MethodMetricsGet      Method = "metrics.get"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -179,6 +181,34 @@ type IDSExportParams struct {
 // IDSResult carries a generated Information Disclosure Statement.
 type IDSResult struct {
 	IDS domain.IDS `json:"ids"`
+}
+
+// MetricsResult carries the daemon's current in-memory timing/counter snapshot.
+type MetricsResult struct {
+	Metrics MetricsSnapshot `json:"metrics"`
+}
+
+// MetricsSnapshot is a transport-safe view of the daemon's metrics.
+type MetricsSnapshot struct {
+	Timestamp time.Time                 `json:"timestamp"`
+	Timings   map[string]TimingMetric   `json:"timings"`
+	Counters  map[string]int64          `json:"counters"`
+	Gauges    map[string]int64          `json:"gauges"`
+}
+
+// TimingMetric aggregates one named operation's observed durations.
+type TimingMetric struct {
+	Count      int64 `json:"count"`
+	Errors     int64 `json:"errors"`
+	TotalNanos int64 `json:"total_nanos"`
+	AvgNanos   int64 `json:"avg_nanos"`
+	AvgMillis  int64 `json:"avg_millis"`
+	MinNanos   int64 `json:"min_nanos"`
+	MinMillis  int64 `json:"min_millis"`
+	MaxNanos   int64 `json:"max_nanos"`
+	MaxMillis  int64 `json:"max_millis"`
+	LastNanos  int64 `json:"last_nanos"`
+	LastMillis int64 `json:"last_millis"`
 }
 
 // Empty is the result of operations with nothing to return.

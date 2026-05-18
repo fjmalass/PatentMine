@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 )
 
@@ -14,6 +16,8 @@ import (
 // catalogue of operations.
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+	s.mux.HandleFunc("GET /metrics", s.handleMetricsProm)
+	s.mux.HandleFunc("GET /metricsz", s.handleMetrics)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
 	s.mux.HandleFunc("GET /patents", s.handlePatentList)                   // command.PatentList
 	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)           // command.PatentGet
@@ -24,6 +28,42 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)     // command.AddToProject
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                // command.ExportIDS
 	s.mux.HandleFunc("POST /ingest", s.handleIngest)                       // command.IngestFamily
+}
+
+// handleMetrics returns the daemon's current in-memory timing/counter snapshot.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	var res proto.MetricsResult
+	s.call(w, r, proto.MethodMetricsGet, nil, &res)
+}
+
+// handleMetricsProm renders the current in-memory metrics snapshot in
+// Prometheus exposition format.
+func (s *Server) handleMetricsProm(w http.ResponseWriter, r *http.Request) {
+	var res proto.MetricsResult
+	ctx, cancel := context.WithTimeout(r.Context(), apiCallTimeout)
+	defer cancel()
+	if err := s.client.Call(ctx, proto.MethodMetricsGet, nil, &res); err != nil {
+		writeError(w, err)
+		return
+	}
+	snap := observability.Snapshot{
+		Timestamp: res.Metrics.Timestamp,
+		Timings:   make(map[string]observability.TimingSummary, len(res.Metrics.Timings)),
+		Counters:  res.Metrics.Counters,
+		Gauges:    res.Metrics.Gauges,
+	}
+	for name, metric := range res.Metrics.Timings {
+		snap.Timings[name] = observability.TimingSummary{
+			Count:      metric.Count,
+			Errors:     metric.Errors,
+			TotalNanos: metric.TotalNanos,
+			MinNanos:   metric.MinNanos,
+			MaxNanos:   metric.MaxNanos,
+			LastNanos:  metric.LastNanos,
+		}
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	_, _ = w.Write([]byte(observability.PrometheusText(snap)))
 }
 
 // handleRelations lists a patent's family-graph edges of one kind (the "kind"

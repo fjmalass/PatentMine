@@ -121,6 +121,7 @@ func (c *Client) Close() error {
 
 // readLoop demultiplexes incoming frames into replies and events.
 func (c *Client) readLoop() {
+	defer close(c.events)
 	for {
 		raw, err := c.conn.ReadMessage()
 		if err != nil {
@@ -175,6 +176,5 @@ func (c *Client) shutdown(err error) {
 	c.mu.Unlock()
 
 	close(c.closed)
-	close(c.events)
 	_ = c.conn.Close()
 }

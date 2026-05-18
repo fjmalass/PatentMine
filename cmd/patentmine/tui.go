@@ -9,6 +9,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/config"
+	"patentmine/internal/domain"
 	"patentmine/internal/rpc"
 	"patentmine/internal/tui"
 	"patentmine/internal/tui/keymap"
@@ -44,8 +45,14 @@ func runTUI(_ []string) int {
 		telemetry.Logger.Error("build command registry failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
+	lastProjectID, err := loadLastProject(cfg.HomeDir)
+	if err != nil {
+		telemetry.Logger.Error("load last project failed", slog.String("error", err.Error()))
+	}
 
-	app := tui.New(client, registry, keymap.Default())
+	app := tui.New(client, registry, keymap.Default(),
+		tui.WithLastProject(lastProjectID),
+		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))
 	if _, err := tea.NewProgram(app, tea.WithAltScreen()).Run(); err != nil {
 		telemetry.Logger.Error("tui run failed", slog.String("error", err.Error()))
 		return fail(err)

@@ -5,17 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/store"
 )
 
 // SaveProject inserts or updates a project by its id.
-func (r *Repo) SaveProject(ctx context.Context, p domain.Project) error {
+func (r *Repo) SaveProject(ctx context.Context, p domain.Project) (err error) {
+	defer r.observeDuration("save_project", time.Now(), &err)
 	if p.ID == "" {
 		return errors.New("store/sqlite: cannot save project with empty id")
 	}
-	_, err := r.writer.ExecContext(ctx,
+	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO project (id, name, created_at) VALUES (?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET name=excluded.name, created_at=excluded.created_at`,
 		string(p.ID), p.Name, encodeTime(p.CreatedAt))
@@ -26,7 +28,8 @@ func (r *Repo) SaveProject(ctx context.Context, p domain.Project) error {
 }
 
 // Project returns one project, or store.ErrNotFound.
-func (r *Repo) Project(ctx context.Context, id domain.ProjectID) (domain.Project, error) {
+func (r *Repo) Project(ctx context.Context, id domain.ProjectID) (project domain.Project, err error) {
+	defer r.observeDuration("project", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
 		`SELECT id, name, created_at FROM project WHERE id = ?`, string(id))
 	p, err := scanProject(row)
@@ -40,7 +43,8 @@ func (r *Repo) Project(ctx context.Context, id domain.ProjectID) (domain.Project
 }
 
 // ListProjects returns every project, ordered by name.
-func (r *Repo) ListProjects(ctx context.Context) ([]domain.Project, error) {
+func (r *Repo) ListProjects(ctx context.Context) (out []domain.Project, err error) {
+	defer r.observeDuration("list_projects", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
 		`SELECT id, name, created_at FROM project ORDER BY name`)
 	if err != nil {
@@ -48,7 +52,7 @@ func (r *Repo) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []domain.Project
+	out = nil
 	for rows.Next() {
 		p, err := scanProject(rows)
 		if err != nil {
@@ -82,14 +86,15 @@ func scanProject(s rowScanner) (domain.Project, error) {
 
 // AddMembership links a patent to a project. An existing link is left as is;
 // state changes go through SetMembershipState.
-func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) error {
+func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err error) {
+	defer r.observeDuration("add_membership", time.Now(), &err)
 	if m.Project == "" || m.Patent.IsZero() {
 		return errors.New("store/sqlite: membership needs a project and a patent")
 	}
 	if !m.State.Valid() {
 		return fmt.Errorf("store/sqlite: invalid membership state %q", m.State)
 	}
-	_, err := r.writer.ExecContext(ctx,
+	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO membership (project_id, patent_number, state, added_at)
 		 VALUES (?,?,?,?)
 		 ON CONFLICT(project_id, patent_number) DO NOTHING`,
@@ -101,7 +106,8 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) error {
 }
 
 // Membership returns one membership, or store.ErrNotFound.
-func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error) {
+func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (membership domain.Membership, err error) {
+	defer r.observeDuration("membership", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
 		`SELECT project_id, patent_number, state, added_at FROM membership
 		 WHERE project_id = ? AND patent_number = ?`,
@@ -127,7 +133,8 @@ func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent 
 
 // SetMembershipState changes a membership's state, or returns store.ErrNotFound
 // when the patent is not a member of the project.
-func (r *Repo) SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.MembershipState) error {
+func (r *Repo) SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.MembershipState) (err error) {
+	defer r.observeDuration("set_membership_state", time.Now(), &err)
 	if !state.Valid() {
 		return fmt.Errorf("store/sqlite: invalid membership state %q", state)
 	}
@@ -148,7 +155,8 @@ func (r *Repo) SetMembershipState(ctx context.Context, project domain.ProjectID,
 }
 
 // Memberships returns every membership of a project, ordered by patent number.
-func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) ([]domain.Membership, error) {
+func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out []domain.Membership, err error) {
+	defer r.observeDuration("memberships", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
 		`SELECT project_id, patent_number, state, added_at FROM membership
 		 WHERE project_id = ? ORDER BY patent_number`, string(project))
@@ -157,7 +165,7 @@ func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) ([]dom
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []domain.Membership
+	out = nil
 	for rows.Next() {
 		var projectID, patentNumber, state, addedAt string
 		if err := rows.Scan(&projectID, &patentNumber, &state, &addedAt); err != nil {

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
@@ -15,6 +17,8 @@ import (
 	"patentmine/internal/store"
 	appversion "patentmine/internal/version"
 )
+
+const slowRPCMethod = 150 * time.Millisecond
 
 // ErrBadParams marks a request whose params failed to decode.
 var ErrBadParams = errors.New("rpc: bad params")
@@ -44,6 +48,7 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodIngestCancel:    s.ingestCancel,
 		proto.MethodRelations:       s.relations,
 		proto.MethodIDSExport:       s.idsExport,
+		proto.MethodMetricsGet:      s.metricsGet,
 	}
 	return s
 }
@@ -112,23 +117,66 @@ func (s *Server) serveConn(ctx context.Context, nc net.Conn) {
 }
 
 func (s *Server) handle(ctx context.Context, conn *proto.Conn, req proto.Request) {
+	start := time.Now()
 	h, ok := s.handlers[req.Method]
 	if !ok {
+		s.observeRPC(req.Method, start, true)
 		_ = conn.WriteMessage(errorReply(req.ID, proto.CodeNoMethod,
 			fmt.Sprintf("unknown method %q", req.Method)))
 		return
 	}
 	result, err := h(ctx, req.Params)
 	if err != nil {
+		s.observeRPC(req.Method, start, true)
 		_ = conn.WriteMessage(errorReply(req.ID, codeFor(err), err.Error()))
 		return
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
+		s.observeRPC(req.Method, start, true)
 		_ = conn.WriteMessage(errorReply(req.ID, proto.CodeInternal, err.Error()))
 		return
 	}
+	s.observeRPC(req.Method, start, false)
 	_ = conn.WriteMessage(proto.Reply{JSONRPC: proto.Version, ID: req.ID, Result: payload})
+}
+
+func (s *Server) observeRPC(method proto.Method, start time.Time, failed bool) {
+	if s.engine == nil {
+		return
+	}
+	if metrics := s.engineMetrics(); metrics != nil {
+		d := time.Since(start)
+		metrics.ObserveDuration("rpc.method."+string(method), d, failed)
+		metrics.IncCounter("rpc.method."+string(method)+".total", 1)
+		if failed {
+			metrics.IncCounter("rpc.method."+string(method)+".error_total", 1)
+		}
+		if d >= slowRPCMethod {
+			s.engine.Logger().Warn("slow rpc method",
+				slog.String("method", string(method)),
+				slog.Int64("duration_ms", d.Milliseconds()),
+				slog.Bool("failed", failed))
+		}
+	}
+}
+
+func (s *Server) engineMetrics() interface{ ObserveDuration(string, time.Duration, bool); IncCounter(string, int64) } {
+	return s.engineMetricsRef()
+}
+
+func (s *Server) engineMetricsRef() interface{ ObserveDuration(string, time.Duration, bool); IncCounter(string, int64) } {
+	if s.engine == nil {
+		return nil
+	}
+	return s.engine.Metrics()
+}
+
+func (s *Server) Logger() *slog.Logger {
+	if s.engine == nil {
+		return slog.Default()
+	}
+	return s.engine.Logger()
 }
 
 // errorReply builds a JSON-RPC error response.
@@ -297,4 +345,8 @@ func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.IDSResult{IDS: ids}, nil
+}
+
+func (s *Server) metricsGet(context.Context, json.RawMessage) (any, error) {
+	return proto.MetricsResult{Metrics: s.engine.MetricsSnapshot()}, nil
 }

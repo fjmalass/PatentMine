@@ -88,6 +88,32 @@ func TestAPIHealth(t *testing.T) {
 	}
 }
 
+func TestAPIMetrics(t *testing.T) {
+	h := testAPI(t)
+	w := do(t, h, http.MethodGet, "/metricsz", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /metricsz = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var res proto.MetricsResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode metrics: %v", err)
+	}
+	if res.Metrics.Timestamp.IsZero() {
+		t.Fatal("metrics timestamp should be set")
+	}
+}
+
+func TestAPIMetricsPrometheus(t *testing.T) {
+	h := testAPI(t)
+	w := do(t, h, http.MethodGet, "/metrics", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /metrics = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/plain") {
+		t.Fatalf("GET /metrics content-type = %q, want text/plain", got)
+	}
+}
+
 func TestAPIProjectRoundTrip(t *testing.T) {
 	h := testAPI(t)
 

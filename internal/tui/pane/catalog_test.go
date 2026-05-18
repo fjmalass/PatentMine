@@ -9,6 +9,10 @@ import (
 	"patentmine/internal/tui/render"
 )
 
+const (
+	testPaneWidth  = 80
+	testPaneHeight = 10
+)
 
 func samplePatents() []domain.PatentRow {
 	return []domain.PatentRow{
@@ -56,7 +60,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
-	out := c.View(80, 10)
+	out := c.View(testPaneWidth, testPaneHeight)
 	for _, want := range []string{"NUMBER", "US0000001B2", "Second", "cached", "stub"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
@@ -64,14 +68,28 @@ func TestCatalogViewRendersRows(t *testing.T) {
 	}
 }
 
+func TestCatalogViewUsesMembershipStateForActiveProject(t *testing.T) {
+	c := loadedCatalog(t)
+	project := &domain.Project{ID: "p-1", Name: "Case A"}
+	c.activeProject = project
+	c.patents[0].MembershipState = domain.MembershipUnderReview
+
+	out := c.View(testPaneWidth, testPaneHeight)
+	for _, want := range []string{"PROJECT STATE", "under_review"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("catalog project view missing %q\n%s", want, out)
+		}
+	}
+}
+
 func TestCatalogEmptyAndErrorStates(t *testing.T) {
 	c := NewCatalog(nil, render.NewTheme())
-	if got := c.View(80, 10); !strings.Contains(got, "loading") {
+	if got := c.View(testPaneWidth, testPaneHeight); !strings.Contains(got, "loading") {
 		t.Errorf("fresh catalog should show a loading state, got %q", got)
 	}
 	c.loadID = 1
 	loaded, _ := c.Update(catalogLoadedMsg{requestID: 1, patents: nil})
-	if got := loaded.(*Catalog).View(80, 10); !strings.Contains(got, "no patents") {
+	if got := loaded.(*Catalog).View(testPaneWidth, testPaneHeight); !strings.Contains(got, "no patents") {
 		t.Errorf("empty catalog should show an empty state, got %q", got)
 	}
 }

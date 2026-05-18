@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
@@ -16,20 +17,25 @@ import (
 // projectsLoadedMsg delivers a finished project.list result.
 type projectsLoadedMsg struct {
 	requestID uint64
-	projects []domain.Project
-	err      error
+	projects  []domain.Project
+	err       error
 }
 
 // Projects lists the projects and offers project-level actions.
 type Projects struct {
-	client *rpc.Client
-	theme  render.Theme
+	client        *rpc.Client
+	theme         render.Theme
+	splash        bool
+	lastProjectID domain.ProjectID
+	splashFooter  string
+	emptyHint     string
 
-	projects []domain.Project
-	page     render.Paginator
-	loading  bool
-	loadErr  string
-	loadID   uint64
+	activeProject *domain.Project
+	projects      []domain.Project
+	page          render.Paginator
+	loading       bool
+	loadErr       string
+	loadID        uint64
 }
 
 // NewProjects builds an empty projects pane.
@@ -42,11 +48,26 @@ func NewProjects(client *rpc.Client, theme render.Theme) *Projects {
 	}
 }
 
+// NewSplash builds the startup project-selection screen.
+func NewSplash(client *rpc.Client, theme render.Theme, lastProjectID domain.ProjectID, splashFooter, emptyHint string) *Projects {
+	p := NewProjects(client, theme)
+	p.splash = true
+	p.lastProjectID = lastProjectID
+	p.splashFooter = splashFooter
+	p.emptyHint = emptyHint
+	return p
+}
+
 // Context implements Pane.
 func (p *Projects) Context() command.Context { return command.ContextProjects }
 
 // Title implements Pane.
-func (p *Projects) Title() string { return "Projects" }
+func (p *Projects) Title() string {
+	if p.splash {
+		return "PatentMine"
+	}
+	return "Projects"
+}
 
 // Init implements Pane.
 func (p *Projects) Init() tea.Cmd { return p.load() }
@@ -143,6 +164,19 @@ func (p *Projects) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		p.loadErr = ""
 		p.projects = m.projects
 		p.page.SetTotal(len(p.projects))
+		if p.lastProjectID != "" {
+			for i, project := range p.projects {
+				if project.ID == p.lastProjectID {
+					p.page.Top()
+					p.page.MoveDown(i)
+					break
+				}
+			}
+		}
+		return p, nil
+	}
+	if m, ok := msg.(ProjectChangedMsg); ok {
+		p.activeProject = cloneProject(m.Project)
 	}
 	return p, nil
 }
@@ -160,6 +194,22 @@ func (p *Projects) selectedProject() (domain.Project, bool) {
 	return p.projects[cur], true
 }
 
+// SelectedProject returns the highlighted project for app-level actions.
+func (p *Projects) SelectedProject() (domain.Project, bool) {
+	return p.selectedProject()
+}
+
+// ProjectByArg resolves a project by id or name from the currently loaded list.
+func (p *Projects) ProjectByArg(arg string) (domain.Project, bool) {
+	needle := strings.TrimSpace(strings.ToLower(arg))
+	for _, project := range p.projects {
+		if strings.ToLower(string(project.ID)) == needle || strings.ToLower(project.Name) == needle {
+			return project, true
+		}
+	}
+	return domain.Project{}, false
+}
+
 // View implements Pane.
 func (p *Projects) View(w, h int) string {
 	switch {
@@ -168,16 +218,36 @@ func (p *Projects) View(w, h int) string {
 	case p.loadErr != "":
 		return p.theme.Error.Render("error: " + p.loadErr)
 	case len(p.projects) == 0:
+		if p.splash {
+			return p.centerSplash("No projects found. "+p.emptyHint, h, w)
+		}
 		return p.theme.Dim.Render("no projects yet — press n to create one")
 	}
 	p.page.SetPageSize(max(h-1, 1))
 
 	var b strings.Builder
-	b.WriteString(p.theme.Header.Render(projectRow("NAME", "CREATED", w)))
+	if p.splash {
+		b.WriteString(p.splashHeader(w))
+		b.WriteString("\n\n")
+		b.WriteString(p.theme.Header.Render(splashProjectRow(" ", "NAME", "ID", "UPDATED", "HINT", w)))
+	} else {
+		b.WriteString(p.theme.Header.Render(projectRow(p.activeLabel(), "NAME", p.createdLabel(), w)))
+	}
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		proj := p.projects[i]
-		line := projectRow(proj.Name, proj.CreatedAt.Format("2006-01-02"), w)
+		line := projectRow(activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format("2006-01-02"), w)
+		if p.splash {
+			marker := "  "
+			if i == p.page.Cursor() {
+				marker = "→ "
+			}
+			hint := ""
+			if proj.ID == p.lastProjectID {
+				hint = "last used"
+			}
+			line = splashProjectRow(marker, proj.Name, string(proj.ID), proj.CreatedAt.Format("2006-01-02"), hint, w)
+		}
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {
 			b.WriteString(p.theme.Selected.Render(render.Pad(line, w)))
@@ -185,12 +255,99 @@ func (p *Projects) View(w, h int) string {
 			b.WriteString(p.theme.Row.Render(line))
 		}
 	}
+	if p.splash {
+		b.WriteString("\n\n")
+		b.WriteString(p.theme.Header.Render(strings.Repeat("─", max(w-2, 1))))
+		b.WriteString("\n")
+		b.WriteString(p.theme.Dim.Render(p.splashFooter))
+		return p.centerSplash(b.String(), h, w)
+	}
 	return b.String()
 }
 
+func (p *Projects) IsSplash() bool { return p.splash }
+
+func (p *Projects) splashHeader(w int) string {
+	lines := []string{
+		"██████╗  █████╗ ████████╗███████╗███╗   ██╗████████╗ ███╗   ███╗██╗███╗   ██╗███████╗",
+		"██╔══██╗██╔══██╗╚══██╔══╝██╔════╝████╗  ██║╚══██╔══╝ ████╗ ████║██║████╗  ██║██╔════╝",
+		"██████╔╝███████║   ██║   █████╗  ██╔██╗ ██║   ██║    ██╔████╔██║██║██╔██╗ ██║█████╗  ",
+		"██╔═══╝ ██╔══██║   ██║   ██╔══╝  ██║╚██╗██║   ██║    ██║╚██╔╝██║██║██║╚██╗██║██╔══╝  ",
+		"██║     ██║  ██║   ██║   ███████╗██║ ╚████║   ██║    ██║ ╚═╝ ██║██║██║ ╚████║███████╗",
+		"╚═╝     ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚══════╝",
+	}
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString(p.theme.Title.Render(render.Truncate(line, w)))
+		b.WriteByte('\n')
+	}
+	b.WriteString(p.theme.Dim.Render("Local Patent Research & Intelligence"))
+	b.WriteByte('\n')
+	b.WriteString(p.theme.Dim.Render("Select a project to enter the catalog"))
+	b.WriteByte('\n')
+	b.WriteString(p.theme.Header.Render(strings.Repeat("─", max(w-2, 1))))
+	b.WriteByte('\n')
+	b.WriteString(p.theme.Title.Render("SELECT PROJECT"))
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (p *Projects) centerSplash(body string, height, width int) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines[i] = lipgloss.PlaceHorizontal(width, lipgloss.Center, line)
+	}
+	body = strings.Join(lines, "\n")
+	used := len(lines)
+	if pad := max((height-used)/2, 0); pad > 0 {
+		body = strings.Repeat("\n", pad) + body
+	}
+	return body
+}
+
+func (p *Projects) activeLabel() string {
+	if p.splash {
+		return " "
+	}
+	return "ACTIVE"
+}
+
+func (p *Projects) createdLabel() string {
+	if p.splash {
+		return "UPDATED"
+	}
+	return "CREATED"
+}
+
+func splashProjectRow(marker, name, id, updated, hint string, w int) string {
+	const markerW = 2
+	const idW = 16
+	const updatedW = 12
+	const hintW = 10
+	nameW := max(w-markerW-idW-updatedW-hintW-4, 0)
+	return render.Pad(marker, markerW) + " " +
+		render.Pad(render.Truncate(name, nameW), nameW) + " " +
+		render.Pad(render.Truncate("["+id+"]", idW), idW) + " " +
+		render.Pad(updated, updatedW) + " " +
+		render.Pad(render.Truncate(hint, hintW), hintW)
+}
+
 // projectRow formats one project line.
-func projectRow(name, created string, w int) string {
+
+func projectRow(active, name, created string, w int) string {
+	const activeW = 6
 	const createdW = 12
-	return render.Pad(render.Truncate(name, max(w-createdW-1, 0)), max(w-createdW-1, 0)) +
-		" " + render.Pad(created, createdW)
+	nameW := max(w-activeW-createdW-2, 0)
+	return render.Pad(active, activeW) + " " +
+		render.Pad(render.Truncate(name, nameW), nameW) + " " +
+		render.Pad(created, createdW)
+}
+
+func activeProjectMark(active *domain.Project, candidate domain.Project) string {
+	if active != nil && active.ID == candidate.ID {
+		return "*"
+	}
+	return ""
 }

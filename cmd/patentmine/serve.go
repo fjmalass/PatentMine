@@ -45,7 +45,7 @@ func runServe(_ []string) int {
 		slog.String("socket_path", cfg.SocketPath),
 		slog.String("logs_dir", cfg.LogsDir))
 
-	repo, err := sqlite.Open(ctx, cfg.DBPath)
+	repo, err := sqlite.OpenWithMetrics(ctx, cfg.DBPath, telemetry.Metrics)
 	if err != nil {
 		telemetry.Logger.ErrorContext(ctx, "open sqlite failed", slog.String("error", err.Error()))
 		return fail(err)
@@ -95,11 +95,12 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
 		return nil, err
 	}
-	registry := ingest.NewRegistry(ingest.NewFileSource(patentsDir))
-	crawler := ingest.NewCrawler(registry, repo, ingest.CrawlConfig{})
+	registry := ingest.NewRegistry(ingest.NewFileSource(patentsDir)).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	crawler := ingest.NewCrawler(registry, repo, ingest.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	return engine.New(ctx, repo, ingest.Factory(crawler),
 		engine.WithLogger(telemetry.Logger),
-		engine.WithActivityRecorder(telemetry.Activity)), nil
+		engine.WithActivityRecorder(telemetry.Activity),
+		engine.WithMetrics(telemetry.Metrics)), nil
 }
 
 // fail prints err and returns the failure exit code.

@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/store"
 )
+
+const slowCrawlerRun = 500 * time.Millisecond
 
 // Crawl tuning. A crawl stops when it reaches either limit, so a dense citation
 // graph cannot produce an unbounded job.
@@ -36,6 +41,8 @@ type Crawler struct {
 	registry *Registry
 	repo     store.Repository
 	cfg      CrawlConfig
+	metrics  *observability.Metrics
+	logger   *slog.Logger
 }
 
 // NewCrawler builds a Crawler.
@@ -49,6 +56,18 @@ func NewCrawler(registry *Registry, repo store.Repository, cfg CrawlConfig) *Cra
 	return &Crawler{registry: registry, repo: repo, cfg: cfg}
 }
 
+// WithMetrics attaches a phase-1 in-process metrics recorder.
+func (c *Crawler) WithMetrics(metrics *observability.Metrics) *Crawler {
+	c.metrics = metrics
+	return c
+}
+
+// WithLogger attaches a logger for slow crawl warnings.
+func (c *Crawler) WithLogger(logger *slog.Logger) *Crawler {
+	c.logger = logger
+	return c
+}
+
 // node is one queued patent number and its BFS depth from the root.
 type node struct {
 	number domain.PatentNumber
@@ -59,6 +78,20 @@ type node struct {
 // uses the configured depth; zero crawls the root only. emit, which may be
 // nil, receives progress.
 func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, emit func(Progress)) error {
+	start := time.Now()
+	failed := true
+	defer func() {
+		if c.metrics != nil {
+			d := time.Since(start)
+			c.metrics.ObserveDuration("ingest.crawler.crawl", d, failed)
+			if c.logger != nil && d >= slowCrawlerRun {
+				c.logger.Warn("slow ingest crawl",
+					slog.String("root", root.String()),
+					slog.Int64("duration_ms", d.Milliseconds()),
+					slog.Bool("failed", failed))
+			}
+		}
+	}()
 	if root.IsZero() {
 		return errors.New("ingest: crawl root must not be empty")
 	}
@@ -113,6 +146,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			Message: fmt.Sprintf("fetched %s", recordNumber),
 		})
 	}
+	failed = false
 	return nil
 }
 

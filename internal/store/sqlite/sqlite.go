@@ -12,6 +12,7 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 
+	"patentmine/internal/observability"
 	"patentmine/internal/store"
 )
 
@@ -31,6 +32,7 @@ const (
 type Repo struct {
 	writer *sql.DB
 	reader *sql.DB
+	metrics *observability.Metrics
 }
 
 // compile-time assertion that Repo satisfies the interface.
@@ -47,6 +49,11 @@ func dsn(path string) string {
 // Open opens the database at path (creating it if absent) and applies any
 // pending migrations.
 func Open(ctx context.Context, path string) (*Repo, error) {
+	return OpenWithMetrics(ctx, path, nil)
+}
+
+// OpenWithMetrics opens the database and wires in optional in-process metrics.
+func OpenWithMetrics(ctx context.Context, path string, metrics *observability.Metrics) (*Repo, error) {
 	writer, err := sql.Open(driverName, dsn(path))
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: open writer: %w", err)
@@ -60,7 +67,7 @@ func Open(ctx context.Context, path string) (*Repo, error) {
 	}
 	reader.SetMaxOpenConns(maxReaderConns)
 
-	r := &Repo{writer: writer, reader: reader}
+	r := &Repo{writer: writer, reader: reader, metrics: metrics}
 	if err := r.migrate(ctx); err != nil {
 		_ = r.Close()
 		return nil, err
@@ -163,4 +170,12 @@ func decodeTime(s string) (time.Time, error) {
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error
+}
+
+func (r *Repo) observeDuration(name string, start time.Time, errp *error) {
+	if r.metrics == nil {
+		return
+	}
+	failed := errp != nil && *errp != nil
+	r.metrics.ObserveDuration("store.sqlite."+name, time.Since(start), failed)
 }

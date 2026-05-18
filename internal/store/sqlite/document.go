@@ -5,13 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/store"
 )
 
 // SaveDocument inserts or updates one life-stage document of a record.
-func (r *Repo) SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error {
+func (r *Repo) SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) (err error) {
+	defer r.observeDuration("save_document", time.Now(), &err)
 	if recordNumber.IsZero() {
 		return errors.New("store/sqlite: document needs a record number")
 	}
@@ -21,7 +23,7 @@ func (r *Repo) SaveDocument(ctx context.Context, recordNumber domain.PatentNumbe
 	if !doc.Stage.Valid() {
 		return fmt.Errorf("store/sqlite: invalid document stage %q", doc.Stage)
 	}
-	_, err := r.writer.ExecContext(ctx, `
+	_, err = r.writer.ExecContext(ctx, `
 		INSERT INTO document (number, record_number, country, serial, kind, stage, dated)
 		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(number) DO UPDATE SET
@@ -38,7 +40,8 @@ func (r *Repo) SaveDocument(ctx context.Context, recordNumber domain.PatentNumbe
 }
 
 // Documents returns every document of a record.
-func (r *Repo) Documents(ctx context.Context, recordNumber domain.PatentNumber) ([]domain.Document, error) {
+func (r *Repo) Documents(ctx context.Context, recordNumber domain.PatentNumber) (out []domain.Document, err error) {
+	defer r.observeDuration("documents", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
 		`SELECT country, serial, kind, stage, dated FROM document
 		 WHERE record_number = ? ORDER BY number`, recordNumber.Normalized())
@@ -47,7 +50,7 @@ func (r *Repo) Documents(ctx context.Context, recordNumber domain.PatentNumber) 
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []domain.Document
+	out = nil
 	for rows.Next() {
 		var country, serial, kind, stage, dated string
 		if err := rows.Scan(&country, &serial, &kind, &stage, &dated); err != nil {
@@ -71,9 +74,10 @@ func (r *Repo) Documents(ctx context.Context, recordNumber domain.PatentNumber) 
 
 // RecordOf returns the record number a document number belongs to, or
 // store.ErrNotFound when the number is unknown.
-func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (domain.PatentNumber, error) {
+func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (record domain.PatentNumber, err error) {
+	defer r.observeDuration("record_of", time.Now(), &err)
 	var recordNumber string
-	err := r.reader.QueryRowContext(ctx,
+	err = r.reader.QueryRowContext(ctx,
 		`SELECT record_number FROM document WHERE number = ?`, number.Normalized()).
 		Scan(&recordNumber)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -88,7 +92,8 @@ func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (domain
 // MergeRecords folds the absorb record into keep: its documents, memberships,
 // and relations are repointed and the absorb patent row is deleted. It is a
 // no-op when keep and absorb are the same record.
-func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumber) error {
+func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumber) (err error) {
+	defer r.observeDuration("merge_records", time.Now(), &err)
 	if keep.IsZero() || absorb.IsZero() {
 		return errors.New("store/sqlite: merge needs two record numbers")
 	}

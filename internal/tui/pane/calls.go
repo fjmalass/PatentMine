@@ -44,8 +44,36 @@ func ingestFamilyCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
 	}
 }
 
+// AddToProjectCmd links a patent to the active project.
+func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodMembershipAdd,
+			proto.MembershipParams{Project: project, Patent: number}, &res); err != nil {
+			return StatusMsg{Text: "add to project failed: " + err.Error(), Error: true}
+		}
+		return StatusMsg{Text: fmt.Sprintf("added %s to %s", number, project)}
+	}
+}
+
+// SetMembershipStateCmd changes a patent's state in the active project.
+func SetMembershipStateCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, state domain.MembershipState) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodMembershipState,
+			proto.MembershipStateParams{Project: project, Patent: number, State: string(state)}, &res); err != nil {
+			return StatusMsg{Text: "set state failed: " + err.Error(), Error: true}
+		}
+		return StatusMsg{Text: fmt.Sprintf("set %s to %s in %s", number, state, project)}
+	}
+}
+
 // projectRequiredCmd reports that an action needs an active project, which the
 // project view (Phase 8) will provide.
 func projectRequiredCmd() tea.Cmd {
-	return status("this action needs an active project (project view: Phase 8)", true)
+	return status("select an active project first", true)
 }

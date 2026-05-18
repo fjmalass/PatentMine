@@ -6,6 +6,7 @@ package keymap
 
 import (
 	"maps"
+	"slices"
 	"strings"
 
 	"patentmine/internal/command"
@@ -119,4 +120,26 @@ func (s *Stack) Match(sequence string) keys.Match {
 	default:
 		return keys.NoMatch
 	}
+}
+
+// Shortcuts returns the active key sequences that invoke id in ctx.
+func (k *Keymaps) Shortcuts(ctx command.Context, id command.ID) []string {
+	seen := map[string]bool{}
+	var out []string
+	collect := func(layer *Layer) {
+		if layer == nil {
+			return
+		}
+		for seq, bound := range layer.bindings {
+			if bound != id || seen[seq] {
+				continue
+			}
+			seen[seq] = true
+			out = append(out, seq)
+		}
+	}
+	collect(k.base)
+	collect(k.contexts[ctx])
+	slices.Sort(out)
+	return out
 }

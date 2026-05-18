@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,10 +31,76 @@ const (
 type Runtime struct {
 	Logger   *slog.Logger
 	Activity *Recorder
+	Metrics  *Metrics
 	Version  string
 
 	logFile      *os.File
 	activityFile *os.File
+}
+
+// Snapshot is the current in-memory metrics view.
+type Snapshot struct {
+	Timestamp time.Time                `json:"timestamp"`
+	Timings   map[string]TimingSummary `json:"timings"`
+	Counters  map[string]int64         `json:"counters"`
+	Gauges    map[string]int64         `json:"gauges"`
+}
+
+// TimingSummary is one duration aggregate.
+type TimingSummary struct {
+	Count      int64 `json:"count"`
+	Errors     int64 `json:"errors"`
+	TotalNanos int64 `json:"total_nanos"`
+	MinNanos   int64 `json:"min_nanos"`
+	MaxNanos   int64 `json:"max_nanos"`
+	LastNanos  int64 `json:"last_nanos"`
+}
+
+// AvgNanos returns the arithmetic mean duration.
+func (t TimingSummary) AvgNanos() int64 {
+	if t.Count == 0 {
+		return 0
+	}
+	return t.TotalNanos / t.Count
+}
+
+// PrometheusText renders a snapshot as Prometheus exposition text.
+func PrometheusText(s Snapshot) string {
+	var b strings.Builder
+	writeGauge := func(name string, value int64) {
+		b.WriteString(name)
+		b.WriteByte(' ')
+		b.WriteString(fmt.Sprintf("%d\n", value))
+	}
+	names := sortedKeys(s.Timings)
+	for _, name := range names {
+		metric := s.Timings[name]
+		base := sanitizePromName(name)
+		writeGauge(base+"_count", metric.Count)
+		writeGauge(base+"_errors", metric.Errors)
+		writeGauge(base+"_total_nanos", metric.TotalNanos)
+		writeGauge(base+"_avg_nanos", metric.AvgNanos())
+		writeGauge(base+"_min_nanos", metric.MinNanos)
+		writeGauge(base+"_max_nanos", metric.MaxNanos)
+		writeGauge(base+"_last_nanos", metric.LastNanos)
+	}
+	for _, name := range sortedKeys(s.Counters) {
+		writeGauge(sanitizePromName(name), s.Counters[name])
+	}
+	for _, name := range sortedKeys(s.Gauges) {
+		writeGauge(sanitizePromName(name), s.Gauges[name])
+	}
+	return b.String()
+}
+
+// Metrics is a lightweight in-process recorder for counters, gauges, and
+// boundary durations. It is intentionally simple: phase 1 needs immediate
+// timing visibility without a collector dependency.
+type Metrics struct {
+	mu       sync.RWMutex
+	timings  map[string]*TimingSummary
+	counters map[string]int64
+	gauges   map[string]int64
 }
 
 // Record is one semantic activity event. It is written as JSONL so future
@@ -85,10 +153,20 @@ func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 	return &Runtime{
 		Logger:       logger,
 		Activity:     &Recorder{component: component, w: activityFile},
+		Metrics:      NewMetrics(),
 		Version:      buildVersion,
 		logFile:      logFile,
 		activityFile: activityFile,
 	}, nil
+}
+
+// NewMetrics builds an empty in-memory metrics registry.
+func NewMetrics() *Metrics {
+	return &Metrics{
+		timings:  make(map[string]*TimingSummary),
+		counters: make(map[string]int64),
+		gauges:   make(map[string]int64),
+	}
 }
 
 // Close flushes and closes the runtime sinks.
@@ -140,8 +218,93 @@ func (r *Recorder) Record(ctx context.Context, rec Record) error {
 	return nil
 }
 
+// ObserveDuration records one completed operation duration.
+func (m *Metrics) ObserveDuration(name string, d time.Duration, failed bool) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	metric := m.timings[name]
+	if metric == nil {
+		metric = &TimingSummary{MinNanos: d.Nanoseconds(), MaxNanos: d.Nanoseconds()}
+		m.timings[name] = metric
+	}
+	ns := d.Nanoseconds()
+	metric.Count++
+	metric.LastNanos = ns
+	metric.TotalNanos += ns
+	if metric.Count == 1 || ns < metric.MinNanos {
+		metric.MinNanos = ns
+	}
+	if ns > metric.MaxNanos {
+		metric.MaxNanos = ns
+	}
+	if failed {
+		metric.Errors++
+	}
+}
+
+// IncCounter adds delta to a named counter.
+func (m *Metrics) IncCounter(name string, delta int64) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.counters[name] += delta
+}
+
+// SetGauge sets a named gauge.
+func (m *Metrics) SetGauge(name string, value int64) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gauges[name] = value
+}
+
+// Snapshot returns a copy safe for JSON responses.
+func (m *Metrics) Snapshot() Snapshot {
+	if m == nil {
+		return Snapshot{Timestamp: time.Now().UTC(), Timings: map[string]TimingSummary{}, Counters: map[string]int64{}, Gauges: map[string]int64{}}
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	timings := make(map[string]TimingSummary, len(m.timings))
+	for k, v := range m.timings {
+		timings[k] = *v
+	}
+	counters := make(map[string]int64, len(m.counters))
+	for k, v := range m.counters {
+		counters[k] = v
+	}
+	gauges := make(map[string]int64, len(m.gauges))
+	for k, v := range m.gauges {
+		gauges[k] = v
+	}
+	return Snapshot{Timestamp: time.Now().UTC(), Timings: timings, Counters: counters, Gauges: gauges}
+}
+
 func localDate(t time.Time) string {
 	return t.In(time.Local).Format(dateLayout)
+}
+
+func sanitizePromName(name string) string {
+	name = strings.ReplaceAll(name, ".", "_")
+	name = strings.ReplaceAll(name, "-", "_")
+	name = strings.ReplaceAll(name, "/", "_")
+	return name
+}
+
+func sortedKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // WithTraceIDs stores trace metadata in a context without taking an OTel dependency.

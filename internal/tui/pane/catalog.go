@@ -15,7 +15,7 @@ import (
 // column widths for a catalog row.
 const (
 	colNumber = 16
-	colState  = 9
+	colState  = 13
 )
 
 // catalogLoadedMsg delivers a finished patent.list result.
@@ -31,6 +31,8 @@ type catalogLoadedMsg struct {
 type Catalog struct {
 	client *rpc.Client
 	theme  render.Theme
+
+	activeProject *domain.Project
 
 	patents    []domain.PatentRow
 	page       render.Paginator
@@ -70,8 +72,12 @@ func (c *Catalog) load() tea.Cmd {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.PatentListResult
+		var project string
+		if c.activeProject != nil {
+			project = string(c.activeProject.ID)
+		}
 		err := client.Call(ctx, proto.MethodPatentList,
-			proto.PatentListParams{Limit: limit, Offset: offset}, &res)
+			proto.PatentListParams{Project: project, Limit: limit, Offset: offset}, &res)
 		return catalogLoadedMsg{
 			requestID: requestID,
 			offset:    offset,
@@ -133,6 +139,15 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 				return c, c.load()
 			}
 		}
+	case ProjectChangedMsg:
+		changed := !sameProject(c.activeProject, m.Project)
+		c.activeProject = cloneProject(m.Project)
+		if changed {
+			c.page.Top()
+			c.loadedBase = 0
+			c.loading = true
+			return c, c.load()
+		}
 	case catalogLoadedMsg:
 		if m.requestID != c.loadID {
 			return c, nil
@@ -172,15 +187,18 @@ func (c *Catalog) View(w, h int) string {
 	case c.loadErr != "":
 		return c.theme.Error.Render("error: " + c.loadErr)
 	case c.page.Total() == 0:
+		if c.activeProject != nil {
+			return c.theme.Dim.Render("no patents in active project " + c.activeProject.Name)
+		}
 		return c.theme.Dim.Render("no patents yet — select a number and press f to ingest its family")
 	}
 
 	var b strings.Builder
-	b.WriteString(c.theme.Header.Render(catalogRow("NUMBER", "STATE", "TITLE", w)))
+	b.WriteString(c.theme.Header.Render(catalogRow("NUMBER", c.stateHeading(), "TITLE", w)))
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
-		line := catalogRow(numberToShowRow(p).String(), string(p.FetchState), p.Title, w)
+		line := catalogRow(numberToShowRow(p).String(), c.stateText(p), p.Title, w)
 		b.WriteByte('\n')
 		if absolute == c.page.Cursor() {
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
@@ -189,6 +207,35 @@ func (c *Catalog) View(w, h int) string {
 		}
 	}
 	return b.String()
+}
+
+func (c *Catalog) stateHeading() string {
+	if c.activeProject != nil {
+		return "PROJECT STATE"
+	}
+	return "FETCH"
+}
+
+func (c *Catalog) stateText(row domain.PatentRow) string {
+	if c.activeProject != nil && row.MembershipState.Valid() {
+		return string(row.MembershipState)
+	}
+	return string(row.FetchState)
+}
+
+func cloneProject(project *domain.Project) *domain.Project {
+	if project == nil {
+		return nil
+	}
+	copy := *project
+	return &copy
+}
+
+func sameProject(a, b *domain.Project) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ID == b.ID && a.Name == b.Name && a.CreatedAt.Equal(b.CreatedAt)
 }
 
 // catalogRow formats one fixed-width catalog line.

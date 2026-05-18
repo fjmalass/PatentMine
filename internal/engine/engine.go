@@ -37,6 +37,7 @@ type Engine struct {
 	ingest     IngestFactory
 	logger     *slog.Logger
 	activities *observability.Recorder
+	metrics    *observability.Metrics
 }
 
 // WithLogger records structured logs for engine operations.
@@ -55,6 +56,13 @@ func WithActivityRecorder(rec *observability.Recorder) Option {
 	}
 }
 
+// WithMetrics enables in-process timings and counters.
+func WithMetrics(metrics *observability.Metrics) Option {
+	return func(e *Engine) {
+		e.metrics = metrics
+	}
+}
+
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx
 // stops all background work. ingest may be nil if no crawl will be started.
 func New(ctx context.Context, repo store.Repository, ingest IngestFactory, opts ...Option) *Engine {
@@ -62,13 +70,15 @@ func New(ctx context.Context, repo store.Repository, ingest IngestFactory, opts 
 	eng := &Engine{
 		repo:   repo,
 		bus:    bus,
-		pool:   newWorkerPool(ctx, ingestWorkers, bus),
+		pool:   newWorkerPool(ctx, ingestWorkers, bus, nil),
 		ingest: ingest,
 		logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
 	for _, opt := range opts {
 		opt(eng)
 	}
+	eng.pool.metrics = eng.metrics
+	eng.bus.metrics = eng.metrics
 	return eng
 }
 
@@ -85,7 +95,8 @@ func (e *Engine) Subscribe() (<-chan proto.Event, func()) {
 }
 
 // Patent returns one patent.
-func (e *Engine) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error) {
+func (e *Engine) Patent(ctx context.Context, n domain.PatentNumber) (patent domain.Patent, err error) {
+	defer e.observeDuration("engine.patent", time.Now(), &err)
 	record, err := e.recordNumber(ctx, n)
 	if err != nil {
 		return domain.Patent{}, err
@@ -108,12 +119,13 @@ func (e *Engine) recordNumber(ctx context.Context, n domain.PatentNumber) (domai
 }
 
 // ListPatents returns one page of lightweight listing rows and the unpaged total.
-func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.PatentRow, int, error) {
+func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) (rows []domain.PatentRow, total int, err error) {
+	defer e.observeDuration("engine.list_patents", time.Now(), &err)
 	patents, err := e.repo.ListPatents(ctx, q)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := e.repo.CountPatents(ctx, q)
+	total, err = e.repo.CountPatents(ctx, q)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -121,7 +133,8 @@ func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain
 }
 
 // SavePatent inserts or updates a patent and announces the change.
-func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) error {
+func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) (err error) {
+	defer e.observeDuration("engine.save_patent", time.Now(), &err)
 	before, _ := e.existingPatent(ctx, p.Number)
 	if err := e.repo.SavePatent(ctx, p); err != nil {
 		e.log(ctx, slog.LevelError, "save patent failed", slog.String("number", p.Number.String()), slog.String("error", err.Error()))
@@ -141,12 +154,14 @@ func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) error {
 }
 
 // Projects returns every project.
-func (e *Engine) Projects(ctx context.Context) ([]domain.Project, error) {
+func (e *Engine) Projects(ctx context.Context) (projects []domain.Project, err error) {
+	defer e.observeDuration("engine.projects", time.Now(), &err)
 	return e.repo.ListProjects(ctx)
 }
 
 // CreateProject creates a project with a generated id.
-func (e *Engine) CreateProject(ctx context.Context, name string) (domain.Project, error) {
+func (e *Engine) CreateProject(ctx context.Context, name string) (project domain.Project, err error) {
+	defer e.observeDuration("engine.create_project", time.Now(), &err)
 	if name == "" {
 		return domain.Project{}, errors.New("engine: project name must not be empty")
 	}
@@ -174,7 +189,8 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (domain.Project
 // AddToProject adds a patent to a project in the default Stored state. The
 // patent may be given by any of its document numbers; it is resolved to the
 // record before the membership is created.
-func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error {
+func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
+	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 	record, err := e.recordNumber(ctx, patent)
 	if err != nil {
 		return err
@@ -212,7 +228,8 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 
 // SetMembershipState changes a membership's state, rejecting transitions the
 // domain rules disallow. This is where the state machine is enforced.
-func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, target domain.MembershipState) error {
+func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, target domain.MembershipState) (err error) {
+	defer e.observeDuration("engine.set_membership_state", time.Now(), &err)
 	if !target.Valid() {
 		return fmt.Errorf("engine: invalid membership state %q", target)
 	}
@@ -248,14 +265,15 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 }
 
 // StartFamilyIngest enqueues a family-graph crawl and returns its job id.
-func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (JobID, error) {
+func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (id JobID, err error) {
+	defer e.observeDuration("engine.start_family_ingest", time.Now(), &err)
 	if e.ingest == nil {
 		return "", errors.New("engine: no ingest factory configured")
 	}
 	if root.IsZero() {
 		return "", errors.New("engine: ingest root must not be empty")
 	}
-	id, err := e.pool.submit(e.ingest(root, depth))
+	id, err = e.pool.submit(e.ingest(root, depth))
 	if err != nil {
 		e.log(context.Background(), slog.LevelError, "ingest enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("error", err.Error()))
 		return "", err
@@ -272,7 +290,8 @@ func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (JobID, 
 }
 
 // Relations returns family-graph edges of one kind from a patent.
-func (e *Engine) Relations(ctx context.Context, number domain.PatentNumber, kind domain.RelationKind) ([]domain.Relation, error) {
+func (e *Engine) Relations(ctx context.Context, number domain.PatentNumber, kind domain.RelationKind) (rels []domain.Relation, err error) {
+	defer e.observeDuration("engine.relations", time.Now(), &err)
 	if !kind.Valid() {
 		return nil, fmt.Errorf("engine: invalid relation kind %q", kind)
 	}
@@ -282,7 +301,8 @@ func (e *Engine) Relations(ctx context.Context, number domain.PatentNumber, kind
 // ExportIDS builds an Information Disclosure Statement for a project: every
 // patent that is a member of the project and not ignored or deleted. The
 // result is a draft that the patent office filing is generated from.
-func (e *Engine) ExportIDS(ctx context.Context, projectID domain.ProjectID) (domain.IDS, error) {
+func (e *Engine) ExportIDS(ctx context.Context, projectID domain.ProjectID) (ids domain.IDS, err error) {
+	defer e.observeDuration("engine.export_ids", time.Now(), &err)
 	if _, err := e.repo.Project(ctx, projectID); err != nil {
 		return domain.IDS{}, err
 	}
@@ -290,7 +310,7 @@ func (e *Engine) ExportIDS(ctx context.Context, projectID domain.ProjectID) (dom
 	if err != nil {
 		return domain.IDS{}, err
 	}
-	ids := domain.IDS{
+	ids = domain.IDS{
 		Project:     projectID,
 		Status:      domain.IDSDraft,
 		GeneratedAt: time.Now().UTC(),
@@ -329,7 +349,8 @@ func idsDocument(p domain.Patent) (domain.Document, bool) {
 }
 
 // CancelIngest stops a running or queued ingest job.
-func (e *Engine) CancelIngest(id JobID) error {
+func (e *Engine) CancelIngest(id JobID) (err error) {
+	defer e.observeDuration("engine.cancel_ingest", time.Now(), &err)
 	if !e.pool.cancel(id) {
 		return fmt.Errorf("engine: no such job %q", id)
 	}
@@ -342,6 +363,47 @@ func (e *Engine) CancelIngest(id JobID) error {
 		After:    map[string]any{"job_id": string(id), "cancelled": true},
 	})
 	return nil
+}
+
+// MetricsSnapshot returns the current timing/counter aggregates.
+func (e *Engine) MetricsSnapshot() proto.MetricsSnapshot {
+	if e.metrics == nil {
+		return proto.MetricsSnapshot{Timestamp: time.Now().UTC(), Timings: map[string]proto.TimingMetric{}, Counters: map[string]int64{}, Gauges: map[string]int64{}}
+	}
+	snap := e.metrics.Snapshot()
+	timings := make(map[string]proto.TimingMetric, len(snap.Timings))
+	for k, v := range snap.Timings {
+		avgNanos := v.AvgNanos()
+		timings[k] = proto.TimingMetric{
+			Count:      v.Count,
+			Errors:     v.Errors,
+			TotalNanos: v.TotalNanos,
+			AvgNanos:   avgNanos,
+			AvgMillis:  avgNanos / int64(time.Millisecond),
+			MinNanos:   v.MinNanos,
+			MinMillis:  v.MinNanos / int64(time.Millisecond),
+			MaxNanos:   v.MaxNanos,
+			MaxMillis:  v.MaxNanos / int64(time.Millisecond),
+			LastNanos:  v.LastNanos,
+			LastMillis: v.LastNanos / int64(time.Millisecond),
+		}
+	}
+	return proto.MetricsSnapshot{
+		Timestamp: snap.Timestamp,
+		Timings:   timings,
+		Counters:  snap.Counters,
+		Gauges:    snap.Gauges,
+	}
+}
+
+// Metrics returns the engine's in-process metrics recorder, when configured.
+func (e *Engine) Metrics() *observability.Metrics {
+	return e.metrics
+}
+
+// Logger returns the engine's structured logger.
+func (e *Engine) Logger() *slog.Logger {
+	return e.logger
 }
 
 // announceChange notifies subscribers that stored data changed.
@@ -381,4 +443,12 @@ func (e *Engine) recordActivity(ctx context.Context, rec observability.Record) {
 	if err := e.activities.Record(ctx, rec); err != nil {
 		e.log(ctx, slog.LevelWarn, "activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
 	}
+}
+
+func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
+	if e.metrics == nil {
+		return
+	}
+	failed := errp != nil && *errp != nil
+	e.metrics.ObserveDuration(name, time.Since(start), failed)
 }

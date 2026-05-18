@@ -55,6 +55,41 @@ func TestRegistryRejectsViewCommandWithMethod(t *testing.T) {
 	}
 }
 
+func TestRegistryRejectsDuplicateTypedName(t *testing.T) {
+	_, err := NewRegistry(
+		Command{ID: "x", Kind: KindView, Name: "open.projects"},
+		Command{ID: "y", Kind: KindView, Name: "open.projects"},
+	)
+	if err == nil {
+		t.Fatal("NewRegistry should reject a duplicate typed command name")
+	}
+}
+
+func TestLookupName(t *testing.T) {
+	reg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	got, ok := reg.LookupName("project.use")
+	if !ok || got.ID != ProjectActivate {
+		t.Fatalf("LookupName(project.use) = %+v ok=%v, want ProjectActivate", got, ok)
+	}
+	got, ok = reg.LookupName("use-project")
+	if !ok || got.ID != ProjectActivate {
+		t.Fatalf("LookupName(use-project) = %+v ok=%v, want ProjectActivate", got, ok)
+	}
+}
+
+func TestRegistryRejectsAliasCollision(t *testing.T) {
+	_, err := NewRegistry(
+		Command{ID: "x", Kind: KindView, Name: "project.use"},
+		Command{ID: "y", Kind: KindView, Name: "open.projects", Aliases: []string{"project.use"}},
+	)
+	if err == nil {
+		t.Fatal("NewRegistry should reject a typed alias colliding with another name")
+	}
+}
+
 func TestLookup(t *testing.T) {
 	reg, err := Default()
 	if err != nil {
@@ -89,19 +124,49 @@ func TestInContextScoping(t *testing.T) {
 			t.Errorf("global command Quit missing from context %q", ctx)
 		}
 	}
-	// ProjectCreate is scoped to the projects context only.
+	// ProjectCreate is scoped to the projects context only, while ProjectActivate
+	// remains typed-command accessible in other contexts so project.use <id> works
+	// everywhere.
 	for _, c := range reg.InContext(ContextCatalog) {
 		if c.ID == ProjectCreate {
 			t.Error("ProjectCreate should not be offered in the catalog context")
 		}
 	}
 	inProjects := false
+	activateInProjects := false
+	activateInCatalog := false
+	for _, c := range reg.InContext(ContextCatalog) {
+		if c.ID == ProjectActivate {
+			activateInCatalog = true
+		}
+	}
 	for _, c := range reg.InContext(ContextProjects) {
 		if c.ID == ProjectCreate {
 			inProjects = true
 		}
+		if c.ID == ProjectActivate {
+			activateInProjects = true
+		}
 	}
 	if !inProjects {
 		t.Error("ProjectCreate should be offered in the projects context")
+	}
+	if !activateInProjects {
+		t.Error("ProjectActivate should be offered in the projects context")
+	}
+	if !activateInCatalog {
+		t.Error("ProjectActivate should be offered in the catalog context")
+	}
+}
+
+func TestTypedCommandsInContext(t *testing.T) {
+	reg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	for _, c := range reg.TypedInContext(ContextCatalog) {
+		if c.Name == "" {
+			t.Fatalf("TypedInContext returned command %q with empty Name", c.ID)
+		}
 	}
 }

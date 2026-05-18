@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/store"
@@ -17,11 +18,18 @@ const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assig
 	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
 	p.grant_date, p.fetched_at, p.display_number`
 
-// patentRowColumns is the lightweight listing column set in scanPatentRow's order.
-const patentRowColumns = `p.country, p.serial, p.kind, p.display_number, p.title, p.fetch_state`
+// patentRowColumns returns the lightweight listing column set in scanPatentRow's
+// order, optionally including a project membership state.
+func patentRowColumns(includeMembership bool) string {
+	if includeMembership {
+		return `p.country, p.serial, p.kind, p.display_number, p.title, p.fetch_state, m.state`
+	}
+	return `p.country, p.serial, p.kind, p.display_number, p.title, p.fetch_state, ''`
+}
 
 // SavePatent inserts or updates a patent by its number.
-func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) error {
+func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
+	defer r.observeDuration("save_patent", time.Now(), &err)
 	if p.Number.IsZero() {
 		return errors.New("store/sqlite: cannot save patent with empty number")
 	}
@@ -61,7 +69,8 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) error {
 }
 
 // Patent returns one patent, or store.ErrNotFound.
-func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error) {
+func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (patent domain.Patent, err error) {
+	defer r.observeDuration("patent", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
 		`SELECT `+patentColumns+` FROM patent p WHERE p.number = ?`, n.Normalized())
 	p, err := scanPatent(row)
@@ -81,13 +90,14 @@ func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent
 }
 
 // ListPatents returns one page of lightweight listing rows matching q.
-func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.PatentRow, error) {
+func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []domain.PatentRow, err error) {
+	defer r.observeDuration("list_patents", time.Now(), &err)
 	where, args := patentFilter(q)
 	limit := q.Limit
 	if limit <= 0 {
 		limit = store.DefaultPageSize
 	}
-	query := `SELECT ` + patentRowColumns + ` FROM patent p` + where +
+	query := `SELECT ` + patentRowColumns(q.Project != "") + ` FROM patent p` + where +
 		` ORDER BY p.number LIMIT ? OFFSET ?`
 	args = append(args, limit, max(q.Offset, 0))
 
@@ -97,7 +107,7 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.P
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []domain.PatentRow
+	out = nil
 	for rows.Next() {
 		p, err := scanPatentRow(rows)
 		if err != nil {
@@ -114,15 +124,16 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain.P
 // scanPatentRow reads one lightweight listing row.
 func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	var (
-		row                            domain.PatentRow
-		country, serial, kind, shown   string
-		fetchState                     string
+		row                          domain.PatentRow
+		country, serial, kind, shown string
+		fetchState, membershipState  string
 	)
-	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title, &fetchState); err != nil {
+	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title, &fetchState, &membershipState); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
 	row.FetchState = domain.FetchState(fetchState)
+	row.MembershipState = domain.MembershipState(membershipState)
 	if shown != "" {
 		display, err := domain.ParsePatentNumber(shown)
 		if err != nil {
@@ -134,7 +145,8 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 }
 
 // CountPatents returns the total rows matching q, ignoring its paging.
-func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (int, error) {
+func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (count int, err error) {
+	defer r.observeDuration("count_patents", time.Now(), &err)
 	where, args := patentFilter(q)
 	var n int
 	if err := r.reader.QueryRowContext(ctx,
@@ -215,14 +227,15 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 }
 
 // SaveRelation inserts a family-graph edge; an existing edge is left untouched.
-func (r *Repo) SaveRelation(ctx context.Context, rel domain.Relation) error {
+func (r *Repo) SaveRelation(ctx context.Context, rel domain.Relation) (err error) {
+	defer r.observeDuration("save_relation", time.Now(), &err)
 	if rel.From.IsZero() || rel.To.IsZero() {
 		return errors.New("store/sqlite: relation endpoints must be non-empty")
 	}
 	if !rel.Kind.Valid() {
 		return fmt.Errorf("store/sqlite: invalid relation kind %q", rel.Kind)
 	}
-	_, err := r.writer.ExecContext(ctx,
+	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO relation (from_number, to_number, kind) VALUES (?,?,?)
 		 ON CONFLICT(from_number, to_number, kind) DO NOTHING`,
 		rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind))
@@ -233,7 +246,8 @@ func (r *Repo) SaveRelation(ctx context.Context, rel domain.Relation) error {
 }
 
 // Relations returns edges of the given kind originating at n.
-func (r *Repo) Relations(ctx context.Context, n domain.PatentNumber, kind domain.RelationKind) ([]domain.Relation, error) {
+func (r *Repo) Relations(ctx context.Context, n domain.PatentNumber, kind domain.RelationKind) (out []domain.Relation, err error) {
+	defer r.observeDuration("relations", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
 		`SELECT from_number, to_number, kind FROM relation
 		 WHERE from_number = ? AND kind = ? ORDER BY to_number`,
@@ -243,7 +257,7 @@ func (r *Repo) Relations(ctx context.Context, n domain.PatentNumber, kind domain
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []domain.Relation
+	out = nil
 	for rows.Next() {
 		var from, to, k string
 		if err := rows.Scan(&from, &to, &k); err != nil {

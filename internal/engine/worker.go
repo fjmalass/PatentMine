@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 )
 
@@ -48,6 +50,7 @@ type workerPool struct {
 
 	mu      sync.Mutex
 	cancels map[JobID]context.CancelFunc
+	metrics *observability.Metrics
 
 	wg sync.WaitGroup
 }
@@ -55,12 +58,13 @@ type workerPool struct {
 const queueDepth = 64
 
 // newWorkerPool starts workers goroutines draining the job queue.
-func newWorkerPool(ctx context.Context, workers int, bus *Bus) *workerPool {
+func newWorkerPool(ctx context.Context, workers int, bus *Bus, metrics *observability.Metrics) *workerPool {
 	p := &workerPool{
 		bus:     bus,
 		baseCtx: ctx,
 		queue:   make(chan queuedJob, queueDepth),
 		cancels: make(map[JobID]context.CancelFunc),
+		metrics: metrics,
 	}
 	for range workers {
 		p.wg.Add(1)
@@ -77,6 +81,7 @@ func (p *workerPool) loop() {
 }
 
 func (p *workerPool) run(qj queuedJob) {
+	start := time.Now()
 	emit := func(ev proto.Event) { p.bus.Publish(ev) }
 	err := qj.job.Run(qj.ctx, qj.id, emit)
 
@@ -90,6 +95,10 @@ func (p *workerPool) run(qj queuedJob) {
 	done := proto.IngestDone{JobID: string(qj.id)}
 	if err != nil {
 		done.Error = err.Error()
+	}
+	if p.metrics != nil {
+		p.metrics.ObserveDuration("engine.worker.job_run", time.Since(start), err != nil)
+		p.metrics.SetGauge("engine.worker.queue_depth", int64(len(p.queue)))
 	}
 	p.bus.Publish(proto.NewEvent(proto.EventIngestDone, done))
 }
@@ -106,12 +115,20 @@ func (p *workerPool) submit(job Job) (JobID, error) {
 
 	select {
 	case p.queue <- queuedJob{id: id, ctx: ctx, job: job}:
+		if p.metrics != nil {
+			p.metrics.IncCounter("engine.worker.submit_total", 1)
+			p.metrics.SetGauge("engine.worker.queue_depth", int64(len(p.queue)))
+		}
 		return id, nil
 	default:
 		cancel()
 		p.mu.Lock()
 		delete(p.cancels, id)
 		p.mu.Unlock()
+		if p.metrics != nil {
+			p.metrics.IncCounter("engine.worker.queue_full_total", 1)
+			p.metrics.SetGauge("engine.worker.queue_depth", int64(len(p.queue)))
+		}
 		return "", ErrQueueFull
 	}
 }
@@ -124,6 +141,10 @@ func (p *workerPool) cancel(id JobID) bool {
 	if ok {
 		cancel()
 		delete(p.cancels, id)
+	}
+	if p.metrics != nil {
+		p.metrics.IncCounter("engine.worker.cancel_total", 1)
+		p.metrics.SetGauge("engine.worker.queue_depth", int64(len(p.queue)))
 	}
 	return ok
 }

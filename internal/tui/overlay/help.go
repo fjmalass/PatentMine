@@ -88,8 +88,16 @@ func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Them
 			}
 			sort.Strings(seqs)
 			keyCol := render.Pad(strings.Join(seqs, " / "), keyColumnWidth)
+			label := c.Title
+			if c.Name != "" {
+				usage := c.Usage
+				if usage == "" {
+					usage = ":" + c.Name
+				}
+				label += "  " + theme.Dim.Render(usage)
+			}
 			lines = append(lines,
-				"  "+theme.HelpKey.Render(keyCol)+" "+theme.Row.Render(c.Title))
+				"  "+theme.HelpKey.Render(keyCol)+" "+theme.Row.Render(label))
 		}
 	}
 

@@ -3,6 +3,7 @@ package engine
 import (
 	"sync"
 
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 )
 
@@ -18,6 +19,7 @@ type Bus struct {
 	subs   map[int]chan proto.Event
 	nextID int
 	closed bool
+	metrics *observability.Metrics
 }
 
 // NewBus creates an empty Bus.
@@ -39,6 +41,9 @@ func (b *Bus) Subscribe() (<-chan proto.Event, func()) {
 	id := b.nextID
 	b.nextID++
 	b.subs[id] = ch
+	if b.metrics != nil {
+		b.metrics.SetGauge("engine.bus.subscribers", int64(len(b.subs)))
+	}
 
 	return ch, func() { b.unsubscribe(id) }
 }
@@ -49,6 +54,9 @@ func (b *Bus) unsubscribe(id int) {
 	if ch, ok := b.subs[id]; ok {
 		delete(b.subs, id)
 		close(ch)
+		if b.metrics != nil {
+			b.metrics.SetGauge("engine.bus.subscribers", int64(len(b.subs)))
+		}
 	}
 }
 
@@ -64,6 +72,9 @@ func (b *Bus) Publish(ev proto.Event) {
 		select {
 		case ch <- ev:
 		default:
+			if b.metrics != nil {
+				b.metrics.IncCounter("engine.bus.drop_total", 1)
+			}
 			select {
 			case <-ch:
 			default:

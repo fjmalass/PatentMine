@@ -70,10 +70,11 @@ type Patent struct {
 // record key and display number separate so list UIs stay cheap without losing
 // the application/publication/grant distinction.
 type PatentRow struct {
-	Number       PatentNumber `json:"number"`
-	DisplayNumber PatentNumber `json:"display_number"`
-	Title        string       `json:"title"`
-	FetchState   FetchState   `json:"fetch_state"`
+	Number          PatentNumber    `json:"number"`
+	DisplayNumber   PatentNumber    `json:"display_number"`
+	Title           string          `json:"title"`
+	FetchState      FetchState      `json:"fetch_state"`
+	MembershipState MembershipState `json:"membership_state,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.

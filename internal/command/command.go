@@ -10,7 +10,9 @@ package command
 
 import (
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 
 	"patentmine/internal/proto"
 )
@@ -47,6 +49,13 @@ const (
 type Command struct {
 	// ID uniquely identifies the command.
 	ID ID
+	// Name is the canonical typed-command form, such as "open.projects".
+	// Empty means the command is not exposed in the command palette/prompt.
+	Name string
+	// Aliases are additional typed forms accepted by the command prompt.
+	Aliases []string
+	// Usage is a concise invocation example shown in help/palette footers.
+	Usage string
 	// Title is a short human label (used in help and the web API).
 	Title string
 	// Help is a one-line description of what the command does.
@@ -78,6 +87,7 @@ func (c Command) AvailableIn(ctx Context) bool {
 // NewRegistry and pass it to frontends; never store one in a package global.
 type Registry struct {
 	byID    map[ID]Command
+	byName  map[string]ID
 	ordered []Command
 }
 
@@ -86,6 +96,7 @@ type Registry struct {
 func NewRegistry(commands ...Command) (*Registry, error) {
 	r := &Registry{
 		byID:    make(map[ID]Command, len(commands)),
+		byName:  make(map[string]ID, len(commands)),
 		ordered: make([]Command, 0, len(commands)),
 	}
 	for _, c := range commands {
@@ -100,6 +111,9 @@ func NewRegistry(commands ...Command) (*Registry, error) {
 		}
 		if c.Kind == KindView && c.Method != "" {
 			return nil, fmt.Errorf("command: view command %q must not set a method", c.ID)
+		}
+		if err := validateTypedNames(r.byName, c); err != nil {
+			return nil, err
 		}
 		r.byID[c.ID] = c
 		r.ordered = append(r.ordered, c)
@@ -131,7 +145,53 @@ func (r *Registry) InContext(ctx Context) []Command {
 	return out
 }
 
+// TypedInContext returns commands that are offered in ctx and exposed in the
+// command palette/prompt.
+func (r *Registry) TypedInContext(ctx Context) []Command {
+	var out []Command
+	for _, c := range r.InContext(ctx) {
+		if c.Name != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// LookupName resolves a canonical or alias typed command.
+func (r *Registry) LookupName(name string) (Command, bool) {
+	id, ok := r.byName[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return Command{}, false
+	}
+	return r.byID[id], true
+}
+
 // Len reports how many commands the registry holds.
 func (r *Registry) Len() int {
 	return len(r.ordered)
+}
+
+func validateTypedNames(index map[string]ID, c Command) error {
+	seen := maps.Clone(index)
+	register := func(name string) error {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" {
+			return nil
+		}
+		if prior, dup := seen[key]; dup {
+			return fmt.Errorf("command: typed name %q for %q conflicts with %q", key, c.ID, prior)
+		}
+		seen[key] = c.ID
+		index[key] = c.ID
+		return nil
+	}
+	if err := register(c.Name); err != nil {
+		return err
+	}
+	for _, alias := range c.Aliases {
+		if err := register(alias); err != nil {
+			return err
+		}
+	}
+	return nil
 }

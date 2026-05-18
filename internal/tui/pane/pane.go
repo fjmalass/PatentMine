@@ -18,6 +18,11 @@ type ResizeMsg struct {
 	Height int
 }
 
+// ProjectChangedMsg reports that the app's active project changed.
+type ProjectChangedMsg struct {
+	Project *domain.Project
+}
+
 // Pane is one screen of the TUI.
 type Pane interface {
 	// Context reports the keymap context the pane uses, so the App can pick

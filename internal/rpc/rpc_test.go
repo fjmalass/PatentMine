@@ -67,6 +67,20 @@ func TestRPCPing(t *testing.T) {
 	}
 }
 
+func TestRPCMetricsSnapshot(t *testing.T) {
+	client := testHarness(t)
+	var metrics proto.MetricsResult
+	if err := client.Call(context.Background(), proto.MethodMetricsGet, nil, &metrics); err != nil {
+		t.Fatalf("metrics.get: %v", err)
+	}
+	if metrics.Metrics.Timestamp.IsZero() {
+		t.Fatal("metrics snapshot timestamp should be set")
+	}
+	if metrics.Metrics.Timings == nil || metrics.Metrics.Counters == nil || metrics.Metrics.Gauges == nil {
+		t.Fatalf("metrics snapshot maps must be initialized: %+v", metrics.Metrics)
+	}
+}
+
 func TestRPCProjectRoundTrip(t *testing.T) {
 	client := testHarness(t)
 	ctx := context.Background()

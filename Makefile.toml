@@ -96,15 +96,18 @@ describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --
 commit="$(git rev-parse --short HEAD)"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+version="$describe branch=$branch commit=$commit"
 paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
 socket="$(echo "$paths" | awk -F= '/^SOCKET=/{print $2}')"
 logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
 date_tag="$(date +%F)"
 stdout_log="$logs_dir/daemon-stdout-$date_tag.log"
+echo "starting patentmine daemon $version"
 nohup go run -ldflags "$ldflags" ${BINARY} serve >> "$stdout_log" 2>&1 &
 for _ in $(seq 1 50); do
   if [ -S "$socket" ]; then
     echo "patentmine daemon started ($socket)"
+    echo "version: $version"
     echo "stdout log: $stdout_log"
     echo "structured log: $logs_dir/log-$date_tag.jsonl"
     echo "activity log: $logs_dir/activity-$date_tag.jsonl"
@@ -120,6 +123,12 @@ exit 1
 [tasks.restart-daemon]
 description = "Restart the engine daemon in the background."
 dependencies = ["stop-daemon", "start-daemon"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+echo "restarted patentmine daemon $describe branch=$branch commit=$commit"
+'''
 
 [tasks.clean-logs]
 description = "Remove dated logs and runtime socket/pid files from the configured app home."

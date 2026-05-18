@@ -122,3 +122,11 @@ func TestDefaultOverlayStackExcludesPaneBindings(t *testing.T) {
 		t.Fatalf("global Q resolved to %q while overlay focused, want app.quit", id)
 	}
 }
+
+func TestShortcutsCollectBaseAndContextBindings(t *testing.T) {
+	km := Default()
+	shortcuts := km.Shortcuts(command.ContextProjects, command.ProjectActivate)
+	if len(shortcuts) != 2 || shortcuts[0] != "enter" || shortcuts[1] != "l" {
+		t.Fatalf("Shortcuts(ProjectActivate) = %v, want [enter l]", shortcuts)
+	}
+}

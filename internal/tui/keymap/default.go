@@ -65,6 +65,7 @@ func Default() *Keymaps {
 		"Q":      command.Quit,
 		"?":      command.Help,
 		"q":      command.Back,
+		":":      command.OpenCommand,
 	})
 
 	catalog := NewLayer("catalog", false).
@@ -84,9 +85,11 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
-			"c": command.OpenCitations,
-			"b": command.OpenCitedBy,
-			"p": command.OpenProjects,
+			"c":      command.OpenCitations,
+			"b":      command.OpenCitedBy,
+			"p":      command.OpenProjects,
+			"/":      command.OpenSearch,
+			"ctrl+r": command.Refresh,
 		})
 
 	citations := NewLayer("citations", false).
@@ -95,6 +98,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
+			"p":      command.OpenProjects,
 			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
@@ -102,6 +106,9 @@ func Default() *Keymaps {
 	projects := NewLayer("projects", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
+			"enter":  command.ProjectActivate,
+			"l":      command.ProjectActivate,
+			"u":      command.ProjectClearActive,
 			"n":      command.ProjectCreate,
 			"I":      command.ExportIDS,
 			"/":      command.OpenSearch,

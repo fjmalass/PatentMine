@@ -56,3 +56,20 @@ func TestOpenCreatesDatedLogAndActivityFiles(t *testing.T) {
 		t.Fatalf("activity body missing action/date tags: %s", activityBody)
 	}
 }
+
+func TestPrometheusTextRendersDerivedMetrics(t *testing.T) {
+	snap := Snapshot{
+		Timestamp: time.Now(),
+		Timings: map[string]TimingSummary{
+			"rpc.method.ping": {Count: 2, TotalNanos: 20, MinNanos: 5, MaxNanos: 15, LastNanos: 15},
+		},
+		Counters: map[string]int64{"engine.bus.drop_total": 3},
+		Gauges:   map[string]int64{"engine.bus.subscribers": 1},
+	}
+	body := PrometheusText(snap)
+	for _, want := range []string{"rpc_method_ping_count 2", "rpc_method_ping_avg_nanos 10", "engine_bus_drop_total 3", "engine_bus_subscribers 1"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("prometheus body missing %q: %s", want, body)
+		}
+	}
+}
