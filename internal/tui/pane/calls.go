@@ -2,7 +2,6 @@ package pane
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/text"
 )
 
 // callTimeout bounds a single request to the daemon.
@@ -38,9 +38,9 @@ func ingestFamilyCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
 		err := client.Call(ctx, proto.MethodIngestFamily,
 			proto.IngestFamilyParams{Root: number}, &res)
 		if err != nil {
-			return StatusMsg{Text: "ingest failed: " + err.Error(), Error: true}
+			return StatusMsg{Key: text.StatusIngestStartFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Text: fmt.Sprintf("ingest started for %s (%s)", number, res.JobID)}
+		return StatusMsg{Key: text.StatusIngestStarted, Args: []any{number.String(), res.JobID}}
 	}
 }
 
@@ -52,9 +52,9 @@ func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain
 		var res proto.Empty
 		if err := client.Call(ctx, proto.MethodMembershipAdd,
 			proto.MembershipParams{Project: project, Patent: number}, &res); err != nil {
-			return StatusMsg{Text: "add to project failed: " + err.Error(), Error: true}
+			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Text: fmt.Sprintf("added %s to %s", number, project)}
+		return StatusMsg{Key: text.StatusAdded, Args: []any{number.String(), string(project)}}
 	}
 }
 
@@ -66,14 +66,22 @@ func SetMembershipStateCmd(client *rpc.Client, project domain.ProjectID, number 
 		var res proto.Empty
 		if err := client.Call(ctx, proto.MethodMembershipState,
 			proto.MembershipStateParams{Project: project, Patent: number, State: string(state)}, &res); err != nil {
-			return StatusMsg{Text: "set state failed: " + err.Error(), Error: true}
+			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Text: fmt.Sprintf("set %s to %s in %s", number, state, project)}
+		return StatusMsg{Key: text.StatusSetState, Args: []any{number.String(), string(state), string(project)}}
 	}
 }
 
-// projectRequiredCmd reports that an action needs an active project, which the
-// project view (Phase 8) will provide.
-func projectRequiredCmd() tea.Cmd {
-	return status("select an active project first", true)
+// CreateProjectCmd creates a project with the given name.
+func CreateProjectCmd(client *rpc.Client, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.ProjectResult
+		if err := client.Call(ctx, proto.MethodProjectCreate,
+			proto.ProjectCreateParams{Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusProjectCreateFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusProjectCreated, Args: []any{res.Project.Name}}
+	}
 }

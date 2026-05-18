@@ -9,6 +9,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/render"
 )
 
@@ -29,8 +30,9 @@ type catalogLoadedMsg struct {
 
 // Catalog is the main patent list pane.
 type Catalog struct {
-	client *rpc.Client
-	theme  render.Theme
+	client   *rpc.Client
+	theme    render.Theme
+	handlers map[command.ID]cmdHandler
 
 	activeProject *domain.Project
 
@@ -44,12 +46,29 @@ type Catalog struct {
 
 // NewCatalog builds an empty catalog pane bound to a daemon client.
 func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
-	return &Catalog{
+	c := &Catalog{
 		client:  client,
 		theme:   theme,
 		page:    render.NewPaginator(10),
 		loading: true,
 	}
+	c.handlers = map[command.ID]cmdHandler{
+		command.NavDown:     func(r int) tea.Cmd { return c.move(func() { c.page.MoveDown(r) }) },
+		command.NavUp:       func(r int) tea.Cmd { return c.move(func() { c.page.MoveUp(r) }) },
+		command.NavPageDown: func(int) tea.Cmd { return c.move(c.page.PageDown) },
+		command.NavPageUp:   func(int) tea.Cmd { return c.move(c.page.PageUp) },
+		command.NavTop:      func(int) tea.Cmd { return c.move(c.page.Top) },
+		command.NavBottom:   func(int) tea.Cmd { return c.move(c.page.Bottom) },
+		command.Refresh:     func(int) tea.Cmd { c.loading = true; return c.load() },
+		command.IngestFamily: func(int) tea.Cmd {
+			number, ok := c.Selection()
+			if !ok {
+				return status(text.StatusNoPatentSelected, true)
+			}
+			return ingestFamilyCmd(c.client, number)
+		},
+	}
+	return c
 }
 
 // Context implements Pane.
@@ -90,40 +109,25 @@ func (c *Catalog) load() tea.Cmd {
 
 // Command implements Pane.
 func (c *Catalog) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
-	before := c.page.Offset()
-	switch id {
-	case command.NavDown:
-		c.page.MoveDown(repeat)
-	case command.NavUp:
-		c.page.MoveUp(repeat)
-	case command.NavPageDown:
-		c.page.PageDown()
-	case command.NavPageUp:
-		c.page.PageUp()
-	case command.NavTop:
-		c.page.Top()
-	case command.NavBottom:
-		c.page.Bottom()
-	case command.Refresh:
-		c.loading = true
-		return c, c.load()
-	case command.IngestFamily:
-		number, ok := c.Selection()
-		if !ok {
-			return c, status("no patent selected", true)
-		}
-		return c, ingestFamilyCmd(c.client, number)
-	case command.MarkStored, command.MarkUnderReview, command.MarkIgnored,
-		command.MarkDeleted, command.AddToProject:
-		return c, projectRequiredCmd()
-	case command.OpenSearch:
-		return c, status("search prompt is not yet wired", false)
-	}
-	if c.page.Offset() != before {
-		c.loading = true
-		return c, c.load()
+	if handler, ok := c.handlers[id]; ok {
+		return c, handler(repeat)
 	}
 	return c, nil
+}
+
+// Handles implements Pane.
+func (c *Catalog) Handles() []command.ID { return handlerIDs(c.handlers) }
+
+// move runs a cursor motion and reloads the page when the visible window
+// scrolled to a new offset.
+func (c *Catalog) move(motion func()) tea.Cmd {
+	before := c.page.Offset()
+	motion()
+	if c.page.Offset() != before {
+		c.loading = true
+		return c.load()
+	}
+	return nil
 }
 
 // Update implements Pane.

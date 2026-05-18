@@ -5,10 +5,13 @@
 package pane
 
 import (
+	"slices"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/text"
 )
 
 // ResizeMsg reports the body area available to a pane after the app reserves
@@ -35,6 +38,10 @@ type Pane interface {
 	// Command applies a resolved command intent forwarded by the App, repeated
 	// the given number of times (for count-prefixed chords like "3j").
 	Command(id command.ID, repeat int) (Pane, tea.Cmd)
+	// Handles reports every command ID the pane services. The App's wiring
+	// check cross-references it against the keymap so a key can never resolve
+	// to a command the focused pane silently drops.
+	Handles() []command.ID
 	// Update applies a non-command message: an rpc result, a daemon event, or
 	// a resize.
 	Update(msg tea.Msg) (Pane, tea.Cmd)
@@ -45,14 +52,31 @@ type Pane interface {
 	Selection() (domain.PatentNumber, bool)
 }
 
-// StatusMsg asks the App to show a line of status text. Panes emit it instead
-// of drawing status themselves, so status appears in one consistent place.
+// cmdHandler carries out one command for a pane, repeated the given count. The
+// pane mutates itself through its pointer receiver and returns only a tea.Cmd.
+type cmdHandler func(repeat int) tea.Cmd
+
+// handlerIDs returns the command IDs of a handler table, sorted for stable
+// output in the wiring check and help screen.
+func handlerIDs(handlers map[command.ID]cmdHandler) []command.ID {
+	ids := make([]command.ID, 0, len(handlers))
+	for id := range handlers {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// StatusMsg asks the App to show a line of status text. Panes emit a text key
+// plus arguments rather than a resolved string, so the App resolves it through
+// the active locale catalog and status appears in one consistent place.
 type StatusMsg struct {
-	Text  string
+	Key   text.Key
+	Args  []any
 	Error bool
 }
 
-// status returns a tea.Cmd that emits a StatusMsg.
-func status(text string, isErr bool) tea.Cmd {
-	return func() tea.Msg { return StatusMsg{Text: text, Error: isErr} }
+// status returns a tea.Cmd that emits a StatusMsg for key.
+func status(key text.Key, isErr bool, args ...any) tea.Cmd {
+	return func() tea.Msg { return StatusMsg{Key: key, Args: args, Error: isErr} }
 }

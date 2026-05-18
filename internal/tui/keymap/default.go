@@ -1,6 +1,10 @@
 package keymap
 
-import "patentmine/internal/command"
+import (
+	"maps"
+
+	"patentmine/internal/command"
+)
 
 // Keymaps holds the base layer plus one layer per UI context. A frontend
 // composes a Stack from these; Default() builds the shipped bindings, but the
@@ -18,6 +22,14 @@ func (k *Keymaps) Base() *Layer {
 // Context returns the layer for c, or nil when c has no dedicated layer.
 func (k *Keymaps) Context(c command.Context) *Layer {
 	return k.contexts[c]
+}
+
+// ContextLayers returns every context-scoped layer keyed by its context. The
+// wiring check walks this to verify every bound key reaches a handler.
+func (k *Keymaps) ContextLayers() map[command.Context]*Layer {
+	out := make(map[command.Context]*Layer, len(k.contexts))
+	maps.Copy(out, k.contexts)
+	return out
 }
 
 // StackFor builds the resolution stack for a context: the base layer plus the

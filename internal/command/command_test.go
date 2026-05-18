@@ -33,8 +33,8 @@ func TestDefaultRegistryBuilds(t *testing.T) {
 
 func TestRegistryRejectsDuplicateID(t *testing.T) {
 	_, err := NewRegistry(
-		Command{ID: NavDown, Title: "a", Kind: KindView},
-		Command{ID: NavDown, Title: "b", Kind: KindView},
+		Command{ID: NavDown, Kind: KindView},
+		Command{ID: NavDown, Kind: KindView},
 	)
 	if err == nil {
 		t.Fatal("NewRegistry should reject a duplicate ID")

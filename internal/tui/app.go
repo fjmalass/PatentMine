@@ -2,12 +2,17 @@
 // the pane and overlay stacks and routes input, but holds no business state —
 // every screen's state lives in its own Pane or Overlay. That decomposition is
 // the deliberate structural defence against a god-object UI model.
+//
+// Input flows through one path. A key chord and a typed command both resolve
+// to a command.ID and run through invoke, so the two can never diverge. Every
+// command.ID is serviced by exactly one handler — an entry in appHandlers or a
+// pane/overlay that lists the ID in Handles — and validateWiring fails the boot
+// if any bound key or typed command would resolve to an unhandled ID.
 package tui
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -20,6 +25,7 @@ import (
 	"patentmine/internal/keys"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
@@ -53,12 +59,54 @@ type pingLoadedMsg struct {
 	err     error
 }
 
+// invocation carries the arguments of one command request: empty for a key
+// chord, populated for a typed command.
+type invocation struct {
+	repeat int
+	args   []string
+}
+
+// appHandler services one command at the App level. appHandlers is the single
+// table of App-handled commands; validateWiring reads it to prove every bound
+// key reaches a handler.
+type appHandler func(*App, invocation) (tea.Model, tea.Cmd)
+
+var appHandlers = map[command.ID]appHandler{
+	command.Quit:               (*App).cmdQuit,
+	command.Help:               (*App).cmdHelp,
+	command.OpenSearch:         (*App).cmdOpenSearch,
+	command.OpenCommand:        (*App).cmdOpenCommand,
+	command.CloseOverlay:       (*App).cmdCloseOverlay,
+	command.Back:               (*App).cmdBack,
+	command.OpenDetail:         (*App).cmdOpenDetail,
+	command.OpenCitations:      (*App).cmdOpenCitations,
+	command.OpenCitedBy:        (*App).cmdOpenCitedBy,
+	command.OpenProjects:       (*App).cmdOpenProjects,
+	command.ProjectActivate:    (*App).cmdProjectActivate,
+	command.ProjectClearActive: (*App).cmdProjectClear,
+	command.ProjectCreate:      (*App).cmdProjectCreate,
+	command.AddToProject:       (*App).cmdAddToProject,
+	command.MarkStored:         (*App).cmdMarkStored,
+	command.MarkUnderReview:    (*App).cmdMarkUnderReview,
+	command.MarkIgnored:        (*App).cmdMarkIgnored,
+	command.MarkDeleted:        (*App).cmdMarkDeleted,
+}
+
+// typedAcceptsArgs lists the commands whose typed form takes arguments. Every
+// other typed command is rejected with a usage error when given any.
+var typedAcceptsArgs = map[command.ID]bool{
+	command.AddToProject:    true,
+	command.ProjectActivate: true,
+	command.ProjectCreate:   true,
+}
+
 // App is the bubbletea root model.
 type App struct {
 	client          *rpc.Client
 	registry        *command.Registry
 	keymaps         *keymap.Keymaps
 	theme           render.Theme
+	text            *text.Catalog
 	reader          keys.Reader
 	saveLastProject func(domain.ProjectID) error
 
@@ -85,24 +133,30 @@ func WithLastProjectSaver(save func(domain.ProjectID) error) Option {
 	return func(a *App) { a.saveLastProject = save }
 }
 
-// New builds the App with the splash/project selector as the initial pane.
-func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps, opts ...Option) *App {
+// New builds the App with the splash/project selector as the initial pane. It
+// fails when the keymap, command registry, and handlers are not consistent —
+// see validateWiring — so a wiring mistake is caught at startup.
+func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps, catalog *text.Catalog, opts ...Option) (*App, error) {
+	if err := validateWiring(registry, keymaps, catalog); err != nil {
+		return nil, err
+	}
 	theme := render.NewTheme()
 	app := &App{
 		client:        client,
 		registry:      registry,
 		keymaps:       keymaps,
 		theme:         theme,
-		status:        "select a project to begin — press ? for help",
+		text:          catalog,
 		tuiVersion:    appversion.String(),
 		daemonVersion: "connecting",
 	}
+	app.status = catalog.T(text.StatusWelcome)
 	for _, opt := range opts {
 		opt(app)
 	}
 	app.panes = []pane.Pane{pane.NewSplash(client, theme, app.lastProjectID,
 		app.splashFooterHint(), app.splashEmptyHint())}
-	return app
+	return app, nil
 }
 
 // Init implements tea.Model.
@@ -155,8 +209,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.PromptCloseMsg:
 		a.popOverlay()
 		return a, nil
+	case overlay.TextSubmitMsg:
+		a.popOverlay()
+		return a.handleTextSubmit(m)
 	case pane.StatusMsg:
-		a.status, a.statusErr = m.Text, m.Error
+		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		return a, nil
 	case pingLoadedMsg:
 		if m.err != nil {
@@ -168,7 +225,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case busEventMsg:
 		return a, tea.Batch(a.handleEvent(m.event), a.listen())
 	case eventsClosedMsg:
-		a.status, a.statusErr = "daemon connection closed", true
+		a.setErr(text.StatusDaemonClosed)
 		return a, nil
 	default:
 		// rpc results and the like — let every pane consume what is theirs.
@@ -209,7 +266,7 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return a, nil // unbound sequence
 	}
-	return a.dispatch(id, chord.Repeat())
+	return a.invoke(id, invocation{repeat: chord.Repeat()})
 }
 
 // keyStack composes the active keymap. With an overlay open the pane layer is
@@ -228,68 +285,188 @@ func (a *App) keyStack() *keymap.Stack {
 	return stack
 }
 
-// dispatch carries out a resolved command. Stack-changing commands are handled
-// here; everything else is forwarded to the focused pane or overlay.
-func (a *App) dispatch(id command.ID, repeat int) (tea.Model, tea.Cmd) {
-	switch id {
-	case command.Quit:
-		return a, tea.Quit
-	case command.Help:
-		if len(a.overlays) == 0 {
-			a.overlays = append(a.overlays, overlay.NewHelp(a.registry, a.keymaps, a.theme))
-		}
-		return a, nil
-	case command.OpenSearch:
-		return a.openPrompt(overlay.PromptPalette)
-	case command.OpenCommand:
-		return a.openPrompt(overlay.PromptDirect)
-	case command.CloseOverlay:
-		a.popOverlay()
-		return a, nil
-	case command.Back:
-		if len(a.overlays) > 0 {
-			a.popOverlay()
-		} else if len(a.panes) > 1 {
-			a.panes = a.panes[:len(a.panes)-1]
-		}
-		return a, nil
-	case command.OpenDetail:
-		return a.openDetail()
-	case command.OpenCitations:
-		return a.openCitations(domain.RelationCites)
-	case command.OpenCitedBy:
-		return a.openCitations(domain.RelationCitedBy)
-	case command.OpenProjects:
-		return a.pushPane(pane.NewProjects(a.client, a.theme))
-	case command.ProjectActivate:
-		return a.activateProject()
-	case command.ProjectClearActive:
-		a.activeProject = nil
-		a.status, a.statusErr = "cleared active project", false
-		return a, a.broadcast(pane.ProjectChangedMsg{})
-	case command.AddToProject:
-		return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-			return pane.AddToProjectCmd(a.client, project, patent)
-		})
-	case command.MarkStored:
-		return a.runMembershipState(domain.MembershipStored)
-	case command.MarkUnderReview:
-		return a.runMembershipState(domain.MembershipUnderReview)
-	case command.MarkIgnored:
-		return a.runMembershipState(domain.MembershipIgnored)
-	case command.MarkDeleted:
-		return a.runMembershipState(domain.MembershipDeleted)
+// invoke carries out a resolved command. App-level commands run from the
+// appHandlers table; everything else is forwarded to the focused overlay or
+// pane — but only when that overlay or pane lists the command in Handles, so a
+// command can never be silently dropped.
+func (a *App) invoke(id command.ID, inv invocation) (tea.Model, tea.Cmd) {
+	if handler, ok := appHandlers[id]; ok {
+		return handler(a, inv)
 	}
-
 	if len(a.overlays) > 0 {
-		updated, cmd := a.focusedOverlay().Command(id, repeat)
+		ov := a.focusedOverlay()
+		if !slices.Contains(ov.Handles(), id) {
+			return a.unhandled(id)
+		}
+		updated, cmd := ov.Command(id, inv.repeat)
 		a.overlays[len(a.overlays)-1] = updated
 		return a, cmd
 	}
-	updated, cmd := a.focusedPane().Command(id, repeat)
+	p := a.focusedPane()
+	if !slices.Contains(p.Handles(), id) {
+		return a.unhandled(id)
+	}
+	updated, cmd := p.Command(id, inv.repeat)
 	a.panes[len(a.panes)-1] = updated
 	return a, cmd
 }
+
+// unhandled reports a command that reached invoke with no handler. validateWiring
+// makes this unreachable for bound keys and typed commands; it stays as a
+// visible last line of defence rather than a silent no-op.
+func (a *App) unhandled(id command.ID) (tea.Model, tea.Cmd) {
+	a.setErr(text.StatusUnhandledCommand, string(id))
+	return a, nil
+}
+
+// --- App-level command handlers ---------------------------------------------
+
+func (a *App) cmdQuit(invocation) (tea.Model, tea.Cmd) { return a, tea.Quit }
+
+func (a *App) cmdHelp(invocation) (tea.Model, tea.Cmd) {
+	if len(a.overlays) == 0 {
+		a.overlays = append(a.overlays, overlay.NewHelp(a.registry, a.keymaps, a.theme, a.text))
+	}
+	return a, nil
+}
+
+func (a *App) cmdOpenSearch(invocation) (tea.Model, tea.Cmd) {
+	return a.openPrompt(overlay.PromptPalette)
+}
+
+func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
+	return a.openPrompt(overlay.PromptDirect)
+}
+
+func (a *App) cmdCloseOverlay(invocation) (tea.Model, tea.Cmd) {
+	a.popOverlay()
+	return a, nil
+}
+
+func (a *App) cmdBack(invocation) (tea.Model, tea.Cmd) {
+	if len(a.overlays) > 0 {
+		a.popOverlay()
+	} else if len(a.panes) > 1 {
+		a.panes = a.panes[:len(a.panes)-1]
+	}
+	return a, nil
+}
+
+func (a *App) cmdOpenDetail(invocation) (tea.Model, tea.Cmd) { return a.openDetail() }
+func (a *App) cmdOpenCitations(invocation) (tea.Model, tea.Cmd) {
+	return a.openCitations(domain.RelationCites)
+}
+func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
+	return a.openCitations(domain.RelationCitedBy)
+}
+
+func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
+	return a.pushPane(pane.NewProjects(a.client, a.theme))
+}
+
+func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
+	a.activeProject = nil
+	a.setStatus(text.StatusClearedProject)
+	return a, a.broadcast(pane.ProjectChangedMsg{})
+}
+
+func (a *App) cmdMarkStored(invocation) (tea.Model, tea.Cmd) {
+	return a.runMembershipState(domain.MembershipStored)
+}
+func (a *App) cmdMarkUnderReview(invocation) (tea.Model, tea.Cmd) {
+	return a.runMembershipState(domain.MembershipUnderReview)
+}
+func (a *App) cmdMarkIgnored(invocation) (tea.Model, tea.Cmd) {
+	return a.runMembershipState(domain.MembershipIgnored)
+}
+func (a *App) cmdMarkDeleted(invocation) (tea.Model, tea.Cmd) {
+	return a.runMembershipState(domain.MembershipDeleted)
+}
+
+func (a *App) cmdProjectActivate(inv invocation) (tea.Model, tea.Cmd) {
+	switch len(inv.args) {
+	case 0:
+		return a.activateProject()
+	case 1:
+		return a.activateProjectByArg(inv.args[0])
+	default:
+		return a.usageError(command.ProjectActivate)
+	}
+}
+
+func (a *App) cmdAddToProject(inv invocation) (tea.Model, tea.Cmd) {
+	switch len(inv.args) {
+	case 0:
+		return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+			return pane.AddToProjectCmd(a.client, project, patent)
+		})
+	case 1:
+		number, err := domain.ParsePatentNumber(inv.args[0])
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+		if a.activeProject == nil {
+			a.setErr(text.StatusNoActiveProject)
+			return a, nil
+		}
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, nil
+		}
+		return a, pane.AddToProjectCmd(a.client, a.activeProject.ID, number)
+	default:
+		return a.usageError(command.AddToProject)
+	}
+}
+
+// cmdProjectCreate opens a name-entry overlay, or — given a typed name — creates
+// the project directly.
+func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) > 0 {
+		return a.createProject(strings.Join(inv.args, " "))
+	}
+	a.overlays = append(a.overlays, overlay.NewTextInput(
+		a.theme, a.text, overlay.PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption))
+	return a, nil
+}
+
+// handleTextSubmit routes a value entered in a TextInput overlay to its action.
+func (a *App) handleTextSubmit(m overlay.TextSubmitMsg) (tea.Model, tea.Cmd) {
+	switch m.Purpose {
+	case overlay.PurposeCreateProject:
+		return a.createProject(m.Value)
+	default:
+		return a, nil
+	}
+}
+
+// createProject sends a project.create request for name.
+func (a *App) createProject(name string) (tea.Model, tea.Cmd) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		a.setErr(text.StatusProjectNameEmpty)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.CreateProjectCmd(a.client, name)
+}
+
+// usageError reports the correct invocation of a command.
+func (a *App) usageError(id command.ID) (tea.Model, tea.Cmd) {
+	cmd, _ := a.registry.Lookup(id)
+	usage := cmd.Usage
+	if usage == "" {
+		usage = ":" + cmd.Name
+	}
+	a.setErr(text.StatusUsage, usage)
+	return a, nil
+}
+
+// --- pane stack --------------------------------------------------------------
 
 // pushPane adds a pane to the stack and returns its init command.
 func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
@@ -301,7 +478,7 @@ func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 func (a *App) openDetail() (tea.Model, tea.Cmd) {
 	number, ok := a.focusedPane().Selection()
 	if !ok {
-		a.status, a.statusErr = "no patent selected", true
+		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
 	return a.pushPane(pane.NewDetail(a.client, a.theme, number))
@@ -312,7 +489,7 @@ func (a *App) openDetail() (tea.Model, tea.Cmd) {
 func (a *App) openCitations(kind domain.RelationKind) (tea.Model, tea.Cmd) {
 	number, ok := a.focusedPane().Selection()
 	if !ok {
-		a.status, a.statusErr = "no patent selected", true
+		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
 	return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind))
@@ -321,52 +498,43 @@ func (a *App) openCitations(kind domain.RelationKind) (tea.Model, tea.Cmd) {
 func (a *App) activateProject() (tea.Model, tea.Cmd) {
 	selector, ok := a.focusedPane().(interface{ SelectedProject() (domain.Project, bool) })
 	if !ok {
-		a.status, a.statusErr = "focused pane has no project selection", true
+		a.setErr(text.StatusNoProjectSelection)
 		return a, nil
 	}
 	project, ok := selector.SelectedProject()
 	if !ok {
-		a.status, a.statusErr = "no project selected", true
+		a.setErr(text.StatusNoProjectSelected)
 		return a, nil
 	}
-	a.activeProject = &project
-	a.lastProjectID = project.ID
-	if a.saveLastProject != nil {
-		if err := a.saveLastProject(project.ID); err != nil {
-			a.status, a.statusErr = "active project: "+project.Name+" (save failed: "+err.Error()+")", true
-		} else {
-			a.status, a.statusErr = "active project: "+project.Name, false
-		}
-	} else {
-		a.status, a.statusErr = "active project: "+project.Name, false
-	}
-	if splash, ok := a.focusedPane().(interface{ IsSplash() bool }); ok && splash.IsSplash() && len(a.panes) == 1 {
-		catalog := pane.NewCatalog(a.client, a.theme)
-		a.panes[0] = catalog
-		return a, tea.Batch(catalog.Init(), a.broadcast(pane.ProjectChangedMsg{Project: &project}))
-	}
-	if len(a.panes) > 1 {
-		a.panes = a.panes[:len(a.panes)-1]
-	}
-	return a, a.broadcast(pane.ProjectChangedMsg{Project: &project})
+	return a.useProject(project)
 }
 
 func (a *App) activateProjectByArg(arg string) (tea.Model, tea.Cmd) {
 	project, ok := a.resolveProjectArg(arg)
 	if !ok {
-		a.status, a.statusErr = "project not found: "+arg, true
+		a.setErr(text.StatusProjectNotFound, arg)
 		return a, nil
 	}
+	return a.useProject(project)
+}
+
+// useProject makes project the active project and updates every pane.
+func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 	a.activeProject = &project
 	a.lastProjectID = project.ID
 	if a.saveLastProject != nil {
 		if err := a.saveLastProject(project.ID); err != nil {
-			a.status, a.statusErr = "active project: "+project.Name+" (save failed: "+err.Error()+")", true
+			a.setErr(text.StatusActiveProjectSaveErr, project.Name, err.Error())
 		} else {
-			a.status, a.statusErr = "active project: "+project.Name, false
+			a.setStatus(text.StatusActiveProject, project.Name)
 		}
 	} else {
-		a.status, a.statusErr = "active project: "+project.Name, false
+		a.setStatus(text.StatusActiveProject, project.Name)
+	}
+	if splash, ok := a.focusedPane().(interface{ IsSplash() bool }); ok && splash.IsSplash() && len(a.panes) == 1 {
+		catalog := pane.NewCatalog(a.client, a.theme)
+		a.panes[0] = catalog
+		return a, tea.Batch(catalog.Init(), a.broadcast(pane.ProjectChangedMsg{Project: &project}))
 	}
 	if len(a.panes) > 1 {
 		a.panes = a.panes[:len(a.panes)-1]
@@ -406,16 +574,16 @@ func (a *App) runMembershipState(target domain.MembershipState) (tea.Model, tea.
 
 func (a *App) runProjectAction(action func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
-		a.status, a.statusErr = "select an active project first", true
+		a.setErr(text.StatusNoActiveProject)
 		return a, nil
 	}
 	number, ok := a.focusedPane().Selection()
 	if !ok {
-		a.status, a.statusErr = "no patent selected", true
+		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
 	if a.client == nil {
-		a.status, a.statusErr = "daemon connection unavailable", true
+		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
 	return a, action(a.activeProject.ID, number)
@@ -426,7 +594,7 @@ func (a *App) syncPaneProject(_ pane.Pane) tea.Cmd {
 }
 
 func (a *App) openPrompt(mode overlay.PromptMode) (tea.Model, tea.Cmd) {
-	a.overlays = append(a.overlays, overlay.NewPrompt(a.registry, a.keymaps, a.theme, a.commandContext(), mode))
+	a.overlays = append(a.overlays, overlay.NewPrompt(a.registry, a.keymaps, a.theme, a.text, a.commandContext(), mode))
 	return a, nil
 }
 
@@ -440,6 +608,9 @@ func (a *App) commandContext() command.Context {
 	return a.focusedPane().Context()
 }
 
+// executeTypedCommand parses a typed command and routes it through invoke, the
+// same path a key chord takes — so a command can never work one way and not the
+// other.
 func (a *App) executeTypedCommand(input string) (tea.Model, tea.Cmd) {
 	parts := strings.Fields(strings.TrimSpace(input))
 	if len(parts) == 0 {
@@ -447,74 +618,18 @@ func (a *App) executeTypedCommand(input string) (tea.Model, tea.Cmd) {
 	}
 	cmd, ok := a.registry.LookupName(parts[0])
 	if !ok {
-		a.status, a.statusErr = "unknown command: "+parts[0], true
+		a.setErr(text.StatusUnknownCommand, parts[0])
 		return a, nil
 	}
-	ctx := a.commandContext()
-	if !cmd.AvailableIn(ctx) {
-		a.status, a.statusErr = cmd.Name+" is not available here", true
+	if !cmd.AvailableIn(a.commandContext()) {
+		a.setErr(text.StatusCommandNotHere, cmd.Name)
 		return a, nil
 	}
 	args := parts[1:]
-	switch cmd.ID {
-	case command.AddToProject:
-		if len(args) == 0 {
-			return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-				return pane.AddToProjectCmd(a.client, project, patent)
-			})
-		}
-		if len(args) != 1 {
-			return a.typedUsageError(cmd)
-		}
-		number, err := domain.ParsePatentNumber(args[0])
-		if err != nil {
-			a.status, a.statusErr = "invalid patent number: "+err.Error(), true
-			return a, nil
-		}
-		if a.activeProject == nil {
-			a.status, a.statusErr = "select an active project first", true
-			return a, nil
-		}
-		if a.client == nil {
-			a.status, a.statusErr = "daemon connection unavailable", true
-			return a, nil
-		}
-		return a, pane.AddToProjectCmd(a.client, a.activeProject.ID, number)
-	case command.ProjectActivate:
-		if len(args) == 0 {
-			return a.activateProject()
-		}
-		if len(args) != 1 {
-			return a.typedUsageError(cmd)
-		}
-		return a.activateProjectByArg(args[0])
-	case command.ProjectClearActive:
-		if len(args) != 0 {
-			return a.typedUsageError(cmd)
-		}
-		a.activeProject = nil
-		a.status, a.statusErr = "cleared active project", false
-		return a, a.broadcast(pane.ProjectChangedMsg{})
-	case command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted,
-		command.OpenProjects, command.OpenDetail, command.OpenCitations, command.OpenCitedBy,
-		command.Refresh, command.Help, command.Quit:
-		if len(args) != 0 {
-			return a.typedUsageError(cmd)
-		}
-		return a.dispatch(cmd.ID, 1)
-	default:
-		a.status, a.statusErr = "typed command not implemented: "+cmd.Name, true
-		return a, nil
+	if len(args) > 0 && !typedAcceptsArgs[cmd.ID] {
+		return a.usageError(cmd.ID)
 	}
-}
-
-func (a *App) typedUsageError(cmd command.Command) (tea.Model, tea.Cmd) {
-	usage := cmd.Usage
-	if usage == "" {
-		usage = ":" + cmd.Name
-	}
-	a.status, a.statusErr = "usage: "+usage, true
-	return a, nil
+	return a.invoke(cmd.ID, invocation{repeat: 1, args: args})
 }
 
 // handleEvent reflects a daemon event into the status line and refreshes data.
@@ -523,18 +638,16 @@ func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 	case proto.EventIngestProgress:
 		var p proto.IngestProgress
 		if json.Unmarshal(ev.Params, &p) == nil {
-			a.status = fmt.Sprintf("ingest %s — fetched %d, found %d: %s",
-				p.JobID, p.Fetched, p.Found, p.Message)
-			a.statusErr = false
+			a.setStatus(text.StatusIngestProgress, p.JobID, p.Fetched, p.Found, p.Message)
 		}
 		return nil
 	case proto.EventIngestDone:
 		var d proto.IngestDone
 		_ = json.Unmarshal(ev.Params, &d)
 		if d.Error != "" {
-			a.status, a.statusErr = "ingest "+d.JobID+" failed: "+d.Error, true
+			a.setErr(text.StatusIngestFailed, d.JobID, d.Error)
 		} else {
-			a.status, a.statusErr = "ingest "+d.JobID+" complete", false
+			a.setStatus(text.StatusIngestComplete, d.JobID)
 		}
 		return a.refreshPanes()
 	case proto.EventDBChanged:
@@ -565,6 +678,15 @@ func (a *App) popOverlay() {
 	if n := len(a.overlays); n > 0 {
 		a.overlays = a.overlays[:n-1]
 	}
+}
+
+// setStatus and setErr resolve a catalog key into the status line.
+func (a *App) setStatus(key text.Key, args ...any) {
+	a.status, a.statusErr = a.text.Tf(key, args...), false
+}
+
+func (a *App) setErr(key text.Key, args ...any) {
+	a.status, a.statusErr = a.text.Tf(key, args...), true
 }
 
 // View implements tea.Model.
@@ -626,51 +748,51 @@ func (a *App) helperLine(ctx command.Context) string {
 	switch ctx {
 	case command.ContextCatalog:
 		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, "commands"),
-			a.shortcutHint(ctx, command.OpenCommand, "command"),
-			a.shortcutHint(ctx, command.OpenDetail, "detail"),
-			a.shortcutHint(ctx, command.OpenCitations, "citations"),
-			a.shortcutHint(ctx, command.OpenCitedBy, "cited by"),
-			a.shortcutHint(ctx, command.OpenProjects, "projects"),
-			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, "project actions"),
-			a.shortcutHint(ctx, command.Back, "back"),
+			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
+			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
+			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
+			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
+			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
+			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
+			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
 	case command.ContextDetail:
 		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, "commands"),
-			a.shortcutHint(ctx, command.OpenCommand, "command"),
-			a.shortcutHint(ctx, command.OpenCitations, "citations"),
-			a.shortcutHint(ctx, command.OpenCitedBy, "cited by"),
-			a.shortcutHint(ctx, command.OpenProjects, "projects"),
-			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, "project actions"),
-			a.shortcutHint(ctx, command.Back, "back"),
+			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
+			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
+			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
+			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
+			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
+			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
 	case command.ContextCitations:
 		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, "commands"),
-			a.shortcutHint(ctx, command.OpenCommand, "command"),
-			a.shortcutHint(ctx, command.OpenDetail, "detail"),
-			a.shortcutHint(ctx, command.OpenProjects, "projects"),
-			a.shortcutHint(ctx, command.IngestFamily, "ingest"),
-			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, "project actions"),
-			a.shortcutHint(ctx, command.Back, "back"),
+			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
+			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
+			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
+			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
+			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
+			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
 	case command.ContextProjects:
 		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, "commands"),
-			a.shortcutHint(ctx, command.OpenCommand, "command"),
-			a.shortcutHint(ctx, command.ProjectActivate, "select project"),
-			a.shortcutHint(ctx, command.ProjectClearActive, "clear active"),
-			a.shortcutHint(ctx, command.ProjectCreate, "new project"),
-			a.shortcutHint(ctx, command.ExportIDS, "export IDS"),
-			a.shortcutHint(ctx, command.Back, "back"),
+			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
+			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.ProjectActivate, text.HintSelectProject),
+			a.shortcutHint(ctx, command.ProjectClearActive, text.HintClearActive),
+			a.shortcutHint(ctx, command.ProjectCreate, text.HintNewProject),
+			a.shortcutHint(ctx, command.ExportIDS, text.HintExportIDS),
+			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
 	default:
 		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, "commands"),
-			a.shortcutHint(ctx, command.OpenCommand, "command"),
-			a.shortcutHint(ctx, command.Help, "help"),
-			a.shortcutHint(ctx, command.Quit, "quit"),
+			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
+			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.Help, text.HintHelp),
+			a.shortcutHint(ctx, command.Quit, text.HintQuit),
 		)
 	}
 }
@@ -679,11 +801,11 @@ func (a *App) splashFooterHint() string {
 	ctx := command.ContextProjects
 	return a.joinHints(
 		a.navigationHint(ctx),
-		a.shortcutHint(ctx, command.ProjectActivate, "select"),
-		"/ commands",
-		a.shortcutHint(ctx, command.OpenCommand, "command"),
-		a.shortcutHint(ctx, command.ProjectCreate, "new project"),
-		a.shortcutHint(ctx, command.Quit, "quit"),
+		a.shortcutHint(ctx, command.ProjectActivate, text.HintSelect),
+		a.text.T(text.HintSlashCommands),
+		a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+		a.shortcutHint(ctx, command.ProjectCreate, text.HintNewProject),
+		a.shortcutHint(ctx, command.Quit, text.HintQuit),
 	)
 }
 
@@ -695,27 +817,29 @@ func (a *App) splashEmptyHint() string {
 	}
 	shortcut := a.shortcutKeys(ctx, command.ProjectCreate)
 	if shortcut == "" {
-		return "Create one with " + createUsage + "."
+		return a.text.Tf(text.SplashCreateHint, createUsage)
 	}
-	return "Create one with " + createUsage + " or " + shortcut + "."
+	return a.text.Tf(text.SplashCreateKeyHint, createUsage, shortcut)
 }
 
 func (a *App) navigationHint(ctx command.Context) string {
 	down := a.shortcutKeys(ctx, command.NavDown)
 	up := a.shortcutKeys(ctx, command.NavUp)
+	move := a.text.T(text.HintMove)
 	if down == "" && up == "" {
-		return "move"
+		return move
 	}
 	if down == "" {
-		return up + " move"
+		return up + " " + move
 	}
 	if up == "" {
-		return down + " move"
+		return down + " " + move
 	}
-	return down + "/" + up + " move"
+	return down + "/" + up + " " + move
 }
 
-func (a *App) shortcutHint(ctx command.Context, id command.ID, label string) string {
+func (a *App) shortcutHint(ctx command.Context, id command.ID, labelKey text.Key) string {
+	label := a.text.T(labelKey)
 	keys := a.shortcutKeys(ctx, id)
 	if keys == "" {
 		return label
@@ -723,7 +847,8 @@ func (a *App) shortcutHint(ctx command.Context, id command.ID, label string) str
 	return keys + " " + label
 }
 
-func (a *App) multiShortcutHint(ctx command.Context, ids []command.ID, label string) string {
+func (a *App) multiShortcutHint(ctx command.Context, ids []command.ID, labelKey text.Key) string {
+	label := a.text.T(labelKey)
 	var parts []string
 	for _, id := range ids {
 		for _, seq := range a.keymaps.Shortcuts(ctx, id) {

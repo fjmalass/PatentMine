@@ -3,9 +3,10 @@
 // (web API), and the help screen are all generated from these declarations,
 // so an action is defined once and every frontend stays in step.
 //
-// A Command carries no behavior: it is data. A frontend's dispatcher interprets
-// the Command.ID. The Registry is built once at startup and injected — there
-// is deliberately no package-level mutable state.
+// A Command carries no behavior and no display strings: it is structure only.
+// A frontend's dispatcher interprets the Command.ID; human labels live in the
+// text catalog, keyed by ID. The Registry is built once at startup and injected
+// — there is deliberately no package-level mutable state.
 package command
 
 import (
@@ -54,12 +55,9 @@ type Command struct {
 	Name string
 	// Aliases are additional typed forms accepted by the command prompt.
 	Aliases []string
-	// Usage is a concise invocation example shown in help/palette footers.
+	// Usage is a concise invocation example shown in help/palette footers. It
+	// is command syntax, not prose, so it stays a literal rather than a key.
 	Usage string
-	// Title is a short human label (used in help and the web API).
-	Title string
-	// Help is a one-line description of what the command does.
-	Help string
 	// Kind says whether the command hits the daemon or only the local view.
 	Kind Kind
 	// Method is the proto method a KindEngine command maps to; empty for

@@ -9,6 +9,7 @@ import (
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
@@ -27,7 +28,10 @@ func newTestApp(t *testing.T) *App {
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
 	}
-	app := New(nil, reg, keymap.Default())
+	app, err := New(nil, reg, keymap.Default(), text.English())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	app.Update(tea.WindowSizeMsg{Width: testAppWidth, Height: testAppHeight})
 	return app
 }
@@ -149,6 +153,7 @@ func (p *refreshProbePane) Command(id command.ID, _ int) (pane.Pane, tea.Cmd) {
 	}
 	return p, nil
 }
+func (p *refreshProbePane) Handles() []command.ID { return []command.ID{command.Refresh} }
 
 type projectProbePane struct{ project domain.Project }
 
@@ -161,6 +166,7 @@ func (p *projectProbePane) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
 }
 func (p *projectProbePane) Command(command.ID, int) (pane.Pane, tea.Cmd) { return p, nil }
+func (p *projectProbePane) Handles() []command.ID                        { return nil }
 func (p *projectProbePane) SelectedProject() (domain.Project, bool)      { return p.project, true }
 
 func TestAppRefreshesAllPanesOnDBChange(t *testing.T) {

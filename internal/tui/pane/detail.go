@@ -23,13 +23,17 @@ type detailLoadedMsg struct {
 	err       error
 }
 
-// Detail shows one patent's full record.
+// Detail shows one patent's full record. The record can be longer than the
+// body area, so the pane scrolls — every navigation binding in the detail
+// keymap layer must resolve to a handler here.
 type Detail struct {
-	client *rpc.Client
-	theme  render.Theme
-	number domain.PatentNumber
+	client   *rpc.Client
+	theme    render.Theme
+	number   domain.PatentNumber
+	handlers map[command.ID]cmdHandler
 
 	patent  domain.Patent
+	page    render.Paginator
 	loading bool
 	loadErr string
 	loadID  uint64
@@ -37,7 +41,26 @@ type Detail struct {
 
 // NewDetail builds a detail pane for one patent number.
 func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber) *Detail {
-	return &Detail{client: client, theme: theme, number: number, loading: true}
+	d := &Detail{
+		client:  client,
+		theme:   theme,
+		number:  number,
+		page:    render.NewPaginator(10),
+		loading: true,
+	}
+	d.handlers = map[command.ID]cmdHandler{
+		command.NavDown:     func(r int) tea.Cmd { d.page.MoveDown(r); return nil },
+		command.NavUp:       func(r int) tea.Cmd { d.page.MoveUp(r); return nil },
+		command.NavPageDown: func(int) tea.Cmd { d.page.PageDown(); return nil },
+		command.NavPageUp:   func(int) tea.Cmd { d.page.PageUp(); return nil },
+		command.NavTop:      func(int) tea.Cmd { d.page.Top(); return nil },
+		command.NavBottom:   func(int) tea.Cmd { d.page.Bottom(); return nil },
+		command.Refresh:     func(int) tea.Cmd { d.loading = true; return d.load() },
+		command.IngestFamily: func(int) tea.Cmd {
+			return ingestFamilyCmd(d.client, d.number)
+		},
+	}
+	return d
 }
 
 // Context implements Pane.
@@ -65,19 +88,15 @@ func (d *Detail) load() tea.Cmd {
 }
 
 // Command implements Pane.
-func (d *Detail) Command(id command.ID, _ int) (Pane, tea.Cmd) {
-	switch id {
-	case command.Refresh:
-		d.loading = true
-		return d, d.load()
-	case command.IngestFamily:
-		return d, ingestFamilyCmd(d.client, d.number)
-	case command.MarkStored, command.MarkUnderReview, command.MarkIgnored,
-		command.MarkDeleted, command.AddToProject:
-		return d, projectRequiredCmd()
+func (d *Detail) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
+	if handler, ok := d.handlers[id]; ok {
+		return d, handler(repeat)
 	}
 	return d, nil
 }
+
+// Handles implements Pane.
+func (d *Detail) Handles() []command.ID { return handlerIDs(d.handlers) }
 
 // Update implements Pane.
 func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
@@ -92,6 +111,7 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		d.loadErr = ""
 		d.patent = m.patent
+		d.page.Top()
 	}
 	return d, nil
 }
@@ -101,14 +121,24 @@ func (d *Detail) Selection() (domain.PatentNumber, bool) {
 	return d.number, true
 }
 
-// View implements Pane.
-func (d *Detail) View(w, _ int) string {
+// View implements Pane. Long records scroll: the body is built in full, then
+// windowed to the visible height by the paginator.
+func (d *Detail) View(w, h int) string {
 	switch {
 	case d.loading:
 		return d.theme.Dim.Render("loading " + d.number.String() + "…")
 	case d.loadErr != "":
 		return d.theme.Error.Render("error: " + d.loadErr)
 	}
+	lines := strings.Split(d.body(w), "\n")
+	d.page.SetTotal(len(lines))
+	d.page.SetPageSize(max(h, 1))
+	start, end := d.page.Window()
+	return strings.Join(lines[start:end], "\n")
+}
+
+// body renders the full, unwindowed detail record.
+func (d *Detail) body(w int) string {
 	p := d.patent
 	var b strings.Builder
 	d.field(&b, w, "Shown as", numberToShow(p).String())

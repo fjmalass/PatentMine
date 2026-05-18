@@ -69,49 +69,49 @@ var projectScopes = []Context{ContextCatalog, ContextDetail, ContextCitations, C
 func Default() (*Registry, error) {
 	return NewRegistry(
 		// --- navigation (view) ---
-		Command{ID: NavDown, Title: "Down", Help: "Move the cursor down one row.", Kind: KindView, Scopes: listScopes},
-		Command{ID: NavUp, Title: "Up", Help: "Move the cursor up one row.", Kind: KindView, Scopes: listScopes},
-		Command{ID: NavPageDown, Title: "Page down", Help: "Scroll down one page.", Kind: KindView, Scopes: listScopes},
-		Command{ID: NavPageUp, Title: "Page up", Help: "Scroll up one page.", Kind: KindView, Scopes: listScopes},
-		Command{ID: NavTop, Title: "Top", Help: "Jump to the first row.", Kind: KindView, Scopes: listScopes},
-		Command{ID: NavBottom, Title: "Bottom", Help: "Jump to the last row.", Kind: KindView, Scopes: listScopes},
+		Command{ID: NavDown, Kind: KindView, Scopes: listScopes},
+		Command{ID: NavUp, Kind: KindView, Scopes: listScopes},
+		Command{ID: NavPageDown, Kind: KindView, Scopes: listScopes},
+		Command{ID: NavPageUp, Kind: KindView, Scopes: listScopes},
+		Command{ID: NavTop, Kind: KindView, Scopes: listScopes},
+		Command{ID: NavBottom, Kind: KindView, Scopes: listScopes},
 
 		// --- panes and overlays (view) ---
-		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Title: "Open detail", Help: "Open the selected patent's detail view.", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Title: "Open citations", Help: "Show patents the selected patent cites.", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
-		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Title: "Open cited by", Help: "Show patents that cite the selected patent.", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
-		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Title: "Open projects", Help: "Open the project list.", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations}},
-		Command{ID: Back, Title: "Back", Help: "Return to the previous pane.", Kind: KindView},
-		Command{ID: CloseOverlay, Title: "Close", Help: "Close the focused overlay.", Kind: KindView, Scopes: []Context{ContextOverlay}},
-		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Title: "Refresh", Help: "Reload the current pane from the daemon.", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
-		Command{ID: OpenSearch, Title: "Command palette", Help: "Open the command palette.", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
-		Command{ID: OpenCommand, Title: "Command prompt", Help: "Open the command prompt.", Kind: KindView},
-		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Title: "Use project", Help: "Make the selected project the active project for patent actions.", Kind: KindView, Scopes: projectScopes},
-		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Title: "Clear active project", Help: "Clear the active project filter and target.", Kind: KindView, Scopes: projectScopes},
+		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
+		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
+		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations}},
+		Command{ID: Back, Kind: KindView},
+		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Context{ContextOverlay}},
+		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
+		Command{ID: OpenSearch, Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
+		Command{ID: OpenCommand, Kind: KindView},
+		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Kind: KindView, Scopes: projectScopes},
+		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
 		// --- application-wide (view) ---
-		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Title: "Quit", Help: "Quit the application.", Kind: KindView},
-		Command{ID: Help, Name: "help", Aliases: []string{"?"}, Usage: ":help", Title: "Help", Help: "Show the help screen.", Kind: KindView},
+		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Kind: KindView},
+		Command{ID: Help, Name: "help", Aliases: []string{"?"}, Usage: ":help", Kind: KindView},
 
 		// --- engine reads ---
-		Command{ID: PatentList, Title: "List patents", Help: "List stored patents.", Kind: KindEngine, Method: proto.MethodPatentList},
-		Command{ID: PatentGet, Title: "Get patent", Help: "Fetch one patent's record.", Kind: KindEngine, Method: proto.MethodPatentGet},
-		Command{ID: PatentRelations, Title: "Patent relations", Help: "List a patent's family-graph edges.", Kind: KindEngine, Method: proto.MethodRelations},
-		Command{ID: ProjectList, Title: "List projects", Help: "List all projects.", Kind: KindEngine, Method: proto.MethodProjectList},
-		Command{ID: ExportIDS, Title: "Export IDS", Help: "Build the Information Disclosure Statement for the selected project.", Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Context{ContextProjects}},
+		Command{ID: PatentList, Kind: KindEngine, Method: proto.MethodPatentList},
+		Command{ID: PatentGet, Kind: KindEngine, Method: proto.MethodPatentGet},
+		Command{ID: PatentRelations, Kind: KindEngine, Method: proto.MethodRelations},
+		Command{ID: ProjectList, Kind: KindEngine, Method: proto.MethodProjectList},
+		Command{ID: ExportIDS, Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Context{ContextProjects}},
 
 		// --- patent membership state (engine) ---
-		Command{ID: MarkStored, Name: "state.stored", Aliases: []string{"stored"}, Usage: ":state.stored", Title: "Mark stored", Help: "Set the selected patent to the stored state.", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: MarkUnderReview, Name: "state.under_review", Aliases: []string{"under-review"}, Usage: ":state.under_review", Title: "Mark under review", Help: "Set the selected patent to under review.", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: MarkIgnored, Name: "state.ignored", Aliases: []string{"ignored"}, Usage: ":state.ignored", Title: "Mark ignored", Help: "Set the selected patent to ignored.", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: MarkDeleted, Name: "state.deleted", Aliases: []string{"deleted"}, Usage: ":state.deleted", Title: "Mark deleted", Help: "Soft-delete the selected patent from the project.", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Title: "Add to project", Help: "Add the selected patent to the active project.", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
+		Command{ID: MarkStored, Name: "state.stored", Aliases: []string{"stored"}, Usage: ":state.stored", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
+		Command{ID: MarkUnderReview, Name: "state.under_review", Aliases: []string{"under-review"}, Usage: ":state.under_review", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
+		Command{ID: MarkIgnored, Name: "state.ignored", Aliases: []string{"ignored"}, Usage: ":state.ignored", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
+		Command{ID: MarkDeleted, Name: "state.deleted", Aliases: []string{"deleted"}, Usage: ":state.deleted", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
+		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
 
 		// --- ingestion (engine) ---
-		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"ingest"}, Usage: ":ingest.family", Title: "Ingest family", Help: "Crawl the selected patent's family graph.", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
-		Command{ID: IngestCancel, Title: "Cancel ingest", Help: "Cancel a running ingest job.", Kind: KindEngine, Method: proto.MethodIngestCancel},
+		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"ingest"}, Usage: ":ingest.family", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: IngestCancel, Kind: KindEngine, Method: proto.MethodIngestCancel},
 
 		// --- projects (engine) ---
-		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create", Title: "Create project", Help: "Create a new project.", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Context{ContextProjects}},
+		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create [NAME]", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Context{ContextProjects}},
 	)
 }

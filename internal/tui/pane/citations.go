@@ -9,6 +9,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/render"
 )
 
@@ -23,10 +24,11 @@ type citationsLoadedMsg struct {
 // RelationKind (citations, cited-by, parents, or children) — so the same pane
 // type serves every family view.
 type Citations struct {
-	client *rpc.Client
-	theme  render.Theme
-	root   domain.PatentNumber
-	kind   domain.RelationKind
+	client   *rpc.Client
+	theme    render.Theme
+	root     domain.PatentNumber
+	kind     domain.RelationKind
+	handlers map[command.ID]cmdHandler
 
 	relations []domain.Relation
 	page      render.Paginator
@@ -37,7 +39,7 @@ type Citations struct {
 
 // NewCitations builds a family-edge pane for one patent and relation kind.
 func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumber, kind domain.RelationKind) *Citations {
-	return &Citations{
+	c := &Citations{
 		client:  client,
 		theme:   theme,
 		root:    root,
@@ -45,6 +47,23 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		page:    render.NewPaginator(10),
 		loading: true,
 	}
+	c.handlers = map[command.ID]cmdHandler{
+		command.NavDown:     func(r int) tea.Cmd { c.page.MoveDown(r); return nil },
+		command.NavUp:       func(r int) tea.Cmd { c.page.MoveUp(r); return nil },
+		command.NavPageDown: func(int) tea.Cmd { c.page.PageDown(); return nil },
+		command.NavPageUp:   func(int) tea.Cmd { c.page.PageUp(); return nil },
+		command.NavTop:      func(int) tea.Cmd { c.page.Top(); return nil },
+		command.NavBottom:   func(int) tea.Cmd { c.page.Bottom(); return nil },
+		command.Refresh:     func(int) tea.Cmd { c.loading = true; return c.load() },
+		command.IngestFamily: func(int) tea.Cmd {
+			number, ok := c.Selection()
+			if !ok {
+				return status(text.StatusNoPatentSelected, true)
+			}
+			return ingestFamilyCmd(c.client, number)
+		},
+	}
+	return c
 }
 
 // Context implements Pane.
@@ -74,34 +93,14 @@ func (c *Citations) load() tea.Cmd {
 
 // Command implements Pane.
 func (c *Citations) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
-	switch id {
-	case command.NavDown:
-		c.page.MoveDown(repeat)
-	case command.NavUp:
-		c.page.MoveUp(repeat)
-	case command.NavPageDown:
-		c.page.PageDown()
-	case command.NavPageUp:
-		c.page.PageUp()
-	case command.NavTop:
-		c.page.Top()
-	case command.NavBottom:
-		c.page.Bottom()
-	case command.Refresh:
-		c.loading = true
-		return c, c.load()
-	case command.IngestFamily:
-		number, ok := c.Selection()
-		if !ok {
-			return c, status("no patent selected", true)
-		}
-		return c, ingestFamilyCmd(c.client, number)
-	case command.MarkStored, command.MarkUnderReview, command.MarkIgnored,
-		command.MarkDeleted, command.AddToProject:
-		return c, projectRequiredCmd()
+	if handler, ok := c.handlers[id]; ok {
+		return c, handler(repeat)
 	}
 	return c, nil
 }
+
+// Handles implements Pane.
+func (c *Citations) Handles() []command.ID { return handlerIDs(c.handlers) }
 
 // Update implements Pane.
 func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {

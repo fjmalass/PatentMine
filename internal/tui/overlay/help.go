@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/render"
 )
@@ -18,36 +19,41 @@ const keyColumnWidth = 18
 // is generated from the command registry and the keymap, so it can never drift
 // out of sync with the bindings that are actually active.
 type Help struct {
-	theme render.Theme
-	lines []string
-	page  render.Paginator
+	catalog  *text.Catalog
+	theme    render.Theme
+	handlers map[command.ID]cmdHandler
+	lines    []string
+	page     render.Paginator
 }
 
 // NewHelp builds the help overlay from the registry and keymap.
-func NewHelp(reg *command.Registry, km *keymap.Keymaps, theme render.Theme) *Help {
-	lines := buildHelpLines(reg, km, theme)
+func NewHelp(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, catalog *text.Catalog) *Help {
+	lines := buildHelpLines(reg, km, theme, catalog)
 	page := render.NewPaginator(12)
 	page.SetTotal(len(lines))
-	return &Help{theme: theme, lines: lines, page: page}
+	h := &Help{catalog: catalog, theme: theme, lines: lines, page: page}
+	h.handlers = map[command.ID]cmdHandler{
+		command.NavDown:     func(r int) tea.Cmd { h.page.MoveDown(r); return nil },
+		command.NavUp:       func(r int) tea.Cmd { h.page.MoveUp(r); return nil },
+		command.NavPageDown: func(int) tea.Cmd { h.page.PageDown(); return nil },
+		command.NavPageUp:   func(int) tea.Cmd { h.page.PageUp(); return nil },
+	}
+	return h
 }
 
 // Title implements Overlay.
-func (h *Help) Title() string { return "Help — key bindings" }
+func (h *Help) Title() string { return h.catalog.T(text.OverlayHelpTitle) }
 
 // Command implements Overlay: navigation scrolls the list.
 func (h *Help) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
-	switch id {
-	case command.NavDown:
-		h.page.MoveDown(repeat)
-	case command.NavUp:
-		h.page.MoveUp(repeat)
-	case command.NavPageDown:
-		h.page.PageDown()
-	case command.NavPageUp:
-		h.page.PageUp()
+	if handler, ok := h.handlers[id]; ok {
+		return h, handler(repeat)
 	}
 	return h, nil
 }
+
+// Handles implements Overlay.
+func (h *Help) Handles() []command.ID { return handlerIDs(h.handlers) }
 
 // View implements Overlay.
 func (h *Help) View(maxW, maxH int) string {
@@ -64,17 +70,17 @@ func (h *Help) View(maxW, maxH int) string {
 }
 
 // buildHelpLines renders the registry+keymap into styled help lines.
-func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Theme) []string {
+func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, catalog *text.Catalog) []string {
 	var lines []string
 
-	section := func(name string, layer *keymap.Layer) {
+	section := func(name text.Key, layer *keymap.Layer) {
 		if layer == nil {
 			return
 		}
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, theme.Title.Render(name))
+		lines = append(lines, theme.Title.Render(catalog.T(name)))
 
 		byCommand := make(map[command.ID][]string)
 		for seq, id := range layer.Bindings() {
@@ -88,7 +94,7 @@ func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Them
 			}
 			sort.Strings(seqs)
 			keyCol := render.Pad(strings.Join(seqs, " / "), keyColumnWidth)
-			label := c.Title
+			label := catalog.T(text.CmdTitle(string(c.ID)))
 			if c.Name != "" {
 				usage := c.Usage
 				if usage == "" {
@@ -101,11 +107,11 @@ func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Them
 		}
 	}
 
-	section("Global", km.Base())
-	section("Catalog", km.Context(command.ContextCatalog))
-	section("Detail", km.Context(command.ContextDetail))
-	section("Citations", km.Context(command.ContextCitations))
-	section("Projects", km.Context(command.ContextProjects))
-	section("Overlay", km.Context(command.ContextOverlay))
+	section(text.HelpSectionGlobal, km.Base())
+	section(text.HelpSectionCatalog, km.Context(command.ContextCatalog))
+	section(text.HelpSectionDetail, km.Context(command.ContextDetail))
+	section(text.HelpSectionCitations, km.Context(command.ContextCitations))
+	section(text.HelpSectionProjects, km.Context(command.ContextProjects))
+	section(text.HelpSectionOverlay, km.Context(command.ContextOverlay))
 	return lines
 }

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/render"
 )
@@ -24,50 +25,54 @@ type promptEntry struct {
 
 // Prompt is a rich command popup for both / palette search and : command entry.
 type Prompt struct {
-	mode  PromptMode
-	ctx   command.Context
-	theme render.Theme
-	all   []promptEntry
-	shown []promptEntry
-	page  render.Paginator
-	query string
-	error string
+	mode     PromptMode
+	ctx      command.Context
+	theme    render.Theme
+	catalog  *text.Catalog
+	handlers map[command.ID]cmdHandler
+	all      []promptEntry
+	shown    []promptEntry
+	page     render.Paginator
+	query    string
+	error    string
 }
 
 // NewPrompt builds a prompt overlay for commands valid in ctx.
-func NewPrompt(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, ctx command.Context, mode PromptMode) *Prompt {
+func NewPrompt(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, catalog *text.Catalog, ctx command.Context, mode PromptMode) *Prompt {
 	cmds := reg.TypedInContext(ctx)
 	all := make([]promptEntry, 0, len(cmds))
 	for _, c := range cmds {
 		all = append(all, promptEntry{command: c, shortcuts: km.Shortcuts(ctx, c.ID)})
 	}
-	p := &Prompt{mode: mode, ctx: ctx, theme: theme, all: all, page: render.NewPaginator(8)}
+	p := &Prompt{mode: mode, ctx: ctx, theme: theme, catalog: catalog, all: all, page: render.NewPaginator(8)}
+	p.handlers = map[command.ID]cmdHandler{
+		command.NavDown:     func(r int) tea.Cmd { p.page.MoveDown(r); return nil },
+		command.NavUp:       func(r int) tea.Cmd { p.page.MoveUp(r); return nil },
+		command.NavPageDown: func(int) tea.Cmd { p.page.PageDown(); return nil },
+		command.NavPageUp:   func(int) tea.Cmd { p.page.PageUp(); return nil },
+	}
 	p.filter()
 	return p
 }
 
 func (p *Prompt) Title() string {
 	if p.mode == PromptDirect {
-		return "Command"
+		return p.catalog.T(text.OverlayCommandTitle)
 	}
-	return "Commands"
+	return p.catalog.T(text.OverlayCommandsTitle)
 }
 
 func (p *Prompt) SourceContext() command.Context { return p.ctx }
 
 func (p *Prompt) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
-	switch id {
-	case command.NavDown:
-		p.page.MoveDown(repeat)
-	case command.NavUp:
-		p.page.MoveUp(repeat)
-	case command.NavPageDown:
-		p.page.PageDown()
-	case command.NavPageUp:
-		p.page.PageUp()
+	if handler, ok := p.handlers[id]; ok {
+		return p, handler(repeat)
 	}
 	return p, nil
 }
+
+// Handles implements Overlay.
+func (p *Prompt) Handles() []command.ID { return handlerIDs(p.handlers) }
 
 func (p *Prompt) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.Type {
@@ -129,10 +134,10 @@ func (p *Prompt) submitInput() string {
 
 func (p *Prompt) inputLine(maxW int) string {
 	prefix := "/"
-	hint := "Filter commands"
+	hint := p.catalog.T(text.PromptFilterHint)
 	if p.mode == PromptDirect {
 		prefix = ":"
-		hint = "Type a dot command"
+		hint = p.catalog.T(text.PromptDirectHint)
 	}
 	input := prefix + " " + p.query
 	if p.query == "" {
@@ -145,7 +150,7 @@ func (p *Prompt) inputLine(maxW int) string {
 
 func (p *Prompt) listView(maxW int) string {
 	if len(p.shown) == 0 {
-		return p.theme.Dim.Render("no matching commands")
+		return p.theme.Dim.Render(p.catalog.T(text.PromptNoMatch))
 	}
 	var b strings.Builder
 	head := render.Pad("SHORTCUT", promptShortcutW) + " " + render.Pad("COMMAND", promptNameW) + " TITLE"
@@ -154,7 +159,8 @@ func (p *Prompt) listView(maxW int) string {
 	for i := start; i < end; i++ {
 		entry := p.shown[i]
 		line := render.Pad(strings.Join(entry.shortcuts, " / "), promptShortcutW) + " " +
-			render.Pad(entry.command.Name, promptNameW) + " " + entry.command.Title
+			render.Pad(entry.command.Name, promptNameW) + " " +
+			p.catalog.T(text.CmdTitle(string(entry.command.ID)))
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {
 			b.WriteString(p.theme.Selected.Render(render.Pad(render.Truncate(line, maxW), maxW)))
@@ -171,13 +177,14 @@ func (p *Prompt) footerLine() string {
 	}
 	selected, ok := p.selected()
 	if !ok {
-		return p.theme.Dim.Render("enter runs the selected command · esc closes")
+		return p.theme.Dim.Render(p.catalog.T(text.PromptRunHint))
 	}
 	usage := selected.command.Usage
 	if usage == "" {
 		usage = ":" + selected.command.Name
 	}
-	return p.theme.HelpKey.Render(usage) + "  " + p.theme.Row.Render(selected.command.Help)
+	help := p.catalog.T(text.CmdHelp(string(selected.command.ID)))
+	return p.theme.HelpKey.Render(usage) + "  " + p.theme.Row.Render(help)
 }
 
 func (p *Prompt) selected() (promptEntry, bool) {
@@ -199,7 +206,7 @@ func (p *Prompt) filter() {
 	}
 	var scored []scoredEntry
 	for _, entry := range p.all {
-		if score, ok := promptScore(entry, needle); ok {
+		if score, ok := promptScore(entry, needle, p.catalog); ok {
 			scored = append(scored, scoredEntry{entry: entry, score: score})
 		}
 	}
@@ -219,17 +226,17 @@ func (p *Prompt) filter() {
 	}
 }
 
-func promptScore(entry promptEntry, needle string) (int, bool) {
+func promptScore(entry promptEntry, needle string, catalog *text.Catalog) (int, bool) {
 	if needle == "" {
 		return 1000, true
 	}
-	fields := []string{entry.command.Name, entry.command.Title, entry.command.Help}
-	for _, alias := range entry.command.Aliases {
-		fields = append(fields, alias)
+	fields := []string{
+		entry.command.Name,
+		catalog.T(text.CmdTitle(string(entry.command.ID))),
+		catalog.T(text.CmdHelp(string(entry.command.ID))),
 	}
-	for _, shortcut := range entry.shortcuts {
-		fields = append(fields, shortcut)
-	}
+	fields = append(fields, entry.command.Aliases...)
+	fields = append(fields, entry.shortcuts...)
 	best := 0
 	found := false
 	for _, field := range fields {

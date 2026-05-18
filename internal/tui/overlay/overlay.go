@@ -4,6 +4,8 @@
 package overlay
 
 import (
+	"slices"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
@@ -15,6 +17,9 @@ type Overlay interface {
 	Title() string
 	// Command applies a resolved command intent (e.g. scrolling).
 	Command(id command.ID, repeat int) (Overlay, tea.Cmd)
+	// Handles reports every command ID the overlay services, so the App's
+	// wiring check can confirm overlay key bindings reach a handler.
+	Handles() []command.ID
 	// View renders the overlay body within maxW columns by maxH rows.
 	View(maxW, maxH int) string
 }
@@ -32,6 +37,19 @@ type ContextSource interface {
 	SourceContext() command.Context
 }
 
+// cmdHandler carries out one command for an overlay.
+type cmdHandler func(repeat int) tea.Cmd
+
+// handlerIDs returns the sorted command IDs of a handler table.
+func handlerIDs(handlers map[command.ID]cmdHandler) []command.ID {
+	ids := make([]command.ID, 0, len(handlers))
+	for id := range handlers {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
 // PromptMode distinguishes palette search from direct command entry.
 type PromptMode string
 
@@ -47,3 +65,18 @@ type PromptSubmitMsg struct {
 
 // PromptCloseMsg asks the app to close the focused prompt overlay.
 type PromptCloseMsg struct{}
+
+// Purpose names what a TextInput overlay is collecting, so the App routes the
+// submitted value to the right action.
+type Purpose string
+
+const (
+	// PurposeCreateProject collects a name for a new project.
+	PurposeCreateProject Purpose = "create-project"
+)
+
+// TextSubmitMsg carries a value entered in a TextInput overlay.
+type TextSubmitMsg struct {
+	Purpose Purpose
+	Value   string
+}

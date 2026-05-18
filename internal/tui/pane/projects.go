@@ -1,7 +1,6 @@
 package pane
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,6 +10,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/render"
 )
 
@@ -25,6 +25,7 @@ type projectsLoadedMsg struct {
 type Projects struct {
 	client        *rpc.Client
 	theme         render.Theme
+	handlers      map[command.ID]cmdHandler
 	splash        bool
 	lastProjectID domain.ProjectID
 	splashFooter  string
@@ -40,12 +41,23 @@ type Projects struct {
 
 // NewProjects builds an empty projects pane.
 func NewProjects(client *rpc.Client, theme render.Theme) *Projects {
-	return &Projects{
+	p := &Projects{
 		client:  client,
 		theme:   theme,
 		page:    render.NewPaginator(10),
 		loading: true,
 	}
+	p.handlers = map[command.ID]cmdHandler{
+		command.NavDown:     func(r int) tea.Cmd { p.page.MoveDown(r); return nil },
+		command.NavUp:       func(r int) tea.Cmd { p.page.MoveUp(r); return nil },
+		command.NavPageDown: func(int) tea.Cmd { p.page.PageDown(); return nil },
+		command.NavPageUp:   func(int) tea.Cmd { p.page.PageUp(); return nil },
+		command.NavTop:      func(int) tea.Cmd { p.page.Top(); return nil },
+		command.NavBottom:   func(int) tea.Cmd { p.page.Bottom(); return nil },
+		command.Refresh:     func(int) tea.Cmd { p.loading = true; return p.load() },
+		command.ExportIDS:   func(int) tea.Cmd { return p.exportCmd() },
+	}
+	return p
 }
 
 // NewSplash builds the startup project-selection screen.
@@ -87,54 +99,20 @@ func (p *Projects) load() tea.Cmd {
 
 // Command implements Pane.
 func (p *Projects) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
-	switch id {
-	case command.NavDown:
-		p.page.MoveDown(repeat)
-	case command.NavUp:
-		p.page.MoveUp(repeat)
-	case command.NavPageDown:
-		p.page.PageDown()
-	case command.NavPageUp:
-		p.page.PageUp()
-	case command.NavTop:
-		p.page.Top()
-	case command.NavBottom:
-		p.page.Bottom()
-	case command.Refresh:
-		p.loading = true
-		return p, p.load()
-	case command.ProjectCreate:
-		return p, p.createCmd()
-	case command.ExportIDS:
-		return p, p.exportCmd()
-	case command.OpenSearch:
-		return p, status("search prompt is not yet wired", false)
+	if handler, ok := p.handlers[id]; ok {
+		return p, handler(repeat)
 	}
 	return p, nil
 }
 
-// createCmd creates a project with a generated name. A name-entry overlay is
-// future work; for now the project can be renamed once that lands.
-func (p *Projects) createCmd() tea.Cmd {
-	client := p.client
-	name := fmt.Sprintf("Project %d", len(p.projects)+1)
-	return func() tea.Msg {
-		ctx, cancel := callContext()
-		defer cancel()
-		var res proto.ProjectResult
-		if err := client.Call(ctx, proto.MethodProjectCreate,
-			proto.ProjectCreateParams{Name: name}, &res); err != nil {
-			return StatusMsg{Text: "create failed: " + err.Error(), Error: true}
-		}
-		return StatusMsg{Text: "created " + res.Project.Name}
-	}
-}
+// Handles implements Pane.
+func (p *Projects) Handles() []command.ID { return handlerIDs(p.handlers) }
 
 // exportCmd builds the IDS for the selected project.
 func (p *Projects) exportCmd() tea.Cmd {
 	project, ok := p.selectedProject()
 	if !ok {
-		return status("no project selected", true)
+		return status(text.StatusNoProjectSelected, true)
 	}
 	client := p.client
 	return func() tea.Msg {
@@ -143,10 +121,9 @@ func (p *Projects) exportCmd() tea.Cmd {
 		var res proto.IDSResult
 		if err := client.Call(ctx, proto.MethodIDSExport,
 			proto.IDSExportParams{Project: project.ID}, &res); err != nil {
-			return StatusMsg{Text: "IDS export failed: " + err.Error(), Error: true}
+			return StatusMsg{Key: text.StatusExportFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Text: fmt.Sprintf("IDS for %q: %d disclosed reference(s)",
-			project.Name, len(res.IDS.Entries))}
+		return StatusMsg{Key: text.StatusExportDone, Args: []any{project.Name, len(res.IDS.Entries)}}
 	}
 }
 
