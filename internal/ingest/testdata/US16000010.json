@@ -1,0 +1,10 @@
+{
+  "number": "US16000010",
+  "title": "Unified invention",
+  "abstract": "Loaded first as an application.",
+  "assignee": "Acme Corp",
+  "inventors": ["Ada Lovelace"],
+  "documents": [
+    {"number": "US16000010", "stage": "application", "date": "2019-02-01"}
+  ]
+}

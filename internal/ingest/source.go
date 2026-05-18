@@ -14,10 +14,12 @@ import (
 // the Crawler should try the next source.
 var ErrNotAvailable = errors.New("ingest: patent not available from this source")
 
-// Result is one patent fetched from a Source, plus the family-graph edges
-// discovered alongside it (citations, cited-by, parents, children).
+// Result is one patent fetched from a Source: the record's bibliographic data,
+// its life-stage documents (application, publication, grant), and the
+// family-graph edges discovered alongside it.
 type Result struct {
 	Patent    domain.Patent
+	Documents []domain.Document
 	Relations []domain.Relation
 }
 

@@ -44,6 +44,17 @@ type Repository interface {
 	// CountPatents returns the total rows matching q, ignoring its paging.
 	CountPatents(ctx context.Context, q PatentQuery) (int, error)
 
+	// SaveDocument inserts or updates one life-stage document of a record.
+	SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error
+	// Documents returns every life-stage document of a record.
+	Documents(ctx context.Context, recordNumber domain.PatentNumber) ([]domain.Document, error)
+	// RecordOf returns the record number a document number belongs to, or
+	// ErrNotFound when the number is unknown.
+	RecordOf(ctx context.Context, number domain.PatentNumber) (domain.PatentNumber, error)
+	// MergeRecords folds the absorb record into keep: documents, memberships,
+	// and relations are repointed and the absorb row is removed.
+	MergeRecords(ctx context.Context, keep, absorb domain.PatentNumber) error
+
 	// SaveRelation inserts a family-graph edge; duplicates are ignored.
 	SaveRelation(ctx context.Context, r domain.Relation) error
 	// Relations returns edges of the given kind originating at n.

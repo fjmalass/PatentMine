@@ -18,19 +18,20 @@ const (
 
 // Progress is an incremental crawl update reported through the emit callback.
 type Progress struct {
-	Fetched int    // Patents fetched (full body) so far.
-	Found   int    // Distinct patents discovered so far (fetched + stub).
+	Fetched int    // Records fetched (full body) so far.
+	Found   int    // Distinct numbers discovered so far (fetched + stub).
 	Message string // Human-readable note about the latest step.
 }
 
 // CrawlConfig bounds a crawl.
 type CrawlConfig struct {
 	MaxDepth   int // BFS depth from the root; <= 0 uses defaultMaxDepth.
-	NodeBudget int // Max patents to fetch; <= 0 uses defaultNodeBudget.
+	NodeBudget int // Max records to fetch; <= 0 uses defaultNodeBudget.
 }
 
 // Crawler walks the patent family graph breadth-first, fetching each node from
-// the source registry and writing patents and relations to the store.
+// the source registry and writing records, documents, and relations to the
+// store.
 type Crawler struct {
 	registry *Registry
 	repo     store.Repository
@@ -48,7 +49,7 @@ func NewCrawler(registry *Registry, repo store.Repository, cfg CrawlConfig) *Cra
 	return &Crawler{registry: registry, repo: repo, cfg: cfg}
 }
 
-// node is one queued patent and its BFS depth from the root.
+// node is one queued patent number and its BFS depth from the root.
 type node struct {
 	number domain.PatentNumber
 	depth  int
@@ -89,7 +90,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		if err != nil {
 			// The patent is referenced but could not be fetched: record a stub
 			// so the edge to it still resolves, and keep crawling.
-			if stubErr := c.ensureStub(ctx, cur.number); stubErr != nil {
+			if _, stubErr := c.ensureRecord(ctx, cur.number); stubErr != nil {
 				return stubErr
 			}
 			report(Progress{
@@ -99,56 +100,164 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			continue
 		}
 
-		if err := c.save(ctx, res, &seen, &queue, cur.depth, depthLimit); err != nil {
+		recordNumber, err := c.saveRecord(ctx, res)
+		if err != nil {
+			return err
+		}
+		if err := c.saveRelations(ctx, recordNumber, res.Relations, cur.depth, depthLimit, seen, &queue); err != nil {
 			return err
 		}
 		fetched++
 		report(Progress{
 			Fetched: fetched, Found: len(seen),
-			Message: fmt.Sprintf("fetched %s", cur.number),
+			Message: fmt.Sprintf("fetched %s", recordNumber),
 		})
 	}
 	return nil
 }
 
-// save persists a fetched patent and its relations, enqueueing in-depth
-// neighbors and recording out-of-depth neighbors as stubs.
-func (c *Crawler) save(ctx context.Context, res Result, seen *map[domain.PatentNumber]bool, queue *[]node, depth, depthLimit int) error {
-	patent := res.Patent
-	patent.FetchState = domain.FetchCached
-	if err := c.repo.SavePatent(ctx, patent); err != nil {
-		return err
+// saveRecord stores a fetched Result as one record and returns the record's
+// permanent number. When the fetched documents already belong to one or more
+// records, the Result is folded into them (merging records that collide).
+func (c *Crawler) saveRecord(ctx context.Context, res Result) (domain.PatentNumber, error) {
+	recordNumber, err := c.resolveRecord(ctx, candidateNumbers(res))
+	if err != nil {
+		return domain.PatentNumber{}, err
 	}
-	for _, rel := range res.Relations {
-		if err := c.repo.SaveRelation(ctx, rel); err != nil {
-			return err
+	if recordNumber.IsZero() {
+		recordNumber = res.Patent.Number
+	}
+
+	existing, err := c.repo.Documents(ctx, recordNumber)
+	if err != nil {
+		return domain.PatentNumber{}, err
+	}
+
+	patent := res.Patent
+	patent.Number = recordNumber
+	patent.FetchState = domain.FetchCached
+	patent.Documents = mergeDocuments(existing, res.Documents)
+	patent.DisplayNumber = patent.NumberToShow()
+	if err := c.repo.SavePatent(ctx, patent); err != nil {
+		return domain.PatentNumber{}, err
+	}
+	for _, doc := range res.Documents {
+		if err := c.repo.SaveDocument(ctx, recordNumber, doc); err != nil {
+			return domain.PatentNumber{}, err
 		}
-		neighbor := rel.To
-		if neighbor.IsZero() || (*seen)[neighbor] {
+	}
+	return recordNumber, nil
+}
+
+// resolveRecord finds which existing record (if any) the candidate numbers
+// belong to. When they belong to several records, those records are merged and
+// the survivor is returned. A zero number means none of them is known yet.
+func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentNumber) (domain.PatentNumber, error) {
+	var records []domain.PatentNumber
+	seen := map[domain.PatentNumber]bool{}
+	for _, n := range candidates {
+		rec, err := c.repo.RecordOf(ctx, n)
+		if errors.Is(err, store.ErrNotFound) {
 			continue
 		}
-		(*seen)[neighbor] = true
-		if depth < depthLimit {
-			*queue = append(*queue, node{number: neighbor, depth: depth + 1})
-		} else if err := c.ensureStub(ctx, neighbor); err != nil {
+		if err != nil {
+			return domain.PatentNumber{}, err
+		}
+		if !seen[rec] {
+			seen[rec] = true
+			records = append(records, rec)
+		}
+	}
+	if len(records) == 0 {
+		return domain.PatentNumber{}, nil
+	}
+	keep := records[0]
+	for _, other := range records[1:] {
+		if err := c.repo.MergeRecords(ctx, keep, other); err != nil {
+			return domain.PatentNumber{}, err
+		}
+	}
+	return keep, nil
+}
+
+// saveRelations records the fetched edges and queues neighbours. Every edge
+// endpoint is resolved to a record number, creating a stub record when the
+// neighbour is new, so an edge always points at real records.
+func (c *Crawler) saveRelations(ctx context.Context, from domain.PatentNumber, relations []domain.Relation, depth, depthLimit int, seen map[domain.PatentNumber]bool, queue *[]node) error {
+	for _, rel := range relations {
+		neighbour := rel.To
+		neighbourRecord, err := c.ensureRecord(ctx, neighbour)
+		if err != nil {
 			return err
+		}
+		if err := c.repo.SaveRelation(ctx, domain.Relation{
+			From: from, To: neighbourRecord, Kind: rel.Kind,
+		}); err != nil {
+			return err
+		}
+		if !seen[neighbour] {
+			seen[neighbour] = true
+			if depth < depthLimit {
+				*queue = append(*queue, node{number: neighbour, depth: depth + 1})
+			}
 		}
 	}
 	return nil
 }
 
-// ensureStub records a placeholder patent when none exists yet, so a relation
-// edge always points at a real row. An existing record is left untouched.
-func (c *Crawler) ensureStub(ctx context.Context, number domain.PatentNumber) error {
-	_, err := c.repo.Patent(ctx, number)
+// ensureRecord returns the record a number belongs to, creating a stub record
+// (a patent row plus one document) when the number is not known yet.
+func (c *Crawler) ensureRecord(ctx context.Context, number domain.PatentNumber) (domain.PatentNumber, error) {
+	rec, err := c.repo.RecordOf(ctx, number)
 	if err == nil {
-		return nil
+		return rec, nil
 	}
 	if !errors.Is(err, store.ErrNotFound) {
-		return err
+		return domain.PatentNumber{}, err
 	}
-	return c.repo.SavePatent(ctx, domain.Patent{
-		Number:     number,
-		FetchState: domain.FetchStub,
-	})
+	stub := domain.Patent{
+		Number:        number,
+		DisplayNumber: number,
+		FetchState:    domain.FetchStub,
+	}
+	if err := c.repo.SavePatent(ctx, stub); err != nil {
+		return domain.PatentNumber{}, err
+	}
+	if err := c.repo.SaveDocument(ctx, number, domain.Document{
+		Number: number,
+		Stage:  domain.GuessStage(number),
+	}); err != nil {
+		return domain.PatentNumber{}, err
+	}
+	return number, nil
+}
+
+// candidateNumbers lists every number that could identify a fetched Result's
+// record: the fetched number and each of its documents.
+func candidateNumbers(res Result) []domain.PatentNumber {
+	numbers := []domain.PatentNumber{res.Patent.Number}
+	for _, d := range res.Documents {
+		numbers = append(numbers, d.Number)
+	}
+	return numbers
+}
+
+// mergeDocuments combines a record's stored documents with newly fetched ones,
+// keyed by number so a fetched document replaces its stored version.
+func mergeDocuments(existing, fetched []domain.Document) []domain.Document {
+	byNumber := make(map[domain.PatentNumber]domain.Document, len(existing)+len(fetched))
+	order := make([]domain.PatentNumber, 0, len(existing)+len(fetched))
+	for _, group := range [][]domain.Document{existing, fetched} {
+		for _, d := range group {
+			if _, ok := byNumber[d.Number]; !ok {
+				order = append(order, d.Number)
+			}
+			byNumber[d.Number] = d
+		}
+	}
+	out := make([]domain.Document, 0, len(order))
+	for _, n := range order {
+		out = append(out, byNumber[n])
+	}
+	return out
 }

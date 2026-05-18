@@ -57,7 +57,25 @@ func (e *Engine) Subscribe() (<-chan proto.Event, func()) {
 
 // Patent returns one patent.
 func (e *Engine) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error) {
-	return e.repo.Patent(ctx, n)
+	record, err := e.recordNumber(ctx, n)
+	if err != nil {
+		return domain.Patent{}, err
+	}
+	return e.repo.Patent(ctx, record)
+}
+
+// recordNumber resolves any of a record's document numbers (application,
+// publication, grant) to the record's permanent number. An unknown number is
+// returned unchanged, so the caller's own lookup reports it as missing.
+func (e *Engine) recordNumber(ctx context.Context, n domain.PatentNumber) (domain.PatentNumber, error) {
+	record, err := e.repo.RecordOf(ctx, n)
+	if err == nil {
+		return record, nil
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return n, nil
+	}
+	return domain.PatentNumber{}, err
 }
 
 // ListPatents returns one page of patents and the unpaged total.
@@ -104,11 +122,17 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (domain.Project
 	return p, nil
 }
 
-// AddToProject adds a patent to a project in the default Stored state.
+// AddToProject adds a patent to a project in the default Stored state. The
+// patent may be given by any of its document numbers; it is resolved to the
+// record before the membership is created.
 func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error {
-	err := e.repo.AddMembership(ctx, domain.Membership{
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return err
+	}
+	err = e.repo.AddMembership(ctx, domain.Membership{
 		Project: project,
-		Patent:  patent,
+		Patent:  record,
 		State:   domain.MembershipStored,
 		AddedAt: time.Now().UTC(),
 	})
@@ -125,14 +149,18 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 	if !target.Valid() {
 		return fmt.Errorf("engine: invalid membership state %q", target)
 	}
-	current, err := e.repo.Membership(ctx, project, patent)
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return err
+	}
+	current, err := e.repo.Membership(ctx, project, record)
 	if err != nil {
 		return err
 	}
 	if !current.State.CanTransitionTo(target) {
 		return fmt.Errorf("engine: cannot move membership from %q to %q", current.State, target)
 	}
-	if err := e.repo.SetMembershipState(ctx, project, patent, target); err != nil {
+	if err := e.repo.SetMembershipState(ctx, project, record, target); err != nil {
 		return err
 	}
 	e.announceChange()
@@ -178,13 +206,33 @@ func (e *Engine) ExportIDS(ctx context.Context, projectID domain.ProjectID) (dom
 		if m.State == domain.MembershipIgnored || m.State == domain.MembershipDeleted {
 			continue // not disclosed to the patent office
 		}
-		entry := domain.IDSEntry{Number: m.Patent}
-		if patent, err := e.repo.Patent(ctx, m.Patent); err == nil {
-			entry.Title = patent.Title
+		patent, err := e.repo.Patent(ctx, m.Patent)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
 		}
-		ids.Entries = append(ids.Entries, entry)
+		if err != nil {
+			return domain.IDS{}, err
+		}
+		doc, ok := idsDocument(patent)
+		if !ok {
+			continue // only an application exists — nothing publishable to disclose
+		}
+		ids.Entries = append(ids.Entries, domain.IDSEntry{
+			Number: doc.Number,
+			Title:  patent.Title,
+		})
 	}
 	return ids, nil
+}
+
+// idsDocument picks the document an IDS should disclose for a record: the
+// grant if it has one, otherwise the publication. A record with only an
+// application has nothing the patent office can be pointed at.
+func idsDocument(p domain.Patent) (domain.Document, bool) {
+	if doc, ok := p.DocumentFor(domain.StageGrant); ok {
+		return doc, true
+	}
+	return p.DocumentFor(domain.StagePublication)
 }
 
 // CancelIngest stops a running or queued ingest job.

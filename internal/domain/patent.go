@@ -9,8 +9,8 @@ import (
 type Source string
 
 const (
-	// SourceFixture is a local test fixture, used before live sources exist.
-	SourceFixture Source = "fixture"
+	// SourceFile is the local file source, used before live sources exist.
+	SourceFile Source = "file"
 	// SourceGoogle is Google Patents.
 	SourceGoogle Source = "google"
 	// SourceJustia is Justia Patents.
@@ -24,7 +24,7 @@ const (
 // Valid reports whether the Source is a known value.
 func (s Source) Valid() bool {
 	switch s {
-	case SourceFixture, SourceGoogle, SourceJustia, SourceUSPTO, SourcePCT:
+	case SourceFile, SourceGoogle, SourceJustia, SourceUSPTO, SourcePCT:
 		return true
 	default:
 		return false
@@ -40,10 +40,18 @@ func ParseSource(s string) (Source, error) {
 	return src, nil
 }
 
-// Patent is the core business object: one patent document. It carries no I/O
-// or UI concerns — persistence lives in package store, display in package tui.
+// Patent is the core business object: one patent record. One record spans the
+// invention's whole life — its application, publication, and grant are all
+// Documents of the same record. It carries no I/O or UI concerns: persistence
+// lives in package store, display in package tui.
 type Patent struct {
-	Number          PatentNumber `json:"number"`
+	// Number is the record's permanent number — the first document number
+	// ever seen for it. It never changes, even after the patent later
+	// publishes, so rows that point at a record stay valid.
+	Number PatentNumber `json:"number"`
+	// DisplayNumber is the number the record should be shown by: the
+	// latest-stage document (grant, else publication, else application).
+	DisplayNumber   PatentNumber `json:"display_number"`
 	Title           string       `json:"title"`
 	Abstract        string       `json:"abstract"`
 	Assignee        string       `json:"assignee"`
@@ -54,9 +62,45 @@ type Patent struct {
 	PublicationDate time.Time    `json:"publication_date"` // Zero when unknown.
 	GrantDate       time.Time    `json:"grant_date"`       // Zero when unknown.
 	FetchedAt       time.Time    `json:"fetched_at"`       // Zero for a stub never fetched.
+	// Documents is the open-ended set of life-stage documents for this record.
+	Documents []Document `json:"documents"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.
 func (p Patent) IsStub() bool {
 	return p.FetchState == FetchStub
+}
+
+// LatestDocument returns the record's furthest-along document — grant over
+// publication over application, breaking ties by date. ok is false when the
+// record has no documents.
+func (p Patent) LatestDocument() (latest Document, ok bool) {
+	for _, d := range p.Documents {
+		switch {
+		case !ok,
+			d.Stage.rank() > latest.Stage.rank(),
+			d.Stage.rank() == latest.Stage.rank() && d.Dated.After(latest.Dated):
+			latest, ok = d, true
+		}
+	}
+	return latest, ok
+}
+
+// NumberToShow returns the number the record should be displayed by: its
+// latest document's number, or the record number when it has no documents.
+func (p Patent) NumberToShow() PatentNumber {
+	if latest, ok := p.LatestDocument(); ok {
+		return latest.Number
+	}
+	return p.Number
+}
+
+// DocumentFor returns the document of the given stage, if the record has one.
+func (p Patent) DocumentFor(stage Stage) (Document, bool) {
+	for _, d := range p.Documents {
+		if d.Stage == stage {
+			return d, true
+		}
+	}
+	return Document{}, false
 }

@@ -104,17 +104,39 @@ func (d *Detail) View(w, _ int) string {
 	}
 	p := d.patent
 	var b strings.Builder
-	d.field(&b, w, "Number", p.Number.String())
+	d.field(&b, w, "Shown as", numberToShow(p).String())
+	d.field(&b, w, "Record key", p.Number.String())
 	d.field(&b, w, "Title", p.Title)
 	d.field(&b, w, "Assignee", p.Assignee)
 	d.field(&b, w, "Inventors", strings.Join(p.Inventors, ", "))
 	d.field(&b, w, "Fetch state", string(p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
-	d.field(&b, w, "Application", dateText(p.ApplicationDate))
-	d.field(&b, w, "Publication", dateText(p.PublicationDate))
-	d.field(&b, w, "Grant", dateText(p.GrantDate))
 	d.field(&b, w, "Abstract", p.Abstract)
+
+	// Every life-stage document — the application stays visible here even once
+	// the patent has published.
+	b.WriteByte('\n')
+	b.WriteString(d.theme.Header.Render("Documents"))
+	b.WriteByte('\n')
+	if len(p.Documents) == 0 {
+		b.WriteString(d.theme.Dim.Render("  (none)"))
+	}
+	for _, doc := range p.Documents {
+		line := "  " + render.Pad(string(doc.Stage), 13) + " " +
+			render.Pad(doc.Number.String(), 20) + " " + dateText(doc.Dated)
+		b.WriteString(d.theme.Row.Render(render.Truncate(line, w)))
+		b.WriteByte('\n')
+	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// numberToShow returns the record's display number, falling back to the
+// record key when no documents set one.
+func numberToShow(p domain.Patent) domain.PatentNumber {
+	if !p.DisplayNumber.IsZero() {
+		return p.DisplayNumber
+	}
+	return p.Number
 }
 
 // field writes one "Label: value" line.

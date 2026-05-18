@@ -25,10 +25,11 @@ var (
 )
 
 // patentNumberPattern matches an optional 2-letter country code, a run of
-// serial digits (which may contain spaces, commas or hyphens), and an optional
-// kind code. Examples: "US11611785B2", "US-11,611,785-B2", "EP1234567A1".
+// serial digits (which may contain spaces, commas, hyphens, or slashes — so
+// application numbers like "16/123,456" parse), and an optional kind code.
+// Examples: "US11611785B2", "US-11,611,785-B2", "EP1234567A1", "US16/123456".
 var patentNumberPattern = regexp.MustCompile(
-	`^([A-Z]{2})?[\s\-]*([0-9][0-9\s,\-]*?)[\s\-]*([A-Z][0-9]?)?$`,
+	`^([A-Z]{2})?[\s\-]*([0-9][0-9\s,\-/]*?)[\s\-]*([A-Z][0-9]?)?$`,
 )
 
 var nonDigit = regexp.MustCompile(`[^0-9]`)
@@ -53,7 +54,7 @@ func ParsePatentNumber(raw string) (PatentNumber, error) {
 }
 
 // MustParsePatentNumber is ParsePatentNumber for compile-time-known literals
-// (tests, fixtures). It panics on error.
+// (tests, samples). It panics on error.
 func MustParsePatentNumber(raw string) PatentNumber {
 	n, err := ParsePatentNumber(raw)
 	if err != nil {

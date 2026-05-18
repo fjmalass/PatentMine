@@ -19,16 +19,16 @@ func openRepo(t *testing.T) *sqlite.Repo {
 	return repo
 }
 
-func newFixtureCrawler(t *testing.T, repo *sqlite.Repo, cfg CrawlConfig) *Crawler {
+func newFileCrawler(t *testing.T, repo *sqlite.Repo, cfg CrawlConfig) *Crawler {
 	t.Helper()
-	registry := NewRegistry(NewFixtureSource("testdata"))
+	registry := NewRegistry(NewFileSource("testdata"))
 	return NewCrawler(registry, repo, cfg)
 }
 
 func TestCrawlWalksFamilyToDepth(t *testing.T) {
 	repo := openRepo(t)
 	ctx := context.Background()
-	crawler := newFixtureCrawler(t, repo, CrawlConfig{})
+	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
 	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1,
@@ -78,7 +78,7 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 	repo := openRepo(t)
 	ctx := context.Background()
-	crawler := newFixtureCrawler(t, repo, CrawlConfig{})
+	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
 	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 0,
@@ -101,7 +101,7 @@ func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 func TestCrawlRespectsNodeBudget(t *testing.T) {
 	repo := openRepo(t)
 	ctx := context.Background()
-	crawler := newFixtureCrawler(t, repo, CrawlConfig{NodeBudget: 2})
+	crawler := newFileCrawler(t, repo, CrawlConfig{NodeBudget: 2})
 
 	var last Progress
 	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 5,
@@ -117,7 +117,7 @@ func TestCrawlCancellation(t *testing.T) {
 	repo := openRepo(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	crawler := newFixtureCrawler(t, repo, CrawlConfig{})
+	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 2, nil)
 	if err == nil {
@@ -125,10 +125,10 @@ func TestCrawlCancellation(t *testing.T) {
 	}
 }
 
-func TestFixtureSourceMissingPatent(t *testing.T) {
-	src := NewFixtureSource("testdata")
+func TestFileSourceMissingPatent(t *testing.T) {
+	src := NewFileSource("testdata")
 	_, err := src.Fetch(context.Background(), domain.MustParsePatentNumber("US9999999B2"))
 	if err != ErrNotAvailable {
-		t.Fatalf("missing fixture err = %v, want ErrNotAvailable", err)
+		t.Fatalf("missing file err = %v, want ErrNotAvailable", err)
 	}
 }

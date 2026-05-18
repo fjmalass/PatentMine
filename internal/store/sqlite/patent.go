@@ -15,7 +15,7 @@ import (
 // patentColumns is the column list, p-aliased, in scanPatent's order.
 const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assignee,
 	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
-	p.grant_date, p.fetched_at`
+	p.grant_date, p.fetched_at, p.display_number`
 
 // SavePatent inserts or updates a patent by its number.
 func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) error {
@@ -29,23 +29,28 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) error {
 	if err != nil {
 		return fmt.Errorf("store/sqlite: encode inventors: %w", err)
 	}
+	// The display number defaults to the record number until documents set it.
+	display := p.DisplayNumber
+	if display.IsZero() {
+		display = p.Number
+	}
 	_, err = r.writer.ExecContext(ctx, `
 		INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 			inventors, fetch_state, source, application_date, publication_date,
-			grant_date, fetched_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			grant_date, fetched_at, display_number)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(number) DO UPDATE SET
 			country=excluded.country, serial=excluded.serial, kind=excluded.kind,
 			title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
 			inventors=excluded.inventors, fetch_state=excluded.fetch_state,
 			source=excluded.source, application_date=excluded.application_date,
 			publication_date=excluded.publication_date, grant_date=excluded.grant_date,
-			fetched_at=excluded.fetched_at`,
+			fetched_at=excluded.fetched_at, display_number=excluded.display_number`,
 		p.Number.Normalized(), p.Number.Country, p.Number.Serial, p.Number.Kind,
 		p.Title, p.Abstract, p.Assignee, string(inventors),
 		string(p.FetchState), string(p.Source),
 		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
-		encodeTime(p.GrantDate), encodeTime(p.FetchedAt))
+		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized())
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
 	}
@@ -63,6 +68,12 @@ func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent
 	if err != nil {
 		return domain.Patent{}, fmt.Errorf("store/sqlite: get patent %s: %w", n, err)
 	}
+	// The detail view needs the full life-stage document set.
+	docs, err := r.Documents(ctx, p.Number)
+	if err != nil {
+		return domain.Patent{}, err
+	}
+	p.Documents = docs
 	return p, nil
 }
 
@@ -133,21 +144,32 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 	return sb.String(), args
 }
 
-// scanPatent reads one patent row in patentColumns order.
+// scanPatent reads one patent row in patentColumns order. It does not load the
+// record's documents — Patent does that for the detail view; list views read
+// only the display_number column.
 func scanPatent(s rowScanner) (domain.Patent, error) {
 	var (
 		p                                domain.Patent
 		country, serial, kind            string
 		inventors, fetchState, source    string
 		appDate, pubDate, grant, fetched string
+		displayNumber                    string
 	)
 	if err := s.Scan(&country, &serial, &kind, &p.Title, &p.Abstract, &p.Assignee,
-		&inventors, &fetchState, &source, &appDate, &pubDate, &grant, &fetched); err != nil {
+		&inventors, &fetchState, &source, &appDate, &pubDate, &grant, &fetched,
+		&displayNumber); err != nil {
 		return domain.Patent{}, err
 	}
 	p.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
 	p.FetchState = domain.FetchState(fetchState)
 	p.Source = domain.Source(source)
+	if displayNumber != "" {
+		shown, err := domain.ParsePatentNumber(displayNumber)
+		if err != nil {
+			return domain.Patent{}, fmt.Errorf("decode display number %q: %w", displayNumber, err)
+		}
+		p.DisplayNumber = shown
+	}
 	if err := json.Unmarshal([]byte(inventors), &p.Inventors); err != nil {
 		return domain.Patent{}, fmt.Errorf("decode inventors: %w", err)
 	}

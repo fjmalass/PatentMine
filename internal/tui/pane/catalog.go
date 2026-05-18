@@ -148,7 +148,7 @@ func (c *Catalog) View(w, h int) string {
 	start, end := c.page.Window()
 	for i := start; i < end; i++ {
 		p := c.patents[i]
-		line := catalogRow(p.Number.String(), string(p.FetchState), p.Title, w)
+		line := catalogRow(numberToShow(p).String(), string(p.FetchState), p.Title, w)
 		b.WriteByte('\n')
 		if i == c.page.Cursor() {
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))

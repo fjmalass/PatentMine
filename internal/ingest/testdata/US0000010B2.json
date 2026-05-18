@@ -1,0 +1,11 @@
+{
+  "number": "US0000010B2",
+  "title": "Unified invention",
+  "abstract": "The same invention, now granted.",
+  "assignee": "Acme Corp",
+  "inventors": ["Ada Lovelace"],
+  "documents": [
+    {"number": "US16000010", "stage": "application", "date": "2019-02-01"},
+    {"number": "US0000010B2", "stage": "grant", "date": "2023-05-01"}
+  ]
+}

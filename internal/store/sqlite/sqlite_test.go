@@ -31,7 +31,7 @@ func samplePatent(number string) domain.Patent {
 		Assignee:   "Acme Corp",
 		Inventors:  []string{"Ada Lovelace", "Alan Turing"},
 		FetchState: domain.FetchCached,
-		Source:     domain.SourceFixture,
+		Source:     domain.SourceFile,
 		GrantDate:  time.Date(2023, 3, 21, 0, 0, 0, 0, time.UTC),
 		FetchedAt:  time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC),
 	}
