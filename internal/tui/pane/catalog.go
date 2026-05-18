@@ -21,6 +21,10 @@ const (
 	colExpires  = 10
 	colTags     = 14
 	colState    = 13
+	colCount    = 6
+	colGaps     = colCount - 1
+	headerRows  = 1
+	defaultPageSize = 10
 )
 
 // sortCols is the ordered set of sort columns, left-to-right.
@@ -72,7 +76,7 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 	c := &Catalog{
 		client:        client,
 		theme:         theme,
-		page:          render.NewPaginator(10),
+		page:          render.NewPaginator(defaultPageSize),
 		loading:       true,
 		sortAscending: true,
 	}
@@ -83,7 +87,7 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.NavPageUp:    func(int) tea.Cmd { return c.move(c.page.PageUp) },
 		command.NavTop:       func(int) tea.Cmd { return c.move(c.page.Top) },
 		command.NavBottom:    func(int) tea.Cmd { return c.move(c.page.Bottom) },
-		command.Refresh:      func(int) tea.Cmd { c.loading = true; return c.load() },
+		command.Refresh:      func(int) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
 		command.SelectVisual: func(int) tea.Cmd { return c.toggleVisual() },
 		command.SelectClear:  func(int) tea.Cmd { c.clearVisual(); return nil },
 		command.IngestFamily: func(int) tea.Cmd { return c.ingestSelected(ingestFamilyDepth) },
@@ -146,6 +150,7 @@ func (c *Catalog) sortNext() tea.Cmd {
 	c.sortColIdx++
 	c.sortAscending = true
 	c.loading = true
+	c.clearVisual()
 	return c.load()
 }
 
@@ -157,6 +162,7 @@ func (c *Catalog) sortPrev() tea.Cmd {
 	c.sortColIdx--
 	c.sortAscending = true
 	c.loading = true
+	c.clearVisual()
 	return c.load()
 }
 
@@ -196,7 +202,7 @@ func (c *Catalog) move(motion func()) tea.Cmd {
 func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	switch m := msg.(type) {
 	case ResizeMsg:
-		pageSize := max(m.Height-1, 1)
+		pageSize := max(m.Height-headerRows, 1)
 		if pageSize != c.page.PageSize() {
 			before := c.page.Offset()
 			c.page.SetPageSize(pageSize)
@@ -228,7 +234,6 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		c.patents = m.patents
 		c.loadedBase = m.offset
 		c.page.SetTotal(m.total)
-		c.clearVisual()
 		if c.page.Offset() != m.offset {
 			c.loading = true
 			return c, c.load()
@@ -287,9 +292,8 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 
 // catColumns returns the column layout, computing the title width from bodyWidth.
 func (c *Catalog) catColumns(bodyWidth int) []catCol {
-	// 5 one-space gaps between 6 columns
-	fixedW := colNumber + colInventor + colExpires + colTags + colState + 5
-	titleW := max(bodyWidth-fixedW, 12)
+	fixedW := colNumber + colInventor + colExpires + colTags + colState + colGaps
+	titleW := max(bodyWidth-fixedW, 1)
 	return []catCol{
 		{"NUMBER",         domain.SortByNumber,   colNumber},
 		{"TITLE",          domain.SortByTitle,    titleW},
@@ -314,7 +318,7 @@ func (c *Catalog) View(w, h int) string {
 		return c.theme.Dim.Render("no patents yet — select a number and press f to ingest its family")
 	}
 
-	c.page.SetPageSize(max(h-1, 1))
+	c.page.SetPageSize(max(h-headerRows, 1))
 	cols := c.catColumns(w)
 	activeSortKey := sortCols[c.sortColIdx]
 
@@ -326,10 +330,10 @@ func (c *Catalog) View(w, h int) string {
 		line := c.renderCatRow(p, cols)
 		b.WriteByte('\n')
 		switch {
-		case absolute == c.page.Cursor():
-			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
 		case c.visualMode && c.inVisualRange(absolute):
 			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
+		case absolute == c.page.Cursor():
+			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
 		default:
 			b.WriteString(c.theme.Row.Render(line))
 		}
