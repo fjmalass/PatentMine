@@ -8,6 +8,8 @@ default_to_workspace = false
 
 [env]
 BINARY = "./cmd/patentmine"
+APP_NAME = "patentmine"
+BIN_DIR = "./bin"
 
 [tasks.build]
 description = "Compile all packages."
@@ -16,7 +18,24 @@ describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --
 commit="$(git rev-parse --short HEAD)"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+version="$describe branch=$branch commit=$commit"
+echo "building patentmine $version"
 go build -ldflags "$ldflags" ./...
+echo "built patentmine $version"
+'''
+
+[tasks.build-binary]
+description = "Build the patentmine CLI binary into ./bin."
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+version="$describe branch=$branch commit=$commit"
+mkdir -p "${BIN_DIR}"
+echo "building patentmine binary $version"
+go build -ldflags "$ldflags" -o "${BIN_DIR}/${APP_NAME}" ${BINARY}
+echo "built ${BIN_DIR}/${APP_NAME} ($version)"
 '''
 
 [tasks.fmt]
@@ -101,6 +120,55 @@ exit 1
 [tasks.restart-daemon]
 description = "Restart the engine daemon in the background."
 dependencies = ["stop-daemon", "start-daemon"]
+
+[tasks.clean-logs]
+description = "Remove dated logs and runtime socket/pid files from the configured app home."
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
+socket="$(echo "$paths" | awk -F= '/^SOCKET=/{print $2}')"
+pid="$(echo "$paths" | awk -F= '/^PID=/{print $2}')"
+mkdir -p "$logs_dir"
+rm -f "$logs_dir"/* "$socket" "$pid"
+echo "cleaned logs/runtime artifacts under $logs_dir"
+'''
+
+[tasks.clean-binaries]
+description = "Remove built CLI binaries from ./bin."
+script = '''
+rm -rf "${BIN_DIR}"
+echo "removed ${BIN_DIR}"
+'''
+
+[tasks.clean-runtime]
+description = "Stop the daemon, then clean logs and runtime artifacts."
+dependencies = ["stop-daemon", "clean-logs"]
+
+[tasks.backup-db]
+description = "Create a timestamped backup copy of the configured database."
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+db_path="$(echo "$paths" | awk -F= '/^DB=/{print $2}')"
+home_dir="$(echo "$paths" | awk -F= '/^HOME=/{print $2}')"
+backup_dir="$home_dir/backups"
+timestamp="$(date +%F-%H%M%S)"
+backup_path="$backup_dir/${APP_NAME}-$timestamp.db"
+if [ ! -f "$db_path" ]; then
+  echo "database not found: $db_path"
+  exit 1
+fi
+mkdir -p "$backup_dir"
+cp "$db_path" "$backup_path"
+echo "database backup created: $backup_path"
+'''
 
 [tasks.run-tui]
 description = "Restart the daemon, then launch the terminal UI."
