@@ -126,7 +126,7 @@ func TestDefaultOverlayStackExcludesPaneBindings(t *testing.T) {
 func TestShortcutsCollectBaseAndContextBindings(t *testing.T) {
 	km := Default()
 	shortcuts := km.Shortcuts(command.ContextProjects, command.ProjectActivate)
-	if len(shortcuts) != 2 || shortcuts[0] != "enter" || shortcuts[1] != "l" {
-		t.Fatalf("Shortcuts(ProjectActivate) = %v, want [enter l]", shortcuts)
+	if len(shortcuts) != 3 || shortcuts[0] != "enter" || shortcuts[1] != "l" || shortcuts[2] != "right" {
+		t.Fatalf("Shortcuts(ProjectActivate) = %v, want [enter l right]", shortcuts)
 	}
 }

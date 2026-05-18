@@ -20,6 +20,7 @@ type TextInput struct {
 	title   text.Key
 	caption text.Key
 	value   string
+	cursor  int // rune index into value
 }
 
 // NewTextInput builds a text-entry overlay. title and caption are catalog keys;
@@ -51,13 +52,31 @@ func (t *TextInput) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		}
 		return t, func() tea.Msg { return TextSubmitMsg{Purpose: t.purpose, Value: value} }, true
 	case tea.KeyBackspace:
-		if t.value != "" {
+		if t.cursor > 0 {
 			runes := []rune(t.value)
-			t.value = string(runes[:len(runes)-1])
+			t.value = string(append(runes[:t.cursor-1], runes[t.cursor:]...))
+			t.cursor--
+		}
+		return t, nil, true
+	case tea.KeyLeft:
+		if t.cursor > 0 {
+			t.cursor--
+		}
+		return t, nil, true
+	case tea.KeyRight:
+		if t.cursor < len([]rune(t.value)) {
+			t.cursor++
 		}
 		return t, nil, true
 	case tea.KeyRunes, tea.KeySpace:
-		t.value += msg.String()
+		runes := []rune(t.value)
+		ins := []rune(msg.String())
+		merged := make([]rune, 0, len(runes)+len(ins))
+		merged = append(merged, runes[:t.cursor]...)
+		merged = append(merged, ins...)
+		merged = append(merged, runes[t.cursor:]...)
+		t.value = string(merged)
+		t.cursor += len(ins)
 		return t, nil, true
 	}
 	return t, nil, true
@@ -68,7 +87,10 @@ func (t *TextInput) View(maxW, _ int) string {
 	var b strings.Builder
 	b.WriteString(t.theme.Row.Render(render.Truncate(t.catalog.T(t.caption), maxW)))
 	b.WriteString("\n\n")
-	input := "> " + t.value + t.theme.Title.Render("█")
+	runes := []rune(t.value)
+	before := string(runes[:t.cursor])
+	after := string(runes[t.cursor:])
+	input := "> " + before + t.theme.Title.Render("█") + after
 	b.WriteString(render.Truncate(input, maxW))
 	b.WriteString("\n\n")
 	b.WriteString(t.theme.Dim.Render(render.Truncate(t.catalog.T(text.TextInputHint), maxW)))

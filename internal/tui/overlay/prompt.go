@@ -34,6 +34,7 @@ type Prompt struct {
 	shown    []promptEntry
 	page     render.Paginator
 	query    string
+	cursor   int // rune index into query
 	error    string
 }
 
@@ -85,13 +86,24 @@ func (p *Prompt) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		}
 		return p, func() tea.Msg { return PromptSubmitMsg{Input: input} }, true
 	case tea.KeyBackspace:
-		if p.query == "" {
+		if p.cursor == 0 {
 			return p, nil, true
 		}
 		runes := []rune(p.query)
-		p.query = string(runes[:len(runes)-1])
+		p.query = string(append(runes[:p.cursor-1], runes[p.cursor:]...))
+		p.cursor--
 		p.error = ""
 		p.filter()
+		return p, nil, true
+	case tea.KeyLeft:
+		if p.cursor > 0 {
+			p.cursor--
+		}
+		return p, nil, true
+	case tea.KeyRight:
+		if p.cursor < len([]rune(p.query)) {
+			p.cursor++
+		}
 		return p, nil, true
 	case tea.KeyUp:
 		p.page.MoveUp(1)
@@ -100,7 +112,14 @@ func (p *Prompt) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		p.page.MoveDown(1)
 		return p, nil, true
 	case tea.KeyRunes, tea.KeySpace:
-		p.query += msg.String()
+		runes := []rune(p.query)
+		ins := []rune(msg.String())
+		merged := make([]rune, 0, len(runes)+len(ins))
+		merged = append(merged, runes[:p.cursor]...)
+		merged = append(merged, ins...)
+		merged = append(merged, runes[p.cursor:]...)
+		p.query = string(merged)
+		p.cursor += len(ins)
 		p.error = ""
 		p.filter()
 		return p, nil, true
@@ -139,11 +158,14 @@ func (p *Prompt) inputLine(maxW int) string {
 		prefix = ":"
 		hint = p.catalog.T(text.PromptDirectHint)
 	}
-	input := prefix + " " + p.query
+	runes := []rune(p.query)
+	before := string(runes[:p.cursor])
+	after := string(runes[p.cursor:])
+	var input string
 	if p.query == "" {
-		input += p.theme.Dim.Render(" " + hint)
+		input = prefix + " " + p.theme.Title.Render("█") + p.theme.Dim.Render(" "+hint)
 	} else {
-		input += p.theme.Title.Render("█")
+		input = prefix + " " + before + p.theme.Title.Render("█") + after
 	}
 	return render.Truncate(input, maxW)
 }

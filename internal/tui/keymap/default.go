@@ -78,6 +78,8 @@ func Default() *Keymaps {
 		"Q":      command.Quit,
 		"?":      command.Help,
 		"q":      command.Back,
+		"h":      command.Back,
+		"left":   command.Back,
 		":":      command.OpenCommand,
 	})
 
@@ -85,12 +87,13 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
-			"enter":  command.OpenDetail,
-			"l":      command.OpenDetail,
-			"c":      command.OpenCitations,
-			"b":      command.OpenCitedBy,
-			"p":      command.OpenProjects,
-			"/":      command.OpenSearch,
+			"enter": command.OpenDetail,
+			"l":     command.OpenDetail,
+			"right": command.OpenDetail,
+			"c":     command.OpenCitations,
+			"b":     command.OpenCitedBy,
+			"p":     command.OpenProjects,
+			"/":     command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
 
@@ -110,22 +113,24 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
-			"enter":  command.OpenDetail,
-			"l":      command.OpenDetail,
-			"p":      command.OpenProjects,
-			"/":      command.OpenSearch,
+			"enter": command.OpenDetail,
+			"l":     command.OpenDetail,
+			"right": command.OpenDetail,
+			"p":     command.OpenProjects,
+			"/":     command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
 
 	projects := NewLayer("projects", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
-			"enter":  command.ProjectActivate,
-			"l":      command.ProjectActivate,
-			"u":      command.ProjectClearActive,
-			"n":      command.ProjectCreate,
-			"I":      command.ExportIDS,
-			"/":      command.OpenSearch,
+			"enter": command.ProjectActivate,
+			"l":     command.ProjectActivate,
+			"right": command.ProjectActivate,
+			"u":     command.ProjectClearActive,
+			"n":     command.ProjectCreate,
+			"I":     command.ExportIDS,
+			"/":     command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
 
