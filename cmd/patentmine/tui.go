@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,9 +21,16 @@ func runTUI(_ []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	telemetry, err := openObservability(cfg, "tui")
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = telemetry.Close() }()
+	telemetry.Logger.Info("tui starting", slog.String("socket_path", cfg.SocketPath))
 
 	client, err := rpc.Dial(cfg.SocketPath)
 	if err != nil {
+		telemetry.Logger.Error("dial daemon failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
 		fmt.Fprintf(os.Stderr, "patentmine: cannot reach the daemon at %s\n", cfg.SocketPath)
 		fmt.Fprintln(os.Stderr, "start it first in another terminal:  patentmine serve")
 		return 1
@@ -31,12 +39,15 @@ func runTUI(_ []string) int {
 
 	registry, err := command.Default()
 	if err != nil {
+		telemetry.Logger.Error("build command registry failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
 
 	app := tui.New(client, registry, keymap.Default())
 	if _, err := tea.NewProgram(app, tea.WithAltScreen()).Run(); err != nil {
+		telemetry.Logger.Error("tui run failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
+	telemetry.Logger.Info("tui stopped")
 	return 0
 }

@@ -7,9 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
 )
@@ -22,25 +25,51 @@ const ingestWorkers = 4
 // works for tests, the real crawler is wired in at daemon startup.
 type IngestFactory func(root domain.PatentNumber, depth int) Job
 
+// Option customizes an Engine.
+type Option func(*Engine)
+
 // Engine is the daemon core. Its methods are the single set of operations the
 // system supports; RPC handlers and embedded callers both go through them.
 type Engine struct {
-	repo   store.Repository
-	bus    *Bus
-	pool   *workerPool
-	ingest IngestFactory
+	repo       store.Repository
+	bus        *Bus
+	pool       *workerPool
+	ingest     IngestFactory
+	logger     *slog.Logger
+	activities *observability.Recorder
+}
+
+// WithLogger records structured logs for engine operations.
+func WithLogger(logger *slog.Logger) Option {
+	return func(e *Engine) {
+		if logger != nil {
+			e.logger = logger
+		}
+	}
+}
+
+// WithActivityRecorder enables semantic activity journaling.
+func WithActivityRecorder(rec *observability.Recorder) Option {
+	return func(e *Engine) {
+		e.activities = rec
+	}
 }
 
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx
 // stops all background work. ingest may be nil if no crawl will be started.
-func New(ctx context.Context, repo store.Repository, ingest IngestFactory) *Engine {
+func New(ctx context.Context, repo store.Repository, ingest IngestFactory, opts ...Option) *Engine {
 	bus := NewBus()
-	return &Engine{
+	eng := &Engine{
 		repo:   repo,
 		bus:    bus,
 		pool:   newWorkerPool(ctx, ingestWorkers, bus),
 		ingest: ingest,
+		logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
+	for _, opt := range opts {
+		opt(eng)
+	}
+	return eng
 }
 
 // Close stops the worker pool and the event bus. The store is not closed here:
@@ -93,9 +122,20 @@ func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) ([]domain
 
 // SavePatent inserts or updates a patent and announces the change.
 func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) error {
+	before, _ := e.existingPatent(ctx, p.Number)
 	if err := e.repo.SavePatent(ctx, p); err != nil {
+		e.log(ctx, slog.LevelError, "save patent failed", slog.String("number", p.Number.String()), slog.String("error", err.Error()))
 		return err
 	}
+	e.log(ctx, slog.LevelInfo, "patent saved", slog.String("number", p.Number.String()))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "patent.save",
+		Entity:   "patent",
+		EntityID: p.Number.String(),
+		Status:   "committed",
+		Before:   before,
+		After:    p,
+	})
 	e.announceChange()
 	return nil
 }
@@ -116,8 +156,17 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (domain.Project
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := e.repo.SaveProject(ctx, p); err != nil {
+		e.log(ctx, slog.LevelError, "create project failed", slog.String("name", name), slog.String("error", err.Error()))
 		return domain.Project{}, err
 	}
+	e.log(ctx, slog.LevelInfo, "project created", slog.String("project_id", string(p.ID)), slog.String("name", p.Name))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "project.create",
+		Entity:   "project",
+		EntityID: string(p.ID),
+		Status:   "committed",
+		After:    p,
+	})
 	e.announceChange()
 	return p, nil
 }
@@ -130,15 +179,33 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	if err != nil {
 		return err
 	}
-	err = e.repo.AddMembership(ctx, domain.Membership{
+	before, _ := e.existingMembership(ctx, project, record)
+	after := domain.Membership{
 		Project: project,
 		Patent:  record,
 		State:   domain.MembershipStored,
 		AddedAt: time.Now().UTC(),
+	}
+	err = e.repo.AddMembership(ctx, domain.Membership{
+		Project: after.Project,
+		Patent:  after.Patent,
+		State:   after.State,
+		AddedAt: after.AddedAt,
 	})
 	if err != nil {
+		e.log(ctx, slog.LevelError, "add membership failed", slog.String("project_id", string(project)), slog.String("patent", patent.String()), slog.String("error", err.Error()))
 		return err
 	}
+	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "membership.add",
+		Entity:   "membership",
+		EntityID: string(project) + "/" + record.String(),
+		Status:   "committed",
+		Before:   before,
+		After:    after,
+		Metadata: map[string]any{"requested_number": patent.String()},
+	})
 	e.announceChange()
 	return nil
 }
@@ -161,8 +228,21 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 		return fmt.Errorf("engine: cannot move membership from %q to %q", current.State, target)
 	}
 	if err := e.repo.SetMembershipState(ctx, project, record, target); err != nil {
+		e.log(ctx, slog.LevelError, "set membership state failed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("target", string(target)), slog.String("error", err.Error()))
 		return err
 	}
+	after := current
+	after.State = target
+	e.log(ctx, slog.LevelInfo, "membership state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("from", string(current.State)), slog.String("to", string(target)))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "membership.set_state",
+		Entity:   "membership",
+		EntityID: string(project) + "/" + record.String(),
+		Status:   "committed",
+		Before:   current,
+		After:    after,
+		Metadata: map[string]any{"requested_number": patent.String()},
+	})
 	e.announceChange()
 	return nil
 }
@@ -175,7 +255,20 @@ func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (JobID, 
 	if root.IsZero() {
 		return "", errors.New("engine: ingest root must not be empty")
 	}
-	return e.pool.submit(e.ingest(root, depth))
+	id, err := e.pool.submit(e.ingest(root, depth))
+	if err != nil {
+		e.log(context.Background(), slog.LevelError, "ingest enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("error", err.Error()))
+		return "", err
+	}
+	e.log(context.Background(), slog.LevelInfo, "ingest enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth))
+	e.recordActivity(context.Background(), observability.Record{
+		Action:   "ingest.start",
+		Entity:   "job",
+		EntityID: string(id),
+		Status:   "queued",
+		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth},
+	})
+	return id, nil
 }
 
 // Relations returns family-graph edges of one kind from a patent.
@@ -240,10 +333,52 @@ func (e *Engine) CancelIngest(id JobID) error {
 	if !e.pool.cancel(id) {
 		return fmt.Errorf("engine: no such job %q", id)
 	}
+	e.log(context.Background(), slog.LevelInfo, "ingest cancelled", slog.String("job_id", string(id)))
+	e.recordActivity(context.Background(), observability.Record{
+		Action:   "ingest.cancel",
+		Entity:   "job",
+		EntityID: string(id),
+		Status:   "committed",
+		After:    map[string]any{"job_id": string(id), "cancelled": true},
+	})
 	return nil
 }
 
 // announceChange notifies subscribers that stored data changed.
 func (e *Engine) announceChange() {
 	e.bus.Publish(proto.NewEvent(proto.EventDBChanged, proto.Empty{}))
+}
+
+func (e *Engine) existingPatent(ctx context.Context, n domain.PatentNumber) (domain.Patent, bool) {
+	p, err := e.repo.Patent(ctx, n)
+	if err == nil {
+		return p, true
+	}
+	return domain.Patent{}, false
+}
+
+func (e *Engine) existingMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, bool) {
+	m, err := e.repo.Membership(ctx, project, patent)
+	if err == nil {
+		return m, true
+	}
+	return domain.Membership{}, false
+}
+
+func (e *Engine) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
+	logger := observability.WithContextAttrs(ctx, e.logger)
+	args := make([]any, 0, len(attrs))
+	for _, attr := range attrs {
+		args = append(args, attr)
+	}
+	logger.Log(ctx, level, msg, args...)
+}
+
+func (e *Engine) recordActivity(ctx context.Context, rec observability.Record) {
+	if e.activities == nil {
+		return
+	}
+	if err := e.activities.Record(ctx, rec); err != nil {
+		e.log(ctx, slog.LevelWarn, "activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
+	}
 }

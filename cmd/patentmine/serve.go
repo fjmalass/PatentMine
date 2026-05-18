@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	"patentmine/internal/config"
 	"patentmine/internal/engine"
 	"patentmine/internal/ingest"
+	"patentmine/internal/observability"
 	"patentmine/internal/rpc"
 	"patentmine/internal/store/sqlite"
 )
@@ -30,52 +32,71 @@ func runServe(_ []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	telemetry, err := openObservability(cfg, "daemon")
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = telemetry.Close() }()
+	telemetry.Logger.InfoContext(ctx, "daemon starting",
+		slog.String("db_path", cfg.DBPath),
+		slog.String("socket_path", cfg.SocketPath),
+		slog.String("logs_dir", cfg.LogsDir))
 
 	repo, err := sqlite.Open(ctx, cfg.DBPath)
 	if err != nil {
+		telemetry.Logger.ErrorContext(ctx, "open sqlite failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
 	defer func() { _ = repo.Close() }()
 
-	eng, err := buildEngine(ctx, cfg, repo)
+	eng, err := buildEngine(ctx, cfg, repo, telemetry)
 	if err != nil {
+		telemetry.Logger.ErrorContext(ctx, "build engine failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
 	defer eng.Close()
 
 	if err := writePIDFile(cfg.PIDPath); err != nil {
+		telemetry.Logger.ErrorContext(ctx, "write pid file failed", slog.String("pid_path", cfg.PIDPath), slog.String("error", err.Error()))
 		return fail(err)
 	}
 	defer func() { _ = os.Remove(cfg.PIDPath) }()
 
 	// Clear a socket left behind by a previous run before binding.
 	if err := os.Remove(cfg.SocketPath); err != nil && !os.IsNotExist(err) {
+		telemetry.Logger.ErrorContext(ctx, "remove stale socket failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
 		return fail(err)
 	}
 	ln, err := net.Listen("unix", cfg.SocketPath)
 	if err != nil {
+		telemetry.Logger.ErrorContext(ctx, "listen failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
 		return fail(err)
 	}
 	defer func() { _ = os.Remove(cfg.SocketPath) }()
 
 	fmt.Printf("patentmine daemon listening on %s\n", cfg.SocketPath)
+	telemetry.Logger.InfoContext(ctx, "daemon listening", slog.String("socket_path", cfg.SocketPath))
 	if err := rpc.NewServer(eng).Serve(ctx, ln); err != nil {
+		telemetry.Logger.ErrorContext(ctx, "rpc server stopped with error", slog.String("error", err.Error()))
 		return fail(err)
 	}
 	fmt.Println("patentmine daemon stopped")
+	telemetry.Logger.InfoContext(ctx, "daemon stopped")
 	return 0
 }
 
 // buildEngine assembles the ingest pipeline and the engine. The default source
 // registry is file-only; web sources are added once their parsers land.
-func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo) (*engine.Engine, error) {
+func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, telemetry *observability.Runtime) (*engine.Engine, error) {
 	patentsDir := filepath.Join(cfg.HomeDir, patentsDirName)
 	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
 		return nil, err
 	}
 	registry := ingest.NewRegistry(ingest.NewFileSource(patentsDir))
 	crawler := ingest.NewCrawler(registry, repo, ingest.CrawlConfig{})
-	return engine.New(ctx, repo, ingest.Factory(crawler)), nil
+	return engine.New(ctx, repo, ingest.Factory(crawler),
+		engine.WithLogger(telemetry.Logger),
+		engine.WithActivityRecorder(telemetry.Activity)), nil
 }
 
 // fail prints err and returns the failure exit code.

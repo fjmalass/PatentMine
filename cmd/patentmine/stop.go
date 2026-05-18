@@ -1,8 +1,12 @@
+// Command patentmine daemon stop control. This file implements the `stop`
+// subcommand, which reads the daemon pid file, signals the running process,
+// waits for shutdown, and records control-plane logs for that lifecycle action.
 package main
 
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -20,12 +24,19 @@ func runStop(_ []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	telemetry, err := openObservability(cfg, "control")
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = telemetry.Close() }()
 	pid, err := readPIDFile(cfg.PIDPath)
 	if errors.Is(err, os.ErrNotExist) {
+		telemetry.Logger.Info("stop requested but daemon not running")
 		fmt.Println("patentmine daemon is not running")
 		return 0
 	}
 	if err != nil {
+		telemetry.Logger.Error("read pid file failed", slog.String("pid_path", cfg.PIDPath), slog.String("error", err.Error()))
 		return fail(err)
 	}
 	proc, err := os.FindProcess(pid)
@@ -35,14 +46,18 @@ func runStop(_ []string) int {
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
 			_ = os.Remove(cfg.PIDPath)
+			telemetry.Logger.Info("stale pid file removed", slog.Int("pid", pid), slog.String("pid_path", cfg.PIDPath))
 			fmt.Println("patentmine daemon is not running")
 			return 0
 		}
+		telemetry.Logger.Error("signal daemon failed", slog.Int("pid", pid), slog.String("error", err.Error()))
 		return fail(err)
 	}
+	telemetry.Logger.Info("daemon stop signaled", slog.Int("pid", pid))
 	deadline := time.Now().Add(stopTimeout)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(cfg.PIDPath); errors.Is(err, os.ErrNotExist) {
+			telemetry.Logger.Info("daemon stopped", slog.Int("pid", pid))
 			fmt.Println("patentmine daemon stopped")
 			return 0
 		}

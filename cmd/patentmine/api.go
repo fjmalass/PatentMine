@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,9 +29,16 @@ func runAPI(_ []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	telemetry, err := openObservability(cfg, "api")
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = telemetry.Close() }()
+	telemetry.Logger.InfoContext(ctx, "api starting", slog.String("socket_path", cfg.SocketPath))
 
 	client, err := rpc.Dial(cfg.SocketPath)
 	if err != nil {
+		telemetry.Logger.ErrorContext(ctx, "dial daemon failed", slog.String("socket_path", cfg.SocketPath), slog.String("error", err.Error()))
 		fmt.Fprintf(os.Stderr, "patentmine: cannot reach the daemon at %s\n", cfg.SocketPath)
 		fmt.Fprintln(os.Stderr, "start it first in another terminal:  patentmine serve")
 		return 1
@@ -39,6 +47,7 @@ func runAPI(_ []string) int {
 
 	registry, err := command.Default()
 	if err != nil {
+		telemetry.Logger.ErrorContext(ctx, "build command registry failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
 
@@ -48,9 +57,12 @@ func runAPI(_ []string) int {
 	}
 
 	fmt.Printf("patentmine web API listening on http://%s\n", addr)
+	telemetry.Logger.InfoContext(ctx, "api listening", slog.String("addr", addr))
 	if err := api.NewServer(client, registry).ListenAndServe(ctx, addr); err != nil {
+		telemetry.Logger.ErrorContext(ctx, "api serve failed", slog.String("error", err.Error()))
 		return fail(err)
 	}
 	fmt.Println("patentmine web API stopped")
+	telemetry.Logger.InfoContext(ctx, "api stopped")
 	return 0
 }

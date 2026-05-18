@@ -14,6 +14,7 @@ const (
 	EnvHome = "PATENTMINE_HOME"
 
 	dbFileName     = "patentmine.db"
+	logsDirName    = "logs"
 	pidFileName    = "patentmine.pid"
 	socketFileName = "patentmine.sock"
 	dirPerm        = 0o755
@@ -23,6 +24,7 @@ const (
 type Config struct {
 	HomeDir    string // Base directory; created if absent.
 	DBPath     string // SQLite database file.
+	LogsDir    string // Runtime logs and activity directory.
 	PIDPath    string // Daemon pid file.
 	SocketPath string // Unix domain socket for the daemon.
 }
@@ -44,6 +46,7 @@ func Load() (Config, error) {
 	return Config{
 		HomeDir:    home,
 		DBPath:     filepath.Join(home, dbFileName),
+		LogsDir:    filepath.Join(home, logsDirName),
 		PIDPath:    filepath.Join(home, pidFileName),
 		SocketPath: filepath.Join(home, socketFileName),
 	}, nil
