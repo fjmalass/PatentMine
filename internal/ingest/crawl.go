@@ -74,10 +74,19 @@ type node struct {
 	depth  int
 }
 
+// fetch retrieves one patent. A force fetch skips the local file cache so the
+// crawl re-pulls from the web even when a cached file exists.
+func (c *Crawler) fetch(ctx context.Context, number domain.PatentNumber, force bool) (Result, error) {
+	if force {
+		return c.registry.FetchExcluding(ctx, number, domain.SourceFile)
+	}
+	return c.registry.Fetch(ctx, number)
+}
+
 // Crawl performs a bounded breadth-first walk from root. A negative maxDepth
-// uses the configured depth; zero crawls the root only. emit, which may be
-// nil, receives progress.
-func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, emit func(Progress)) error {
+// uses the configured depth; zero crawls the root only. force bypasses the
+// local file cache. emit, which may be nil, receives progress.
+func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, force bool, emit func(Progress)) error {
 	start := time.Now()
 	failed := true
 	defer func() {
@@ -116,7 +125,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		cur := queue[0]
 		queue = queue[1:]
 
-		res, err := c.registry.Fetch(ctx, cur.number)
+		res, err := c.fetch(ctx, cur.number, force)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}

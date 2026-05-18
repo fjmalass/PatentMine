@@ -31,6 +31,7 @@ func runTUI(_ []string) int {
 	defer func() { _ = telemetry.Close() }()
 	telemetry.Logger.Info("tui starting", slog.String("socket_path", cfg.SocketPath))
 	fmt.Fprintf(os.Stderr, "patentmine tui %s\n", appversion.String())
+	reportPaths(os.Stderr, cfg)
 
 	client, err := rpc.Dial(cfg.SocketPath)
 	if err != nil {

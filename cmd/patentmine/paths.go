@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"patentmine/internal/config"
 )
@@ -19,4 +20,14 @@ func runPaths(_ []string) int {
 		cfg.HomeDir, cfg.DBPath, cfg.PIDPath, cfg.SocketPath)
 	fmt.Printf("LOGS=%s\n", cfg.LogsDir)
 	return 0
+}
+
+// reportPaths writes the resolved runtime locations in human-readable form.
+// Entrypoints print it on startup so a user always knows where their database
+// and logs live.
+func reportPaths(w io.Writer, cfg config.Config) {
+	fmt.Fprintf(w, "  home    %s\n", cfg.HomeDir)
+	fmt.Fprintf(w, "  db      %s\n", cfg.DBPath)
+	fmt.Fprintf(w, "  logs    %s\n", cfg.LogsDir)
+	fmt.Fprintf(w, "  socket  %s\n", cfg.SocketPath)
 }

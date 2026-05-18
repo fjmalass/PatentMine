@@ -33,6 +33,7 @@ type patentFile struct {
 	ApplicationDate string         `json:"application_date"`
 	PublicationDate string         `json:"publication_date"`
 	GrantDate       string         `json:"grant_date"`
+	FirstClaim      string         `json:"first_claim"`
 	Documents       []fileDocument `json:"documents"`
 	Cites           []string       `json:"cites"`
 	CitedBy         []string       `json:"cited_by"`
@@ -81,6 +82,7 @@ func fileToResult(number domain.PatentNumber, file patentFile) (Result, error) {
 		Abstract:   file.Abstract,
 		Assignee:   file.Assignee,
 		Inventors:  file.Inventors,
+		FirstClaim: file.FirstClaim,
 		FetchState: domain.FetchCached,
 		Source:     domain.SourceFile,
 		FetchedAt:  time.Now().UTC(),
@@ -105,6 +107,37 @@ func fileToResult(number domain.PatentNumber, file patentFile) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Patent: patent, Documents: documents, Relations: relations}, nil
+}
+
+// ImportFile loads a patent record from a local fixture file (the patentFile
+// JSON shape) into the store, including its citation and family edges. It
+// satisfies engine.FileImporter, so the engine can import a file without
+// importing the ingest package.
+func (c *Crawler) ImportFile(ctx context.Context, path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("ingest: read fixture %s: %w", path, err)
+	}
+	var file patentFile
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return fmt.Errorf("ingest: decode fixture %s: %w", path, err)
+	}
+	number, err := domain.ParsePatentNumber(file.Number)
+	if err != nil {
+		return fmt.Errorf("ingest: fixture %s has an invalid number %q: %w", path, file.Number, err)
+	}
+	res, err := fileToResult(number, file)
+	if err != nil {
+		return err
+	}
+	recordNumber, err := c.saveRecord(ctx, res)
+	if err != nil {
+		return err
+	}
+	// depth 0 with limit 0: edges are saved and neighbour stubs created, but no
+	// neighbour is queued for crawling.
+	queue := []node{}
+	return c.saveRelations(ctx, recordNumber, res.Relations, 0, 0, map[domain.PatentNumber]bool{}, &queue)
 }
 
 // fileDocuments reads the life-stage documents. When a file lists none, one is

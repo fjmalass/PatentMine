@@ -53,6 +53,93 @@ func TestEngineProjectLifecycle(t *testing.T) {
 	}
 }
 
+// TestEngineAddToProjectCreatesStubForUnknownPatent covers adding a patent that
+// has never been fetched: the engine records it as a stub so the membership
+// foreign key is satisfied.
+func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
+	eng, _ := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	number := domain.MustParsePatentNumber("AU607081B2")
+	if err := eng.AddToProject(ctx, project.ID, number); err != nil {
+		t.Fatalf("AddToProject for an unfetched patent: %v", err)
+	}
+	stub, err := eng.Patent(ctx, number)
+	if err != nil {
+		t.Fatalf("Patent after add: %v", err)
+	}
+	if !stub.IsStub() {
+		t.Fatalf("added patent fetch state = %q, want stub", stub.FetchState)
+	}
+}
+
+// TestEngineAddToProjectAutoFetchesNewStub checks that adding a never-seen
+// patent enqueues a single-patent fetch (depth 0) so the record fills in.
+func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {
+	gotDepth := make(chan int, 1)
+	factory := func(_ domain.PatentNumber, depth int, _ bool) Job {
+		gotDepth <- depth
+		return JobFunc(func(context.Context, JobID, func(proto.Event)) error { return nil })
+	}
+	eng, _ := newTestEngine(t, factory)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := eng.AddToProject(ctx, project.ID, domain.MustParsePatentNumber("AU607081B2")); err != nil {
+		t.Fatalf("AddToProject: %v", err)
+	}
+	select {
+	case depth := <-gotDepth:
+		if depth != 0 {
+			t.Fatalf("auto-fetch depth = %d, want 0 (root only)", depth)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("AddToProject did not auto-fetch a newly added patent")
+	}
+}
+
+type fakeImporter struct{ path string }
+
+func (f *fakeImporter) ImportFile(_ context.Context, path string) error {
+	f.path = path
+	return nil
+}
+
+func TestEngineImportFileDelegatesToImporter(t *testing.T) {
+	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "import.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer func() { _ = repo.Close() }()
+
+	fake := &fakeImporter{}
+	eng := New(ctx, repo, nil, WithFileImporter(fake))
+	defer eng.Close()
+
+	if err := eng.ImportFile(ctx, "fixtures/US11611785B2.json"); err != nil {
+		t.Fatalf("ImportFile: %v", err)
+	}
+	if fake.path != "fixtures/US11611785B2.json" {
+		t.Fatalf("importer received path %q", fake.path)
+	}
+}
+
+func TestEngineImportFileWithoutImporterFails(t *testing.T) {
+	eng, _ := newTestEngine(t, nil)
+	if err := eng.ImportFile(context.Background(), "x.json"); err == nil {
+		t.Fatal("ImportFile without a configured importer should fail")
+	}
+}
+
 func TestEngineEnforcesMembershipTransitions(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
 	ctx := context.Background()
@@ -87,7 +174,7 @@ func TestEngineEnforcesMembershipTransitions(t *testing.T) {
 }
 
 func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
-	factory := func(root domain.PatentNumber, _ int) Job {
+	factory := func(root domain.PatentNumber, _ int, _ bool) Job {
 		return JobFunc(func(_ context.Context, id JobID, emit func(proto.Event)) error {
 			emit(proto.NewEvent(proto.EventIngestProgress, proto.IngestProgress{
 				JobID: string(id), Found: 1, Message: "crawled " + root.String(),
@@ -100,7 +187,7 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 	events, unsub := eng.Subscribe()
 	defer unsub()
 
-	jobID, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1)
+	jobID, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, false)
 	if err != nil {
 		t.Fatalf("StartFamilyIngest: %v", err)
 	}
@@ -134,7 +221,7 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 
 func TestEngineIngestWithoutFactoryFails(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
-	if _, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1); err == nil {
+	if _, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, false); err == nil {
 		t.Fatal("StartFamilyIngest without a factory should fail")
 	}
 }

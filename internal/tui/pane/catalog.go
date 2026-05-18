@@ -61,11 +61,10 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.NavBottom:   func(int) tea.Cmd { return c.move(c.page.Bottom) },
 		command.Refresh:     func(int) tea.Cmd { c.loading = true; return c.load() },
 		command.IngestFamily: func(int) tea.Cmd {
-			number, ok := c.Selection()
-			if !ok {
-				return status(text.StatusNoPatentSelected, true)
-			}
-			return ingestFamilyCmd(c.client, number)
+			return c.ingestSelected(ingestFamilyDepth)
+		},
+		command.FetchPatent: func(int) tea.Cmd {
+			return c.ingestSelected(ingestPatentDepth)
 		},
 	}
 	return c
@@ -117,6 +116,15 @@ func (c *Catalog) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
 
 // Handles implements Pane.
 func (c *Catalog) Handles() []command.ID { return handlerIDs(c.handlers) }
+
+// ingestSelected enqueues an ingest for the highlighted patent.
+func (c *Catalog) ingestSelected(depth int) tea.Cmd {
+	number, ok := c.Selection()
+	if !ok {
+		return status(text.StatusNoPatentSelected, true)
+	}
+	return IngestCmd(c.client, number, depth, false)
+}
 
 // move runs a cursor motion and reloads the page when the visible window
 // scrolled to a new offset.

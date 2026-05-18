@@ -26,6 +26,7 @@ const (
 	MethodMembershipState Method = "membership.set_state"
 	MethodIngestFamily    Method = "ingest.family"
 	MethodIngestCancel    Method = "ingest.cancel"
+	MethodImportFile      Method = "import.file"
 	MethodRelations       Method = "patent.relations"
 	MethodIDSExport       Method = "ids.export"
 	MethodMetricsGet      Method = "metrics.get"
@@ -145,15 +146,23 @@ type MembershipStateParams struct {
 	State   string              `json:"state"`
 }
 
-// IngestFamilyParams starts a family-graph crawl rooted at one patent.
+// IngestFamilyParams starts a family-graph crawl rooted at one patent. Depth 0
+// fetches only the root; a negative depth uses the configured family depth.
+// Force bypasses the local file cache and re-fetches from the web.
 type IngestFamilyParams struct {
 	Root  domain.PatentNumber `json:"root"`
 	Depth int                 `json:"depth"`
+	Force bool                `json:"force,omitempty"`
 }
 
 // IngestStartResult returns the id of an enqueued job.
 type IngestStartResult struct {
 	JobID string `json:"job_id"`
+}
+
+// ImportFileParams loads a patent record from a local fixture file.
+type ImportFileParams struct {
+	Path string `json:"path"`
 }
 
 // IngestCancelParams cancels a running job.

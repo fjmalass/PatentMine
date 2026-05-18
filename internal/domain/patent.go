@@ -21,6 +21,10 @@ const (
 	SourcePCT Source = "pct"
 )
 
+// ExpirationEstimated marks an ExpirationDate derived by the +20-year rule
+// rather than read from an authoritative source.
+const ExpirationEstimated = "estimated"
+
 // Valid reports whether the Source is a known value.
 func (s Source) Valid() bool {
 	switch s {
@@ -62,6 +66,14 @@ type Patent struct {
 	PublicationDate time.Time    `json:"publication_date"` // Zero when unknown.
 	GrantDate       time.Time    `json:"grant_date"`       // Zero when unknown.
 	FetchedAt       time.Time    `json:"fetched_at"`       // Zero for a stub never fetched.
+	// FirstClaim is the patent's claim 1, the body text shown in the detail view.
+	FirstClaim string `json:"first_claim,omitempty"`
+	// ExpirationDate is when the patent's protection ends; zero when unknown.
+	ExpirationDate time.Time `json:"expiration_date"`
+	// ExpirationSource records how ExpirationDate was determined, e.g. "estimated".
+	ExpirationSource string `json:"expiration_source,omitempty"`
+	// SourceURL is the provider page the record was fetched from.
+	SourceURL string `json:"source_url,omitempty"`
 	// Documents is the open-ended set of life-stage documents for this record.
 	Documents []Document `json:"documents"`
 }

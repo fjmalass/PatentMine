@@ -22,8 +22,15 @@ const ingestWorkers = 4
 
 // IngestFactory builds the Job that crawls a patent family. It is injected so
 // the engine does not depend on the ingest package directly: a stub factory
-// works for tests, the real crawler is wired in at daemon startup.
-type IngestFactory func(root domain.PatentNumber, depth int) Job
+// works for tests, the real crawler is wired in at daemon startup. force makes
+// the crawl bypass the local file cache and re-fetch from the web.
+type IngestFactory func(root domain.PatentNumber, depth int, force bool) Job
+
+// FileImporter loads a patent record from a local file into the store. Like
+// IngestFactory it is injected, so the engine never imports the ingest package.
+type FileImporter interface {
+	ImportFile(ctx context.Context, path string) error
+}
 
 // Option customizes an Engine.
 type Option func(*Engine)
@@ -31,13 +38,19 @@ type Option func(*Engine)
 // Engine is the daemon core. Its methods are the single set of operations the
 // system supports; RPC handlers and embedded callers both go through them.
 type Engine struct {
-	repo       store.Repository
-	bus        *Bus
-	pool       *workerPool
-	ingest     IngestFactory
-	logger     *slog.Logger
-	activities *observability.Recorder
-	metrics    *observability.Metrics
+	repo         store.Repository
+	bus          *Bus
+	pool         *workerPool
+	ingest       IngestFactory
+	fileImporter FileImporter
+	logger       *slog.Logger
+	activities   *observability.Recorder
+	metrics      *observability.Metrics
+}
+
+// WithFileImporter wires the file-import backend used by ImportFile.
+func WithFileImporter(fi FileImporter) Option {
+	return func(e *Engine) { e.fileImporter = fi }
 }
 
 // WithLogger records structured logs for engine operations.
@@ -118,6 +131,36 @@ func (e *Engine) recordNumber(ctx context.Context, n domain.PatentNumber) (domai
 	return domain.PatentNumber{}, err
 }
 
+// ensureRecord resolves a number to its record, creating a stub patent (a
+// patent row plus one document) when the number is not yet known. Membership
+// rows reference the patent table by foreign key, so a patent must exist as at
+// least a stub before it can be added to a project. The returned bool reports
+// whether a new stub was created — the caller uses it to trigger a first fetch.
+func (e *Engine) ensureRecord(ctx context.Context, n domain.PatentNumber) (domain.PatentNumber, bool, error) {
+	record, err := e.repo.RecordOf(ctx, n)
+	if err == nil {
+		return record, false, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return domain.PatentNumber{}, false, err
+	}
+	stub := domain.Patent{
+		Number:        n,
+		DisplayNumber: n,
+		FetchState:    domain.FetchStub,
+	}
+	if err := e.repo.SavePatent(ctx, stub); err != nil {
+		return domain.PatentNumber{}, false, err
+	}
+	if err := e.repo.SaveDocument(ctx, n, domain.Document{
+		Number: n,
+		Stage:  domain.GuessStage(n),
+	}); err != nil {
+		return domain.PatentNumber{}, false, err
+	}
+	return n, true, nil
+}
+
 // ListPatents returns one page of lightweight listing rows and the unpaged total.
 func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) (rows []domain.PatentRow, total int, err error) {
 	defer e.observeDuration("engine.list_patents", time.Now(), &err)
@@ -188,10 +231,12 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 
 // AddToProject adds a patent to a project in the default Stored state. The
 // patent may be given by any of its document numbers; it is resolved to the
-// record before the membership is created.
+// record before the membership is created. A patent that has never been
+// fetched is recorded as a stub first, so it can be tracked in a project
+// ahead of ingestion.
 func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
-	record, err := e.recordNumber(ctx, patent)
+	record, created, err := e.ensureRecord(ctx, patent)
 	if err != nil {
 		return err
 	}
@@ -223,6 +268,14 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		Metadata: map[string]any{"requested_number": patent.String()},
 	})
 	e.announceChange()
+	// A patent added as a fresh stub has no bibliographic data yet — kick a
+	// single-patent fetch so the record fills in shortly after it is added.
+	if created && e.ingest != nil {
+		if _, fetchErr := e.StartFamilyIngest(record, 0, false); fetchErr != nil {
+			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
+				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
+		}
+	}
 	return nil
 }
 
@@ -264,8 +317,9 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 	return nil
 }
 
-// StartFamilyIngest enqueues a family-graph crawl and returns its job id.
-func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (id JobID, err error) {
+// StartFamilyIngest enqueues a family-graph crawl and returns its job id. A
+// force crawl bypasses the local file cache and re-fetches from the web.
+func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int, force bool) (id JobID, err error) {
 	defer e.observeDuration("engine.start_family_ingest", time.Now(), &err)
 	if e.ingest == nil {
 		return "", errors.New("engine: no ingest factory configured")
@@ -273,20 +327,38 @@ func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int) (id JobI
 	if root.IsZero() {
 		return "", errors.New("engine: ingest root must not be empty")
 	}
-	id, err = e.pool.submit(e.ingest(root, depth))
+	id, err = e.pool.submit(e.ingest(root, depth, force))
 	if err != nil {
 		e.log(context.Background(), slog.LevelError, "ingest enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("error", err.Error()))
 		return "", err
 	}
-	e.log(context.Background(), slog.LevelInfo, "ingest enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth))
+	e.log(context.Background(), slog.LevelInfo, "ingest enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
 	e.recordActivity(context.Background(), observability.Record{
 		Action:   "ingest.start",
 		Entity:   "job",
 		EntityID: string(id),
 		Status:   "queued",
-		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth},
+		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth, "force": force},
 	})
 	return id, nil
+}
+
+// ImportFile loads a patent record from a local fixture file into the store.
+func (e *Engine) ImportFile(ctx context.Context, path string) (err error) {
+	defer e.observeDuration("engine.import_file", time.Now(), &err)
+	if e.fileImporter == nil {
+		return errors.New("engine: no file importer configured")
+	}
+	if err := e.fileImporter.ImportFile(ctx, path); err != nil {
+		e.log(ctx, slog.LevelError, "import file failed", slog.String("path", path), slog.String("error", err.Error()))
+		return err
+	}
+	e.log(ctx, slog.LevelInfo, "file imported", slog.String("path", path))
+	e.recordActivity(ctx, observability.Record{
+		Action: "import.file", Entity: "patent", EntityID: path, Status: "committed",
+	})
+	e.announceChange()
+	return nil
 }
 
 // Relations returns family-graph edges of one kind from a patent.

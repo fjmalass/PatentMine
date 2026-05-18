@@ -67,6 +67,7 @@ func patentActions() map[string]command.ID {
 		"x": command.MarkDeleted,
 		"a": command.AddToProject,
 		"f": command.IngestFamily,
+		"F": command.FetchPatent,
 	}
 }
 

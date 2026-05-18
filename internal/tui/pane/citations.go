@@ -56,11 +56,10 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		command.NavBottom:   func(int) tea.Cmd { c.page.Bottom(); return nil },
 		command.Refresh:     func(int) tea.Cmd { c.loading = true; return c.load() },
 		command.IngestFamily: func(int) tea.Cmd {
-			number, ok := c.Selection()
-			if !ok {
-				return status(text.StatusNoPatentSelected, true)
-			}
-			return ingestFamilyCmd(c.client, number)
+			return c.ingestSelected(ingestFamilyDepth)
+		},
+		command.FetchPatent: func(int) tea.Cmd {
+			return c.ingestSelected(ingestPatentDepth)
 		},
 	}
 	return c
@@ -101,6 +100,15 @@ func (c *Citations) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
 
 // Handles implements Pane.
 func (c *Citations) Handles() []command.ID { return handlerIDs(c.handlers) }
+
+// ingestSelected enqueues an ingest for the highlighted neighbour patent.
+func (c *Citations) ingestSelected(depth int) tea.Cmd {
+	number, ok := c.Selection()
+	if !ok {
+		return status(text.StatusNoPatentSelected, true)
+	}
+	return IngestCmd(c.client, number, depth, false)
+}
 
 // Update implements Pane.
 func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {

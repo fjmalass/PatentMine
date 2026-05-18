@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"patentmine/internal/domain"
@@ -65,6 +66,12 @@ func (r *Registry) WithLogger(logger *slog.Logger) *Registry {
 // Fetch returns the first successful result. A source reporting ErrNotAvailable
 // is skipped; a hard error is remembered but the next source is still tried.
 func (r *Registry) Fetch(ctx context.Context, number domain.PatentNumber) (Result, error) {
+	return r.FetchExcluding(ctx, number)
+}
+
+// FetchExcluding is Fetch with the named sources skipped. A force fetch passes
+// SourceFile so the crawl bypasses the local file cache and re-pulls from the web.
+func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumber, exclude ...domain.Source) (Result, error) {
 	start := time.Now()
 	var failed bool
 	defer func() {
@@ -74,6 +81,9 @@ func (r *Registry) Fetch(ctx context.Context, number domain.PatentNumber) (Resul
 	}()
 	lastErr := error(ErrNotAvailable)
 	for _, s := range r.sources {
+		if slices.Contains(exclude, s.Name()) {
+			continue
+		}
 		sourceStart := time.Now()
 		res, err := s.Fetch(ctx, number)
 		if r.metrics != nil {

@@ -16,7 +16,8 @@ import (
 // patentColumns is the column list, p-aliased, in scanPatent's order.
 const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assignee,
 	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
-	p.grant_date, p.fetched_at, p.display_number`
+	p.grant_date, p.fetched_at, p.display_number,
+	p.first_claim, p.expiration_date, p.expiration_source, p.source_url`
 
 // patentRowColumns returns the lightweight listing column set in scanPatentRow's
 // order, optionally including a project membership state.
@@ -48,20 +49,24 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	_, err = r.writer.ExecContext(ctx, `
 		INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 			inventors, fetch_state, source, application_date, publication_date,
-			grant_date, fetched_at, display_number)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			grant_date, fetched_at, display_number,
+			first_claim, expiration_date, expiration_source, source_url)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(number) DO UPDATE SET
 			country=excluded.country, serial=excluded.serial, kind=excluded.kind,
 			title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
 			inventors=excluded.inventors, fetch_state=excluded.fetch_state,
 			source=excluded.source, application_date=excluded.application_date,
 			publication_date=excluded.publication_date, grant_date=excluded.grant_date,
-			fetched_at=excluded.fetched_at, display_number=excluded.display_number`,
+			fetched_at=excluded.fetched_at, display_number=excluded.display_number,
+			first_claim=excluded.first_claim, expiration_date=excluded.expiration_date,
+			expiration_source=excluded.expiration_source, source_url=excluded.source_url`,
 		p.Number.Normalized(), p.Number.Country, p.Number.Serial, p.Number.Kind,
 		p.Title, p.Abstract, p.Assignee, string(inventors),
 		string(p.FetchState), string(p.Source),
 		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
-		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized())
+		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized(),
+		p.FirstClaim, encodeTime(p.ExpirationDate), p.ExpirationSource, p.SourceURL)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
 	}
@@ -190,11 +195,11 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 		country, serial, kind            string
 		inventors, fetchState, source    string
 		appDate, pubDate, grant, fetched string
-		displayNumber                    string
+		displayNumber, expiration        string
 	)
 	if err := s.Scan(&country, &serial, &kind, &p.Title, &p.Abstract, &p.Assignee,
 		&inventors, &fetchState, &source, &appDate, &pubDate, &grant, &fetched,
-		&displayNumber); err != nil {
+		&displayNumber, &p.FirstClaim, &expiration, &p.ExpirationSource, &p.SourceURL); err != nil {
 		return domain.Patent{}, err
 	}
 	p.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -221,6 +226,9 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 		return domain.Patent{}, err
 	}
 	if p.FetchedAt, err = decodeTime(fetched); err != nil {
+		return domain.Patent{}, err
+	}
+	if p.ExpirationDate, err = decodeTime(expiration); err != nil {
 		return domain.Patent{}, err
 	}
 	return p, nil

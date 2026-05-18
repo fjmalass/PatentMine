@@ -46,6 +46,7 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodMembershipState: s.membershipState,
 		proto.MethodIngestFamily:    s.ingestFamily,
 		proto.MethodIngestCancel:    s.ingestCancel,
+		proto.MethodImportFile:      s.importFile,
 		proto.MethodRelations:       s.relations,
 		proto.MethodIDSExport:       s.idsExport,
 		proto.MethodMetricsGet:      s.metricsGet,
@@ -301,11 +302,22 @@ func (s *Server) ingestFamily(_ context.Context, raw json.RawMessage) (any, erro
 	if err != nil {
 		return nil, err
 	}
-	id, err := s.engine.StartFamilyIngest(p.Root, p.Depth)
+	id, err := s.engine.StartFamilyIngest(p.Root, p.Depth, p.Force)
 	if err != nil {
 		return nil, err
 	}
 	return proto.IngestStartResult{JobID: string(id)}, nil
+}
+
+func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ImportFileParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.ImportFile(ctx, p.Path); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
 }
 
 func (s *Server) ingestCancel(_ context.Context, raw json.RawMessage) (any, error) {

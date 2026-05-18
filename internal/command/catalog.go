@@ -48,6 +48,8 @@ const (
 	// Ingestion.
 	IngestFamily ID = "ingest.family"
 	IngestCancel ID = "ingest.cancel"
+	FetchPatent  ID = "patent.fetch"
+	Import       ID = "patent.import"
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -109,6 +111,8 @@ func Default() (*Registry, error) {
 
 		// --- ingestion (engine) ---
 		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"ingest"}, Usage: ":ingest.family", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: FetchPatent, Name: "fetch", Aliases: []string{"fetch-patent"}, Usage: ":fetch", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodIngestFamily},
 		Command{ID: IngestCancel, Kind: KindEngine, Method: proto.MethodIngestCancel},
 
 		// --- projects (engine) ---

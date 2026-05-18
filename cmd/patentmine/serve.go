@@ -39,6 +39,7 @@ func runServe(_ []string) int {
 	}
 	defer func() { _ = telemetry.Close() }()
 	fmt.Printf("patentmine daemon %s starting\n", appversion.String())
+	reportPaths(os.Stdout, cfg)
 	telemetry.Logger.InfoContext(ctx, "daemon starting",
 		slog.String("build_version", appversion.String()),
 		slog.String("db_path", cfg.DBPath),
@@ -95,9 +96,15 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
 		return nil, err
 	}
-	registry := ingest.NewRegistry(ingest.NewFileSource(patentsDir)).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	// Sources are consulted in order: the local file cache first, then Google
+	// Patents. A source with no record for a number is skipped to the next.
+	registry := ingest.NewRegistry(
+		ingest.NewFileSource(patentsDir),
+		ingest.NewGoogleSource(),
+	).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	crawler := ingest.NewCrawler(registry, repo, ingest.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	return engine.New(ctx, repo, ingest.Factory(crawler),
+		engine.WithFileImporter(crawler),
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),
 		engine.WithMetrics(telemetry.Metrics)), nil

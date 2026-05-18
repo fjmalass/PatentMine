@@ -191,13 +191,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Root  domain.PatentNumber `json:"root"`
 		Depth int                 `json:"depth"`
+		Force bool                `json:"force"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
 	var res proto.IngestStartResult
 	s.call(w, r, proto.MethodIngestFamily,
-		proto.IngestFamilyParams{Root: body.Root, Depth: body.Depth}, &res)
+		proto.IngestFamilyParams{Root: body.Root, Depth: body.Depth, Force: body.Force}, &res)
 }
 
 // decodeBody decodes a JSON request body, writing a 400 on failure. It reports

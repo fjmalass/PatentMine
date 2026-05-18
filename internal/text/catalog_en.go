@@ -36,6 +36,8 @@ const (
 	StatusProjectCreateFailed  Key = "status.project_create_failed"
 	StatusProjectCreated       Key = "status.project_created"
 	StatusProjectNameEmpty     Key = "status.project_name_empty"
+	StatusImportFailed         Key = "status.import_failed"
+	StatusImported             Key = "status.imported"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -109,6 +111,8 @@ var cmdStrings = map[string][2]string{
 	"patent.mark-deleted":      {"Mark deleted", "Soft-delete the selected patent from the project."},
 	"patent.add-to-project":    {"Add to project", "Add the selected patent to the active project."},
 	"ingest.family":            {"Ingest family", "Crawl the selected patent's family graph."},
+	"patent.fetch":             {"Fetch patent", "Fetch the selected patent's record from the web."},
+	"patent.import":            {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"ingest.cancel":            {"Cancel ingest", "Cancel a running ingest job."},
 	"project.create":           {"Create project", "Create a new project."},
 	"project.activate":         {"Use project", "Make the selected project the active project for patent actions."},
@@ -147,6 +151,8 @@ var englishNamed = map[Key]string{
 	StatusProjectCreateFailed:  "create project failed: %s",
 	StatusProjectCreated:       "created project %s",
 	StatusProjectNameEmpty:     "project name cannot be empty",
+	StatusImportFailed:         "import failed: %s",
+	StatusImported:             "imported %s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",

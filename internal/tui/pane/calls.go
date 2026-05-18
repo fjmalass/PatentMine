@@ -27,20 +27,42 @@ func nextAsyncID() uint64 {
 	return asyncSeq.Add(1)
 }
 
-// ingestFamilyCmd starts a family-graph ingest for number and reports the
-// outcome as a StatusMsg. The crawl itself runs in the daemon; this call only
-// enqueues it, so the UI never blocks.
-func ingestFamilyCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
+// ingest depth selectors. A negative depth crawls the configured family depth;
+// zero fetches only the named patent.
+const (
+	ingestFamilyDepth = -1
+	ingestPatentDepth = 0
+)
+
+// IngestCmd enqueues an ingest for number and reports the outcome as a
+// StatusMsg. depth selects a single-patent fetch (0) or a family crawl (<0);
+// force bypasses the local file cache. The crawl runs in the daemon, so this
+// call only enqueues it and the UI never blocks.
+func IngestCmd(client *rpc.Client, number domain.PatentNumber, depth int, force bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.IngestStartResult
 		err := client.Call(ctx, proto.MethodIngestFamily,
-			proto.IngestFamilyParams{Root: number}, &res)
+			proto.IngestFamilyParams{Root: number, Depth: depth, Force: force}, &res)
 		if err != nil {
 			return StatusMsg{Key: text.StatusIngestStartFailed, Args: []any{err.Error()}, Error: true}
 		}
 		return StatusMsg{Key: text.StatusIngestStarted, Args: []any{number.String(), res.JobID}}
+	}
+}
+
+// ImportFileCmd loads a patent record from a local fixture file.
+func ImportFileCmd(client *rpc.Client, path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodImportFile,
+			proto.ImportFileParams{Path: path}, &res); err != nil {
+			return StatusMsg{Key: text.StatusImportFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusImported, Args: []any{path}}
 	}
 }
 

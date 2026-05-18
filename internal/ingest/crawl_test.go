@@ -31,7 +31,7 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 0,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 0, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestCrawlRespectsNodeBudget(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{NodeBudget: 2})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 5,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 5, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
@@ -119,9 +119,34 @@ func TestCrawlCancellation(t *testing.T) {
 	cancel()
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
-	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 2, nil)
+	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 2, false, nil)
 	if err == nil {
 		t.Fatal("Crawl on a cancelled context should return an error")
+	}
+}
+
+func TestCrawlerImportFile(t *testing.T) {
+	repo := openRepo(t)
+	ctx := context.Background()
+	crawler := newFileCrawler(t, repo, CrawlConfig{})
+
+	if err := crawler.ImportFile(ctx, "testdata/US0000001B2.json"); err != nil {
+		t.Fatalf("ImportFile: %v", err)
+	}
+	root := domain.MustParsePatentNumber("US0000001B2")
+	p, err := repo.Patent(ctx, root)
+	if err != nil {
+		t.Fatalf("Patent after import: %v", err)
+	}
+	if p.FetchState != domain.FetchCached {
+		t.Fatalf("imported patent fetch state = %s, want cached", p.FetchState)
+	}
+	cites, err := repo.Relations(ctx, root, domain.RelationCites)
+	if err != nil {
+		t.Fatalf("Relations: %v", err)
+	}
+	if len(cites) != 1 {
+		t.Fatalf("imported citation edges = %v, want one", cites)
 	}
 }
 

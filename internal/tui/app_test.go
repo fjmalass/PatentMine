@@ -189,6 +189,19 @@ func TestAppRefreshesAllPanesOnDBChange(t *testing.T) {
 	}
 }
 
+func TestImportCommandValidatesArgs(t *testing.T) {
+	app := newTestApp(t)
+
+	app.executeTypedCommand("import")
+	if !app.statusErr {
+		t.Fatal(":import with no argument should report a usage error")
+	}
+	app.executeTypedCommand("import US10000000B2 bogus")
+	if !app.statusErr {
+		t.Fatal(":import with an unknown flag should report a usage error")
+	}
+}
+
 func TestExecuteTypedCommandUsesSelectedProjectState(t *testing.T) {
 	app := newTestApp(t)
 	app.panes = []pane.Pane{&projectProbePane{project: domain.Project{ID: "p-2", Name: "Case B"}}}

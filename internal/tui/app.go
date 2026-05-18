@@ -86,6 +86,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.ProjectClearActive: (*App).cmdProjectClear,
 	command.ProjectCreate:      (*App).cmdProjectCreate,
 	command.AddToProject:       (*App).cmdAddToProject,
+	command.Import:             (*App).cmdImport,
 	command.MarkStored:         (*App).cmdMarkStored,
 	command.MarkUnderReview:    (*App).cmdMarkUnderReview,
 	command.MarkIgnored:        (*App).cmdMarkIgnored,
@@ -98,6 +99,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.AddToProject:    true,
 	command.ProjectActivate: true,
 	command.ProjectCreate:   true,
+	command.Import:          true,
 }
 
 // App is the bubbletea root model.
@@ -429,6 +431,40 @@ func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
 	a.overlays = append(a.overlays, overlay.NewTextInput(
 		a.theme, a.text, overlay.PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption))
 	return a, nil
+}
+
+// cmdImport fetches a patent by number — optionally forcing past the file
+// cache — or loads a fixture file when the argument is a path.
+func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.Import)
+	}
+	force := false
+	for _, arg := range inv.args[1:] {
+		if !strings.EqualFold(arg, "force") {
+			return a.usageError(command.Import)
+		}
+		force = true
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	target := inv.args[0]
+	if isFixturePath(target) {
+		return a, pane.ImportFileCmd(a.client, target)
+	}
+	number, err := domain.ParsePatentNumber(target)
+	if err != nil {
+		a.setErr(text.StatusInvalidPatentNumber, err.Error())
+		return a, nil
+	}
+	return a, pane.IngestCmd(a.client, number, 0, force)
+}
+
+// isFixturePath reports whether arg names a fixture file rather than a patent.
+func isFixturePath(arg string) bool {
+	return strings.ContainsAny(arg, `/\`) || strings.HasSuffix(strings.ToLower(arg), ".json")
 }
 
 // handleTextSubmit routes a value entered in a TextInput overlay to its action.
