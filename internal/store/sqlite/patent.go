@@ -262,12 +262,12 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 		// project members. When we are listing relations, we show all related
 		// patents and use the project JOIN to decorate them with state/tags.
 		joinType := "JOIN"
-		if !q.Relation.IsZero() && q.ReviewState == "" {
+		if !q.Relation.IsZero() && q.ReviewState == domain.ReviewStateNone {
 			joinType = "LEFT JOIN"
 		}
 		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")
 		args = append(args, string(q.Project))
-		if q.ReviewState != "" {
+		if q.ReviewState != domain.ReviewStateNone {
 			conds = append(conds, "m.state = ?")
 			args = append(args, string(q.ReviewState))
 		}

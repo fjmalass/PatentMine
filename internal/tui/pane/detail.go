@@ -74,29 +74,29 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 		loading:   true,
 	}
 	d.handlers = map[command.ID]cmdHandler{
-		command.NavDown:     func(r int) tea.Cmd { d.page.MoveDown(r); return nil },
-		command.NavUp:       func(r int) tea.Cmd { d.page.MoveUp(r); return nil },
-		command.NavPageDown: func(int) tea.Cmd { d.page.PageDown(); return nil },
-		command.NavPageUp:   func(int) tea.Cmd { d.page.PageUp(); return nil },
-		command.NavTop:      func(int) tea.Cmd { d.page.Top(); return nil },
-		command.NavBottom:   func(r int) tea.Cmd { d.page.Bottom(); return nil },
-		command.Refresh:     func(int) tea.Cmd { d.loading = true; return d.reload() },
-		command.IngestFamily: func(int) tea.Cmd {
+		command.NavDown:     func(inv Invocation) tea.Cmd { d.page.MoveDown(inv.Repeat); return nil },
+		command.NavUp:       func(inv Invocation) tea.Cmd { d.page.MoveUp(inv.Repeat); return nil },
+		command.NavPageDown: func(Invocation) tea.Cmd { d.page.PageDown(); return nil },
+		command.NavPageUp:   func(Invocation) tea.Cmd { d.page.PageUp(); return nil },
+		command.NavTop:      func(Invocation) tea.Cmd { d.page.Top(); return nil },
+		command.NavBottom:   func(Invocation) tea.Cmd { d.page.Bottom(); return nil },
+		command.Refresh:     func(Invocation) tea.Cmd { d.loading = true; return d.reload() },
+		command.IngestFamily: func(Invocation) tea.Cmd {
 			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileFamily, false)
 		},
-		command.IngestCitations: func(int) tea.Cmd {
+		command.IngestCitations: func(Invocation) tea.Cmd {
 			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileCitations, false)
 		},
-		command.IngestCitedBy: func(int) tea.Cmd {
+		command.IngestCitedBy: func(Invocation) tea.Cmd {
 			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileCitedBy, false)
 		},
-		command.IngestAll: func(int) tea.Cmd {
+		command.IngestAll: func(Invocation) tea.Cmd {
 			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileAll, false)
 		},
-		command.FetchPatent: func(int) tea.Cmd {
+		command.FetchPatent: func(Invocation) tea.Cmd {
 			return IngestCmd(d.client, d.number, ingestPatentDepth, "", false)
 		},
-		}
+	}
 	return d
 }
 
@@ -155,9 +155,9 @@ func (d *Detail) loadRelations() tea.Cmd {
 }
 
 // Command implements Pane.
-func (d *Detail) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
+func (d *Detail) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if handler, ok := d.handlers[id]; ok {
-		return d, handler(repeat)
+		return d, handler(inv)
 	}
 	return d, nil
 }

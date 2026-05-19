@@ -25,11 +25,15 @@ func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile
 	return engine.JobFunc(func(ctx context.Context, id engine.JobID, emit func(proto.Event)) error {
 		return crawler.Crawl(ctx, root, depth, profile, force, func(p Progress) {
 			emit(proto.NewEvent(proto.EventIngestProgress, proto.IngestProgress{
-				JobID:   string(id),
-				Fetched: p.Fetched,
-				Found:   p.Found,
-				Total:   p.Total,
-				Message: p.Message,
+				JobID:           string(id),
+				IngestedCount:   p.IngestedCount,
+				DiscoveredCount: p.DiscoveredCount,
+				PendingCount:    p.PendingCount,
+				CitationsCount:  p.CitationsCount,
+				CitedByCount:    p.CitedByCount,
+				ParentsCount:    p.ParentsCount,
+				ChildrenCount:   p.ChildrenCount,
+				Message:         p.Message,
 			}))
 		})
 	})

@@ -36,9 +36,8 @@ type Pane interface {
 	Title() string
 	// Init returns a command to run when the pane is first shown.
 	Init() tea.Cmd
-	// Command applies a resolved command intent forwarded by the App, repeated
-	// the given number of times (for count-prefixed chords like "3j").
-	Command(id command.ID, repeat int) (Pane, tea.Cmd)
+	// Command applies a resolved command intent forwarded by the App.
+	Command(id command.ID, inv Invocation) (Pane, tea.Cmd)
 	// Handles reports every command ID the pane services. The App's wiring
 	// check cross-references it against the keymap so a key can never resolve
 	// to a command the focused pane silently drops.
@@ -59,6 +58,13 @@ type MultiSelector interface {
 	Selections() []domain.PatentNumber
 }
 
+// KeyHandler is implemented by panes that need to intercept raw key events
+// before keymap resolution — for example when an inline input bar is active.
+// The App checks this interface before feeding the key to the chord reader.
+type KeyHandler interface {
+	HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool)
+}
+
 // JumpProvider is implemented by panes that support jump mode — a quick scroll
 // straight to a labelled field in a long, scrolling pane. The App opens the
 // jump overlay from JumpAnchors and calls JumpTo with the chosen line.
@@ -69,9 +75,15 @@ type JumpProvider interface {
 	JumpTo(line int)
 }
 
-// cmdHandler carries out one command for a pane, repeated the given count. The
-// pane mutates itself through its pointer receiver and returns only a tea.Cmd.
-type cmdHandler func(repeat int) tea.Cmd
+// Invocation carries a resolved command's repeat count and any typed arguments.
+type Invocation struct {
+	Repeat int
+	Args   []string
+}
+
+// cmdHandler carries out one command for a pane. The pane mutates itself
+// through its pointer receiver and returns only a tea.Cmd.
+type cmdHandler func(Invocation) tea.Cmd
 
 // handlerIDs returns the command IDs of a handler table, sorted for stable
 // output in the wiring check and help screen.

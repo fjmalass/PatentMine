@@ -71,6 +71,10 @@ const (
 	ProjectCreate      ID = "project.create"
 	ProjectActivate    ID = "project.activate"
 	ProjectClearActive ID = "project.clear-active"
+
+	// Filtering.
+	Filter   ID = "view.filter"
+	FindOpen ID = "find.open"
 )
 
 // listScopes are the contexts that behave as scrollable lists.
@@ -112,6 +116,10 @@ func Default() (*Registry, error) {
 		Command{ID: SortApply, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
+
+		// --- filtering (view) ---
+		Command{ID: Filter,   Name: "filter", Aliases: []string{"f"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 
 		// --- application-wide (view) ---
 		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Kind: KindView},

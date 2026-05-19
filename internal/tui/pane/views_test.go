@@ -56,7 +56,7 @@ func TestCitationsPaneSelectsNeighbour(t *testing.T) {
 	if !ok || sel.Serial != "0000002" {
 		t.Fatalf("selection = %v ok=%v, want US0000002B2", sel, ok)
 	}
-	c.Command(command.NavBottom, 1)
+	c.Command(command.NavBottom, Invocation{Repeat: 1})
 	sel, _ = c.Selection()
 	if sel.Serial != "0000003" {
 		t.Fatalf("selection after NavBottom = %v, want US0000003B2", sel)

@@ -395,6 +395,8 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		Relation:      p.Number,
 		RelationKind:  p.Kind,
 		Project:       p.Project,
+		ReviewState:   p.ReviewState,
+		Search:        p.Search,
 		Limit:         p.Limit,
 		Offset:        p.Offset,
 		SortColumn:    p.SortColumn,

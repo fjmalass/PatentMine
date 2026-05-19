@@ -201,6 +201,8 @@ type RelationsParams struct {
 	Number        domain.PatentNumber `json:"number"`
 	Kind          domain.RelationKind `json:"kind"`
 	Project       domain.ProjectID    `json:"project,omitempty"`
+	ReviewState   domain.ReviewState  `json:"review_state,omitempty"`
+	Search        string              `json:"search,omitempty"`
 	Limit         int                 `json:"limit,omitempty"`
 	Offset        int                 `json:"offset,omitempty"`
 	SortColumn    domain.SortColumn   `json:"sort_column,omitempty"`
@@ -259,11 +261,15 @@ type Empty struct{}
 
 // IngestProgress reports incremental progress of an ingest job.
 type IngestProgress struct {
-	JobID   string `json:"job_id"`
-	Fetched int    `json:"fetched"`
-	Found   int    `json:"found"`
-	Total   int    `json:"total"`
-	Message string `json:"message"`
+	JobID           string `json:"job_id"`
+	IngestedCount   int    `json:"ingested_count"`
+	DiscoveredCount int    `json:"discovered_count"`
+	PendingCount    int    `json:"pending_count"`
+	CitationsCount  int    `json:"citations_count,omitempty"`
+	CitedByCount    int    `json:"cited_by_count,omitempty"`
+	ParentsCount    int    `json:"parents_count,omitempty"`
+	ChildrenCount   int    `json:"children_count,omitempty"`
+	Message         string `json:"message"`
 }
 
 // IngestDone reports that an ingest job finished, with an error if it failed.

@@ -107,6 +107,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.Import:          true,
 	command.TagAdd:          true,
 	command.TagRemove:       true,
+	command.Filter:          true,
 }
 
 // App is the bubbletea root model.
@@ -312,6 +313,15 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+	if len(a.overlays) == 0 {
+		if interceptor, ok := a.focusedPane().(pane.KeyHandler); ok {
+			updated, cmd, consumed := interceptor.HandleKey(m)
+			a.panes[len(a.panes)-1] = updated
+			if consumed {
+				return a, cmd
+			}
+		}
+	}
 	stack := a.keyStack()
 	chord, ok := a.reader.Feed(keys.Key(m.String()), stack.Match)
 	if !ok {
@@ -361,7 +371,7 @@ func (a *App) invoke(id command.ID, inv invocation) (tea.Model, tea.Cmd) {
 	if !slices.Contains(p.Handles(), id) {
 		return a.unhandled(id)
 	}
-	updated, cmd := p.Command(id, inv.repeat)
+	updated, cmd := p.Command(id, pane.Invocation{Repeat: inv.repeat, Args: inv.args})
 	a.panes[len(a.panes)-1] = updated
 	return a, cmd
 }
@@ -818,7 +828,7 @@ func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 	case proto.EventIngestProgress:
 		var p proto.IngestProgress
 		if json.Unmarshal(ev.Params, &p) == nil {
-			a.setStatus(text.StatusIngestProgress, p.JobID, p.Fetched, p.Found, p.Message)
+			a.setStatus(text.StatusIngestProgress, p.JobID, p.IngestedCount, p.DiscoveredCount, p.Message)
 		}
 		return nil
 	case proto.EventIngestDone:
@@ -842,7 +852,7 @@ func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 func (a *App) refreshPanes() tea.Cmd {
 	var cmds []tea.Cmd
 	for i, p := range a.panes {
-		updated, cmd := p.Command(command.Refresh, 1)
+		updated, cmd := p.Command(command.Refresh, pane.Invocation{Repeat: 1})
 		a.panes[i] = updated
 		if cmd != nil {
 			cmds = append(cmds, cmd)

@@ -48,14 +48,14 @@ func NewProjects(client *rpc.Client, theme render.Theme) *Projects {
 		loading: true,
 	}
 	p.handlers = map[command.ID]cmdHandler{
-		command.NavDown:     func(r int) tea.Cmd { p.page.MoveDown(r); return nil },
-		command.NavUp:       func(r int) tea.Cmd { p.page.MoveUp(r); return nil },
-		command.NavPageDown: func(int) tea.Cmd { p.page.PageDown(); return nil },
-		command.NavPageUp:   func(int) tea.Cmd { p.page.PageUp(); return nil },
-		command.NavTop:      func(int) tea.Cmd { p.page.Top(); return nil },
-		command.NavBottom:   func(int) tea.Cmd { p.page.Bottom(); return nil },
-		command.Refresh:     func(int) tea.Cmd { p.loading = true; return p.load() },
-		command.ExportIDS:   func(int) tea.Cmd { return p.exportCmd() },
+		command.NavDown:     func(inv Invocation) tea.Cmd { p.page.MoveDown(inv.Repeat); return nil },
+		command.NavUp:       func(inv Invocation) tea.Cmd { p.page.MoveUp(inv.Repeat); return nil },
+		command.NavPageDown: func(Invocation) tea.Cmd { p.page.PageDown(); return nil },
+		command.NavPageUp:   func(Invocation) tea.Cmd { p.page.PageUp(); return nil },
+		command.NavTop:      func(Invocation) tea.Cmd { p.page.Top(); return nil },
+		command.NavBottom:   func(Invocation) tea.Cmd { p.page.Bottom(); return nil },
+		command.Refresh:     func(Invocation) tea.Cmd { p.loading = true; return p.load() },
+		command.ExportIDS:   func(Invocation) tea.Cmd { return p.exportCmd() },
 	}
 	return p
 }
@@ -98,9 +98,9 @@ func (p *Projects) load() tea.Cmd {
 }
 
 // Command implements Pane.
-func (p *Projects) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
+func (p *Projects) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if handler, ok := p.handlers[id]; ok {
-		return p, handler(repeat)
+		return p, handler(inv)
 	}
 	return p, nil
 }

@@ -47,6 +47,7 @@ const (
 	StatusBatchDeleted         Key = "status.batch_deleted"
 	StatusBatchSetState        Key = "status.batch_set_state"
 	StatusBatchAdded           Key = "status.batch_added"
+	StatusFilter               Key = "status.filter"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -129,13 +130,18 @@ var cmdStrings = map[string][2]string{
 	"patent.add-to-project":    {"Add to project", "Add the selected patent to the active project."},
 	"patent.tag":               {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":             {"Untag patent", "Remove a tag from the selected patent within the active project."},
-	"ingest.family":            {"Ingest family", "Crawl the selected patent's family graph."},
+	"ingest.family":            {"Ingest family", "Crawl the selected patent's family graph (parents and children)."},
+	"ingest.citations":         {"Ingest citations", "Crawl patents the selected patent cites."},
+	"ingest.citedby":           {"Ingest cited-by", "Crawl patents that cite the selected patent."},
+	"ingest.all":               {"Ingest all", "Crawl the full family graph including citations and cited-by."},
 	"patent.fetch":             {"Fetch patent", "Fetch the selected patent's record from the web."},
 	"patent.import":            {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"ingest.cancel":            {"Cancel ingest", "Cancel a running ingest job."},
 	"project.create":           {"Create project", "Create a new project."},
 	"project.activate":         {"Use project", "Make the selected project the active project for patent actions."},
 	"project.clear-active":     {"Clear active project", "Clear the active project filter and target."},
+	"view.filter":              {"Filter", "Apply a filter to the current list (e.g. :filter state cached)."},
+	"find.open":                {"Find", "Open the inline find bar; type to search, n/N to navigate, Enter to keep, Esc to cancel."},
 }
 
 // englishNamed is the English text for every named key.
@@ -156,7 +162,7 @@ var englishNamed = map[Key]string{
 	StatusUnhandledCommand:     "unhandled command: %s",
 	StatusInvalidPatentNumber:  "invalid patent number: %s",
 	StatusDaemonClosed:         "daemon connection closed",
-	StatusIngestProgress:       "ingest %s — fetched %d, found %d: %s",
+	StatusIngestProgress:       "ingest %s — ingested %d, discovered %d: %s",
 	StatusIngestFailed:         "ingest %s failed: %s",
 	StatusIngestComplete:       "ingest %s complete",
 	StatusIngestStarted:        "ingest started for %s (%s)",
@@ -181,6 +187,7 @@ var englishNamed = map[Key]string{
 	StatusBatchDeleted:         "deleted %d patents",
 	StatusBatchSetState:        "set %d patents to %s in %s",
 	StatusBatchAdded:           "added %d patents to %s",
+	StatusFilter:               "%s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",

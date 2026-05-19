@@ -44,6 +44,8 @@ type Citations struct {
 	visualAnchor  int
 	activeSort    domain.SortColumn
 	sortAscending bool
+	filter        PatentFilter
+	find          findBar
 	focusedColIdx int
 	lastWidth     int
 }
@@ -62,23 +64,25 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		focusedColIdx: -1,
 	}
 	c.handlers = map[command.ID]cmdHandler{
-		command.NavDown:      func(r int) tea.Cmd { return c.move(func() { c.page.MoveDown(r) }) },
-		command.NavUp:        func(r int) tea.Cmd { return c.move(func() { c.page.MoveUp(r) }) },
-		command.NavPageDown:  func(int) tea.Cmd { return c.move(c.page.PageDown) },
-		command.NavPageUp:    func(int) tea.Cmd { return c.move(c.page.PageUp) },
-		command.NavTop:       func(int) tea.Cmd { return c.move(c.page.Top) },
-		command.NavBottom:    func(int) tea.Cmd { return c.move(c.page.Bottom) },
-		command.Refresh:      func(int) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
-		command.SelectVisual: func(int) tea.Cmd { return c.toggleVisual() },
-		command.SelectClear:  func(int) tea.Cmd { c.clearVisual(); return nil },
-		command.IngestFamily: func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
-		command.IngestCitations: func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitations) },
-		command.IngestCitedBy:   func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitedBy) },
-		command.IngestAll:       func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileAll) },
-		command.FetchPatent:  func(int) tea.Cmd { return c.ingestSelected("") },
-		command.ColNext:      func(int) tea.Cmd { return c.focusNext() },
-		command.ColPrev:      func(int) tea.Cmd { return c.focusPrev() },
-		command.SortApply:    func(int) tea.Cmd { return c.applySort() },
+		command.NavDown:      func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
+		command.NavUp:        func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
+		command.NavPageDown:  func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
+		command.NavPageUp:    func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
+		command.NavTop:       func(Invocation) tea.Cmd { return c.move(c.page.Top) },
+		command.NavBottom:    func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
+		command.Refresh:      func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
+		command.SelectVisual: func(Invocation) tea.Cmd { return c.toggleVisual() },
+		command.SelectClear:  func(Invocation) tea.Cmd { c.clearVisual(); return nil },
+		command.IngestFamily: func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
+		command.IngestCitations: func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitations) },
+		command.IngestCitedBy:   func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitedBy) },
+		command.IngestAll:       func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileAll) },
+		command.FetchPatent:  func(Invocation) tea.Cmd { return c.ingestSelected("") },
+		command.ColNext:      func(Invocation) tea.Cmd { return c.focusNext() },
+		command.ColPrev:      func(Invocation) tea.Cmd { return c.focusPrev() },
+		command.SortApply: func(Invocation) tea.Cmd { return c.applySort() },
+		command.Filter:    c.applyFilter,
+		command.FindOpen:  func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
 	}
 	return c
 }
@@ -113,6 +117,8 @@ func (c *Citations) load() tea.Cmd {
 				Number:        root,
 				Kind:          kind,
 				Project:       project,
+				ReviewState:   c.filter.ReviewState,
+				Search:        c.filter.Search,
 				Limit:         limit,
 				Offset:        offset,
 				SortColumn:    c.activeSort,
@@ -125,6 +131,45 @@ func (c *Citations) load() tea.Cmd {
 			patents:   res.Patents,
 			err:       err,
 		}
+	}
+}
+
+func (c *Citations) applyFilter(inv Invocation) tea.Cmd {
+	msg, err := c.filter.parse(inv.Args)
+	if err != nil {
+		return func() tea.Msg { return StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true} }
+	}
+	c.loading = true
+	c.page.Top()
+	return tea.Batch(
+		c.load(),
+		func() tea.Msg { return StatusMsg{Key: text.StatusFilter, Args: []any{msg}} },
+	)
+}
+
+// HandleKey implements pane.KeyHandler: intercepts raw keys while the find bar
+// is active so typed characters go into the search input before chord resolution.
+func (c *Citations) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
+	if !c.find.active {
+		return c, nil, false
+	}
+	search, action := c.find.handleKey(msg)
+	switch action {
+	case "reload":
+		c.filter.Search = search
+		c.loading = true
+		c.page.Top()
+		return c, c.load(), true
+	case "confirm":
+		c.filter.Search = search
+		return c, nil, true
+	case "cancel":
+		c.filter.Search = search
+		c.loading = true
+		c.page.Top()
+		return c, c.load(), true
+	default:
+		return c, nil, true
 	}
 }
 
@@ -181,9 +226,9 @@ func (c *Citations) currentCols() []tableCol {
 }
 
 // Command implements Pane.
-func (c *Citations) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
+func (c *Citations) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if handler, ok := c.handlers[id]; ok {
-		return c, handler(repeat)
+		return c, handler(inv)
 	}
 	return c, nil
 }
@@ -320,7 +365,11 @@ func (c *Citations) View(w, h int) string {
 		return c.theme.Dim.Render("no " + relationLabel(c.kind) + " edges recorded")
 	}
 
-	c.page.SetPageSize(max(h-headerRows, 1))
+	findRows := 0
+	if c.find.active {
+		findRows = 1
+	}
+	c.page.SetPageSize(max(h-headerRows-findRows, 1))
 	var projectID domain.ProjectID
 	if c.activeProject != nil {
 		projectID = c.activeProject.ID
@@ -328,6 +377,10 @@ func (c *Citations) View(w, h int) string {
 	cols := c.currentCols()
 
 	var b strings.Builder
+	if c.filter.IsActive() && !c.find.active {
+		b.WriteString(c.filter.View(w, c.theme))
+		b.WriteByte('\n')
+	}
 	b.WriteString(renderTableHeader(c.theme, cols, c.activeSort, c.sortAscending, c.focusedColIdx))
 
 	for i, p := range c.patents {
@@ -342,6 +395,10 @@ func (c *Citations) View(w, h int) string {
 		default:
 			b.WriteString(c.theme.Row.Render(line))
 		}
+	}
+	if c.find.active {
+		b.WriteByte('\n')
+		b.WriteString(c.find.view(w, c.theme, c.page.Total()))
 	}
 	return b.String()
 }

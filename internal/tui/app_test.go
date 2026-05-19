@@ -147,7 +147,7 @@ func (p *refreshProbePane) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
 }
 
-func (p *refreshProbePane) Command(id command.ID, _ int) (pane.Pane, tea.Cmd) {
+func (p *refreshProbePane) Command(id command.ID, _ pane.Invocation) (pane.Pane, tea.Cmd) {
 	if id == command.Refresh {
 		p.refreshes++
 	}
@@ -165,7 +165,7 @@ func (p *projectProbePane) View(int, int) string                { return "" }
 func (p *projectProbePane) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
 }
-func (p *projectProbePane) Command(command.ID, int) (pane.Pane, tea.Cmd) { return p, nil }
+func (p *projectProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) { return p, nil }
 func (p *projectProbePane) Handles() []command.ID                        { return nil }
 func (p *projectProbePane) SelectedProject() (domain.Project, bool)      { return p.project, true }
 

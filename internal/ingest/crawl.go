@@ -17,16 +17,20 @@ const slowCrawlerRun = 500 * time.Millisecond
 // Crawl tuning. A crawl stops when it reaches either limit, so a dense citation
 // graph cannot produce an unbounded job.
 const (
-	defaultMaxDepth   = 2
+	defaultMaxDepth   = 4
 	defaultNodeBudget = 200
 )
 
 // Progress is an incremental crawl update reported through the emit callback.
 type Progress struct {
-	Fetched int    // Records fetched (full body) so far.
-	Found   int    // Distinct numbers discovered so far (fetched + stub).
-	Total   int    // Total items currently in the crawl queue (fetched + queued).
-	Message string // Human-readable note about the latest step.
+	IngestedCount   int    // Total full records saved to the database.
+	DiscoveredCount int    // Total unique patent numbers seen (ingested + stubs).
+	PendingCount    int    // Items currently in the crawl queue.
+	CitationsCount  int    // Total citation edges found.
+	CitedByCount    int    // Total cited-by edges found.
+	ParentsCount    int    // Total parent/continuation edges found.
+	ChildrenCount   int    // Total child edges found.
+	Message         string // Human-readable note about the latest step.
 }
 
 // CrawlConfig bounds a crawl.
@@ -114,54 +118,101 @@ const (
 func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, force bool, emit func(Progress)) error {
 	start := time.Now()
 	failed := true
+	log := observability.WithContextAttrs(ctx, c.logger)
+	if log == nil {
+		log = slog.Default()
+	}
+
 	defer func() {
 		if c.metrics != nil {
 			d := time.Since(start)
 			c.metrics.ObserveDuration("ingest.crawler.crawl", d, failed)
-			if c.logger != nil && d >= slowCrawlerRun {
-				c.logger.Warn("slow ingest crawl",
+			if d >= slowCrawlerRun {
+				log.Warn("slow ingest crawl",
 					slog.String("root", root.String()),
 					slog.Int64("duration_ms", d.Milliseconds()),
 					slog.Bool("failed", failed))
 			}
 		}
 	}()
+
 	if root.IsZero() {
 		return errors.New("ingest: crawl root must not be empty")
 	}
+
+	log.Info("starting ingest crawl",
+		slog.String("root", root.String()),
+		slog.Int("max_depth", maxDepth),
+		slog.String("profile", string(profile)),
+		slog.Bool("force", force))
+
 	depthLimit := maxDepth
 	if maxDepth < 0 {
 		depthLimit = c.cfg.MaxDepth
 	}
+
+	type crawlStats struct {
+		citations int
+		citedBy   int
+		parents   int
+		children  int
+	}
+	stats := crawlStats{}
+
 	report := func(p Progress) {
+		p.CitationsCount = stats.citations
+		p.CitedByCount = stats.citedBy
+		p.ParentsCount = stats.parents
+		p.ChildrenCount = stats.children
+
 		if emit != nil {
 			emit(p)
+		}
+		if c.metrics != nil {
+			c.metrics.SetGauge("ingest.crawler.ingested", int64(p.IngestedCount))
+			c.metrics.SetGauge("ingest.crawler.discovered", int64(p.DiscoveredCount))
+			c.metrics.SetGauge("ingest.crawler.pending", int64(p.PendingCount))
+			c.metrics.SetGauge("ingest.crawler.citations", int64(p.CitationsCount))
+			c.metrics.SetGauge("ingest.crawler.cited_by", int64(p.CitedByCount))
+			c.metrics.SetGauge("ingest.crawler.parents", int64(p.ParentsCount))
+			c.metrics.SetGauge("ingest.crawler.children", int64(p.ChildrenCount))
 		}
 	}
 
 	seen := map[domain.PatentNumber]bool{root: true}
 	queue := []node{{number: root, depth: 0}}
-	fetched := 0
+	ingested := 0
 
-	for len(queue) > 0 && fetched < c.cfg.NodeBudget {
+	for len(queue) > 0 && ingested < c.cfg.NodeBudget {
 		if err := ctx.Err(); err != nil {
+			log.Info("crawl cancelled", slog.String("error", err.Error()))
 			return err
 		}
 		cur := queue[0]
 		queue = queue[1:]
 
+		fstart := time.Now()
 		res, err := c.fetch(ctx, cur.number, force)
+		if c.metrics != nil {
+			c.metrics.ObserveDuration("ingest.crawler.fetch", time.Since(fstart), err != nil)
+		}
+
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			log.Info("fetch cancelled", slog.String("number", cur.number.String()))
 			return err
 		}
 		if err != nil {
+			log.Warn("fetch failed",
+				slog.String("number", cur.number.String()),
+				slog.String("error", err.Error()))
+
 			// The patent is referenced but could not be fetched: record a stub
 			// so the edge to it still resolves, and keep crawling.
 			if _, stubErr := c.ensureRecord(ctx, cur.number); stubErr != nil {
 				return stubErr
 			}
 			report(Progress{
-				Fetched: fetched, Found: len(seen), Total: fetched + len(queue),
+				IngestedCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
 				Message: fmt.Sprintf("%s unavailable: %v", cur.number, err),
 			})
 			continue
@@ -169,17 +220,57 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 		recordNumber, err := c.saveRecord(ctx, res)
 		if err != nil {
+			log.Error("save record failed",
+				slog.String("number", cur.number.String()),
+				slog.String("error", err.Error()))
 			return err
 		}
+
+		// Update stats for all relations found in this fetch, even if we've
+		// seen the neighbour before, so the user sees a count of edges found.
+		for _, rel := range res.Relations {
+			switch rel.Kind {
+			case domain.RelationCites:
+				stats.citations++
+			case domain.RelationCitedBy:
+				stats.citedBy++
+			case domain.RelationParent:
+				stats.parents++
+			case domain.RelationChild:
+				stats.children++
+			}
+		}
+
 		if err := c.saveRelations(ctx, recordNumber, res.Relations, cur.depth, depthLimit, profile, seen, &queue); err != nil {
+			log.Error("save relations failed",
+				slog.String("number", recordNumber.String()),
+				slog.String("error", err.Error()))
 			return err
 		}
-		fetched++
+
+		ingested++
 		report(Progress{
-			Fetched: fetched, Found: len(seen), Total: fetched + len(queue),
-			Message: fmt.Sprintf("fetched %s", recordNumber),
+			IngestedCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
+			Message: fmt.Sprintf("ingested %s", recordNumber),
 		})
 	}
+
+	reason := "exhausted"
+	if ingested >= c.cfg.NodeBudget {
+		reason = "budget reached"
+	}
+
+	log.Info("ingest crawl finished",
+		slog.String("root", root.String()),
+		slog.String("reason", reason),
+		slog.Int("ingested", ingested),
+		slog.Int("discovered", len(seen)),
+		slog.Int("citations", stats.citations),
+		slog.Int("cited_by", stats.citedBy),
+		slog.Int("parents", stats.parents),
+		slog.Int("children", stats.children),
+		slog.Duration("duration", time.Since(start)))
+
 	failed = false
 	return nil
 }

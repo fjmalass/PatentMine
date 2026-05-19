@@ -39,19 +39,19 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 	}
 
 	// A count-prefixed motion moves two rows at once.
-	c.Command(command.NavDown, 2)
+	c.Command(command.NavDown, Invocation{Repeat: 2})
 	sel, _ = c.Selection()
 	if sel.Serial != "16000003" {
 		t.Fatalf("selection after 2j = %v, want US16000003", sel)
 	}
 
 	// Navigation clamps at the list bounds.
-	c.Command(command.NavDown, 10)
+	c.Command(command.NavDown, Invocation{Repeat: 10})
 	sel, _ = c.Selection()
 	if sel.Serial != "16000003" {
 		t.Fatalf("selection after clamp = %v, want last row", sel)
 	}
-	c.Command(command.NavTop, 1)
+	c.Command(command.NavTop, Invocation{Repeat: 1})
 	sel, _ = c.Selection()
 	if sel.Serial != "16000001" {
 		t.Fatalf("selection after NavTop = %v, want first row", sel)

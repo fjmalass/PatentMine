@@ -41,6 +41,13 @@ func ParseFetchState(s string) (FetchState, error) {
 type ReviewState string
 
 const (
+	// ReviewStateNone is the zero value: patent has no membership row in the
+	// current project. Never stored in the database — appears only as a derived
+	// value when a LEFT JOIN produces no matching membership row, and as the
+	// zero value of PatentFilter.ReviewState when no state filter is active.
+	// Contrast with ReviewStateLoad: that state means a membership row EXISTS
+	// but the patent has not yet been fetched.
+	ReviewStateNone ReviewState = ""
 	// ReviewStateLoad is the default state of a patent added to a project.
 	// It acts as a call to action: the user should load/fetch the patent.
 	ReviewStateLoad ReviewState = "load"
@@ -65,10 +72,14 @@ func (s ReviewState) Valid() bool {
 }
 
 // ParseReviewState converts a string into a ReviewState.
+// The empty string is accepted and returns ReviewStateNone.
 func ParseReviewState(s string) (ReviewState, error) {
+	if s == "" {
+		return ReviewStateNone, nil
+	}
 	ms := ReviewState(s)
 	if !ms.Valid() {
-		return "", fmt.Errorf("domain: unknown review state %q", s)
+		return ReviewStateNone, fmt.Errorf("domain: unknown review state %q", s)
 	}
 	return ms, nil
 }

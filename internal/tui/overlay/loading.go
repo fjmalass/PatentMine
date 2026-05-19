@@ -21,6 +21,7 @@ type Loading struct {
 	jobID    string
 	title    string
 	message  string
+	progress proto.IngestProgress
 	spinner  spinner.Model
 	finished bool
 }
@@ -67,9 +68,10 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		case proto.EventIngestProgress:
 			var p proto.IngestProgress
 			if err := json.Unmarshal(m.Params, &p); err == nil && p.JobID == l.jobID {
+				l.progress = p
 				l.message = p.Message
-				if p.Fetched > 0 {
-					l.message = fmt.Sprintf("%s (%d fetched)", p.Message, p.Fetched)
+				if p.IngestedCount > 0 {
+					l.message = fmt.Sprintf("%s (%d ingested)", p.Message, p.IngestedCount)
 				}
 			}
 		case proto.EventIngestDone:
@@ -88,6 +90,33 @@ func (l *Loading) View(w, h int) string {
 	b.WriteString("\n")
 	b.WriteString("  " + l.spinner.View() + " " + render.Truncate(l.message, w-6))
 	b.WriteByte('\n')
+
+	p := l.progress
+	if p.DiscoveredCount > 0 {
+		var parts []string
+		parts = append(parts, fmt.Sprintf("discovered: %d", p.DiscoveredCount))
+		if p.PendingCount > 0 {
+			parts = append(parts, fmt.Sprintf("pending: %d", p.PendingCount))
+		}
+		if p.CitationsCount > 0 {
+			parts = append(parts, fmt.Sprintf("cites: %d", p.CitationsCount))
+		}
+		if p.CitedByCount > 0 {
+			parts = append(parts, fmt.Sprintf("cited-by: %d", p.CitedByCount))
+		}
+		if p.ParentsCount > 0 {
+			parts = append(parts, fmt.Sprintf("parents: %d", p.ParentsCount))
+		}
+		if p.ChildrenCount > 0 {
+			parts = append(parts, fmt.Sprintf("children: %d", p.ChildrenCount))
+		}
+		if len(parts) > 0 {
+			b.WriteString("     ")
+			b.WriteString(l.theme.Dim.Render(strings.Join(parts, " · ")))
+			b.WriteByte('\n')
+		}
+	}
+
 	b.WriteByte('\n')
 	b.WriteString(l.theme.Dim.Render(render.Pad("JobID: "+l.jobID, w-2)))
 	return b.String()
