@@ -84,6 +84,8 @@ type Repository interface {
 	Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error)
 	// SetReviewState changes a membership's state, or returns ErrNotFound.
 	SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.ReviewState) error
+	// DeleteMembership permanently removes a patent from a project. No-op if not a member.
+	DeleteMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
 	// Memberships returns every membership of a project.
 	Memberships(ctx context.Context, project domain.ProjectID) ([]domain.Membership, error)
 

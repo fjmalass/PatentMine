@@ -206,7 +206,12 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				slog.String("number", cur.number.String()),
 				slog.String("error", err.Error()))
 
-			// The patent is referenced but could not be fetched: record a stub
+			// Root patent not found — fail the job so the caller can clean up.
+			if cur.depth == 0 && errors.Is(err, ErrNotAvailable) {
+				return fmt.Errorf("ingest: patent %s not found", cur.number)
+			}
+
+			// A referenced patent that could not be fetched: record a stub
 			// so the edge to it still resolves, and keep crawling.
 			if _, stubErr := c.ensureRecord(ctx, cur.number); stubErr != nil {
 				return stubErr

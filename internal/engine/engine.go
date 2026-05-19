@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -289,14 +290,49 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	// This covers both brand-new stubs (created==true) and existing stubs that
 	// were previously discovered as citation edges.
 	if state == domain.ReviewStateStored && e.ingest != nil {
-		if _, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
+		if jobID, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
 		} else {
 			fetchStarted = true
+			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
 	}
 	return fetchStarted, nil
+}
+
+// cleanupIfNotFound watches for the done event of a single-patent fetch job
+// and removes the membership (and stub patent if freshly created) when the
+// root patent was not found.
+func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.PatentNumber, stubCreated bool, id JobID) {
+	ch, unsub := e.pool.bus.Subscribe()
+	defer unsub()
+	for ev := range ch {
+		if proto.EventKind(ev.Method) != proto.EventIngestDone {
+			continue
+		}
+		var d proto.IngestDone
+		if err := json.Unmarshal(ev.Params, &d); err != nil || d.JobID != string(id) {
+			continue
+		}
+		if d.Error == "" {
+			return
+		}
+		ctx := context.Background()
+		if stubCreated {
+			if err := e.repo.DeletePatent(ctx, record); err != nil {
+				e.log(ctx, slog.LevelWarn, "cleanup stub after not-found failed",
+					slog.String("record", record.String()), slog.String("error", err.Error()))
+			}
+		} else {
+			if err := e.repo.DeleteMembership(ctx, project, record); err != nil {
+				e.log(ctx, slog.LevelWarn, "cleanup membership after not-found failed",
+					slog.String("record", record.String()), slog.String("error", err.Error()))
+			}
+		}
+		e.announceChange()
+		return
+	}
 }
 
 // SetReviewState changes a membership's state, rejecting transitions the

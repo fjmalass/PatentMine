@@ -455,16 +455,16 @@ func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdMarkStored(invocation) (tea.Model, tea.Cmd) {
-	return a.runReviewState(domain.ReviewStateStored)
+	return a.runReviewState(command.MarkStored, domain.ReviewStateStored)
 }
 func (a *App) cmdMarkUnderReview(invocation) (tea.Model, tea.Cmd) {
-	return a.runReviewState(domain.ReviewStateUnderReview)
+	return a.runReviewState(command.MarkUnderReview, domain.ReviewStateUnderReview)
 }
 func (a *App) cmdMarkIgnored(invocation) (tea.Model, tea.Cmd) {
-	return a.runReviewState(domain.ReviewStateIgnored)
+	return a.runReviewState(command.MarkIgnored, domain.ReviewStateIgnored)
 }
 func (a *App) cmdMarkDeleted(invocation) (tea.Model, tea.Cmd) {
-	return a.runReviewState(domain.ReviewStateDeleted)
+	return a.runReviewState(command.MarkDeleted, domain.ReviewStateDeleted)
 }
 
 func (a *App) cmdProjectActivate(inv invocation) (tea.Model, tea.Cmd) {
@@ -511,7 +511,7 @@ func (a *App) cmdTagAdd(inv invocation) (tea.Model, tea.Cmd) {
 		return a.usageError(command.TagAdd)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+	return a.runAction(command.TagAdd, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
 		return pane.AssignTagCmd(a.client, project, patent, name)
 	})
 }
@@ -522,37 +522,15 @@ func (a *App) cmdTagRemove(inv invocation) (tea.Model, tea.Cmd) {
 		return a.usageError(command.TagRemove)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+	return a.runAction(command.TagRemove, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
 		return pane.RemoveTagCmd(a.client, project, patent, name)
 	})
 }
 
 func (a *App) cmdPatentDelete(invocation) (tea.Model, tea.Cmd) {
-	if a.client == nil {
-		a.setErr(text.StatusDaemonUnavailable)
-		return a, nil
-	}
-	numbers := a.focusedSelections()
-	if len(numbers) == 0 {
-		a.setErr(text.StatusNoPatentSelected)
-		return a, nil
-	}
-	var msg string
-	var confirmCmd tea.Cmd
-	if len(numbers) == 1 {
-		msg = "Delete " + numbers[0].String() + "? This cannot be undone."
-		confirmCmd = pane.DeletePatentCmd(a.client, numbers[0])
-	} else {
-		msg = fmt.Sprintf("Delete %d patents? This cannot be undone.", len(numbers))
-		cmds := make([]tea.Cmd, 0, len(numbers))
-		for _, n := range numbers {
-			cmds = append(cmds, pane.DeletePatentCmd(a.client, n))
-		}
-		confirmCmd = tea.Batch(cmds...)
-	}
-	a.confirmCmd = confirmCmd
-	a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
-	return a, nil
+	return a.runAction(command.PatentDelete, func(_ domain.ProjectID, n domain.PatentNumber) tea.Cmd {
+		return pane.DeletePatentCmd(a.client, n)
+	})
 }
 
 // cmdProjectCreate opens a name-entry overlay, or — given a typed name — creates
@@ -740,25 +718,19 @@ func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {
 	return domain.Project{}, false
 }
 
-func (a *App) runReviewState(target domain.ReviewState) (tea.Model, tea.Cmd) {
-	return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+func (a *App) runReviewState(id command.ID, target domain.ReviewState) (tea.Model, tea.Cmd) {
+	return a.runAction(id, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
 		return pane.SetReviewStateCmd(a.client, project, patent, target)
 	})
 }
 
-func (a *App) focusedSelections() []domain.PatentNumber {
-	if ms, ok := a.focusedPane().(pane.MultiSelector); ok {
-		if sels := ms.Selections(); len(sels) >= 2 {
-			return sels
-		}
-	}
-	if number, ok := a.focusedPane().Selection(); ok {
-		return []domain.PatentNumber{number}
-	}
-	return nil
-}
-
-func (a *App) runProjectAction(action func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd) (tea.Model, tea.Cmd) {
+// runAction is the canonical dispatcher for single-patent and multi-patent
+// project actions. It validates preconditions, loops over all focused selections,
+// and applies any confirmation registered for id in commandPolicies.
+func (a *App) runAction(
+	id command.ID,
+	build func(domain.ProjectID, domain.PatentNumber) tea.Cmd,
+) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
 		return a, nil
@@ -774,9 +746,34 @@ func (a *App) runProjectAction(action func(project domain.ProjectID, patent doma
 	}
 	cmds := make([]tea.Cmd, 0, len(numbers))
 	for _, n := range numbers {
-		cmds = append(cmds, action(a.activeProject.ID, n))
+		cmds = append(cmds, build(a.activeProject.ID, n))
 	}
-	return a, tea.Batch(cmds...)
+	cmd := tea.Batch(cmds...)
+
+	if policy := commandPolicies[id]; policy.Confirm != nil {
+		if msg, needs := policy.Confirm(numbers); needs {
+			a.confirmCmd = cmd
+			a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
+			return a, nil
+		}
+	}
+	return a, cmd
+}
+
+func (a *App) focusedSelections() []domain.PatentNumber {
+	if ms, ok := a.focusedPane().(pane.MultiSelector); ok {
+		if sels := ms.Selections(); len(sels) >= 2 {
+			return sels
+		}
+	}
+	if number, ok := a.focusedPane().Selection(); ok {
+		return []domain.PatentNumber{number}
+	}
+	return nil
+}
+
+func (a *App) runProjectAction(action func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd) (tea.Model, tea.Cmd) {
+	return a.runAction("", action)
 }
 
 func (a *App) syncPaneProject(_ pane.Pane) tea.Cmd {

@@ -164,6 +164,18 @@ func (r *Repo) SetReviewState(ctx context.Context, project domain.ProjectID, pat
 	return nil
 }
 
+// DeleteMembership permanently removes a patent from a project.
+func (r *Repo) DeleteMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
+	defer r.observeDuration("delete_membership", time.Now(), &err)
+	_, err = r.writer.ExecContext(ctx,
+		`DELETE FROM membership WHERE project_id = ? AND patent_number = ?`,
+		string(project), patent.Normalized())
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete membership: %w", err)
+	}
+	return nil
+}
+
 // Memberships returns every membership of a project, ordered by patent number.
 func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out []domain.Membership, err error) {
 	defer r.observeDuration("memberships", time.Now(), &err)
