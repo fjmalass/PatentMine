@@ -29,6 +29,7 @@ const (
 	StatusIngestStartFailed    Key = "status.ingest_start_failed"
 	StatusAddFailed            Key = "status.add_failed"
 	StatusAdded                Key = "status.added"
+	StatusAddedNoIngest        Key = "status.added_no_ingest"
 	StatusSetStateFailed       Key = "status.set_state_failed"
 	StatusSetState             Key = "status.set_state"
 	StatusExportFailed         Key = "status.export_failed"
@@ -64,6 +65,7 @@ const (
 	HintClearActive     Key = "hint.clear_active"
 	HintExportIDS       Key = "hint.export_ids"
 	HintIngest          Key = "hint.ingest"
+	HintFetch           Key = "hint.fetch"
 	HintJump            Key = "hint.jump"
 	HintHelp            Key = "hint.help"
 	HintQuit            Key = "hint.quit"
@@ -169,6 +171,7 @@ var englishNamed = map[Key]string{
 	StatusIngestStartFailed:    "ingest failed: %s",
 	StatusAddFailed:            "add to project failed: %s",
 	StatusAdded:                "added %s to %s",
+	StatusAddedNoIngest:        "added %s — press F to fetch",
 	StatusSetStateFailed:       "set state failed: %s",
 	StatusSetState:             "set %s to %s review state in %s",
 	StatusExportFailed:         "IDS export failed: %s",
@@ -202,7 +205,8 @@ var englishNamed = map[Key]string{
 	HintSelect:          "select",
 	HintClearActive:     "clear active",
 	HintExportIDS:       "export IDS",
-	HintIngest:          "ingest",
+	HintIngest:          "ingest family",
+	HintFetch:           "fetch patent",
 	HintJump:            "jump",
 	HintHelp:            "help",
 	HintQuit:            "quit",

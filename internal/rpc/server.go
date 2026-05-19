@@ -309,10 +309,11 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.AddToProject(ctx, p.Project, p.Patent); err != nil {
+	fetchStarted, err := s.engine.AddToProject(ctx, p.Project, p.Patent)
+	if err != nil {
 		return nil, err
 	}
-	return proto.Empty{}, nil
+	return proto.MembershipAddResult{FetchStarted: fetchStarted}, nil
 }
 
 func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, error) {

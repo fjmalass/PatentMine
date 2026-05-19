@@ -71,10 +71,13 @@ func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		var res proto.Empty
+		var res proto.MembershipAddResult
 		if err := client.Call(ctx, proto.MethodMembershipAdd,
 			proto.MembershipParams{Project: project, Patent: number}, &res); err != nil {
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
+		}
+		if !res.FetchStarted {
+			return StatusMsg{Key: text.StatusAddedNoIngest, Args: []any{number.String()}}
 		}
 		return StatusMsg{Key: text.StatusAdded, Args: []any{number.String(), string(project)}}
 	}

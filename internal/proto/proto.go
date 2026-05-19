@@ -156,6 +156,11 @@ type MembershipParams struct {
 	Patent  domain.PatentNumber `json:"patent"`
 }
 
+// MembershipAddResult reports the outcome of adding a patent to a project.
+type MembershipAddResult struct {
+	FetchStarted bool `json:"fetch_started"`
+}
+
 // ReviewStateParams sets a membership's state.
 type ReviewStateParams struct {
 	Project domain.ProjectID    `json:"project"`

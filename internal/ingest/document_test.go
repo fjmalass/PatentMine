@@ -17,7 +17,7 @@ func TestCrawlUnifiesApplicationAndGrant(t *testing.T) {
 	// The grant file lists both the application and the grant as documents.
 	grant := domain.MustParsePatentNumber("US0000010B2")
 	application := domain.MustParsePatentNumber("US16000010")
-	if err := crawler.Crawl(ctx, grant, 0, false, nil); err != nil {
+	if err := crawler.Crawl(ctx, grant, 0, domain.CrawlProfileAll, false, nil); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
 
@@ -54,11 +54,11 @@ func TestCrawlFoldsGrantIntoExistingApplicationRecord(t *testing.T) {
 	grant := domain.MustParsePatentNumber("US0000010B2")
 
 	// The application is loaded one day...
-	if err := crawler.Crawl(ctx, application, 0, false, nil); err != nil {
+	if err := crawler.Crawl(ctx, application, 0, domain.CrawlProfileAll, false, nil); err != nil {
 		t.Fatalf("Crawl application: %v", err)
 	}
 	// ...and the grant later. It must fold into the existing record.
-	if err := crawler.Crawl(ctx, grant, 0, false, nil); err != nil {
+	if err := crawler.Crawl(ctx, grant, 0, domain.CrawlProfileAll, false, nil); err != nil {
 		t.Fatalf("Crawl grant: %v", err)
 	}
 

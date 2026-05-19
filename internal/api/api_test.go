@@ -30,7 +30,7 @@ func testAPI(t *testing.T) http.Handler {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
-	factory := func(root domain.PatentNumber, _ int, _ bool) engine.Job {
+	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) engine.Job {
 		return engine.JobFunc(func(_ context.Context, id engine.JobID, emit func(proto.Event)) error {
 			emit(proto.NewEvent(proto.EventIngestProgress,
 				proto.IngestProgress{JobID: string(id), Message: root.String()}))

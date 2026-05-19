@@ -31,7 +31,7 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1, false,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1, domain.CrawlProfileAll, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
@@ -54,8 +54,8 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 		t.Fatalf("US0000004B2 fetch state = %s, want stub", stub.FetchState)
 	}
 
-	if last.Fetched != 3 || last.Found != 4 {
-		t.Fatalf("final progress = %+v, want fetched 3 found 4", last)
+	if last.IngestedCount != 3 || last.DiscoveredCount != 4 {
+		t.Fatalf("final progress = %+v, want ingested 3 discovered 4", last)
 	}
 
 	// Family edges were recorded.
@@ -81,12 +81,12 @@ func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 0, false,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 0, domain.CrawlProfileAll, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
-	if last.Fetched != 1 {
-		t.Fatalf("depth-0 crawl fetched %d, want 1", last.Fetched)
+	if last.IngestedCount != 1 {
+		t.Fatalf("depth-0 crawl fetched %d, want 1", last.IngestedCount)
 	}
 	// Neighbours are recorded as stubs, not fetched.
 	neighbour, err := repo.Patent(ctx, domain.MustParsePatentNumber("US0000002B2"))
@@ -104,12 +104,12 @@ func TestCrawlRespectsNodeBudget(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{NodeBudget: 2})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 5, false,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 5, domain.CrawlProfileAll, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
-	if last.Fetched != 2 {
-		t.Fatalf("crawl fetched %d, want 2 (node budget)", last.Fetched)
+	if last.IngestedCount != 2 {
+		t.Fatalf("crawl fetched %d, want 2 (node budget)", last.IngestedCount)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestCrawlCancellation(t *testing.T) {
 	cancel()
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
-	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 2, false, nil)
+	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 2, domain.CrawlProfileAll, false, nil)
 	if err == nil {
 		t.Fatal("Crawl on a cancelled context should return an error")
 	}

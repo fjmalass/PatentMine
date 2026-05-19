@@ -246,12 +246,14 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // patent may be given by any of its document numbers; it is resolved to the
 // record before the membership is created. A patent that has never been
 // fetched is recorded as a stub first, so it can be tracked in a project
-// ahead of ingestion.
-func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
+// ahead of ingestion. fetchStarted reports whether an automatic single-patent
+// fetch was enqueued; false means the caller should prompt the user to fetch
+// manually (e.g. with F).
+func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 	record, created, err := e.ensureRecord(ctx, patent)
 	if err != nil {
-		return err
+		return false, err
 	}
 	before, _ := e.existingMembership(ctx, project, record)
 	state := domain.ReviewStateStored
@@ -269,7 +271,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	err = e.repo.AddMembership(ctx, after)
 	if err != nil {
 		e.log(ctx, slog.LevelError, "add membership failed", slog.String("project_id", string(project)), slog.String("patent", patent.String()), slog.String("error", err.Error()))
-		return err
+		return false, err
 	}
 	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
 	e.recordActivity(ctx, observability.Record{
@@ -290,9 +292,11 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		if _, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
+		} else {
+			fetchStarted = true
 		}
 	}
-	return nil
+	return fetchStarted, nil
 }
 
 // SetReviewState changes a membership's state, rejecting transitions the

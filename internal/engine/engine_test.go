@@ -66,7 +66,7 @@ func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	number := domain.MustParsePatentNumber("AU607081B2")
-	if err := eng.AddToProject(ctx, project.ID, number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, number); err != nil {
 		t.Fatalf("AddToProject for an unfetched patent: %v", err)
 	}
 	stub, err := eng.Patent(ctx, number)
@@ -93,7 +93,7 @@ func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := eng.AddToProject(ctx, project.ID, domain.MustParsePatentNumber("AU607081B2")); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, domain.MustParsePatentNumber("AU607081B2")); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	select {
@@ -156,7 +156,7 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 
@@ -249,7 +249,7 @@ func TestEngineExportIDSExcludesIgnoredAndDeleted(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("SaveDocument %s: %v", n, err)
 		}
-		if err := eng.AddToProject(ctx, project.ID, number); err != nil {
+		if _, err := eng.AddToProject(ctx, project.ID, number); err != nil {
 			t.Fatalf("AddToProject %s: %v", n, err)
 		}
 	}
@@ -300,7 +300,7 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 			t.Fatalf("SaveDocument: %v", err)
 		}
 	}
-	if err := eng.AddToProject(ctx, project.ID, granted); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, granted); err != nil {
 		t.Fatalf("AddToProject granted: %v", err)
 	}
 
@@ -316,7 +316,7 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveDocument pending: %v", err)
 	}
-	if err := eng.AddToProject(ctx, project.ID, pending); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, pending); err != nil {
 		t.Fatalf("AddToProject pending: %v", err)
 	}
 
@@ -364,7 +364,7 @@ func TestEngineResolvesDocumentNumberToRecord(t *testing.T) {
 	}
 
 	// Adding by the application number must resolve to the record.
-	if err := eng.AddToProject(ctx, project.ID, application); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, application); err != nil {
 		t.Fatalf("AddToProject by application number: %v", err)
 	}
 	members, err := repo.Memberships(ctx, project.ID)
@@ -421,7 +421,7 @@ func TestEngineReviewStateOf(t *testing.T) {
 	if _, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number); err != nil || ok {
 		t.Fatalf("ReviewStateOf before add = (ok %v, err %v), want ok false", ok, err)
 	}
-	if err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	state, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number)

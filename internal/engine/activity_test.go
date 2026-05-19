@@ -42,7 +42,7 @@ func TestEngineWritesSemanticActivityRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := eng.AddToProject(context.Background(), project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(context.Background(), project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 

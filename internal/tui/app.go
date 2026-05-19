@@ -944,6 +944,8 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
+			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
+			a.shortcutHint(ctx, command.FetchPatent, text.HintFetch),
 			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
 			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
@@ -955,6 +957,8 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
+			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
+			a.shortcutHint(ctx, command.FetchPatent, text.HintFetch),
 			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
 			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
