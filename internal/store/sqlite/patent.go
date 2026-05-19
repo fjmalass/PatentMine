@@ -28,7 +28,7 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 		`WHERE pt.patent_number = p.number AND t.project_id = ?), '[]')`
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-			`p.inventors, p.expiration_date, p.fetch_state, m.state, ` + tagsSubq,
+			`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), ` + tagsSubq,
 			[]any{string(project)}
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
@@ -76,6 +76,17 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 		p.FirstClaim, encodeTime(p.ExpirationDate), p.ExpirationSource, p.SourceURL)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
+	}
+	// When a patent is fully fetched, every project membership that is currently
+	// "stored" (the default for numbers discovered from family edges) moves to
+	// "cached".
+	if p.FetchState == domain.FetchCached {
+		_, err = r.writer.ExecContext(ctx,
+			`UPDATE membership SET state = ? WHERE patent_number = ? AND state = ?`,
+			string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateLoad))
+		if err != nil {
+			return fmt.Errorf("store/sqlite: update membership state on fetch: %w", err)
+		}
 	}
 	return nil
 }
@@ -175,16 +186,16 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		row                           domain.PatentRow
 		country, serial, kind, shown  string
 		inventorsJSON, expirationDate string
-		fetchState, membershipState   string
+		fetchState, reviewState       string
 		tagsJSON                      string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
-		&inventorsJSON, &expirationDate, &fetchState, &membershipState, &tagsJSON); err != nil {
+		&inventorsJSON, &expirationDate, &fetchState, &reviewState, &tagsJSON); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
 	row.FetchState = domain.FetchState(fetchState)
-	row.MembershipState = domain.MembershipState(membershipState)
+	row.ReviewState = domain.ReviewState(reviewState)
 	if shown != "" {
 		display, err := domain.ParsePatentNumber(shown)
 		if err != nil {
@@ -221,6 +232,8 @@ func patentSortExpr(col domain.SortColumn, asc bool) string {
 		return "json_extract(p.inventors, '$[0]') " + dir
 	case domain.SortByExpires:
 		return "p.expiration_date " + dir
+	case domain.SortByReviewState:
+		return "COALESCE(m.state, p.fetch_state) " + dir
 	default:
 		return "p.number " + dir
 	}
@@ -242,20 +255,41 @@ func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (count int
 func patentFilter(q store.PatentQuery) (string, []any) {
 	var sb strings.Builder
 	var args []any
-	if q.Project != "" {
-		sb.WriteString(" JOIN membership m ON m.patent_number = p.number AND m.project_id = ?")
-		args = append(args, string(q.Project))
-	}
 	var conds []string
-	if q.Project != "" && q.State != "" {
-		conds = append(conds, "m.state = ?")
-		args = append(args, string(q.State))
+
+	if q.Project != "" {
+		// When we are in the main catalog (no relation filter), we only show
+		// project members. When we are listing relations, we show all related
+		// patents and use the project JOIN to decorate them with state/tags.
+		joinType := "JOIN"
+		if !q.Relation.IsZero() && q.ReviewState == "" {
+			joinType = "LEFT JOIN"
+		}
+		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")
+		args = append(args, string(q.Project))
+		if q.ReviewState != "" {
+			conds = append(conds, "m.state = ?")
+			args = append(args, string(q.ReviewState))
+		}
 	}
+
+	if !q.Relation.IsZero() && q.RelationKind != "" {
+		// A relation from A to B of kind K can be stored as (from=A, to=B, kind=K)
+		// OR (from=B, to=A, kind=K.Inverse()). To find all patents related to N
+		// by kind K, we check both directions.
+		conds = append(conds, `EXISTS (SELECT 1 FROM relation rel WHERE `+
+			`(rel.from_number = ? AND rel.kind = ? AND rel.to_number = p.number) OR `+
+			`(rel.to_number = ? AND rel.kind = ? AND rel.from_number = p.number))`)
+		args = append(args, q.Relation.Normalized(), string(q.RelationKind),
+			q.Relation.Normalized(), string(q.RelationKind.Inverse()))
+	}
+
 	if q.Search != "" {
 		conds = append(conds, "(p.number LIKE ? OR p.title LIKE ?)")
 		like := "%" + q.Search + "%"
 		args = append(args, like, like)
 	}
+
 	if len(conds) > 0 {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(conds, " AND "))

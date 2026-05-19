@@ -60,10 +60,10 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 	}
 	p := resp.Patents[0]
 
-	var inventors []string
+	var inventors []domain.Inventor
 	for _, inv := range p.Inventors {
 		if name := strings.TrimSpace(inv.First + " " + inv.Last); name != "" {
-			inventors = append(inventors, name)
+			inventors = append(inventors, domain.Inventor(name))
 		}
 	}
 	var assignees []string

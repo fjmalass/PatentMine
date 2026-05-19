@@ -80,14 +80,14 @@ func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain
 	}
 }
 
-// SetMembershipStateCmd changes a patent's state in the active project.
-func SetMembershipStateCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, state domain.MembershipState) tea.Cmd {
+// SetReviewStateCmd changes a patent's state in the active project.
+func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, state domain.ReviewState) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
-		if err := client.Call(ctx, proto.MethodMembershipState,
-			proto.MembershipStateParams{Project: project, Patent: number, State: string(state)}, &res); err != nil {
+		if err := client.Call(ctx, proto.MethodReviewState,
+			proto.ReviewStateParams{Project: project, Patent: number, State: string(state)}, &res); err != nil {
 			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
 		}
 		return StatusMsg{Key: text.StatusSetState, Args: []any{number.String(), string(state), string(project)}}

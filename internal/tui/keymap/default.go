@@ -90,8 +90,9 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
-			"left":   command.ColPrev,
 			"right":  command.ColNext,
+			"left":   command.ColPrev,
+			".":      command.SortApply,
 			"c":      command.OpenCitations,
 			"b":      command.OpenCitedBy,
 			"p":      command.OpenProjects,
@@ -119,7 +120,9 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
-			"right":  command.OpenDetail,
+			"right":  command.ColNext,
+			"left":   command.ColPrev,
+			".":      command.SortApply,
 			"p":      command.OpenProjects,
 			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,

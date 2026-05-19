@@ -44,7 +44,7 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodProjectList:     s.projectList,
 		proto.MethodProjectCreate:   s.projectCreate,
 		proto.MethodMembershipAdd:   s.membershipAdd,
-		proto.MethodMembershipState: s.membershipState,
+		proto.MethodReviewState: s.reviewState,
 		proto.MethodTagAssign:       s.tagAssign,
 		proto.MethodTagRemove:       s.tagRemove,
 		proto.MethodIngestFamily:    s.ingestFamily,
@@ -237,12 +237,12 @@ func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error
 	// State and tags are project-scoped; populate them only when the caller
 	// named a project, leaving them empty for a project-independent lookup.
 	if p.Project != "" {
-		state, ok, err := s.engine.MembershipStateOf(ctx, p.Project, p.Number)
+		state, ok, err := s.engine.ReviewStateOf(ctx, p.Project, p.Number)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			result.State = state
+			result.ReviewState = state
 		}
 		tags, err := s.engine.PatentTags(ctx, p.Project, p.Number)
 		if err != nil {
@@ -260,7 +260,7 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 	}
 	patents, total, err := s.engine.ListPatents(ctx, store.PatentQuery{
 		Project:       p.Project,
-		State:         p.State,
+		ReviewState:   p.ReviewState,
 		Search:        p.Search,
 		Limit:         p.Limit,
 		Offset:        p.Offset,
@@ -315,16 +315,16 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	return proto.Empty{}, nil
 }
 
-func (s *Server) membershipState(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.MembershipStateParams](raw)
+func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ReviewStateParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	state, err := domain.ParseMembershipState(p.State)
+	state, err := domain.ParseReviewState(p.State)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadParams, err)
 	}
-	if err := s.engine.SetMembershipState(ctx, p.Project, p.Patent, state); err != nil {
+	if err := s.engine.SetReviewState(ctx, p.Project, p.Patent, state); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil
@@ -391,15 +391,20 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 	if err != nil {
 		return nil, err
 	}
-	kind, err := domain.ParseRelationKind(p.Kind)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrBadParams, err)
+	q := store.PatentQuery{
+		Relation:      p.Number,
+		RelationKind:  p.Kind,
+		Project:       p.Project,
+		Limit:         p.Limit,
+		Offset:        p.Offset,
+		SortColumn:    p.SortColumn,
+		SortAscending: p.SortAscending,
 	}
-	rels, err := s.engine.Relations(ctx, p.Number, kind)
+	patents, total, err := s.engine.Relations(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	return proto.RelationsResult{Relations: rels}, nil
+	return proto.RelationsResult{Patents: patents, Total: total}, nil
 }
 
 func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -188,15 +188,15 @@ func googleText(s *goquery.Selection, selectors ...string) string {
 
 // googleTexts returns the de-duplicated text of every element matched by any
 // selector.
-func googleTexts(s *goquery.Selection, selectors ...string) []string {
+func googleTexts(s *goquery.Selection, selectors ...string) []domain.Inventor {
 	seen := map[string]bool{}
-	var out []string
+	var out []domain.Inventor
 	for _, selector := range selectors {
 		s.Find(selector).Each(func(_ int, el *goquery.Selection) {
 			text := clean(el.Text())
 			if text != "" && !seen[text] {
 				seen[text] = true
-				out = append(out, text)
+				out = append(out, domain.Inventor(text))
 			}
 		})
 	}

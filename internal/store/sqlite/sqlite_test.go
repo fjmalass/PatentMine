@@ -29,7 +29,7 @@ func samplePatent(number string) domain.Patent {
 		Title:      "A method for " + number,
 		Abstract:   "abstract text",
 		Assignee:   "Acme Corp",
-		Inventors:  []string{"Ada Lovelace", "Alan Turing"},
+		Inventors:  []domain.Inventor{"Ada Lovelace", "Alan Turing"},
 		FetchState: domain.FetchCached,
 		Source:     domain.SourceFile,
 		GrantDate:  time.Date(2023, 3, 21, 0, 0, 0, 0, time.UTC),
@@ -171,6 +171,43 @@ func TestRelations(t *testing.T) {
 	}
 }
 
+func TestBidirectionalRelations(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	n1 := domain.MustParsePatentNumber("US0000001A1")
+	n2 := domain.MustParsePatentNumber("US0000002A1")
+
+	if err := repo.SavePatent(ctx, samplePatent(n1.String())); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SavePatent(ctx, samplePatent(n2.String())); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save A cites B
+	if err := repo.SaveRelation(ctx, domain.Relation{From: n1, To: n2, Kind: domain.RelationCites}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Query citations of A -> should find B
+	cites, err := repo.ListPatents(ctx, store.PatentQuery{Relation: n1, RelationKind: domain.RelationCites})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cites) != 1 || cites[0].Number != n2 {
+		t.Errorf("citations of A: got %v, want [%v]", cites, n2)
+	}
+
+	// Query cited_by of B -> should find A
+	citedBy, err := repo.ListPatents(ctx, store.PatentQuery{Relation: n2, RelationKind: domain.RelationCitedBy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(citedBy) != 1 || citedBy[0].Number != n1 {
+		t.Errorf("cited_by of B: got %v, want [%v]", citedBy, n1)
+	}
+}
+
 func TestProjectAndMembership(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()
@@ -184,29 +221,29 @@ func TestProjectAndMembership(t *testing.T) {
 		t.Fatalf("SavePatent: %v", err)
 	}
 	if err := repo.AddMembership(ctx, domain.Membership{
-		Project: project.ID,
-		Patent:  patent.Number,
-		State:   domain.MembershipStored,
-		AddedAt: time.Now(),
+		Project:     project.ID,
+		Patent:      patent.Number,
+		ReviewState: domain.ReviewStateLoad,
+		AddedAt:     time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
 	}
 
-	if err := repo.SetMembershipState(ctx, project.ID, patent.Number, domain.MembershipUnderReview); err != nil {
-		t.Fatalf("SetMembershipState: %v", err)
+	if err := repo.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState: %v", err)
 	}
 	members, err := repo.Memberships(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("Memberships: %v", err)
 	}
-	if len(members) != 1 || members[0].State != domain.MembershipUnderReview {
+	if len(members) != 1 || members[0].ReviewState != domain.ReviewStateUnderReview {
 		t.Fatalf("Memberships = %v, want one under_review", members)
 	}
 
 	// Listing a project's patents filtered by state.
 	page, err := repo.ListPatents(ctx, store.PatentQuery{
-		Project: project.ID,
-		State:   domain.MembershipUnderReview,
+		Project:     project.ID,
+		ReviewState: domain.ReviewStateUnderReview,
 	})
 	if err != nil {
 		t.Fatalf("ListPatents by project: %v", err)
@@ -216,10 +253,10 @@ func TestProjectAndMembership(t *testing.T) {
 	}
 
 	// State change for an absent membership reports ErrNotFound.
-	err = repo.SetMembershipState(ctx, project.ID,
-		domain.MustParsePatentNumber("US9999999B2"), domain.MembershipIgnored)
+	err = repo.SetReviewState(ctx, project.ID,
+		domain.MustParsePatentNumber("US9999999B2"), domain.ReviewStateIgnored)
 	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("SetMembershipState absent: err = %v, want ErrNotFound", err)
+		t.Fatalf("SetReviewState absent: err = %v, want ErrNotFound", err)
 	}
 }
 

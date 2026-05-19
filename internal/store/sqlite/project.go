@@ -85,20 +85,30 @@ func scanProject(s rowScanner) (domain.Project, error) {
 }
 
 // AddMembership links a patent to a project. An existing link is left as is;
-// state changes go through SetMembershipState.
+// state changes go through SetReviewState.
 func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err error) {
 	defer r.observeDuration("add_membership", time.Now(), &err)
 	if m.Project == "" || m.Patent.IsZero() {
 		return errors.New("store/sqlite: membership needs a project and a patent")
 	}
-	if !m.State.Valid() {
-		return fmt.Errorf("store/sqlite: invalid membership state %q", m.State)
+	if !m.ReviewState.Valid() {
+		return fmt.Errorf("store/sqlite: invalid review state %q", m.ReviewState)
 	}
+	state := m.ReviewState
+	// When adding a patent that is already fully fetched, it starts as cached
+	// rather than stored.
+	var fetchState string
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT fetch_state FROM patent WHERE number = ?`, m.Patent.Normalized()).Scan(&fetchState)
+	if err == nil && domain.FetchState(fetchState) == domain.FetchCached && state == domain.ReviewStateLoad {
+		state = domain.ReviewStateCached
+	}
+
 	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO membership (project_id, patent_number, state, added_at)
 		 VALUES (?,?,?,?)
 		 ON CONFLICT(project_id, patent_number) DO NOTHING`,
-		string(m.Project), m.Patent.Normalized(), string(m.State), encodeTime(m.AddedAt))
+		string(m.Project), m.Patent.Normalized(), string(state), encodeTime(m.AddedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: add membership: %w", err)
 	}
@@ -124,29 +134,29 @@ func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent 
 		return domain.Membership{}, err
 	}
 	return domain.Membership{
-		Project: domain.ProjectID(projectID),
-		Patent:  patent,
-		State:   domain.MembershipState(state),
-		AddedAt: added,
+		Project:     domain.ProjectID(projectID),
+		Patent:      patent,
+		ReviewState: domain.ReviewState(state),
+		AddedAt:     added,
 	}, nil
 }
 
-// SetMembershipState changes a membership's state, or returns store.ErrNotFound
+// SetReviewState changes a membership's state, or returns store.ErrNotFound
 // when the patent is not a member of the project.
-func (r *Repo) SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.MembershipState) (err error) {
-	defer r.observeDuration("set_membership_state", time.Now(), &err)
+func (r *Repo) SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.ReviewState) (err error) {
+	defer r.observeDuration("set_review_state", time.Now(), &err)
 	if !state.Valid() {
-		return fmt.Errorf("store/sqlite: invalid membership state %q", state)
+		return fmt.Errorf("store/sqlite: invalid review state %q", state)
 	}
 	res, err := r.writer.ExecContext(ctx,
 		`UPDATE membership SET state = ? WHERE project_id = ? AND patent_number = ?`,
 		string(state), string(project), patent.Normalized())
 	if err != nil {
-		return fmt.Errorf("store/sqlite: set membership state: %w", err)
+		return fmt.Errorf("store/sqlite: set review state: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("store/sqlite: set membership state: %w", err)
+		return fmt.Errorf("store/sqlite: set review state: %w", err)
 	}
 	if affected == 0 {
 		return store.ErrNotFound
@@ -180,10 +190,10 @@ func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out [
 			return nil, err
 		}
 		out = append(out, domain.Membership{
-			Project: domain.ProjectID(projectID),
-			Patent:  patent,
-			State:   domain.MembershipState(state),
-			AddedAt: added,
+			Project:     domain.ProjectID(projectID),
+			Patent:      patent,
+			ReviewState: domain.ReviewState(state),
+			AddedAt:     added,
 		})
 	}
 	if err := rows.Err(); err != nil {

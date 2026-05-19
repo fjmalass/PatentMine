@@ -9,6 +9,7 @@ import (
 
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
+	"patentmine/internal/store"
 	"patentmine/internal/store/sqlite"
 )
 
@@ -140,7 +141,7 @@ func TestEngineImportFileWithoutImporterFails(t *testing.T) {
 	}
 }
 
-func TestEngineEnforcesMembershipTransitions(t *testing.T) {
+func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
 	ctx := context.Background()
 
@@ -160,15 +161,15 @@ func TestEngineEnforcesMembershipTransitions(t *testing.T) {
 	}
 
 	// stored -> deleted is allowed.
-	if err := eng.SetMembershipState(ctx, project.ID, patent.Number, domain.MembershipDeleted); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateDeleted); err != nil {
 		t.Fatalf("stored->deleted: %v", err)
 	}
 	// deleted -> ignored is rejected by the domain transition rules.
-	if err := eng.SetMembershipState(ctx, project.ID, patent.Number, domain.MembershipIgnored); err == nil {
+	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateIgnored); err == nil {
 		t.Fatal("deleted->ignored should be rejected")
 	}
 	// deleted -> stored (undelete) is allowed.
-	if err := eng.SetMembershipState(ctx, project.ID, patent.Number, domain.MembershipStored); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateLoad); err != nil {
 		t.Fatalf("deleted->stored: %v", err)
 	}
 }
@@ -253,9 +254,9 @@ func TestEngineExportIDSExcludesIgnoredAndDeleted(t *testing.T) {
 		}
 	}
 	// Ignored patents are not disclosed on the IDS.
-	if err := eng.SetMembershipState(ctx, project.ID,
-		domain.MustParsePatentNumber("US0000002B2"), domain.MembershipIgnored); err != nil {
-		t.Fatalf("SetMembershipState: %v", err)
+	if err := eng.SetReviewState(ctx, project.ID,
+		domain.MustParsePatentNumber("US0000002B2"), domain.ReviewStateIgnored); err != nil {
+		t.Fatalf("SetReviewState: %v", err)
 	}
 
 	ids, err := eng.ExportIDS(ctx, project.ID)
@@ -375,8 +376,8 @@ func TestEngineResolvesDocumentNumberToRecord(t *testing.T) {
 	}
 
 	// Changing state by the application number resolves too.
-	if err := eng.SetMembershipState(ctx, project.ID, application, domain.MembershipUnderReview); err != nil {
-		t.Fatalf("SetMembershipState by application number: %v", err)
+	if err := eng.SetReviewState(ctx, project.ID, application, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState by application number: %v", err)
 	}
 
 	// Fetching by the application number returns the unified record.
@@ -391,14 +392,16 @@ func TestEngineResolvesDocumentNumberToRecord(t *testing.T) {
 
 func TestEngineRelationsRejectsInvalidKind(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
-	_, err := eng.Relations(context.Background(),
-		domain.MustParsePatentNumber("US0000001B2"), domain.RelationKind("bogus"))
+	_, _, err := eng.Relations(context.Background(), store.PatentQuery{
+		Relation:     domain.MustParsePatentNumber("US0000001B2"),
+		RelationKind: domain.RelationKind("bogus"),
+	})
 	if err == nil {
 		t.Fatal("Relations with an invalid kind should fail")
 	}
 }
 
-func TestEngineMembershipStateOf(t *testing.T) {
+func TestEngineReviewStateOf(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
 	ctx := context.Background()
 
@@ -415,19 +418,19 @@ func TestEngineMembershipStateOf(t *testing.T) {
 	}
 
 	// A patent that is not yet a member reports ok=false, not an error.
-	if _, ok, err := eng.MembershipStateOf(ctx, project.ID, patent.Number); err != nil || ok {
-		t.Fatalf("MembershipStateOf before add = (ok %v, err %v), want ok false", ok, err)
+	if _, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number); err != nil || ok {
+		t.Fatalf("ReviewStateOf before add = (ok %v, err %v), want ok false", ok, err)
 	}
 	if err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
-	state, ok, err := eng.MembershipStateOf(ctx, project.ID, patent.Number)
-	if err != nil || !ok || state != domain.MembershipStored {
-		t.Fatalf("MembershipStateOf = (%q, %v, %v), want (stored, true, nil)", state, ok, err)
+	state, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number)
+	if err != nil || !ok || state != domain.ReviewStateLoad {
+		t.Fatalf("ReviewStateOf = (%q, %v, %v), want (stored, true, nil)", state, ok, err)
 	}
 	// With no project named the call is a quiet no-op.
-	if _, ok, err := eng.MembershipStateOf(ctx, "", patent.Number); err != nil || ok {
-		t.Fatalf("MembershipStateOf with no project = (ok %v, err %v), want ok false", ok, err)
+	if _, ok, err := eng.ReviewStateOf(ctx, "", patent.Number); err != nil || ok {
+		t.Fatalf("ReviewStateOf with no project = (ok %v, err %v), want ok false", ok, err)
 	}
 }
 

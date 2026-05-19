@@ -80,3 +80,6 @@ type TextSubmitMsg struct {
 	Purpose Purpose
 	Value   string
 }
+
+// CloseOverlayMsg asks the app to close the focused overlay.
+type CloseOverlayMsg struct{}

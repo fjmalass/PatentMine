@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	testPaneWidth  = 80
+	testPaneWidth  = 100
 	testPaneHeight = 10
 )
 
@@ -68,14 +68,14 @@ func TestCatalogViewRendersRows(t *testing.T) {
 	}
 }
 
-func TestCatalogViewUsesMembershipStateForActiveProject(t *testing.T) {
+func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 	c := loadedCatalog(t)
 	project := &domain.Project{ID: "p-1", Name: "Case A"}
 	c.activeProject = project
-	c.patents[0].MembershipState = domain.MembershipUnderReview
+	c.patents[0].ReviewState = domain.ReviewStateUnderReview
 
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"PROJECT STATE", "under_review"} {
+	for _, want := range []string{"REVIEW STATE", "under_review"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog project view missing %q\n%s", want, out)
 		}

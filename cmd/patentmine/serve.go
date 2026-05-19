@@ -16,6 +16,7 @@ import (
 	"patentmine/internal/ingest"
 	"patentmine/internal/observability"
 	"patentmine/internal/rpc"
+	"patentmine/internal/store"
 	"patentmine/internal/store/sqlite"
 	appversion "patentmine/internal/version"
 )
@@ -99,8 +100,9 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		ingest.NewFileSource(patentsDir),
 		ingest.NewGoogleSource(),
 	).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
-	crawler := ingest.NewCrawler(registry, repo, ingest.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
-	return engine.New(ctx, repo, ingest.Factory(crawler),
+	cachingRepo := store.NewCache(repo)
+	crawler := ingest.NewCrawler(registry, cachingRepo, ingest.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	return engine.New(ctx, cachingRepo, ingest.Factory(crawler),
 		engine.WithFileImporter(crawler),
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),

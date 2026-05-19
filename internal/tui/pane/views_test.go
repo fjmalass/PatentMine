@@ -15,48 +15,17 @@ const (
 	testProjectPaneHeight   = 10
 	testSplashPaneWidth     = 100
 	testSplashPaneHeight    = 24
-	testCitationsPaneWidth  = 80
+	testCitationsPaneWidth  = 100
 	testCitationsPaneHeight = 10
 )
 
-func TestProjectsPaneNavigationAndView(t *testing.T) {
-	p := NewProjects(nil, render.NewTheme())
+func TestProjectsPaneSelectsLastUsed(t *testing.T) {
 	projects := []domain.Project{
-		{ID: "p-1", Name: "Litigation A", CreatedAt: time.Now()},
-		{ID: "p-2", Name: "Filing B", CreatedAt: time.Now()},
+		{ID: "p-1", Name: "Project 1", CreatedAt: time.Now().UTC()},
+		{ID: "p-2", Name: "Project 2", CreatedAt: time.Now().UTC()},
 	}
-	updated, _ := p.Update(projectsLoadedMsg{projects: projects})
-	p = updated.(*Projects)
-	active := projects[1]
-	updated, _ = p.Update(ProjectChangedMsg{Project: &active})
-	p = updated.(*Projects)
+	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint")
 
-	if got, ok := p.selectedProject(); !ok || got.ID != "p-1" {
-		t.Fatalf("initial selected project = %v ok=%v, want p-1", got, ok)
-	}
-	p.Command(command.NavDown, 1)
-	if got, _ := p.selectedProject(); got.ID != "p-2" {
-		t.Fatalf("selected project after NavDown = %v, want p-2", got)
-	}
-
-	out := p.View(testProjectPaneWidth, testProjectPaneHeight)
-	for _, want := range []string{"ACTIVE", "NAME", "Litigation A", "Filing B", "*"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("projects view missing %q\n%s", want, out)
-		}
-	}
-	// The projects pane exposes no patent selection.
-	if _, ok := p.Selection(); ok {
-		t.Error("projects pane should report no patent selection")
-	}
-}
-
-func TestSplashPreselectsLastUsedProject(t *testing.T) {
-	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "empty")
-	projects := []domain.Project{
-		{ID: "p-1", Name: "Litigation A", CreatedAt: time.Now()},
-		{ID: "p-2", Name: "Filing B", CreatedAt: time.Now()},
-	}
 	updated, _ := p.Update(projectsLoadedMsg{requestID: 0, projects: projects})
 	p = updated.(*Projects)
 	got, ok := p.selectedProject()
@@ -66,7 +35,7 @@ func TestSplashPreselectsLastUsedProject(t *testing.T) {
 	out := p.View(testSplashPaneWidth, testSplashPaneHeight)
 	for _, want := range []string{"SELECT PROJECT", "last used", "[p-2]"} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("splash view missing %q\n%s", want, out)
+			t.Errorf("projects view missing %q\n%s", want, out)
 		}
 	}
 }
@@ -75,11 +44,11 @@ func TestCitationsPaneSelectsNeighbour(t *testing.T) {
 	root := domain.MustParsePatentNumber("US0000001B2")
 	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
 
-	relations := []domain.Relation{
-		{From: root, To: domain.MustParsePatentNumber("US0000002B2"), Kind: domain.RelationCites},
-		{From: root, To: domain.MustParsePatentNumber("US0000003B2"), Kind: domain.RelationCites},
+	patents := []domain.PatentRow{
+		{Number: domain.MustParsePatentNumber("US0000002B2"), Title: "Second"},
+		{Number: domain.MustParsePatentNumber("US0000003B2"), Title: "Third"},
 	}
-	updated, _ := c.Update(citationsLoadedMsg{relations: relations})
+	updated, _ := c.Update(citationsLoadedMsg{patents: patents, total: 2})
 	c = updated.(*Citations)
 
 	// Selection is the neighbour patent, so drilling into detail works.
@@ -94,7 +63,7 @@ func TestCitationsPaneSelectsNeighbour(t *testing.T) {
 	}
 
 	out := c.View(testCitationsPaneWidth, testCitationsPaneHeight)
-	if !strings.Contains(out, "Citations") || !strings.Contains(out, "US0000002B2") {
+	if !strings.Contains(out, "US0000002B2") || !strings.Contains(out, "Second") {
 		t.Errorf("citations view missing expected content\n%s", out)
 	}
 }

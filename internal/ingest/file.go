@@ -25,20 +25,20 @@ type fileDocument struct {
 
 // patentFile is the on-disk JSON shape of a saved patent record.
 type patentFile struct {
-	Number          string         `json:"number"`
-	Title           string         `json:"title"`
-	Abstract        string         `json:"abstract"`
-	Assignee        string         `json:"assignee"`
-	Inventors       []string       `json:"inventors"`
-	ApplicationDate string         `json:"application_date"`
-	PublicationDate string         `json:"publication_date"`
-	GrantDate       string         `json:"grant_date"`
-	FirstClaim      string         `json:"first_claim"`
-	Documents       []fileDocument `json:"documents"`
-	Cites           []string       `json:"cites"`
-	CitedBy         []string       `json:"cited_by"`
-	Parents         []string       `json:"parents"`
-	Children        []string       `json:"children"`
+	Number          string           `json:"number"`
+	Title           string           `json:"title"`
+	Abstract        string           `json:"abstract"`
+	Assignee        string           `json:"assignee"`
+	Inventors       []domain.Inventor `json:"inventors"`
+	ApplicationDate string           `json:"application_date"`
+	PublicationDate string           `json:"publication_date"`
+	GrantDate       string           `json:"grant_date"`
+	FirstClaim      string           `json:"first_claim"`
+	Documents       []fileDocument   `json:"documents"`
+	Cites           []string         `json:"cites"`
+	CitedBy         []string         `json:"cited_by"`
+	Parents         []string         `json:"parents"`
+	Children        []string         `json:"children"`
 }
 
 // FileSource serves patents from local JSON files on disk. It is the first

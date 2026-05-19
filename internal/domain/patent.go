@@ -11,8 +11,9 @@ type SortColumn string
 const (
 	SortByNumber   SortColumn = "number"
 	SortByTitle    SortColumn = "title"
-	SortByInventor SortColumn = "inventor"
-	SortByExpires  SortColumn = "expires"
+	SortByInventor    SortColumn = "inventor"
+	SortByExpires     SortColumn = "expires"
+	SortByReviewState SortColumn = "review_state"
 )
 
 // Source identifies where a patent record was ingested from.
@@ -54,6 +55,9 @@ func ParseSource(s string) (Source, error) {
 	return src, nil
 }
 
+// Inventor is one human creator of a patented invention.
+type Inventor string
+
 // Patent is the core business object: one patent record. One record spans the
 // invention's whole life — its application, publication, and grant are all
 // Documents of the same record. It carries no I/O or UI concerns: persistence
@@ -69,7 +73,7 @@ type Patent struct {
 	Title           string       `json:"title"`
 	Abstract        string       `json:"abstract"`
 	Assignee        string       `json:"assignee"`
-	Inventors       []string     `json:"inventors"`
+	Inventors       []Inventor   `json:"inventors"`
 	FetchState      FetchState   `json:"fetch_state"`
 	Source          Source       `json:"source"`
 	ApplicationDate time.Time    `json:"application_date"` // Zero when unknown.
@@ -92,14 +96,14 @@ type Patent struct {
 // record key and display number separate so list UIs stay cheap without losing
 // the application/publication/grant distinction.
 type PatentRow struct {
-	Number          PatentNumber    `json:"number"`
-	DisplayNumber   PatentNumber    `json:"display_number"`
-	Title           string          `json:"title"`
-	Inventors       []string        `json:"inventors"`
-	ExpirationDate  time.Time       `json:"expiration_date"`
-	Tags            []string        `json:"tags"`
-	FetchState      FetchState      `json:"fetch_state"`
-	MembershipState MembershipState `json:"membership_state,omitempty"`
+	Number         PatentNumber `json:"number"`
+	DisplayNumber  PatentNumber `json:"display_number"`
+	Title          string       `json:"title"`
+	Inventors      []Inventor   `json:"inventors"`
+	ExpirationDate time.Time    `json:"expiration_date"`
+	Tags           []string     `json:"tags"`
+	FetchState     FetchState   `json:"fetch_state"`
+	ReviewState    ReviewState  `json:"review_state,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.

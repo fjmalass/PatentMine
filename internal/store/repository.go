@@ -21,8 +21,12 @@ const DefaultPageSize = 100
 type PatentQuery struct {
 	// Project, when set, restricts results to that project's members.
 	Project domain.ProjectID
-	// State, when set together with Project, filters by membership state.
-	State domain.MembershipState
+	// ReviewState, when set together with Project, filters by review state.
+	ReviewState domain.ReviewState
+	// Relation, when set together with RelationKind, restricts results to
+	// patents having that relation to the given patent number.
+	Relation     domain.PatentNumber
+	RelationKind domain.RelationKind
 	// Search, when set, is a case-insensitive substring match on number/title.
 	Search string
 	// Limit is the page size; values <= 0 fall back to DefaultPageSize.
@@ -78,8 +82,8 @@ type Repository interface {
 	AddMembership(ctx context.Context, m domain.Membership) error
 	// Membership returns one membership, or ErrNotFound.
 	Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error)
-	// SetMembershipState changes a membership's state, or returns ErrNotFound.
-	SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.MembershipState) error
+	// SetReviewState changes a membership's state, or returns ErrNotFound.
+	SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.ReviewState) error
 	// Memberships returns every membership of a project.
 	Memberships(ctx context.Context, project domain.ProjectID) ([]domain.Membership, error)
 

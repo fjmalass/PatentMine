@@ -2,21 +2,21 @@ package domain
 
 import "testing"
 
-func TestMembershipStateTransitions(t *testing.T) {
+func TestReviewStateTransitions(t *testing.T) {
 	cases := []struct {
-		from MembershipState
-		to   MembershipState
+		from ReviewState
+		to   ReviewState
 		want bool
 	}{
-		{MembershipStored, MembershipUnderReview, true},
-		{MembershipStored, MembershipIgnored, true},
-		{MembershipStored, MembershipDeleted, true},
-		{MembershipStored, MembershipStored, true}, // no-op allowed
-		{MembershipUnderReview, MembershipStored, true},
-		{MembershipIgnored, MembershipStored, true},
-		{MembershipDeleted, MembershipStored, true}, // undelete
-		{MembershipDeleted, MembershipIgnored, false},
-		{MembershipDeleted, MembershipUnderReview, false},
+		{ReviewStateLoad, ReviewStateUnderReview, true},
+		{ReviewStateLoad, ReviewStateIgnored, true},
+		{ReviewStateLoad, ReviewStateDeleted, true},
+		{ReviewStateLoad, ReviewStateLoad, true}, // no-op allowed
+		{ReviewStateUnderReview, ReviewStateLoad, true},
+		{ReviewStateIgnored, ReviewStateLoad, true},
+		{ReviewStateDeleted, ReviewStateLoad, true}, // undelete
+		{ReviewStateDeleted, ReviewStateIgnored, false},
+		{ReviewStateDeleted, ReviewStateUnderReview, false},
 	}
 	for _, c := range cases {
 		if got := c.from.CanTransitionTo(c.to); got != c.want {
@@ -25,12 +25,12 @@ func TestMembershipStateTransitions(t *testing.T) {
 	}
 }
 
-func TestParseMembershipState(t *testing.T) {
-	if _, err := ParseMembershipState("stored"); err != nil {
-		t.Errorf("ParseMembershipState(stored) error: %v", err)
+func TestParseReviewState(t *testing.T) {
+	if _, err := ParseReviewState("load"); err != nil {
+		t.Errorf("ParseReviewState(load) error: %v", err)
 	}
-	if _, err := ParseMembershipState("bogus"); err == nil {
-		t.Error("ParseMembershipState(bogus) expected error")
+	if _, err := ParseReviewState("bogus"); err == nil {
+		t.Error("ParseReviewState(bogus) expected error")
 	}
 }
 

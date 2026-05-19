@@ -28,6 +28,7 @@ const (
 	SelectClear   ID = "select.clear"
 	ColNext       ID = "col.next"
 	ColPrev       ID = "col.prev"
+	SortApply     ID = "col.sort-apply"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
@@ -42,7 +43,7 @@ const (
 	// ExportIDS builds an Information Disclosure Statement for a project.
 	ExportIDS ID = "ids.export"
 
-	// Patent membership-state changes. All four map to one proto method; the
+	// Patent review-state changes. All four map to one proto method; the
 	// target state is the difference the dispatcher supplies.
 	MarkStored      ID = "patent.mark-stored"
 	MarkUnderReview ID = "patent.mark-under-review"
@@ -103,8 +104,9 @@ func Default() (*Registry, error) {
 		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Context{ContextDetail}},
 		Command{ID: SelectVisual, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 		Command{ID: SelectClear, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: ColNext, Kind: KindView, Scopes: []Context{ContextCatalog}},
-		Command{ID: ColPrev, Kind: KindView, Scopes: []Context{ContextCatalog}},
+		Command{ID: ColNext, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: ColPrev, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: SortApply, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
@@ -119,11 +121,11 @@ func Default() (*Registry, error) {
 		Command{ID: ProjectList, Kind: KindEngine, Method: proto.MethodProjectList},
 		Command{ID: ExportIDS, Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Context{ContextProjects}},
 
-		// --- patent membership state (engine) ---
-		Command{ID: MarkStored, Name: "state.stored", Aliases: []string{"stored"}, Usage: ":state.stored", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: MarkUnderReview, Name: "state.under_review", Aliases: []string{"under-review"}, Usage: ":state.under_review", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: MarkIgnored, Name: "state.ignored", Aliases: []string{"ignored"}, Usage: ":state.ignored", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
-		Command{ID: MarkDeleted, Name: "state.deleted", Aliases: []string{"deleted"}, Usage: ":state.deleted", Kind: KindEngine, Method: proto.MethodMembershipState, Scopes: patentScopes},
+		// --- patent review state (engine) ---
+		Command{ID: MarkStored, Name: "review_state.stored", Aliases: []string{"stored"}, Usage: ":review_state.stored", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
+		Command{ID: MarkUnderReview, Name: "review_state.under_review", Aliases: []string{"under-review"}, Usage: ":review_state.under_review", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
+		Command{ID: MarkIgnored, Name: "review_state.ignored", Aliases: []string{"ignored"}, Usage: ":review_state.ignored", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
+		Command{ID: MarkDeleted, Name: "review_state.deleted", Aliases: []string{"deleted"}, Usage: ":review_state.deleted", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
 		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
 		Command{ID: TagAdd, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagAssign, Scopes: patentScopes},

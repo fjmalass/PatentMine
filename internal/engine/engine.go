@@ -254,18 +254,19 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		return err
 	}
 	before, _ := e.existingMembership(ctx, project, record)
-	after := domain.Membership{
-		Project: project,
-		Patent:  record,
-		State:   domain.MembershipStored,
-		AddedAt: time.Now().UTC(),
+	state := domain.ReviewStateLoad
+	if !created {
+		if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
+			state = domain.ReviewStateCached
+		}
 	}
-	err = e.repo.AddMembership(ctx, domain.Membership{
-		Project: after.Project,
-		Patent:  after.Patent,
-		State:   after.State,
-		AddedAt: after.AddedAt,
-	})
+	after := domain.Membership{
+		Project:     project,
+		Patent:      record,
+		ReviewState: state,
+		AddedAt:     time.Now().UTC(),
+	}
+	err = e.repo.AddMembership(ctx, after)
 	if err != nil {
 		e.log(ctx, slog.LevelError, "add membership failed", slog.String("project_id", string(project)), slog.String("patent", patent.String()), slog.String("error", err.Error()))
 		return err
@@ -292,12 +293,12 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	return nil
 }
 
-// SetMembershipState changes a membership's state, rejecting transitions the
+// SetReviewState changes a membership's state, rejecting transitions the
 // domain rules disallow. This is where the state machine is enforced.
-func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, target domain.MembershipState) (err error) {
-	defer e.observeDuration("engine.set_membership_state", time.Now(), &err)
+func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, target domain.ReviewState) (err error) {
+	defer e.observeDuration("engine.set_review_state", time.Now(), &err)
 	if !target.Valid() {
-		return fmt.Errorf("engine: invalid membership state %q", target)
+		return fmt.Errorf("engine: invalid review state %q", target)
 	}
 	record, err := e.recordNumber(ctx, patent)
 	if err != nil {
@@ -307,16 +308,16 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 	if err != nil {
 		return err
 	}
-	if !current.State.CanTransitionTo(target) {
-		return fmt.Errorf("engine: cannot move membership from %q to %q", current.State, target)
+	if !current.ReviewState.CanTransitionTo(target) {
+		return fmt.Errorf("engine: cannot move membership from %q to %q", current.ReviewState, target)
 	}
-	if err := e.repo.SetMembershipState(ctx, project, record, target); err != nil {
-		e.log(ctx, slog.LevelError, "set membership state failed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("target", string(target)), slog.String("error", err.Error()))
+	if err := e.repo.SetReviewState(ctx, project, record, target); err != nil {
+		e.log(ctx, slog.LevelError, "set review state failed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("target", string(target)), slog.String("error", err.Error()))
 		return err
 	}
 	after := current
-	after.State = target
-	e.log(ctx, slog.LevelInfo, "membership state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("from", string(current.State)), slog.String("to", string(target)))
+	after.ReviewState = target
+	e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("from", string(current.ReviewState)), slog.String("to", string(target)))
 	e.recordActivity(ctx, observability.Record{
 		Action:   "membership.set_state",
 		Entity:   "membership",
@@ -330,11 +331,11 @@ func (e *Engine) SetMembershipState(ctx context.Context, project domain.ProjectI
 	return nil
 }
 
-// MembershipStateOf returns a patent's workflow state in a project. ok is
+// ReviewStateOf returns a patent's workflow state in a project. ok is
 // false when no project is named or the patent is not one of its members —
 // review state is a property of the (patent, project) pair, not the patent.
-func (e *Engine) MembershipStateOf(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (state domain.MembershipState, ok bool, err error) {
-	defer e.observeDuration("engine.membership_state_of", time.Now(), &err)
+func (e *Engine) ReviewStateOf(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (state domain.ReviewState, ok bool, err error) {
+	defer e.observeDuration("engine.review_state_of", time.Now(), &err)
 	if project == "" {
 		return "", false, nil
 	}
@@ -349,7 +350,7 @@ func (e *Engine) MembershipStateOf(ctx context.Context, project domain.ProjectID
 	if err != nil {
 		return "", false, err
 	}
-	return m.State, true, nil
+	return m.ReviewState, true, nil
 }
 
 // PatentTags returns the tags a patent carries within a project. It is empty
@@ -486,13 +487,19 @@ func (e *Engine) ImportFile(ctx context.Context, path string) (err error) {
 	return nil
 }
 
-// Relations returns family-graph edges of one kind from a patent.
-func (e *Engine) Relations(ctx context.Context, number domain.PatentNumber, kind domain.RelationKind) (rels []domain.Relation, err error) {
+// Relations returns family-graph edges of one kind from a patent, as full
+// listing rows.
+func (e *Engine) Relations(ctx context.Context, q store.PatentQuery) (out []domain.PatentRow, total int, err error) {
 	defer e.observeDuration("engine.relations", time.Now(), &err)
-	if !kind.Valid() {
-		return nil, fmt.Errorf("engine: invalid relation kind %q", kind)
+	if !q.RelationKind.Valid() {
+		return nil, 0, fmt.Errorf("engine: invalid relation kind %q", q.RelationKind)
 	}
-	return e.repo.Relations(ctx, number, kind)
+	out, err = e.repo.ListPatents(ctx, q)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err = e.repo.CountPatents(ctx, q)
+	return out, total, err
 }
 
 // ExportIDS builds an Information Disclosure Statement for a project: every
@@ -513,7 +520,7 @@ func (e *Engine) ExportIDS(ctx context.Context, projectID domain.ProjectID) (ids
 		GeneratedAt: time.Now().UTC(),
 	}
 	for _, m := range members {
-		if m.State == domain.MembershipIgnored || m.State == domain.MembershipDeleted {
+		if m.ReviewState == domain.ReviewStateIgnored || m.ReviewState == domain.ReviewStateDeleted {
 			continue // not disclosed to the patent office
 		}
 		patent, err := e.repo.Patent(ctx, m.Patent)

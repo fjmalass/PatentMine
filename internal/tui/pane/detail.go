@@ -22,7 +22,7 @@ const detailDateLayout = "2006-01-02"
 type detailLoadedMsg struct {
 	requestID uint64
 	patent    domain.Patent
-	state     domain.MembershipState
+	state     domain.ReviewState
 	tags      []domain.Tag
 	err       error
 }
@@ -50,7 +50,7 @@ type Detail struct {
 	handlers map[command.ID]cmdHandler
 
 	patent    domain.Patent
-	state     domain.MembershipState
+	state     domain.ReviewState
 	tags      []domain.Tag
 	relCounts map[domain.RelationKind]int
 	anchors   []render.JumpAnchor // jump targets, rebuilt on every body render
@@ -120,7 +120,7 @@ func (d *Detail) load() tea.Cmd {
 		return detailLoadedMsg{
 			requestID: requestID,
 			patent:    res.Patent,
-			state:     res.State,
+			state:     res.ReviewState,
 			tags:      res.Tags,
 			err:       err,
 		}
@@ -137,8 +137,8 @@ func (d *Detail) loadRelations() tea.Cmd {
 		for _, kind := range detailRelationKinds {
 			var res proto.RelationsResult
 			if err := client.Call(ctx, proto.MethodRelations,
-				proto.RelationsParams{Number: number, Kind: string(kind)}, &res); err == nil {
-				counts[kind] = len(res.Relations)
+				proto.RelationsParams{Number: number, Kind: kind, Limit: 1}, &res); err == nil {
+				counts[kind] = res.Total
 			}
 		}
 		return detailRelationsMsg{requestID: requestID, counts: counts}
@@ -227,7 +227,11 @@ func (d *Detail) body(w int) string {
 	d.addAnchor(&b, 'a', "Assignee", 0)
 	d.field(&b, w, "Assignee", p.Assignee)
 	d.addAnchor(&b, 'i', "Inventors", 0)
-	d.field(&b, w, "Inventors", strings.Join(p.Inventors, ", "))
+	var names []string
+	for _, inv := range p.Inventors {
+		names = append(names, string(inv))
+	}
+	d.field(&b, w, "Inventors", strings.Join(names, ", "))
 	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
 	d.field(&b, w, "Fetch state", string(p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
@@ -358,7 +362,7 @@ func wrapText(s string, width int) []string {
 
 // reviewStateText renders a patent's review state within the pane's project,
 // or a note when the patent is not a member of that project.
-func reviewStateText(state domain.MembershipState) string {
+func reviewStateText(state domain.ReviewState) string {
 	if state == "" {
 		return "not in project"
 	}

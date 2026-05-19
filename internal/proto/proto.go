@@ -24,7 +24,7 @@ const (
 	MethodProjectList     Method = "project.list"
 	MethodProjectCreate   Method = "project.create"
 	MethodMembershipAdd   Method = "membership.add"
-	MethodMembershipState Method = "membership.set_state"
+	MethodReviewState Method = "review_state.set"
 	MethodTagAssign       Method = "tag.assign"
 	MethodTagRemove       Method = "tag.remove"
 	MethodIngestFamily    Method = "ingest.family"
@@ -113,20 +113,20 @@ type PatentGetParams struct {
 // request named a project the patent is a member of, and are empty otherwise:
 // they describe the (patent, project) pair, not the patent.
 type PatentResult struct {
-	Patent domain.Patent          `json:"patent"`
-	State  domain.MembershipState `json:"state,omitempty"`
-	Tags   []domain.Tag           `json:"tags,omitempty"`
+	Patent      domain.Patent      `json:"patent"`
+	ReviewState domain.ReviewState `json:"review_state,omitempty"`
+	Tags        []domain.Tag       `json:"tags,omitempty"`
 }
 
 // PatentListParams selects and paginates a patent listing.
 type PatentListParams struct {
-	Project       domain.ProjectID      `json:"project,omitempty"`
-	State         domain.MembershipState `json:"state,omitempty"`
-	Search        string                `json:"search,omitempty"`
-	Limit         int                   `json:"limit,omitempty"`
-	Offset        int                   `json:"offset,omitempty"`
-	SortColumn    domain.SortColumn     `json:"sort_column,omitempty"`
-	SortAscending bool                  `json:"sort_ascending,omitempty"`
+	Project       domain.ProjectID   `json:"project,omitempty"`
+	ReviewState   domain.ReviewState `json:"review_state,omitempty"`
+	Search        string             `json:"search,omitempty"`
+	Limit         int                `json:"limit,omitempty"`
+	Offset        int                `json:"offset,omitempty"`
+	SortColumn    domain.SortColumn  `json:"sort_column,omitempty"`
+	SortAscending bool               `json:"sort_ascending,omitempty"`
 }
 
 // PatentListResult carries one page of patents plus the unpaged total.
@@ -156,8 +156,8 @@ type MembershipParams struct {
 	Patent  domain.PatentNumber `json:"patent"`
 }
 
-// MembershipStateParams sets a membership's state.
-type MembershipStateParams struct {
+// ReviewStateParams sets a membership's state.
+type ReviewStateParams struct {
 	Project domain.ProjectID    `json:"project"`
 	Patent  domain.PatentNumber `json:"patent"`
 	State   string              `json:"state"`
@@ -197,13 +197,19 @@ type IngestCancelParams struct {
 
 // RelationsParams selects family-graph edges of one kind from one patent.
 type RelationsParams struct {
-	Number domain.PatentNumber `json:"number"`
-	Kind   string              `json:"kind"`
+	Number        domain.PatentNumber `json:"number"`
+	Kind          domain.RelationKind `json:"kind"`
+	Project       domain.ProjectID    `json:"project,omitempty"`
+	Limit         int                 `json:"limit,omitempty"`
+	Offset        int                 `json:"offset,omitempty"`
+	SortColumn    domain.SortColumn   `json:"sort_column,omitempty"`
+	SortAscending bool                `json:"sort_ascending,omitempty"`
 }
 
 // RelationsResult carries the requested family-graph edges.
 type RelationsResult struct {
-	Relations []domain.Relation `json:"relations"`
+	Patents []domain.PatentRow `json:"patents"`
+	Total   int                `json:"total"`
 }
 
 // IDSExportParams selects the project to build an Information Disclosure

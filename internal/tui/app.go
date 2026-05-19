@@ -237,8 +237,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			provider.JumpTo(m.Line)
 		}
 		return a, nil
+	case overlay.CloseOverlayMsg:
+		a.popOverlay()
+		return a, nil
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
+		if m.Key == text.StatusIngestStarted && len(m.Args) >= 2 {
+			jobID, _ := m.Args[1].(string)
+			title := "Fetching " + m.Args[0].(string)
+			loading := overlay.NewLoading(a.theme, jobID, title)
+			a.overlays = append(a.overlays, loading)
+			return a, loading.Init()
+		}
 		return a, nil
 	case pingLoadedMsg:
 		if m.err != nil {
@@ -248,13 +258,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.daemonVersion = m.version
 		return a, nil
 	case busEventMsg:
-		return a, tea.Batch(a.handleEvent(m.event), a.listen())
+		return a, tea.Batch(
+			a.handleEvent(m.event),
+			a.broadcastOverlays(m.event),
+			a.listen())
 	case eventsClosedMsg:
 		a.setErr(text.StatusDaemonClosed)
 		return a, nil
 	default:
-		// rpc results and the like — let every pane consume what is theirs.
-		return a, a.broadcast(msg)
+		// rpc results, spinner ticks and the like — let every pane/overlay consume what is theirs.
+		return a, tea.Batch(a.broadcast(msg), a.broadcastOverlays(msg))
 	}
 }
 
@@ -266,6 +279,23 @@ func (a *App) broadcast(msg tea.Msg) tea.Cmd {
 		a.panes[i] = updated
 		if cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// broadcastOverlays forwards a message to every overlay.
+func (a *App) broadcastOverlays(msg tea.Msg) tea.Cmd {
+	var cmds []tea.Cmd
+	for i, ov := range a.overlays {
+		if u, ok := ov.(interface {
+			Update(tea.Msg) (overlay.Overlay, tea.Cmd)
+		}); ok {
+			updated, cmd := u.Update(msg)
+			a.overlays[i] = updated
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 	}
 	return tea.Batch(cmds...)
@@ -415,16 +445,16 @@ func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdMarkStored(invocation) (tea.Model, tea.Cmd) {
-	return a.runMembershipState(domain.MembershipStored)
+	return a.runReviewState(domain.ReviewStateLoad)
 }
 func (a *App) cmdMarkUnderReview(invocation) (tea.Model, tea.Cmd) {
-	return a.runMembershipState(domain.MembershipUnderReview)
+	return a.runReviewState(domain.ReviewStateUnderReview)
 }
 func (a *App) cmdMarkIgnored(invocation) (tea.Model, tea.Cmd) {
-	return a.runMembershipState(domain.MembershipIgnored)
+	return a.runReviewState(domain.ReviewStateIgnored)
 }
 func (a *App) cmdMarkDeleted(invocation) (tea.Model, tea.Cmd) {
-	return a.runMembershipState(domain.MembershipDeleted)
+	return a.runReviewState(domain.ReviewStateDeleted)
 }
 
 func (a *App) cmdProjectActivate(inv invocation) (tea.Model, tea.Cmd) {
@@ -700,9 +730,9 @@ func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {
 	return domain.Project{}, false
 }
 
-func (a *App) runMembershipState(target domain.MembershipState) (tea.Model, tea.Cmd) {
+func (a *App) runReviewState(target domain.ReviewState) (tea.Model, tea.Cmd) {
 	return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.SetMembershipStateCmd(a.client, project, patent, target)
+		return pane.SetReviewStateCmd(a.client, project, patent, target)
 	})
 }
 
