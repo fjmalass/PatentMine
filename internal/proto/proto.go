@@ -175,9 +175,10 @@ type TagParams struct {
 // fetches only the root; a negative depth uses the configured family depth.
 // Force bypasses the local file cache and re-fetches from the web.
 type IngestFamilyParams struct {
-	Root  domain.PatentNumber `json:"root"`
-	Depth int                 `json:"depth"`
-	Force bool                `json:"force,omitempty"`
+	Root    domain.PatentNumber `json:"root"`
+	Depth   int                 `json:"depth"`
+	Profile domain.CrawlProfile `json:"profile,omitempty"`
+	Force   bool                `json:"force,omitempty"`
 }
 
 // IngestStartResult returns the id of an enqueued job.
@@ -261,6 +262,7 @@ type IngestProgress struct {
 	JobID   string `json:"job_id"`
 	Fetched int    `json:"fetched"`
 	Found   int    `json:"found"`
+	Total   int    `json:"total"`
 	Message string `json:"message"`
 }
 

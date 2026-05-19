@@ -79,15 +79,24 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 		command.NavPageDown: func(int) tea.Cmd { d.page.PageDown(); return nil },
 		command.NavPageUp:   func(int) tea.Cmd { d.page.PageUp(); return nil },
 		command.NavTop:      func(int) tea.Cmd { d.page.Top(); return nil },
-		command.NavBottom:   func(int) tea.Cmd { d.page.Bottom(); return nil },
+		command.NavBottom:   func(r int) tea.Cmd { d.page.Bottom(); return nil },
 		command.Refresh:     func(int) tea.Cmd { d.loading = true; return d.reload() },
 		command.IngestFamily: func(int) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestFamilyDepth, false)
+			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileFamily, false)
+		},
+		command.IngestCitations: func(int) tea.Cmd {
+			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileCitations, false)
+		},
+		command.IngestCitedBy: func(int) tea.Cmd {
+			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileCitedBy, false)
+		},
+		command.IngestAll: func(int) tea.Cmd {
+			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileAll, false)
 		},
 		command.FetchPatent: func(int) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestPatentDepth, false)
+			return IngestCmd(d.client, d.number, ingestPatentDepth, "", false)
 		},
-	}
+		}
 	return d
 }
 

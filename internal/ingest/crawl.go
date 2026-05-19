@@ -25,13 +25,15 @@ const (
 type Progress struct {
 	Fetched int    // Records fetched (full body) so far.
 	Found   int    // Distinct numbers discovered so far (fetched + stub).
+	Total   int    // Total items currently in the crawl queue (fetched + queued).
 	Message string // Human-readable note about the latest step.
 }
 
 // CrawlConfig bounds a crawl.
 type CrawlConfig struct {
-	MaxDepth   int // BFS depth from the root; <= 0 uses defaultMaxDepth.
-	NodeBudget int // Max records to fetch; <= 0 uses defaultNodeBudget.
+	MaxDepth   int                 // BFS depth from the root; <= 0 uses defaultMaxDepth.
+	NodeBudget int                 // Max records to fetch; <= 0 uses defaultNodeBudget.
+	Profile    domain.CrawlProfile // Profile name (e.g., 'family', 'citations').
 }
 
 // Crawler walks the patent family graph breadth-first, fetching each node from
@@ -74,19 +76,42 @@ type node struct {
 	depth  int
 }
 
-// fetch retrieves one patent. A force fetch skips the local file cache so the
-// crawl re-pulls from the web even when a cached file exists.
+// fetch retrieves one patent. A force fetch skips the local file cache and
+// the SQLite database so the crawl re-pulls from the web.
 func (c *Crawler) fetch(ctx context.Context, number domain.PatentNumber, force bool) (Result, error) {
+	if !force {
+		p, err := c.repo.Patent(ctx, number)
+		if err == nil && p.FetchState == domain.FetchCached {
+			var rels []domain.Relation
+			for _, kind := range []domain.RelationKind{
+				domain.RelationCites, domain.RelationCitedBy,
+				domain.RelationParent, domain.RelationChild,
+			} {
+				if kr, err := c.repo.Relations(ctx, number, kind); err == nil {
+					rels = append(rels, kr...)
+				}
+			}
+			return Result{Patent: p, Documents: p.Documents, Relations: rels}, nil
+		}
+	}
 	if force {
 		return c.registry.FetchExcluding(ctx, number, domain.SourceFile)
 	}
 	return c.registry.Fetch(ctx, number)
 }
 
+// Ingestion profiles define which family-graph edges to follow during a crawl.
+const (
+	CrawlProfileCitations = "citations" // Follow cites only (depth 0 only)
+	CrawlProfileCitedBy   = "citedby"   // Follow cited_by only (depth 0 only)
+	CrawlProfileFamily    = "family"    // Follow parent/child recursion
+	CrawlProfileAll       = "all"       // Combination of the above
+)
+
 // Crawl performs a bounded breadth-first walk from root. A negative maxDepth
 // uses the configured depth; zero crawls the root only. force bypasses the
 // local file cache. emit, which may be nil, receives progress.
-func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, force bool, emit func(Progress)) error {
+func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, force bool, emit func(Progress)) error {
 	start := time.Now()
 	failed := true
 	defer func() {
@@ -136,7 +161,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				return stubErr
 			}
 			report(Progress{
-				Fetched: fetched, Found: len(seen),
+				Fetched: fetched, Found: len(seen), Total: fetched + len(queue),
 				Message: fmt.Sprintf("%s unavailable: %v", cur.number, err),
 			})
 			continue
@@ -146,12 +171,12 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		if err != nil {
 			return err
 		}
-		if err := c.saveRelations(ctx, recordNumber, res.Relations, cur.depth, depthLimit, seen, &queue); err != nil {
+		if err := c.saveRelations(ctx, recordNumber, res.Relations, cur.depth, depthLimit, profile, seen, &queue); err != nil {
 			return err
 		}
 		fetched++
 		report(Progress{
-			Fetched: fetched, Found: len(seen),
+			Fetched: fetched, Found: len(seen), Total: fetched + len(queue),
 			Message: fmt.Sprintf("fetched %s", recordNumber),
 		})
 	}
@@ -226,7 +251,7 @@ func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentN
 // saveRelations records the fetched edges and queues neighbours. Every edge
 // endpoint is resolved to a record number, creating a stub record when the
 // neighbour is new, so an edge always points at real records.
-func (c *Crawler) saveRelations(ctx context.Context, from domain.PatentNumber, relations []domain.Relation, depth, depthLimit int, seen map[domain.PatentNumber]bool, queue *[]node) error {
+func (c *Crawler) saveRelations(ctx context.Context, from domain.PatentNumber, relations []domain.Relation, depth, depthLimit int, profile domain.CrawlProfile, seen map[domain.PatentNumber]bool, queue *[]node) error {
 	for _, rel := range relations {
 		neighbour := rel.To
 		neighbourRecord, err := c.ensureRecord(ctx, neighbour)
@@ -241,7 +266,24 @@ func (c *Crawler) saveRelations(ctx context.Context, from domain.PatentNumber, r
 		if !seen[neighbour] {
 			seen[neighbour] = true
 			if depth < depthLimit {
-				*queue = append(*queue, node{number: neighbour, depth: depth + 1})
+				shouldQueue := false
+				switch profile {
+				case domain.CrawlProfileCitations:
+					shouldQueue = rel.Kind == domain.RelationCites && depth == 0
+				case domain.CrawlProfileCitedBy:
+					shouldQueue = rel.Kind == domain.RelationCitedBy && depth == 0
+				case domain.CrawlProfileFamily:
+					shouldQueue = rel.Kind == domain.RelationParent || rel.Kind == domain.RelationChild
+				case domain.CrawlProfileAll, "":
+					if rel.Kind == domain.RelationCites || rel.Kind == domain.RelationCitedBy {
+						shouldQueue = depth == 0
+					} else {
+						shouldQueue = true
+					}
+				}
+				if shouldQueue {
+					*queue = append(*queue, node{number: neighbour, depth: depth + 1})
+				}
 			}
 		}
 	}

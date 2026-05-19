@@ -59,10 +59,13 @@ const (
 	PatentDelete ID = "patent.delete"
 
 	// Ingestion.
-	IngestFamily ID = "ingest.family"
-	IngestCancel ID = "ingest.cancel"
-	FetchPatent  ID = "patent.fetch"
-	Import       ID = "patent.import"
+	IngestFamily    ID = "ingest.family"
+	IngestCitations ID = "ingest.citations"
+	IngestCitedBy   ID = "ingest.citedby"
+	IngestAll       ID = "ingest.all"
+	IngestCancel    ID = "ingest.cancel"
+	FetchPatent     ID = "patent.fetch"
+	Import          ID = "patent.import"
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -132,7 +135,10 @@ func Default() (*Registry, error) {
 		Command{ID: TagRemove, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodTagRemove, Scopes: patentScopes},
 
 		// --- ingestion (engine) ---
-		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"ingest"}, Usage: ":ingest.family", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"family"}, Usage: ":ingest.family", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: IngestCitations, Name: "ingest.citations", Aliases: []string{"ingest-citations"}, Usage: ":ingest.citations", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: IngestCitedBy, Name: "ingest.citedby", Aliases: []string{"ingest-citedby"}, Usage: ":ingest.citedby", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
+		Command{ID: IngestAll, Name: "ingest.all", Aliases: []string{"ingest", "recursion"}, Usage: ":ingest.all", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
 		Command{ID: FetchPatent, Name: "fetch", Aliases: []string{"fetch-patent"}, Usage: ":fetch", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodIngestFamily},
 		Command{ID: IngestCancel, Kind: KindEngine, Method: proto.MethodIngestCancel},

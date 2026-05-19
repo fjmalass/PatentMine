@@ -16,6 +16,26 @@ const (
 	SortByReviewState SortColumn = "review_state"
 )
 
+// CrawlProfile defines which family-graph edges to follow during a crawl.
+type CrawlProfile string
+
+const (
+	CrawlProfileCitations CrawlProfile = "citations" // Follow cites only (depth 0 only)
+	CrawlProfileCitedBy   CrawlProfile = "citedby"   // Follow cited_by only (depth 0 only)
+	CrawlProfileFamily    CrawlProfile = "family"    // Follow parent/child recursion
+	CrawlProfileAll       CrawlProfile = "all"       // Combination of the above
+)
+
+// Valid reports whether the profile is a known value.
+func (p CrawlProfile) Valid() bool {
+	switch p {
+	case CrawlProfileCitations, CrawlProfileCitedBy, CrawlProfileFamily, CrawlProfileAll:
+		return true
+	default:
+		return false
+	}
+}
+
 // Source identifies where a patent record was ingested from.
 type Source string
 

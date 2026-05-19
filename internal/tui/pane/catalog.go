@@ -65,8 +65,11 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.Refresh:      func(int) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
 		command.SelectVisual: func(int) tea.Cmd { return c.toggleVisual() },
 		command.SelectClear:  func(int) tea.Cmd { c.clearVisual(); return nil },
-		command.IngestFamily: func(int) tea.Cmd { return c.ingestSelected(ingestFamilyDepth) },
-		command.FetchPatent:  func(int) tea.Cmd { return c.ingestSelected(ingestPatentDepth) },
+		command.IngestFamily: func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
+		command.IngestCitations: func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitations) },
+		command.IngestCitedBy:   func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitedBy) },
+		command.IngestAll:       func(int) tea.Cmd { return c.ingestSelected(domain.CrawlProfileAll) },
+		command.FetchPatent:  func(int) tea.Cmd { return c.ingestSelected("") },
 		command.ColNext:      func(int) tea.Cmd { return c.focusNext() },
 		command.ColPrev:      func(int) tea.Cmd { return c.focusPrev() },
 		command.SortApply:    func(int) tea.Cmd { return c.applySort() },
@@ -180,12 +183,16 @@ func (c *Catalog) Command(id command.ID, repeat int) (Pane, tea.Cmd) {
 func (c *Catalog) Handles() []command.ID { return handlerIDs(c.handlers) }
 
 // ingestSelected enqueues an ingest for the highlighted patent.
-func (c *Catalog) ingestSelected(depth int) tea.Cmd {
+func (c *Catalog) ingestSelected(profile domain.CrawlProfile) tea.Cmd {
 	number, ok := c.Selection()
 	if !ok {
 		return status(text.StatusNoPatentSelected, true)
 	}
-	return IngestCmd(c.client, number, depth, false)
+	depth := ingestFamilyDepth
+	if profile == "" {
+		depth = ingestPatentDepth
+	}
+	return IngestCmd(c.client, number, depth, profile, false)
 }
 
 // move runs a cursor motion and reloads the page when the visible window

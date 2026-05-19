@@ -137,7 +137,7 @@ func (c *Crawler) ImportFile(ctx context.Context, path string) error {
 	// depth 0 with limit 0: edges are saved and neighbour stubs created, but no
 	// neighbour is queued for crawling.
 	queue := []node{}
-	return c.saveRelations(ctx, recordNumber, res.Relations, 0, 0, map[domain.PatentNumber]bool{}, &queue)
+	return c.saveRelations(ctx, recordNumber, res.Relations, 0, 0, "", map[domain.PatentNumber]bool{}, &queue)
 }
 
 // fileDocuments reads the life-stage documents. When a file lists none, one is

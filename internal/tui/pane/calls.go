@@ -35,16 +35,16 @@ const (
 )
 
 // IngestCmd enqueues an ingest for number and reports the outcome as a
-// StatusMsg. depth selects a single-patent fetch (0) or a family crawl (<0);
-// force bypasses the local file cache. The crawl runs in the daemon, so this
-// call only enqueues it and the UI never blocks.
-func IngestCmd(client *rpc.Client, number domain.PatentNumber, depth int, force bool) tea.Cmd {
+// StatusMsg. depth selects how far the family walk explicitly; a negative
+// depth defers to the crawler's configured default. profile selects which
+// family-graph edges to follow. force bypasses the local file cache.
+func IngestCmd(client *rpc.Client, number domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.IngestStartResult
 		err := client.Call(ctx, proto.MethodIngestFamily,
-			proto.IngestFamilyParams{Root: number, Depth: depth, Force: force}, &res)
+			proto.IngestFamilyParams{Root: number, Depth: depth, Profile: profile, Force: force}, &res)
 		if err != nil {
 			return StatusMsg{Key: text.StatusIngestStartFailed, Args: []any{err.Error()}, Error: true}
 		}

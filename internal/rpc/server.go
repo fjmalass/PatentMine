@@ -357,7 +357,7 @@ func (s *Server) ingestFamily(_ context.Context, raw json.RawMessage) (any, erro
 	if err != nil {
 		return nil, err
 	}
-	id, err := s.engine.StartFamilyIngest(p.Root, p.Depth, p.Force)
+	id, err := s.engine.StartFamilyIngest(p.Root, p.Depth, p.Profile, p.Force)
 	if err != nil {
 		return nil, err
 	}

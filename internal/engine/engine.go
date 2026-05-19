@@ -25,7 +25,7 @@ const ingestWorkers = 4
 // the engine does not depend on the ingest package directly: a stub factory
 // works for tests, the real crawler is wired in at daemon startup. force makes
 // the crawl bypass the local file cache and re-fetch from the web.
-type IngestFactory func(root domain.PatentNumber, depth int, force bool) Job
+type IngestFactory func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) Job
 
 // FileImporter loads a patent record from a local file into the store. Like
 // IngestFactory it is injected, so the engine never imports the ingest package.
@@ -285,7 +285,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	// A patent added as a fresh stub has no bibliographic data yet — kick a
 	// single-patent fetch so the record fills in shortly after it is added.
 	if created && e.ingest != nil {
-		if _, fetchErr := e.StartFamilyIngest(record, 0, false); fetchErr != nil {
+		if _, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
 		}
@@ -445,7 +445,7 @@ func (e *Engine) RemoveTag(ctx context.Context, project domain.ProjectID, patent
 
 // StartFamilyIngest enqueues a family-graph crawl and returns its job id. A
 // force crawl bypasses the local file cache and re-fetches from the web.
-func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int, force bool) (id JobID, err error) {
+func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
 	defer e.observeDuration("engine.start_family_ingest", time.Now(), &err)
 	if e.ingest == nil {
 		return "", errors.New("engine: no ingest factory configured")
@@ -453,9 +453,9 @@ func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int, force bo
 	if root.IsZero() {
 		return "", errors.New("engine: ingest root must not be empty")
 	}
-	id, err = e.pool.submit(e.ingest(root, depth, force))
+	id, err = e.pool.submit(e.ingest(root, depth, profile, force))
 	if err != nil {
-		e.log(context.Background(), slog.LevelError, "ingest enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("error", err.Error()))
+		e.log(context.Background(), slog.LevelError, "ingest enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("error", err.Error()))
 		return "", err
 	}
 	e.log(context.Background(), slog.LevelInfo, "ingest enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
