@@ -254,7 +254,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		return err
 	}
 	before, _ := e.existingMembership(ctx, project, record)
-	state := domain.ReviewStateLoad
+	state := domain.ReviewStateStored
 	if !created {
 		if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
 			state = domain.ReviewStateCached
@@ -282,9 +282,11 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		Metadata: map[string]any{"requested_number": patent.String()},
 	})
 	e.announceChange()
-	// A patent added as a fresh stub has no bibliographic data yet — kick a
-	// single-patent fetch so the record fills in shortly after it is added.
-	if created && e.ingest != nil {
+	// Any patent in "stored" state has no full record yet — kick a single-patent
+	// fetch so bibliographic data fills in shortly after the patent is added.
+	// This covers both brand-new stubs (created==true) and existing stubs that
+	// were previously discovered as citation edges.
+	if state == domain.ReviewStateStored && e.ingest != nil {
 		if _, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))

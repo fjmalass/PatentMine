@@ -45,12 +45,13 @@ const (
 	// current project. Never stored in the database — appears only as a derived
 	// value when a LEFT JOIN produces no matching membership row, and as the
 	// zero value of PatentFilter.ReviewState when no state filter is active.
-	// Contrast with ReviewStateLoad: that state means a membership row EXISTS
+	// Contrast with ReviewStateStored: that state means a membership row EXISTS
 	// but the patent has not yet been fetched.
 	ReviewStateNone ReviewState = ""
-	// ReviewStateLoad is the default state of a patent added to a project.
-	// It acts as a call to action: the user should load/fetch the patent.
-	ReviewStateLoad ReviewState = "load"
+	// ReviewStateStored is the default state of a patent added to a project.
+	// The patent is tracked (stub exists) but its full record has not yet been
+	// fetched from the web. Triggers auto-fetch on add.
+	ReviewStateStored ReviewState = "stored"
 	// ReviewStateUnderReview marks a patent awaiting human review.
 	ReviewStateUnderReview ReviewState = "under_review"
 	// ReviewStateIgnored marks a patent the user has set aside.
@@ -64,7 +65,7 @@ const (
 // Valid reports whether the ReviewState is a known value.
 func (s ReviewState) Valid() bool {
 	switch s {
-	case ReviewStateLoad, ReviewStateUnderReview, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted:
+	case ReviewStateStored, ReviewStateUnderReview, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted:
 		return true
 	default:
 		return false
@@ -88,11 +89,11 @@ func ParseReviewState(s string) (ReviewState, error) {
 // state changes are allowed. Keeping it as data (not scattered if-statements)
 // means a new state or rule is one edit here.
 var reviewStateTransitions = map[ReviewState][]ReviewState{
-	ReviewStateLoad:        {ReviewStateUnderReview, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted},
-	ReviewStateUnderReview: {ReviewStateLoad, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted},
-	ReviewStateIgnored:     {ReviewStateLoad, ReviewStateUnderReview, ReviewStateCached, ReviewStateDeleted},
-	ReviewStateCached:      {ReviewStateLoad, ReviewStateUnderReview, ReviewStateIgnored, ReviewStateDeleted},
-	ReviewStateDeleted:     {ReviewStateLoad},
+	ReviewStateStored:        {ReviewStateUnderReview, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted},
+	ReviewStateUnderReview: {ReviewStateStored, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted},
+	ReviewStateIgnored:     {ReviewStateStored, ReviewStateUnderReview, ReviewStateCached, ReviewStateDeleted},
+	ReviewStateCached:      {ReviewStateStored, ReviewStateUnderReview, ReviewStateIgnored, ReviewStateDeleted},
+	ReviewStateDeleted:     {ReviewStateStored},
 }
 
 // CanTransitionTo reports whether moving from s to target is allowed. A no-op

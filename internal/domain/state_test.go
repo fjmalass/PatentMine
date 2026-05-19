@@ -8,13 +8,13 @@ func TestReviewStateTransitions(t *testing.T) {
 		to   ReviewState
 		want bool
 	}{
-		{ReviewStateLoad, ReviewStateUnderReview, true},
-		{ReviewStateLoad, ReviewStateIgnored, true},
-		{ReviewStateLoad, ReviewStateDeleted, true},
-		{ReviewStateLoad, ReviewStateLoad, true}, // no-op allowed
-		{ReviewStateUnderReview, ReviewStateLoad, true},
-		{ReviewStateIgnored, ReviewStateLoad, true},
-		{ReviewStateDeleted, ReviewStateLoad, true}, // undelete
+		{ReviewStateStored, ReviewStateUnderReview, true},
+		{ReviewStateStored, ReviewStateIgnored, true},
+		{ReviewStateStored, ReviewStateDeleted, true},
+		{ReviewStateStored, ReviewStateStored, true}, // no-op allowed
+		{ReviewStateUnderReview, ReviewStateStored, true},
+		{ReviewStateIgnored, ReviewStateStored, true},
+		{ReviewStateDeleted, ReviewStateStored, true}, // undelete
 		{ReviewStateDeleted, ReviewStateIgnored, false},
 		{ReviewStateDeleted, ReviewStateUnderReview, false},
 	}
@@ -26,8 +26,8 @@ func TestReviewStateTransitions(t *testing.T) {
 }
 
 func TestParseReviewState(t *testing.T) {
-	if _, err := ParseReviewState("load"); err != nil {
-		t.Errorf("ParseReviewState(load) error: %v", err)
+	if _, err := ParseReviewState("stored"); err != nil {
+		t.Errorf("ParseReviewState(stored) error: %v", err)
 	}
 	if _, err := ParseReviewState("bogus"); err == nil {
 		t.Error("ParseReviewState(bogus) expected error")

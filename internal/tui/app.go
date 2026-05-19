@@ -455,7 +455,7 @@ func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdMarkStored(invocation) (tea.Model, tea.Cmd) {
-	return a.runReviewState(domain.ReviewStateLoad)
+	return a.runReviewState(domain.ReviewStateStored)
 }
 func (a *App) cmdMarkUnderReview(invocation) (tea.Model, tea.Cmd) {
 	return a.runReviewState(domain.ReviewStateUnderReview)

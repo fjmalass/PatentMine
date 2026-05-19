@@ -82,7 +82,7 @@ func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
 // patent enqueues a single-patent fetch (depth 0) so the record fills in.
 func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {
 	gotDepth := make(chan int, 1)
-	factory := func(_ domain.PatentNumber, depth int, _ bool) Job {
+	factory := func(_ domain.PatentNumber, depth int, _ domain.CrawlProfile, _ bool) Job {
 		gotDepth <- depth
 		return JobFunc(func(context.Context, JobID, func(proto.Event)) error { return nil })
 	}
@@ -169,16 +169,16 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 		t.Fatal("deleted->ignored should be rejected")
 	}
 	// deleted -> stored (undelete) is allowed.
-	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateLoad); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateStored); err != nil {
 		t.Fatalf("deleted->stored: %v", err)
 	}
 }
 
 func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
-	factory := func(root domain.PatentNumber, _ int, _ bool) Job {
+	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) Job {
 		return JobFunc(func(_ context.Context, id JobID, emit func(proto.Event)) error {
 			emit(proto.NewEvent(proto.EventIngestProgress, proto.IngestProgress{
-				JobID: string(id), Found: 1, Message: "crawled " + root.String(),
+				JobID: string(id), IngestedCount: 1, Message: "crawled " + root.String(),
 			}))
 			return nil
 		})
@@ -188,7 +188,7 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 	events, unsub := eng.Subscribe()
 	defer unsub()
 
-	jobID, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, false)
+	jobID, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false)
 	if err != nil {
 		t.Fatalf("StartFamilyIngest: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 
 func TestEngineIngestWithoutFactoryFails(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
-	if _, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, false); err == nil {
+	if _, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false); err == nil {
 		t.Fatal("StartFamilyIngest without a factory should fail")
 	}
 }
@@ -425,7 +425,7 @@ func TestEngineReviewStateOf(t *testing.T) {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	state, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number)
-	if err != nil || !ok || state != domain.ReviewStateLoad {
+	if err != nil || !ok || state != domain.ReviewStateStored {
 		t.Fatalf("ReviewStateOf = (%q, %v, %v), want (stored, true, nil)", state, ok, err)
 	}
 	// With no project named the call is a quiet no-op.

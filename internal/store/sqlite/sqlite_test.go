@@ -223,7 +223,7 @@ func TestProjectAndMembership(t *testing.T) {
 	if err := repo.AddMembership(ctx, domain.Membership{
 		Project:     project.ID,
 		Patent:      patent.Number,
-		ReviewState: domain.ReviewStateLoad,
+		ReviewState: domain.ReviewStateStored,
 		AddedAt:     time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)

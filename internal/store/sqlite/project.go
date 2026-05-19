@@ -100,7 +100,7 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err erro
 	var fetchState string
 	err = r.reader.QueryRowContext(ctx,
 		`SELECT fetch_state FROM patent WHERE number = ?`, m.Patent.Normalized()).Scan(&fetchState)
-	if err == nil && domain.FetchState(fetchState) == domain.FetchCached && state == domain.ReviewStateLoad {
+	if err == nil && domain.FetchState(fetchState) == domain.FetchCached && state == domain.ReviewStateStored {
 		state = domain.ReviewStateCached
 	}
 

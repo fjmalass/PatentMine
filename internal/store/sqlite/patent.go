@@ -83,7 +83,7 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	if p.FetchState == domain.FetchCached {
 		_, err = r.writer.ExecContext(ctx,
 			`UPDATE membership SET state = ? WHERE patent_number = ? AND state = ?`,
-			string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateLoad))
+			string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateStored))
 		if err != nil {
 			return fmt.Errorf("store/sqlite: update membership state on fetch: %w", err)
 		}
