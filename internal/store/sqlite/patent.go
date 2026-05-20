@@ -421,3 +421,37 @@ func (r *Repo) Relations(ctx context.Context, n domain.PatentNumber, kind domain
 	}
 	return out, nil
 }
+
+// AllRelations returns every family-graph edge where n is either the origin (from) or destination (to).
+func (r *Repo) AllRelations(ctx context.Context, n domain.PatentNumber) (out []domain.Relation, err error) {
+	defer r.observeDuration("all_relations", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT from_number, to_number, kind FROM relation
+		 WHERE from_number = ? OR to_number = ? ORDER BY from_number, to_number`,
+		n.Normalized(), n.Normalized())
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list all relations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out = nil
+	for rows.Next() {
+		var from, to, k string
+		if err := rows.Scan(&from, &to, &k); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan all relation: %w", err)
+		}
+		fromNum, err := domain.ParsePatentNumber(from)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: all relation from %q: %w", from, err)
+		}
+		toNum, err := domain.ParsePatentNumber(to)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: all relation to %q: %w", to, err)
+		}
+		out = append(out, domain.Relation{From: fromNum, To: toNum, Kind: domain.RelationKind(k)})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: list all relations: %w", err)
+	}
+	return out, nil
+}

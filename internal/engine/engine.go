@@ -198,14 +198,121 @@ func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	return nil
 }
 
+// PatentSnapshot is a complete backup of a patent and its family-graph relation
+// edges, recorded prior to a hard purge (permanent delete) so it can be replayed.
+type PatentSnapshot struct {
+	Patent    domain.Patent     `json:"patent"`
+	Relations []domain.Relation `json:"relations"`
+}
+
 // DeletePatent permanently removes a patent and all associated data.
 func (e *Engine) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
 	defer e.observeDuration("engine.delete_patent", time.Now(), &err)
-	if err := e.repo.DeletePatent(ctx, n); err != nil {
-		e.log(ctx, slog.LevelError, "delete patent failed", slog.String("number", n.String()), slog.String("error", err.Error()))
+
+	record, err := e.recordNumber(ctx, n)
+	if err != nil {
 		return err
 	}
-	e.log(ctx, slog.LevelInfo, "patent deleted", slog.String("number", n.String()))
+
+	// 1. Fetch the patent and its associated documents.
+	patent, err := e.repo.Patent(ctx, record)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// If not found in repo, let's execute the repository deletion directly to ensure proper errors/logging behavior.
+			return e.repo.DeletePatent(ctx, record)
+		}
+		return err
+	}
+
+	// 2. Query all relations involving the patent.
+	relations, err := e.repo.AllRelations(ctx, record)
+	if err != nil {
+		return err
+	}
+
+	// 3. Compile the snapshot.
+	snapshot := PatentSnapshot{
+		Patent:    patent,
+		Relations: relations,
+	}
+
+	// 4. Delete the patent from repository.
+	if err := e.repo.DeletePatent(ctx, record); err != nil {
+		e.log(ctx, slog.LevelError, "delete patent failed", slog.String("number", record.String()), slog.String("error", err.Error()))
+		return err
+	}
+
+	e.log(ctx, slog.LevelInfo, "patent deleted", slog.String("number", record.String()))
+
+	// 5. Record activity carrying the snapshot inside Before field.
+	e.recordActivity(ctx, observability.Record{
+		Action:   "patent.delete",
+		Entity:   "patent",
+		EntityID: record.String(),
+		Status:   "committed",
+		Before:   snapshot,
+	})
+
+	e.announceChange()
+	return nil
+}
+
+// RestorePatent restores a patent from a backup snapshot.
+// If soft is true, it restores the patent as a FetchStub with a single guess-stage document,
+// but restores all relation edges to keep the topology intact.
+// If soft is false, it performs a full hard restore of the patent, all documents, and all relation edges.
+func (e *Engine) RestorePatent(ctx context.Context, snapshot PatentSnapshot, soft bool) (err error) {
+	defer e.observeDuration("engine.restore_patent", time.Now(), &err)
+
+	if soft {
+		stub := domain.Patent{
+			Number:        snapshot.Patent.Number,
+			DisplayNumber: snapshot.Patent.Number,
+			FetchState:    domain.FetchStub,
+		}
+		if err := e.repo.SavePatent(ctx, stub); err != nil {
+			e.log(ctx, slog.LevelError, "restore soft patent failed", slog.String("number", snapshot.Patent.Number.String()), slog.String("error", err.Error()))
+			return err
+		}
+		stubDoc := domain.Document{
+			Number: snapshot.Patent.Number,
+			Stage:  domain.GuessStage(snapshot.Patent.Number),
+		}
+		if err := e.repo.SaveDocument(ctx, snapshot.Patent.Number, stubDoc); err != nil {
+			e.log(ctx, slog.LevelError, "restore soft document failed", slog.String("number", snapshot.Patent.Number.String()), slog.String("error", err.Error()))
+			return err
+		}
+	} else {
+		if err := e.repo.SavePatent(ctx, snapshot.Patent); err != nil {
+			e.log(ctx, slog.LevelError, "restore hard patent failed", slog.String("number", snapshot.Patent.Number.String()), slog.String("error", err.Error()))
+			return err
+		}
+		for _, doc := range snapshot.Patent.Documents {
+			if err := e.repo.SaveDocument(ctx, snapshot.Patent.Number, doc); err != nil {
+				e.log(ctx, slog.LevelError, "restore hard document failed", slog.String("number", doc.Number.String()), slog.String("error", err.Error()))
+				return err
+			}
+		}
+	}
+
+	for _, rel := range snapshot.Relations {
+		if err := e.repo.SaveRelation(ctx, rel); err != nil {
+			e.log(ctx, slog.LevelError, "restore relation failed", slog.String("from", rel.From.String()), slog.String("to", rel.To.String()), slog.String("error", err.Error()))
+			return err
+		}
+	}
+
+	e.log(ctx, slog.LevelInfo, "patent restored", slog.String("number", snapshot.Patent.Number.String()), slog.Bool("soft", soft))
+
+	e.recordActivity(ctx, observability.Record{
+		Action:   "patent.restore",
+		Entity:   "patent",
+		EntityID: snapshot.Patent.Number.String(),
+		Status:   "committed",
+		After:    snapshot.Patent,
+		Metadata: map[string]any{"soft": soft},
+	})
+
 	e.announceChange()
 	return nil
 }

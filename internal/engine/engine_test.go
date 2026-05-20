@@ -1,14 +1,17 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
 	"patentmine/internal/store/sqlite"
@@ -531,5 +534,240 @@ func TestEngineTagging(t *testing.T) {
 	// A blank name is rejected on assign.
 	if err := eng.AssignTag(ctx, project.ID, patent.Number, "  "); err == nil {
 		t.Fatal("AssignTag with a blank name should fail")
+	}
+}
+
+func TestDeleteBackupAndReplay(t *testing.T) {
+	// 1. Initialize activity recording runtime in temp dir
+	logsDir := t.TempDir()
+	runtime, err := observability.Open(logsDir, "engine-test", "1.0.0")
+	if err != nil {
+		t.Fatalf("observability.Open: %v", err)
+	}
+	defer runtime.Close()
+
+	ctx := context.Background()
+
+	// 2. Initialize engine and SQLite repository
+	repo, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "engine.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer repo.Close()
+
+	eng := New(ctx, repo, nil, WithActivityRecorder(runtime.Activity))
+	defer eng.Close()
+
+	// 3. Populate dummy patents
+	p1 := domain.MustParsePatentNumber("US11611785B2")
+	p2 := domain.MustParsePatentNumber("US0000001A1")
+	p3 := domain.MustParsePatentNumber("US0000002A1")
+
+	// Save patents
+	patent1 := domain.Patent{
+		Number:        p1,
+		DisplayNumber: p1,
+		Title:         "System for Patent Mining",
+		Abstract:      "An intelligent system for patent ingestion and graph crawling.",
+		Assignee:      "PatentMine Inc.",
+		Inventors:     []domain.Inventor{"John Doe", "Jane Smith"},
+		FetchState:    domain.FetchCached,
+		FirstClaim:    "Claim 1: A system comprising...",
+	}
+	if err := eng.SavePatent(ctx, patent1); err != nil {
+		t.Fatalf("SavePatent p1: %v", err)
+	}
+	if err := eng.SavePatent(ctx, domain.Patent{Number: p2, DisplayNumber: p2, FetchState: domain.FetchCached}); err != nil {
+		t.Fatalf("SavePatent p2: %v", err)
+	}
+	if err := eng.SavePatent(ctx, domain.Patent{Number: p3, DisplayNumber: p3, FetchState: domain.FetchCached}); err != nil {
+		t.Fatalf("SavePatent p3: %v", err)
+	}
+
+	// 4. Save documents for p1
+	doc1 := domain.Document{Number: p1, Stage: domain.StageGrant}
+	doc2 := domain.Document{Number: domain.MustParsePatentNumber("US11611785"), Stage: domain.StageApplication}
+	if err := repo.SaveDocument(ctx, p1, doc1); err != nil {
+		t.Fatalf("SaveDocument doc1: %v", err)
+	}
+	if err := repo.SaveDocument(ctx, p1, doc2); err != nil {
+		t.Fatalf("SaveDocument doc2: %v", err)
+	}
+
+	// 5. Create bidirectional/directed relations involving p1
+	rel1 := domain.Relation{From: p1, To: p2, Kind: domain.RelationCites}
+	rel2 := domain.Relation{From: p3, To: p1, Kind: domain.RelationCites}
+	if err := repo.SaveRelation(ctx, rel1); err != nil {
+		t.Fatalf("SaveRelation rel1: %v", err)
+	}
+	if err := repo.SaveRelation(ctx, rel2); err != nil {
+		t.Fatalf("SaveRelation rel2: %v", err)
+	}
+
+	// Verify before deleting
+	storedPatent, err := eng.Patent(ctx, p1)
+	if err != nil {
+		t.Fatalf("Patent before delete: %v", err)
+	}
+	if len(storedPatent.Documents) != 2 {
+		t.Fatalf("Expected 2 documents, got %d", len(storedPatent.Documents))
+	}
+
+	storedRels, err := repo.AllRelations(ctx, p1)
+	if err != nil {
+		t.Fatalf("AllRelations: %v", err)
+	}
+	if len(storedRels) != 2 {
+		t.Fatalf("Expected 2 relations, got %d", len(storedRels))
+	}
+
+	// 6. Delete P1
+	if err := eng.DeletePatent(ctx, p1); err != nil {
+		t.Fatalf("DeletePatent: %v", err)
+	}
+
+	// Verify completely deleted
+	_, err = eng.Patent(ctx, p1)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Expected store.ErrNotFound, got %v", err)
+	}
+	delDocs, err := repo.Documents(ctx, p1)
+	if err != nil {
+		t.Fatalf("repo.Documents: %v", err)
+	}
+	if len(delDocs) != 0 {
+		t.Fatalf("Expected documents to be deleted, got %d", len(delDocs))
+	}
+	delRels, err := repo.AllRelations(ctx, p1)
+	if err != nil {
+		t.Fatalf("repo.AllRelations: %v", err)
+	}
+	if len(delRels) != 0 {
+		t.Fatalf("Expected relations to be deleted, got %d", len(delRels))
+	}
+
+	// 7. Flush activity records and find the delete event
+	if err := runtime.Close(); err != nil {
+		t.Fatalf("Close runtime: %v", err)
+	}
+
+	files, err := os.ReadDir(logsDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	var activityPath string
+	for _, f := range files {
+		if filepath.HasPrefix(f.Name(), "activity-") {
+			activityPath = filepath.Join(logsDir, f.Name())
+			break
+		}
+	}
+	if activityPath == "" {
+		t.Fatal("No activity log file found")
+	}
+
+	content, err := os.ReadFile(activityPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	// Find the delete action
+	var deleteRecord struct {
+		Action string         `json:"action"`
+		Before PatentSnapshot `json:"before"`
+	}
+
+	lines := bytes.Split(content, []byte("\n"))
+	found := false
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		var temp struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(line, &temp); err == nil && temp.Action == "patent.delete" {
+			if err := json.Unmarshal(line, &deleteRecord); err != nil {
+				t.Fatalf("Unmarshal delete action: %v", err)
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("Could not find patent.delete in activity journal")
+	}
+
+	snapshot := deleteRecord.Before
+	if snapshot.Patent.Number != p1 {
+		t.Fatalf("Snapshot patent number = %v, want %v", snapshot.Patent.Number, p1)
+	}
+	if len(snapshot.Patent.Documents) != 2 {
+		t.Fatalf("Snapshot documents = %d, want 2", len(snapshot.Patent.Documents))
+	}
+	if len(snapshot.Relations) != 2 {
+		t.Fatalf("Snapshot relations = %d, want 2", len(snapshot.Relations))
+	}
+
+	// 8. Replay/Full Restore
+	if err := eng.RestorePatent(ctx, snapshot, false); err != nil {
+		t.Fatalf("RestorePatent hard: %v", err)
+	}
+
+	// Verify full restore
+	restoredPatent, err := eng.Patent(ctx, p1)
+	if err != nil {
+		t.Fatalf("Patent after hard restore: %v", err)
+	}
+	if restoredPatent.Title != patent1.Title || restoredPatent.Abstract != patent1.Abstract {
+		t.Fatalf("Restored title = %q, want %q", restoredPatent.Title, patent1.Title)
+	}
+	if len(restoredPatent.Documents) != 2 {
+		t.Fatalf("Restored documents count = %d, want 2", len(restoredPatent.Documents))
+	}
+	restoredRels, err := repo.AllRelations(ctx, p1)
+	if err != nil {
+		t.Fatalf("AllRelations after hard restore: %v", err)
+	}
+	if len(restoredRels) != 2 {
+		t.Fatalf("Restored relations count = %d, want 2", len(restoredRels))
+	}
+
+	// 9. Hard delete again
+	if err := eng.DeletePatent(ctx, p1); err != nil {
+		t.Fatalf("DeletePatent again: %v", err)
+	}
+
+	// 10. Replay/Soft Restore (stub recovery)
+	if err := eng.RestorePatent(ctx, snapshot, true); err != nil {
+		t.Fatalf("RestorePatent soft: %v", err)
+	}
+
+	// Verify soft restore (FetchState should be FetchStub, no rich metadata, single guess-stage document)
+	stubPatent, err := eng.Patent(ctx, p1)
+	if err != nil {
+		t.Fatalf("Patent after soft restore: %v", err)
+	}
+	if stubPatent.FetchState != domain.FetchStub {
+		t.Fatalf("FetchState = %s, want %s", stubPatent.FetchState, domain.FetchStub)
+	}
+	if stubPatent.Title != "" || stubPatent.Abstract != "" {
+		t.Fatalf("Metadata was not stripped: title=%q abstract=%q", stubPatent.Title, stubPatent.Abstract)
+	}
+	if len(stubPatent.Documents) != 1 {
+		t.Fatalf("Stub documents count = %d, want 1", len(stubPatent.Documents))
+	}
+	if stubPatent.Documents[0].Stage != domain.GuessStage(p1) {
+		t.Fatalf("Stub document stage = %s, want guess-stage", stubPatent.Documents[0].Stage)
+	}
+
+	// Relations should STILL be fully restored!
+	softRels, err := repo.AllRelations(ctx, p1)
+	if err != nil {
+		t.Fatalf("AllRelations after soft restore: %v", err)
+	}
+	if len(softRels) != 2 {
+		t.Fatalf("Soft restored relations count = %d, want 2", len(softRels))
 	}
 }

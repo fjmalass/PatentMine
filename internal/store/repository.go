@@ -70,6 +70,8 @@ type Repository interface {
 	SaveRelation(ctx context.Context, r domain.Relation) error
 	// Relations returns edges of the given kind originating at n.
 	Relations(ctx context.Context, n domain.PatentNumber, kind domain.RelationKind) ([]domain.Relation, error)
+	// AllRelations returns every family-graph edge where n is either the origin (from) or destination (to).
+	AllRelations(ctx context.Context, n domain.PatentNumber) ([]domain.Relation, error)
 
 	// SaveProject inserts or updates a project by its id.
 	SaveProject(ctx context.Context, p domain.Project) error
