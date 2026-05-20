@@ -8,6 +8,7 @@ const (
 	colorSelected = "237" // selected-row background
 	colorVisual   = "17"  // visual-range background (dark navy)
 	colorDim      = "242" // de-emphasised text
+	colorWarn     = "220" // warning / under-review text
 	colorError    = "203" // error text
 	colorOK       = "78"  // success text
 	colorText     = "252" // default foreground
@@ -16,18 +17,20 @@ const (
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
 // startup and shared; styles are values, so this is safe to copy.
 type Theme struct {
-	Title      lipgloss.Style
-	Header     lipgloss.Style
-	SortActive lipgloss.Style
-	Row        lipgloss.Style
-	Selected   lipgloss.Style
-	Visual     lipgloss.Style
-	Dim        lipgloss.Style
-	Status     lipgloss.Style
-	Error      lipgloss.Style
-	OK         lipgloss.Style
-	HelpKey    lipgloss.Style
-	Box        lipgloss.Style
+	Title       lipgloss.Style
+	Header      lipgloss.Style
+	SortActive  lipgloss.Style
+	Row         lipgloss.Style
+	Selected    lipgloss.Style
+	Visual      lipgloss.Style
+	Dim         lipgloss.Style
+	Status      lipgloss.Style
+	Error       lipgloss.Style
+	OK          lipgloss.Style
+	Warn        lipgloss.Style
+	MutedItalic lipgloss.Style
+	HelpKey     lipgloss.Style
+	Box         lipgloss.Style
 }
 
 // NewTheme builds the default theme.
@@ -55,6 +58,10 @@ func NewTheme() Theme {
 			Foreground(lipgloss.Color(colorError)),
 		OK: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorOK)),
+		Warn: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorWarn)),
+		MutedItalic: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorDim)).Italic(true),
 		HelpKey: lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color(colorAccent)),
 		Box: lipgloss.NewStyle().

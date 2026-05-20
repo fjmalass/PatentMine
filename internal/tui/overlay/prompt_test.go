@@ -1,6 +1,7 @@
 package overlay
 
 import (
+	"strings"
 	"testing"
 
 	"patentmine/internal/command"
@@ -40,5 +41,24 @@ func TestPromptMatchesAliasesAndShortcuts(t *testing.T) {
 	prompt.filter()
 	if len(prompt.shown) == 0 || prompt.shown[0].command.ID != command.ProjectActivate {
 		t.Fatalf("shortcut search top result = %+v, want ProjectActivate", prompt.shown)
+	}
+}
+
+func TestPromptDirectFooterStaysSingleLine(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ContextCatalog, PromptDirect)
+	prompt.query = "tag"
+	prompt.filter()
+	footer := prompt.footerLine(40)
+	if got := len(strings.Split(footer, "\n")); got != 1 {
+		t.Fatalf("footer rendered %d lines, want 1: %q", got, footer)
+	}
+	view := prompt.View(40, 12)
+	last := view[strings.LastIndex(view, "\n")+1:]
+	if got := len(strings.Split(last, "\n")); got != 1 {
+		t.Fatalf("prompt footer wrapped in full view: %q", view)
 	}
 }

@@ -319,6 +319,10 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 			return
 		}
 		ctx := context.Background()
+		membership, err := e.repo.Membership(ctx, project, record)
+		if err == nil && membership.ReviewState != domain.ReviewStateStored {
+			return
+		}
 		if stubCreated {
 			if err := e.repo.DeletePatent(ctx, record); err != nil {
 				e.log(ctx, slog.LevelWarn, "cleanup stub after not-found failed",
@@ -347,6 +351,13 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		return err
 	}
 	current, err := e.repo.Membership(ctx, project, record)
+	if errors.Is(err, store.ErrNotFound) {
+		// Patent not yet in the project — add it so the state change can proceed.
+		if _, addErr := e.AddToProject(ctx, project, record); addErr != nil {
+			return addErr
+		}
+		current, err = e.repo.Membership(ctx, project, record)
+	}
 	if err != nil {
 		return err
 	}

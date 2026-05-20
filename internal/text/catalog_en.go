@@ -49,6 +49,8 @@ const (
 	StatusBatchSetState        Key = "status.batch_set_state"
 	StatusBatchAdded           Key = "status.batch_added"
 	StatusFilter               Key = "status.filter"
+	StatusBrowserOpenFailed    Key = "status.browser_open_failed"
+	StatusBrowserOpened        Key = "status.browser_opened"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -66,6 +68,7 @@ const (
 	HintExportIDS       Key = "hint.export_ids"
 	HintIngest          Key = "hint.ingest"
 	HintFetch           Key = "hint.fetch"
+	HintBrowse          Key = "hint.browse"
 	HintJump            Key = "hint.jump"
 	HintHelp            Key = "hint.help"
 	HintQuit            Key = "hint.quit"
@@ -103,6 +106,7 @@ var cmdStrings = map[string][2]string{
 	"nav.top":                  {"Top", "Jump to the first row."},
 	"nav.bottom":               {"Bottom", "Jump to the last row."},
 	"view.detail":              {"Open detail", "Open the selected patent's detail view."},
+	"view.browser":             {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
 	"view.projects":            {"Open projects", "Open the project list."},
@@ -191,6 +195,8 @@ var englishNamed = map[Key]string{
 	StatusBatchSetState:        "set %d patents to %s in %s",
 	StatusBatchAdded:           "added %d patents to %s",
 	StatusFilter:               "%s",
+	StatusBrowserOpenFailed:    "open browser failed: %s",
+	StatusBrowserOpened:        "opened %d patent page(s) in browser",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",
@@ -207,6 +213,7 @@ var englishNamed = map[Key]string{
 	HintExportIDS:       "export IDS",
 	HintIngest:          "ingest family",
 	HintFetch:           "fetch patent",
+	HintBrowse:          "open browser",
 	HintJump:            "jump",
 	HintHelp:            "help",
 	HintQuit:            "quit",

@@ -78,6 +78,10 @@ func TestLookupName(t *testing.T) {
 	if !ok || got.ID != ProjectActivate {
 		t.Fatalf("LookupName(use-project) = %+v ok=%v, want ProjectActivate", got, ok)
 	}
+	got, ok = reg.LookupName("filter.clear")
+	if !ok || got.ID != Filter {
+		t.Fatalf("LookupName(filter.clear) = %+v ok=%v, want Filter", got, ok)
+	}
 }
 
 func TestRegistryRejectsAliasCollision(t *testing.T) {

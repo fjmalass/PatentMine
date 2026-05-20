@@ -11,6 +11,15 @@ import (
 	"patentmine/internal/proto"
 )
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // routes registers every HTTP endpoint. Each maps to a command in the registry
 // (named in the trailing comment), so the web API and the TUI act on the same
 // catalogue of operations.
@@ -19,15 +28,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /metrics", s.handleMetricsProm)
 	s.mux.HandleFunc("GET /metricsz", s.handleMetrics)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
-	s.mux.HandleFunc("GET /patents", s.handlePatentList)                   // command.PatentList
-	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)           // command.PatentGet
-	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations) // command.PatentRelations
+	s.mux.HandleFunc("GET /patents", s.handlePatentList)                        // command.PatentList
+	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)                // command.PatentGet
+	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations)      // command.PatentRelations
 	s.mux.HandleFunc("PUT /patents/{number}/review_state", s.handleReviewState) // command.Mark*
-	s.mux.HandleFunc("GET /projects", s.handleProjectList)                 // command.ProjectList
-	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)              // command.ProjectCreate
-	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)     // command.AddToProject
-	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                // command.ExportIDS
-	s.mux.HandleFunc("POST /ingest", s.handleIngest)                       // command.IngestFamily
+	s.mux.HandleFunc("GET /projects", s.handleProjectList)                      // command.ProjectList
+	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)                   // command.ProjectCreate
+	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)          // command.AddToProject
+	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                     // command.ExportIDS
+	s.mux.HandleFunc("POST /ingest", s.handleIngest)                            // command.IngestFamily
 }
 
 // handleMetrics returns the daemon's current in-memory timing/counter snapshot.
@@ -74,13 +83,27 @@ func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "invalid patent number: "+err.Error())
 		return
 	}
-	kind := domain.RelationKind(r.URL.Query().Get("kind"))
+	q := r.URL.Query()
+	kind := domain.RelationKind(q.Get("kind"))
 	if kind == "" {
 		kind = domain.RelationCites
 	}
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	sortAscending, _ := strconv.ParseBool(q.Get("sort_ascending"))
 	var res proto.RelationsResult
 	s.call(w, r, proto.MethodRelations,
-		proto.RelationsParams{Number: number, Kind: kind}, &res)
+		proto.RelationsParams{
+			Number:        number,
+			Kind:          kind,
+			Project:       domain.ProjectID(q.Get("project")),
+			ReviewState:   domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
+			Search:        q.Get("search"),
+			Limit:         limit,
+			Offset:        offset,
+			SortColumn:    domain.SortColumn(q.Get("sort_column")),
+			SortAscending: sortAscending,
+		}, &res)
 }
 
 // handleIDS builds the Information Disclosure Statement for a project.
@@ -109,7 +132,7 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	params := proto.PatentListParams{
 		Project:     domain.ProjectID(q.Get("project")),
-		ReviewState: domain.ReviewState(q.Get("state")),
+		ReviewState: domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
 		Search:      q.Get("search"),
 		Limit:       limit,
 		Offset:      offset,

@@ -29,6 +29,7 @@ const (
 	ColNext       ID = "col.next"
 	ColPrev       ID = "col.prev"
 	SortApply     ID = "col.sort-apply"
+	OpenBrowser   ID = "view.browser"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
@@ -100,6 +101,7 @@ func Default() (*Registry, error) {
 
 		// --- panes and overlays (view) ---
 		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: OpenBrowser, Name: "browse", Aliases: []string{"open.browser", "web"}, Usage: ":browse [PATENT ...]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
 		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations}},
@@ -118,7 +120,7 @@ func Default() (*Registry, error) {
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
 		// --- filtering (view) ---
-		Command{ID: Filter,   Name: "filter", Aliases: []string{"f"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 
 		// --- application-wide (view) ---

@@ -91,6 +91,25 @@ func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.Proj
 	return b.String()
 }
 
+func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID) string {
+	vals := [6]string{
+		numberToShowRow(row).String(),
+		row.Title,
+		formatInventorsShort(row.Inventors),
+		formatExpires(row.ExpirationDate),
+		formatTags(row.Tags),
+		styleStateText(theme, row, projectID),
+	}
+	var b strings.Builder
+	for i, col := range cols {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(render.Pad(render.Truncate(vals[i], col.width), col.width))
+	}
+	return b.String()
+}
+
 func tableStateHeading(projectID domain.ProjectID) string {
 	if projectID != "" {
 		return "REVIEW STATE"
@@ -103,6 +122,29 @@ func tableStateText(row domain.PatentRow, projectID domain.ProjectID) string {
 		return string(row.ReviewState)
 	}
 	return string(row.FetchState)
+}
+
+func styleStateText(theme render.Theme, row domain.PatentRow, projectID domain.ProjectID) string {
+	text := tableStateText(row, projectID)
+	if projectID != "" && row.ReviewState.Valid() {
+		switch row.ReviewState {
+		case domain.ReviewStateUnderReview:
+			return theme.Warn.Render(text)
+		case domain.ReviewStateCached:
+			return theme.Dim.Render(text)
+		case domain.ReviewStateDeleted:
+			return theme.Error.Render(text)
+		}
+		return text
+	}
+	switch row.FetchState {
+	case domain.FetchCached:
+		return theme.Dim.Render(text)
+	case domain.FetchStub:
+		return theme.MutedItalic.Render(text)
+	default:
+		return text
+	}
 }
 
 func numberToShowRow(row domain.PatentRow) domain.PatentNumber {

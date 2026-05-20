@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"patentmine/internal/command"
 	"patentmine/internal/text"
@@ -137,7 +138,7 @@ func (p *Prompt) View(maxW, maxH int) string {
 	b.WriteString("\n\n")
 	b.WriteString(p.listView(maxW))
 	b.WriteString("\n\n")
-	b.WriteString(render.Truncate(p.footerLine(), maxW))
+	b.WriteString(p.footerLine(maxW))
 	return b.String()
 }
 
@@ -193,20 +194,31 @@ func (p *Prompt) listView(maxW int) string {
 	return b.String()
 }
 
-func (p *Prompt) footerLine() string {
+func (p *Prompt) footerLine(maxW int) string {
 	if p.error != "" {
-		return p.theme.Error.Render(p.error)
+		return render.Truncate(p.theme.Error.Render(p.error), maxW)
 	}
 	selected, ok := p.selected()
 	if !ok {
-		return p.theme.Dim.Render(p.catalog.T(text.PromptRunHint))
+		return render.Truncate(p.theme.Dim.Render(p.catalog.T(text.PromptRunHint)), maxW)
 	}
 	usage := selected.command.Usage
 	if usage == "" {
 		usage = ":" + selected.command.Name
 	}
-	help := p.catalog.T(text.CmdHelp(string(selected.command.ID)))
-	return p.theme.HelpKey.Render(usage) + "  " + p.theme.Row.Render(help)
+	summary := p.catalog.T(text.CmdHelp(string(selected.command.ID)))
+	if p.mode == PromptDirect {
+		summary = p.catalog.T(text.CmdTitle(string(selected.command.ID)))
+	}
+	usage = render.Truncate(usage, maxW)
+	if ansi.StringWidth(usage) >= maxW {
+		return p.theme.HelpKey.Render(usage)
+	}
+	remaining := maxW - ansi.StringWidth(usage) - 2
+	if remaining <= 0 {
+		return p.theme.HelpKey.Render(usage)
+	}
+	return p.theme.HelpKey.Render(usage) + "  " + p.theme.Row.Render(render.Truncate(summary, remaining))
 }
 
 func (p *Prompt) selected() (promptEntry, bool) {

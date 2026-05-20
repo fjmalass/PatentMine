@@ -90,6 +90,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
+			"w":      command.OpenBrowser,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
 			".":      command.SortApply,
@@ -122,6 +123,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
+			"w":      command.OpenBrowser,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
 			".":      command.SortApply,
@@ -137,13 +139,13 @@ func Default() *Keymaps {
 	projects := NewLayer("projects", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
-			"enter": command.ProjectActivate,
-			"l":     command.ProjectActivate,
-			"right": command.ProjectActivate,
-			"u":     command.ProjectClearActive,
-			"n":     command.ProjectCreate,
-			"I":     command.ExportIDS,
-			"/":     command.OpenSearch,
+			"enter":  command.ProjectActivate,
+			"l":      command.ProjectActivate,
+			"right":  command.ProjectActivate,
+			"u":      command.ProjectClearActive,
+			"n":      command.ProjectCreate,
+			"I":      command.ExportIDS,
+			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
 

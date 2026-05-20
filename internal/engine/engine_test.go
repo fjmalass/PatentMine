@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -217,6 +218,48 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 		case <-deadline:
 			t.Fatalf("timed out (progress=%v done=%v)", gotProgress, gotDone)
 		}
+	}
+}
+
+func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
+	factory := func(_ domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) Job {
+		return JobFunc(func(_ context.Context, _ JobID, _ func(proto.Event)) error {
+			return errors.New("not found")
+		})
+	}
+	eng, repo := newTestEngine(t, factory)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	patent := domain.MustParsePatentNumber("US9999999B2")
+	if err := eng.SetReviewState(ctx, project.ID, patent, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		membership, err := repo.Membership(ctx, project.ID, patent)
+		if err == nil {
+			if membership.ReviewState != domain.ReviewStateUnderReview {
+				t.Fatalf("Membership state = %q, want under_review", membership.ReviewState)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Membership disappeared after auto-fetch failure: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	stored, err := repo.Patent(ctx, patent)
+	if err != nil {
+		t.Fatalf("Patent after failed auto-fetch: %v", err)
+	}
+	if stored.FetchState != domain.FetchStub {
+		t.Fatalf("Patent fetch state = %q, want stub", stored.FetchState)
 	}
 }
 

@@ -81,6 +81,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.CloseOverlay:       (*App).cmdCloseOverlay,
 	command.Back:               (*App).cmdBack,
 	command.OpenDetail:         (*App).cmdOpenDetail,
+	command.OpenBrowser:        (*App).cmdOpenBrowser,
 	command.OpenCitations:      (*App).cmdOpenCitations,
 	command.OpenCitedBy:        (*App).cmdOpenCitedBy,
 	command.OpenProjects:       (*App).cmdOpenProjects,
@@ -108,6 +109,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.TagAdd:          true,
 	command.TagRemove:       true,
 	command.Filter:          true,
+	command.OpenBrowser:     true,
 }
 
 // App is the bubbletea root model.
@@ -132,6 +134,7 @@ type App struct {
 	lastProjectID domain.ProjectID
 	tuiVersion    string
 	daemonVersion string
+	openURL       func(string) error
 }
 
 type Option func(*App)
@@ -160,6 +163,7 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		text:          catalog,
 		tuiVersion:    appversion.String(),
 		daemonVersion: "connecting",
+		openURL:       openExternalURL,
 	}
 	app.status = catalog.T(text.StatusWelcome)
 	for _, opt := range opts {
@@ -437,6 +441,28 @@ func (a *App) cmdBack(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdOpenDetail(invocation) (tea.Model, tea.Cmd) { return a.openDetail() }
+
+func (a *App) cmdOpenBrowser(inv invocation) (tea.Model, tea.Cmd) {
+	var numbers []domain.PatentNumber
+	if len(inv.args) > 0 {
+		numbers = make([]domain.PatentNumber, 0, len(inv.args))
+		for _, arg := range inv.args {
+			number, err := domain.ParsePatentNumber(arg)
+			if err != nil {
+				a.setErr(text.StatusInvalidPatentNumber, err.Error())
+				return a, nil
+			}
+			numbers = append(numbers, number)
+		}
+	} else {
+		numbers = a.focusedSelections()
+		if len(numbers) == 0 {
+			a.setErr(text.StatusNoPatentSelected)
+			return a, nil
+		}
+	}
+	return a, a.openPatentsInBrowser(numbers)
+}
 func (a *App) cmdOpenCitations(invocation) (tea.Model, tea.Cmd) {
 	return a.openCitations(domain.RelationCites)
 }
@@ -938,6 +964,7 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
 			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
+			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
@@ -951,6 +978,7 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
 			a.shortcutHint(ctx, command.JumpMode, text.HintJump),
+			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
@@ -964,6 +992,7 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
 			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
+			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
 			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
 			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),

@@ -242,7 +242,7 @@ func (d *Detail) body(w int) string {
 	}
 	d.field(&b, w, "Inventors", strings.Join(names, ", "))
 	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
-	d.field(&b, w, "Fetch state", string(p.FetchState))
+	d.field(&b, w, "Fetch state", fetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
 	d.field(&b, w, "Source URL", p.SourceURL)
 	d.addAnchor(&b, 'e', "Expiration", 0)
@@ -253,7 +253,7 @@ func (d *Detail) body(w int) string {
 	if d.project != "" {
 		b.WriteByte('\n')
 		d.addAnchor(&b, 'r', "Review state", 0)
-		d.field(&b, w, "Review state", reviewStateText(d.state))
+		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
 		d.addAnchor(&b, 't', "Tags", 0)
 		d.field(&b, w, "Tags", tagsText(d.tags))
 	}
@@ -376,6 +376,32 @@ func reviewStateText(state domain.ReviewState) string {
 		return "not in project"
 	}
 	return string(state)
+}
+
+func styledReviewStateText(theme render.Theme, state domain.ReviewState) string {
+	text := reviewStateText(state)
+	switch state {
+	case domain.ReviewStateUnderReview:
+		return theme.Warn.Render(text)
+	case domain.ReviewStateCached:
+		return theme.Dim.Render(text)
+	case domain.ReviewStateDeleted:
+		return theme.Error.Render(text)
+	default:
+		return text
+	}
+}
+
+func fetchStateText(theme render.Theme, state domain.FetchState) string {
+	text := string(state)
+	switch state {
+	case domain.FetchCached:
+		return theme.Dim.Render(text)
+	case domain.FetchStub:
+		return theme.MutedItalic.Render(text)
+	default:
+		return text
+	}
 }
 
 // tagsText renders a patent's tags as a comma-separated list, or a dash when

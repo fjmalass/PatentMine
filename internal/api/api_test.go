@@ -19,9 +19,19 @@ import (
 	"patentmine/internal/store/sqlite"
 )
 
+type apiEnv struct {
+	handler http.Handler
+	repo    *sqlite.Repo
+}
+
 // testAPI starts a daemon over a temp socket and returns the HTTP handler in
 // front of it.
 func testAPI(t *testing.T) http.Handler {
+	t.Helper()
+	return testAPIEnv(t).handler
+}
+
+func testAPIEnv(t *testing.T) apiEnv {
 	t.Helper()
 
 	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "api.db"))
@@ -60,7 +70,7 @@ func testAPI(t *testing.T) http.Handler {
 		eng.Close()
 		_ = repo.Close()
 	})
-	return api.NewServer(client, registry).Handler()
+	return apiEnv{handler: api.NewServer(client, registry).Handler(), repo: repo}
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -179,5 +189,81 @@ func TestAPIIngestStartsJob(t *testing.T) {
 	var res proto.IngestStartResult
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil || res.JobID == "" {
 		t.Fatalf("ingest body = %s", w.Body.String())
+	}
+}
+
+func TestAPIPatentListHonorsReviewStateAlias(t *testing.T) {
+	env := testAPIEnv(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One"}
+	patent := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), FetchState: domain.FetchCached}
+	if err := env.repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	if err := env.repo.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	if err := env.repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      patent.Number,
+		ReviewState: domain.ReviewStateStored,
+	}); err != nil {
+		t.Fatalf("AddMembership: %v", err)
+	}
+	if err := env.repo.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState: %v", err)
+	}
+
+	w := do(t, env.handler, http.MethodGet, "/patents?project=p1&review_state=under_review", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /patents = %d: %s", w.Code, w.Body.String())
+	}
+	var res proto.PatentListResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(res.Patents) != 1 || res.Patents[0].ReviewState != domain.ReviewStateUnderReview {
+		t.Fatalf("list result = %+v, want one under_review patent", res.Patents)
+	}
+}
+
+func TestAPIRelationsHonorsProjectAndReviewState(t *testing.T) {
+	env := testAPIEnv(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One"}
+	root := domain.MustParsePatentNumber("US0000001A1")
+	ref := domain.MustParsePatentNumber("US0000002A1")
+	for _, patent := range []domain.Patent{
+		{Number: root, FetchState: domain.FetchCached},
+		{Number: ref, FetchState: domain.FetchCached},
+	} {
+		if err := env.repo.SavePatent(ctx, patent); err != nil {
+			t.Fatalf("SavePatent(%s): %v", patent.Number, err)
+		}
+	}
+	if err := env.repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	if err := env.repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      ref,
+		ReviewState: domain.ReviewStateUnderReview,
+	}); err != nil {
+		t.Fatalf("AddMembership: %v", err)
+	}
+	if err := env.repo.SaveRelation(ctx, domain.Relation{From: root, To: ref, Kind: domain.RelationCites}); err != nil {
+		t.Fatalf("SaveRelation: %v", err)
+	}
+
+	w := do(t, env.handler, http.MethodGet, "/patents/US0000001A1/relations?kind=cites&project=p1&review_state=under_review", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /patents/{number}/relations = %d: %s", w.Code, w.Body.String())
+	}
+	var res proto.RelationsResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode relations: %v", err)
+	}
+	if len(res.Patents) != 1 || res.Patents[0].Number != ref || res.Patents[0].ReviewState != domain.ReviewStateUnderReview {
+		t.Fatalf("relations result = %+v, want one under_review related patent", res.Patents)
 	}
 }

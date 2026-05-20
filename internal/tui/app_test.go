@@ -166,8 +166,30 @@ func (p *projectProbePane) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
 }
 func (p *projectProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) { return p, nil }
-func (p *projectProbePane) Handles() []command.ID                        { return nil }
-func (p *projectProbePane) SelectedProject() (domain.Project, bool)      { return p.project, true }
+func (p *projectProbePane) Handles() []command.ID                                    { return nil }
+func (p *projectProbePane) SelectedProject() (domain.Project, bool)                  { return p.project, true }
+
+type patentProbePane struct {
+	selection  domain.PatentNumber
+	selections []domain.PatentNumber
+}
+
+func (p *patentProbePane) Context() command.Context            { return command.ContextCatalog }
+func (p *patentProbePane) Title() string                       { return "patents" }
+func (p *patentProbePane) Init() tea.Cmd                       { return nil }
+func (p *patentProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }
+func (p *patentProbePane) View(int, int) string                { return "" }
+func (p *patentProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) {
+	return p, nil
+}
+func (p *patentProbePane) Handles() []command.ID { return nil }
+func (p *patentProbePane) Selection() (domain.PatentNumber, bool) {
+	if p.selection.IsZero() {
+		return domain.PatentNumber{}, false
+	}
+	return p.selection, true
+}
+func (p *patentProbePane) Selections() []domain.PatentNumber { return p.selections }
 
 func TestAppRefreshesAllPanesOnDBChange(t *testing.T) {
 	app := newTestApp(t)
@@ -209,5 +231,75 @@ func TestExecuteTypedCommandUsesSelectedProjectState(t *testing.T) {
 	app.executeTypedCommand("project.use")
 	if app.activeProject == nil || app.activeProject.ID != "p-2" {
 		t.Fatalf("activeProject = %+v, want p-2", app.activeProject)
+	}
+}
+
+func TestOpenBrowserUsesFocusedSelection(t *testing.T) {
+	app := newTestApp(t)
+	number := domain.MustParsePatentNumber("US11611785B2")
+	app.panes = []pane.Pane{&patentProbePane{selection: number}}
+	var opened []string
+	app.openURL = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+
+	_, cmd := app.invoke(command.OpenBrowser, invocation{repeat: 1})
+	if cmd == nil {
+		t.Fatal("OpenBrowser should return a command")
+	}
+	msg := cmd()
+	status, ok := msg.(pane.StatusMsg)
+	if !ok || status.Key != text.StatusBrowserOpened {
+		t.Fatalf("browser status = %#v, want StatusBrowserOpened", msg)
+	}
+	if len(opened) != 1 || opened[0] != "https://patents.google.com/patent/US11611785B2" {
+		t.Fatalf("opened URLs = %v", opened)
+	}
+}
+
+func TestOpenBrowserUsesVisualSelection(t *testing.T) {
+	app := newTestApp(t)
+	selected := []domain.PatentNumber{
+		domain.MustParsePatentNumber("US11611785B2"),
+		domain.MustParsePatentNumber("US10000000B2"),
+	}
+	app.panes = []pane.Pane{&patentProbePane{selection: selected[0], selections: selected}}
+	var opened []string
+	app.openURL = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+
+	_, cmd := app.invoke(command.OpenBrowser, invocation{repeat: 1})
+	if cmd == nil {
+		t.Fatal("OpenBrowser should return a command")
+	}
+	_ = cmd()
+	if len(opened) != 2 {
+		t.Fatalf("opened %d URLs, want 2", len(opened))
+	}
+}
+
+func TestBrowseCommandAcceptsExplicitPatentArgs(t *testing.T) {
+	app := newTestApp(t)
+	app.panes = []pane.Pane{&patentProbePane{}}
+	var opened []string
+	app.openURL = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+
+	_, cmd := app.executeTypedCommand("browse US11611785B2")
+	if cmd == nil {
+		t.Fatal(":browse should return a command")
+	}
+	msg := cmd()
+	status, ok := msg.(pane.StatusMsg)
+	if !ok || status.Key != text.StatusBrowserOpened {
+		t.Fatalf("browse status = %#v, want StatusBrowserOpened", msg)
+	}
+	if len(opened) != 1 || !strings.Contains(opened[0], "US11611785B2") {
+		t.Fatalf("opened URLs = %v", opened)
 	}
 }

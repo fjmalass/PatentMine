@@ -58,25 +58,25 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		focusedColIdx: -1,
 	}
 	c.handlers = map[command.ID]cmdHandler{
-		command.NavDown:      func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
-		command.NavUp:        func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
-		command.NavPageDown:  func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
-		command.NavPageUp:    func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
-		command.NavTop:       func(Invocation) tea.Cmd { return c.move(c.page.Top) },
-		command.NavBottom:    func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
-		command.Refresh:      func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
-		command.SelectVisual: func(Invocation) tea.Cmd { return c.toggleVisual() },
-		command.SelectClear:  func(Invocation) tea.Cmd { c.clearVisual(); return nil },
-		command.IngestFamily: func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
+		command.NavDown:         func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
+		command.NavUp:           func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
+		command.NavPageDown:     func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
+		command.NavPageUp:       func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
+		command.NavTop:          func(Invocation) tea.Cmd { return c.move(c.page.Top) },
+		command.NavBottom:       func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
+		command.Refresh:         func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
+		command.SelectVisual:    func(Invocation) tea.Cmd { return c.toggleVisual() },
+		command.SelectClear:     func(Invocation) tea.Cmd { c.clearVisual(); return nil },
+		command.IngestFamily:    func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
 		command.IngestCitations: func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitations) },
 		command.IngestCitedBy:   func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitedBy) },
 		command.IngestAll:       func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileAll) },
-		command.FetchPatent:  func(Invocation) tea.Cmd { return c.ingestSelected("") },
-		command.ColNext:      func(Invocation) tea.Cmd { return c.focusNext() },
-		command.ColPrev:      func(Invocation) tea.Cmd { return c.focusPrev() },
-		command.SortApply: func(Invocation) tea.Cmd { return c.applySort() },
-		command.Filter:    c.applyFilter,
-		command.FindOpen:  func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
+		command.FetchPatent:     func(Invocation) tea.Cmd { return c.ingestSelected("") },
+		command.ColNext:         func(Invocation) tea.Cmd { return c.focusNext() },
+		command.ColPrev:         func(Invocation) tea.Cmd { return c.focusPrev() },
+		command.SortApply:       func(Invocation) tea.Cmd { return c.applySort() },
+		command.Filter:          c.applyFilter,
+		command.FindOpen:        func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
 	}
 	return c
 }
@@ -379,7 +379,7 @@ func (c *Catalog) View(w, h int) string {
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
-		line := renderTableRow(p, cols, projectID)
+		line := renderStyledTableRow(c.theme, p, cols, projectID)
 		b.WriteByte('\n')
 		switch {
 		case c.visualMode && c.inVisualRange(absolute):
