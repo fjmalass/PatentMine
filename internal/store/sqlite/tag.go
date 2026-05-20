@@ -40,6 +40,24 @@ func (r *Repo) CreateTag(ctx context.Context, project domain.ProjectID, name str
 	return t, nil
 }
 
+// DeleteTag removes a tag from the project's taxonomy.
+func (r *Repo) DeleteTag(ctx context.Context, project domain.ProjectID, name string) (err error) {
+	defer r.observeDuration("delete_tag", time.Now(), &err)
+	if project == "" {
+		return errors.New("store/sqlite: tag needs a project")
+	}
+	if name == "" {
+		return errors.New("store/sqlite: tag name must not be empty")
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`DELETE FROM tag WHERE project_id = ? AND name = ?`,
+		string(project), name)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete tag: %w", err)
+	}
+	return nil
+}
+
 // ProjectTags returns every tag of a project, ordered by name.
 func (r *Repo) ProjectTags(ctx context.Context, project domain.ProjectID) (out []domain.Tag, err error) {
 	defer r.observeDuration("project_tags", time.Now(), &err)
@@ -72,9 +90,9 @@ func (r *Repo) TagPatent(ctx context.Context, tagID int64, patent domain.PatentN
 		return errors.New("store/sqlite: tag assignment needs a patent")
 	}
 	_, err = r.writer.ExecContext(ctx,
-		`INSERT INTO patent_tag (tag_id, patent_number) VALUES (?,?)
+		`INSERT INTO patent_tag (tag_id, patent_number, created_at) VALUES (?,?,?)
 		 ON CONFLICT(tag_id, patent_number) DO NOTHING`,
-		tagID, patent.Normalized())
+		tagID, patent.Normalized(), encodeTime(time.Now()))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: tag patent: %w", err)
 	}
@@ -99,7 +117,7 @@ func (r *Repo) UntagPatent(ctx context.Context, tagID int64, patent domain.Paten
 func (r *Repo) PatentTags(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (out []domain.Tag, err error) {
 	defer r.observeDuration("patent_tags", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT t.id, t.project_id, t.name, t.created_at
+		`SELECT t.id, t.project_id, t.name, t.created_at, pt.created_at
 		 FROM tag t
 		 JOIN patent_tag pt ON pt.tag_id = t.id
 		 WHERE t.project_id = ? AND pt.patent_number = ?
@@ -112,10 +130,27 @@ func (r *Repo) PatentTags(ctx context.Context, project domain.ProjectID, patent 
 
 	out = nil
 	for rows.Next() {
-		t, err := scanTag(rows)
-		if err != nil {
-			return nil, fmt.Errorf("store/sqlite: scan tag: %w", err)
+		var (
+			t          domain.Tag
+			projectID  string
+			createdAt  string
+			assignedAt string
+		)
+		if err := rows.Scan(&t.ID, &projectID, &t.Name, &createdAt, &assignedAt); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan patent tag: %w", err)
 		}
+		t.Project = domain.ProjectID(projectID)
+		created, err := decodeTime(createdAt)
+		if err != nil {
+			return nil, err
+		}
+		t.CreatedAt = created
+		assigned, err := decodeTime(assignedAt)
+		if err != nil {
+			return nil, err
+		}
+		t.AssignedAt = assigned
+
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {

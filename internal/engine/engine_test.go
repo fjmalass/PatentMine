@@ -504,19 +504,19 @@ func TestEngineTagging(t *testing.T) {
 	}
 
 	// AssignTag creates the named tag and links it to the patent.
-	if err := eng.AssignTag(ctx, project.ID, patent.Number, "key-reference"); err != nil {
+	if err := eng.AssignTag(ctx, project.ID, patent.Number, "key_reference"); err != nil {
 		t.Fatalf("AssignTag: %v", err)
 	}
 	tags, err := eng.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {
 		t.Fatalf("PatentTags: %v", err)
 	}
-	if len(tags) != 1 || tags[0].Name != "key-reference" {
-		t.Fatalf("PatentTags = %v, want one key-reference tag", tags)
+	if len(tags) != 1 || tags[0].Name != "key_reference" {
+		t.Fatalf("PatentTags = %v, want one key_reference tag", tags)
 	}
 
 	// RemoveTag matches the name case-insensitively.
-	if err := eng.RemoveTag(ctx, project.ID, patent.Number, "KEY-REFERENCE"); err != nil {
+	if err := eng.RemoveTag(ctx, project.ID, patent.Number, "KEY_REFERENCE"); err != nil {
 		t.Fatalf("RemoveTag: %v", err)
 	}
 	tags, err = eng.PatentTags(ctx, project.ID, patent.Number)

@@ -159,6 +159,23 @@ func (c *Cache) AddMembership(ctx context.Context, m domain.Membership) error {
 	return nil
 }
 
+func (c *Cache) CreateTag(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error) {
+	tag, err := c.Repository.CreateTag(ctx, project, name)
+	if err != nil {
+		return domain.Tag{}, err
+	}
+	c.flush()
+	return tag, nil
+}
+
+func (c *Cache) DeleteTag(ctx context.Context, project domain.ProjectID, name string) error {
+	if err := c.Repository.DeleteTag(ctx, project, name); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 // queryKey builds a stable string key for a listing query.
 func queryKey(prefix string, q PatentQuery) string {
 	return fmt.Sprintf("%s:%s:%s:%s:%s:%s:%d:%d:%s:%v",

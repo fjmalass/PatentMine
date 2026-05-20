@@ -87,6 +87,26 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("store/sqlite: init schema: %w", err)
 	}
+	// Migrate existing database instances if they lack the created_at column in patent_tag.
+	var hasCreatedAt bool
+	rows, err := r.writer.QueryContext(ctx, "PRAGMA table_info(patent_tag)")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var name, typeStr string
+			var notnull, pk int
+			var dfltVal any
+			if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err == nil {
+				if name == "created_at" {
+					hasCreatedAt = true
+				}
+			}
+		}
+		if !hasCreatedAt {
+			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent_tag ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
+		}
+	}
 	return nil
 }
 

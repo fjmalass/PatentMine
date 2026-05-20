@@ -37,6 +37,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)          // command.AddToProject
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                     // command.ExportIDS
 	s.mux.HandleFunc("POST /ingest", s.handleIngest)                            // command.IngestFamily
+
+	// Fixed Tag Taxonomy endpoints
+	s.mux.HandleFunc("POST /projects/{id}/tags", s.handleTagCreate)
+	s.mux.HandleFunc("GET /projects/{id}/tags", s.handleTagList)
+	s.mux.HandleFunc("DELETE /projects/{id}/tags/{name}", s.handleTagDelete)
+	s.mux.HandleFunc("POST /projects/{id}/patents/{number}/tags", s.handlePatentTagAdd)
+	s.mux.HandleFunc("DELETE /projects/{id}/patents/{number}/tags/{name}", s.handlePatentTagDelete)
+	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/tags", s.handlePatentTagList)
 }
 
 // handleMetrics returns the daemon's current in-memory timing/counter snapshot.
@@ -222,6 +230,94 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	var res proto.IngestStartResult
 	s.call(w, r, proto.MethodIngestFamily,
 		proto.IngestFamilyParams{Root: body.Root, Depth: body.Depth, Force: body.Force}, &res)
+}
+
+// handleTagCreate creates a taxonomy tag in a project.
+func (s *Server) handleTagCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	params := proto.TagCreateParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Name:    body.Name,
+	}
+	var res domain.Tag
+	s.call(w, r, proto.MethodTagCreate, params, &res)
+}
+
+// handleTagList lists taxonomy tags in a project.
+func (s *Server) handleTagList(w http.ResponseWriter, r *http.Request) {
+	params := proto.TagListParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+	}
+	var res proto.TagListResult
+	s.call(w, r, proto.MethodTagList, params, &res)
+}
+
+// handleTagDelete deletes a taxonomy tag from a project.
+func (s *Server) handleTagDelete(w http.ResponseWriter, r *http.Request) {
+	params := proto.TagDeleteParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Name:    r.PathValue("name"),
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodTagDelete, params, &res)
+}
+
+// handlePatentTagAdd assigns a tag to a patent in a project.
+func (s *Server) handlePatentTagAdd(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	params := proto.TagParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Patent:  number,
+		Name:    body.Name,
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodPatentTagAdd, params, &res)
+}
+
+// handlePatentTagDelete removes a tag from a patent in a project.
+func (s *Server) handlePatentTagDelete(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	params := proto.TagParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Patent:  number,
+		Name:    r.PathValue("name"),
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodPatentTagDelete, params, &res)
+}
+
+// handlePatentTagList lists tags assigned to a patent in a project.
+func (s *Server) handlePatentTagList(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	params := proto.PatentTagListParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Patent:  number,
+	}
+	var res proto.PatentTagListResult
+	s.call(w, r, proto.MethodPatentTagList, params, &res)
 }
 
 // decodeBody decodes a JSON request body, writing a 400 on failure. It reports

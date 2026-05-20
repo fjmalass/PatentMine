@@ -2,6 +2,7 @@ package pane
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -151,5 +152,107 @@ func CreateProjectCmd(client *rpc.Client, name string) tea.Cmd {
 			return StatusMsg{Key: text.StatusProjectCreateFailed, Args: []any{err.Error()}, Error: true}
 		}
 		return StatusMsg{Key: text.StatusProjectCreated, Args: []any{res.Project.Name}}
+	}
+}
+
+// CreateTagTaxonomyCmd registers a tag in the project's taxonomy.
+func CreateTagTaxonomyCmd(client *rpc.Client, project domain.ProjectID, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res domain.Tag
+		if err := client.Call(ctx, proto.MethodTagCreate,
+			proto.TagCreateParams{Project: project, Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagTaxonomyAddFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusTagTaxonomyAdded, Args: []any{name, string(project)}}
+	}
+}
+
+// DeleteTagTaxonomyCmd removes a tag from the project's taxonomy.
+func DeleteTagTaxonomyCmd(client *rpc.Client, project domain.ProjectID, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodTagDelete,
+			proto.TagDeleteParams{Project: project, Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagTaxonomyDeleteFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusTagTaxonomyDeleted, Args: []any{name, string(project)}}
+	}
+}
+
+// ListTagTaxonomyCmd lists all taxonomy tags in the project.
+func ListTagTaxonomyCmd(client *rpc.Client, project domain.ProjectID) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.TagListResult
+		if err := client.Call(ctx, proto.MethodTagList,
+			proto.TagListParams{Project: project}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagTaxonomyListFailed, Args: []any{err.Error()}, Error: true}
+		}
+		var names []string
+		for _, t := range res.Tags {
+			names = append(names, t.Name)
+		}
+		if len(names) == 0 {
+			return StatusMsg{Key: text.StatusFilter, Args: []any{"taxonomy: (no tags registered)"}}
+		}
+		return StatusMsg{Key: text.StatusFilter, Args: []any{"taxonomy: " + strings.Join(names, ", ")}}
+	}
+}
+
+// AssignPatentTagCmd assigns a taxonomy tag to a patent.
+func AssignPatentTagCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodPatentTagAdd,
+			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagPatentAddFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusTagPatentAdded, Args: []any{name, number.String()}}
+	}
+}
+
+// RemovePatentTagCmd removes a tag assignment from a patent.
+func RemovePatentTagCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.Empty
+		if err := client.Call(ctx, proto.MethodPatentTagDelete,
+			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagPatentDeleteFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusTagPatentDeleted, Args: []any{name, number.String()}}
+	}
+}
+
+// ListPatentTagsCmd lists all tags assigned to a patent.
+func ListPatentTagsCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentTagListResult
+		if err := client.Call(ctx, proto.MethodPatentTagList,
+			proto.PatentTagListParams{Project: project, Patent: number}, &res); err != nil {
+			return StatusMsg{Key: text.StatusTagPatentListFailed, Args: []any{err.Error()}, Error: true}
+		}
+		var tagStrings []string
+		for _, t := range res.Tags {
+			var assignedStr string
+			if !t.AssignedAt.IsZero() {
+				assignedStr = " (assigned " + t.AssignedAt.Format("2006-01-02 15:04:05") + ")"
+			}
+			tagStrings = append(tagStrings, t.Name+assignedStr)
+		}
+		if len(tagStrings) == 0 {
+			return StatusMsg{Key: text.StatusFilter, Args: []any{"patent tags: (none assigned)"}}
+		}
+		return StatusMsg{Key: text.StatusFilter, Args: []any{"patent tags: " + strings.Join(tagStrings, ", ")}}
 	}
 }

@@ -36,6 +36,12 @@ const (
 	MethodIDSEntrySave   Method = "ids.entry.save"
 	MethodIDSEntryDelete Method = "ids.entry.delete"
 	MethodMetricsGet     Method = "metrics.get"
+	MethodTagCreate      Method = "tag.create"
+	MethodTagList        Method = "tag.list"
+	MethodTagDelete      Method = "tag.delete"
+	MethodPatentTagAdd    Method = "patent.tag.add"
+	MethodPatentTagDelete Method = "patent.tag.delete"
+	MethodPatentTagList   Method = "patent.tag.list"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -179,6 +185,40 @@ type TagParams struct {
 	Patent  domain.PatentNumber `json:"patent"`
 	Name    string              `json:"name"`
 }
+
+// TagCreateParams registers a new tag in the project's taxonomy.
+type TagCreateParams struct {
+	Project domain.ProjectID `json:"project"`
+	Name    string           `json:"name"`
+}
+
+// TagDeleteParams removes a tag from the project's taxonomy.
+type TagDeleteParams struct {
+	Project domain.ProjectID `json:"project"`
+	Name    string           `json:"name"`
+}
+
+// TagListParams lists all taxonomy tags in the project.
+type TagListParams struct {
+	Project domain.ProjectID `json:"project"`
+}
+
+// TagListResult carries the list of project taxonomy tags.
+type TagListResult struct {
+	Tags []domain.Tag `json:"tags"`
+}
+
+// PatentTagListParams lists tags assigned to a patent.
+type PatentTagListParams struct {
+	Project domain.ProjectID    `json:"project"`
+	Patent  domain.PatentNumber `json:"patent"`
+}
+
+// PatentTagListResult carries the list of tags assigned to a patent.
+type PatentTagListResult struct {
+	Tags []domain.Tag `json:"tags"`
+}
+
 
 // IngestFamilyParams starts a family-graph crawl rooted at one patent. Depth 0
 // fetches only the root; a negative depth uses the configured family depth.

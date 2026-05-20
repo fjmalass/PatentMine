@@ -56,6 +56,12 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodIDSEntrySave:   s.idsEntrySave,
 		proto.MethodIDSEntryDelete: s.idsEntryDelete,
 		proto.MethodMetricsGet:     s.metricsGet,
+		proto.MethodTagCreate:      s.tagCreate,
+		proto.MethodTagList:        s.tagList,
+		proto.MethodTagDelete:      s.tagDelete,
+		proto.MethodPatentTagAdd:    s.patentTagAdd,
+		proto.MethodPatentTagDelete: s.patentTagDelete,
+		proto.MethodPatentTagList:   s.patentTagList,
 	}
 	return s
 }
@@ -367,6 +373,75 @@ func (s *Server) tagRemove(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.Empty{}, nil
+}
+
+func (s *Server) tagCreate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagCreateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	tag, err := s.engine.CreateTaxonomyTag(ctx, p.Project, p.Name)
+	if err != nil {
+		return nil, err
+	}
+	return tag, nil
+}
+
+func (s *Server) tagList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := s.engine.ListTaxonomyTags(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TagListResult{Tags: tags}, nil
+}
+
+func (s *Server) tagDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagDeleteParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteTaxonomyTag(ctx, p.Project, p.Name); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) patentTagAdd(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.AssignPatentTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) patentTagDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.RemovePatentTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) patentTagList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentTagListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := s.engine.PatentTags(ctx, p.Project, p.Patent)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentTagListResult{Tags: tags}, nil
 }
 
 func (s *Server) ingestFamily(_ context.Context, raw json.RawMessage) (any, error) {

@@ -583,11 +583,91 @@ func (e *Engine) DeleteIDSEntry(ctx context.Context, project domain.ProjectID, p
 	return nil
 }
 
-// AssignTag tags a patent within a project, creating the named tag when the
-// project does not have it yet. The patent may be given by any of its document
-// numbers; it is resolved to the record before the tag is assigned.
-func (e *Engine) AssignTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
-	defer e.observeDuration("engine.assign_tag", time.Now(), &err)
+// CreateTaxonomyTag registers a new tag in the project's taxonomy.
+// The name must match lowercase snake_case constraints.
+func (e *Engine) CreateTaxonomyTag(ctx context.Context, project domain.ProjectID, name string) (tag domain.Tag, err error) {
+	defer e.observeDuration("engine.create_taxonomy_tag", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if project == "" {
+		return domain.Tag{}, errors.New("engine: tag needs a project")
+	}
+	if err := domain.ValidateTagName(name); err != nil {
+		return domain.Tag{}, err
+	}
+	tag, err = e.repo.CreateTag(ctx, project, name)
+	if err != nil {
+		e.log(ctx, slog.LevelError, "create taxonomy tag failed", slog.String("project_id", string(project)), slog.String("name", name), slog.String("error", err.Error()))
+		return domain.Tag{}, err
+	}
+	e.log(ctx, slog.LevelInfo, "taxonomy tag created", slog.String("project_id", string(project)), slog.String("tag", name))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "tag.create",
+		Entity:   "tag",
+		EntityID: string(project) + "/" + name,
+		Status:   "committed",
+		After:    tag,
+	})
+	e.announceChange()
+	return tag, nil
+}
+
+// DeleteTaxonomyTag removes a tag from the project's taxonomy.
+func (e *Engine) DeleteTaxonomyTag(ctx context.Context, project domain.ProjectID, name string) (err error) {
+	defer e.observeDuration("engine.delete_taxonomy_tag", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if project == "" {
+		return errors.New("engine: tag needs a project")
+	}
+	if name == "" {
+		return errors.New("engine: tag name must not be empty")
+	}
+	
+	// Lookup the tag first to record in history
+	tags, err := e.repo.ProjectTags(ctx, project)
+	if err != nil {
+		return err
+	}
+	var targetTag domain.Tag
+	found := false
+	for _, t := range tags {
+		if strings.EqualFold(t.Name, name) {
+			targetTag = t
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("engine: tag %q not found in project's taxonomy", name)
+	}
+
+	if err := e.repo.DeleteTag(ctx, project, targetTag.Name); err != nil {
+		e.log(ctx, slog.LevelError, "delete taxonomy tag failed", slog.String("project_id", string(project)), slog.String("name", targetTag.Name), slog.String("error", err.Error()))
+		return err
+	}
+	e.log(ctx, slog.LevelInfo, "taxonomy tag deleted", slog.String("project_id", string(project)), slog.String("tag", targetTag.Name))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "tag.delete",
+		Entity:   "tag",
+		EntityID: string(project) + "/" + targetTag.Name,
+		Status:   "committed",
+		Before:   targetTag,
+	})
+	e.announceChange()
+	return nil
+}
+
+// ListTaxonomyTags lists all tags in the project's taxonomy.
+func (e *Engine) ListTaxonomyTags(ctx context.Context, project domain.ProjectID) (tags []domain.Tag, err error) {
+	defer e.observeDuration("engine.list_taxonomy_tags", time.Now(), &err)
+	if project == "" {
+		return nil, errors.New("engine: list taxonomy tags needs a project")
+	}
+	return e.repo.ProjectTags(ctx, project)
+}
+
+// AssignPatentTag tags a patent within a project, verifying that the tag exists in the taxonomy.
+func (e *Engine) AssignPatentTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+	defer e.observeDuration("engine.assign_patent_tag", time.Now(), &err)
 	name = strings.TrimSpace(name)
 	if project == "" {
 		return errors.New("engine: tag needs a project")
@@ -599,32 +679,61 @@ func (e *Engine) AssignTag(ctx context.Context, project domain.ProjectID, patent
 	if err != nil {
 		return err
 	}
-	tag, err := e.repo.CreateTag(ctx, project, name)
+
+	// Verify the tag exists in the project's fixed taxonomy
+	taxonomy, err := e.repo.ProjectTags(ctx, project)
 	if err != nil {
-		e.log(ctx, slog.LevelError, "create tag failed", slog.String("project_id", string(project)), slog.String("name", name), slog.String("error", err.Error()))
 		return err
 	}
-	if err := e.repo.TagPatent(ctx, tag.ID, record); err != nil {
-		e.log(ctx, slog.LevelError, "tag patent failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
+	var matchedTag domain.Tag
+	found := false
+	for _, t := range taxonomy {
+		if strings.EqualFold(t.Name, name) {
+			matchedTag = t
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("engine: tag %q does not exist in the project taxonomy; create it first", name)
+	}
+
+	if err := e.repo.TagPatent(ctx, matchedTag.ID, record); err != nil {
+		e.log(ctx, slog.LevelError, "assign patent tag failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
 		return err
 	}
-	e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", name))
+	
+	// Fetch the updated tag list to get the AssignedAt value
+	assignedTags, err := e.repo.PatentTags(ctx, project, record)
+	var assignedAt time.Time
+	if err == nil {
+		for _, t := range assignedTags {
+			if t.ID == matchedTag.ID {
+				assignedAt = t.AssignedAt
+				break
+			}
+		}
+	}
+	if assignedAt.IsZero() {
+		assignedAt = time.Now()
+	}
+
+	e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "tag.assign",
-		Entity:   "tag",
-		EntityID: string(project) + "/" + record.String(),
+		Action:   "patent.tag_assign",
+		Entity:   "patent_tag",
+		EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
 		Status:   "committed",
-		After:    map[string]any{"tag": name, "tag_id": tag.ID},
+		After:    map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID, "assigned_at": assignedAt.UTC().Format(time.RFC3339)},
 		Metadata: map[string]any{"requested_number": patent.String()},
 	})
 	e.announceChange()
 	return nil
 }
 
-// RemoveTag removes a tag from a patent within a project. It reports an error
-// when the patent does not carry a tag of that name.
-func (e *Engine) RemoveTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
-	defer e.observeDuration("engine.remove_tag", time.Now(), &err)
+// RemovePatentTag removes a tag assignment from a patent.
+func (e *Engine) RemovePatentTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+	defer e.observeDuration("engine.remove_patent_tag", time.Now(), &err)
 	name = strings.TrimSpace(name)
 	if project == "" {
 		return errors.New("engine: tag needs a project")
@@ -647,16 +756,30 @@ func (e *Engine) RemoveTag(ctx context.Context, project domain.ProjectID, patent
 		}
 		e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
 		e.recordActivity(ctx, observability.Record{
-			Action:   "tag.remove",
-			Entity:   "tag",
-			EntityID: string(project) + "/" + record.String(),
+			Action:   "patent.tag_remove",
+			Entity:   "patent_tag",
+			EntityID: string(project) + "/" + record.String() + "/" + t.Name,
 			Status:   "committed",
-			After:    map[string]any{"tag": t.Name, "tag_id": t.ID},
+			Before:   map[string]any{"tag_name": t.Name, "tag_id": t.ID, "assigned_at": t.AssignedAt.UTC().Format(time.RFC3339)},
 		})
 		e.announceChange()
 		return nil
 	}
 	return fmt.Errorf("engine: patent %s has no tag %q", record, name)
+}
+
+// AssignTag tags a patent within a project, creating the named tag when the
+// project does not have it yet. The patent may be given by any of its document
+// numbers; it is resolved to the record before the tag is assigned.
+func (e *Engine) AssignTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+	_, _ = e.CreateTaxonomyTag(ctx, project, name)
+	return e.AssignPatentTag(ctx, project, patent, name)
+}
+
+// RemoveTag removes a tag from a patent within a project. It reports an error
+// when the patent does not carry a tag of that name.
+func (e *Engine) RemoveTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+	return e.RemovePatentTag(ctx, project, patent, name)
 }
 
 // StartFamilyIngest enqueues a family-graph crawl and returns its job id. A

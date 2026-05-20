@@ -94,6 +94,8 @@ type Repository interface {
 	// CreateTag returns the project's tag of the given name, creating it when
 	// the project does not have it yet. The name is matched as stored.
 	CreateTag(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error)
+	// DeleteTag removes a tag from the project's taxonomy.
+	DeleteTag(ctx context.Context, project domain.ProjectID, name string) error
 	// ProjectTags returns every tag of a project, ordered by name.
 	ProjectTags(ctx context.Context, project domain.ProjectID) ([]domain.Tag, error)
 	// TagPatent assigns a tag to a patent; an existing assignment is left as is.

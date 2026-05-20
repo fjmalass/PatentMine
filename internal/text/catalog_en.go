@@ -51,6 +51,16 @@ const (
 	StatusFilter               Key = "status.filter"
 	StatusBrowserOpenFailed    Key = "status.browser_open_failed"
 	StatusBrowserOpened        Key = "status.browser_opened"
+	StatusTagTaxonomyAddFailed    Key = "status.tag_taxonomy_add_failed"
+	StatusTagTaxonomyAdded        Key = "status.tag_taxonomy_added"
+	StatusTagTaxonomyDeleteFailed Key = "status.tag_taxonomy_delete_failed"
+	StatusTagTaxonomyDeleted      Key = "status.tag_taxonomy_deleted"
+	StatusTagTaxonomyListFailed   Key = "status.tag_taxonomy_list_failed"
+	StatusTagPatentAddFailed      Key = "status.tag_patent_add_failed"
+	StatusTagPatentAdded          Key = "status.tag_patent_added"
+	StatusTagPatentDeleteFailed   Key = "status.tag_patent_delete_failed"
+	StatusTagPatentDeleted        Key = "status.tag_patent_deleted"
+	StatusTagPatentListFailed     Key = "status.tag_patent_list_failed"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -163,6 +173,12 @@ var cmdStrings = map[string][2]string{
 	"ids.toggle-full":          {"Toggle IDS full", "Toggle whether the full document is cited on the IDS."},
 	"ids.cycle-status":         {"Cycle IDS status", "Cycle the IDS entry status through pending, submitted, and accepted."},
 	"ids.delete":               {"Delete IDS entry", "Remove the current patent from the curated IDS."},
+	"tag.add":                  {"Add taxonomy tag", "Register a new tag in the project's taxonomy."},
+	"tag.list":                 {"List taxonomy tags", "List all tags in the project's taxonomy."},
+	"tag.delete":               {"Delete taxonomy tag", "Remove a tag from the project's taxonomy."},
+	"tag.patent.add":           {"Assign patent tag", "Assign a taxonomy tag to the selected patent."},
+	"tag.patent.delete":        {"Remove patent tag", "Remove a tag assignment from the selected patent."},
+	"tag.patent.list":          {"List patent tags", "List tags assigned to the selected patent."},
 }
 
 // englishNamed is the English text for every named key.
@@ -212,6 +228,16 @@ var englishNamed = map[Key]string{
 	StatusFilter:               "%s",
 	StatusBrowserOpenFailed:    "open browser failed: %s",
 	StatusBrowserOpened:        "opened %d patent page(s) in browser",
+	StatusTagTaxonomyAddFailed:    "add tag to taxonomy failed: %s",
+	StatusTagTaxonomyAdded:        "added taxonomy tag %q to %s",
+	StatusTagTaxonomyDeleteFailed: "delete tag from taxonomy failed: %s",
+	StatusTagTaxonomyDeleted:      "deleted taxonomy tag %q from %s",
+	StatusTagTaxonomyListFailed:   "list taxonomy tags failed: %s",
+	StatusTagPatentAddFailed:      "assign tag to patent failed: %s",
+	StatusTagPatentAdded:          "assigned tag %q to patent %s",
+	StatusTagPatentDeleteFailed:   "remove tag from patent failed: %s",
+	StatusTagPatentDeleted:        "removed tag %q from patent %s",
+	StatusTagPatentListFailed:     "list patent tags failed: %s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",

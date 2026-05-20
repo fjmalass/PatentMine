@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS tag (
 CREATE TABLE IF NOT EXISTS patent_tag (
     tag_id        INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
     patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    created_at    TEXT NOT NULL,
     PRIMARY KEY (tag_id, patent_number)
 );
 

@@ -97,6 +97,12 @@ var appHandlers = map[command.ID]appHandler{
 	command.MarkDeleted:        (*App).cmdMarkDeleted,
 	command.TagAdd:             (*App).cmdTagAdd,
 	command.TagRemove:          (*App).cmdTagRemove,
+	command.TagTaxonomyAdd:     (*App).cmdTagTaxonomyAdd,
+	command.TagTaxonomyList:    (*App).cmdTagTaxonomyList,
+	command.TagTaxonomyDelete:  (*App).cmdTagTaxonomyDelete,
+	command.TagPatentAdd:       (*App).cmdTagPatentAdd,
+	command.TagPatentDelete:    (*App).cmdTagPatentDelete,
+	command.TagPatentList:      (*App).cmdTagPatentList,
 	command.PatentDelete:       (*App).cmdPatentDelete,
 }
 
@@ -109,6 +115,10 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.Import:          true,
 	command.TagAdd:          true,
 	command.TagRemove:       true,
+	command.TagTaxonomyAdd:     true,
+	command.TagTaxonomyDelete:  true,
+	command.TagPatentAdd:       true,
+	command.TagPatentDelete:    true,
 	command.Filter:          true,
 	command.OpenBrowser:     true,
 }
@@ -555,6 +565,82 @@ func (a *App) cmdTagRemove(inv invocation) (tea.Model, tea.Cmd) {
 	name := strings.Join(inv.args, " ")
 	return a.runAction(command.TagRemove, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
 		return pane.RemoveTagCmd(a.client, project, patent, name)
+	})
+}
+
+// cmdTagTaxonomyAdd registers a tag in the project's taxonomy.
+func (a *App) cmdTagTaxonomyAdd(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.TagTaxonomyAdd)
+	}
+	name := strings.Join(inv.args, " ")
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.CreateTagTaxonomyCmd(a.client, a.activeProject.ID, name)
+}
+
+// cmdTagTaxonomyList lists all taxonomy tags in the active project.
+func (a *App) cmdTagTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.ListTagTaxonomyCmd(a.client, a.activeProject.ID)
+}
+
+// cmdTagTaxonomyDelete removes a tag from the project's taxonomy.
+func (a *App) cmdTagTaxonomyDelete(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.TagTaxonomyDelete)
+	}
+	name := strings.Join(inv.args, " ")
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.DeleteTagTaxonomyCmd(a.client, a.activeProject.ID, name)
+}
+
+// cmdTagPatentAdd assigns a tag to the selected patent within the active project.
+func (a *App) cmdTagPatentAdd(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.TagPatentAdd)
+	}
+	name := strings.Join(inv.args, " ")
+	return a.runAction(command.TagPatentAdd, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.AssignPatentTagCmd(a.client, project, patent, name)
+	})
+}
+
+// cmdTagPatentDelete removes a tag assignment from the selected patent within the active project.
+func (a *App) cmdTagPatentDelete(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.TagPatentDelete)
+	}
+	name := strings.Join(inv.args, " ")
+	return a.runAction(command.TagPatentDelete, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.RemovePatentTagCmd(a.client, project, patent, name)
+	})
+}
+
+// cmdTagPatentList lists all tags assigned to the selected patent.
+func (a *App) cmdTagPatentList(inv invocation) (tea.Model, tea.Cmd) {
+	return a.runAction(command.TagPatentList, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.ListPatentTagsCmd(a.client, project, patent)
 	})
 }
 

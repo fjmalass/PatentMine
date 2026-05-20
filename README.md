@@ -156,6 +156,13 @@ CREATE TABLE IF NOT EXISTS project_ids (
 > [!NOTE]
 > While tag *assignments* (`patent_tag`) are deleted, tag *definitions* (`tag` table) are preserved. Scoped to the project, they remain available for other patents.
 
+> [!IMPORTANT]
+> **Strict Tag Taxonomy Constraints**:
+> 1. **Fixed Taxonomy List**: Tags must be explicitly added to a project's taxonomy table first using `:tag.add <name>` (or via the REST API) before they can be assigned to a patent. Assigning an unregistered tag will fail.
+> 2. **Naming Validation**: All tag names are strictly restricted to lowercase snake_case matching the regex pattern `^[a-z0-9_]+$`. Any creation or registration of tags violating this rule is rejected.
+> 3. **Auditable Timestamps**: The `patent_tag` assignment tracks the exact timestamp (`assigned_at`) when the tag was linked to a patent.
+> 4. **Cascading Deletions**: Deleting a tag from the taxonomy automatically deletes all corresponding patent-tag assignments in that project via SQLite cascading foreign keys.
+
 ### B. Graph Topology Handling
 Because relations (`relation` table) can point to placeholders that aren't yet fully ingested, they do not use strict foreign key constraints. Two models exist for deleting family edges:
 
@@ -305,3 +312,14 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 * `I` : Export the complete Information Disclosure Statement (IDS) draft.
 * `/` : Search project listings.
 * `ctrl+r` : Refresh project items.
+
+### TUI Command Prompt Commands (Via `:`)
+
+When in the TUI, pressing `:` opens the CLI command prompt palette where you can type commands directly to execute engine functions. The following tag taxonomy and assignment commands are fully supported:
+
+* `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
+* `:tag.list` : List all tags currently registered in the active project's taxonomy.
+* `:tag.delete <name>` : Remove a tag from the active project's taxonomy (cascades to delete all patent assignments for this tag).
+* `:tag.patent.add <name>` : Assign a taxonomy-registered tag to the selected patent. (Fails if the tag does not exist in the taxonomy).
+* `:tag.patent.delete <name>` : Remove a tag assignment from the selected patent.
+* `:tag.patent.list` : List all tags assigned to the selected patent, along with their assignment timestamps.
