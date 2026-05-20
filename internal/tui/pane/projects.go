@@ -206,14 +206,14 @@ func (p *Projects) View(w, h int) string {
 	if p.splash {
 		b.WriteString(p.splashHeader(w))
 		b.WriteString("\n\n")
-		b.WriteString(p.theme.Header.Render(splashProjectRow(" ", "NAME", "ID", "UPDATED", "HINT", w)))
+		b.WriteString(p.theme.Header.Render(splashProjectRow("#", " ", "NAME", "ID", "UPDATED", "HINT", w)))
 	} else {
-		b.WriteString(p.theme.Header.Render(projectRow(p.activeLabel(), "NAME", p.createdLabel(), w)))
+		b.WriteString(p.theme.Header.Render(projectRow("#", p.activeLabel(), "NAME", p.createdLabel(), w)))
 	}
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		proj := p.projects[i]
-		line := projectRow(activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format("2006-01-02"), w)
+		line := projectRow(formatViewIndex(i), activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format("2006-01-02"), w)
 		if p.splash {
 			marker := "  "
 			if i == p.page.Cursor() {
@@ -223,7 +223,7 @@ func (p *Projects) View(w, h int) string {
 			if proj.ID == p.lastProjectID {
 				hint = "last used"
 			}
-			line = splashProjectRow(marker, proj.Name, string(proj.ID), proj.CreatedAt.Format("2006-01-02"), hint, w)
+			line = splashProjectRow(formatViewIndex(i), marker, proj.Name, string(proj.ID), proj.CreatedAt.Format("2006-01-02"), hint, w)
 		}
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {
@@ -298,13 +298,15 @@ func (p *Projects) createdLabel() string {
 	return "CREATED"
 }
 
-func splashProjectRow(marker, name, id, updated, hint string, w int) string {
+func splashProjectRow(index, marker, name, id, updated, hint string, w int) string {
+	const indexW = 4
 	const markerW = 2
 	const idW = 16
 	const updatedW = 12
 	const hintW = 10
-	nameW := max(w-markerW-idW-updatedW-hintW-4, 0)
-	return render.Pad(marker, markerW) + " " +
+	nameW := max(w-indexW-markerW-idW-updatedW-hintW-5, 0)
+	return render.Pad(index, indexW) + " " +
+		render.Pad(marker, markerW) + " " +
 		render.Pad(render.Truncate(name, nameW), nameW) + " " +
 		render.Pad(render.Truncate("["+id+"]", idW), idW) + " " +
 		render.Pad(updated, updatedW) + " " +
@@ -313,11 +315,13 @@ func splashProjectRow(marker, name, id, updated, hint string, w int) string {
 
 // projectRow formats one project line.
 
-func projectRow(active, name, created string, w int) string {
+func projectRow(index, active, name, created string, w int) string {
+	const indexW = 4
 	const activeW = 6
 	const createdW = 12
-	nameW := max(w-activeW-createdW-2, 0)
-	return render.Pad(active, activeW) + " " +
+	nameW := max(w-indexW-activeW-createdW-3, 0)
+	return render.Pad(index, indexW) + " " +
+		render.Pad(active, activeW) + " " +
 		render.Pad(render.Truncate(name, nameW), nameW) + " " +
 		render.Pad(created, createdW)
 }

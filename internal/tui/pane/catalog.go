@@ -379,7 +379,7 @@ func (c *Catalog) View(w, h int) string {
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
-		line := renderStyledTableRow(c.theme, p, cols, projectID)
+		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute)
 		b.WriteByte('\n')
 		switch {
 		case c.visualMode && c.inVisualRange(absolute):

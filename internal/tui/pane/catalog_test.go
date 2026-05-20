@@ -61,9 +61,33 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"NUMBER", "US0000001B2", "Second", "cached", "stub"} {
+	for _, want := range []string{"#", "NUMBER", "US0000001B2", "Second", "cached", "stub"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
+		}
+	}
+}
+
+func TestCatalogIndexUsesAbsolutePositionAcrossPages(t *testing.T) {
+	c := NewCatalog(nil, render.NewTheme())
+	c.page.SetTotal(5)
+	c.page.SetPageSize(2)
+	c.page.ScrollTo(2)
+	c.loadID = 1
+	updated, _ := c.Update(catalogLoadedMsg{
+		requestID: 1,
+		offset:    2,
+		total:     5,
+		patents: []domain.PatentRow{
+			{Number: domain.MustParsePatentNumber("US16000003"), DisplayNumber: domain.MustParsePatentNumber("US0000003B2"), Title: "Third", FetchState: domain.FetchStub},
+			{Number: domain.MustParsePatentNumber("US16000004"), DisplayNumber: domain.MustParsePatentNumber("US0000004B2"), Title: "Fourth", FetchState: domain.FetchCached},
+		},
+	})
+	c = updated.(*Catalog)
+	out := c.View(testPaneWidth, testPaneHeight)
+	for _, want := range []string{"3    US0000003B2", "4    US0000004B2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("catalog paged view missing %q\n%s", want, out)
 		}
 	}
 }

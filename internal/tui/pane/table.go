@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,12 +11,13 @@ import (
 
 // column widths for patent tables.
 const (
+	colIndex        = 4
 	colNumber       = 16
 	colInventor     = 18
 	colExpires      = 10
 	colTags         = 14
 	colState        = 13
-	colCount        = 6
+	colCount        = 7
 	colGaps         = colCount - 1
 	headerRows      = 1
 	defaultPageSize = 10
@@ -30,9 +32,10 @@ type tableCol struct {
 
 // patentTableColumns returns the columns for a patent table.
 func patentTableColumns(bodyWidth int, projectID domain.ProjectID) []tableCol {
-	fixedW := colNumber + colInventor + colExpires + colTags + colState + colGaps
+	fixedW := colIndex + colNumber + colInventor + colExpires + colTags + colState + colGaps
 	titleW := max(bodyWidth-fixedW, 1)
 	return []tableCol{
+		{"#", "", colIndex},
 		{"NUMBER", domain.SortByNumber, colNumber},
 		{"TITLE", domain.SortByTitle, titleW},
 		{"INVENTOR", domain.SortByInventor, colInventor},
@@ -72,8 +75,9 @@ func renderTableHeader(theme render.Theme, cols []tableCol, activeSortKey domain
 }
 
 // renderTableRow formats one patent row across all columns.
-func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.ProjectID) string {
-	vals := [6]string{
+func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int) string {
+	vals := [7]string{
+		formatViewIndex(absoluteIndex),
 		numberToShowRow(row).String(),
 		row.Title,
 		formatInventorsShort(row.Inventors),
@@ -91,8 +95,9 @@ func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.Proj
 	return b.String()
 }
 
-func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID) string {
-	vals := [6]string{
+func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int) string {
+	vals := [7]string{
+		formatViewIndex(absoluteIndex),
 		numberToShowRow(row).String(),
 		row.Title,
 		formatInventorsShort(row.Inventors),
@@ -108,6 +113,10 @@ func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []table
 		b.WriteString(render.Pad(render.Truncate(vals[i], col.width), col.width))
 	}
 	return b.String()
+}
+
+func formatViewIndex(absoluteIndex int) string {
+	return strconv.Itoa(max(absoluteIndex, 0) + 1)
 }
 
 func tableStateHeading(projectID domain.ProjectID) string {
