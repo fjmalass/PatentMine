@@ -222,3 +222,86 @@ For engineers maintaining or extending the indirection and lifecycle systems, ke
 | **Stub Ingestion** | [`internal/engine/engine.go`](file:///mnt/d/Repos/PatentMineNew/internal/engine/engine.go) | `ensureRecord` | Creates a new stub patent and document when a candidate is first discovered. |
 | **Deletion Mechanics** | [`internal/store/sqlite/patent.go`](file:///mnt/d/Repos/PatentMineNew/internal/store/sqlite/patent.go) | `DeletePatent` | Hand-purges incoming/outgoing relations, and deletes the main patent row (cascading to other tables). |
 | **Activity Journal** | [`internal/observability/observability.go`](file:///mnt/d/Repos/PatentMineNew/internal/observability/observability.go) | `Record` | Declares the JSONL record structure used for backup and replay. |
+
+---
+
+## 6. CLI Subcommands & TUI Shortcut Reference
+
+For complete operational visibility, the command-line interface subcommands and the Terminal User Interface (TUI) keyboard shortcuts are cataloged below.
+
+### CLI Subcommands
+Launch CLI operations using the `patentmine` binary:
+* `patentmine serve` : Start the high-performance engine daemon (binds database and orchestrates Unix sockets).
+* `patentmine stop` : Send a termination signal to stop the running daemon.
+* `patentmine tui` : Launch the interactive Terminal User Interface thin client.
+* `patentmine api` : Boot the web API server gateway.
+* `patentmine paths` : Output the resolved runtime directories and file paths.
+* `patentmine version` : Print the current system build version.
+
+### TUI Keyboard Shortcuts
+
+The TUI automatically builds its scrollable help overlay (`?`) dynamically from source bindings, ensuring it never drifts. Below is the master keymap reference:
+
+#### A. Global Key Bindings (Active Everywhere)
+* `ctrl+c` / `Q` : Quit the TUI application completely.
+* `?` : Open the interactive Help overlay.
+* `q` / `h` / `left` : Go back to the previous screen or close the focused overlay panel.
+* `:` : Open the CLI direct command prompt palette.
+
+#### B. Common Scrolling & Motions
+* `j` / `down` : Move selection pointer down by one row.
+* `k` / `up` : Move selection pointer up by one row.
+* `ctrl+d` / `pgdown` : Page selection down.
+* `ctrl+u` / `pgup` : Page selection up.
+* `g g` : Jump straight to the top of the list.
+* `G` : Jump straight to the bottom of the list.
+
+#### C. Common Patent Workflow Actions
+*(Available in Catalog, Detail, and Citations views when a patent is selected)*
+* `s` : Move patent workflow review state to **Stored**.
+* `r` : Move patent workflow review state to **Under Review**.
+* `i` : Move patent workflow review state to **Ignored**.
+* `x` : Move patent workflow review state to **Deleted**.
+* `D` : Trigger **Hard Purge** (permanently delete the patent, compile snapshot, and write backup to activity log).
+* `a` : Link the selected patent to a specific project membership.
+* `f` : Trigger a recursive **Family Crawl** to ingest parents, children, and relations.
+* `F` : Fetch current patent details (single-patent metadata ingestion).
+
+#### D. Catalog Pane Bindings
+* `enter` / `l` : Open the patent detail pane for the selected record.
+* `I` : Open the project's Information Disclosure Statement (IDS) editor.
+* `w` : Open the current patent's source web page in your default browser.
+* `right` / `left` : Navigate columns horizontally.
+* `.` : Toggle and apply sorting on the currently focused column.
+* `c` : Open the family citations graph panel.
+* `b` : Open the "cited by" family citations graph panel.
+* `p` : Toggle the Projects dashboard list.
+* `/` : Open the Find/Filter query prompt.
+* `n` / `N` : Navigate forwards/backwards through Find/Filter pattern matches.
+* `ctrl+r` : Hard refresh the catalog database view.
+* `v` : Enter line-based visual selection mode.
+* `esc` : Cancel visual selection.
+
+#### E. Detail View Bindings
+* `I` : Transition directly to the IDS editor.
+* `c` / `b` : View family citations or "cited by" records.
+* `p` : Navigate to the Projects list.
+* `/` : Open query prompt to search/highlight text inside details.
+* `;` : Open jump mode to instantly scroll to headings, claims, or section anchors.
+* `ctrl+r` : Refresh the current detail views.
+
+#### F. IDS Curation Pane Bindings
+* `enter` / `e` : Edit reference fields inside the curated IDS entries.
+* `f` : Toggle full listing/narrow views.
+* `s` : Cycle IDS review statuses (Pending, Approved, Disclosed).
+* `D` : Delete the selected reference from the IDS form.
+* `p` : Switch back to the Projects dashboard.
+* `ctrl+r` : Refresh references.
+
+#### G. Projects Dashboard Bindings
+* `enter` / `l` / `right` : Activate and open the selected project.
+* `u` : Deactivate the current active project filter.
+* `n` : Create a new project profile.
+* `I` : Export the complete Information Disclosure Statement (IDS) draft.
+* `/` : Search project listings.
+* `ctrl+r` : Refresh project items.
