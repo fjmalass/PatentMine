@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"patentmine/internal/domain"
 )
@@ -98,10 +99,14 @@ type Repository interface {
 	DeleteTag(ctx context.Context, project domain.ProjectID, name string) error
 	// ProjectTags returns every tag of a project, ordered by name.
 	ProjectTags(ctx context.Context, project domain.ProjectID) ([]domain.Tag, error)
+	// TagByName returns one taxonomy tag in a project, matching name case-insensitively.
+	TagByName(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error)
 	// TagPatent assigns a tag to a patent; an existing assignment is left as is.
-	TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) error
+	TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (bool, error)
 	// UntagPatent removes a tag from a patent; a missing assignment is a no-op.
-	UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) error
+	UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (bool, error)
+	// PatentTag returns one assigned tag on a patent in a project, matching name case-insensitively.
+	PatentTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (domain.Tag, error)
 	// PatentTags returns the tags a patent carries within a project, ordered by
 	// name.
 	PatentTags(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) ([]domain.Tag, error)

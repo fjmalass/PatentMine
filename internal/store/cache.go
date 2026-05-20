@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"patentmine/internal/domain"
 )
@@ -119,20 +120,26 @@ func (c *Cache) SetReviewState(ctx context.Context, project domain.ProjectID, pa
 	return nil
 }
 
-func (c *Cache) TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) error {
-	if err := c.Repository.TagPatent(ctx, tagID, patent); err != nil {
-		return err
+func (c *Cache) TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (bool, error) {
+	changed, err := c.Repository.TagPatent(ctx, tagID, patent, assignedAt)
+	if err != nil {
+		return false, err
 	}
-	c.flush()
-	return nil
+	if changed {
+		c.flush()
+	}
+	return changed, nil
 }
 
-func (c *Cache) UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) error {
-	if err := c.Repository.UntagPatent(ctx, tagID, patent); err != nil {
-		return err
+func (c *Cache) UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (bool, error) {
+	changed, err := c.Repository.UntagPatent(ctx, tagID, patent)
+	if err != nil {
+		return false, err
 	}
-	c.flush()
-	return nil
+	if changed {
+		c.flush()
+	}
+	return changed, nil
 }
 
 func (c *Cache) SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error {

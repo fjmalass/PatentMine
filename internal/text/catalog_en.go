@@ -179,6 +179,7 @@ var cmdStrings = map[string][2]string{
 	"tag.patent.add":           {"Assign patent tag", "Assign a taxonomy tag to the selected patent."},
 	"tag.patent.delete":        {"Remove patent tag", "Remove a tag assignment from the selected patent."},
 	"tag.patent.list":          {"List patent tags", "List tags assigned to the selected patent."},
+	"tag.patent":               {"Manage patent tags", "Open the interactive tag selector popup for the selected patent(s)."},
 }
 
 // englishNamed is the English text for every named key.

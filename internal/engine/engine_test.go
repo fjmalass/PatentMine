@@ -487,6 +487,102 @@ func TestEngineReviewStateOf(t *testing.T) {
 	}
 }
 
+func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
+	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "metrics.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	metrics := observability.NewMetrics()
+	ctx, cancel := context.WithCancel(context.Background())
+	eng := New(ctx, repo, nil, WithMetrics(metrics))
+	t.Cleanup(func() {
+		eng.Close()
+		cancel()
+		_ = repo.Close()
+	})
+
+	patent := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), FetchState: domain.FetchCached}
+	if err := eng.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+		t.Fatalf("AddToProject: %v", err)
+	}
+	if _, err := eng.CreateTaxonomyTag(ctx, project.ID, "prior_art"); err != nil {
+		t.Fatalf("CreateTaxonomyTag: %v", err)
+	}
+
+	events, unsub := eng.Subscribe()
+	defer unsub()
+
+	if err := eng.AssignPatentTag(ctx, project.ID, patent.Number, "prior_art"); err != nil {
+		t.Fatalf("AssignPatentTag: %v", err)
+	}
+	expectDBChanged(t, events, "tag assignment")
+	if err := eng.AssignPatentTag(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
+		t.Fatalf("AssignPatentTag repeat: %v", err)
+	}
+	expectNoDBChanged(t, events, "repeat tag assignment")
+	if err := eng.RemovePatentTag(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
+		t.Fatalf("RemovePatentTag: %v", err)
+	}
+	expectDBChanged(t, events, "tag removal")
+
+	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState: %v", err)
+	}
+	expectDBChanged(t, events, "review state change")
+	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState repeat: %v", err)
+	}
+	expectNoDBChanged(t, events, "repeat review state")
+
+	snap := metrics.Snapshot()
+	wantCounters := map[string]int64{
+		"engine.patent_tag.assign.changed_total": 1,
+		"engine.patent_tag.assign.noop_total":    1,
+		"engine.patent_tag.remove.changed_total": 1,
+		"engine.review_state.changed_total":      1,
+		"engine.review_state.noop_total":         1,
+	}
+	for name, want := range wantCounters {
+		if got := snap.Counters[name]; got != want {
+			t.Fatalf("counter %s = %d, want %d", name, got, want)
+		}
+	}
+	if got := snap.Timings["engine.assign_patent_tag"].Count; got != 2 {
+		t.Fatalf("assign tag timing count = %d, want 2", got)
+	}
+	if got := snap.Timings["engine.set_review_state"].Count; got != 2 {
+		t.Fatalf("review state timing count = %d, want 2", got)
+	}
+}
+
+func expectDBChanged(t *testing.T, events <-chan proto.Event, label string) {
+	t.Helper()
+	select {
+	case ev := <-events:
+		if ev.Method != proto.EventDBChanged {
+			t.Fatalf("%s emitted %s, want db.changed", label, ev.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("%s did not emit db.changed", label)
+	}
+}
+
+func expectNoDBChanged(t *testing.T, events <-chan proto.Event, label string) {
+	t.Helper()
+	select {
+	case ev := <-events:
+		t.Fatalf("%s emitted unexpected event %s", label, ev.Method)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestEngineTagging(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
 	ctx := context.Background()

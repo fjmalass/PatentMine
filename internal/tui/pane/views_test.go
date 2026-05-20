@@ -77,3 +77,44 @@ func TestCitationsTitleReflectsKind(t *testing.T) {
 		t.Fatalf("cited-by pane title = %q, want a 'Cited by' prefix", cited.Title())
 	}
 }
+
+func TestDetailPaneJumpActive(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "test-project")
+
+	// Pre-populate patent data so loading is false
+	d.loading = false
+	d.patent = domain.Patent{
+		Number:    num,
+		Title:     "Test Patent Title",
+		Assignee:  "Test Assignee",
+		Inventors: []domain.Inventor{"John Doe"},
+	}
+
+	// 1. When jumpActive is false, verify no inline shortcuts
+	outNormal := d.body(80)
+	if strings.Contains(outNormal, "[a]") || strings.Contains(outNormal, "[i]") {
+		t.Errorf("expected no inline shortcuts in normal view, but found some: %s", outNormal)
+	}
+
+	// 2. Set jumpActive to true, verify inline shortcuts exist
+	d.SetJumpActive(true)
+	outJump := d.body(80)
+	if !strings.Contains(outJump, "[a]") {
+		t.Errorf("expected assignee inline shortcut '[a]' when jump mode is active, but not found: %s", outJump)
+	}
+	if !strings.Contains(outJump, "[i]") {
+		t.Errorf("expected inventors inline shortcut '[i]' when jump mode is active, but not found: %s", outJump)
+	}
+	if !strings.Contains(outJump, "[d] Documents") {
+		t.Errorf("expected documents heading inline shortcut '[d] Documents' when jump mode is active, but not found: %s", outJump)
+	}
+
+	// 3. Set jumpActive to false again, verify inline shortcuts are gone
+	d.SetJumpActive(false)
+	outNormal2 := d.body(80)
+	if strings.Contains(outNormal2, "[a]") || strings.Contains(outNormal2, "[i]") {
+		t.Errorf("expected no inline shortcuts after deactivating jump mode, but found some: %s", outNormal2)
+	}
+}
+

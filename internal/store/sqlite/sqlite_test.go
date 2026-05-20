@@ -312,13 +312,28 @@ func TestTagStore(t *testing.T) {
 	if again.ID != tag.ID {
 		t.Fatalf("CreateTag not idempotent: id %d then %d", tag.ID, again.ID)
 	}
+	byName, err := repo.TagByName(ctx, project.ID, "PRIOR-ART")
+	if err != nil {
+		t.Fatalf("TagByName: %v", err)
+	}
+	if byName.ID != tag.ID {
+		t.Fatalf("TagByName ID = %d, want %d", byName.ID, tag.ID)
+	}
 
 	// A tag assigned to a patent reads back through PatentTags.
-	if err := repo.TagPatent(ctx, tag.ID, patent.Number); err != nil {
+	changed, err := repo.TagPatent(ctx, tag.ID, patent.Number, time.Now().UTC())
+	if err != nil {
 		t.Fatalf("TagPatent: %v", err)
 	}
-	if err := repo.TagPatent(ctx, tag.ID, patent.Number); err != nil {
+	if !changed {
+		t.Fatal("TagPatent changed = false, want true")
+	}
+	changed, err = repo.TagPatent(ctx, tag.ID, patent.Number, time.Now().UTC())
+	if err != nil {
 		t.Fatalf("TagPatent (repeat): %v", err) // a duplicate assignment is a no-op
+	}
+	if changed {
+		t.Fatal("TagPatent repeat changed = true, want false")
 	}
 	tags, err := repo.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {
@@ -327,10 +342,28 @@ func TestTagStore(t *testing.T) {
 	if len(tags) != 1 || tags[0].Name != "prior-art" {
 		t.Fatalf("PatentTags = %v, want one prior-art tag", tags)
 	}
+	oneTag, err := repo.PatentTag(ctx, project.ID, patent.Number, "PRIOR-ART")
+	if err != nil {
+		t.Fatalf("PatentTag: %v", err)
+	}
+	if oneTag.ID != tag.ID || oneTag.AssignedAt.IsZero() {
+		t.Fatalf("PatentTag = %+v, want tag %d with AssignedAt", oneTag, tag.ID)
+	}
 
 	// Removing the tag clears the assignment but keeps the tag itself.
-	if err := repo.UntagPatent(ctx, tag.ID, patent.Number); err != nil {
+	changed, err = repo.UntagPatent(ctx, tag.ID, patent.Number)
+	if err != nil {
 		t.Fatalf("UntagPatent: %v", err)
+	}
+	if !changed {
+		t.Fatal("UntagPatent changed = false, want true")
+	}
+	changed, err = repo.UntagPatent(ctx, tag.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("UntagPatent repeat: %v", err)
+	}
+	if changed {
+		t.Fatal("UntagPatent repeat changed = true, want false")
 	}
 	tags, err = repo.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {

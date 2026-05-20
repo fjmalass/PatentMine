@@ -83,32 +83,78 @@ func (r *Repo) ProjectTags(ctx context.Context, project domain.ProjectID) (out [
 	return out, nil
 }
 
+// TagByName returns one tag in a project without loading the whole taxonomy.
+func (r *Repo) TagByName(ctx context.Context, project domain.ProjectID, name string) (tag domain.Tag, err error) {
+	defer r.observeDuration("tag_by_name", time.Now(), &err)
+	row := r.reader.QueryRowContext(ctx,
+		`SELECT id, project_id, name, created_at FROM tag
+		 WHERE project_id = ? AND lower(name) = lower(?)`, string(project), name)
+	t, err := scanTag(row)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return domain.Tag{}, store.ErrNotFound
+		}
+		return domain.Tag{}, fmt.Errorf("store/sqlite: get tag by name: %w", err)
+	}
+	return t, nil
+}
+
 // TagPatent assigns a tag to a patent. An existing assignment is left as is.
-func (r *Repo) TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (err error) {
+func (r *Repo) TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (changed bool, err error) {
 	defer r.observeDuration("tag_patent", time.Now(), &err)
 	if patent.IsZero() {
-		return errors.New("store/sqlite: tag assignment needs a patent")
+		return false, errors.New("store/sqlite: tag assignment needs a patent")
 	}
-	_, err = r.writer.ExecContext(ctx,
+	if assignedAt.IsZero() {
+		assignedAt = time.Now()
+	}
+	res, err := r.writer.ExecContext(ctx,
 		`INSERT INTO patent_tag (tag_id, patent_number, created_at) VALUES (?,?,?)
 		 ON CONFLICT(tag_id, patent_number) DO NOTHING`,
-		tagID, patent.Normalized(), encodeTime(time.Now()))
+		tagID, patent.Normalized(), encodeTime(assignedAt))
 	if err != nil {
-		return fmt.Errorf("store/sqlite: tag patent: %w", err)
+		return false, fmt.Errorf("store/sqlite: tag patent: %w", err)
 	}
-	return nil
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store/sqlite: tag patent: %w", err)
+	}
+	return rows > 0, nil
 }
 
 // UntagPatent removes a tag from a patent. A missing assignment is a no-op.
-func (r *Repo) UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (err error) {
+func (r *Repo) UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (changed bool, err error) {
 	defer r.observeDuration("untag_patent", time.Now(), &err)
-	_, err = r.writer.ExecContext(ctx,
+	res, err := r.writer.ExecContext(ctx,
 		`DELETE FROM patent_tag WHERE tag_id = ? AND patent_number = ?`,
 		tagID, patent.Normalized())
 	if err != nil {
-		return fmt.Errorf("store/sqlite: untag patent: %w", err)
+		return false, fmt.Errorf("store/sqlite: untag patent: %w", err)
 	}
-	return nil
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("store/sqlite: untag patent: %w", err)
+	}
+	return rows > 0, nil
+}
+
+// PatentTag returns a single assigned tag without loading every tag on the patent.
+func (r *Repo) PatentTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (tag domain.Tag, err error) {
+	defer r.observeDuration("patent_tag", time.Now(), &err)
+	row := r.reader.QueryRowContext(ctx,
+		`SELECT t.id, t.project_id, t.name, t.created_at, pt.created_at
+		 FROM tag t
+		 JOIN patent_tag pt ON pt.tag_id = t.id
+		 WHERE t.project_id = ? AND pt.patent_number = ? AND lower(t.name) = lower(?)`,
+		string(project), patent.Normalized(), name)
+	t, err := scanAssignedTag(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Tag{}, store.ErrNotFound
+		}
+		return domain.Tag{}, fmt.Errorf("store/sqlite: get patent tag: %w", err)
+	}
+	return t, nil
 }
 
 // PatentTags returns the tags a patent carries within a project, ordered by
@@ -130,33 +176,40 @@ func (r *Repo) PatentTags(ctx context.Context, project domain.ProjectID, patent 
 
 	out = nil
 	for rows.Next() {
-		var (
-			t          domain.Tag
-			projectID  string
-			createdAt  string
-			assignedAt string
-		)
-		if err := rows.Scan(&t.ID, &projectID, &t.Name, &createdAt, &assignedAt); err != nil {
+		t, err := scanAssignedTag(rows)
+		if err != nil {
 			return nil, fmt.Errorf("store/sqlite: scan patent tag: %w", err)
 		}
-		t.Project = domain.ProjectID(projectID)
-		created, err := decodeTime(createdAt)
-		if err != nil {
-			return nil, err
-		}
-		t.CreatedAt = created
-		assigned, err := decodeTime(assignedAt)
-		if err != nil {
-			return nil, err
-		}
-		t.AssignedAt = assigned
-
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: list patent tags: %w", err)
 	}
 	return out, nil
+}
+
+func scanAssignedTag(s rowScanner) (domain.Tag, error) {
+	var (
+		t          domain.Tag
+		projectID  string
+		createdAt  string
+		assignedAt string
+	)
+	if err := s.Scan(&t.ID, &projectID, &t.Name, &createdAt, &assignedAt); err != nil {
+		return domain.Tag{}, err
+	}
+	t.Project = domain.ProjectID(projectID)
+	created, err := decodeTime(createdAt)
+	if err != nil {
+		return domain.Tag{}, err
+	}
+	t.CreatedAt = created
+	assigned, err := decodeTime(assignedAt)
+	if err != nil {
+		return domain.Tag{}, err
+	}
+	t.AssignedAt = assigned
+	return t, nil
 }
 
 // scanTag reads one tag row in the column order used by every tag query.

@@ -50,16 +50,17 @@ type Detail struct {
 	project  domain.ProjectID
 	handlers map[command.ID]cmdHandler
 
-	patent    domain.Patent
-	state     domain.ReviewState
-	tags      []domain.Tag
-	idsEntry  *domain.IDSEntry
-	relCounts map[domain.RelationKind]int
-	anchors   []render.JumpAnchor // jump targets, rebuilt on every body render
-	page      render.Paginator
-	loading   bool
-	loadErr   string
-	loadID    uint64
+	patent     domain.Patent
+	state      domain.ReviewState
+	tags       []domain.Tag
+	idsEntry   *domain.IDSEntry
+	relCounts  map[domain.RelationKind]int
+	anchors    []render.JumpAnchor // jump targets, rebuilt on every body render
+	page       render.Paginator
+	loading    bool
+	loadErr    string
+	loadID     uint64
+	jumpActive bool
 }
 
 // NewDetail builds a detail pane for one patent number. project, when set,
@@ -276,7 +277,11 @@ func (d *Detail) body(w int) string {
 	// the patent has published.
 	d.addAnchor(&b, 'd', "Documents", 1)
 	b.WriteByte('\n')
-	b.WriteString(d.theme.Header.Render("Documents"))
+	displayDocs := "Documents"
+	if d.jumpActive {
+		displayDocs = fmt.Sprintf("[%s] Documents", d.theme.Warn.Copy().Bold(true).Render("d"))
+	}
+	b.WriteString(d.theme.Header.Render(displayDocs))
 	b.WriteByte('\n')
 	if len(p.Documents) == 0 {
 		b.WriteString(d.theme.Dim.Render("  (none)"))
@@ -314,6 +319,37 @@ func (d *Detail) JumpAnchors() []render.JumpAnchor { return d.anchors }
 // visible window.
 func (d *Detail) JumpTo(line int) { d.page.ScrollTo(line) }
 
+// SetJumpActive updates the jump mode state, triggering inline shortcut rendering.
+func (d *Detail) SetJumpActive(active bool) {
+	d.jumpActive = active
+}
+
+func labelAnchorKey(label string) (rune, bool) {
+	switch label {
+	case "Assignee":
+		return 'a', true
+	case "Inventors":
+		return 'i', true
+	case "Expiration":
+		return 'e', true
+	case "Review state":
+		return 'r', true
+	case "IDS":
+		return 'y', true
+	case "Tags":
+		return 't', true
+	case "Citations":
+		return 'x', true
+	case "Documents":
+		return 'd', true
+	case "First claim":
+		return 'c', true
+	case "Abstract":
+		return 'b', true
+	}
+	return 0, false
+}
+
 // numberToShow returns the record's display number, falling back to the
 // record key when no documents set one.
 func numberToShow(p domain.Patent) domain.PatentNumber {
@@ -325,11 +361,20 @@ func numberToShow(p domain.Patent) domain.PatentNumber {
 
 // field writes one "Label: value" line, truncated to the body width.
 func (d *Detail) field(b *strings.Builder, w int, label, value string) {
-	const labelW = 14
+	labelW := 14
+	displayLabel := label
+	if d.jumpActive {
+		labelW = 18
+		if key, ok := labelAnchorKey(label); ok {
+			displayLabel = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(key)), label)
+		} else {
+			displayLabel = "    " + label
+		}
+	}
 	if strings.TrimSpace(value) == "" {
 		value = "—"
 	}
-	b.WriteString(d.theme.Header.Render(render.Pad(label, labelW)))
+	b.WriteString(d.theme.Header.Render(render.Pad(displayLabel, labelW)))
 	b.WriteString(" ")
 	b.WriteString(d.theme.Row.Render(render.Truncate(value, max(w-labelW-1, 0))))
 	b.WriteByte('\n')
@@ -339,7 +384,13 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 // like the first claim and abstract are readable in the scrolling view.
 func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 	b.WriteByte('\n')
-	b.WriteString(d.theme.Header.Render(heading))
+	displayHeading := heading
+	if d.jumpActive {
+		if key, ok := labelAnchorKey(heading); ok {
+			displayHeading = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(key)), heading)
+		}
+	}
+	b.WriteString(d.theme.Header.Render(displayHeading))
 	b.WriteByte('\n')
 	if strings.TrimSpace(text) == "" {
 		b.WriteString(d.theme.Dim.Render("  (none)"))

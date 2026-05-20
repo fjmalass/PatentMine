@@ -99,6 +99,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.TagRemove:          (*App).cmdTagRemove,
 	command.TagTaxonomyAdd:     (*App).cmdTagTaxonomyAdd,
 	command.TagTaxonomyList:    (*App).cmdTagTaxonomyList,
+	command.TagPatentManage:    (*App).cmdTagPatentManage,
 	command.TagTaxonomyDelete:  (*App).cmdTagTaxonomyDelete,
 	command.TagPatentAdd:       (*App).cmdTagPatentAdd,
 	command.TagPatentDelete:    (*App).cmdTagPatentDelete,
@@ -421,10 +422,14 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 }
 
 // cmdJumpMode opens the jump overlay for the focused pane, when that pane
-// offers jump anchors. It is a no-op when an overlay is already open, the pane
-// does not support jump mode, or the pane has not yet rendered any anchors.
+// offers jump anchors. It is a no-op when an overlay is already open (unless it is
+// the jump overlay itself, which toggles off), the pane does not support jump mode,
+// or the pane has not yet rendered any anchors.
 func (a *App) cmdJumpMode(invocation) (tea.Model, tea.Cmd) {
 	if len(a.overlays) > 0 {
+		if _, ok := a.focusedOverlay().(*overlay.Jump); ok {
+			a.popOverlay()
+		}
 		return a, nil
 	}
 	provider, ok := a.focusedPane().(pane.JumpProvider)
@@ -434,6 +439,9 @@ func (a *App) cmdJumpMode(invocation) (tea.Model, tea.Cmd) {
 	anchors := provider.JumpAnchors()
 	if len(anchors) == 0 {
 		return a, nil
+	}
+	if setter, ok := a.focusedPane().(interface{ SetJumpActive(bool) }); ok {
+		setter.SetJumpActive(true)
 	}
 	a.overlays = append(a.overlays, overlay.NewJump(a.theme, anchors))
 	return a, nil
@@ -595,7 +603,29 @@ func (a *App) cmdTagTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	return a, pane.ListTagTaxonomyCmd(a.client, a.activeProject.ID)
+	o, cmd := overlay.NewTagTaxonomyOverlay(a.client, a.theme, a.text, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+// cmdTagPatentManage opens the interactive tag manager popup for the selected patent(s).
+func (a *App) cmdTagPatentManage(inv invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	o, cmd := overlay.NewTagPatentOverlay(a.client, a.theme, a.text, a.activeProject.ID, numbers)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
 }
 
 // cmdTagTaxonomyDelete removes a tag from the project's taxonomy.
@@ -1055,6 +1085,11 @@ func (a *App) focusedOverlay() overlay.Overlay { return a.overlays[len(a.overlay
 
 func (a *App) popOverlay() {
 	if n := len(a.overlays); n > 0 {
+		if _, ok := a.overlays[n-1].(*overlay.Jump); ok {
+			if setter, ok := a.focusedPane().(interface{ SetJumpActive(bool) }); ok {
+				setter.SetJumpActive(false)
+			}
+		}
 		a.overlays = a.overlays[:n-1]
 	}
 }

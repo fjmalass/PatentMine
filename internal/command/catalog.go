@@ -64,6 +64,7 @@ const (
 	TagPatentAdd      ID = "tag.patent.add"
 	TagPatentDelete   ID = "tag.patent.delete"
 	TagPatentList     ID = "tag.patent.list"
+	TagPatentManage   ID = "tag.patent"
 
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
@@ -169,6 +170,7 @@ func Default() (*Registry, error) {
 		Command{ID: TagPatentAdd, Name: "tag.patent.add", Aliases: []string{"patent-tag"}, Usage: ":tag.patent.add <name>", Kind: KindEngine, Method: proto.MethodPatentTagAdd, Scopes: patentScopes},
 		Command{ID: TagPatentDelete, Name: "tag.patent.delete", Aliases: []string{"patent-untag"}, Usage: ":tag.patent.delete <name>", Kind: KindEngine, Method: proto.MethodPatentTagDelete, Scopes: patentScopes},
 		Command{ID: TagPatentList, Name: "tag.patent.list", Aliases: []string{"patent-tags"}, Usage: ":tag.patent.list", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
+		Command{ID: TagPatentManage, Name: "tag.patent", Aliases: []string{"tag-manage"}, Usage: ":tag.patent", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
 
 		// --- ingestion (engine) ---
 		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"family"}, Usage: ":ingest.family", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},

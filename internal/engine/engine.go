@@ -363,9 +363,11 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	if err != nil {
 		return false, err
 	}
-	before, _ := e.existingMembership(ctx, project, record)
+	before, exists := e.existingMembership(ctx, project, record)
 	state := domain.ReviewStateStored
-	if !created {
+	if exists {
+		state = before.ReviewState
+	} else if !created {
 		if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
 			state = domain.ReviewStateCached
 		}
@@ -396,7 +398,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	// fetch so bibliographic data fills in shortly after the patent is added.
 	// This covers both brand-new stubs (created==true) and existing stubs that
 	// were previously discovered as citation edges.
-	if state == domain.ReviewStateStored && e.ingest != nil {
+	if !exists && state == domain.ReviewStateStored && e.ingest != nil {
 		if jobID, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
@@ -471,6 +473,11 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 	if !current.ReviewState.CanTransitionTo(target) {
 		return fmt.Errorf("engine: cannot move membership from %q to %q", current.ReviewState, target)
 	}
+	if current.ReviewState == target {
+		e.incCounter("engine.review_state.noop_total", 1)
+		e.log(ctx, slog.LevelDebug, "review state unchanged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("state", string(target)))
+		return nil
+	}
 	if err := e.repo.SetReviewState(ctx, project, record, target); err != nil {
 		e.log(ctx, slog.LevelError, "set review state failed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("target", string(target)), slog.String("error", err.Error()))
 		return err
@@ -488,6 +495,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		Metadata: map[string]any{"requested_number": patent.String()},
 	})
 	e.announceChange()
+	e.incCounter("engine.review_state.changed_total", 1)
 	return nil
 }
 
@@ -621,23 +629,13 @@ func (e *Engine) DeleteTaxonomyTag(ctx context.Context, project domain.ProjectID
 	if name == "" {
 		return errors.New("engine: tag name must not be empty")
 	}
-	
-	// Lookup the tag first to record in history
-	tags, err := e.repo.ProjectTags(ctx, project)
+
+	targetTag, err := e.repo.TagByName(ctx, project, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("engine: tag %q not found in project's taxonomy", name)
+	}
 	if err != nil {
 		return err
-	}
-	var targetTag domain.Tag
-	found := false
-	for _, t := range tags {
-		if strings.EqualFold(t.Name, name) {
-			targetTag = t
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("engine: tag %q not found in project's taxonomy", name)
 	}
 
 	if err := e.repo.DeleteTag(ctx, project, targetTag.Name); err != nil {
@@ -680,42 +678,24 @@ func (e *Engine) AssignPatentTag(ctx context.Context, project domain.ProjectID, 
 		return err
 	}
 
-	// Verify the tag exists in the project's fixed taxonomy
-	taxonomy, err := e.repo.ProjectTags(ctx, project)
+	matchedTag, err := e.repo.TagByName(ctx, project, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("engine: tag %q does not exist in the project taxonomy; create it first", name)
+	}
 	if err != nil {
 		return err
 	}
-	var matchedTag domain.Tag
-	found := false
-	for _, t := range taxonomy {
-		if strings.EqualFold(t.Name, name) {
-			matchedTag = t
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("engine: tag %q does not exist in the project taxonomy; create it first", name)
-	}
 
-	if err := e.repo.TagPatent(ctx, matchedTag.ID, record); err != nil {
+	assignedAt := time.Now().UTC()
+	changed, err := e.repo.TagPatent(ctx, matchedTag.ID, record, assignedAt)
+	if err != nil {
 		e.log(ctx, slog.LevelError, "assign patent tag failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
 		return err
 	}
-	
-	// Fetch the updated tag list to get the AssignedAt value
-	assignedTags, err := e.repo.PatentTags(ctx, project, record)
-	var assignedAt time.Time
-	if err == nil {
-		for _, t := range assignedTags {
-			if t.ID == matchedTag.ID {
-				assignedAt = t.AssignedAt
-				break
-			}
-		}
-	}
-	if assignedAt.IsZero() {
-		assignedAt = time.Now()
+	if !changed {
+		e.incCounter("engine.patent_tag.assign.noop_total", 1)
+		e.log(ctx, slog.LevelDebug, "patent tag already assigned", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
+		return nil
 	}
 
 	e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
@@ -728,6 +708,7 @@ func (e *Engine) AssignPatentTag(ctx context.Context, project domain.ProjectID, 
 		Metadata: map[string]any{"requested_number": patent.String()},
 	})
 	e.announceChange()
+	e.incCounter("engine.patent_tag.assign.changed_total", 1)
 	return nil
 }
 
@@ -742,30 +723,34 @@ func (e *Engine) RemovePatentTag(ctx context.Context, project domain.ProjectID, 
 	if err != nil {
 		return err
 	}
-	tags, err := e.repo.PatentTags(ctx, project, record)
+	t, err := e.repo.PatentTag(ctx, project, record, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("engine: patent %s has no tag %q", record, name)
+	}
 	if err != nil {
 		return err
 	}
-	for _, t := range tags {
-		if !strings.EqualFold(t.Name, name) {
-			continue
-		}
-		if err := e.repo.UntagPatent(ctx, t.ID, record); err != nil {
-			e.log(ctx, slog.LevelError, "untag patent failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
-			return err
-		}
-		e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
-		e.recordActivity(ctx, observability.Record{
-			Action:   "patent.tag_remove",
-			Entity:   "patent_tag",
-			EntityID: string(project) + "/" + record.String() + "/" + t.Name,
-			Status:   "committed",
-			Before:   map[string]any{"tag_name": t.Name, "tag_id": t.ID, "assigned_at": t.AssignedAt.UTC().Format(time.RFC3339)},
-		})
-		e.announceChange()
+	changed, err := e.repo.UntagPatent(ctx, t.ID, record)
+	if err != nil {
+		e.log(ctx, slog.LevelError, "untag patent failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
+		return err
+	}
+	if !changed {
+		e.incCounter("engine.patent_tag.remove.noop_total", 1)
+		e.log(ctx, slog.LevelDebug, "patent tag already absent", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
 		return nil
 	}
-	return fmt.Errorf("engine: patent %s has no tag %q", record, name)
+	e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
+	e.recordActivity(ctx, observability.Record{
+		Action:   "patent.tag_remove",
+		Entity:   "patent_tag",
+		EntityID: string(project) + "/" + record.String() + "/" + t.Name,
+		Status:   "committed",
+		Before:   map[string]any{"tag_name": t.Name, "tag_id": t.ID, "assigned_at": t.AssignedAt.UTC().Format(time.RFC3339)},
+	})
+	e.announceChange()
+	e.incCounter("engine.patent_tag.remove.changed_total", 1)
+	return nil
 }
 
 // AssignTag tags a patent within a project, creating the named tag when the
@@ -982,6 +967,13 @@ func (e *Engine) recordActivity(ctx context.Context, rec observability.Record) {
 	if err := e.activities.Record(ctx, rec); err != nil {
 		e.log(ctx, slog.LevelWarn, "activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
 	}
+}
+
+func (e *Engine) incCounter(name string, delta int64) {
+	if e.metrics == nil {
+		return
+	}
+	e.metrics.IncCounter(name, delta)
 }
 
 func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
