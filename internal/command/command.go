@@ -42,6 +42,7 @@ const (
 	ContextCatalog   Context = "catalog"   // the main patent list
 	ContextDetail    Context = "detail"    // one patent's detail view
 	ContextCitations Context = "citations" // a citations / cited-by list
+	ContextIDS       Context = "ids"       // one patent's IDS entry editor
 	ContextProjects  Context = "projects"  // the project list
 	ContextOverlay   Context = "overlay"   // a modal overlay is focused
 )

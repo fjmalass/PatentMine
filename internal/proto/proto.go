@@ -17,22 +17,25 @@ const Version = "2.0"
 type Method string
 
 const (
-	MethodPing            Method = "ping"
-	MethodPatentGet       Method = "patent.get"
-	MethodPatentList      Method = "patent.list"
-	MethodPatentDelete    Method = "patent.delete"
-	MethodProjectList     Method = "project.list"
-	MethodProjectCreate   Method = "project.create"
-	MethodMembershipAdd   Method = "membership.add"
-	MethodReviewState Method = "review_state.set"
-	MethodTagAssign       Method = "tag.assign"
-	MethodTagRemove       Method = "tag.remove"
-	MethodIngestFamily    Method = "ingest.family"
-	MethodIngestCancel    Method = "ingest.cancel"
-	MethodImportFile      Method = "import.file"
-	MethodRelations       Method = "patent.relations"
-	MethodIDSExport       Method = "ids.export"
-	MethodMetricsGet      Method = "metrics.get"
+	MethodPing           Method = "ping"
+	MethodPatentGet      Method = "patent.get"
+	MethodPatentList     Method = "patent.list"
+	MethodPatentDelete   Method = "patent.delete"
+	MethodProjectList    Method = "project.list"
+	MethodProjectCreate  Method = "project.create"
+	MethodMembershipAdd  Method = "membership.add"
+	MethodReviewState    Method = "review_state.set"
+	MethodTagAssign      Method = "tag.assign"
+	MethodTagRemove      Method = "tag.remove"
+	MethodIngestFamily   Method = "ingest.family"
+	MethodIngestCancel   Method = "ingest.cancel"
+	MethodImportFile     Method = "import.file"
+	MethodRelations      Method = "patent.relations"
+	MethodIDSExport      Method = "ids.export"
+	MethodIDSEntryGet    Method = "ids.entry.get"
+	MethodIDSEntrySave   Method = "ids.entry.save"
+	MethodIDSEntryDelete Method = "ids.entry.delete"
+	MethodMetricsGet     Method = "metrics.get"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -116,6 +119,7 @@ type PatentResult struct {
 	Patent      domain.Patent      `json:"patent"`
 	ReviewState domain.ReviewState `json:"review_state,omitempty"`
 	Tags        []domain.Tag       `json:"tags,omitempty"`
+	IDSEntry    *domain.IDSEntry   `json:"ids_entry,omitempty"`
 }
 
 // PatentListParams selects and paginates a patent listing.
@@ -231,6 +235,22 @@ type IDSResult struct {
 	IDS domain.IDS `json:"ids"`
 }
 
+// IDSEntryParams identifies one project/patent IDS entry.
+type IDSEntryParams struct {
+	Project domain.ProjectID    `json:"project"`
+	Patent  domain.PatentNumber `json:"patent"`
+}
+
+// IDSEntrySaveParams carries the IDS entry to insert or update.
+type IDSEntrySaveParams struct {
+	Entry domain.IDSEntry `json:"entry"`
+}
+
+// IDSEntryResult carries one curated IDS entry.
+type IDSEntryResult struct {
+	Entry domain.IDSEntry `json:"entry"`
+}
+
 // MetricsResult carries the daemon's current in-memory timing/counter snapshot.
 type MetricsResult struct {
 	Metrics MetricsSnapshot `json:"metrics"`
@@ -238,10 +258,10 @@ type MetricsResult struct {
 
 // MetricsSnapshot is a transport-safe view of the daemon's metrics.
 type MetricsSnapshot struct {
-	Timestamp time.Time                 `json:"timestamp"`
-	Timings   map[string]TimingMetric   `json:"timings"`
-	Counters  map[string]int64          `json:"counters"`
-	Gauges    map[string]int64          `json:"gauges"`
+	Timestamp time.Time               `json:"timestamp"`
+	Timings   map[string]TimingMetric `json:"timings"`
+	Counters  map[string]int64        `json:"counters"`
+	Gauges    map[string]int64        `json:"gauges"`
 }
 
 // TimingMetric aggregates one named operation's observed durations.

@@ -5,6 +5,7 @@ import "github.com/charmbracelet/lipgloss"
 // Theme colours, named so no raw colour code appears at a call site.
 const (
 	colorAccent   = "63"  // headings, highlights
+	colorAltRow   = "235" // alternating row background
 	colorSelected = "237" // selected-row background
 	colorVisual   = "17"  // visual-range background (dark navy)
 	colorDim      = "242" // de-emphasised text
@@ -21,6 +22,7 @@ type Theme struct {
 	Header      lipgloss.Style
 	SortActive  lipgloss.Style
 	Row         lipgloss.Style
+	RowAlt      lipgloss.Style
 	Selected    lipgloss.Style
 	Visual      lipgloss.Style
 	Dim         lipgloss.Style
@@ -44,6 +46,9 @@ func NewTheme() Theme {
 			Foreground(lipgloss.Color(colorAccent)),
 		Row: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorText)),
+		RowAlt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorAltRow)),
 		Selected: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorSelected)).Bold(true),

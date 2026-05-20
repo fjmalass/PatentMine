@@ -33,7 +33,7 @@ func TestProjectsPaneSelectsLastUsed(t *testing.T) {
 		t.Fatalf("selected project = %v ok=%v, want p-2", got, ok)
 	}
 	out := p.View(testSplashPaneWidth, testSplashPaneHeight)
-	for _, want := range []string{"#", "SELECT PROJECT", "last used", "[p-2]", "1", "2"} {
+	for _, want := range []string{"[2/2]", "#", "SELECT PROJECT", "last used", "[p-2]", "1", "2"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("projects view missing %q\n%s", want, out)
 		}
@@ -63,7 +63,7 @@ func TestCitationsPaneSelectsNeighbour(t *testing.T) {
 	}
 
 	out := c.View(testCitationsPaneWidth, testCitationsPaneHeight)
-	for _, want := range []string{"#", "1    US0000002B2", "Second"} {
+	for _, want := range []string{"[2/2]", "#", "1    US0000002B2", "Second"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("citations view missing expected content %q\n%s", want, out)
 		}

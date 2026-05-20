@@ -73,3 +73,20 @@ CREATE TABLE IF NOT EXISTS patent_tag (
 );
 
 CREATE INDEX IF NOT EXISTS idx_patent_tag_patent ON patent_tag (patent_number);
+
+CREATE TABLE IF NOT EXISTS project_ids (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id        TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    patent_number     TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    kind_code         TEXT NOT NULL DEFAULT '',
+    country_code      TEXT NOT NULL DEFAULT '',
+    in_full           INTEGER NOT NULL DEFAULT 0,
+    relevant_passages TEXT NOT NULL DEFAULT '',
+    notes             TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'pending',
+    added_at          TEXT NOT NULL,
+    UNIQUE (project_id, patent_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_ids_project ON project_ids (project_id, added_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_ids_patent ON project_ids (patent_number);

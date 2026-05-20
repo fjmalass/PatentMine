@@ -111,6 +111,7 @@ func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Them
 	section(text.HelpSectionCatalog, km.Context(command.ContextCatalog))
 	section(text.HelpSectionDetail, km.Context(command.ContextDetail))
 	section(text.HelpSectionCitations, km.Context(command.ContextCitations))
+	section(text.HelpSectionIDS, km.Context(command.ContextIDS))
 	section(text.HelpSectionProjects, km.Context(command.ContextProjects))
 	section(text.HelpSectionOverlay, km.Context(command.ContextOverlay))
 	return lines

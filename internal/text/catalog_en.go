@@ -58,6 +58,7 @@ const (
 	HintDetail          Key = "hint.detail"
 	HintCitations       Key = "hint.citations"
 	HintCitedBy         Key = "hint.cited_by"
+	HintIDS             Key = "hint.ids"
 	HintProjects        Key = "hint.projects"
 	HintProjectActions  Key = "hint.project_actions"
 	HintBack            Key = "hint.back"
@@ -78,22 +79,31 @@ const (
 	SplashCreateKeyHint Key = "splash.create_key_hint"
 
 	// Overlays.
-	OverlayHelpTitle     Key = "overlay.help.title"
-	OverlayCommandsTitle Key = "overlay.commands.title"
-	OverlayCommandTitle  Key = "overlay.command.title"
-	PromptFilterHint     Key = "overlay.prompt.filter_hint"
-	PromptDirectHint     Key = "overlay.prompt.direct_hint"
-	PromptNoMatch        Key = "overlay.prompt.no_match"
-	PromptRunHint        Key = "overlay.prompt.run_hint"
-	HelpSectionGlobal    Key = "help.section.global"
-	HelpSectionCatalog   Key = "help.section.catalog"
-	HelpSectionDetail    Key = "help.section.detail"
-	HelpSectionCitations Key = "help.section.citations"
-	HelpSectionProjects  Key = "help.section.projects"
-	HelpSectionOverlay   Key = "help.section.overlay"
-	NewProjectTitle      Key = "overlay.new_project.title"
-	NewProjectCaption    Key = "overlay.new_project.caption"
-	TextInputHint        Key = "overlay.text_input.hint"
+	OverlayHelpTitle       Key = "overlay.help.title"
+	OverlayCommandsTitle   Key = "overlay.commands.title"
+	OverlayCommandTitle    Key = "overlay.command.title"
+	PromptFilterHint       Key = "overlay.prompt.filter_hint"
+	PromptDirectHint       Key = "overlay.prompt.direct_hint"
+	PromptNoMatch          Key = "overlay.prompt.no_match"
+	PromptRunHint          Key = "overlay.prompt.run_hint"
+	HelpSectionGlobal      Key = "help.section.global"
+	HelpSectionCatalog     Key = "help.section.catalog"
+	HelpSectionDetail      Key = "help.section.detail"
+	HelpSectionCitations   Key = "help.section.citations"
+	HelpSectionIDS         Key = "help.section.ids"
+	HelpSectionProjects    Key = "help.section.projects"
+	HelpSectionOverlay     Key = "help.section.overlay"
+	NewProjectTitle        Key = "overlay.new_project.title"
+	NewProjectCaption      Key = "overlay.new_project.caption"
+	EditIDSKindTitle       Key = "overlay.ids.kind.title"
+	EditIDSKindCaption     Key = "overlay.ids.kind.caption"
+	EditIDSCountryTitle    Key = "overlay.ids.country.title"
+	EditIDSCountryCaption  Key = "overlay.ids.country.caption"
+	EditIDSPassagesTitle   Key = "overlay.ids.passages.title"
+	EditIDSPassagesCaption Key = "overlay.ids.passages.caption"
+	EditIDSNotesTitle      Key = "overlay.ids.notes.title"
+	EditIDSNotesCaption    Key = "overlay.ids.notes.caption"
+	TextInputHint          Key = "overlay.text_input.hint"
 )
 
 // cmdStrings is the title/help text for every command, keyed by command ID.
@@ -109,6 +119,7 @@ var cmdStrings = map[string][2]string{
 	"view.browser":             {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
+	"view.ids":                 {"Open IDS", "Open the selected patent's IDS entry editor."},
 	"view.projects":            {"Open projects", "Open the project list."},
 	"view.back":                {"Back", "Return to the previous pane."},
 	"view.close-overlay":       {"Close", "Close the focused overlay."},
@@ -148,6 +159,10 @@ var cmdStrings = map[string][2]string{
 	"project.clear-active":     {"Clear active project", "Clear the active project filter and target."},
 	"view.filter":              {"Filter", "Apply a filter to the current list (e.g. :filter state cached)."},
 	"find.open":                {"Find", "Open the inline find bar; type to search, n/N to navigate, Enter to keep, Esc to cancel."},
+	"ids.edit-field":           {"Edit IDS field", "Edit the selected IDS field."},
+	"ids.toggle-full":          {"Toggle IDS full", "Toggle whether the full document is cited on the IDS."},
+	"ids.cycle-status":         {"Cycle IDS status", "Cycle the IDS entry status through pending, submitted, and accepted."},
+	"ids.delete":               {"Delete IDS entry", "Remove the current patent from the curated IDS."},
 }
 
 // englishNamed is the English text for every named key.
@@ -203,6 +218,7 @@ var englishNamed = map[Key]string{
 	HintDetail:          "detail",
 	HintCitations:       "citations",
 	HintCitedBy:         "cited by",
+	HintIDS:             "IDS",
 	HintProjects:        "projects",
 	HintProjectActions:  "project actions",
 	HintBack:            "back",
@@ -222,22 +238,31 @@ var englishNamed = map[Key]string{
 	SplashCreateHint:    "Create one with %s.",
 	SplashCreateKeyHint: "Create one with %s or %s.",
 
-	OverlayHelpTitle:     "Help — key bindings",
-	OverlayCommandsTitle: "Commands",
-	OverlayCommandTitle:  "Command",
-	PromptFilterHint:     "Filter commands",
-	PromptDirectHint:     "Type a dot command",
-	PromptNoMatch:        "no matching commands",
-	PromptRunHint:        "enter runs the selected command · esc closes",
-	HelpSectionGlobal:    "Global",
-	HelpSectionCatalog:   "Catalog",
-	HelpSectionDetail:    "Detail",
-	HelpSectionCitations: "Citations",
-	HelpSectionProjects:  "Projects",
-	HelpSectionOverlay:   "Overlay",
-	NewProjectTitle:      "New project",
-	NewProjectCaption:    "Enter a name for the new project.",
-	TextInputHint:        "enter confirms · esc cancels",
+	OverlayHelpTitle:       "Help — key bindings",
+	OverlayCommandsTitle:   "Commands",
+	OverlayCommandTitle:    "Command",
+	PromptFilterHint:       "Filter commands",
+	PromptDirectHint:       "Type a dot command",
+	PromptNoMatch:          "no matching commands",
+	PromptRunHint:          "enter runs the selected command · esc closes",
+	HelpSectionGlobal:      "Global",
+	HelpSectionCatalog:     "Catalog",
+	HelpSectionDetail:      "Detail",
+	HelpSectionCitations:   "Citations",
+	HelpSectionIDS:         "IDS",
+	HelpSectionProjects:    "Projects",
+	HelpSectionOverlay:     "Overlay",
+	NewProjectTitle:        "New project",
+	NewProjectCaption:      "Enter a name for the new project.",
+	EditIDSKindTitle:       "IDS kind code",
+	EditIDSKindCaption:     "Enter the patent kind code, such as B2 or A1.",
+	EditIDSCountryTitle:    "IDS country code",
+	EditIDSCountryCaption:  "Enter the patent country code, such as US, EP, or WO.",
+	EditIDSPassagesTitle:   "IDS relevant passages",
+	EditIDSPassagesCaption: "Enter the cited passages, or leave blank when citing the full document.",
+	EditIDSNotesTitle:      "IDS notes",
+	EditIDSNotesCaption:    "Enter any IDS note for this patent.",
+	TextInputHint:          "enter confirms · esc cancels",
 }
 
 // English returns the shipped en catalog: every command's title and help plus

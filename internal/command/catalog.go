@@ -17,6 +17,7 @@ const (
 	OpenDetail    ID = "view.detail"
 	OpenCitations ID = "view.citations"
 	OpenCitedBy   ID = "view.cited-by"
+	OpenIDS       ID = "view.ids"
 	OpenProjects  ID = "view.projects"
 	Back          ID = "view.back"
 	CloseOverlay  ID = "view.close-overlay"
@@ -76,10 +77,16 @@ const (
 	// Filtering.
 	Filter   ID = "view.filter"
 	FindOpen ID = "find.open"
+
+	// IDS entry editing.
+	IDSEditField   ID = "ids.edit-field"
+	IDSToggleFull  ID = "ids.toggle-full"
+	IDSCycleStatus ID = "ids.cycle-status"
+	IDSDelete      ID = "ids.delete"
 )
 
 // listScopes are the contexts that behave as scrollable lists.
-var listScopes = []Context{ContextCatalog, ContextCitations, ContextProjects, ContextDetail}
+var listScopes = []Context{ContextCatalog, ContextCitations, ContextProjects, ContextDetail, ContextIDS}
 
 // patentScopes are the contexts where a patent is selected and can be acted on.
 var patentScopes = []Context{ContextCatalog, ContextDetail, ContextCitations}
@@ -104,10 +111,11 @@ func Default() (*Registry, error) {
 		Command{ID: OpenBrowser, Name: "browse", Aliases: []string{"open.browser", "web"}, Usage: ":browse [PATENT ...]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
-		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations}},
+		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextIDS}},
+		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations}},
 		Command{ID: Back, Kind: KindView},
 		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Context{ContextOverlay}},
-		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
+		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects, ContextIDS}},
 		Command{ID: OpenSearch, Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
 		Command{ID: OpenCommand, Kind: KindView},
 		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Context{ContextDetail}},
@@ -122,6 +130,10 @@ func Default() (*Registry, error) {
 		// --- filtering (view) ---
 		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: IDSEditField, Kind: KindView, Scopes: []Context{ContextIDS}},
+		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Context{ContextIDS}},
+		Command{ID: IDSCycleStatus, Kind: KindView, Scopes: []Context{ContextIDS}},
+		Command{ID: IDSDelete, Kind: KindView, Scopes: []Context{ContextIDS}},
 
 		// --- application-wide (view) ---
 		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Kind: KindView},

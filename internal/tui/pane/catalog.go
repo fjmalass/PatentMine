@@ -371,15 +371,18 @@ func (c *Catalog) View(w, h int) string {
 	cols := c.currentCols()
 
 	var b strings.Builder
+	filterSummary := ""
 	if c.filter.IsActive() && !c.find.active {
-		b.WriteString(c.filter.View(w, c.theme))
-		b.WriteByte('\n')
+		filterSummary = "filters: " + strings.Join(c.filter.Labels(), " · ")
 	}
+	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
+	b.WriteByte('\n')
 	b.WriteString(renderTableHeader(c.theme, cols, c.activeSort, c.sortAscending, c.focusedColIdx))
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
 		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute)
+		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {
 		case c.visualMode && c.inVisualRange(absolute):
@@ -387,7 +390,7 @@ func (c *Catalog) View(w, h int) string {
 		case absolute == c.page.Cursor():
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
 		default:
-			b.WriteString(c.theme.Row.Render(line))
+			b.WriteString(rowStyle(render.Pad(line, w)))
 		}
 	}
 	if c.find.active {

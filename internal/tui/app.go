@@ -84,6 +84,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenBrowser:        (*App).cmdOpenBrowser,
 	command.OpenCitations:      (*App).cmdOpenCitations,
 	command.OpenCitedBy:        (*App).cmdOpenCitedBy,
+	command.OpenIDS:            (*App).cmdOpenIDS,
 	command.OpenProjects:       (*App).cmdOpenProjects,
 	command.ProjectActivate:    (*App).cmdProjectActivate,
 	command.ProjectClearActive: (*App).cmdProjectClear,
@@ -236,6 +237,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
 		return a.handleTextSubmit(m)
+	case pane.EditIDSFieldMsg:
+		return a.openIDSEditInput(m.Field)
 	case overlay.JumpSelectMsg:
 		a.popOverlay()
 		if provider, ok := a.focusedPane().(pane.JumpProvider); ok {
@@ -470,6 +473,8 @@ func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
 	return a.openCitations(domain.RelationCitedBy)
 }
 
+func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) { return a.openIDS() }
+
 func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewProjects(a.client, a.theme))
 }
@@ -609,9 +614,47 @@ func (a *App) handleTextSubmit(m overlay.TextSubmitMsg) (tea.Model, tea.Cmd) {
 	switch m.Purpose {
 	case overlay.PurposeCreateProject:
 		return a.createProject(m.Value)
+	case overlay.PurposeEditIDSKind:
+		return a.applyIDSFieldEdit("kind", m.Value)
+	case overlay.PurposeEditIDSCountry:
+		return a.applyIDSFieldEdit("country", m.Value)
+	case overlay.PurposeEditIDSPassages:
+		return a.applyIDSFieldEdit("passages", m.Value)
+	case overlay.PurposeEditIDSNotes:
+		return a.applyIDSFieldEdit("notes", m.Value)
 	default:
 		return a, nil
 	}
+}
+
+func (a *App) openIDSEditInput(field string) (tea.Model, tea.Cmd) {
+	var (
+		purpose overlay.Purpose
+		title   text.Key
+		caption text.Key
+	)
+	switch field {
+	case "kind":
+		purpose, title, caption = overlay.PurposeEditIDSKind, text.EditIDSKindTitle, text.EditIDSKindCaption
+	case "country":
+		purpose, title, caption = overlay.PurposeEditIDSCountry, text.EditIDSCountryTitle, text.EditIDSCountryCaption
+	case "passages":
+		purpose, title, caption = overlay.PurposeEditIDSPassages, text.EditIDSPassagesTitle, text.EditIDSPassagesCaption
+	case "notes":
+		purpose, title, caption = overlay.PurposeEditIDSNotes, text.EditIDSNotesTitle, text.EditIDSNotesCaption
+	default:
+		return a, nil
+	}
+	a.overlays = append(a.overlays, overlay.NewTextInput(a.theme, a.text, purpose, title, caption))
+	return a, nil
+}
+
+func (a *App) applyIDSFieldEdit(field, value string) (tea.Model, tea.Cmd) {
+	idsPane, ok := a.focusedPane().(interface{ ApplyTextValue(string, string) tea.Cmd })
+	if !ok {
+		return a, nil
+	}
+	return a, idsPane.ApplyTextValue(field, value)
 }
 
 // createProject sends a project.create request for name.
@@ -684,6 +727,19 @@ func (a *App) openDetail() (tea.Model, tea.Cmd) {
 		project = a.activeProject.ID
 	}
 	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project))
+}
+
+func (a *App) openIDS() (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	number, ok := a.focusedPane().Selection()
+	if !ok {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, a.activeProject.ID))
 }
 
 // openCitations pushes a family-edge pane for the focused pane's selected
@@ -988,6 +1044,7 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
 			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
+			a.shortcutHint(ctx, command.OpenIDS, text.HintIDS),
 			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
@@ -1002,6 +1059,7 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
 			a.shortcutHint(ctx, command.JumpMode, text.HintJump),
+			a.shortcutHint(ctx, command.OpenIDS, text.HintIDS),
 			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
 			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
 			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
@@ -1016,10 +1074,19 @@ func (a *App) helperLine(ctx command.Context) string {
 			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
 			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
 			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
+			a.shortcutHint(ctx, command.OpenIDS, text.HintIDS),
 			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
 			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
 			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
 			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
+			a.shortcutHint(ctx, command.Back, text.HintBack),
+		)
+	case command.ContextIDS:
+		return a.joinHints(
+			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
+			a.shortcutHint(ctx, command.IDSEditField, text.HintDetail),
+			a.shortcutHint(ctx, command.IDSToggleFull, text.HintFetch),
+			a.shortcutHint(ctx, command.IDSCycleStatus, text.HintProjectActions),
 			a.shortcutHint(ctx, command.Back, text.HintBack),
 		)
 	case command.ContextProjects:

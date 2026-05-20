@@ -102,6 +102,15 @@ type Repository interface {
 	// name.
 	PatentTags(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) ([]domain.Tag, error)
 
+	// IDSEntry returns the curated IDS entry for one (project, patent) pair.
+	IDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.IDSEntry, error)
+	// SaveIDSEntry inserts or updates one curated IDS entry.
+	SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error)
+	// DeleteIDSEntry removes the curated IDS entry for one (project, patent) pair.
+	DeleteIDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
+	// ListIDSEntries returns every curated IDS entry of a project.
+	ListIDSEntries(ctx context.Context, project domain.ProjectID) ([]domain.IDSEntry, error)
+
 	// Close releases all database resources.
 	Close() error
 }

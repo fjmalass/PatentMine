@@ -347,3 +347,62 @@ func TestTagStore(t *testing.T) {
 		t.Fatalf("ProjectTags = %v, want one prior-art tag", all)
 	}
 }
+
+func TestIDSEntryStoreAndPatentListing(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	patent := samplePatent("US11611785B2")
+	if err := repo.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: patent.Number, ReviewState: domain.ReviewStateCached, AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("AddMembership: %v", err)
+	}
+
+	entry, err := repo.SaveIDSEntry(ctx, domain.IDSEntry{
+		Project:          project.ID,
+		Patent:           patent.Number,
+		KindCode:         "B2",
+		CountryCode:      "US",
+		RelevantPassages: "col. 1",
+		Notes:            "primary reference",
+		Status:           domain.IDSEntrySubmitted,
+	})
+	if err != nil {
+		t.Fatalf("SaveIDSEntry: %v", err)
+	}
+	if entry.ID == 0 {
+		t.Fatal("SaveIDSEntry should assign an ID")
+	}
+
+	got, err := repo.IDSEntry(ctx, project.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("IDSEntry: %v", err)
+	}
+	if got.Status != domain.IDSEntrySubmitted || got.CountryCode != "US" {
+		t.Fatalf("IDSEntry = %+v, want submitted US entry", got)
+	}
+
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID})
+	if err != nil {
+		t.Fatalf("ListPatents: %v", err)
+	}
+	if len(rows) != 1 || rows[0].IDSEntry == nil {
+		t.Fatalf("ListPatents IDS row = %+v, want IDS entry", rows)
+	}
+	if rows[0].IDSEntry.Status != domain.IDSEntrySubmitted {
+		t.Fatalf("row IDS status = %q, want submitted", rows[0].IDSEntry.Status)
+	}
+
+	if err := repo.DeleteIDSEntry(ctx, project.ID, patent.Number); err != nil {
+		t.Fatalf("DeleteIDSEntry: %v", err)
+	}
+	if _, err := repo.IDSEntry(ctx, project.ID, patent.Number); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("IDSEntry after delete: err = %v, want ErrNotFound", err)
+	}
+}

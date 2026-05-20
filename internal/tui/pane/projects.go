@@ -200,20 +200,25 @@ func (p *Projects) View(w, h int) string {
 		}
 		return p.theme.Dim.Render("no projects yet — press n to create one")
 	}
-	p.page.SetPageSize(max(h-1, 1))
+	p.page.SetPageSize(max(h-headerRows, 1))
 
 	var b strings.Builder
 	if p.splash {
 		b.WriteString(p.splashHeader(w))
 		b.WriteString("\n\n")
+		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total()))
+		b.WriteByte('\n')
 		b.WriteString(p.theme.Header.Render(splashProjectRow("#", " ", "NAME", "ID", "UPDATED", "HINT", w)))
 	} else {
+		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total()))
+		b.WriteByte('\n')
 		b.WriteString(p.theme.Header.Render(projectRow("#", p.activeLabel(), "NAME", p.createdLabel(), w)))
 	}
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		proj := p.projects[i]
 		line := projectRow(formatViewIndex(i), activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format("2006-01-02"), w)
+		rowStyle := tableRowStyle(p.theme, i)
 		if p.splash {
 			marker := "  "
 			if i == p.page.Cursor() {
@@ -229,7 +234,7 @@ func (p *Projects) View(w, h int) string {
 		if i == p.page.Cursor() {
 			b.WriteString(p.theme.Selected.Render(render.Pad(line, w)))
 		} else {
-			b.WriteString(p.theme.Row.Render(line))
+			b.WriteString(rowStyle(render.Pad(line, w)))
 		}
 	}
 	if p.splash {

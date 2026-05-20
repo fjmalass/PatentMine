@@ -37,22 +37,25 @@ type Server struct {
 func NewServer(eng *engine.Engine) *Server {
 	s := &Server{engine: eng}
 	s.handlers = map[proto.Method]handlerFunc{
-		proto.MethodPing:            s.ping,
-		proto.MethodPatentGet:       s.patentGet,
-		proto.MethodPatentList:      s.patentList,
-		proto.MethodPatentDelete:    s.patentDelete,
-		proto.MethodProjectList:     s.projectList,
-		proto.MethodProjectCreate:   s.projectCreate,
-		proto.MethodMembershipAdd:   s.membershipAdd,
-		proto.MethodReviewState: s.reviewState,
-		proto.MethodTagAssign:       s.tagAssign,
-		proto.MethodTagRemove:       s.tagRemove,
-		proto.MethodIngestFamily:    s.ingestFamily,
-		proto.MethodIngestCancel:    s.ingestCancel,
-		proto.MethodImportFile:      s.importFile,
-		proto.MethodRelations:       s.relations,
-		proto.MethodIDSExport:       s.idsExport,
-		proto.MethodMetricsGet:      s.metricsGet,
+		proto.MethodPing:           s.ping,
+		proto.MethodPatentGet:      s.patentGet,
+		proto.MethodPatentList:     s.patentList,
+		proto.MethodPatentDelete:   s.patentDelete,
+		proto.MethodProjectList:    s.projectList,
+		proto.MethodProjectCreate:  s.projectCreate,
+		proto.MethodMembershipAdd:  s.membershipAdd,
+		proto.MethodReviewState:    s.reviewState,
+		proto.MethodTagAssign:      s.tagAssign,
+		proto.MethodTagRemove:      s.tagRemove,
+		proto.MethodIngestFamily:   s.ingestFamily,
+		proto.MethodIngestCancel:   s.ingestCancel,
+		proto.MethodImportFile:     s.importFile,
+		proto.MethodRelations:      s.relations,
+		proto.MethodIDSExport:      s.idsExport,
+		proto.MethodIDSEntryGet:    s.idsEntryGet,
+		proto.MethodIDSEntrySave:   s.idsEntrySave,
+		proto.MethodIDSEntryDelete: s.idsEntryDelete,
+		proto.MethodMetricsGet:     s.metricsGet,
 	}
 	return s
 }
@@ -165,11 +168,17 @@ func (s *Server) observeRPC(method proto.Method, start time.Time, failed bool) {
 	}
 }
 
-func (s *Server) engineMetrics() interface{ ObserveDuration(string, time.Duration, bool); IncCounter(string, int64) } {
+func (s *Server) engineMetrics() interface {
+	ObserveDuration(string, time.Duration, bool)
+	IncCounter(string, int64)
+} {
 	return s.engineMetricsRef()
 }
 
-func (s *Server) engineMetricsRef() interface{ ObserveDuration(string, time.Duration, bool); IncCounter(string, int64) } {
+func (s *Server) engineMetricsRef() interface {
+	ObserveDuration(string, time.Duration, bool)
+	IncCounter(string, int64)
+} {
 	if s.engine == nil {
 		return nil
 	}
@@ -249,6 +258,13 @@ func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error
 			return nil, err
 		}
 		result.Tags = tags
+		entry, ok, err := s.engine.IDSEntryOf(ctx, p.Project, p.Number)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result.IDSEntry = &entry
+		}
 	}
 	return result, nil
 }
@@ -420,6 +436,44 @@ func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.IDSResult{IDS: ids}, nil
+}
+
+func (s *Server) idsEntryGet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSEntryParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	entry, ok, err := s.engine.IDSEntryOf(ctx, p.Project, p.Patent)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return proto.IDSEntryResult{Entry: entry}, nil
+}
+
+func (s *Server) idsEntrySave(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSEntrySaveParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	entry, err := s.engine.SaveIDSEntry(ctx, p.Entry)
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSEntryResult{Entry: entry}, nil
+}
+
+func (s *Server) idsEntryDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSEntryParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteIDSEntry(ctx, p.Project, p.Patent); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
 }
 
 func (s *Server) metricsGet(context.Context, json.RawMessage) (any, error) {

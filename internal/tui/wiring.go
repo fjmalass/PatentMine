@@ -96,7 +96,7 @@ func validateWiring(reg *command.Registry, keymaps *keymap.Keymaps, catalog *tex
 // paneContexts are the contexts backed by a focusable pane.
 var paneContexts = []command.Context{
 	command.ContextCatalog, command.ContextDetail,
-	command.ContextCitations, command.ContextProjects,
+	command.ContextCitations, command.ContextIDS, command.ContextProjects,
 }
 
 // typedCheckContexts returns the contexts in which a typed command must be
@@ -125,6 +125,7 @@ func paneHandlerSets() map[command.Context][]command.ID {
 		pane.NewCatalog(nil, theme),
 		pane.NewDetail(nil, theme, domain.PatentNumber{}, ""),
 		pane.NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
+		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		pane.NewProjects(nil, theme),
 	}
 	out := make(map[command.Context][]command.ID, len(panes))

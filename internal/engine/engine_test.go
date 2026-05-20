@@ -270,7 +270,7 @@ func TestEngineIngestWithoutFactoryFails(t *testing.T) {
 	}
 }
 
-func TestEngineExportIDSExcludesIgnoredAndDeleted(t *testing.T) {
+func TestEngineExportIDSUsesOnlyCuratedEntries(t *testing.T) {
 	eng, repo := newTestEngine(t, nil)
 	ctx := context.Background()
 
@@ -296,10 +296,11 @@ func TestEngineExportIDSExcludesIgnoredAndDeleted(t *testing.T) {
 			t.Fatalf("AddToProject %s: %v", n, err)
 		}
 	}
-	// Ignored patents are not disclosed on the IDS.
-	if err := eng.SetReviewState(ctx, project.ID,
-		domain.MustParsePatentNumber("US0000002B2"), domain.ReviewStateIgnored); err != nil {
-		t.Fatalf("SetReviewState: %v", err)
+	for _, n := range []string{"US0000001B2", "US0000003B2"} {
+		entry := domain.IDSEntry{Project: project.ID, Patent: domain.MustParsePatentNumber(n), Status: domain.IDSEntryPending}
+		if _, err := eng.SaveIDSEntry(ctx, entry); err != nil {
+			t.Fatalf("SaveIDSEntry %s: %v", n, err)
+		}
 	}
 
 	ids, err := eng.ExportIDS(ctx, project.ID)
@@ -310,11 +311,11 @@ func TestEngineExportIDSExcludesIgnoredAndDeleted(t *testing.T) {
 		t.Fatalf("IDS status = %s, want draft", ids.Status)
 	}
 	if len(ids.Entries) != 2 {
-		t.Fatalf("IDS has %d entries, want 2 (the ignored patent excluded)", len(ids.Entries))
+		t.Fatalf("IDS has %d entries, want 2 curated entries", len(ids.Entries))
 	}
 	for _, e := range ids.Entries {
 		if e.Number.Serial == "0000002" {
-			t.Fatal("ignored patent must not appear on the IDS")
+			t.Fatal("uncurated patent must not appear on the IDS")
 		}
 	}
 }
@@ -346,6 +347,9 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	if _, err := eng.AddToProject(ctx, project.ID, granted); err != nil {
 		t.Fatalf("AddToProject granted: %v", err)
 	}
+	if _, err := eng.SaveIDSEntry(ctx, domain.IDSEntry{Project: project.ID, Patent: granted, Status: domain.IDSEntryPending}); err != nil {
+		t.Fatalf("SaveIDSEntry granted: %v", err)
+	}
 
 	// A record with only an application — nothing publishable to disclose.
 	pending := domain.MustParsePatentNumber("US16000021")
@@ -361,6 +365,9 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	}
 	if _, err := eng.AddToProject(ctx, project.ID, pending); err != nil {
 		t.Fatalf("AddToProject pending: %v", err)
+	}
+	if _, err := eng.SaveIDSEntry(ctx, domain.IDSEntry{Project: project.ID, Patent: pending, Status: domain.IDSEntryPending}); err != nil {
+		t.Fatalf("SaveIDSEntry pending: %v", err)
 	}
 
 	ids, err := eng.ExportIDS(ctx, project.ID)

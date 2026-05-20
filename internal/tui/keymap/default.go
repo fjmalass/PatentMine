@@ -90,6 +90,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
+			"I":      command.OpenIDS,
 			"w":      command.OpenBrowser,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
@@ -109,6 +110,7 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
+			"I":      command.OpenIDS,
 			"c":      command.OpenCitations,
 			"b":      command.OpenCitedBy,
 			"p":      command.OpenProjects,
@@ -123,6 +125,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
+			"I":      command.OpenIDS,
 			"w":      command.OpenBrowser,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
@@ -134,6 +137,18 @@ func Default() *Keymaps {
 			"ctrl+r": command.Refresh,
 			"v":      command.SelectVisual,
 			"esc":    command.SelectClear,
+		})
+
+	ids := NewLayer("ids", false).
+		BindAll(listMotions()).
+		BindAll(map[string]command.ID{
+			"enter":  command.IDSEditField,
+			"e":      command.IDSEditField,
+			"f":      command.IDSToggleFull,
+			"s":      command.IDSCycleStatus,
+			"D":      command.IDSDelete,
+			"p":      command.OpenProjects,
+			"ctrl+r": command.Refresh,
 		})
 
 	projects := NewLayer("projects", false).
@@ -169,6 +184,7 @@ func Default() *Keymaps {
 			command.ContextCatalog:   catalog,
 			command.ContextDetail:    detail,
 			command.ContextCitations: citations,
+			command.ContextIDS:       ids,
 			command.ContextProjects:  projects,
 			command.ContextOverlay:   overlay,
 		},

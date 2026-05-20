@@ -24,6 +24,7 @@ type detailLoadedMsg struct {
 	patent    domain.Patent
 	state     domain.ReviewState
 	tags      []domain.Tag
+	idsEntry  *domain.IDSEntry
 	err       error
 }
 
@@ -52,6 +53,7 @@ type Detail struct {
 	patent    domain.Patent
 	state     domain.ReviewState
 	tags      []domain.Tag
+	idsEntry  *domain.IDSEntry
 	relCounts map[domain.RelationKind]int
 	anchors   []render.JumpAnchor // jump targets, rebuilt on every body render
 	page      render.Paginator
@@ -131,6 +133,7 @@ func (d *Detail) load() tea.Cmd {
 			patent:    res.Patent,
 			state:     res.ReviewState,
 			tags:      res.Tags,
+			idsEntry:  res.IDSEntry,
 			err:       err,
 		}
 	}
@@ -181,6 +184,7 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.patent = m.patent
 		d.state = m.state
 		d.tags = m.tags
+		d.idsEntry = m.idsEntry
 		d.page.Top()
 	case detailRelationsMsg:
 		if m.requestID == d.loadID {
@@ -254,6 +258,8 @@ func (d *Detail) body(w int) string {
 		b.WriteByte('\n')
 		d.addAnchor(&b, 'r', "Review state", 0)
 		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
+		d.addAnchor(&b, 'y', "IDS", 0)
+		d.field(&b, w, "IDS", detailIDSText(d.idsEntry))
 		d.addAnchor(&b, 't', "Tags", 0)
 		d.field(&b, w, "Tags", tagsText(d.tags))
 	}
@@ -415,6 +421,13 @@ func tagsText(tags []domain.Tag) string {
 		names[i] = t.Name
 	}
 	return strings.Join(names, ", ")
+}
+
+func detailIDSText(entry *domain.IDSEntry) string {
+	if entry == nil {
+		return "not on IDS"
+	}
+	return entry.SummaryText()
 }
 
 // countryOrDash returns the country code, or a dash when it is blank.

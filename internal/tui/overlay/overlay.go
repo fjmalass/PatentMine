@@ -72,7 +72,11 @@ type Purpose string
 
 const (
 	// PurposeCreateProject collects a name for a new project.
-	PurposeCreateProject Purpose = "create-project"
+	PurposeCreateProject   Purpose = "create-project"
+	PurposeEditIDSKind     Purpose = "edit-ids-kind"
+	PurposeEditIDSCountry  Purpose = "edit-ids-country"
+	PurposeEditIDSPassages Purpose = "edit-ids-passages"
+	PurposeEditIDSNotes    Purpose = "edit-ids-notes"
 )
 
 // TextSubmitMsg carries a value entered in a TextInput overlay.

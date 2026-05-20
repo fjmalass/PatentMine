@@ -61,7 +61,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"#", "NUMBER", "US0000001B2", "Second", "cached", "stub"} {
+	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "cached", "stub"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
 		}
@@ -97,11 +97,24 @@ func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 	project := &domain.Project{ID: "p-1", Name: "Case A"}
 	c.activeProject = project
 	c.patents[0].ReviewState = domain.ReviewStateUnderReview
+	c.patents[0].IDSEntry = &domain.IDSEntry{Project: project.ID, Patent: c.patents[0].Number, Status: domain.IDSEntrySubmitted}
 
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"REVIEW STATE", "under_review"} {
+	for _, want := range []string{"[1/3]", "REVIEW STATE", "IDS", "submitted", "under_review"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog project view missing %q\n%s", want, out)
+		}
+	}
+}
+
+func TestCatalogStatusLineShowsFilters(t *testing.T) {
+	c := loadedCatalog(t)
+	c.filter.Search = "widget"
+	c.filter.ReviewState = domain.ReviewStateUnderReview
+	out := c.View(testPaneWidth, testPaneHeight)
+	for _, want := range []string{"[1/3]", "filters: state:under_review", "search:widget"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("catalog status line missing %q\n%s", want, out)
 		}
 	}
 }

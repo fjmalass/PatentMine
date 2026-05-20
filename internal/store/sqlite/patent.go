@@ -28,11 +28,13 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 		`WHERE pt.patent_number = p.number AND t.project_id = ?), '[]')`
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-			`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), ` + tagsSubq,
+				`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), ` + tagsSubq + `, ` +
+				`COALESCE(pid.kind_code, ''), COALESCE(pid.country_code, ''), COALESCE(pid.in_full, 0), ` +
+				`COALESCE(pid.relevant_passages, ''), COALESCE(pid.notes, ''), COALESCE(pid.status, ''), COALESCE(pid.added_at, '')`,
 			[]any{string(project)}
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-		`p.inventors, p.expiration_date, p.fetch_state, '', '[]'`, nil
+		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''`, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -188,9 +190,14 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		inventorsJSON, expirationDate string
 		fetchState, reviewState       string
 		tagsJSON                      string
+		idsKindCode, idsCountryCode   string
+		idsRelevant, idsNotes         string
+		idsStatus, idsAddedAt         string
+		idsInFull                     int
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
-		&inventorsJSON, &expirationDate, &fetchState, &reviewState, &tagsJSON); err != nil {
+		&inventorsJSON, &expirationDate, &fetchState, &reviewState, &tagsJSON,
+		&idsKindCode, &idsCountryCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -211,6 +218,20 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	}
 	if err := json.Unmarshal([]byte(tagsJSON), &row.Tags); err != nil {
 		row.Tags = nil
+	}
+	if idsStatus != "" || idsKindCode != "" || idsCountryCode != "" || idsRelevant != "" || idsNotes != "" || idsAddedAt != "" || idsInFull != 0 {
+		row.IDSEntry = &domain.IDSEntry{
+			Patent:           row.Number,
+			KindCode:         idsKindCode,
+			CountryCode:      idsCountryCode,
+			InFull:           idsInFull != 0,
+			RelevantPassages: idsRelevant,
+			Notes:            idsNotes,
+			Status:           domain.IDSEntryStatus(idsStatus),
+		}
+		if t, err := decodeTime(idsAddedAt); err == nil {
+			row.IDSEntry.AddedAt = t
+		}
 	}
 	return row, nil
 }
@@ -234,6 +255,8 @@ func patentSortExpr(col domain.SortColumn, asc bool) string {
 		return "p.expiration_date " + dir
 	case domain.SortByReviewState:
 		return "COALESCE(m.state, p.fetch_state) " + dir
+	case domain.SortByIDS:
+		return "COALESCE(pid.status, '') " + dir
 	default:
 		return "p.number " + dir
 	}
@@ -266,6 +289,7 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 			joinType = "LEFT JOIN"
 		}
 		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")
+		sb.WriteString(" LEFT JOIN project_ids pid ON pid.patent_number = p.number AND pid.project_id = m.project_id")
 		args = append(args, string(q.Project))
 		if q.ReviewState != domain.ReviewStateNone {
 			conds = append(conds, "m.state = ?")

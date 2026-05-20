@@ -9,11 +9,12 @@ import (
 type SortColumn string
 
 const (
-	SortByNumber   SortColumn = "number"
-	SortByTitle    SortColumn = "title"
+	SortByNumber      SortColumn = "number"
+	SortByTitle       SortColumn = "title"
 	SortByInventor    SortColumn = "inventor"
 	SortByExpires     SortColumn = "expires"
 	SortByReviewState SortColumn = "review_state"
+	SortByIDS         SortColumn = "ids"
 )
 
 // CrawlProfile defines which family-graph edges to follow during a crawl.
@@ -124,6 +125,7 @@ type PatentRow struct {
 	Tags           []string     `json:"tags"`
 	FetchState     FetchState   `json:"fetch_state"`
 	ReviewState    ReviewState  `json:"review_state,omitempty"`
+	IDSEntry       *IDSEntry    `json:"ids_entry,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.
