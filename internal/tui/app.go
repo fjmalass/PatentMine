@@ -641,10 +641,34 @@ func (a *App) usageError(id command.ID) (tea.Model, tea.Cmd) {
 
 // --- pane stack --------------------------------------------------------------
 
+// preparePane syncs a newly mounted pane with the current app state before its
+// first render/load, so list panes size themselves from the live window rather
+// than their constructor defaults.
+func (a *App) preparePane(p pane.Pane) (pane.Pane, []tea.Cmd) {
+	var cmds []tea.Cmd
+	if a.width > 0 && a.height > 0 {
+		updated, cmd := p.Update(pane.ResizeMsg{Width: a.width, Height: max(a.height-statusRows, 1)})
+		p = updated
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	updated, cmd := p.Update(pane.ProjectChangedMsg{Project: a.activeProject})
+	p = updated
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return p, cmds
+}
+
 // pushPane adds a pane to the stack and returns its init command.
 func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
+	p, cmds := a.preparePane(p)
 	a.panes = append(a.panes, p)
-	return a, tea.Batch(p.Init(), a.syncPaneProject(p))
+	if len(cmds) == 0 {
+		cmds = append(cmds, p.Init())
+	}
+	return a, tea.Batch(cmds...)
 }
 
 // openDetail pushes a detail pane for the focused pane's selected patent. The
@@ -710,9 +734,13 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 		a.setStatus(text.StatusActiveProject, project.Name)
 	}
 	if splash, ok := a.focusedPane().(interface{ IsSplash() bool }); ok && splash.IsSplash() && len(a.panes) == 1 {
-		catalog := pane.NewCatalog(a.client, a.theme)
-		a.panes[0] = catalog
-		return a, tea.Batch(catalog.Init(), a.broadcast(pane.ProjectChangedMsg{Project: &project}))
+		var mounted pane.Pane = pane.NewCatalog(a.client, a.theme)
+		mounted, cmds := a.preparePane(mounted)
+		a.panes[0] = mounted
+		if len(cmds) == 0 {
+			cmds = append(cmds, mounted.Init())
+		}
+		return a, tea.Batch(cmds...)
 	}
 	if len(a.panes) > 1 {
 		a.panes = a.panes[:len(a.panes)-1]
@@ -800,10 +828,6 @@ func (a *App) focusedSelections() []domain.PatentNumber {
 
 func (a *App) runProjectAction(action func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd) (tea.Model, tea.Cmd) {
 	return a.runAction("", action)
-}
-
-func (a *App) syncPaneProject(_ pane.Pane) tea.Cmd {
-	return a.broadcast(pane.ProjectChangedMsg{Project: a.activeProject})
 }
 
 func (a *App) openPrompt(mode overlay.PromptMode) (tea.Model, tea.Cmd) {

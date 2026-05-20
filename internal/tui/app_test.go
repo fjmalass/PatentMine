@@ -155,6 +155,28 @@ func (p *refreshProbePane) Command(id command.ID, _ pane.Invocation) (pane.Pane,
 }
 func (p *refreshProbePane) Handles() []command.ID { return []command.ID{command.Refresh} }
 
+type mountProbePane struct {
+	resized bool
+	inited  bool
+}
+
+func (p *mountProbePane) Context() command.Context               { return command.ContextCatalog }
+func (p *mountProbePane) Title() string                          { return "mount" }
+func (p *mountProbePane) Init() tea.Cmd                          { p.inited = true; return nil }
+func (p *mountProbePane) View(int, int) string                   { return "" }
+func (p *mountProbePane) Selection() (domain.PatentNumber, bool) { return domain.PatentNumber{}, false }
+func (p *mountProbePane) Handles() []command.ID                  { return nil }
+func (p *mountProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) {
+	return p, nil
+}
+func (p *mountProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
+	if _, ok := msg.(pane.ResizeMsg); ok {
+		p.resized = true
+		return p, func() tea.Msg { return nil }
+	}
+	return p, nil
+}
+
 type projectProbePane struct{ project domain.Project }
 
 func (p *projectProbePane) Context() command.Context            { return command.ContextProjects }
@@ -208,6 +230,21 @@ func TestAppRefreshesAllPanesOnDBChange(t *testing.T) {
 	}
 	if first.refreshes != 1 || second.refreshes != 1 {
 		t.Fatalf("db.changed refreshed %d/%d panes, want 1/1", first.refreshes, second.refreshes)
+	}
+}
+
+func TestPushPanePreparesPaneBeforeInit(t *testing.T) {
+	app := newTestApp(t)
+	probe := &mountProbePane{}
+	_, cmd := app.pushPane(probe)
+	if !probe.resized {
+		t.Fatal("pushPane should send ResizeMsg before first load/init")
+	}
+	if probe.inited {
+		t.Fatal("pushPane should not call Init when preparePane already returned a load command")
+	}
+	if cmd == nil {
+		t.Fatal("pushPane should return prepared pane command")
 	}
 }
 
