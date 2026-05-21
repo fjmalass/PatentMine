@@ -99,7 +99,7 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			if d.jumpActive && len(d.anchors) > 0 {
 				d.page.ScrollTo(d.nextAnchorLine())
 			} else {
-				d.page.MoveDown(inv.Repeat)
+				d.page.ScrollTo(d.page.Cursor() + inv.Repeat)
 			}
 			return nil
 		},
@@ -107,28 +107,14 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			if d.jumpActive && len(d.anchors) > 0 {
 				d.page.ScrollTo(d.prevAnchorLine())
 			} else {
-				d.page.MoveUp(inv.Repeat)
+				d.page.ScrollTo(d.page.Cursor() - inv.Repeat)
 			}
 			return nil
 		},
-		command.NavPageDown: func(Invocation) tea.Cmd { d.page.PageDown(); return nil },
-		command.NavPageUp:   func(Invocation) tea.Cmd { d.page.PageUp(); return nil },
-		command.NavTop: func(Invocation) tea.Cmd {
-			if d.jumpActive && len(d.anchors) > 0 {
-				d.page.ScrollTo(d.anchors[0].Line)
-			} else {
-				d.page.Top()
-			}
-			return nil
-		},
-		command.NavBottom: func(Invocation) tea.Cmd {
-			if d.jumpActive && len(d.anchors) > 0 {
-				d.page.ScrollTo(d.anchors[len(d.anchors)-1].Line)
-			} else {
-				d.page.Bottom()
-			}
-			return nil
-		},
+		command.NavPageDown: func(Invocation) tea.Cmd { d.page.ScrollTo(d.page.Cursor() + d.page.PageSize()); return nil },
+		command.NavPageUp:   func(Invocation) tea.Cmd { d.page.ScrollTo(d.page.Cursor() - d.page.PageSize()); return nil },
+		command.NavTop:      func(Invocation) tea.Cmd { d.page.Top(); return nil },
+		command.NavBottom:   func(Invocation) tea.Cmd { d.page.Bottom(); return nil },
 		command.Refresh:     func(Invocation) tea.Cmd { d.loading = true; return d.reload() },
 		command.CrawlFamily: func(Invocation) tea.Cmd {
 			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileFamily, false)
@@ -271,7 +257,16 @@ func (d *Detail) View(w, h int) string {
 	d.page.SetTotal(len(lines))
 	d.page.SetPageSize(max(h, 1))
 	start, end := d.page.Window()
-	return strings.Join(lines[start:end], "\n")
+	cursor := d.page.Cursor()
+	out := make([]string, 0, end-start)
+	for i, line := range lines[start:end] {
+		if start+i == cursor {
+			out = append(out, d.theme.Selected.Render(render.Pad(line, w)))
+		} else {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // body renders the full, unwindowed detail record. It also rebuilds the jump
