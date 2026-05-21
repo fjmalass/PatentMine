@@ -114,6 +114,7 @@ func Default() *Keymaps {
 		BindAll(patentActions()).
 		BindAll(map[string]command.ID{
 			"I":      command.OpenIDS,
+			"w":      command.OpenBrowser,
 			"c":      command.OpenCitations,
 			"b":      command.OpenCitedBy,
 			"p":      command.OpenProjects,
