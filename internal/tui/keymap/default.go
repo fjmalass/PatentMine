@@ -67,8 +67,8 @@ func patentActions() map[string]command.ID {
 		"x": command.MarkDeleted,
 		"D": command.PatentDelete,
 		"a": command.AddToProject,
-		"f": command.IngestFamily,
-		"F": command.FetchPatent,
+		"f": command.CrawlFamily,
+		"L": command.LookupPatent,
 	}
 }
 
@@ -105,6 +105,8 @@ func Default() *Keymaps {
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"esc":    command.SelectClear,
+			"g a":    command.SelectAll,
+			"ctrl+a": command.SelectAll,
 		})
 
 	detail := NewLayer("detail", false).
@@ -138,7 +140,8 @@ func Default() *Keymaps {
 			"ctrl+r": command.Refresh,
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
-			"esc":    command.SelectClear,
+			"g a":    command.SelectAll,
+			"ctrl+a": command.SelectAll,
 		})
 
 	ids := NewLayer("ids", false).

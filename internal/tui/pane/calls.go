@@ -28,28 +28,87 @@ func nextAsyncID() uint64 {
 	return asyncSeq.Add(1)
 }
 
-// ingest depth selectors. A negative depth crawls the configured family depth;
-// zero fetches only the named patent.
+// crawl depth selectors. A negative depth crawls the configured family depth;
+// zero looks up only the named patent.
 const (
-	ingestFamilyDepth = -1
-	ingestPatentDepth = 0
+	crawlFamilyDepth = -1
+	lookupDepth      = 0
 )
 
-// IngestCmd enqueues an ingest for number and reports the outcome as a
+// crawlDepth returns the depth to use for a given profile. An empty profile
+// means a single-patent lookup (depth 0); any other profile follows the full
+// family crawl (depth -1, which defers to the daemon's configured default).
+func crawlDepth(profile domain.CrawlProfile) int {
+	if profile == "" {
+		return lookupDepth
+	}
+	return crawlFamilyDepth
+}
+
+// CrawlCmd enqueues a crawl or lookup for number and reports the outcome as a
 // StatusMsg. depth selects how far the family walk explicitly; a negative
 // depth defers to the crawler's configured default. profile selects which
 // family-graph edges to follow. force bypasses the local file cache.
-func IngestCmd(client *rpc.Client, number domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
+func CrawlCmd(client *rpc.Client, number domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		var res proto.IngestStartResult
-		err := client.Call(ctx, proto.MethodIngestFamily,
-			proto.IngestFamilyParams{Root: number, Depth: depth, Profile: profile, Force: force}, &res)
+		var res proto.CrawlStartResult
+		err := client.Call(ctx, proto.MethodCrawlFamily,
+			proto.CrawlFamilyParams{Root: number, Depth: depth, Profile: profile, Force: force}, &res)
 		if err != nil {
-			return StatusMsg{Key: text.StatusIngestStartFailed, Args: []any{err.Error()}, Error: true}
+			return StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusIngestStarted, Args: []any{number.String(), res.JobID}}
+		return StatusMsg{Key: text.StatusCrawlStarted, Args: []any{number.String(), res.JobID, depth}}
+	}
+}
+
+// MultiCrawlCmd starts a crawl or lookup for each number concurrently and
+// returns a single MultiCrawlStartedMsg with all job IDs so the app can show
+// one aggregate overlay for multi-selection.
+func MultiCrawlCmd(client *rpc.Client, numbers []domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
+	return func() tea.Msg {
+		type rpcResult struct {
+			number domain.PatentNumber
+			jobID  string
+			err    error
+		}
+		ch := make(chan rpcResult, len(numbers))
+		for _, n := range numbers {
+			go func(n domain.PatentNumber) {
+				ctx, cancel := callContext()
+				defer cancel()
+				var res proto.CrawlStartResult
+				err := client.Call(ctx, proto.MethodCrawlFamily,
+					proto.CrawlFamilyParams{Root: n, Depth: depth, Profile: profile, Force: force}, &res)
+				if err != nil {
+					ch <- rpcResult{number: n, err: err}
+				} else {
+					ch <- rpcResult{number: n, jobID: res.JobID}
+				}
+			}(n)
+		}
+		var jobIDs []string
+		var failErrs []string
+		for range numbers {
+			r := <-ch
+			if r.err != nil {
+				failErrs = append(failErrs, r.err.Error())
+			} else {
+				jobIDs = append(jobIDs, r.jobID)
+			}
+		}
+		if len(jobIDs) == 0 {
+			return StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{strings.Join(failErrs, "; ")}, Error: true}
+		}
+		if len(failErrs) > 0 {
+			jobIDs = append(jobIDs, "(errors: "+strings.Join(failErrs, "; ")+")")
+		}
+		return MultiCrawlStartedMsg{
+			Numbers: numbers,
+			JobIDs:  jobIDs,
+			Depth:   depth,
+		}
 	}
 }
 
@@ -78,7 +137,7 @@ func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if !res.FetchStarted {
-			return StatusMsg{Key: text.StatusAddedNoIngest, Args: []any{number.String()}}
+			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{number.String()}}
 		}
 		return StatusMsg{Key: text.StatusAdded, Args: []any{number.String(), string(project)}}
 	}

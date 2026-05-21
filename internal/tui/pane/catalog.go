@@ -72,6 +72,7 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.ReselectLast:    func(Invocation) tea.Cmd { return c.reselectLast() },
 		command.Refresh:         func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
 		command.SelectVisual:    func(Invocation) tea.Cmd { return c.toggleVisual() },
+		command.SelectAll:       func(Invocation) tea.Cmd { return c.selectAllVisual() },
 		command.SelectClear: func(Invocation) tea.Cmd {
 			if c.visualMode {
 				c.saveVisual()
@@ -79,11 +80,11 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 			}
 			return nil
 		},
-		command.IngestFamily:    func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
-		command.IngestCitations: func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitations) },
-		command.IngestCitedBy:   func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitedBy) },
-		command.IngestAll:       func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileAll) },
-		command.FetchPatent:     func(Invocation) tea.Cmd { return c.ingestSelected("") },
+		command.CrawlFamily:    func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
+		command.CrawlCitations: func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
+		command.CrawlCitedBy:   func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
+		command.CrawlAll:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
+		command.LookupPatent:   func(Invocation) tea.Cmd { return c.crawlSelected("") },
 		command.ColNext:         func(Invocation) tea.Cmd { return c.focusNext() },
 		command.ColPrev:         func(Invocation) tea.Cmd { return c.focusPrev() },
 		command.SortApply:       func(Invocation) tea.Cmd { return c.applySort() },
@@ -239,17 +240,17 @@ func (c *Catalog) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 // Handles implements Pane.
 func (c *Catalog) Handles() []command.ID { return handlerIDs(c.handlers) }
 
-// ingestSelected enqueues an ingest for the highlighted patent.
-func (c *Catalog) ingestSelected(profile domain.CrawlProfile) tea.Cmd {
-	number, ok := c.Selection()
-	if !ok {
-		return status(text.StatusNoPatentSelected, true)
+// crawlSelected enqueues a crawl or lookup for the selected patent(s).
+func (c *Catalog) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
+	numbers := c.Selections()
+	if len(numbers) < 2 {
+		n, ok := c.Selection()
+		if !ok {
+			return status(text.StatusNoPatentSelected, true)
+		}
+		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false)
 	}
-	depth := ingestFamilyDepth
-	if profile == "" {
-		depth = ingestPatentDepth
-	}
-	return IngestCmd(c.client, number, depth, profile, false)
+	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false)
 }
 
 // move runs a cursor motion and reloads the page when the visible window
@@ -381,6 +382,18 @@ func (c *Catalog) toggleVisual() tea.Cmd {
 	return nil
 }
 
+func (c *Catalog) selectAllVisual() tea.Cmd {
+	if c.page.Total() == 0 {
+		return nil
+	}
+	if c.visualMode {
+		c.saveVisual()
+	}
+	c.visualMode = true
+	c.visualAnchor = 0
+	return c.move(c.page.Bottom)
+}
+
 func (c *Catalog) clearVisual() {
 	c.visualMode = false
 	c.visualAnchor = 0
@@ -433,7 +446,7 @@ func (c *Catalog) View(w, h int) string {
 		if c.activeProject != nil {
 			return c.theme.Dim.Render("no patents in active project " + c.activeProject.Name)
 		}
-		return c.theme.Dim.Render("no patents yet — select a number and press f to ingest its family")
+		return c.theme.Dim.Render("no patents yet — select a number and press f to crawl its family")
 	}
 
 	findRows := 0

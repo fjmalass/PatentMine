@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"context"
@@ -54,7 +54,7 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 		t.Fatalf("US0000004B2 fetch state = %s, want stub", stub.FetchState)
 	}
 
-	if last.IngestedCount != 3 || last.DiscoveredCount != 4 {
+	if last.CrawledCount != 3 || last.DiscoveredCount != 4 {
 		t.Fatalf("final progress = %+v, want ingested 3 discovered 4", last)
 	}
 
@@ -85,8 +85,8 @@ func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
-	if last.IngestedCount != 1 {
-		t.Fatalf("depth-0 crawl fetched %d, want 1", last.IngestedCount)
+	if last.CrawledCount != 1 {
+		t.Fatalf("depth-0 crawl fetched %d, want 1", last.CrawledCount)
 	}
 	// Neighbours are recorded as stubs, not fetched.
 	neighbour, err := repo.Patent(ctx, domain.MustParsePatentNumber("US0000002B2"))
@@ -108,8 +108,8 @@ func TestCrawlRespectsNodeBudget(t *testing.T) {
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
-	if last.IngestedCount != 2 {
-		t.Fatalf("crawl fetched %d, want 2 (node budget)", last.IngestedCount)
+	if last.CrawledCount != 2 {
+		t.Fatalf("crawl fetched %d, want 2 (node budget)", last.CrawledCount)
 	}
 }
 

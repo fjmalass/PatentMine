@@ -27,8 +27,8 @@ const (
 	MethodReviewState    Method = "review_state.set"
 	MethodTagAssign      Method = "tag.assign"
 	MethodTagRemove      Method = "tag.remove"
-	MethodIngestFamily   Method = "ingest.family"
-	MethodIngestCancel   Method = "ingest.cancel"
+	MethodCrawlFamily   Method = "crawl.family"
+	MethodCrawlCancel   Method = "crawl.cancel"
 	MethodImportFile     Method = "import.file"
 	MethodRelations      Method = "patent.relations"
 	MethodIDSExport      Method = "ids.export"
@@ -48,8 +48,8 @@ const (
 type EventKind string
 
 const (
-	EventIngestProgress EventKind = "ingest.progress"
-	EventIngestDone     EventKind = "ingest.done"
+	EventCrawlProgress EventKind = "crawl.progress"
+	EventCrawlDone     EventKind = "crawl.done"
 	EventDBChanged      EventKind = "db.changed"
 )
 
@@ -220,18 +220,18 @@ type PatentTagListResult struct {
 }
 
 
-// IngestFamilyParams starts a family-graph crawl rooted at one patent. Depth 0
+// CrawlFamilyParams starts a family-graph crawl rooted at one patent. Depth 0
 // fetches only the root; a negative depth uses the configured family depth.
 // Force bypasses the local file cache and re-fetches from the web.
-type IngestFamilyParams struct {
+type CrawlFamilyParams struct {
 	Root    domain.PatentNumber `json:"root"`
 	Depth   int                 `json:"depth"`
 	Profile domain.CrawlProfile `json:"profile,omitempty"`
 	Force   bool                `json:"force,omitempty"`
 }
 
-// IngestStartResult returns the id of an enqueued job.
-type IngestStartResult struct {
+// CrawlStartResult returns the id of an enqueued job.
+type CrawlStartResult struct {
 	JobID string `json:"job_id"`
 }
 
@@ -240,8 +240,8 @@ type ImportFileParams struct {
 	Path string `json:"path"`
 }
 
-// IngestCancelParams cancels a running job.
-type IngestCancelParams struct {
+// CrawlCancelParams cancels a running job.
+type CrawlCancelParams struct {
 	JobID string `json:"job_id"`
 }
 
@@ -324,10 +324,10 @@ type Empty struct{}
 
 // --- Event payloads ---
 
-// IngestProgress reports incremental progress of an ingest job.
-type IngestProgress struct {
+// CrawlProgress reports incremental progress of a crawl job.
+type CrawlProgress struct {
 	JobID           string `json:"job_id"`
-	IngestedCount   int    `json:"ingested_count"`
+	CrawledCount   int    `json:"crawled_count"`
 	DiscoveredCount int    `json:"discovered_count"`
 	PendingCount    int    `json:"pending_count"`
 	CitationsCount  int    `json:"citations_count,omitempty"`
@@ -337,8 +337,8 @@ type IngestProgress struct {
 	Message         string `json:"message"`
 }
 
-// IngestDone reports that an ingest job finished, with an error if it failed.
-type IngestDone struct {
+// CrawlDone reports that a crawl job finished, with an error if it failed.
+type CrawlDone struct {
 	JobID string `json:"job_id"`
 	Error string `json:"error,omitempty"`
 }

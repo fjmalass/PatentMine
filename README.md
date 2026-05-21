@@ -1,6 +1,6 @@
 # PatentMine: Architectural & Lifecycle Manual
 
-PatentMine is a high-performance patent curation and ingestion engine. At its core, the project solves a fundamental data modeling challenge: **patent number indirection and record merging across lifecycle stages**, while providing real-time family-tree crawl orchestration and a responsive terminal user interface (TUI).
+PatentMine is a high-performance patent curation and crawling engine. At its core, the project solves a fundamental data modeling challenge: **patent number indirection and record merging across lifecycle stages**, while providing real-time family-tree crawl orchestration and a responsive terminal user interface (TUI).
 
 This manual details the architecture, dynamic value-type systems, lifecycle phases of a patent, database cascades, deletion models, and codebase navigation.
 
@@ -21,8 +21,8 @@ graph TD
     style D fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
-During ingestion, citation crawls, or user project curation:
-* Ingestion sources (Google Patents, Justia, USPTO, WIPO) record relationships using whatever stage numbers they crawled first.
+During crawling, citation crawls, or user project curation:
+* Crawl sources (Google Patents, Justia, USPTO, WIPO) record relationships using whatever stage numbers they crawled first.
 * A citation in an older patent might point directly to an *application* number.
 * A newer patent's family citation edge might point to the *grant* number of that same invention.
 
@@ -73,7 +73,7 @@ A patent record travels through four distinct phases in its lifetime:
 ```mermaid
 sequenceDiagram
     autonumber
-    participant CrawlEdge as Ingestion/Crawl Edge
+    participant CrawlEdge as Crawl Edge
     participant Engine as Engine Core
     participant DB as SQLite Database
     participant Web as Web Crawler (Google/USPTO)
@@ -85,8 +85,8 @@ sequenceDiagram
     DB-->>Engine: store.ErrNotFound
     Engine->>DB: Create Stub Patent (FetchStub) & Document (US-PubNo)
     
-    %% Phase 2: Ingestion & Candidate Resolution
-    Note over Engine, Web: Phase 2: Ingestion & Candidate Resolution
+    %% Phase 2: Crawl & Candidate Resolution
+    Note over Engine, Web: Phase 2: Crawl & Candidate Resolution
     Web->>Engine: Returns full crawled patent metadata + associated document numbers
     Engine->>DB: Check which candidates are already known (ResolveRecord)
     DB-->>Engine: Returns known records (e.g., stubs previously created)
@@ -108,7 +108,7 @@ sequenceDiagram
 * The engine queries the `document` table via `RecordOf` to resolve the number. 
 * If the number is unknown, a **Stub Patent** is immediately saved with `FetchState = FetchStub`. A corresponding `Document` is inserted pointing to this stub. This creates a placeholder in the family graph before fetching its metadata.
 
-### Phase 2: Ingestion & Candidate Resolution
+### Phase 2: Crawl & Candidate Resolution
 * When the web crawler retrieves the full patent, it returns a package of metadata plus all associated lifecycle documents (the "candidates").
 * In `resolveRecord` (`crawl.go`), the crawler queries `RecordOf` for each candidate to see which existing stubs are already in the system.
 
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS project_ids (
 > 4. **Cascading Deletions**: Deleting a tag from the taxonomy automatically deletes all corresponding patent-tag assignments in that project via SQLite cascading foreign keys.
 
 ### B. Graph Topology Handling
-Because relations (`relation` table) can point to placeholders that aren't yet fully ingested, they do not use strict foreign key constraints. Two models exist for deleting family edges:
+Because relations (`relation` table) can point to placeholders that aren't yet fully crawled, they do not use strict foreign key constraints. Two models exist for deleting family edges:
 
 1. **Hard Purge (Current Model)**: Deletes all incoming and outgoing relation edges involving the patent:
    ```sql
@@ -225,8 +225,8 @@ For engineers maintaining or extending the indirection and lifecycle systems, ke
 | **Database Contract** | [`internal/store/repository.go`](file:///mnt/d/Repos/PatentMineNew/internal/store/repository.go) | `MergeRecords` | Defines the database interface for repointing records. |
 | **DB Indirection Lookup** | [`internal/store/sqlite/document.go`](file:///mnt/d/Repos/PatentMineNew/internal/store/sqlite/document.go) | `RecordOf` | Queries the `document` table to find the canonical parent number. |
 | **ACID Merging** | [`internal/store/sqlite/document.go`](file:///mnt/d/Repos/PatentMineNew/internal/store/sqlite/document.go) | `MergeRecords` | SQL transaction that repoints documents, memberships, relations, and deletes duplicate rows. |
-| **Candidate Resolution** | [`internal/ingest/crawl.go`](file:///mnt/d/Repos/PatentMineNew/internal/ingest/crawl.go) | `resolveRecord` | Checks candidate document numbers and triggers `MergeRecords` on conflicts. |
-| **Stub Ingestion** | [`internal/engine/engine.go`](file:///mnt/d/Repos/PatentMineNew/internal/engine/engine.go) | `ensureRecord` | Creates a new stub patent and document when a candidate is first discovered. |
+| **Candidate Resolution** | [`internal/crawl/crawl.go`](file:///mnt/d/Repos/PatentMineNew/internal/crawl/crawl.go) | `resolveRecord` | Checks candidate document numbers and triggers `MergeRecords` on conflicts. |
+| **Stub Creation** | [`internal/engine/engine.go`](file:///mnt/d/Repos/PatentMineNew/internal/engine/engine.go) | `ensureRecord` | Creates a new stub patent and document when a candidate is first discovered. |
 | **Deletion Mechanics** | [`internal/store/sqlite/patent.go`](file:///mnt/d/Repos/PatentMineNew/internal/store/sqlite/patent.go) | `DeletePatent` | Hand-purges incoming/outgoing relations, and deletes the main patent row (cascading to other tables). |
 | **Activity Journal** | [`internal/observability/observability.go`](file:///mnt/d/Repos/PatentMineNew/internal/observability/observability.go) | `Record` | Declares the JSONL record structure used for backup and replay. |
 
@@ -340,9 +340,9 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 * `x` : Move patent workflow review state to **Deleted**.
 * `D` : Trigger **Hard Purge** (permanently delete the patent, compile snapshot, and write backup to activity log).
 * `a` : Link the selected patent to a specific project membership.
-* `f` : Trigger a recursive **Family Crawl** to ingest parents, children, and relations.
-* `F` : Fetch current patent details (single-patent metadata ingestion).
+* `f` : Trigger a recursive **Family Crawl** to crawl parents, children, and relations.
 
+* `L` : Lookup current patent details (single-patent metadata lookup).
 #### D. Catalog Pane Bindings
 * `enter` / `l` : Open the patent detail pane for the selected record.
 * `I` : Open the project's Information Disclosure Statement (IDS) editor.

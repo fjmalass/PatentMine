@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"context"
@@ -65,11 +65,11 @@ func (s *FileSource) Fetch(_ context.Context, number domain.PatentNumber) (Resul
 		return Result{}, ErrNotAvailable
 	}
 	if err != nil {
-		return Result{}, fmt.Errorf("ingest/file: read %s: %w", path, err)
+		return Result{}, fmt.Errorf("crawl/file: read %s: %w", path, err)
 	}
 	var file patentFile
 	if err := json.Unmarshal(raw, &file); err != nil {
-		return Result{}, fmt.Errorf("ingest/file: decode %s: %w", path, err)
+		return Result{}, fmt.Errorf("crawl/file: decode %s: %w", path, err)
 	}
 	return fileToResult(number, file)
 }
@@ -112,19 +112,19 @@ func fileToResult(number domain.PatentNumber, file patentFile) (Result, error) {
 // ImportFile loads a patent record from a local fixture file (the patentFile
 // JSON shape) into the store, including its citation and family edges. It
 // satisfies engine.FileImporter, so the engine can import a file without
-// importing the ingest package.
+// importing the crawl package.
 func (c *Crawler) ImportFile(ctx context.Context, path string) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("ingest: read fixture %s: %w", path, err)
+		return fmt.Errorf("crawl: read fixture %s: %w", path, err)
 	}
 	var file patentFile
 	if err := json.Unmarshal(raw, &file); err != nil {
-		return fmt.Errorf("ingest: decode fixture %s: %w", path, err)
+		return fmt.Errorf("crawl: decode fixture %s: %w", path, err)
 	}
 	number, err := domain.ParsePatentNumber(file.Number)
 	if err != nil {
-		return fmt.Errorf("ingest: fixture %s has an invalid number %q: %w", path, file.Number, err)
+		return fmt.Errorf("crawl: fixture %s has an invalid number %q: %w", path, file.Number, err)
 	}
 	res, err := fileToResult(number, file)
 	if err != nil {
@@ -158,11 +158,11 @@ func fileDocuments(number domain.PatentNumber, file patentFile) ([]domain.Docume
 	for _, fd := range file.Documents {
 		num, err := domain.ParsePatentNumber(fd.Number)
 		if err != nil {
-			return nil, fmt.Errorf("ingest/file: document %q: %w", fd.Number, err)
+			return nil, fmt.Errorf("crawl/file: document %q: %w", fd.Number, err)
 		}
 		stage, err := domain.ParseStage(fd.Stage)
 		if err != nil {
-			return nil, fmt.Errorf("ingest/file: document %s: %w", fd.Number, err)
+			return nil, fmt.Errorf("crawl/file: document %s: %w", fd.Number, err)
 		}
 		dated, err := parseDate(fd.Date)
 		if err != nil {
@@ -189,7 +189,7 @@ func buildRelations(from domain.PatentNumber, file patentFile) ([]domain.Relatio
 		for _, raw := range g.numbers {
 			to, err := domain.ParsePatentNumber(raw)
 			if err != nil {
-				return nil, fmt.Errorf("ingest/file: %s neighbor %q: %w", g.kind, raw, err)
+				return nil, fmt.Errorf("crawl/file: %s neighbor %q: %w", g.kind, raw, err)
 			}
 			relations = append(relations, domain.Relation{From: from, To: to, Kind: g.kind})
 		}
@@ -204,7 +204,7 @@ func parseDate(s string) (time.Time, error) {
 	}
 	t, err := time.Parse(dateLayout, s)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("ingest/file: bad date %q: %w", s, err)
+		return time.Time{}, fmt.Errorf("crawl/file: bad date %q: %w", s, err)
 	}
 	return t, nil
 }

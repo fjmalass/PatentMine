@@ -32,7 +32,7 @@ func TestHigherLayerOverridesLower(t *testing.T) {
 }
 
 func TestBlockingOverlayMasksLowerLayers(t *testing.T) {
-	catalog := NewLayer("catalog", false).Bind("j", command.NavDown).Bind("f", command.IngestFamily)
+	catalog := NewLayer("catalog", false).Bind("j", command.NavDown).Bind("f", command.CrawlFamily)
 	overlay := NewLayer("overlay", true).Bind("esc", command.CloseOverlay)
 	stack := NewStack(catalog)
 	stack.Push(overlay)
@@ -48,8 +48,8 @@ func TestBlockingOverlayMasksLowerLayers(t *testing.T) {
 
 	// Popping the overlay restores the catalog bindings.
 	stack.Pop()
-	if id, ok := stack.Resolve("f"); !ok || id != command.IngestFamily {
-		t.Fatalf("after pop, resolve f = %q ok=%v, want ingest.family", id, ok)
+	if id, ok := stack.Resolve("f"); !ok || id != command.CrawlFamily {
+		t.Fatalf("after pop, resolve f = %q ok=%v, want crawl.family", id, ok)
 	}
 }
 

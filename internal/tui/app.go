@@ -267,14 +267,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
-		if m.Key == text.StatusIngestStarted && len(m.Args) >= 2 {
+		if m.Key == text.StatusCrawlStarted && len(m.Args) >= 2 {
 			jobID, _ := m.Args[1].(string)
-			title := "Fetching " + m.Args[0].(string)
-			loading := overlay.NewLoading(a.theme, jobID, title)
+			isLookup := len(m.Args) >= 3
+			if d, ok := m.Args[2].(int); ok && d == 0 {
+				isLookup = true
+			}
+			verb := "Crawling"
+			if isLookup {
+				verb = "Looking up"
+			}
+			title := verb + " " + m.Args[0].(string)
+			loading := overlay.NewLoading(a.theme, []string{jobID}, title)
 			a.overlays = append(a.overlays, loading)
 			return a, loading.Init()
 		}
 		return a, nil
+	case pane.MultiCrawlStartedMsg:
+		isLookup := m.Depth == 0
+		verb := "Crawling"
+		if isLookup {
+			verb = "Looking up"
+		}
+		title := fmt.Sprintf("%s %d patents", verb, len(m.Numbers))
+		loading := overlay.NewLoading(a.theme, m.JobIDs, title)
+		a.overlays = append(a.overlays, loading)
+		return a, loading.Init()
 	case pingLoadedMsg:
 		if m.err != nil {
 			a.daemonVersion = "unavailable"
@@ -714,7 +732,7 @@ func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusInvalidPatentNumber, err.Error())
 		return a, nil
 	}
-	return a, pane.IngestCmd(a.client, number, 0, "", force)
+	return a, pane.CrawlCmd(a.client, number, 0, "", force)
 }
 
 // isFixturePath reports whether arg names a fixture file rather than a patent.
@@ -1047,19 +1065,19 @@ func (a *App) executeTypedCommand(input string) (tea.Model, tea.Cmd) {
 // handleEvent reflects a daemon event into the status line and refreshes data.
 func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 	switch ev.Method {
-	case proto.EventIngestProgress:
-		var p proto.IngestProgress
+	case proto.EventCrawlProgress:
+		var p proto.CrawlProgress
 		if json.Unmarshal(ev.Params, &p) == nil {
-			a.setStatus(text.StatusIngestProgress, p.JobID, p.IngestedCount, p.DiscoveredCount, p.Message)
+			a.setStatus(text.StatusCrawlProgress, p.JobID, p.CrawledCount, p.DiscoveredCount, p.Message)
 		}
 		return nil
-	case proto.EventIngestDone:
-		var d proto.IngestDone
+	case proto.EventCrawlDone:
+		var d proto.CrawlDone
 		_ = json.Unmarshal(ev.Params, &d)
 		if d.Error != "" {
-			a.setErr(text.StatusIngestFailed, d.JobID, d.Error)
+			a.setErr(text.StatusCrawlFailed, d.JobID, d.Error)
 		} else {
-			a.setStatus(text.StatusIngestComplete, d.JobID)
+			a.setStatus(text.StatusCrawlComplete, d.JobID)
 		}
 		return a.refreshPanes()
 	case proto.EventDBChanged:

@@ -99,12 +99,12 @@ func TestLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	got, ok := reg.Lookup(IngestFamily)
+	got, ok := reg.Lookup(CrawlFamily)
 	if !ok {
-		t.Fatal("IngestFamily not found in default registry")
+		t.Fatal("CrawlFamily not found in default registry")
 	}
-	if got.Kind != KindEngine || got.Method != proto.MethodIngestFamily {
-		t.Fatalf("IngestFamily = %+v, want engine kind with ingest.family method", got)
+	if got.Kind != KindEngine || got.Method != proto.MethodCrawlFamily {
+		t.Fatalf("CrawlFamily = %+v, want engine kind with crawl.family method", got)
 	}
 	if _, ok := reg.Lookup("does.not.exist"); ok {
 		t.Fatal("Lookup of an unknown ID should fail")

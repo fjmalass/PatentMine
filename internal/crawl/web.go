@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"context"
@@ -52,11 +52,11 @@ func (s *httpSource) Fetch(ctx context.Context, number domain.PatentNumber) (Res
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.urlFor(number), nil)
 	if err != nil {
-		return Result{}, fmt.Errorf("ingest/%s: build request: %w", s.name, err)
+		return Result{}, fmt.Errorf("crawl/%s: build request: %w", s.name, err)
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("ingest/%s: %w", s.name, err)
+		return Result{}, fmt.Errorf("crawl/%s: %w", s.name, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -66,12 +66,12 @@ func (s *httpSource) Fetch(ctx context.Context, number domain.PatentNumber) (Res
 	case http.StatusNotFound:
 		return Result{}, ErrNotAvailable
 	default:
-		return Result{}, fmt.Errorf("ingest/%s: unexpected status %d", s.name, resp.StatusCode)
+		return Result{}, fmt.Errorf("crawl/%s: unexpected status %d", s.name, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return Result{}, fmt.Errorf("ingest/%s: read body: %w", s.name, err)
+		return Result{}, fmt.Errorf("crawl/%s: read body: %w", s.name, err)
 	}
 	return s.parse(number, body)
 }

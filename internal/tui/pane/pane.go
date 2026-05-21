@@ -112,6 +112,15 @@ type StatusMsg struct {
 	Error bool
 }
 
+// MultiCrawlStartedMsg is emitted when multiple patents are selected and a
+// crawl or lookup is started for each of them. It carries all job IDs so the
+// app can show a single aggregate overlay instead of stacking one per job.
+type MultiCrawlStartedMsg struct {
+	Numbers []domain.PatentNumber
+	JobIDs  []string
+	Depth   int
+}
+
 // status returns a tea.Cmd that emits a StatusMsg for key.
 func status(key text.Key, isErr bool, args ...any) tea.Cmd {
 	return func() tea.Msg { return StatusMsg{Key: key, Args: args, Error: isErr} }

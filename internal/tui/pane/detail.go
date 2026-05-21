@@ -130,20 +130,20 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			return nil
 		},
 		command.Refresh:     func(Invocation) tea.Cmd { d.loading = true; return d.reload() },
-		command.IngestFamily: func(Invocation) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileFamily, false)
+		command.CrawlFamily: func(Invocation) tea.Cmd {
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileFamily, false)
 		},
-		command.IngestCitations: func(Invocation) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileCitations, false)
+		command.CrawlCitations: func(Invocation) tea.Cmd {
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileCitations, false)
 		},
-		command.IngestCitedBy: func(Invocation) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileCitedBy, false)
+		command.CrawlCitedBy: func(Invocation) tea.Cmd {
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileCitedBy, false)
 		},
-		command.IngestAll: func(Invocation) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileAll, false)
+		command.CrawlAll: func(Invocation) tea.Cmd {
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileAll, false)
 		},
-		command.FetchPatent: func(Invocation) tea.Cmd {
-			return IngestCmd(d.client, d.number, ingestPatentDepth, "", false)
+		command.LookupPatent: func(Invocation) tea.Cmd {
+			return CrawlCmd(d.client, d.number, lookupDepth, "", false)
 		},
 	}
 	return d

@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"context"
@@ -12,11 +12,11 @@ import (
 const useConfiguredDepth = -1
 
 // NewFamilyJob adapts a family-graph crawl to engine.Job. The engine's worker
-// pool runs it; crawl progress is forwarded as ingest.progress events.
+// pool runs it; crawl progress is forwarded as crawl.progress events.
 //
 // depth selects how far the crawl walks: a negative depth defers to the
 // crawler's configured default, zero fetches only the root patent (a single-
-// patent fetch), and a positive depth bounds the family walk explicitly. force
+// patent lookup), and a positive depth bounds the family walk explicitly. force
 // bypasses the local file cache.
 func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) engine.Job {
 	if depth < 0 {
@@ -24,9 +24,9 @@ func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile
 	}
 	return engine.JobFunc(func(ctx context.Context, id engine.JobID, emit func(proto.Event)) error {
 		return crawler.Crawl(ctx, root, depth, profile, force, func(p Progress) {
-			emit(proto.NewEvent(proto.EventIngestProgress, proto.IngestProgress{
+			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
 				JobID:           string(id),
-				IngestedCount:   p.IngestedCount,
+				CrawledCount:    p.CrawledCount,
 				DiscoveredCount: p.DiscoveredCount,
 				PendingCount:    p.PendingCount,
 				CitationsCount:  p.CitationsCount,
@@ -39,9 +39,9 @@ func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile
 	})
 }
 
-// Factory returns an engine.IngestFactory bound to a crawler, ready to hand to
+// Factory returns an engine.CrawlFactory bound to a crawler, ready to hand to
 // engine.New.
-func Factory(crawler *Crawler) engine.IngestFactory {
+func Factory(crawler *Crawler) engine.CrawlFactory {
 	return func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) engine.Job {
 		return NewFamilyJob(crawler, root, depth, profile, force)
 	}

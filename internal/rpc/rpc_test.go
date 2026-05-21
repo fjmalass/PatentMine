@@ -28,8 +28,8 @@ func testHarness(t *testing.T) *rpc.Client {
 	// A factory whose job emits one progress event then finishes.
 	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) engine.Job {
 		return engine.JobFunc(func(_ context.Context, id engine.JobID, emit func(proto.Event)) error {
-			emit(proto.NewEvent(proto.EventIngestProgress, proto.IngestProgress{
-				JobID: string(id), IngestedCount: 1, Message: root.String(),
+			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
+				JobID: string(id), CrawledCount: 1, Message: root.String(),
 			}))
 			return nil
 		})
@@ -129,18 +129,18 @@ func TestRPCUnknownMethod(t *testing.T) {
 	}
 }
 
-func TestRPCIngestStreamsEvents(t *testing.T) {
+func TestRPCCrawlStreamsEvents(t *testing.T) {
 	client := testHarness(t)
 	ctx := context.Background()
 
-	var started proto.IngestStartResult
-	if err := client.Call(ctx, proto.MethodIngestFamily,
-		proto.IngestFamilyParams{Root: domain.MustParsePatentNumber("US11611785B2"), Depth: 1},
+	var started proto.CrawlStartResult
+	if err := client.Call(ctx, proto.MethodCrawlFamily,
+		proto.CrawlFamilyParams{Root: domain.MustParsePatentNumber("US11611785B2"), Depth: 1},
 		&started); err != nil {
-		t.Fatalf("ingest.family: %v", err)
+		t.Fatalf("crawl.family: %v", err)
 	}
 	if started.JobID == "" {
-		t.Fatal("ingest.family returned no job id")
+		t.Fatal("crawl.family returned no job id")
 	}
 
 	// The job's progress event and the engine's done event must both arrive.
@@ -153,9 +153,9 @@ func TestRPCIngestStreamsEvents(t *testing.T) {
 				t.Fatal("event stream closed early")
 			}
 			switch ev.Method {
-			case proto.EventIngestProgress:
+			case proto.EventCrawlProgress:
 				gotProgress = true
-			case proto.EventIngestDone:
+			case proto.EventCrawlDone:
 				gotDone = true
 			}
 		case <-deadline:

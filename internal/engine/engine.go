@@ -1,4 +1,4 @@
-// Package engine is the daemon core. It owns the store, the ingest worker
+// Package engine is the daemon core. It owns the store, the crawl worker
 // pool, and the event bus, and exposes the operations that frontends invoke
 // (directly in tests, or over RPC in the running system).
 package engine
@@ -19,17 +19,17 @@ import (
 	"patentmine/internal/store"
 )
 
-// ingestWorkers is the number of concurrent ingest jobs.
-const ingestWorkers = 4
+// crawlWorkers is the number of concurrent crawl jobs.
+const crawlWorkers = 4
 
-// IngestFactory builds the Job that crawls a patent family. It is injected so
-// the engine does not depend on the ingest package directly: a stub factory
+// CrawlFactory builds the Job that crawls a patent family. It is injected so
+// the engine does not depend on the crawl package directly: a stub factory
 // works for tests, the real crawler is wired in at daemon startup. force makes
 // the crawl bypass the local file cache and re-fetch from the web.
-type IngestFactory func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) Job
+type CrawlFactory func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) Job
 
 // FileImporter loads a patent record from a local file into the store. Like
-// IngestFactory it is injected, so the engine never imports the ingest package.
+// CrawlFactory it is injected, so the engine never imports the crawl package.
 type FileImporter interface {
 	ImportFile(ctx context.Context, path string) error
 }
@@ -43,7 +43,7 @@ type Engine struct {
 	repo         store.Repository
 	bus          *Bus
 	pool         *workerPool
-	ingest       IngestFactory
+	crawl        CrawlFactory
 	fileImporter FileImporter
 	logger       *slog.Logger
 	activities   *observability.Recorder
@@ -79,14 +79,14 @@ func WithMetrics(metrics *observability.Metrics) Option {
 }
 
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx
-// stops all background work. ingest may be nil if no crawl will be started.
-func New(ctx context.Context, repo store.Repository, ingest IngestFactory, opts ...Option) *Engine {
+// stops all background work. crawl may be nil if no crawl will be started.
+func New(ctx context.Context, repo store.Repository, crawl CrawlFactory, opts ...Option) *Engine {
 	bus := NewBus()
 	eng := &Engine{
 		repo:   repo,
 		bus:    bus,
-		pool:   newWorkerPool(ctx, ingestWorkers, bus, nil),
-		ingest: ingest,
+		pool:   newWorkerPool(ctx, crawlWorkers, bus, nil),
+		crawl: crawl,
 		logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
 	for _, opt := range opts {
@@ -354,7 +354,7 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // patent may be given by any of its document numbers; it is resolved to the
 // record before the membership is created. A patent that has never been
 // fetched is recorded as a stub first, so it can be tracked in a project
-// ahead of ingestion. fetchStarted reports whether an automatic single-patent
+// ahead of crawling. fetchStarted reports whether an automatic single-patent
 // fetch was enqueued; false means the caller should prompt the user to fetch
 // manually (e.g. with F).
 func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, err error) {
@@ -398,8 +398,8 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	// fetch so bibliographic data fills in shortly after the patent is added.
 	// This covers both brand-new stubs (created==true) and existing stubs that
 	// were previously discovered as citation edges.
-	if !exists && state == domain.ReviewStateStored && e.ingest != nil {
-		if jobID, fetchErr := e.StartFamilyIngest(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
+	if !exists && state == domain.ReviewStateStored && e.crawl != nil {
+		if jobID, fetchErr := e.StartFamilyCrawl(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
 		} else {
@@ -417,10 +417,10 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 	ch, unsub := e.pool.bus.Subscribe()
 	defer unsub()
 	for ev := range ch {
-		if proto.EventKind(ev.Method) != proto.EventIngestDone {
+		if proto.EventKind(ev.Method) != proto.EventCrawlDone {
 			continue
 		}
-		var d proto.IngestDone
+		var d proto.CrawlDone
 		if err := json.Unmarshal(ev.Params, &d); err != nil || d.JobID != string(id) {
 			continue
 		}
@@ -767,24 +767,24 @@ func (e *Engine) RemoveTag(ctx context.Context, project domain.ProjectID, patent
 	return e.RemovePatentTag(ctx, project, patent, name)
 }
 
-// StartFamilyIngest enqueues a family-graph crawl and returns its job id. A
+// StartFamilyCrawl enqueues a family-graph crawl and returns its job id. A
 // force crawl bypasses the local file cache and re-fetches from the web.
-func (e *Engine) StartFamilyIngest(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
-	defer e.observeDuration("engine.start_family_ingest", time.Now(), &err)
-	if e.ingest == nil {
-		return "", errors.New("engine: no ingest factory configured")
+func (e *Engine) StartFamilyCrawl(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
+	defer e.observeDuration("engine.start_family_crawl", time.Now(), &err)
+	if e.crawl == nil {
+		return "", errors.New("engine: no crawl factory configured")
 	}
 	if root.IsZero() {
-		return "", errors.New("engine: ingest root must not be empty")
+		return "", errors.New("engine: crawl root must not be empty")
 	}
-	id, err = e.pool.submit(e.ingest(root, depth, profile, force))
+	id, err = e.pool.submit(e.crawl(root, depth, profile, force))
 	if err != nil {
-		e.log(context.Background(), slog.LevelError, "ingest enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("error", err.Error()))
+		e.log(context.Background(), slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("error", err.Error()))
 		return "", err
 	}
-	e.log(context.Background(), slog.LevelInfo, "ingest enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
+	e.log(context.Background(), slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
 	e.recordActivity(context.Background(), observability.Record{
-		Action:   "ingest.start",
+		Action:   "crawl.start",
 		Entity:   "job",
 		EntityID: string(id),
 		Status:   "queued",
@@ -872,15 +872,15 @@ func idsDocument(p domain.Patent) (domain.Document, bool) {
 	return p.DocumentFor(domain.StagePublication)
 }
 
-// CancelIngest stops a running or queued ingest job.
-func (e *Engine) CancelIngest(id JobID) (err error) {
-	defer e.observeDuration("engine.cancel_ingest", time.Now(), &err)
+// CancelCrawl stops a running or queued crawl job.
+func (e *Engine) CancelCrawl(id JobID) (err error) {
+	defer e.observeDuration("engine.cancel_crawl", time.Now(), &err)
 	if !e.pool.cancel(id) {
 		return fmt.Errorf("engine: no such job %q", id)
 	}
-	e.log(context.Background(), slog.LevelInfo, "ingest cancelled", slog.String("job_id", string(id)))
+	e.log(context.Background(), slog.LevelInfo, "crawl cancelled", slog.String("job_id", string(id)))
 	e.recordActivity(context.Background(), observability.Record{
-		Action:   "ingest.cancel",
+		Action:   "crawl.cancel",
 		Entity:   "job",
 		EntityID: string(id),
 		Status:   "committed",

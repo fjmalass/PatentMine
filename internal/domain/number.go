@@ -10,7 +10,7 @@ import (
 
 // PatentNumber is a parsed, normalized patent identifier. It is a value type:
 // two PatentNumbers compare equal when every field matches, so it is safe to
-// use as a map key and for deduplication across ingestion sources.
+// use as a map key and for deduplication across crawl sources.
 type PatentNumber struct {
 	Country string // ISO-2 country code, uppercase; empty when the source omits it.
 	Serial  string // Serial digits only, separators stripped.

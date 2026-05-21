@@ -42,8 +42,8 @@ func testAPIEnv(t *testing.T) apiEnv {
 
 	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) engine.Job {
 		return engine.JobFunc(func(_ context.Context, id engine.JobID, emit func(proto.Event)) error {
-			emit(proto.NewEvent(proto.EventIngestProgress,
-				proto.IngestProgress{JobID: string(id), Message: root.String()}))
+			emit(proto.NewEvent(proto.EventCrawlProgress,
+				proto.CrawlProgress{JobID: string(id), Message: root.String()}))
 			return nil
 		})
 	}
@@ -180,15 +180,15 @@ func TestAPICommandsEndpoint(t *testing.T) {
 	}
 }
 
-func TestAPIIngestStartsJob(t *testing.T) {
+func TestAPICrawlStartsJob(t *testing.T) {
 	h := testAPI(t)
-	w := do(t, h, http.MethodPost, "/ingest", `{"root":"US11611785B2","depth":1}`)
+	w := do(t, h, http.MethodPost, "/crawl", `{"root":"US11611785B2","depth":1}`)
 	if w.Code != http.StatusOK {
-		t.Fatalf("POST /ingest = %d: %s", w.Code, w.Body.String())
+		t.Fatalf("POST /crawl = %d: %s", w.Code, w.Body.String())
 	}
-	var res proto.IngestStartResult
+	var res proto.CrawlStartResult
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil || res.JobID == "" {
-		t.Fatalf("ingest body = %s", w.Body.String())
+		t.Fatalf("crawl body = %s", w.Body.String())
 	}
 }
 

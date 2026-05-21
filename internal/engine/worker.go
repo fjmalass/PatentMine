@@ -12,13 +12,13 @@ import (
 	"patentmine/internal/proto"
 )
 
-// ErrQueueFull reports that no ingest slot is available right now.
-var ErrQueueFull = errors.New("engine: ingest queue full")
+// ErrQueueFull reports that no crawl slot is available right now.
+var ErrQueueFull = errors.New("engine: crawl queue full")
 
 // JobID identifies a background job for progress reporting and cancellation.
 type JobID string
 
-// Job is one unit of background work — typically a family-graph ingest crawl.
+// Job is one unit of background work — typically a family-graph crawl.
 // It receives its own JobID so progress events can be attributed; emit
 // publishes those events. The pool wraps every job with a final done event.
 type Job interface {
@@ -92,7 +92,7 @@ func (p *workerPool) run(qj queuedJob) {
 	}
 	p.mu.Unlock()
 
-	done := proto.IngestDone{JobID: string(qj.id)}
+	done := proto.CrawlDone{JobID: string(qj.id)}
 	if err != nil {
 		done.Error = err.Error()
 	}
@@ -100,7 +100,7 @@ func (p *workerPool) run(qj queuedJob) {
 		p.metrics.ObserveDuration("engine.worker.job_run", time.Since(start), err != nil)
 		p.metrics.SetGauge("engine.worker.queue_depth", int64(len(p.queue)))
 	}
-	p.bus.Publish(proto.NewEvent(proto.EventIngestDone, done))
+	p.bus.Publish(proto.NewEvent(proto.EventCrawlDone, done))
 }
 
 // submit enqueues a job and returns its id. The job's context is a child of

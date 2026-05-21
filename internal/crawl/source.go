@@ -1,7 +1,7 @@
-// Package ingest pulls patents and family-graph edges from the web. A Source
+// Package crawl pulls patents and family-graph edges from the web. A Source
 // fetches one patent from one provider; the Crawler walks the family graph
 // across sources and writes the result to the store.
-package ingest
+package crawl
 
 import (
 	"context"
@@ -18,7 +18,7 @@ const slowSourceFetch = 300 * time.Millisecond
 
 // ErrNotAvailable means a Source has no record for the requested patent, so
 // the Crawler should try the next source.
-var ErrNotAvailable = errors.New("ingest: patent not available from this source")
+var ErrNotAvailable = errors.New("crawl: patent not available from this source")
 
 // Result is one patent fetched from a Source: the record's bibliographic data,
 // its life-stage documents (application, publication, grant), and the
@@ -76,7 +76,7 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 	var failed bool
 	defer func() {
 		if r.metrics != nil {
-			r.metrics.ObserveDuration("ingest.registry.fetch", time.Since(start), failed)
+			r.metrics.ObserveDuration("crawl.registry.fetch", time.Since(start), failed)
 		}
 	}()
 	lastErr := error(ErrNotAvailable)
@@ -88,9 +88,9 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 		res, err := s.Fetch(ctx, number)
 		if r.metrics != nil {
 			d := time.Since(sourceStart)
-			r.metrics.ObserveDuration("ingest.source."+string(s.Name())+".fetch", d, err != nil)
+			r.metrics.ObserveDuration("crawl.source."+string(s.Name())+".fetch", d, err != nil)
 			if r.logger != nil && d >= slowSourceFetch {
-				r.logger.Warn("slow ingest source fetch",
+				r.logger.Warn("slow crawl source fetch",
 					slog.String("source", string(s.Name())),
 					slog.String("number", number.String()),
 					slog.Int64("duration_ms", d.Milliseconds()),

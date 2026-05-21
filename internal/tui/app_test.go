@@ -73,7 +73,7 @@ func TestAppQuitCommand(t *testing.T) {
 
 func TestAppChordCountReachesPane(t *testing.T) {
 	app := newTestApp(t)
-	// While an overlay is open, pane bindings are inactive: 'f' (ingest, a
+	// While an overlay is open, pane bindings are inactive: 'f' (crawl, a
 	// catalog binding) must not be routed anywhere.
 	app.Update(runeKey('?'))
 	stack := app.keyStack()

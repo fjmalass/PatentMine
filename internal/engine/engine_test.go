@@ -19,14 +19,14 @@ import (
 
 // newTestEngine builds an engine over a fresh temp database, returning the
 // store too so tests can seed documents directly.
-func newTestEngine(t *testing.T, ingest IngestFactory) (*Engine, *sqlite.Repo) {
+func newTestEngine(t *testing.T, crawl CrawlFactory) (*Engine, *sqlite.Repo) {
 	t.Helper()
 	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "engine.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	eng := New(ctx, repo, ingest)
+	eng := New(ctx, repo, crawl)
 	t.Cleanup(func() {
 		eng.Close()
 		cancel()
@@ -178,11 +178,11 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 	}
 }
 
-func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
+func TestEngineCrawlEmitsProgressAndDone(t *testing.T) {
 	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) Job {
 		return JobFunc(func(_ context.Context, id JobID, emit func(proto.Event)) error {
-			emit(proto.NewEvent(proto.EventIngestProgress, proto.IngestProgress{
-				JobID: string(id), IngestedCount: 1, Message: "crawled " + root.String(),
+			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
+				JobID: string(id), CrawledCount: 1, Message: "crawled " + root.String(),
 			}))
 			return nil
 		})
@@ -192,9 +192,9 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 	events, unsub := eng.Subscribe()
 	defer unsub()
 
-	jobID, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false)
+	jobID, err := eng.StartFamilyCrawl(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false)
 	if err != nil {
-		t.Fatalf("StartFamilyIngest: %v", err)
+		t.Fatalf("StartFamilyCrawl: %v", err)
 	}
 
 	var gotProgress, gotDone bool
@@ -203,10 +203,10 @@ func TestEngineIngestEmitsProgressAndDone(t *testing.T) {
 		select {
 		case ev := <-events:
 			switch ev.Method {
-			case proto.EventIngestProgress:
+			case proto.EventCrawlProgress:
 				gotProgress = true
-			case proto.EventIngestDone:
-				var done proto.IngestDone
+			case proto.EventCrawlDone:
+				var done proto.CrawlDone
 				if err := json.Unmarshal(ev.Params, &done); err != nil {
 					t.Fatalf("decode done: %v", err)
 				}
@@ -266,10 +266,10 @@ func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
 	}
 }
 
-func TestEngineIngestWithoutFactoryFails(t *testing.T) {
+func TestEngineCrawlWithoutFactoryFails(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
-	if _, err := eng.StartFamilyIngest(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false); err == nil {
-		t.Fatal("StartFamilyIngest without a factory should fail")
+	if _, err := eng.StartFamilyCrawl(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false); err == nil {
+		t.Fatal("StartFamilyCrawl without a factory should fail")
 	}
 }
 

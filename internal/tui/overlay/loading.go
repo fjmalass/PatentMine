@@ -3,7 +3,9 @@ package overlay
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,29 +16,46 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-// Loading is a modal overlay that shows a throbber and progress message
-// while a background daemon job (like an ingest) is running.
+// Loading is a modal overlay that shows a throbber, progress bar, and ETA
+// while one or more background daemon jobs (like crawls) are running.
+// Single-job and multi-job modes are both supported.
 type Loading struct {
-	theme    render.Theme
-	jobID    string
-	title    string
-	message  string
-	progress proto.IngestProgress
+	theme   render.Theme
+	jobIDs  []string
+	title   string
+	message string
+
+	// Per-job progress; keyed by job ID so progress events from concurrent
+	// jobs are aggregated independently.
+	progresses map[string]proto.CrawlProgress
+	doneCount  int // number of jobs that have finished
+
 	spinner  spinner.Model
-	finished bool
+	finished bool // true when all jobs are done
+
+	startTime time.Time
+	lastTime  time.Time
+	lastTotal int // summed CrawledCount from last progress event
+	eta       time.Duration
 }
 
-// NewLoading builds a loading overlay for the given job.
-func NewLoading(theme render.Theme, jobID, title string) *Loading {
+// NewLoading builds a loading overlay for one or more jobs.
+func NewLoading(theme render.Theme, jobIDs []string, title string) *Loading {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	if jobIDs == nil {
+		jobIDs = []string{}
+	}
 	return &Loading{
-		theme:   theme,
-		jobID:   jobID,
-		title:   title,
-		message: "Starting…",
-		spinner: s,
+		theme:      theme,
+		jobIDs:     jobIDs,
+		title:      title,
+		message:    "Starting…",
+		progresses: make(map[string]proto.CrawlProgress, len(jobIDs)),
+		spinner:    s,
+		startTime:  time.Now(),
+		lastTime:   time.Now(),
 	}
 }
 
@@ -47,11 +66,20 @@ func (l *Loading) Init() tea.Cmd {
 }
 
 func (l *Loading) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
-	// Loading doesn't handle commands directly; it closes on EventIngestDone.
 	return l, nil
 }
 
 func (l *Loading) Handles() []command.ID { return nil }
+
+// matchJob reports whether an event belongs to one of the tracked jobs.
+func (l *Loading) matchJob(jobID string) bool {
+	for _, id := range l.jobIDs {
+		if id == jobID {
+			return true
+		}
+	}
+	return false
+}
 
 func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	switch m := msg.(type) {
@@ -65,24 +93,52 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		return l, cmd
 	case proto.Event:
 		switch m.Method {
-		case proto.EventIngestProgress:
-			var p proto.IngestProgress
-			if err := json.Unmarshal(m.Params, &p); err == nil && p.JobID == l.jobID {
-				l.progress = p
+		case proto.EventCrawlProgress:
+			var p proto.CrawlProgress
+			if err := json.Unmarshal(m.Params, &p); err == nil && l.matchJob(p.JobID) {
+				l.progresses[p.JobID] = p
 				l.message = p.Message
-				if p.IngestedCount > 0 {
-					l.message = fmt.Sprintf("%s (%d ingested)", p.Message, p.IngestedCount)
+
+				totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
+				totalDiscovered := l.sumProgress(func(p proto.CrawlProgress) int { return p.DiscoveredCount })
+
+				if totalCrawled > 0 {
+					l.message = fmt.Sprintf("%s (%d crawled)", p.Message, totalCrawled)
 				}
+
+				now := time.Now()
+				elapsed := now.Sub(l.startTime)
+				if totalCrawled > l.lastTotal && elapsed.Seconds() > 1 {
+					rate := float64(totalCrawled) / elapsed.Seconds()
+					remaining := float64(max(totalDiscovered-totalCrawled, 0))
+					if remaining > 0 && rate > 0 {
+						l.eta = time.Duration(remaining/rate) * time.Second
+					}
+				}
+				l.lastTime = now
+				l.lastTotal = totalCrawled
 			}
-		case proto.EventIngestDone:
-			var d proto.IngestDone
-			if err := json.Unmarshal(m.Params, &d); err == nil && d.JobID == l.jobID {
-				l.finished = true
-				return l, func() tea.Msg { return CloseOverlayMsg{} }
+		case proto.EventCrawlDone:
+			var d proto.CrawlDone
+			if err := json.Unmarshal(m.Params, &d); err == nil && l.matchJob(d.JobID) {
+				l.doneCount++
+				if l.doneCount >= len(l.jobIDs) {
+					l.finished = true
+					return l, func() tea.Msg { return CloseOverlayMsg{} }
+				}
 			}
 		}
 	}
 	return l, nil
+}
+
+// sumProgress adds up a field across all tracked jobs.
+func (l *Loading) sumProgress(fn func(proto.CrawlProgress) int) int {
+	var total int
+	for _, p := range l.progresses {
+		total += fn(p)
+	}
+	return total
 }
 
 func (l *Loading) View(w, h int) string {
@@ -91,24 +147,57 @@ func (l *Loading) View(w, h int) string {
 	b.WriteString("  " + l.spinner.View() + " " + render.Truncate(l.message, w-6))
 	b.WriteByte('\n')
 
-	p := l.progress
-	if p.DiscoveredCount > 0 {
+	totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
+	totalDiscovered := l.sumProgress(func(p proto.CrawlProgress) int { return p.DiscoveredCount })
+
+	if totalDiscovered > 0 {
+		pct := float64(totalCrawled) / float64(totalDiscovered)
+		barWidth := min(w-16, 30)
+		nJobs := len(l.jobIDs)
+		label := fmt.Sprintf(" %d/%d", totalCrawled, totalDiscovered)
+		if nJobs > 1 {
+			label = fmt.Sprintf(" %d/%d (%d patents)", totalCrawled, totalDiscovered, nJobs)
+		}
+		if barWidth > 0 {
+			filled := int(math.Round(pct * float64(barWidth)))
+			filled = max(filled, 0)
+			filled = min(filled, barWidth)
+			bar := "[" + strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled) + "]"
+
+			etaStr := ""
+			if l.eta > 0 {
+				etaStr = "  (~" + formatDuration(l.eta) + " remaining)"
+			}
+			line := l.theme.Dim.Render(bar + label + etaStr)
+			b.WriteString("  ")
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+
+	if totalDiscovered > 0 {
+		totalPending := l.sumProgress(func(p proto.CrawlProgress) int { return p.PendingCount })
+		totalCites := l.sumProgress(func(p proto.CrawlProgress) int { return p.CitationsCount })
+		totalCitedBy := l.sumProgress(func(p proto.CrawlProgress) int { return p.CitedByCount })
+		totalParents := l.sumProgress(func(p proto.CrawlProgress) int { return p.ParentsCount })
+		totalChildren := l.sumProgress(func(p proto.CrawlProgress) int { return p.ChildrenCount })
+
 		var parts []string
-		parts = append(parts, fmt.Sprintf("discovered: %d", p.DiscoveredCount))
-		if p.PendingCount > 0 {
-			parts = append(parts, fmt.Sprintf("pending: %d", p.PendingCount))
+		parts = append(parts, fmt.Sprintf("discovered: %d", totalDiscovered))
+		if totalPending > 0 {
+			parts = append(parts, fmt.Sprintf("pending: %d", totalPending))
 		}
-		if p.CitationsCount > 0 {
-			parts = append(parts, fmt.Sprintf("cites: %d", p.CitationsCount))
+		if totalCites > 0 {
+			parts = append(parts, fmt.Sprintf("cites: %d", totalCites))
 		}
-		if p.CitedByCount > 0 {
-			parts = append(parts, fmt.Sprintf("cited-by: %d", p.CitedByCount))
+		if totalCitedBy > 0 {
+			parts = append(parts, fmt.Sprintf("cited-by: %d", totalCitedBy))
 		}
-		if p.ParentsCount > 0 {
-			parts = append(parts, fmt.Sprintf("parents: %d", p.ParentsCount))
+		if totalParents > 0 {
+			parts = append(parts, fmt.Sprintf("parents: %d", totalParents))
 		}
-		if p.ChildrenCount > 0 {
-			parts = append(parts, fmt.Sprintf("children: %d", p.ChildrenCount))
+		if totalChildren > 0 {
+			parts = append(parts, fmt.Sprintf("children: %d", totalChildren))
 		}
 		if len(parts) > 0 {
 			b.WriteString("     ")
@@ -118,6 +207,25 @@ func (l *Loading) View(w, h int) string {
 	}
 
 	b.WriteByte('\n')
-	b.WriteString(l.theme.Dim.Render(render.Pad("JobID: "+l.jobID, w-2)))
+	if len(l.jobIDs) == 1 {
+		b.WriteString(l.theme.Dim.Render(render.Pad("JobID: "+l.jobIDs[0], w-2)))
+	} else {
+		b.WriteString(l.theme.Dim.Render(render.Pad(fmt.Sprintf("%d jobs", len(l.jobIDs)), w-2)))
+	}
 	return b.String()
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if m >= 60 {
+		h := m / 60
+		m = m % 60
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	return fmt.Sprintf("%dm%ds", m, s)
 }

@@ -36,7 +36,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)                   // command.ProjectCreate
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)          // command.AddToProject
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                     // command.ExportIDS
-	s.mux.HandleFunc("POST /ingest", s.handleIngest)                            // command.IngestFamily
+	s.mux.HandleFunc("POST /crawl", s.handleCrawl)                             // command.CrawlFamily
 
 	// Fixed Tag Taxonomy endpoints
 	s.mux.HandleFunc("POST /projects/{id}/tags", s.handleTagCreate)
@@ -217,8 +217,8 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodMembershipAdd, params, &res)
 }
 
-// handleIngest starts a family-graph crawl.
-func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+// handleCrawl starts a family-graph crawl.
+func (s *Server) handleCrawl(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Root  domain.PatentNumber `json:"root"`
 		Depth int                 `json:"depth"`
@@ -227,9 +227,9 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	var res proto.IngestStartResult
-	s.call(w, r, proto.MethodIngestFamily,
-		proto.IngestFamilyParams{Root: body.Root, Depth: body.Depth, Force: body.Force}, &res)
+	var res proto.CrawlStartResult
+	s.call(w, r, proto.MethodCrawlFamily,
+		proto.CrawlFamilyParams{Root: body.Root, Depth: body.Depth, Force: body.Force}, &res)
 }
 
 // handleTagCreate creates a taxonomy tag in a project.

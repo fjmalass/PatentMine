@@ -37,7 +37,7 @@ func (p CrawlProfile) Valid() bool {
 	}
 }
 
-// Source identifies where a patent record was ingested from.
+// Source identifies where a patent record was crawled from.
 type Source string
 
 const (

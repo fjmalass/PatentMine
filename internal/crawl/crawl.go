@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"context"
@@ -23,8 +23,8 @@ const (
 
 // Progress is an incremental crawl update reported through the emit callback.
 type Progress struct {
-	IngestedCount   int    // Total full records saved to the database.
-	DiscoveredCount int    // Total unique patent numbers seen (ingested + stubs).
+	CrawledCount    int    // Total full records saved to the database.
+	DiscoveredCount int    // Total unique patent numbers seen (crawled + stubs).
 	PendingCount    int    // Items currently in the crawl queue.
 	CitationsCount  int    // Total citation edges found.
 	CitedByCount    int    // Total cited-by edges found.
@@ -104,7 +104,7 @@ func (c *Crawler) fetch(ctx context.Context, number domain.PatentNumber, force b
 	return c.registry.Fetch(ctx, number)
 }
 
-// Ingestion profiles define which family-graph edges to follow during a crawl.
+// Crawl profiles define which family-graph edges to follow during a crawl.
 const (
 	CrawlProfileCitations = "citations" // Follow cites only (depth 0 only)
 	CrawlProfileCitedBy   = "citedby"   // Follow cited_by only (depth 0 only)
@@ -126,9 +126,9 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 	defer func() {
 		if c.metrics != nil {
 			d := time.Since(start)
-			c.metrics.ObserveDuration("ingest.crawler.crawl", d, failed)
+			c.metrics.ObserveDuration("crawl.crawler.crawl", d, failed)
 			if d >= slowCrawlerRun {
-				log.Warn("slow ingest crawl",
+				log.Warn("slow crawl",
 					slog.String("root", root.String()),
 					slog.Int64("duration_ms", d.Milliseconds()),
 					slog.Bool("failed", failed))
@@ -137,10 +137,10 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 	}()
 
 	if root.IsZero() {
-		return errors.New("ingest: crawl root must not be empty")
+		return errors.New("crawl: crawl root must not be empty")
 	}
 
-	log.Info("starting ingest crawl",
+	log.Info("starting crawl",
 		slog.String("root", root.String()),
 		slog.Int("max_depth", maxDepth),
 		slog.String("profile", string(profile)),
@@ -169,13 +169,13 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			emit(p)
 		}
 		if c.metrics != nil {
-			c.metrics.SetGauge("ingest.crawler.ingested", int64(p.IngestedCount))
-			c.metrics.SetGauge("ingest.crawler.discovered", int64(p.DiscoveredCount))
-			c.metrics.SetGauge("ingest.crawler.pending", int64(p.PendingCount))
-			c.metrics.SetGauge("ingest.crawler.citations", int64(p.CitationsCount))
-			c.metrics.SetGauge("ingest.crawler.cited_by", int64(p.CitedByCount))
-			c.metrics.SetGauge("ingest.crawler.parents", int64(p.ParentsCount))
-			c.metrics.SetGauge("ingest.crawler.children", int64(p.ChildrenCount))
+			c.metrics.SetGauge("crawl.crawler.crawled", int64(p.CrawledCount))
+			c.metrics.SetGauge("crawl.crawler.discovered", int64(p.DiscoveredCount))
+			c.metrics.SetGauge("crawl.crawler.pending", int64(p.PendingCount))
+			c.metrics.SetGauge("crawl.crawler.citations", int64(p.CitationsCount))
+			c.metrics.SetGauge("crawl.crawler.cited_by", int64(p.CitedByCount))
+			c.metrics.SetGauge("crawl.crawler.parents", int64(p.ParentsCount))
+			c.metrics.SetGauge("crawl.crawler.children", int64(p.ChildrenCount))
 		}
 	}
 
@@ -194,7 +194,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		fstart := time.Now()
 		res, err := c.fetch(ctx, cur.number, force)
 		if c.metrics != nil {
-			c.metrics.ObserveDuration("ingest.crawler.fetch", time.Since(fstart), err != nil)
+			c.metrics.ObserveDuration("crawl.crawler.fetch", time.Since(fstart), err != nil)
 		}
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -208,7 +208,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 			// Root patent not found — fail the job so the caller can clean up.
 			if cur.depth == 0 && errors.Is(err, ErrNotAvailable) {
-				return fmt.Errorf("ingest: patent %s not found", cur.number)
+				return fmt.Errorf("crawl: patent %s not found", cur.number)
 			}
 
 			// A referenced patent that could not be fetched: record a stub
@@ -217,7 +217,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				return stubErr
 			}
 			report(Progress{
-				IngestedCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
+				CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
 				Message: fmt.Sprintf("%s unavailable: %v", cur.number, err),
 			})
 			continue
@@ -255,8 +255,8 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 		ingested++
 		report(Progress{
-			IngestedCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
-			Message: fmt.Sprintf("ingested %s", recordNumber),
+			CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
+			Message: fmt.Sprintf("crawled %s", recordNumber),
 		})
 	}
 
@@ -265,10 +265,10 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		reason = "budget reached"
 	}
 
-	log.Info("ingest crawl finished",
+	log.Info("crawl finished",
 		slog.String("root", root.String()),
 		slog.String("reason", reason),
-		slog.Int("ingested", ingested),
+		slog.Int("crawled", ingested),
 		slog.Int("discovered", len(seen)),
 		slog.Int("citations", stats.citations),
 		slog.Int("cited_by", stats.citedBy),

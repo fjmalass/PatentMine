@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"bytes"
@@ -44,7 +44,7 @@ var googleDateLayouts = []string{"2006-01-02", "2006/01/02"}
 func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
-		return Result{}, fmt.Errorf("ingest/google: parse HTML: %w", err)
+		return Result{}, fmt.Errorf("crawl/google: parse HTML: %w", err)
 	}
 	title := clean(googleText(doc.Selection, "span[itemprop='title']", "meta[name='DC.title']", "title"))
 	if title == "" {

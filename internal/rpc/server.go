@@ -47,8 +47,8 @@ func NewServer(eng *engine.Engine) *Server {
 		proto.MethodReviewState:    s.reviewState,
 		proto.MethodTagAssign:      s.tagAssign,
 		proto.MethodTagRemove:      s.tagRemove,
-		proto.MethodIngestFamily:   s.ingestFamily,
-		proto.MethodIngestCancel:   s.ingestCancel,
+		proto.MethodCrawlFamily:   s.crawlFamily,
+		proto.MethodCrawlCancel:   s.crawlCancel,
 		proto.MethodImportFile:     s.importFile,
 		proto.MethodRelations:      s.relations,
 		proto.MethodIDSExport:      s.idsExport,
@@ -444,16 +444,16 @@ func (s *Server) patentTagList(ctx context.Context, raw json.RawMessage) (any, e
 	return proto.PatentTagListResult{Tags: tags}, nil
 }
 
-func (s *Server) ingestFamily(_ context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IngestFamilyParams](raw)
+func (s *Server) crawlFamily(_ context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.CrawlFamilyParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	id, err := s.engine.StartFamilyIngest(p.Root, p.Depth, p.Profile, p.Force)
+	id, err := s.engine.StartFamilyCrawl(p.Root, p.Depth, p.Profile, p.Force)
 	if err != nil {
 		return nil, err
 	}
-	return proto.IngestStartResult{JobID: string(id)}, nil
+	return proto.CrawlStartResult{JobID: string(id)}, nil
 }
 
 func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -467,12 +467,12 @@ func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, erro
 	return proto.Empty{}, nil
 }
 
-func (s *Server) ingestCancel(_ context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IngestCancelParams](raw)
+func (s *Server) crawlCancel(_ context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.CrawlCancelParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.CancelIngest(engine.JobID(p.JobID)); err != nil {
+	if err := s.engine.CancelCrawl(engine.JobID(p.JobID)); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil

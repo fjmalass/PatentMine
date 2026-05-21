@@ -28,6 +28,7 @@ const (
 	JumpMode      ID = "view.jump"
 	SelectVisual  ID = "select.visual"
 	SelectClear   ID = "select.clear"
+	SelectAll     ID = "select.all"
 	ColNext       ID = "col.next"
 	ColPrev       ID = "col.prev"
 	SortApply     ID = "col.sort-apply"
@@ -70,13 +71,13 @@ const (
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
 
-	// Ingestion.
-	IngestFamily    ID = "ingest.family"
-	IngestCitations ID = "ingest.citations"
-	IngestCitedBy   ID = "ingest.citedby"
-	IngestAll       ID = "ingest.all"
-	IngestCancel    ID = "ingest.cancel"
-	FetchPatent     ID = "patent.fetch"
+	// Crawling.
+	CrawlFamily    ID = "crawl.family"
+	CrawlCitations ID = "crawl.citations"
+	CrawlCitedBy   ID = "crawl.citedby"
+	CrawlAll       ID = "crawl.all"
+	CrawlCancel    ID = "crawl.cancel"
+	LookupPatent   ID = "patent.lookup"
 	Import          ID = "patent.import"
 
 	// Projects.
@@ -132,6 +133,7 @@ func Default() (*Registry, error) {
 		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: SelectVisual, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: SelectClear, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: SelectAll, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
@@ -174,14 +176,14 @@ func Default() (*Registry, error) {
 		Command{ID: TagPatentList, Name: "tag.patent.list", Aliases: []string{"patent-tags"}, Usage: ":tag.patent.list", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
 		Command{ID: TagPatentManage, Name: "tag.patent", Aliases: []string{"tag-manage"}, Usage: ":tag.patent", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
 
-		// --- ingestion (engine) ---
-		Command{ID: IngestFamily, Name: "ingest.family", Aliases: []string{"family"}, Usage: ":ingest.family", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
-		Command{ID: IngestCitations, Name: "ingest.citations", Aliases: []string{"ingest-citations"}, Usage: ":ingest.citations", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
-		Command{ID: IngestCitedBy, Name: "ingest.citedby", Aliases: []string{"ingest-citedby"}, Usage: ":ingest.citedby", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
-		Command{ID: IngestAll, Name: "ingest.all", Aliases: []string{"ingest", "recursion"}, Usage: ":ingest.all", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
-		Command{ID: FetchPatent, Name: "fetch", Aliases: []string{"fetch-patent"}, Usage: ":fetch", Kind: KindEngine, Method: proto.MethodIngestFamily, Scopes: patentScopes},
-		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodIngestFamily},
-		Command{ID: IngestCancel, Kind: KindEngine, Method: proto.MethodIngestCancel},
+		// --- crawling (engine) ---
+		Command{ID: CrawlFamily, Name: "crawl.family", Aliases: []string{"family"}, Usage: ":crawl.family", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
+		Command{ID: CrawlCitations, Name: "crawl.citations", Aliases: []string{"crawl-citations"}, Usage: ":crawl.citations", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
+		Command{ID: CrawlCitedBy, Name: "crawl.citedby", Aliases: []string{"crawl-citedby"}, Usage: ":crawl.citedby", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
+		Command{ID: CrawlAll, Name: "crawl.all", Aliases: []string{"crawl", "recursion"}, Usage: ":crawl.all", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
+		Command{ID: LookupPatent, Name: "lookup", Aliases: []string{"lookup-patent"}, Usage: ":lookup", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
+		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
+		Command{ID: CrawlCancel, Kind: KindEngine, Method: proto.MethodCrawlCancel},
 
 		// --- projects (engine) ---
 		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create [NAME]", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Scope{ScopeProjects}},

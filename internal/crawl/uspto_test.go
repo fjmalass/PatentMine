@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"errors"

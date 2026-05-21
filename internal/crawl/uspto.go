@@ -1,4 +1,4 @@
-package ingest
+package crawl
 
 import (
 	"encoding/json"
@@ -53,7 +53,7 @@ type usptoResponse struct {
 func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 	var resp usptoResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return Result{}, fmt.Errorf("ingest/uspto: decode response: %w", err)
+		return Result{}, fmt.Errorf("crawl/uspto: decode response: %w", err)
 	}
 	if len(resp.Patents) == 0 {
 		return Result{}, ErrNotAvailable

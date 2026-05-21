@@ -22,14 +22,14 @@ const (
 	StatusUnhandledCommand     Key = "status.unhandled_command"
 	StatusInvalidPatentNumber  Key = "status.invalid_patent_number"
 	StatusDaemonClosed         Key = "status.daemon_closed"
-	StatusIngestProgress       Key = "status.ingest_progress"
-	StatusIngestFailed         Key = "status.ingest_failed"
-	StatusIngestComplete       Key = "status.ingest_complete"
-	StatusIngestStarted        Key = "status.ingest_started"
-	StatusIngestStartFailed    Key = "status.ingest_start_failed"
+	StatusCrawlProgress       Key = "status.ingest_progress"
+	StatusCrawlFailed         Key = "status.ingest_failed"
+	StatusCrawlComplete       Key = "status.ingest_complete"
+	StatusCrawlStarted        Key = "status.ingest_started"
+	StatusCrawlStartFailed    Key = "status.ingest_start_failed"
 	StatusAddFailed            Key = "status.add_failed"
 	StatusAdded                Key = "status.added"
-	StatusAddedNoIngest        Key = "status.added_no_ingest"
+	StatusAddedNoCrawl        Key = "status.added_no_ingest"
 	StatusSetStateFailed       Key = "status.set_state_failed"
 	StatusSetState             Key = "status.set_state"
 	StatusExportFailed         Key = "status.export_failed"
@@ -77,8 +77,8 @@ const (
 	HintSelect          Key = "hint.select"
 	HintClearActive     Key = "hint.clear_active"
 	HintExportIDS       Key = "hint.export_ids"
-	HintIngest          Key = "hint.ingest"
-	HintFetch           Key = "hint.fetch"
+	HintCrawl          Key = "hint.ingest"
+	HintLookup           Key = "hint.fetch"
 	HintBrowse          Key = "hint.browse"
 	HintJump            Key = "hint.jump"
 	HintHelp            Key = "hint.help"
@@ -153,19 +153,20 @@ var cmdStrings = map[string][2]string{
 	"patent.delete":            {"Delete patent", "Permanently remove the selected patent from the database."},
 	"select.visual":            {"Visual select", "Toggle visual mode at the cursor to begin range selection."},
 	"select.clear":             {"Clear selection", "Exit visual mode and clear the selection range."},
+	"select.all":               {"Select all", "Select every patent in the current list."},
 	"col.next":                 {"Next column", "Move the visual focus to the next column."},
 	"col.prev":                 {"Prev column", "Move the visual focus to the previous column."},
 	"col.sort-apply":           {"Apply sort", "Apply sorting to the currently focused column."},
 	"patent.add-to-project":    {"Add to project", "Add the selected patent to the active project."},
 	"patent.tag":               {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":             {"Untag patent", "Remove a tag from the selected patent within the active project."},
-	"ingest.family":            {"Ingest family", "Crawl the selected patent's family graph (parents and children)."},
-	"ingest.citations":         {"Ingest citations", "Crawl patents the selected patent cites."},
-	"ingest.citedby":           {"Ingest cited-by", "Crawl patents that cite the selected patent."},
-	"ingest.all":               {"Ingest all", "Crawl the full family graph including citations and cited-by."},
-	"patent.fetch":             {"Fetch patent", "Fetch the selected patent's record from the web."},
+	"crawl.family":            {"Crawl family", "Recursively crawl the selected patent's family graph (parents and children)."},
+	"crawl.citations":         {"Crawl citations", "Crawl patents the selected patent cites."},
+	"crawl.citedby":           {"Crawl cited-by", "Crawl patents that cite the selected patent."},
+	"crawl.all":               {"Crawl all", "Crawl the full family graph including citations and cited-by."},
+	"patent.lookup":           {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":            {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
-	"ingest.cancel":            {"Cancel ingest", "Cancel a running ingest job."},
+	"crawl.cancel":            {"Cancel crawl", "Cancel a running crawl job."},
 	"project.create":           {"Create project", "Create a new project."},
 	"project.activate":         {"Use project", "Make the selected project the active project for patent actions."},
 	"project.clear-active":     {"Clear active project", "Clear the active project filter and target."},
@@ -202,14 +203,14 @@ var englishNamed = map[Key]string{
 	StatusUnhandledCommand:     "unhandled command: %s",
 	StatusInvalidPatentNumber:  "invalid patent number: %s",
 	StatusDaemonClosed:         "daemon connection closed",
-	StatusIngestProgress:       "ingest %s — ingested %d, discovered %d: %s",
-	StatusIngestFailed:         "ingest %s failed: %s",
-	StatusIngestComplete:       "ingest %s complete",
-	StatusIngestStarted:        "ingest started for %s (%s)",
-	StatusIngestStartFailed:    "ingest failed: %s",
+	StatusCrawlProgress:       "crawl %s — crawled %d, discovered %d: %s",
+	StatusCrawlFailed:         "crawl %s failed: %s",
+	StatusCrawlComplete:       "crawl %s complete",
+	StatusCrawlStarted:        "crawl started for %s (%s)",
+	StatusCrawlStartFailed:    "crawl failed: %s",
 	StatusAddFailed:            "add to project failed: %s",
 	StatusAdded:                "added %s to %s",
-	StatusAddedNoIngest:        "added %s — press F to fetch",
+	StatusAddedNoCrawl:        "added %s — press L to lookup",
 	StatusSetStateFailed:       "set state failed: %s",
 	StatusSetState:             "set %s to %s review state in %s",
 	StatusExportFailed:         "IDS export failed: %s",
@@ -256,8 +257,8 @@ var englishNamed = map[Key]string{
 	HintSelect:          "select",
 	HintClearActive:     "clear active",
 	HintExportIDS:       "export IDS",
-	HintIngest:          "ingest family",
-	HintFetch:           "fetch patent",
+	HintCrawl:          "crawl family",
+	HintLookup:           "lookup patent",
 	HintBrowse:          "open browser",
 	HintJump:            "jump",
 	HintHelp:            "help",
