@@ -38,6 +38,11 @@ type Catalog struct {
 	loadID        uint64
 	visualMode    bool
 	visualAnchor  int
+	lastActive        domain.PatentNumber
+	savedVisual       []domain.PatentNumber
+	savedVisualAnchor int
+	savedVisualCursor int
+	gvHighlight       map[domain.PatentNumber]bool
 	activeSort    domain.SortColumn
 	sortAscending bool
 	filter        PatentFilter
@@ -64,9 +69,16 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.NavPageUp:       func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
 		command.NavTop:          func(Invocation) tea.Cmd { return c.move(c.page.Top) },
 		command.NavBottom:       func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
+		command.ReselectLast:    func(Invocation) tea.Cmd { return c.reselectLast() },
 		command.Refresh:         func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
 		command.SelectVisual:    func(Invocation) tea.Cmd { return c.toggleVisual() },
-		command.SelectClear:     func(Invocation) tea.Cmd { c.clearVisual(); return nil },
+		command.SelectClear: func(Invocation) tea.Cmd {
+			if c.visualMode {
+				c.saveVisual()
+				c.clearVisual()
+			}
+			return nil
+		},
 		command.IngestFamily:    func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileFamily) },
 		command.IngestCitations: func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitations) },
 		command.IngestCitedBy:   func(Invocation) tea.Cmd { return c.ingestSelected(domain.CrawlProfileCitedBy) },
@@ -245,10 +257,73 @@ func (c *Catalog) ingestSelected(profile domain.CrawlProfile) tea.Cmd {
 func (c *Catalog) move(motion func()) tea.Cmd {
 	before := c.page.Offset()
 	motion()
+	if pn, ok := c.Selection(); ok {
+		c.lastActive = pn
+	}
+	c.gvHighlight = nil
 	if c.page.Offset() != before {
 		c.loading = true
 		return c.load()
 	}
+	return nil
+}
+
+// saveVisual captures the current visual selection so gv can restore it.
+func (c *Catalog) saveVisual() {
+	c.savedVisual = c.Selections()
+	c.savedVisualAnchor = c.visualAnchor
+	c.savedVisualCursor = c.page.Cursor()
+}
+
+// SaveVisualSelection implements pane.VisualSelectionSaver.
+func (c *Catalog) SaveVisualSelection() {
+	if c.visualMode {
+		c.saveVisual()
+		c.clearVisual()
+	}
+}
+
+// reselectLast re-enters visual mode over the last saved selection by patent
+// number (gv behaves like Vim's gv). Falls back to the last active patent if
+// no visual selection was saved.
+func (c *Catalog) reselectLast() tea.Cmd {
+	targets := c.savedVisual
+	if len(targets) == 0 && !c.lastActive.IsZero() {
+		targets = []domain.PatentNumber{c.lastActive}
+	}
+	if len(targets) == 0 {
+		return status(text.StatusNoPatentSelected, false)
+	}
+
+	// Build index by patent number (sort-agnostic).
+	idx := make(map[domain.PatentNumber]int, len(c.patents))
+	for i, p := range c.patents {
+		idx[p.Number] = c.loadedBase + i
+	}
+
+	highlights := make(map[domain.PatentNumber]bool, len(targets))
+	first := -1
+	last := -1
+	for _, t := range targets {
+		highlights[t] = true
+		if pos, ok := idx[t]; ok {
+			if first == -1 || pos < first {
+				first = pos
+			}
+			if pos > last {
+				last = pos
+			}
+		}
+	}
+	if first == -1 {
+		return status(text.StatusNoPatentSelected, false)
+	}
+
+	c.clearVisual()
+	c.visualMode = true
+	c.visualAnchor = first
+	c.gvHighlight = highlights
+	c.page.ScrollTo(last)
 	return nil
 }
 
@@ -298,6 +373,7 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 
 func (c *Catalog) toggleVisual() tea.Cmd {
 	if c.visualMode {
+		c.saveVisual()
 		c.clearVisual()
 		return nil
 	}
@@ -308,6 +384,7 @@ func (c *Catalog) toggleVisual() tea.Cmd {
 func (c *Catalog) clearVisual() {
 	c.visualMode = false
 	c.visualAnchor = 0
+	c.gvHighlight = nil
 }
 
 func (c *Catalog) inVisualRange(absolute int) bool {
@@ -385,6 +462,8 @@ func (c *Catalog) View(w, h int) string {
 		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {
+		case c.gvHighlight != nil && c.gvHighlight[p.Number]:
+			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
 		case c.visualMode && c.inVisualRange(absolute):
 			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
 		case absolute == c.page.Cursor():

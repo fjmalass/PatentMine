@@ -102,6 +102,7 @@ func Default() *Keymaps {
 			"n":      command.NavDown,
 			"N":      command.NavUp,
 			"ctrl+r": command.Refresh,
+			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"esc":    command.SelectClear,
 		})
@@ -135,6 +136,7 @@ func Default() *Keymaps {
 			"n":      command.NavDown,
 			"N":      command.NavUp,
 			"ctrl+r": command.Refresh,
+			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"esc":    command.SelectClear,
 		})

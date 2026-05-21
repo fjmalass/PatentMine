@@ -58,6 +58,13 @@ type MultiSelector interface {
 	Selections() []domain.PatentNumber
 }
 
+// VisualSelectionSaver is implemented by panes that support saving their
+// visual selection for gv restore. The App calls this when a visual selection
+// is consumed by an action (e.g. review state change).
+type VisualSelectionSaver interface {
+	SaveVisualSelection()
+}
+
 // KeyHandler is implemented by panes that need to intercept raw key events
 // before keymap resolution — for example when an inline input bar is active.
 // The App checks this interface before feeding the key to the chord reader.

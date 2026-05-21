@@ -125,6 +125,7 @@ var cmdStrings = map[string][2]string{
 	"nav.page-up":              {"Page up", "Scroll up one page."},
 	"nav.top":                  {"Top", "Jump to the first row."},
 	"nav.bottom":               {"Bottom", "Jump to the last row."},
+	"nav.reselect-last":        {"Reselect last", "Jump back to the last active patent."},
 	"view.detail":              {"Open detail", "Open the selected patent's detail view."},
 	"view.browser":             {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},

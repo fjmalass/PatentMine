@@ -10,8 +10,9 @@ const (
 	NavUp       ID = "nav.up"
 	NavPageDown ID = "nav.page-down"
 	NavPageUp   ID = "nav.page-up"
-	NavTop      ID = "nav.top"
-	NavBottom   ID = "nav.bottom"
+	NavTop          ID = "nav.top"
+	NavBottom       ID = "nav.bottom"
+	ReselectLast    ID = "nav.reselect-last"
 
 	// Moving between panes and overlays.
 	OpenDetail    ID = "view.detail"
@@ -114,6 +115,7 @@ func Default() (*Registry, error) {
 		Command{ID: NavPageUp, Kind: KindView, Scopes: listScopes},
 		Command{ID: NavTop, Kind: KindView, Scopes: listScopes},
 		Command{ID: NavBottom, Kind: KindView, Scopes: listScopes},
+		Command{ID: ReselectLast, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
 
 		// --- panes and overlays (view) ---
 		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},

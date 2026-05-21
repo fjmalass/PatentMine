@@ -970,6 +970,11 @@ func (a *App) runAction(
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
+	if len(numbers) >= 2 {
+		if vs, ok := a.focusedPane().(pane.VisualSelectionSaver); ok {
+			vs.SaveVisualSelection()
+		}
+	}
 	cmds := make([]tea.Cmd, 0, len(numbers))
 	for _, n := range numbers {
 		cmds = append(cmds, build(a.activeProject.ID, n))
