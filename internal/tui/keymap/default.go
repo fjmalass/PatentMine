@@ -6,12 +6,12 @@ import (
 	"patentmine/internal/command"
 )
 
-// Keymaps holds the base layer plus one layer per UI context. A frontend
+// Keymaps holds the base layer plus one layer per UI scope. A frontend
 // composes a Stack from these; Default() builds the shipped bindings, but the
 // same shape could be loaded from a user config file.
 type Keymaps struct {
 	base     *Layer
-	contexts map[command.Context]*Layer
+	scopes map[command.Scope]*Layer
 }
 
 // Base returns the always-active global layer.
@@ -19,27 +19,27 @@ func (k *Keymaps) Base() *Layer {
 	return k.base
 }
 
-// Context returns the layer for c, or nil when c has no dedicated layer.
-func (k *Keymaps) Context(c command.Context) *Layer {
-	return k.contexts[c]
+// Scope returns the layer for s, or nil when s has no dedicated layer.
+func (k *Keymaps) Scope(s command.Scope) *Layer {
+	return k.scopes[s]
 }
 
-// ContextLayers returns every context-scoped layer keyed by its context. The
+// ScopeLayers returns every scope-scoped layer keyed by its scope. The
 // wiring check walks this to verify every bound key reaches a handler.
-func (k *Keymaps) ContextLayers() map[command.Context]*Layer {
-	out := make(map[command.Context]*Layer, len(k.contexts))
-	maps.Copy(out, k.contexts)
+func (k *Keymaps) ScopeLayers() map[command.Scope]*Layer {
+	out := make(map[command.Scope]*Layer, len(k.scopes))
+	maps.Copy(out, k.scopes)
 	return out
 }
 
-// StackFor builds the resolution stack for a context: the base layer plus the
-// context's own layer.
-func (k *Keymaps) StackFor(c command.Context) *Stack {
-	s := NewStack(k.base)
-	if layer := k.contexts[c]; layer != nil {
-		s.Push(layer)
+// StackFor builds the resolution stack for a scope: the base layer plus the
+// scope's own layer.
+func (k *Keymaps) StackFor(s command.Scope) *Stack {
+	st := NewStack(k.base)
+	if layer := k.scopes[s]; layer != nil {
+		st.Push(layer)
 	}
-	return s
+	return st
 }
 
 // listMotions are the navigation bindings shared by every scrollable context.
@@ -58,7 +58,7 @@ func listMotions() map[string]command.ID {
 	}
 }
 
-// patentActions are the bindings shared by contexts where a patent is selected.
+// patentActions are the bindings shared by scopes where a patent is selected.
 func patentActions() map[string]command.ID {
 	return map[string]command.ID{
 		"s": command.MarkStored,
@@ -182,13 +182,13 @@ func Default() *Keymaps {
 
 	return &Keymaps{
 		base: base,
-		contexts: map[command.Context]*Layer{
-			command.ContextCatalog:   catalog,
-			command.ContextDetail:    detail,
-			command.ContextCitations: citations,
-			command.ContextIDS:       ids,
-			command.ContextProjects:  projects,
-			command.ContextOverlay:   overlay,
+		scopes: map[command.Scope]*Layer{
+			command.ScopeCatalog:   catalog,
+			command.ScopeDetail:    detail,
+			command.ScopeCitations: citations,
+			command.ScopeIDS:       ids,
+			command.ScopeProjects:  projects,
+			command.ScopeOverlay:   overlay,
 		},
 	}
 }

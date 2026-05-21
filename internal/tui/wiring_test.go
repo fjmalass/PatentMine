@@ -31,7 +31,7 @@ func TestValidateWiringRejectsDeadBinding(t *testing.T) {
 	}
 	km := keymap.Default()
 	// PatentList is an engine read with no key handler in any pane or the App.
-	km.Context(command.ContextCatalog).Bind("Z", command.PatentList)
+	km.Scope(command.ScopeCatalog).Bind("Z", command.PatentList)
 	if _, err := New(nil, reg, km, text.English()); err == nil {
 		t.Fatal("New should reject a key bound to an unhandled command")
 	}

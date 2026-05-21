@@ -111,40 +111,40 @@ func TestLookup(t *testing.T) {
 	}
 }
 
-func TestInContextScoping(t *testing.T) {
+func TestInScopeScoping(t *testing.T) {
 	reg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	// Quit is global, so it appears in every context.
-	for _, ctx := range []Context{ContextCatalog, ContextDetail, ContextOverlay} {
+	// Quit is global, so it appears in every scope.
+	for _, scope := range []Scope{ScopeCatalog, ScopeDetail, ScopeOverlay} {
 		found := false
-		for _, c := range reg.InContext(ctx) {
+		for _, c := range reg.InScope(scope) {
 			if c.ID == Quit {
 				found = true
 			}
 		}
 		if !found {
-			t.Errorf("global command Quit missing from context %q", ctx)
+			t.Errorf("global command Quit missing from scope %q", scope)
 		}
 	}
-	// ProjectCreate is scoped to the projects context only, while ProjectActivate
-	// remains typed-command accessible in other contexts so project.use <id> works
+	// ProjectCreate is scoped to the projects scope only, while ProjectActivate
+	// remains typed-command accessible in other scopes so project.use <id> works
 	// everywhere.
-	for _, c := range reg.InContext(ContextCatalog) {
+	for _, c := range reg.InScope(ScopeCatalog) {
 		if c.ID == ProjectCreate {
-			t.Error("ProjectCreate should not be offered in the catalog context")
+			t.Error("ProjectCreate should not be offered in the catalog scope")
 		}
 	}
 	inProjects := false
 	activateInProjects := false
 	activateInCatalog := false
-	for _, c := range reg.InContext(ContextCatalog) {
+	for _, c := range reg.InScope(ScopeCatalog) {
 		if c.ID == ProjectActivate {
 			activateInCatalog = true
 		}
 	}
-	for _, c := range reg.InContext(ContextProjects) {
+	for _, c := range reg.InScope(ScopeProjects) {
 		if c.ID == ProjectCreate {
 			inProjects = true
 		}
@@ -153,24 +153,24 @@ func TestInContextScoping(t *testing.T) {
 		}
 	}
 	if !inProjects {
-		t.Error("ProjectCreate should be offered in the projects context")
+		t.Error("ProjectCreate should be offered in the projects scope")
 	}
 	if !activateInProjects {
-		t.Error("ProjectActivate should be offered in the projects context")
+		t.Error("ProjectActivate should be offered in the projects scope")
 	}
 	if !activateInCatalog {
-		t.Error("ProjectActivate should be offered in the catalog context")
+		t.Error("ProjectActivate should be offered in the catalog scope")
 	}
 }
 
-func TestTypedCommandsInContext(t *testing.T) {
+func TestTypedCommandsInScope(t *testing.T) {
 	reg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	for _, c := range reg.TypedInContext(ContextCatalog) {
+	for _, c := range reg.TypedInScope(ScopeCatalog) {
 		if c.Name == "" {
-			t.Fatalf("TypedInContext returned command %q with empty Name", c.ID)
+			t.Fatalf("TypedInScope returned command %q with empty Name", c.ID)
 		}
 	}
 }

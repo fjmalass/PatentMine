@@ -15,7 +15,7 @@ func TestPromptRanksExactAndPrefixMatchesFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
 	}
-	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ContextCatalog, PromptPalette)
+	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptPalette)
 	prompt.query = "proj"
 	prompt.filter()
 	if len(prompt.shown) == 0 {
@@ -31,7 +31,7 @@ func TestPromptMatchesAliasesAndShortcuts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
 	}
-	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ContextProjects, PromptPalette)
+	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeProjects, PromptPalette)
 	prompt.query = "use-project"
 	prompt.filter()
 	if len(prompt.shown) == 0 || prompt.shown[0].command.ID != command.ProjectActivate {
@@ -49,7 +49,7 @@ func TestPromptDirectFooterStaysSingleLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
 	}
-	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ContextCatalog, PromptDirect)
+	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
 	prompt.query = "tag"
 	prompt.filter()
 	footer := prompt.footerLine(40)

@@ -150,7 +150,7 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 }
 
 // Context implements Pane.
-func (d *Detail) Context() command.Context { return command.ContextDetail }
+func (d *Detail) Scope() command.Scope { return command.ScopeDetail }
 
 // Title implements Pane.
 func (d *Detail) Title() string { return "Detail · " + d.number.String() }

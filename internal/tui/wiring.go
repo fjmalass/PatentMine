@@ -25,57 +25,57 @@ func validateWiring(reg *command.Registry, keymaps *keymap.Keymaps, catalog *tex
 	paneHandled := paneHandlerSets()
 	overlayHandled := overlayHandlerSet(reg, keymaps, catalog)
 
-	// dispatchable reports whether command id reaches a handler in ctx: either
-	// the App table, or the pane/overlay that owns that context.
-	dispatchable := func(id command.ID, ctx command.Context) bool {
+	// dispatchable reports whether command id reaches a handler in scope: either
+	// the App table, or the pane/overlay that owns that scope.
+	dispatchable := func(id command.ID, scope command.Scope) bool {
 		if _, ok := appHandlers[id]; ok {
 			return true
 		}
-		if ctx == command.ContextOverlay {
+		if scope == command.ScopeOverlay {
 			return slices.Contains(overlayHandled, id)
 		}
-		return slices.Contains(paneHandled[ctx], id)
+		return slices.Contains(paneHandled[scope], id)
 	}
 
 	var errs []error
 
 	// Every key binding must resolve to a registered, dispatchable command.
-	checkLayer := func(ctx command.Context, layer *keymap.Layer, global bool) {
+	checkLayer := func(scope command.Scope, layer *keymap.Layer, global bool) {
 		if layer == nil {
 			return
 		}
 		for seq, id := range layer.Bindings() {
 			if _, ok := reg.Lookup(id); !ok {
-				errs = append(errs, fmt.Errorf("keymap: %q binds %q to unregistered command %q", ctx, seq, id))
+				errs = append(errs, fmt.Errorf("keymap: %q binds %q to unregistered command %q", scope, seq, id))
 				continue
 			}
 			if global {
-				// A global key is active in every context, so only the App
+				// A global key is active in every scope, so only the App
 				// table can service it.
 				if _, ok := appHandlers[id]; !ok {
 					errs = append(errs, fmt.Errorf("keymap: global key %q binds %q, which no App handler services", seq, id))
 				}
 				continue
 			}
-			if !dispatchable(id, ctx) {
-				errs = append(errs, fmt.Errorf("keymap: %q key %q binds %q, which no handler services there", ctx, seq, id))
+			if !dispatchable(id, scope) {
+				errs = append(errs, fmt.Errorf("keymap: %q key %q binds %q, which no handler services there", scope, seq, id))
 			}
 		}
 	}
 	checkLayer("global", keymaps.Base(), true)
-	for ctx, layer := range keymaps.ContextLayers() {
-		checkLayer(ctx, layer, false)
+	for scope, layer := range keymaps.ScopeLayers() {
+		checkLayer(scope, layer, false)
 	}
 
-	// Every typed command must be dispatchable in each context it is offered in,
+	// Every typed command must be dispatchable in each scope it is offered in,
 	// so the command prompt and palette can never invoke a dead command.
 	for _, c := range reg.All() {
 		if c.Name == "" {
 			continue
 		}
-		for _, ctx := range typedCheckContexts(c) {
-			if !dispatchable(c.ID, ctx) {
-				errs = append(errs, fmt.Errorf("command: typed command %q is offered in %q but no handler services it there", c.Name, ctx))
+		for _, scope := range typedCheckScope(c) {
+			if !dispatchable(c.ID, scope) {
+				errs = append(errs, fmt.Errorf("command: typed command %q is offered in %q but no handler services it there", c.Name, scope))
 			}
 		}
 	}
@@ -93,33 +93,33 @@ func validateWiring(reg *command.Registry, keymaps *keymap.Keymaps, catalog *tex
 	return errors.Join(errs...)
 }
 
-// paneContexts are the contexts backed by a focusable pane.
-var paneContexts = []command.Context{
-	command.ContextCatalog, command.ContextDetail,
-	command.ContextCitations, command.ContextIDS, command.ContextProjects,
+// paneScopes are the scopes backed by a focusable pane.
+var paneScopes = []command.Scope{
+	command.ScopeCatalog, command.ScopeDetail,
+	command.ScopeCitations, command.ScopeIDS, command.ScopeProjects,
 }
 
-// typedCheckContexts returns the contexts in which a typed command must be
-// dispatchable. A global command is checked against every pane context (where
+// typedCheckScope returns the scopes in which a typed command must be
+// dispatchable. A global command is checked against every pane scope (where
 // dispatchable resolves it through the App table); a scoped command against its
 // own pane scopes.
-func typedCheckContexts(c command.Command) []command.Context {
+func typedCheckScope(c command.Command) []command.Scope {
 	if c.Global() {
-		return paneContexts
+		return paneScopes
 	}
-	var out []command.Context
-	for _, ctx := range c.Scopes {
-		if ctx == command.ContextOverlay {
-			continue // overlay-scoped typed commands run in their source context
+	var out []command.Scope
+	for _, sc := range c.Scopes {
+		if sc == command.ScopeOverlay {
+			continue // overlay-scoped typed commands run in their source scope
 		}
-		out = append(out, ctx)
+		out = append(out, sc)
 	}
 	return out
 }
 
 // paneHandlerSets builds a sample of every pane and records the command IDs it
 // services, keyed by the pane's context.
-func paneHandlerSets() map[command.Context][]command.ID {
+func paneHandlerSets() map[command.Scope][]command.ID {
 	theme := render.NewTheme()
 	panes := []pane.Pane{
 		pane.NewCatalog(nil, theme),
@@ -128,9 +128,9 @@ func paneHandlerSets() map[command.Context][]command.ID {
 		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		pane.NewProjects(nil, theme),
 	}
-	out := make(map[command.Context][]command.ID, len(panes))
+	out := make(map[command.Scope][]command.ID, len(panes))
 	for _, p := range panes {
-		out[p.Context()] = p.Handles()
+		out[p.Scope()] = p.Handles()
 	}
 	return out
 }
@@ -142,7 +142,7 @@ func overlayHandlerSet(reg *command.Registry, keymaps *keymap.Keymaps, catalog *
 	theme := render.NewTheme()
 	overlays := []overlay.Overlay{
 		overlay.NewHelp(reg, keymaps, theme, catalog),
-		overlay.NewPrompt(reg, keymaps, theme, catalog, command.ContextCatalog, overlay.PromptPalette),
+		overlay.NewPrompt(reg, keymaps, theme, catalog, command.ScopeCatalog, overlay.PromptPalette),
 		overlay.NewTextInput(theme, catalog, overlay.PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption),
 	}
 	var out []command.ID

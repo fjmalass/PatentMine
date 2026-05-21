@@ -30,11 +30,11 @@ type KeyHandler interface {
 	HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 }
 
-// ContextSource reports the underlying pane context an overlay was opened from.
+// ScopeSource reports the underlying pane scope an overlay was opened from.
 // Prompt overlays use this so their filtered command list reflects the screen
-// behind them rather than the generic overlay context.
-type ContextSource interface {
-	SourceContext() command.Context
+// behind them rather than the generic overlay scope.
+type ScopeSource interface {
+	SourceScope() command.Scope
 }
 
 // cmdHandler carries out one command for an overlay.

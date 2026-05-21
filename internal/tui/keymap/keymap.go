@@ -139,8 +139,8 @@ func (s *Stack) Match(sequence string) keys.Match {
 }
 
 // BoundLetters returns the sorted, deduplicated single-letter/digit keys bound
-// in the base layer and the given context layer combined.
-func (k *Keymaps) BoundLetters(ctx command.Context) []rune {
+// in the base layer and the given scope layer combined.
+func (k *Keymaps) BoundLetters(scope command.Scope) []rune {
 	seen := map[rune]bool{}
 	collect := func(layer *Layer) {
 		if layer == nil {
@@ -151,7 +151,7 @@ func (k *Keymaps) BoundLetters(ctx command.Context) []rune {
 		}
 	}
 	collect(k.base)
-	collect(k.contexts[ctx])
+	collect(k.scopes[scope])
 	out := make([]rune, 0, len(seen))
 	for r := range seen {
 		out = append(out, r)
@@ -160,8 +160,8 @@ func (k *Keymaps) BoundLetters(ctx command.Context) []rune {
 	return out
 }
 
-// Shortcuts returns the active key sequences that invoke id in ctx.
-func (k *Keymaps) Shortcuts(ctx command.Context, id command.ID) []string {
+// Shortcuts returns the active key sequences that invoke id in scope.
+func (k *Keymaps) Shortcuts(scope command.Scope, id command.ID) []string {
 	seen := map[string]bool{}
 	var out []string
 	collect := func(layer *Layer) {
@@ -177,7 +177,7 @@ func (k *Keymaps) Shortcuts(ctx command.Context, id command.ID) []string {
 		}
 	}
 	collect(k.base)
-	collect(k.contexts[ctx])
+	collect(k.scopes[scope])
 	slices.Sort(out)
 	return out
 }

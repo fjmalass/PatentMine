@@ -362,13 +362,13 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 // deliberately left out so only the overlay and global bindings apply.
 func (a *App) keyStack() *keymap.Stack {
 	stack := keymap.NewStack(a.keymaps.Base())
-	var ctx command.Context
+	var scope command.Scope
 	if len(a.overlays) > 0 {
-		ctx = command.ContextOverlay
+		scope = command.ScopeOverlay
 	} else {
-		ctx = a.focusedPane().Context()
+		scope = a.focusedPane().Scope()
 	}
-	if layer := a.keymaps.Context(ctx); layer != nil {
+	if layer := a.keymaps.Scope(scope); layer != nil {
 		stack.Push(layer)
 	}
 	return stack
@@ -839,7 +839,7 @@ func (a *App) openDetail() (tea.Model, tea.Cmd) {
 	if a.activeProject != nil {
 		project = a.activeProject.ID
 	}
-	bound := a.keymaps.BoundLetters(command.ContextDetail)
+	bound := a.keymaps.BoundLetters(command.ScopeDetail)
 	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound))
 }
 
@@ -1006,18 +1006,18 @@ func (a *App) runProjectAction(action func(project domain.ProjectID, patent doma
 }
 
 func (a *App) openPrompt(mode overlay.PromptMode) (tea.Model, tea.Cmd) {
-	a.overlays = append(a.overlays, overlay.NewPrompt(a.registry, a.keymaps, a.theme, a.text, a.commandContext(), mode))
+	a.overlays = append(a.overlays, overlay.NewPrompt(a.registry, a.keymaps, a.theme, a.text, a.scope(), mode))
 	return a, nil
 }
 
-func (a *App) commandContext() command.Context {
+func (a *App) scope() command.Scope {
 	if len(a.overlays) > 0 {
-		if source, ok := a.focusedOverlay().(overlay.ContextSource); ok {
-			return source.SourceContext()
+		if source, ok := a.focusedOverlay().(overlay.ScopeSource); ok {
+			return source.SourceScope()
 		}
-		return command.ContextOverlay
+		return command.ScopeOverlay
 	}
-	return a.focusedPane().Context()
+	return a.focusedPane().Scope()
 }
 
 // executeTypedCommand parses a typed command and routes it through invoke, the
@@ -1033,7 +1033,7 @@ func (a *App) executeTypedCommand(input string) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusUnknownCommand, parts[0])
 		return a, nil
 	}
-	if !cmd.AvailableIn(a.commandContext()) {
+	if !cmd.AvailableIn(a.scope()) {
 		a.setErr(text.StatusCommandNotHere, cmd.Name)
 		return a, nil
 	}
@@ -1142,7 +1142,7 @@ func (a *App) headerBlock(focused pane.Pane) string {
 		return ""
 	}
 	line1 := a.renderScreenHeader(focused)
-	line2 := a.theme.Dim.Render(render.Pad(" "+a.helperLine(focused.Context()), a.width))
+	line2 := a.theme.Dim.Render(render.Pad(" "+a.helperLine(focused.Scope()), a.width))
 	line3 := a.theme.Header.Render(strings.Repeat("─", a.width))
 	return line1 + "\n" + line2 + "\n" + line3
 }
@@ -1161,46 +1161,46 @@ func (a *App) renderScreenHeader(focused pane.Pane) string {
 	return render.Pad(" "+b.String(), a.width)
 }
 
-func (a *App) helperLine(ctx command.Context) string {
+func (a *App) helperLine(scope command.Scope) string {
 	var parts []string
-	for _, h := range a.hints.For(ctx) {
+	for _, h := range a.hints.For(scope) {
 		if len(h.Commands) == 1 {
-			parts = append(parts, a.shortcutHint(ctx, h.Commands[0], h.Label))
+			parts = append(parts, a.shortcutHint(scope, h.Commands[0], h.Label))
 		} else {
-			parts = append(parts, a.multiShortcutHint(ctx, h.Commands, h.Label))
+			parts = append(parts, a.multiShortcutHint(scope, h.Commands, h.Label))
 		}
 	}
 	return a.joinHints(parts...)
 }
 
 func (a *App) splashFooterHint() string {
-	ctx := command.ContextProjects
+	scope := command.ScopeProjects
 	return a.joinHints(
-		a.navigationHint(ctx),
-		a.shortcutHint(ctx, command.ProjectActivate, text.HintSelect),
+		a.navigationHint(scope),
+		a.shortcutHint(scope, command.ProjectActivate, text.HintSelect),
 		a.text.T(text.HintSlashCommands),
-		a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-		a.shortcutHint(ctx, command.ProjectCreate, text.HintNewProject),
-		a.shortcutHint(ctx, command.Quit, text.HintQuit),
+		a.shortcutHint(scope, command.OpenCommand, text.HintCommand),
+		a.shortcutHint(scope, command.ProjectCreate, text.HintNewProject),
+		a.shortcutHint(scope, command.Quit, text.HintQuit),
 	)
 }
 
 func (a *App) splashEmptyHint() string {
-	ctx := command.ContextProjects
+	scope := command.ScopeProjects
 	createUsage := ":project.create"
 	if cmd, ok := a.registry.Lookup(command.ProjectCreate); ok && cmd.Usage != "" {
 		createUsage = cmd.Usage
 	}
-	shortcut := a.shortcutKeys(ctx, command.ProjectCreate)
+	shortcut := a.shortcutKeys(scope, command.ProjectCreate)
 	if shortcut == "" {
 		return a.text.Tf(text.SplashCreateHint, createUsage)
 	}
 	return a.text.Tf(text.SplashCreateKeyHint, createUsage, shortcut)
 }
 
-func (a *App) navigationHint(ctx command.Context) string {
-	down := a.shortcutKeys(ctx, command.NavDown)
-	up := a.shortcutKeys(ctx, command.NavUp)
+func (a *App) navigationHint(scope command.Scope) string {
+	down := a.shortcutKeys(scope, command.NavDown)
+	up := a.shortcutKeys(scope, command.NavUp)
 	move := a.text.T(text.HintMove)
 	if down == "" && up == "" {
 		return move
@@ -1214,36 +1214,34 @@ func (a *App) navigationHint(ctx command.Context) string {
 	return down + "/" + up + " " + move
 }
 
-func (a *App) shortcutHint(ctx command.Context, id command.ID, labelKey text.Key) string {
+func (a *App) shortcutHint(scope command.Scope, id command.ID, labelKey text.Key) string {
 	label := a.text.T(labelKey)
-	keys := a.shortcutKeys(ctx, id)
+	keys := a.shortcutKeys(scope, id)
 	if keys == "" {
 		return label
 	}
 	return keys + " " + label
 }
 
-func (a *App) multiShortcutHint(ctx command.Context, ids []command.ID, labelKey text.Key) string {
+func (a *App) multiShortcutHint(scope command.Scope, ids []command.ID, labelKey text.Key) string {
 	label := a.text.T(labelKey)
-	var parts []string
+	var keys []string
 	for _, id := range ids {
-		for _, seq := range a.keymaps.Shortcuts(ctx, id) {
-			if !slices.Contains(parts, seq) {
-				parts = append(parts, seq)
-			}
+		k := a.shortcutKeys(scope, id)
+		if k != "" {
+			keys = append(keys, k)
 		}
 	}
-	if len(parts) == 0 {
+	if len(keys) == 0 {
 		return label
 	}
-	slices.Sort(parts)
-	return strings.Join(parts, "/") + " " + label
+	return strings.Join(keys, "/") + " " + label
 }
 
-func (a *App) shortcutKeys(ctx command.Context, id command.ID) string {
-	shortcuts := a.keymaps.Shortcuts(ctx, id)
-	if len(shortcuts) == 0 && ctx != command.ContextOverlay {
-		shortcuts = a.keymaps.Shortcuts(command.ContextOverlay, id)
+func (a *App) shortcutKeys(scope command.Scope, id command.ID) string {
+	shortcuts := a.keymaps.Shortcuts(scope, id)
+	if len(shortcuts) == 0 && scope != command.ScopeOverlay {
+		shortcuts = a.keymaps.Shortcuts(command.ScopeOverlay, id)
 	}
 	if len(shortcuts) == 0 {
 		return ""

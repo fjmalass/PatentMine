@@ -73,7 +73,7 @@ func TestMatchClassifiesSequences(t *testing.T) {
 
 func TestDefaultKeymapDrivesTheReader(t *testing.T) {
 	km := Default()
-	stack := km.StackFor(command.ContextCatalog)
+	stack := km.StackFor(command.ScopeCatalog)
 
 	// Drive a Vim-style "3j" through the Reader against the real keymap.
 	var r keys.Reader
@@ -109,7 +109,7 @@ func TestDefaultOverlayStackExcludesPaneBindings(t *testing.T) {
 	// pane layer is left out, so a pane binding like 'f' is simply inactive.
 	km := Default()
 	stack := NewStack(km.Base())
-	stack.Push(km.Context(command.ContextOverlay))
+	stack.Push(km.Scope(command.ScopeOverlay))
 
 	if _, ok := stack.Resolve("f"); ok {
 		t.Fatal("the catalog 'f' binding must be inactive while an overlay is focused")
@@ -125,7 +125,7 @@ func TestDefaultOverlayStackExcludesPaneBindings(t *testing.T) {
 
 func TestShortcutsCollectBaseAndContextBindings(t *testing.T) {
 	km := Default()
-	shortcuts := km.Shortcuts(command.ContextProjects, command.ProjectActivate)
+	shortcuts := km.Shortcuts(command.ScopeProjects, command.ProjectActivate)
 	if len(shortcuts) != 3 || shortcuts[0] != "enter" || shortcuts[1] != "l" || shortcuts[2] != "right" {
 		t.Fatalf("Shortcuts(ProjectActivate) = %v, want [enter l right]", shortcuts)
 	}

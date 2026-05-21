@@ -85,7 +85,7 @@ func NewIDSDetail(client *rpc.Client, theme render.Theme, number domain.PatentNu
 	return p
 }
 
-func (p *IDSDetail) Context() command.Context { return command.ContextIDS }
+func (p *IDSDetail) Scope() command.Scope { return command.ScopeIDS }
 
 func (p *IDSDetail) Title() string { return "IDS · " + p.number.String() }
 

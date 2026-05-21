@@ -29,9 +29,9 @@ type ProjectChangedMsg struct {
 
 // Pane is one screen of the TUI.
 type Pane interface {
-	// Context reports the keymap context the pane uses, so the App can pick
+	// Scope reports the keymap scope the pane uses, so the App can pick
 	// the right key bindings while this pane is focused.
-	Context() command.Context
+	Scope() command.Scope
 	// Title is shown in the header bar.
 	Title() string
 	// Init returns a command to run when the pane is first shown.

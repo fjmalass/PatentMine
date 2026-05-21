@@ -33,18 +33,18 @@ const (
 	KindEngine Kind = "engine"
 )
 
-// Context names a UI situation — which pane or overlay is active. Commands are
-// scoped to contexts so a keymap can offer the right actions and the help
+// Scope names a UI situation — which pane or overlay is active. Commands are
+// scoped to scopes so a keymap can offer the right actions and the help
 // screen can group them.
-type Context string
+type Scope string
 
 const (
-	ContextCatalog   Context = "catalog"   // the main patent list
-	ContextDetail    Context = "detail"    // one patent's detail view
-	ContextCitations Context = "citations" // a citations / cited-by list
-	ContextIDS       Context = "ids"       // one patent's IDS entry editor
-	ContextProjects  Context = "projects"  // the project list
-	ContextOverlay   Context = "overlay"   // a modal overlay is focused
+	ScopeCatalog   Scope = "catalog"   // the main patent list
+	ScopeDetail    Scope = "detail"    // one patent's detail view
+	ScopeCitations Scope = "citations" // a citations / cited-by list
+	ScopeIDS       Scope = "ids"       // one patent's IDS entry editor
+	ScopeProjects  Scope = "projects"  // the project list
+	ScopeOverlay   Scope = "overlay"   // a modal overlay is focused
 )
 
 // Command is the declaration of one action.
@@ -64,22 +64,22 @@ type Command struct {
 	// Method is the proto method a KindEngine command maps to; empty for
 	// KindView commands.
 	Method proto.Method
-	// Scopes lists the contexts in which the command is offered. An empty
-	// Scopes means the command is global (valid in every context).
-	Scopes []Context
+	// Scopes lists the scopes in which the command is offered. An empty
+	// Scopes means the command is global (valid in every scope).
+	Scopes []Scope
 }
 
-// Global reports whether the command applies in every context.
+// Global reports whether the command applies in every scope.
 func (c Command) Global() bool {
 	return len(c.Scopes) == 0
 }
 
-// AvailableIn reports whether the command is offered in ctx.
-func (c Command) AvailableIn(ctx Context) bool {
+// AvailableIn reports whether the command is offered in scope.
+func (c Command) AvailableIn(scope Scope) bool {
 	if c.Global() {
 		return true
 	}
-	return slices.Contains(c.Scopes, ctx)
+	return slices.Contains(c.Scopes, scope)
 }
 
 // Registry is an immutable, injected catalog of commands. Build it once with
@@ -133,22 +133,22 @@ func (r *Registry) All() []Command {
 	return out
 }
 
-// InContext returns the commands offered in ctx, in registration order.
-func (r *Registry) InContext(ctx Context) []Command {
+// InScope returns the commands offered in scope, in registration order.
+func (r *Registry) InScope(scope Scope) []Command {
 	var out []Command
 	for _, c := range r.ordered {
-		if c.AvailableIn(ctx) {
+		if c.AvailableIn(scope) {
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-// TypedInContext returns commands that are offered in ctx and exposed in the
+// TypedInScope returns commands that are offered in scope and exposed in the
 // command palette/prompt.
-func (r *Registry) TypedInContext(ctx Context) []Command {
+func (r *Registry) TypedInScope(scope Scope) []Command {
 	var out []Command
-	for _, c := range r.InContext(ctx) {
+	for _, c := range r.InScope(scope) {
 		if c.Name != "" {
 			out = append(out, c)
 		}

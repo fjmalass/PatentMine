@@ -138,7 +138,7 @@ func TestAppOpensCommandPaletteAndPrompt(t *testing.T) {
 
 type refreshProbePane struct{ refreshes int }
 
-func (p *refreshProbePane) Context() command.Context            { return command.ContextCatalog }
+func (p *refreshProbePane) Scope() command.Scope            { return command.ScopeCatalog }
 func (p *refreshProbePane) Title() string                       { return "probe" }
 func (p *refreshProbePane) Init() tea.Cmd                       { return nil }
 func (p *refreshProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }
@@ -160,7 +160,7 @@ type mountProbePane struct {
 	inited  bool
 }
 
-func (p *mountProbePane) Context() command.Context               { return command.ContextCatalog }
+func (p *mountProbePane) Scope() command.Scope               { return command.ScopeCatalog }
 func (p *mountProbePane) Title() string                          { return "mount" }
 func (p *mountProbePane) Init() tea.Cmd                          { p.inited = true; return nil }
 func (p *mountProbePane) View(int, int) string                   { return "" }
@@ -179,7 +179,7 @@ func (p *mountProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
 
 type projectProbePane struct{ project domain.Project }
 
-func (p *projectProbePane) Context() command.Context            { return command.ContextProjects }
+func (p *projectProbePane) Scope() command.Scope            { return command.ScopeProjects }
 func (p *projectProbePane) Title() string                       { return "projects" }
 func (p *projectProbePane) Init() tea.Cmd                       { return nil }
 func (p *projectProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }
@@ -196,7 +196,7 @@ type patentProbePane struct {
 	selections []domain.PatentNumber
 }
 
-func (p *patentProbePane) Context() command.Context            { return command.ContextCatalog }
+func (p *patentProbePane) Scope() command.Scope            { return command.ScopeCatalog }
 func (p *patentProbePane) Title() string                       { return "patents" }
 func (p *patentProbePane) Init() tea.Cmd                       { return nil }
 func (p *patentProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }

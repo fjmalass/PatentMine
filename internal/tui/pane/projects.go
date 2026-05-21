@@ -71,7 +71,7 @@ func NewSplash(client *rpc.Client, theme render.Theme, lastProjectID domain.Proj
 }
 
 // Context implements Pane.
-func (p *Projects) Context() command.Context { return command.ContextProjects }
+func (p *Projects) Scope() command.Scope { return command.ScopeProjects }
 
 // Title implements Pane.
 func (p *Projects) Title() string {

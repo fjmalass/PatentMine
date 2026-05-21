@@ -15,38 +15,38 @@ type Hint struct {
 	Label    text.Key
 }
 
-// HintCatalog maps each UI context to its ordered list of header hints. It is
+// HintCatalog maps each UI scope to its ordered list of header hints. It is
 // built once at startup and injected, matching the command.Registry pattern.
 type HintCatalog struct {
-	byContext map[command.Context][]Hint
+	byScope map[command.Scope][]Hint
 }
 
-// For returns the hints for ctx, or nil when ctx has none.
-func (c *HintCatalog) For(ctx command.Context) []Hint {
-	return c.byContext[ctx]
+// For returns the hints for scope, or nil when scope has none.
+func (c *HintCatalog) For(scope command.Scope) []Hint {
+	return c.byScope[scope]
 }
 
 // NewHintCatalog builds a HintCatalog and validates that every command ID in
 // every hint is registered in reg. A missing ID causes a startup failure — the
 // same safety as command.NewRegistry and validateWiring.
-func NewHintCatalog(reg *command.Registry, raw map[command.Context][]Hint) (*HintCatalog, error) {
-	for ctx, hints := range raw {
+func NewHintCatalog(reg *command.Registry, raw map[command.Scope][]Hint) (*HintCatalog, error) {
+	for scope, hints := range raw {
 		for i, h := range hints {
 			for _, id := range h.Commands {
 				if _, ok := reg.Lookup(id); !ok {
-					return nil, fmt.Errorf("keymap hint: context %q hint %d references unregistered command %q", ctx, i, id)
+					return nil, fmt.Errorf("keymap hint: scope %q hint %d references unregistered command %q", scope, i, id)
 				}
 			}
 		}
 	}
-	return &HintCatalog{byContext: raw}, nil
+	return &HintCatalog{byScope: raw}, nil
 }
 
-// DefaultHints returns the shipped per-context hint definitions. Each entry
+// DefaultHints returns the shipped per-scope hint definitions. Each entry
 // corresponds to one group of keys-and-label shown in the header bar.
-func DefaultHints() map[command.Context][]Hint {
-	return map[command.Context][]Hint{
-		command.ContextCatalog: {
+func DefaultHints() map[command.Scope][]Hint {
+	return map[command.Scope][]Hint{
+		command.ScopeCatalog: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.OpenDetail}, Label: text.HintDetail},
@@ -60,7 +60,7 @@ func DefaultHints() map[command.Context][]Hint {
 			{Commands: []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, Label: text.HintProjectActions},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
-		command.ContextDetail: {
+		command.ScopeDetail: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.JumpMode}, Label: text.HintJump},
@@ -74,7 +74,7 @@ func DefaultHints() map[command.Context][]Hint {
 			{Commands: []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, Label: text.HintProjectActions},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
-		command.ContextCitations: {
+		command.ScopeCitations: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.OpenDetail}, Label: text.HintDetail},
@@ -85,14 +85,14 @@ func DefaultHints() map[command.Context][]Hint {
 			{Commands: []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, Label: text.HintProjectActions},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
-		command.ContextIDS: {
+		command.ScopeIDS: {
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.IDSEditField}, Label: text.HintDetail},
 			{Commands: []command.ID{command.IDSToggleFull}, Label: text.HintFetch},
 			{Commands: []command.ID{command.IDSCycleStatus}, Label: text.HintProjectActions},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
-		command.ContextProjects: {
+		command.ScopeProjects: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.ProjectActivate}, Label: text.HintSelectProject},
@@ -101,7 +101,7 @@ func DefaultHints() map[command.Context][]Hint {
 			{Commands: []command.ID{command.ExportIDS}, Label: text.HintExportIDS},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
-		command.ContextOverlay: {
+		command.ScopeOverlay: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 		},

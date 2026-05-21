@@ -95,14 +95,14 @@ const (
 	IDSDelete      ID = "ids.delete"
 )
 
-// listScopes are the contexts that behave as scrollable lists.
-var listScopes = []Context{ContextCatalog, ContextCitations, ContextProjects, ContextDetail, ContextIDS}
+// listScopes are the scopes that behave as scrollable lists.
+var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeProjects, ScopeDetail, ScopeIDS}
 
-// patentScopes are the contexts where a patent is selected and can be acted on.
-var patentScopes = []Context{ContextCatalog, ContextDetail, ContextCitations}
+// patentScopes are the scopes where a patent is selected and can be acted on.
+var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}
 
-// projectScopes are the contexts where project-focused actions are relevant.
-var projectScopes = []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}
+// projectScopes are the scopes where project-focused actions are relevant.
+var projectScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects}
 
 // Default returns the registry of every command the system supports. It is the
 // single source of truth: build it once at startup and inject it.
@@ -115,36 +115,36 @@ func Default() (*Registry, error) {
 		Command{ID: NavPageUp, Kind: KindView, Scopes: listScopes},
 		Command{ID: NavTop, Kind: KindView, Scopes: listScopes},
 		Command{ID: NavBottom, Kind: KindView, Scopes: listScopes},
-		Command{ID: ReselectLast, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: ReselectLast, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 
 		// --- panes and overlays (view) ---
-		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: OpenBrowser, Name: "browse", Aliases: []string{"open.browser", "web"}, Usage: ":browse [PATENT ...]", Kind: KindView, Scopes: patentScopes},
-		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
-		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail}},
-		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextIDS}},
-		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations}},
+		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
+		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
+		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeIDS}},
+		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}},
 		Command{ID: Back, Kind: KindView},
-		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Context{ContextOverlay}},
-		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects, ContextIDS}},
-		Command{ID: OpenSearch, Kind: KindView, Scopes: []Context{ContextCatalog, ContextDetail, ContextCitations, ContextProjects}},
+		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Scope{ScopeOverlay}},
+		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects, ScopeIDS}},
+		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects}},
 		Command{ID: OpenCommand, Kind: KindView},
-		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Context{ContextDetail}},
-		Command{ID: SelectVisual, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: SelectClear, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: ColNext, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: ColPrev, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: SortApply, Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
+		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: SelectVisual, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: SelectClear, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
 		// --- filtering (view) ---
-		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Context{ContextCatalog, ContextCitations}},
-		Command{ID: IDSEditField, Kind: KindView, Scopes: []Context{ContextIDS}},
-		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Context{ContextIDS}},
-		Command{ID: IDSCycleStatus, Kind: KindView, Scopes: []Context{ContextIDS}},
-		Command{ID: IDSDelete, Kind: KindView, Scopes: []Context{ContextIDS}},
+		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: IDSEditField, Kind: KindView, Scopes: []Scope{ScopeIDS}},
+		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Scope{ScopeIDS}},
+		Command{ID: IDSCycleStatus, Kind: KindView, Scopes: []Scope{ScopeIDS}},
+		Command{ID: IDSDelete, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 
 		// --- application-wide (view) ---
 		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Kind: KindView},
@@ -155,7 +155,7 @@ func Default() (*Registry, error) {
 		Command{ID: PatentGet, Kind: KindEngine, Method: proto.MethodPatentGet},
 		Command{ID: PatentRelations, Kind: KindEngine, Method: proto.MethodRelations},
 		Command{ID: ProjectList, Kind: KindEngine, Method: proto.MethodProjectList},
-		Command{ID: ExportIDS, Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Context{ContextProjects}},
+		Command{ID: ExportIDS, Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Scope{ScopeProjects}},
 
 		// --- patent review state (engine) ---
 		Command{ID: MarkStored, Name: "review_state.stored", Aliases: []string{"stored"}, Usage: ":review_state.stored", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
@@ -184,6 +184,6 @@ func Default() (*Registry, error) {
 		Command{ID: IngestCancel, Kind: KindEngine, Method: proto.MethodIngestCancel},
 
 		// --- projects (engine) ---
-		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create [NAME]", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Context{ContextProjects}},
+		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create [NAME]", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Scope{ScopeProjects}},
 	)
 }

@@ -27,7 +27,7 @@ type promptEntry struct {
 // Prompt is a rich command popup for both / palette search and : command entry.
 type Prompt struct {
 	mode     PromptMode
-	ctx      command.Context
+	scope    command.Scope
 	theme    render.Theme
 	catalog  *text.Catalog
 	handlers map[command.ID]cmdHandler
@@ -39,14 +39,14 @@ type Prompt struct {
 	error    string
 }
 
-// NewPrompt builds a prompt overlay for commands valid in ctx.
-func NewPrompt(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, catalog *text.Catalog, ctx command.Context, mode PromptMode) *Prompt {
-	cmds := reg.TypedInContext(ctx)
+// NewPrompt builds a prompt overlay for commands valid in scope.
+func NewPrompt(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, catalog *text.Catalog, scope command.Scope, mode PromptMode) *Prompt {
+	cmds := reg.TypedInScope(scope)
 	all := make([]promptEntry, 0, len(cmds))
 	for _, c := range cmds {
-		all = append(all, promptEntry{command: c, shortcuts: km.Shortcuts(ctx, c.ID)})
+		all = append(all, promptEntry{command: c, shortcuts: km.Shortcuts(scope, c.ID)})
 	}
-	p := &Prompt{mode: mode, ctx: ctx, theme: theme, catalog: catalog, all: all, page: render.NewPaginator(8)}
+	p := &Prompt{mode: mode, scope: scope, theme: theme, catalog: catalog, all: all, page: render.NewPaginator(8)}
 	p.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(r int) tea.Cmd { p.page.MoveDown(r); return nil },
 		command.NavUp:       func(r int) tea.Cmd { p.page.MoveUp(r); return nil },
@@ -64,7 +64,7 @@ func (p *Prompt) Title() string {
 	return p.catalog.T(text.OverlayCommandsTitle)
 }
 
-func (p *Prompt) SourceContext() command.Context { return p.ctx }
+func (p *Prompt) SourceScope() command.Scope { return p.scope }
 
 func (p *Prompt) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if handler, ok := p.handlers[id]; ok {

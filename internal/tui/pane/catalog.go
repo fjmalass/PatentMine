@@ -94,7 +94,7 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 }
 
 // Context implements Pane.
-func (c *Catalog) Context() command.Context { return command.ContextCatalog }
+func (c *Catalog) Scope() command.Scope { return command.ScopeCatalog }
 
 // Title implements Pane.
 func (c *Catalog) Title() string { return "Patents" }

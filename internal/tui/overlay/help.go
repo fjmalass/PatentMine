@@ -143,12 +143,12 @@ func freeLetters(bound []rune) []rune {
 	return out
 }
 
-// contextSection renders one context's bindings grouped by pane-specific then
-// available keys. The Detail context additionally shows a jump-mode caption.
-func contextSection(reg *command.Registry, lines *[]string, theme render.Theme, catalog *text.Catalog, name text.Key, km *keymap.Keymaps, ctx command.Context) {
-	layer := km.Context(ctx)
-	if layer == nil && ctx == command.ContextDetail {
-		// Detail context always exists; show jump mode hint even if layer empty.
+// scopeSection renders one scope's bindings grouped by pane-specific then
+// available keys. The Detail scope additionally shows a jump-mode caption.
+func scopeSection(reg *command.Registry, lines *[]string, theme render.Theme, catalog *text.Catalog, name text.Key, km *keymap.Keymaps, scope command.Scope) {
+	layer := km.Scope(scope)
+	if layer == nil && scope == command.ScopeDetail {
+		// Detail scope always exists; show jump mode hint even if layer empty.
 	}
 	if layer == nil {
 		return
@@ -181,12 +181,12 @@ func contextSection(reg *command.Registry, lines *[]string, theme render.Theme, 
 			"  "+theme.HelpKey.Render(keyCol)+" "+theme.Row.Render(label))
 	}
 
-	if ctx == command.ContextDetail {
+	if scope == command.ScopeDetail {
 		*lines = append(*lines, "")
 		*lines = append(*lines, "  "+theme.Dim.Render("; jump — shows inline anchor labels, j/k cycle sections"))
 	}
 
-	avail := freeLetters(km.BoundLetters(ctx))
+	avail := freeLetters(km.BoundLetters(scope))
 	if len(avail) > 0 {
 		var b strings.Builder
 		for i, r := range avail {
@@ -206,20 +206,20 @@ func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Them
 	// General section — base layer (always active).
 	section(reg, &lines, theme, catalog, text.HelpSectionGlobal, km.Base())
 
-	// Per-context sections with available keys.
-	contexts := []struct {
-		name text.Key
-		ctx  command.Context
+	// Per-scope sections with available keys.
+	scopes := []struct {
+		name  text.Key
+		scope command.Scope
 	}{
-		{text.HelpSectionCatalog, command.ContextCatalog},
-		{text.HelpSectionDetail, command.ContextDetail},
-		{text.HelpSectionCitations, command.ContextCitations},
-		{text.HelpSectionIDS, command.ContextIDS},
-		{text.HelpSectionProjects, command.ContextProjects},
-		{text.HelpSectionOverlay, command.ContextOverlay},
+		{text.HelpSectionCatalog, command.ScopeCatalog},
+		{text.HelpSectionDetail, command.ScopeDetail},
+		{text.HelpSectionCitations, command.ScopeCitations},
+		{text.HelpSectionIDS, command.ScopeIDS},
+		{text.HelpSectionProjects, command.ScopeProjects},
+		{text.HelpSectionOverlay, command.ScopeOverlay},
 	}
-	for _, cs := range contexts {
-		contextSection(reg, &lines, theme, catalog, cs.name, km, cs.ctx)
+	for _, s := range scopes {
+		scopeSection(reg, &lines, theme, catalog, s.name, km, s.scope)
 	}
 	return lines
 }

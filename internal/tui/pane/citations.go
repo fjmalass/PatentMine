@@ -100,7 +100,7 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 }
 
 // Context implements Pane.
-func (c *Citations) Context() command.Context { return command.ContextCitations }
+func (c *Citations) Scope() command.Scope { return command.ScopeCitations }
 
 // Title implements Pane.
 func (c *Citations) Title() string {
