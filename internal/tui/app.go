@@ -129,6 +129,7 @@ type App struct {
 	client          *rpc.Client
 	registry        *command.Registry
 	keymaps         *keymap.Keymaps
+	hints           *keymap.HintCatalog
 	theme           render.Theme
 	text            *text.Catalog
 	reader          keys.Reader
@@ -167,10 +168,15 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		return nil, err
 	}
 	theme := render.NewTheme()
+	hints, err := keymap.NewHintCatalog(registry, keymap.DefaultHints())
+	if err != nil {
+		return nil, err
+	}
 	app := &App{
 		client:        client,
 		registry:      registry,
 		keymaps:       keymaps,
+		hints:         hints,
 		theme:         theme,
 		text:          catalog,
 		tuiVersion:    appversion.String(),
@@ -421,29 +427,20 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 	return a.openPrompt(overlay.PromptDirect)
 }
 
-// cmdJumpMode opens the jump overlay for the focused pane, when that pane
-// offers jump anchors. It is a no-op when an overlay is already open (unless it is
-// the jump overlay itself, which toggles off), the pane does not support jump mode,
-// or the pane has not yet rendered any anchors.
+// cmdJumpMode toggles jump mode on the focused pane. When jump mode is active
+// the pane renders inline shortcut labels (e.g. "[a] Assignee") and navigation
+// keys (j/k) cycle between labelled sections instead of scrolling line-by-line.
+// It is a no-op when an overlay is already open.
 func (a *App) cmdJumpMode(invocation) (tea.Model, tea.Cmd) {
 	if len(a.overlays) > 0 {
-		if _, ok := a.focusedOverlay().(*overlay.Jump); ok {
-			a.popOverlay()
-		}
 		return a, nil
 	}
-	provider, ok := a.focusedPane().(pane.JumpProvider)
-	if !ok {
-		return a, nil
+	if toggler, ok := a.focusedPane().(interface {
+		SetJumpActive(bool)
+		JumpActive() bool
+	}); ok {
+		toggler.SetJumpActive(!toggler.JumpActive())
 	}
-	anchors := provider.JumpAnchors()
-	if len(anchors) == 0 {
-		return a, nil
-	}
-	if setter, ok := a.focusedPane().(interface{ SetJumpActive(bool) }); ok {
-		setter.SetJumpActive(true)
-	}
-	a.overlays = append(a.overlays, overlay.NewJump(a.theme, anchors))
 	return a, nil
 }
 
@@ -842,7 +839,8 @@ func (a *App) openDetail() (tea.Model, tea.Cmd) {
 	if a.activeProject != nil {
 		project = a.activeProject.ID
 	}
-	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project))
+	bound := a.keymaps.BoundLetters(command.ContextDetail)
+	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound))
 }
 
 func (a *App) openIDS() (tea.Model, tea.Cmd) {
@@ -1164,75 +1162,15 @@ func (a *App) renderScreenHeader(focused pane.Pane) string {
 }
 
 func (a *App) helperLine(ctx command.Context) string {
-	switch ctx {
-	case command.ContextCatalog:
-		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
-			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
-			a.shortcutHint(ctx, command.OpenIDS, text.HintIDS),
-			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
-			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
-			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
-			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
-			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
-			a.shortcutHint(ctx, command.FetchPatent, text.HintFetch),
-			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
-			a.shortcutHint(ctx, command.Back, text.HintBack),
-		)
-	case command.ContextDetail:
-		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
-			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-			a.shortcutHint(ctx, command.JumpMode, text.HintJump),
-			a.shortcutHint(ctx, command.OpenIDS, text.HintIDS),
-			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
-			a.shortcutHint(ctx, command.OpenCitations, text.HintCitations),
-			a.shortcutHint(ctx, command.OpenCitedBy, text.HintCitedBy),
-			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
-			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
-			a.shortcutHint(ctx, command.FetchPatent, text.HintFetch),
-			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
-			a.shortcutHint(ctx, command.Back, text.HintBack),
-		)
-	case command.ContextCitations:
-		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
-			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-			a.shortcutHint(ctx, command.OpenDetail, text.HintDetail),
-			a.shortcutHint(ctx, command.OpenIDS, text.HintIDS),
-			a.shortcutHint(ctx, command.OpenBrowser, text.HintBrowse),
-			a.shortcutHint(ctx, command.OpenProjects, text.HintProjects),
-			a.shortcutHint(ctx, command.IngestFamily, text.HintIngest),
-			a.multiShortcutHint(ctx, []command.ID{command.AddToProject, command.MarkStored, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, text.HintProjectActions),
-			a.shortcutHint(ctx, command.Back, text.HintBack),
-		)
-	case command.ContextIDS:
-		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-			a.shortcutHint(ctx, command.IDSEditField, text.HintDetail),
-			a.shortcutHint(ctx, command.IDSToggleFull, text.HintFetch),
-			a.shortcutHint(ctx, command.IDSCycleStatus, text.HintProjectActions),
-			a.shortcutHint(ctx, command.Back, text.HintBack),
-		)
-	case command.ContextProjects:
-		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
-			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-			a.shortcutHint(ctx, command.ProjectActivate, text.HintSelectProject),
-			a.shortcutHint(ctx, command.ProjectClearActive, text.HintClearActive),
-			a.shortcutHint(ctx, command.ProjectCreate, text.HintNewProject),
-			a.shortcutHint(ctx, command.ExportIDS, text.HintExportIDS),
-			a.shortcutHint(ctx, command.Back, text.HintBack),
-		)
-	default:
-		return a.joinHints(
-			a.shortcutHint(ctx, command.OpenSearch, text.HintCommands),
-			a.shortcutHint(ctx, command.OpenCommand, text.HintCommand),
-			a.shortcutHint(ctx, command.Help, text.HintHelp),
-			a.shortcutHint(ctx, command.Quit, text.HintQuit),
-		)
+	var parts []string
+	for _, h := range a.hints.For(ctx) {
+		if len(h.Commands) == 1 {
+			parts = append(parts, a.shortcutHint(ctx, h.Commands[0], h.Label))
+		} else {
+			parts = append(parts, a.multiShortcutHint(ctx, h.Commands, h.Label))
+		}
 	}
+	return a.joinHints(parts...)
 }
 
 func (a *App) splashFooterHint() string {

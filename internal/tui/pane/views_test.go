@@ -80,7 +80,10 @@ func TestCitationsTitleReflectsKind(t *testing.T) {
 
 func TestDetailPaneJumpActive(t *testing.T) {
 	num := domain.MustParsePatentNumber("US0000001B2")
-	d := NewDetail(nil, render.NewTheme(), num, "test-project")
+	// Bound letters simulate keymap conflicts a, i, c, b — the algorithm
+	// should assign non-conflicting letters for those labels.
+	bound := []rune{'a', 'i', 'c', 'b'}
+	d := NewDetail(nil, render.NewTheme(), num, "test-project", bound)
 
 	// Pre-populate patent data so loading is false
 	d.loading = false
@@ -93,27 +96,31 @@ func TestDetailPaneJumpActive(t *testing.T) {
 
 	// 1. When jumpActive is false, verify no inline shortcuts
 	outNormal := d.body(80)
-	if strings.Contains(outNormal, "[a]") || strings.Contains(outNormal, "[i]") {
+	if strings.Contains(outNormal, "[") {
 		t.Errorf("expected no inline shortcuts in normal view, but found some: %s", outNormal)
 	}
 
-	// 2. Set jumpActive to true, verify inline shortcuts exist
+	// 2. Set jumpActive to true, verify inline shortcuts exist with correct keys
 	d.SetJumpActive(true)
 	outJump := d.body(80)
-	if !strings.Contains(outJump, "[a]") {
-		t.Errorf("expected assignee inline shortcut '[a]' when jump mode is active, but not found: %s", outJump)
+
+	// Assignee: 'a' is bound, try second letter 's' -> free -> 's'
+	if !strings.Contains(outJump, "[s] Assignee") {
+		t.Errorf("expected assignee inline shortcut '[s] Assignee' when jump mode is active, got: %s", outJump)
 	}
-	if !strings.Contains(outJump, "[i]") {
-		t.Errorf("expected inventors inline shortcut '[i]' when jump mode is active, but not found: %s", outJump)
+	// Inventors: 'i' is bound, try second letter 'n' -> free -> 'n'
+	if !strings.Contains(outJump, "[n] Inventors") {
+		t.Errorf("expected inventors inline shortcut '[n] Inventors' when jump mode is active, got: %s", outJump)
 	}
-	if !strings.Contains(outJump, "[d] Documents") {
-		t.Errorf("expected documents heading inline shortcut '[d] Documents' when jump mode is active, but not found: %s", outJump)
+	// Expiration: 'e' is free -> 'e'
+	if !strings.Contains(outJump, "[e] Expiration") {
+		t.Errorf("expected expiration inline shortcut '[e] Expiration' when jump mode is active, got: %s", outJump)
 	}
 
 	// 3. Set jumpActive to false again, verify inline shortcuts are gone
 	d.SetJumpActive(false)
 	outNormal2 := d.body(80)
-	if strings.Contains(outNormal2, "[a]") || strings.Contains(outNormal2, "[i]") {
+	if strings.Contains(outNormal2, "[") {
 		t.Errorf("expected no inline shortcuts after deactivating jump mode, but found some: %s", outNormal2)
 	}
 }

@@ -103,6 +103,7 @@ const (
 	HelpSectionIDS         Key = "help.section.ids"
 	HelpSectionProjects    Key = "help.section.projects"
 	HelpSectionOverlay     Key = "help.section.overlay"
+	HelpSectionAvailable   Key = "help.section.available"
 	NewProjectTitle        Key = "overlay.new_project.title"
 	NewProjectCaption      Key = "overlay.new_project.caption"
 	EditIDSKindTitle       Key = "overlay.ids.kind.title"
@@ -280,6 +281,7 @@ var englishNamed = map[Key]string{
 	HelpSectionIDS:         "IDS",
 	HelpSectionProjects:    "Projects",
 	HelpSectionOverlay:     "Overlay",
+	HelpSectionAvailable:   "Available keys",
 	NewProjectTitle:        "New project",
 	NewProjectCaption:      "Enter a name for the new project.",
 	EditIDSKindTitle:       "IDS kind code",

@@ -123,7 +123,7 @@ func paneHandlerSets() map[command.Context][]command.ID {
 	theme := render.NewTheme()
 	panes := []pane.Pane{
 		pane.NewCatalog(nil, theme),
-		pane.NewDetail(nil, theme, domain.PatentNumber{}, ""),
+		pane.NewDetail(nil, theme, domain.PatentNumber{}, "", nil),
 		pane.NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
 		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		pane.NewProjects(nil, theme),

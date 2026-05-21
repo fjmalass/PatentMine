@@ -69,50 +69,157 @@ func (h *Help) View(maxW, maxH int) string {
 	return b.String()
 }
 
+// section adds a heading line and binding lines for a keymap layer.
+func section(reg *command.Registry, lines *[]string, theme render.Theme, catalog *text.Catalog, name text.Key, layer *keymap.Layer) {
+	if layer == nil {
+		return
+	}
+	if len(*lines) > 0 {
+		*lines = append(*lines, "")
+	}
+	*lines = append(*lines, theme.Title.Render(catalog.T(name)))
+
+	byCommand := make(map[command.ID][]string)
+	for seq, id := range layer.Bindings() {
+		byCommand[id] = append(byCommand[id], seq)
+	}
+	for _, c := range reg.All() {
+		seqs, bound := byCommand[c.ID]
+		if !bound {
+			continue
+		}
+		sort.Strings(seqs)
+		keyCol := render.Pad(strings.Join(seqs, " / "), keyColumnWidth)
+		label := catalog.T(text.CmdTitle(string(c.ID)))
+		if c.Name != "" {
+			usage := c.Usage
+			if usage == "" {
+				usage = ":" + c.Name
+			}
+			label += "  " + theme.Dim.Render(usage)
+		}
+		*lines = append(*lines,
+			"  "+theme.HelpKey.Render(keyCol)+" "+theme.Row.Render(label))
+	}
+}
+
+// availableLine renders a "Available keys: h, l, m, …" line for a keymap layer.
+func availableLine(lines *[]string, theme render.Theme, catalog *text.Catalog, layer *keymap.Layer) {
+	if layer == nil {
+		return
+	}
+	bound := layer.BoundLetters()
+	free := freeLetters(bound)
+	if len(free) == 0 {
+		return
+	}
+	var b strings.Builder
+	for i, r := range free {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(string(r))
+	}
+	*lines = append(*lines, "  "+theme.Dim.Render(catalog.T(text.HelpSectionAvailable)+":")+" "+theme.HelpKey.Render(b.String()))
+}
+
+// freeLetters returns a-z0-9 runes not in bound, sorted.
+func freeLetters(bound []rune) []rune {
+	boundSet := make(map[rune]bool, len(bound))
+	for _, r := range bound {
+		boundSet[r] = true
+	}
+	var out []rune
+	for r := 'a'; r <= 'z'; r++ {
+		if !boundSet[r] {
+			out = append(out, r)
+		}
+	}
+	for r := '0'; r <= '9'; r++ {
+		if !boundSet[r] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// contextSection renders one context's bindings grouped by pane-specific then
+// available keys. The Detail context additionally shows a jump-mode caption.
+func contextSection(reg *command.Registry, lines *[]string, theme render.Theme, catalog *text.Catalog, name text.Key, km *keymap.Keymaps, ctx command.Context) {
+	layer := km.Context(ctx)
+	if layer == nil && ctx == command.ContextDetail {
+		// Detail context always exists; show jump mode hint even if layer empty.
+	}
+	if layer == nil {
+		return
+	}
+	if len(*lines) > 0 {
+		*lines = append(*lines, "")
+	}
+	*lines = append(*lines, theme.Title.Render(catalog.T(name)))
+
+	byCommand := make(map[command.ID][]string)
+	for seq, id := range layer.Bindings() {
+		byCommand[id] = append(byCommand[id], seq)
+	}
+	for _, c := range reg.All() {
+		seqs, bound := byCommand[c.ID]
+		if !bound {
+			continue
+		}
+		sort.Strings(seqs)
+		keyCol := render.Pad(strings.Join(seqs, " / "), keyColumnWidth)
+		label := catalog.T(text.CmdTitle(string(c.ID)))
+		if c.Name != "" {
+			usage := c.Usage
+			if usage == "" {
+				usage = ":" + c.Name
+			}
+			label += "  " + theme.Dim.Render(usage)
+		}
+		*lines = append(*lines,
+			"  "+theme.HelpKey.Render(keyCol)+" "+theme.Row.Render(label))
+	}
+
+	if ctx == command.ContextDetail {
+		*lines = append(*lines, "")
+		*lines = append(*lines, "  "+theme.Dim.Render("; jump — shows inline anchor labels, j/k cycle sections"))
+	}
+
+	avail := freeLetters(km.BoundLetters(ctx))
+	if len(avail) > 0 {
+		var b strings.Builder
+		for i, r := range avail {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(string(r))
+		}
+		*lines = append(*lines, "  "+theme.Dim.Render(catalog.T(text.HelpSectionAvailable)+":")+" "+theme.HelpKey.Render(b.String()))
+	}
+}
+
 // buildHelpLines renders the registry+keymap into styled help lines.
 func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Theme, catalog *text.Catalog) []string {
 	var lines []string
 
-	section := func(name text.Key, layer *keymap.Layer) {
-		if layer == nil {
-			return
-		}
-		if len(lines) > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, theme.Title.Render(catalog.T(name)))
+	// General section — base layer (always active).
+	section(reg, &lines, theme, catalog, text.HelpSectionGlobal, km.Base())
 
-		byCommand := make(map[command.ID][]string)
-		for seq, id := range layer.Bindings() {
-			byCommand[id] = append(byCommand[id], seq)
-		}
-		// Iterate the registry for a stable, meaningful order.
-		for _, c := range reg.All() {
-			seqs, bound := byCommand[c.ID]
-			if !bound {
-				continue
-			}
-			sort.Strings(seqs)
-			keyCol := render.Pad(strings.Join(seqs, " / "), keyColumnWidth)
-			label := catalog.T(text.CmdTitle(string(c.ID)))
-			if c.Name != "" {
-				usage := c.Usage
-				if usage == "" {
-					usage = ":" + c.Name
-				}
-				label += "  " + theme.Dim.Render(usage)
-			}
-			lines = append(lines,
-				"  "+theme.HelpKey.Render(keyCol)+" "+theme.Row.Render(label))
-		}
+	// Per-context sections with available keys.
+	contexts := []struct {
+		name text.Key
+		ctx  command.Context
+	}{
+		{text.HelpSectionCatalog, command.ContextCatalog},
+		{text.HelpSectionDetail, command.ContextDetail},
+		{text.HelpSectionCitations, command.ContextCitations},
+		{text.HelpSectionIDS, command.ContextIDS},
+		{text.HelpSectionProjects, command.ContextProjects},
+		{text.HelpSectionOverlay, command.ContextOverlay},
 	}
-
-	section(text.HelpSectionGlobal, km.Base())
-	section(text.HelpSectionCatalog, km.Context(command.ContextCatalog))
-	section(text.HelpSectionDetail, km.Context(command.ContextDetail))
-	section(text.HelpSectionCitations, km.Context(command.ContextCitations))
-	section(text.HelpSectionIDS, km.Context(command.ContextIDS))
-	section(text.HelpSectionProjects, km.Context(command.ContextProjects))
-	section(text.HelpSectionOverlay, km.Context(command.ContextOverlay))
+	for _, cs := range contexts {
+		contextSection(reg, &lines, theme, catalog, cs.name, km, cs.ctx)
+	}
 	return lines
 }

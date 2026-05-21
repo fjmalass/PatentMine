@@ -56,6 +56,7 @@ type Detail struct {
 	idsEntry   *domain.IDSEntry
 	relCounts  map[domain.RelationKind]int
 	anchors    []render.JumpAnchor // jump targets, rebuilt on every body render
+	jumpKeys   map[string]rune    // label -> assigned jump key, stable for pane lifetime
 	page       render.Paginator
 	loading    bool
 	loadErr    string
@@ -63,10 +64,26 @@ type Detail struct {
 	jumpActive bool
 }
 
+// detailAnchorLabels are the section labels in display order. The jump key
+// assignment algorithm uses this order to assign keys.
+var detailAnchorLabels = []string{
+	"Assignee",
+	"Inventors",
+	"Expiration",
+	"Review state",
+	"IDS",
+	"Tags",
+	"Citations",
+	"Documents",
+	"First claim",
+	"Abstract",
+}
+
 // NewDetail builds a detail pane for one patent number. project, when set,
 // scopes the pane's review state and tags; pass "" for a project-independent
-// view.
-func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber, project domain.ProjectID) *Detail {
+// view. boundLetters are the single-letter/digit keys bound in the base and
+// detail keymap layers, used to avoid conflicts when assigning jump keys.
+func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber, project domain.ProjectID, boundLetters []rune) *Detail {
 	d := &Detail{
 		client:    client,
 		theme:     theme,
@@ -76,13 +93,42 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 		page:      render.NewPaginator(10),
 		loading:   true,
 	}
+	d.computeJumpKeys(boundLetters)
 	d.handlers = map[command.ID]cmdHandler{
-		command.NavDown:     func(inv Invocation) tea.Cmd { d.page.MoveDown(inv.Repeat); return nil },
-		command.NavUp:       func(inv Invocation) tea.Cmd { d.page.MoveUp(inv.Repeat); return nil },
+		command.NavDown: func(inv Invocation) tea.Cmd {
+			if d.jumpActive && len(d.anchors) > 0 {
+				d.page.ScrollTo(d.nextAnchorLine())
+			} else {
+				d.page.MoveDown(inv.Repeat)
+			}
+			return nil
+		},
+		command.NavUp: func(inv Invocation) tea.Cmd {
+			if d.jumpActive && len(d.anchors) > 0 {
+				d.page.ScrollTo(d.prevAnchorLine())
+			} else {
+				d.page.MoveUp(inv.Repeat)
+			}
+			return nil
+		},
 		command.NavPageDown: func(Invocation) tea.Cmd { d.page.PageDown(); return nil },
 		command.NavPageUp:   func(Invocation) tea.Cmd { d.page.PageUp(); return nil },
-		command.NavTop:      func(Invocation) tea.Cmd { d.page.Top(); return nil },
-		command.NavBottom:   func(Invocation) tea.Cmd { d.page.Bottom(); return nil },
+		command.NavTop: func(Invocation) tea.Cmd {
+			if d.jumpActive && len(d.anchors) > 0 {
+				d.page.ScrollTo(d.anchors[0].Line)
+			} else {
+				d.page.Top()
+			}
+			return nil
+		},
+		command.NavBottom: func(Invocation) tea.Cmd {
+			if d.jumpActive && len(d.anchors) > 0 {
+				d.page.ScrollTo(d.anchors[len(d.anchors)-1].Line)
+			} else {
+				d.page.Bottom()
+			}
+			return nil
+		},
 		command.Refresh:     func(Invocation) tea.Cmd { d.loading = true; return d.reload() },
 		command.IngestFamily: func(Invocation) tea.Cmd {
 			return IngestCmd(d.client, d.number, ingestFamilyDepth, domain.CrawlProfileFamily, false)
@@ -238,9 +284,9 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, "Shown as", numberToShow(p).String())
 	d.field(&b, w, "Record key", p.Number.String())
 	d.field(&b, w, "Title", p.Title)
-	d.addAnchor(&b, 'a', "Assignee", 0)
+	d.addAnchor(&b, d.jumpKey("Assignee"), "Assignee", 0)
 	d.field(&b, w, "Assignee", p.Assignee)
-	d.addAnchor(&b, 'i', "Inventors", 0)
+	d.addAnchor(&b, d.jumpKey("Inventors"), "Inventors", 0)
 	var names []string
 	for _, inv := range p.Inventors {
 		names = append(names, string(inv))
@@ -250,24 +296,24 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, "Fetch state", fetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
 	d.field(&b, w, "Source URL", p.SourceURL)
-	d.addAnchor(&b, 'e', "Expiration", 0)
+	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", 0)
 	d.field(&b, w, "Expiration", expirationText(p))
 
 	// Project-scoped fields. Review state and tags describe the patent within
 	// one project, so they appear only when the pane has an active project.
 	if d.project != "" {
 		b.WriteByte('\n')
-		d.addAnchor(&b, 'r', "Review state", 0)
+		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", 0)
 		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
-		d.addAnchor(&b, 'y', "IDS", 0)
+		d.addAnchor(&b, d.jumpKey("IDS"), "IDS", 0)
 		d.field(&b, w, "IDS", detailIDSText(d.idsEntry))
-		d.addAnchor(&b, 't', "Tags", 0)
+		d.addAnchor(&b, d.jumpKey("Tags"), "Tags", 0)
 		d.field(&b, w, "Tags", tagsText(d.tags))
 	}
 
 	// Family-graph edge counts. The dedicated panes (c/b) list the edges.
 	b.WriteByte('\n')
-	d.addAnchor(&b, 'x', "Citations", 0)
+	d.addAnchor(&b, d.jumpKey("Citations"), "Citations", 0)
 	d.field(&b, w, "Citations", fmt.Sprintf("%d", d.relCounts[domain.RelationCites]))
 	d.field(&b, w, "Cited by", fmt.Sprintf("%d", d.relCounts[domain.RelationCitedBy]))
 	d.field(&b, w, "Parents", fmt.Sprintf("%d", d.relCounts[domain.RelationParent]))
@@ -275,11 +321,11 @@ func (d *Detail) body(w int) string {
 
 	// Every life-stage document — the application stays visible here even once
 	// the patent has published.
-	d.addAnchor(&b, 'd', "Documents", 1)
+	d.addAnchor(&b, d.jumpKey("Documents"), "Documents", 1)
 	b.WriteByte('\n')
 	displayDocs := "Documents"
 	if d.jumpActive {
-		displayDocs = fmt.Sprintf("[%s] Documents", d.theme.Warn.Copy().Bold(true).Render("d"))
+		displayDocs = fmt.Sprintf("[%s] Documents", d.theme.Warn.Copy().Bold(true).Render(string(d.jumpKey("Documents"))))
 	}
 	b.WriteString(d.theme.Header.Render(displayDocs))
 	b.WriteByte('\n')
@@ -294,9 +340,9 @@ func (d *Detail) body(w int) string {
 		b.WriteByte('\n')
 	}
 
-	d.addAnchor(&b, 'c', "First claim", 1)
+	d.addAnchor(&b, d.jumpKey("First claim"), "First claim", 1)
 	d.section(&b, w, "First claim", p.FirstClaim)
-	d.addAnchor(&b, 'b', "Abstract", 1)
+	d.addAnchor(&b, d.jumpKey("Abstract"), "Abstract", 1)
 	d.section(&b, w, "Abstract", p.Abstract)
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -324,30 +370,107 @@ func (d *Detail) SetJumpActive(active bool) {
 	d.jumpActive = active
 }
 
-func labelAnchorKey(label string) (rune, bool) {
-	switch label {
-	case "Assignee":
-		return 'a', true
-	case "Inventors":
-		return 'i', true
-	case "Expiration":
-		return 'e', true
-	case "Review state":
-		return 'r', true
-	case "IDS":
-		return 'y', true
-	case "Tags":
-		return 't', true
-	case "Citations":
-		return 'x', true
-	case "Documents":
-		return 'd', true
-	case "First claim":
-		return 'c', true
-	case "Abstract":
-		return 'b', true
+// JumpActive reports whether jump mode is active.
+func (d *Detail) JumpActive() bool { return d.jumpActive }
+
+// nextAnchorLine returns the line of the first anchor after the cursor, or the
+// first anchor when the cursor is at or past the last anchor.
+func (d *Detail) nextAnchorLine() int {
+	cursor := d.page.Cursor()
+	for _, a := range d.anchors {
+		if a.Line > cursor {
+			return a.Line
+		}
 	}
-	return 0, false
+	return d.anchors[0].Line
+}
+
+// prevAnchorLine returns the line of the last anchor before the cursor, or the
+// last anchor when the cursor is at or before the first anchor.
+func (d *Detail) prevAnchorLine() int {
+	cursor := d.page.Cursor()
+	for i := len(d.anchors) - 1; i >= 0; i-- {
+		if d.anchors[i].Line < cursor {
+			return d.anchors[i].Line
+		}
+	}
+	return d.anchors[len(d.anchors)-1].Line
+}
+
+// computeJumpKeys assigns a stable jump key to each anchor label, avoiding
+// conflicts with keys already bound in the base and detail keymap layers.
+// Each label's characters are tried in order (first letter, second, etc.);
+// if none are free, the first free letter in a-z is used, then 0-9.
+func (d *Detail) computeJumpKeys(bound []rune) {
+	boundSet := make(map[rune]bool, len(bound))
+	for _, r := range bound {
+		boundSet[r] = true
+	}
+	used := make(map[rune]bool, len(detailAnchorLabels))
+	d.jumpKeys = make(map[string]rune, len(detailAnchorLabels))
+	for _, label := range detailAnchorLabels {
+		key := d.assignKey(label, boundSet, used)
+		d.jumpKeys[label] = key
+		used[key] = true
+	}
+}
+
+func (d *Detail) assignKey(label string, boundSet, used map[rune]bool) rune {
+	for _, r := range label {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			r = r - 'A' + 'a'
+			fallthrough
+		case r >= 'a' && r <= 'z':
+			if !boundSet[r] && !used[r] {
+				return r
+			}
+		case r >= '0' && r <= '9':
+			if !boundSet[r] && !used[r] {
+				return r
+			}
+		}
+	}
+	for r := 'a'; r <= 'z'; r++ {
+		if !boundSet[r] && !used[r] {
+			return r
+		}
+	}
+	for r := '0'; r <= '9'; r++ {
+		if !used[r] {
+			return r
+		}
+	}
+	return '?'
+}
+
+// jumpKey returns the assigned jump key for a label, or 0 if unset.
+func (d *Detail) jumpKey(label string) rune {
+	if d.jumpKeys != nil {
+		if key, ok := d.jumpKeys[label]; ok {
+			return key
+		}
+	}
+	return 0
+}
+
+// HandleKey implements pane.KeyHandler. When jump mode is active it intercepts
+// single-letter keys that match a jump anchor, scrolling to that section and
+// consuming the key so it never reaches the keymap.
+func (d *Detail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
+	if !d.jumpActive {
+		return d, nil, false
+	}
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+		for _, a := range d.anchors {
+			if a.Key == r {
+				d.JumpTo(a.Line)
+				return d, nil, true
+			}
+		}
+	}
+	return d, nil, false
 }
 
 // numberToShow returns the record's display number, falling back to the
@@ -365,7 +488,7 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 	displayLabel := label
 	if d.jumpActive {
 		labelW = 18
-		if key, ok := labelAnchorKey(label); ok {
+		if key, ok := d.jumpKeys[label]; ok {
 			displayLabel = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(key)), label)
 		} else {
 			displayLabel = "    " + label
@@ -386,7 +509,7 @@ func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 	b.WriteByte('\n')
 	displayHeading := heading
 	if d.jumpActive {
-		if key, ok := labelAnchorKey(heading); ok {
+		if key, ok := d.jumpKeys[heading]; ok {
 			displayHeading = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(key)), heading)
 		}
 	}

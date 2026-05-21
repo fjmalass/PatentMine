@@ -7,7 +7,9 @@ package keymap
 import (
 	"maps"
 	"slices"
+	"sort"
 	"strings"
+	"unicode"
 
 	"patentmine/internal/command"
 	"patentmine/internal/keys"
@@ -42,6 +44,20 @@ func (l *Layer) BindAll(bindings map[string]command.ID) *Layer {
 // Bindings returns a copy of the layer's sequence-to-command map.
 func (l *Layer) Bindings() map[string]command.ID {
 	return maps.Clone(l.bindings)
+}
+
+// BoundLetters returns the single-letter and single-digit keys bound in this layer.
+func (l *Layer) BoundLetters() []rune {
+	var out []rune
+	for seq := range l.bindings {
+		if len(seq) == 1 {
+			r := rune(seq[0])
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
 }
 
 // Stack is the ordered set of active layers. The last pushed layer has the
@@ -120,6 +136,28 @@ func (s *Stack) Match(sequence string) keys.Match {
 	default:
 		return keys.NoMatch
 	}
+}
+
+// BoundLetters returns the sorted, deduplicated single-letter/digit keys bound
+// in the base layer and the given context layer combined.
+func (k *Keymaps) BoundLetters(ctx command.Context) []rune {
+	seen := map[rune]bool{}
+	collect := func(layer *Layer) {
+		if layer == nil {
+			return
+		}
+		for _, r := range layer.BoundLetters() {
+			seen[r] = true
+		}
+	}
+	collect(k.base)
+	collect(k.contexts[ctx])
+	out := make([]rune, 0, len(seen))
+	for r := range seen {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // Shortcuts returns the active key sequences that invoke id in ctx.

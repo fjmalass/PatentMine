@@ -78,9 +78,9 @@ func Default() *Keymaps {
 		"ctrl+c": command.Quit,
 		"Q":      command.Quit,
 		"?":      command.Help,
-		"q":      command.Back,
 		"h":      command.Back,
 		"left":   command.Back,
+		"esc":    command.Back,
 		":":      command.OpenCommand,
 	})
 

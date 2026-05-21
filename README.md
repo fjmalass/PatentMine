@@ -232,7 +232,76 @@ For engineers maintaining or extending the indirection and lifecycle systems, ke
 
 ---
 
-## 6. CLI Subcommands & TUI Shortcut Reference
+## 6. TUI Key Binding Architecture
+
+The TUI uses a layered keymap system built at startup in `internal/tui/keymap/default.go`. A `Stack` of layers resolves key sequences to command IDs; the topmost matching layer wins.
+
+### Binding layers
+
+| Layer | Scope | Files |
+|-------|-------|-------|
+| **Base ("global")** | Always active | `keymap/default.go` — Quit, Back, Help, Command prompt |
+| **Context** | Active only when the pane type is focused | `keymap/default.go` — `listMotions()`, `patentActions()`, pane-specific keys |
+| **Overlay** | Active when a modal overlay is shown | `keymap/default.go` — Close, scroll |
+
+When an overlay is open the pane context layer is excluded, so only global + overlay bindings apply.
+
+### How to add a new key binding
+
+1. **Define the command ID** in `internal/command/catalog.go`:
+   ```go
+   MyNewAction ID = "my.new-action"
+   ```
+2. **Register the command** in the `Default()` function (same file) with its scope:
+   ```go
+   Command{ID: MyNewAction, Name: "my.action", Kind: KindView, Scopes: []Context{ContextDetail}},
+   ```
+3. **Bind the key sequence** in `internal/tui/keymap/default.go` — add to an existing context layer or create a new one:
+   ```go
+   detail := NewLayer("detail", false).BindAll(map[string]command.ID{
+       "m": command.MyNewAction,
+   })
+   ```
+4. **Add a handler** in the pane's `handlers` map or in `app.go`'s `appHandlers` table:
+   ```go
+   command.MyNewAction: func(inv Invocation) tea.Cmd { /* ... */ },
+   ```
+5. **List the command** in the pane's `Handles()` return value so the wiring check recognizes it.
+6. **Add text catalog entries** in `internal/text/catalog_en.go`:
+   ```go
+   "cmd.my.new-action.title": "My action",
+   "cmd.my.new-action.help":  "Does something useful",
+   ```
+7. The `validateWiring()` function run at startup verifies every bound key reaches a handler.
+
+### Jump anchors (dynamic key assignment)
+
+Jump anchors in the Detail pane (`internal/tui/pane/detail.go`) use collision-avoiding dynamic key assignment. At construction time, `computeJumpKeys()` scans the base + detail keymap layers for bound single-letter/digit keys, then assigns each anchor label a unique key:
+
+1. Try each character of the label in order (first letter, second letter, …) — if it's not bound in the keymap and not already assigned to another anchor, use it.
+2. If no label character is free, scan `a`–`z` for the first unbound, unassigned letter.
+3. Last resort: scan `0`–`9`.
+
+This ensures jump keys never collide with keymap bindings while staying as mnemonic as possible.
+
+The mapping is computed once per pane instance and is stable for its lifetime. To add a new jump anchor:
+
+1. Add the label to `detailAnchorLabels` in `detail.go` (order in the slice determines assignment priority).
+2. Call `d.addAnchor(&b, d.jumpKey("Your Label"), "Your Label", lineDelta)` in `body()`.
+3. The key is assigned automatically.
+
+### Help overlay hierarchy
+
+The `?` help overlay (`internal/tui/overlay/help.go`) groups bindings as:
+
+- **General** — base layer bindings (always active)
+- **Context** — per-context sections: Catalog, Detail, Citations, IDS, Projects, Overlay
+- **Available keys** — unbound single-letter/digit keys listed at the bottom of each context section
+- **Jump mode** — the Detail section includes a `;` jump-mode caption
+
+---
+
+## 7. CLI Subcommands & TUI Shortcut Reference
 
 For complete operational visibility, the command-line interface subcommands and the Terminal User Interface (TUI) keyboard shortcuts are cataloged below.
 
