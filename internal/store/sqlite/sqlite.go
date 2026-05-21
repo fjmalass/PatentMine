@@ -30,6 +30,7 @@ const (
 type Repo struct {
 	writer *sql.DB
 	reader *sql.DB
+	path    string
 	metrics *observability.Metrics
 }
 
@@ -65,7 +66,7 @@ func OpenWithMetrics(ctx context.Context, path string, metrics *observability.Me
 	}
 	reader.SetMaxOpenConns(maxReaderConns)
 
-	r := &Repo{writer: writer, reader: reader, metrics: metrics}
+	r := &Repo{writer: writer, reader: reader, path: path, metrics: metrics}
 	if err := r.initSchema(ctx); err != nil {
 		_ = r.Close()
 		return nil, err
@@ -87,6 +88,10 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("store/sqlite: init schema: %w", err)
 	}
+	// Fold the legacy project_ids table into membership and add FK cascades.
+	if err := r.migrateF(ctx); err != nil {
+		return err
+	}
 	// Migrate existing database instances if they lack the created_at column in patent_tag.
 	var hasCreatedAt bool
 	rows, err := r.writer.QueryContext(ctx, "PRAGMA table_info(patent_tag)")
@@ -106,6 +111,29 @@ func (r *Repo) initSchema(ctx context.Context) error {
 		if !hasCreatedAt {
 			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent_tag ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
 		}
+	}
+	if err := r.syncFTS(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+// syncFTS rebuilds the patent_fts full-text index from the patent table when
+// the two are out of step — typically on a database created before the index
+// existed. An already-consistent index is left untouched.
+func (r *Repo) syncFTS(ctx context.Context) error {
+	var patentCount, ftsCount int
+	if err := r.writer.QueryRowContext(ctx, `SELECT count(*) FROM patent`).Scan(&patentCount); err != nil {
+		return fmt.Errorf("store/sqlite: count patents: %w", err)
+	}
+	if err := r.writer.QueryRowContext(ctx, `SELECT count(*) FROM patent_fts`).Scan(&ftsCount); err != nil {
+		return fmt.Errorf("store/sqlite: count patent_fts: %w", err)
+	}
+	if patentCount == ftsCount {
+		return nil
+	}
+	if _, err := r.writer.ExecContext(ctx, `INSERT INTO patent_fts(patent_fts) VALUES('rebuild')`); err != nil {
+		return fmt.Errorf("store/sqlite: rebuild patent_fts: %w", err)
 	}
 	return nil
 }

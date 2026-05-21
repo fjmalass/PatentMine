@@ -148,6 +148,14 @@ func TestRelations(t *testing.T) {
 	to := domain.MustParsePatentNumber("US0000002A1")
 	rel := domain.Relation{From: from, To: to, Kind: domain.RelationCites}
 
+	// Relation endpoints are foreign keys into patent, so both records must
+	// exist before an edge between them can be saved.
+	if err := repo.SavePatent(ctx, samplePatent("US0000001A1")); err != nil {
+		t.Fatalf("SavePatent from: %v", err)
+	}
+	if err := repo.SavePatent(ctx, samplePatent("US0000002A1")); err != nil {
+		t.Fatalf("SavePatent to: %v", err)
+	}
 	if err := repo.SaveRelation(ctx, rel); err != nil {
 		t.Fatalf("SaveRelation: %v", err)
 	}

@@ -19,19 +19,17 @@ const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assig
 	p.grant_date, p.fetched_at, p.display_number,
 	p.first_claim, p.expiration_date, p.expiration_source, p.source_url`
 
-// patentRowColumns returns the SELECT column list for scanPatentRow and any
-// args those columns need (the tag subquery binds the project ID).
-// When project is non-empty the membership state and project tags are included.
+// patentRowColumns returns the SELECT column list for scanPatentRow. When
+// project is non-empty the membership state and curated IDS columns are
+// included; tags are not selected here — ListPatents fills them for the whole
+// page in one query (see attachTags) rather than a per-row subquery.
 func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
-	const tagsSubq = `COALESCE((SELECT json_group_array(t.name) FROM patent_tag pt ` +
-		`JOIN tag t ON t.id = pt.tag_id ` +
-		`WHERE pt.patent_number = p.number AND t.project_id = ?), '[]')`
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-				`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), ` + tagsSubq + `, ` +
-				`COALESCE(pid.kind_code, ''), COALESCE(pid.country_code, ''), COALESCE(pid.in_full, 0), ` +
-				`COALESCE(pid.relevant_passages, ''), COALESCE(pid.notes, ''), COALESCE(pid.status, ''), COALESCE(pid.added_at, '')`,
-			[]any{string(project)}
+				`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
+				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_country_code, ''), COALESCE(m.ids_in_full, 0), ` +
+				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, '')`,
+			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''`, nil
@@ -94,35 +92,17 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 }
 
 // DeletePatent permanently removes a patent and all its associated documents,
-// relations, and memberships.
+// relations, and memberships. Deleting the patent row is enough: the ON DELETE
+// CASCADE foreign keys on document, patent_tag, membership, and relation remove
+// every dependent row.
 func (r *Repo) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
 	defer r.observeDuration("delete_patent", time.Now(), &err)
-	num := n.Normalized()
-	tx, err := r.writer.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("store/sqlite: delete patent %s: begin tx: %w", n, err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	// relation has no FK cascade — clear both sides.
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM relation WHERE from_number = ? OR to_number = ?`, num, num); err != nil {
-		return fmt.Errorf("store/sqlite: delete patent %s: relations: %w", n, err)
-	}
-	// membership has no FK cascade.
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM membership WHERE patent_number = ?`, num); err != nil {
-		return fmt.Errorf("store/sqlite: delete patent %s: memberships: %w", n, err)
-	}
-	// deleting the patent row cascades to document and patent_tag.
-	res, err := tx.ExecContext(ctx, `DELETE FROM patent WHERE number = ?`, num)
+	res, err := r.writer.ExecContext(ctx, `DELETE FROM patent WHERE number = ?`, n.Normalized())
 	if err != nil {
 		return fmt.Errorf("store/sqlite: delete patent %s: %w", n, err)
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {
 		return store.ErrNotFound
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store/sqlite: delete patent %s: commit: %w", n, err)
 	}
 	return nil
 }
@@ -179,7 +159,53 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: list patents: %w", err)
 	}
+	if q.Project != "" {
+		if err := r.attachTags(ctx, q.Project, out); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
+}
+
+// attachTags fills the Tags field of every row in one query. It replaces a
+// correlated json_group_array subquery that ran once per row, so a 100-row
+// page costs one tag query instead of a hundred.
+func (r *Repo) attachTags(ctx context.Context, project domain.ProjectID, rows []domain.PatentRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(rows)+1)
+	args = append(args, string(project))
+	placeholders := make([]string, len(rows))
+	index := make(map[string]int, len(rows))
+	for i, row := range rows {
+		n := row.Number.Normalized()
+		placeholders[i] = "?"
+		args = append(args, n)
+		index[n] = i
+	}
+	query := `SELECT pt.patent_number, t.name FROM patent_tag pt
+		JOIN tag t ON t.id = pt.tag_id
+		WHERE t.project_id = ? AND pt.patent_number IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY t.name`
+	res, err := r.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: attach tags: %w", err)
+	}
+	defer func() { _ = res.Close() }()
+	for res.Next() {
+		var number, name string
+		if err := res.Scan(&number, &name); err != nil {
+			return fmt.Errorf("store/sqlite: scan tag row: %w", err)
+		}
+		if i, ok := index[number]; ok {
+			rows[i].Tags = append(rows[i].Tags, name)
+		}
+	}
+	if err := res.Err(); err != nil {
+		return fmt.Errorf("store/sqlite: attach tags: %w", err)
+	}
+	return nil
 }
 
 // scanPatentRow reads one lightweight listing row.
@@ -256,7 +282,7 @@ func patentSortExpr(col domain.SortColumn, asc bool) string {
 	case domain.SortByReviewState:
 		return "COALESCE(m.state, p.fetch_state) " + dir
 	case domain.SortByIDS:
-		return "COALESCE(pid.status, '') " + dir
+		return "COALESCE(m.ids_status, '') " + dir
 	default:
 		return "p.number " + dir
 	}
@@ -289,7 +315,6 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 			joinType = "LEFT JOIN"
 		}
 		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")
-		sb.WriteString(" LEFT JOIN project_ids pid ON pid.patent_number = p.number AND pid.project_id = m.project_id")
 		args = append(args, string(q.Project))
 		if q.ReviewState != domain.ReviewStateNone {
 			conds = append(conds, "m.state = ?")
@@ -309,9 +334,11 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 	}
 
 	if q.Search != "" {
-		conds = append(conds, "(p.number LIKE ? OR p.title LIKE ?)")
-		like := "%" + q.Search + "%"
-		args = append(args, like, like)
+		// Number stays a substring LIKE so a partial patent number still
+		// matches mid-token; title and abstract go through the FTS5 index.
+		conds = append(conds, "(p.number LIKE ? OR p.rowid IN "+
+			"(SELECT rowid FROM patent_fts WHERE patent_fts MATCH ?))")
+		args = append(args, "%"+q.Search+"%", ftsQuery(q.Search))
 	}
 
 	if len(conds) > 0 {
@@ -319,6 +346,26 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 		sb.WriteString(strings.Join(conds, " AND "))
 	}
 	return sb.String(), args
+}
+
+// ftsQuery turns a user's search string into an FTS5 MATCH expression: each
+// whitespace-separated token becomes a quoted prefix term, so "wid ass" matches
+// "widget assembly". Quoting neutralizes FTS5 operator characters in the input.
+func ftsQuery(search string) string {
+	fields := strings.Fields(search)
+	if len(fields) == 0 {
+		return `""`
+	}
+	var b strings.Builder
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteByte('"')
+		b.WriteString(strings.ReplaceAll(f, `"`, `""`))
+		b.WriteString(`"*`)
+	}
+	return b.String()
 }
 
 // scanPatent reads one patent row in patentColumns order. It does not load the

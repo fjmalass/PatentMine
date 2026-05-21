@@ -6,6 +6,7 @@ package pane
 
 import (
 	"slices"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -119,6 +120,35 @@ type MultiCrawlStartedMsg struct {
 	Numbers []domain.PatentNumber
 	JobIDs  []string
 	Depth   int
+}
+
+// CopyToClipboardMsg asks the app to copy the given text to the system clipboard.
+type CopyToClipboardMsg struct {
+	Text string
+}
+
+// NoteAddMsg tells the app to add a selected passage to the notes buffer.
+type NoteAddMsg struct {
+	Number     domain.PatentNumber
+	Locator    string
+	Text       string
+	CapturedAt time.Time
+}
+
+// NoteOpenMsg tells the app to show the notes buffer overlay for a patent.
+type NoteOpenMsg struct {
+	Number domain.PatentNumber
+	Patent domain.Patent
+}
+
+// FullTextLoadedMsg delivers the result of fetching full patent claims text.
+type FullTextLoadedMsg struct {
+	RequestID uint64
+	Number    domain.PatentNumber
+	FullText  *domain.FullText
+	Patent    domain.Patent
+	Duration  time.Duration
+	Err       error
 }
 
 // status returns a tea.Cmd that emits a StatusMsg for key.

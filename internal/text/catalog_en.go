@@ -32,6 +32,10 @@ const (
 	StatusAddedNoCrawl        Key = "status.added_no_ingest"
 	StatusSetStateFailed       Key = "status.set_state_failed"
 	StatusSetState             Key = "status.set_state"
+	StatusNotesAdded          Key = "status.notes_added"
+	StatusNotesFlushed        Key = "status.notes_flushed"
+	StatusCopiedToClipboard   Key = "status.copied_to_clipboard"
+	StatusClipboardFailed     Key = "status.clipboard_failed"
 	StatusExportFailed         Key = "status.export_failed"
 	StatusExportDone           Key = "status.export_done"
 	StatusProjectCreateFailed  Key = "status.project_create_failed"
@@ -176,6 +180,11 @@ var cmdStrings = map[string][2]string{
 	"ids.toggle-full":          {"Toggle IDS full", "Toggle whether the full document is cited on the IDS."},
 	"ids.cycle-status":         {"Cycle IDS status", "Cycle the IDS entry status through pending, submitted, and accepted."},
 	"ids.delete":               {"Delete IDS entry", "Remove the current patent from the curated IDS."},
+	"view.fulltext":            {"Full text", "Open the full claims text viewer for the selected patent."},
+	"edit.copy":                {"Copy/yank", "Copy the selection to the clipboard with its locator and capture timestamp."},
+	"edit.copy-meta":           {"Copy with patent info", "Copy the selection to the clipboard with locator, timestamp, and patent metadata."},
+	"edit.note-add":            {"Add to notes", "Add the selected passage and its locator to the session notes buffer."},
+	"edit.note-open":           {"Open notes", "Show the accumulated notes buffer for this patent."},
 	"tag.add":                  {"Add taxonomy tag", "Register a new tag in the project's taxonomy."},
 	"tag.list":                 {"List taxonomy tags", "List all tags in the project's taxonomy."},
 	"tag.delete":               {"Delete taxonomy tag", "Remove a tag from the project's taxonomy."},
@@ -231,7 +240,11 @@ var englishNamed = map[Key]string{
 	StatusBatchAdded:           "added %d patents to %s",
 	StatusFilter:               "%s",
 	StatusBrowserOpenFailed:    "open browser failed: %s",
-	StatusBrowserOpened:        "opened %d patent page(s) in browser",
+	StatusBrowserOpened:    "opened %d patent page(s) in browser",
+	StatusNotesAdded:       "added %s to notes buffer",
+	StatusNotesFlushed:     "flushed notes for %s to IDS: %s",
+	StatusCopiedToClipboard: "copied to clipboard: %d bytes",
+	StatusClipboardFailed:   "clipboard: %s",
 	StatusTagTaxonomyAddFailed:    "add tag to taxonomy failed: %s",
 	StatusTagTaxonomyAdded:        "added taxonomy tag %q to %s",
 	StatusTagTaxonomyDeleteFailed: "delete tag from taxonomy failed: %s",

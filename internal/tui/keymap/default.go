@@ -124,6 +124,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"/":  command.OpenSearch,
 			";":  command.JumpMode,
+			"t":  command.OpenFullText,
 		})
 
 	citations := NewLayer("citations", false).
@@ -173,6 +174,21 @@ func Default() *Keymaps {
 	// The overlay layer is composed directly on top of the global base while an
 	// overlay is focused — the App leaves the pane layer out entirely, so the
 	// pane's bindings are inactive while only the global ones remain.
+	fullText := NewLayer("fulltext", false).
+		BindAll(listMotions()).
+		BindAll(map[string]command.ID{
+			";":  command.JumpMode,
+			"V":  command.SelectVisual,
+			"y":  command.CopyYank,
+			"Y":  command.CopyYankMeta,
+			"n":  command.NoteAdd,
+			"N":  command.NoteOpen,
+			"w":  command.OpenBrowser,
+			"/":  command.OpenSearch,
+			"h":  command.Back,
+			"esc": command.Back,
+		})
+
 	overlay := NewLayer("overlay", false).BindAll(map[string]command.ID{
 		"esc":    command.CloseOverlay,
 		"q":      command.CloseOverlay,
@@ -192,6 +208,7 @@ func Default() *Keymaps {
 			command.ScopeCitations: citations,
 			command.ScopeIDS:       ids,
 			command.ScopeProjects:  projects,
+			command.ScopeFullText:  fullText,
 			command.ScopeOverlay:   overlay,
 		},
 	}

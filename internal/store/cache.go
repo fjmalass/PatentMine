@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"patentmine/internal/domain"
@@ -13,10 +14,16 @@ import (
 // memory. It is a "write-through" cache: every modification is forwarded to
 // the underlying store, and the listing cache is flushed to ensure
 // consistency.
+//
+// While caching is suspended (see SuspendCaching) listings are read straight
+// through and never stored, so a long burst of writes — a family crawl — can
+// never serve stale rows. One flush on resume restores normal operation.
 type Cache struct {
 	Repository
 	mu    sync.RWMutex
 	lists map[string]listResult
+	// suspend counts active SuspendCaching holders; >0 means bypass the cache.
+	suspend atomic.Int32
 }
 
 type listResult struct {
@@ -39,7 +46,31 @@ func (c *Cache) flush() {
 	clear(c.lists)
 }
 
+// SuspendCaching turns the listing cache into a pass-through. Calls nest: each
+// SuspendCaching must be paired with a ResumeCaching. The crawler brackets a
+// crawl with this pair so the thousands of writes a crawl makes cannot leave
+// stale listings behind.
+func (c *Cache) SuspendCaching() {
+	c.suspend.Add(1)
+}
+
+// ResumeCaching releases one suspension. When the last holder releases, the
+// cache is flushed so the next listing reflects every write made meanwhile.
+func (c *Cache) ResumeCaching() {
+	if c.suspend.Add(-1) <= 0 {
+		c.flush()
+	}
+}
+
+// suspended reports whether the cache is currently a pass-through.
+func (c *Cache) suspended() bool {
+	return c.suspend.Load() > 0
+}
+
 func (c *Cache) ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error) {
+	if c.suspended() {
+		return c.Repository.ListPatents(ctx, q)
+	}
 	key := queryKey("list", q)
 	c.mu.RLock()
 	res, ok := c.lists[key]
@@ -67,6 +98,9 @@ func (c *Cache) ListPatents(ctx context.Context, q PatentQuery) ([]domain.Patent
 }
 
 func (c *Cache) CountPatents(ctx context.Context, q PatentQuery) (int, error) {
+	if c.suspended() {
+		return c.Repository.CountPatents(ctx, q)
+	}
 	key := queryKey("list", q)
 	c.mu.RLock()
 	res, ok := c.lists[key]
@@ -98,6 +132,14 @@ func (c *Cache) SavePatent(ctx context.Context, p domain.Patent) error {
 
 func (c *Cache) DeletePatent(ctx context.Context, n domain.PatentNumber) error {
 	if err := c.Repository.DeletePatent(ctx, n); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) SaveNode(ctx context.Context, batch NodeBatch) error {
+	if err := c.Repository.SaveNode(ctx, batch); err != nil {
 		return err
 	}
 	c.flush()

@@ -337,6 +337,18 @@ func (d *Detail) body(w int) string {
 
 	d.addAnchor(&b, d.jumpKey("First claim"), "First claim", 1)
 	d.section(&b, w, "First claim", p.FirstClaim)
+
+	// Full claims text action hint
+	b.WriteByte('\n')
+	fullTextLabel := "Full claims text"
+	key := d.jumpKey(fullTextLabel)
+	if key != 0 {
+		b.WriteString(d.theme.Warn.Render(fmt.Sprintf("[%s] %s — press '%s' to open full text viewer", string(key), fullTextLabel, string(key))))
+	} else {
+		b.WriteString(d.theme.Dim.Render("Full claims text — press 't' to open full text viewer"))
+	}
+	b.WriteByte('\n')
+
 	d.addAnchor(&b, d.jumpKey("Abstract"), "Abstract", 1)
 	d.section(&b, w, "Abstract", p.Abstract)
 	return strings.TrimRight(b.String(), "\n")

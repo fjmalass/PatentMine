@@ -44,6 +44,7 @@ const (
 	ScopeCitations Scope = "citations" // a citations / cited-by list
 	ScopeIDS       Scope = "ids"       // one patent's IDS entry editor
 	ScopeProjects  Scope = "projects"  // the project list
+	ScopeFullText  Scope = "fulltext"  // full claims text viewer
 	ScopeOverlay   Scope = "overlay"   // a modal overlay is focused
 )
 

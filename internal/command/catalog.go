@@ -94,10 +94,17 @@ const (
 	IDSToggleFull  ID = "ids.toggle-full"
 	IDSCycleStatus ID = "ids.cycle-status"
 	IDSDelete      ID = "ids.delete"
+
+	// Full text viewer.
+	OpenFullText ID = "view.fulltext"
+	CopyYank     ID = "edit.copy"
+	CopyYankMeta ID = "edit.copy-meta"
+	NoteAdd      ID = "edit.note-add"
+	NoteOpen     ID = "edit.note-open"
 )
 
 // listScopes are the scopes that behave as scrollable lists.
-var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeProjects, ScopeDetail, ScopeIDS}
+var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText}
 
 // patentScopes are the scopes where a patent is selected and can be acted on.
 var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}
@@ -184,6 +191,13 @@ func Default() (*Registry, error) {
 		Command{ID: LookupPatent, Name: "lookup", Aliases: []string{"lookup-patent"}, Usage: ":lookup", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
 		Command{ID: CrawlCancel, Kind: KindEngine, Method: proto.MethodCrawlCancel},
+
+		// --- full text viewer (view) ---
+		Command{ID: OpenFullText, Name: "open.fulltext", Aliases: []string{"fulltext", "claims", "all-claims"}, Usage: ":open.fulltext", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: CopyYank, Name: "copy", Aliases: []string{"yank", "clipboard"}, Usage: ":copy", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: CopyYankMeta, Name: "copy.meta", Aliases: []string{"yank-meta", "copy-with-patent"}, Usage: ":copy.meta", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: NoteAdd, Name: "note.add", Aliases: []string{"add-note", "note"}, Usage: ":note.add", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: NoteOpen, Name: "note.open", Aliases: []string{"notes", "show-notes"}, Usage: ":note.open", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 
 		// --- projects (engine) ---
 		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create [NAME]", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Scope{ScopeProjects}},

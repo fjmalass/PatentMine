@@ -111,6 +111,9 @@ func TestMergeRecords(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
 	}
+	if err := repo.SavePatent(ctx, samplePatent("US0000002B2")); err != nil {
+		t.Fatalf("SavePatent relation target: %v", err)
+	}
 	if err := repo.SaveRelation(ctx, domain.Relation{
 		From: absorb, To: domain.MustParsePatentNumber("US0000002B2"), Kind: domain.RelationCites,
 	}); err != nil {

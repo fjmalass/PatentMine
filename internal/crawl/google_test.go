@@ -103,6 +103,59 @@ func TestParseGoogleExtractsClaimAndExpiration(t *testing.T) {
 	}
 }
 
+const googleDescriptionPage = `<!doctype html><html><head></head><body>
+<section itemprop="description">
+  <div class="description-paragraph" num="0001">The present invention relates to widgets.</div>
+  <div class="description-paragraph" num="0045">In one embodiment, the frobnicator is blue.</div>
+  <div class="description-paragraph">An unnumbered paragraph of disclosure.</div>
+</section>
+</body></html>`
+
+func TestParseAllClaimsNumbersEveryClaim(t *testing.T) {
+	claims, err := ParseAllClaims([]byte(googleSamplePage))
+	if err != nil {
+		t.Fatalf("ParseAllClaims: %v", err)
+	}
+	if len(claims) != 2 {
+		t.Fatalf("claims = %d, want 2", len(claims))
+	}
+	if claims[0].Number != 1 || claims[1].Number != 2 {
+		t.Errorf("claim numbers = %d, %d", claims[0].Number, claims[1].Number)
+	}
+	if claims[0].Text != "A widget comprising a frobnicator." {
+		t.Errorf("claim 1 text = %q", claims[0].Text)
+	}
+}
+
+func TestParseDescriptionExtractsNumberedParagraphs(t *testing.T) {
+	paragraphs, err := ParseDescription([]byte(googleDescriptionPage))
+	if err != nil {
+		t.Fatalf("ParseDescription: %v", err)
+	}
+	if len(paragraphs) != 3 {
+		t.Fatalf("paragraphs = %d, want 3", len(paragraphs))
+	}
+	if paragraphs[0].Number != "0001" || paragraphs[1].Number != "0045" {
+		t.Errorf("paragraph numbers = %q, %q", paragraphs[0].Number, paragraphs[1].Number)
+	}
+	if paragraphs[2].Number != "" {
+		t.Errorf("unnumbered paragraph number = %q, want empty", paragraphs[2].Number)
+	}
+	if paragraphs[1].Text != "In one embodiment, the frobnicator is blue." {
+		t.Errorf("paragraph 0045 text = %q", paragraphs[1].Text)
+	}
+}
+
+func TestParseDescriptionAbsentReturnsEmpty(t *testing.T) {
+	paragraphs, err := ParseDescription([]byte(googleSamplePage))
+	if err != nil {
+		t.Fatalf("ParseDescription on a page with no description = %v, want nil", err)
+	}
+	if len(paragraphs) != 0 {
+		t.Errorf("paragraphs = %d, want 0", len(paragraphs))
+	}
+}
+
 func TestParseGoogleUnknownPageIsNotAvailable(t *testing.T) {
 	number := domain.MustParsePatentNumber("US10000000B2")
 	_, err := parseGoogle(number, []byte("<html><head></head><body>nothing here</body></html>"))

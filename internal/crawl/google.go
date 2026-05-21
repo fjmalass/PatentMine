@@ -2,7 +2,10 @@ package crawl
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -15,16 +18,33 @@ import (
 // googleMinInterval keeps requests to Google Patents polite.
 const googleMinInterval = 2 * time.Second
 
-// NewGoogleSource builds a Source backed by Google Patents.
+// googlePatentURLPrefix is the base of a Google Patents patent page URL.
+const googlePatentURLPrefix = "https://patents.google.com/patent/"
+
+// googleLimiter and googleClient are shared by every path that talks to Google
+// Patents — the bibliographic Source and FetchFullText alike — so the polite
+// request interval and the timeout/body caps apply to all Google traffic, not
+// just the crawl Source.
+var (
+	googleLimiter = newLimiter(googleMinInterval)
+	googleClient  = &http.Client{Timeout: httpTimeout}
+)
+
+// googlePatentURL returns the Google Patents page URL for a patent number.
+func googlePatentURL(n domain.PatentNumber) string {
+	return googlePatentURLPrefix + n.Normalized() + "/en"
+}
+
+// NewGoogleSource builds a Source backed by Google Patents. It shares the
+// package-level limiter and client so it cannot outpace FetchFullText.
 func NewGoogleSource() Source {
-	return newHTTPSource(
-		domain.SourceGoogle,
-		googleMinInterval,
-		func(n domain.PatentNumber) string {
-			return "https://patents.google.com/patent/" + n.Normalized() + "/en"
-		},
-		parseGoogle,
-	)
+	return &httpSource{
+		name:    domain.SourceGoogle,
+		client:  googleClient,
+		limiter: googleLimiter,
+		urlFor:  googlePatentURL,
+		parse:   parseGoogle,
+	}
 }
 
 var (
@@ -68,7 +88,7 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 	}
 
 	patent.FirstClaim = clean(googleText(doc.Selection, "section[itemprop='claims'] .claim", ".claims .claim"))
-	patent.SourceURL = "https://patents.google.com/patent/" + number.Normalized() + "/en"
+	patent.SourceURL = googlePatentURL(number)
 	// Google does not state a definitive expiration; estimate it as 20 years
 	// from the earliest of publication or grant.
 	if base := firstNonZeroTime(patent.PublicationDate, patent.GrantDate); !base.IsZero() {
@@ -263,6 +283,91 @@ func firstNonZeroTime(times ...time.Time) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// ParseAllClaims extracts every numbered claim from a Google Patents HTML body.
+// It returns the claims in document order with their numbers stripped from the
+// text and stored as ClaimSection.Number.
+func ParseAllClaims(body []byte) ([]domain.ClaimSection, error) {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("crawl/google: parse claims HTML: %w", err)
+	}
+	var claims []domain.ClaimSection
+	doc.Find("section[itemprop='claims'] .claim, .claims .claim").Each(func(i int, s *goquery.Selection) {
+		raw := strings.TrimSpace(s.Text())
+		if raw == "" {
+			return
+		}
+		num := i + 1
+		// Try to extract the claim number from the text ("1. ...", "Claim 1. ...")
+		cleaned := clean(raw)
+		claims = append(claims, domain.ClaimSection{Number: num, Text: cleaned})
+	})
+	if len(claims) == 0 {
+		return nil, fmt.Errorf("crawl/google: no claims found")
+	}
+	return claims, nil
+}
+
+// ParseDescription extracts the disclosure paragraphs from a Google Patents
+// HTML body. Google numbers paragraphs with a "num" attribute (e.g. "0045").
+// It returns an empty slice (not an error) when the page has no description.
+func ParseDescription(body []byte) ([]domain.DescriptionParagraph, error) {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("crawl/google: parse description HTML: %w", err)
+	}
+	var paragraphs []domain.DescriptionParagraph
+	doc.Find("section[itemprop='description'] .description-paragraph, .description .description-paragraph").Each(func(i int, s *goquery.Selection) {
+		text := clean(s.Text())
+		if text == "" {
+			return
+		}
+		num, _ := s.Attr("num")
+		paragraphs = append(paragraphs, domain.DescriptionParagraph{
+			Number: strings.TrimSpace(num),
+			Text:   text,
+		})
+	})
+	return paragraphs, nil
+}
+
+// FetchFullText fetches a patent's full claims and disclosure text from Google
+// Patents. It goes through the shared Google limiter and client, so it obeys
+// the same polite interval, timeout, and body cap as the crawl Source. Every
+// claim section is parsed; disclosure paragraphs are best-effort and may be
+// absent.
+func FetchFullText(ctx context.Context, number domain.PatentNumber) (*domain.FullText, error) {
+	if err := googleLimiter.wait(ctx); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, googlePatentURL(number), nil)
+	if err != nil {
+		return nil, fmt.Errorf("crawl/google: build full-text request: %w", err)
+	}
+	resp, err := googleClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("crawl/google: fetch full text: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("crawl/google: full text: unexpected status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("crawl/google: read body: %w", err)
+	}
+	claims, err := ParseAllClaims(body)
+	if err != nil {
+		return nil, err
+	}
+	paragraphs, _ := ParseDescription(body)
+	return &domain.FullText{
+		Number:     number,
+		Claims:     claims,
+		Paragraphs: paragraphs,
+	}, nil
 }
 
 // clean collapses runs of whitespace in scraped text to single spaces.

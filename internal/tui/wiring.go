@@ -97,6 +97,7 @@ func validateWiring(reg *command.Registry, keymaps *keymap.Keymaps, catalog *tex
 var paneScopes = []command.Scope{
 	command.ScopeCatalog, command.ScopeDetail,
 	command.ScopeCitations, command.ScopeIDS, command.ScopeProjects,
+	command.ScopeFullText,
 }
 
 // typedCheckScope returns the scopes in which a typed command must be
@@ -127,6 +128,7 @@ func paneHandlerSets() map[command.Scope][]command.ID {
 		pane.NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
 		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		pane.NewProjects(nil, theme),
+		pane.NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
 	}
 	out := make(map[command.Scope][]command.ID, len(panes))
 	for _, p := range panes {

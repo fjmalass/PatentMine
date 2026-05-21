@@ -140,6 +140,14 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		return errors.New("crawl: crawl root must not be empty")
 	}
 
+	// A crawl makes thousands of writes; suspend the listing cache for its
+	// duration so it does not serve rows that are stale within milliseconds,
+	// and flush once when the crawl ends.
+	if cc, ok := c.repo.(cacheController); ok {
+		cc.SuspendCaching()
+		defer cc.ResumeCaching()
+	}
+
 	log.Info("starting crawl",
 		slog.String("root", root.String()),
 		slog.Int("max_depth", maxDepth),
@@ -213,7 +221,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 			// A referenced patent that could not be fetched: record a stub
 			// so the edge to it still resolves, and keep crawling.
-			if _, stubErr := c.ensureRecord(ctx, cur.number); stubErr != nil {
+			if _, stubErr := c.stubRecord(ctx, cur.number); stubErr != nil {
 				return stubErr
 			}
 			report(Progress{
@@ -221,14 +229,6 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				Message: fmt.Sprintf("%s unavailable: %v", cur.number, err),
 			})
 			continue
-		}
-
-		recordNumber, err := c.saveRecord(ctx, res)
-		if err != nil {
-			log.Error("save record failed",
-				slog.String("number", cur.number.String()),
-				slog.String("error", err.Error()))
-			return err
 		}
 
 		// Update stats for all relations found in this fetch, even if we've
@@ -246,9 +246,10 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			}
 		}
 
-		if err := c.saveRelations(ctx, recordNumber, res.Relations, cur.depth, depthLimit, profile, seen, &queue); err != nil {
-			log.Error("save relations failed",
-				slog.String("number", recordNumber.String()),
+		recordNumber, err := c.ingestNode(ctx, res, cur.depth, depthLimit, profile, seen, &queue)
+		if err != nil {
+			log.Error("ingest node failed",
+				slog.String("number", cur.number.String()),
 				slog.String("error", err.Error()))
 			return err
 		}
@@ -280,10 +281,20 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 	return nil
 }
 
-// saveRecord stores a fetched Result as one record and returns the record's
-// permanent number. When the fetched documents already belong to one or more
-// records, the Result is folded into them (merging records that collide).
-func (c *Crawler) saveRecord(ctx context.Context, res Result) (domain.PatentNumber, error) {
+// cacheController is satisfied by store.Cache: a crawl brackets itself with
+// these calls so the listing cache becomes a pass-through for its duration.
+type cacheController interface {
+	SuspendCaching()
+	ResumeCaching()
+}
+
+// ingestNode persists one fetched Result and every edge it carries as a single
+// atomic batch. It resolves the record number (merging colliding records),
+// merges the record's documents, resolves each neighbour to a record number —
+// noting a stub for any neighbour not yet known — queues neighbours per the
+// crawl profile, and issues exactly one SaveNode. A node with hundreds of
+// citations therefore costs one transaction, not hundreds.
+func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit int, profile domain.CrawlProfile, seen map[domain.PatentNumber]bool, queue *[]node) (domain.PatentNumber, error) {
 	recordNumber, err := c.resolveRecord(ctx, candidateNumbers(res))
 	if err != nil {
 		return domain.PatentNumber{}, err
@@ -302,13 +313,41 @@ func (c *Crawler) saveRecord(ctx context.Context, res Result) (domain.PatentNumb
 	patent.FetchState = domain.FetchCached
 	patent.Documents = mergeDocuments(existing, res.Documents)
 	patent.DisplayNumber = patent.NumberToShow()
-	if err := c.repo.SavePatent(ctx, patent); err != nil {
-		return domain.PatentNumber{}, err
-	}
-	for _, doc := range res.Documents {
-		if err := c.repo.SaveDocument(ctx, recordNumber, doc); err != nil {
+
+	batch := store.NodeBatch{Patent: patent, Documents: res.Documents}
+	stubbed := map[domain.PatentNumber]bool{}
+
+	for _, rel := range res.Relations {
+		neighbour := rel.To
+		neighbourRecord, err := c.repo.RecordOf(ctx, neighbour)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			// Unknown neighbour: its record number is itself, and a stub is
+			// created in the same batch so the edge always resolves.
+			neighbourRecord = neighbour
+			if !stubbed[neighbour] {
+				stubbed[neighbour] = true
+				batch.Stubs = append(batch.Stubs, store.StubRecord{
+					Number: neighbour,
+					Stage:  domain.GuessStage(neighbour),
+				})
+			}
+		case err != nil:
 			return domain.PatentNumber{}, err
 		}
+		batch.Relations = append(batch.Relations, domain.Relation{
+			From: recordNumber, To: neighbourRecord, Kind: rel.Kind,
+		})
+		if !seen[neighbour] {
+			seen[neighbour] = true
+			if depth < depthLimit && shouldQueue(profile, rel.Kind, depth) {
+				*queue = append(*queue, node{number: neighbour, depth: depth + 1})
+			}
+		}
+	}
+
+	if err := c.repo.SaveNode(ctx, batch); err != nil {
+		return domain.PatentNumber{}, err
 	}
 	return recordNumber, nil
 }
@@ -344,51 +383,30 @@ func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentN
 	return keep, nil
 }
 
-// saveRelations records the fetched edges and queues neighbours. Every edge
-// endpoint is resolved to a record number, creating a stub record when the
-// neighbour is new, so an edge always points at real records.
-func (c *Crawler) saveRelations(ctx context.Context, from domain.PatentNumber, relations []domain.Relation, depth, depthLimit int, profile domain.CrawlProfile, seen map[domain.PatentNumber]bool, queue *[]node) error {
-	for _, rel := range relations {
-		neighbour := rel.To
-		neighbourRecord, err := c.ensureRecord(ctx, neighbour)
-		if err != nil {
-			return err
+// shouldQueue reports whether a neighbour reached by an edge of the given kind
+// should be enqueued for further crawling, given the crawl profile and the
+// current BFS depth.
+func shouldQueue(profile domain.CrawlProfile, kind domain.RelationKind, depth int) bool {
+	switch profile {
+	case domain.CrawlProfileCitations:
+		return kind == domain.RelationCites && depth == 0
+	case domain.CrawlProfileCitedBy:
+		return kind == domain.RelationCitedBy && depth == 0
+	case domain.CrawlProfileFamily:
+		return kind == domain.RelationParent || kind == domain.RelationChild
+	case domain.CrawlProfileAll, "":
+		if kind == domain.RelationCites || kind == domain.RelationCitedBy {
+			return depth == 0
 		}
-		if err := c.repo.SaveRelation(ctx, domain.Relation{
-			From: from, To: neighbourRecord, Kind: rel.Kind,
-		}); err != nil {
-			return err
-		}
-		if !seen[neighbour] {
-			seen[neighbour] = true
-			if depth < depthLimit {
-				shouldQueue := false
-				switch profile {
-				case domain.CrawlProfileCitations:
-					shouldQueue = rel.Kind == domain.RelationCites && depth == 0
-				case domain.CrawlProfileCitedBy:
-					shouldQueue = rel.Kind == domain.RelationCitedBy && depth == 0
-				case domain.CrawlProfileFamily:
-					shouldQueue = rel.Kind == domain.RelationParent || rel.Kind == domain.RelationChild
-				case domain.CrawlProfileAll, "":
-					if rel.Kind == domain.RelationCites || rel.Kind == domain.RelationCitedBy {
-						shouldQueue = depth == 0
-					} else {
-						shouldQueue = true
-					}
-				}
-				if shouldQueue {
-					*queue = append(*queue, node{number: neighbour, depth: depth + 1})
-				}
-			}
-		}
+		return true
+	default:
+		return false
 	}
-	return nil
 }
 
-// ensureRecord returns the record a number belongs to, creating a stub record
-// (a patent row plus one document) when the number is not known yet.
-func (c *Crawler) ensureRecord(ctx context.Context, number domain.PatentNumber) (domain.PatentNumber, error) {
+// stubRecord returns the record a number belongs to, creating a stub record (a
+// patent row plus one document) in one batch when the number is not known yet.
+func (c *Crawler) stubRecord(ctx context.Context, number domain.PatentNumber) (domain.PatentNumber, error) {
 	rec, err := c.repo.RecordOf(ctx, number)
 	if err == nil {
 		return rec, nil
@@ -396,17 +414,8 @@ func (c *Crawler) ensureRecord(ctx context.Context, number domain.PatentNumber) 
 	if !errors.Is(err, store.ErrNotFound) {
 		return domain.PatentNumber{}, err
 	}
-	stub := domain.Patent{
-		Number:        number,
-		DisplayNumber: number,
-		FetchState:    domain.FetchStub,
-	}
-	if err := c.repo.SavePatent(ctx, stub); err != nil {
-		return domain.PatentNumber{}, err
-	}
-	if err := c.repo.SaveDocument(ctx, number, domain.Document{
-		Number: number,
-		Stage:  domain.GuessStage(number),
+	if err := c.repo.SaveNode(ctx, store.NodeBatch{
+		Stubs: []store.StubRecord{{Number: number, Stage: domain.GuessStage(number)}},
 	}); err != nil {
 		return domain.PatentNumber{}, err
 	}

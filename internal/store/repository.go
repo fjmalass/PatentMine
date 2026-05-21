@@ -40,12 +40,36 @@ type PatentQuery struct {
 	SortAscending bool
 }
 
+// StubRecord is a placeholder patent created for a neighbour discovered through
+// a family-graph edge but not yet fetched. It is just a number and a guessed
+// life stage; an existing record of the same number is never overwritten.
+type StubRecord struct {
+	Number domain.PatentNumber
+	Stage  domain.Stage
+}
+
+// NodeBatch is every write a crawler makes for one fetched patent: the record
+// itself, its life-stage documents, stub records for newly discovered
+// neighbours, and the family-graph edges. SaveNode applies the whole batch in a
+// single transaction, so a node with hundreds of citations costs one commit
+// instead of hundreds. A zero-value Patent is skipped, so a batch may carry
+// only stubs (used when a referenced patent could not be fetched).
+type NodeBatch struct {
+	Patent    domain.Patent
+	Documents []domain.Document
+	Stubs     []StubRecord
+	Relations []domain.Relation
+}
+
 // Repository is the persistence contract. Every method takes a context so the
 // interface is cancellation-aware and ready for a pooled/async backend without
 // changing any caller — the "future non-blocking local DB" requirement.
 type Repository interface {
 	// SavePatent inserts or updates a patent by its number.
 	SavePatent(ctx context.Context, p domain.Patent) error
+	// SaveNode atomically writes one crawled patent: its record, documents,
+	// neighbour stubs, and family-graph edges.
+	SaveNode(ctx context.Context, batch NodeBatch) error
 	// DeletePatent permanently removes a patent and all its associated
 	// documents, relations, and memberships.
 	DeletePatent(ctx context.Context, n domain.PatentNumber) error
