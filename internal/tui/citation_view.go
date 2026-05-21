@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	citationColSource = "source"
-	overlayIndexWidth  = 4  // index column width shared across all overlay list views
-	listJumpWidth      = 2  // width reserved for jump-mode hint prefix (e.g. "a ")
-	listRowPrefixWidth = 2  // width of rowNoCursor / rowCursor
+	citationColSource  = "source"
+	overlayIndexWidth  = 4 // index column width shared across all overlay list views
+	listJumpWidth      = 2 // width reserved for jump-mode hint prefix (e.g. "a ")
+	listRowPrefixWidth = 2 // width of rowNoCursor / rowCursor
 	rowCursor          = "> "
 	rowNoCursor        = "  "
 
@@ -80,11 +80,11 @@ func (m *Model) reviewOverlayColumns(availableWidth int) []listColumn {
 		},
 		availableWidth,
 		map[string]int{
-			domain.SortColumnNumber:    citColMinNum,
-			domain.SortColumnTitle:     citColMinTitle,
-			domain.SortColumnInventor:  citColMinInv,
+			domain.SortColumnNumber:     citColMinNum,
+			domain.SortColumnTitle:      citColMinTitle,
+			domain.SortColumnInventor:   citColMinInv,
 			domain.SortColumnExpiration: citColMinExp,
-			citationColSource:          citColMinSource,
+			citationColSource:           citColMinSource,
 		},
 		[]string{
 			domain.SortColumnTitle,
@@ -102,9 +102,9 @@ func (m *Model) viewCitations(relation string) string {
 	}
 	citationPopupTitle := func() string {
 		if relation == domain.RelationCitedBy {
-			return "Cited By · " + m.current.Number
+			return "Cited By · " + string(m.current.Number)
 		}
-		return "Citations · " + m.current.Number
+		return "Citations · " + string(m.current.Number)
 	}
 	opts := storage.ListCitationsOptions{
 		SortColumn:        m.sortColumn,
@@ -186,7 +186,7 @@ func (m *Model) viewCitations(relation string) string {
 		}
 
 		rowValues := map[string]string{
-			domain.SortColumnNumber:      edge.TargetPatent,
+			domain.SortColumnNumber:      string(edge.TargetPatent),
 			domain.SortColumnTitle:       edge.TargetTitle,
 			domain.SortColumnInventor:    formatInventorsShort(edge.TargetInventors),
 			domain.SortColumnExpiration:  expDate,
@@ -271,11 +271,11 @@ func (m *Model) viewReviewQueue() string {
 		}
 
 		rowValues := map[string]string{
-			domain.SortColumnNumber:     edge.TargetPatent,
+			domain.SortColumnNumber:     string(edge.TargetPatent),
 			domain.SortColumnTitle:      edge.TargetTitle,
 			domain.SortColumnInventor:   formatInventorsShort(edge.TargetInventors),
 			domain.SortColumnExpiration: expDate,
-			citationColSource:           edge.SourcePatent,
+			citationColSource:           string(edge.SourcePatent),
 		}
 
 		rowStyle := m.overlayRowStyle(i, selected)
@@ -343,7 +343,7 @@ func (m *Model) viewPopupPatentDetail() string {
 	w := m.overlayContentWidth()
 	style := lipgloss.NewStyle().Width(w)
 	var body strings.Builder
-	body.WriteString(style.Bold(true).Render(p.Number) + "\n")
+	body.WriteString(style.Bold(true).Render(string(p.Number)) + "\n")
 	body.WriteString(style.Render(p.Title) + "\n\n")
 	body.WriteString(m.renderDetailFields(m.detailFields(), w, false))
 	return m.renderPopup(m.text.T(TextPreviewTitle), body.String())

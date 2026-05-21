@@ -73,7 +73,7 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 	}
 
 	patent := domain.Patent{
-		Number:            number,
+		Number:            domain.PatentNumber(number),
 		Title:             clean(firstText(doc.Selection, "span[itemprop='title']", "meta[name='DC.title']", "title")),
 		Abstract:          clean(firstText(doc.Selection, "div.abstract", "section[itemprop='abstract']", "abstract")),
 		Assignee:          clean(firstText(doc.Selection, "dd[itemprop='assigneeOriginal']", "span[itemprop='assigneeOriginal']", "dd[itemprop='assigneeCurrent']")),
@@ -85,7 +85,7 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 		ApplicationDate:   attr(doc.Selection, "time[itemprop='filingDate']", "datetime"),
 		PublicationNumber: clean(firstText(doc.Selection, "span[itemprop='publicationNumber']")),
 		GrantNumber:       clean(firstText(doc.Selection, "span[itemprop='grantNumber']")),
-		FirstClaim:         clean(doc.Find("section[itemprop='claims'] .claim").First().Text()),
+		FirstClaim:        clean(doc.Find("section[itemprop='claims'] .claim").First().Text()),
 	}
 	if expirationDate := adjustedExpirationDate(doc); expirationDate != "" {
 		patent.ExpirationDate = expirationDate
@@ -99,7 +99,7 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 	}
 	bundle := domain.PatentBundle{Patent: patent}
 	if patent.Abstract != "" {
-		bundle.Sections = append(bundle.Sections, domain.PatentTextSection{PatentNumber: number, SectionType: "abstract", Ordinal: 1, Text: patent.Abstract})
+		bundle.Sections = append(bundle.Sections, domain.PatentTextSection{PatentNumber: domain.PatentNumber(number), SectionType: "abstract", Ordinal: 1, Text: patent.Abstract})
 	}
 	addSection(doc.Selection, &bundle, number, "claims", "section[itemprop='claims'] .claim, .claims .claim")
 	addSection(doc.Selection, &bundle, number, "description", "section[itemprop='description'] p, .description p")
@@ -110,7 +110,7 @@ func ImportGooglePatents(rawURL string, logger *slog.Logger) (domain.PatentBundl
 	bundle.Patent.ExpectedCitations = bundle.ExpectedCitations
 	bundle.Patent.ExpectedCitedBy = bundle.ExpectedCitedBy
 
-	bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: number, CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title)})
+	bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: domain.PatentNumber(number), CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title)})
 
 	// Format counts for logging
 	countStr := func(actual, expected int) string {
@@ -177,7 +177,7 @@ func extractClassifications(doc *goquery.Document, bundle *domain.PatentBundle, 
 		if code == "" {
 			code, description = classificationFromText(row.Text())
 		}
-		addClassification(bundle, number, code, description)
+		addClassification(bundle, domain.PatentNumber(number), code, description)
 	})
 	logger.Debug("google.classifications", "number", number, "count", len(bundle.Classifications)-before)
 }
@@ -216,7 +216,7 @@ func classificationFromText(text string) (string, string) {
 	return code, clean(description)
 }
 
-func addClassification(bundle *domain.PatentBundle, number, code, description string) {
+func addClassification(bundle *domain.PatentBundle, number domain.PatentNumber, code, description string) {
 	if strings.TrimSpace(code) == "" {
 		return
 	}
@@ -279,14 +279,14 @@ func texts(s *goquery.Selection, selectors ...string) []string {
 	return out
 }
 
-func addSection(s *goquery.Selection, bundle *domain.PatentBundle, number, sectionType, selector string) {
+func addSection(s *goquery.Selection, bundle *domain.PatentBundle, number string, sectionType, selector string) {
 	ordinal := 1
 	s.Find(selector).Each(func(_ int, sel *goquery.Selection) {
 		text := clean(sel.Text())
 		if text == "" {
 			return
 		}
-		bundle.Sections = append(bundle.Sections, domain.PatentTextSection{PatentNumber: number, SectionType: sectionType, Ordinal: ordinal, Text: text})
+		bundle.Sections = append(bundle.Sections, domain.PatentTextSection{PatentNumber: domain.PatentNumber(number), SectionType: sectionType, Ordinal: ordinal, Text: text})
 		ordinal++
 	})
 }
@@ -336,8 +336,8 @@ func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logge
 	}
 
 	addEdge := func(e domain.FamilyEdge) {
-		key := e.ParentNumber + "\x00" + e.ChildNumber
-		if seen[key] || strings.EqualFold(e.ParentNumber, e.ChildNumber) {
+		key := string(e.ParentNumber) + "\x00" + string(e.ChildNumber)
+		if seen[key] || strings.EqualFold(string(e.ParentNumber), string(e.ChildNumber)) {
 			return
 		}
 		if e.ParentNumber == "" || e.ChildNumber == "" {
@@ -355,8 +355,8 @@ func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logge
 		}
 		relRaw := row.Find("[itemprop='relationType']").First().Text()
 		addEdge(domain.FamilyEdge{
-			ParentNumber: parentNum,
-			ChildNumber:  source,
+			ParentNumber: domain.PatentNumber(parentNum),
+			ChildNumber:  domain.PatentNumber(source),
 			RelationType: mapRelationType(relRaw),
 		})
 	})
@@ -369,8 +369,8 @@ func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logge
 		}
 		relRaw := row.Find("[itemprop='relationType']").First().Text()
 		addEdge(domain.FamilyEdge{
-			ParentNumber: source,
-			ChildNumber:  childNum,
+			ParentNumber: domain.PatentNumber(source),
+			ChildNumber:  domain.PatentNumber(childNum),
 			RelationType: mapRelationType(relRaw),
 		})
 	})
@@ -383,8 +383,8 @@ func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logge
 		}
 		relRaw := row.Find("[itemprop='relationType']").First().Text()
 		addEdge(domain.FamilyEdge{
-			ParentNumber: source,
-			ChildNumber:  childNum,
+			ParentNumber: domain.PatentNumber(source),
+			ChildNumber:  domain.PatentNumber(childNum),
 			RelationType: mapRelationType(relRaw),
 		})
 	})
@@ -412,10 +412,10 @@ func extractFamilyEdges(doc *goquery.Document, source string, logger *slog.Logge
 			return numbers
 		}
 		for _, child := range collectLegacy("[itemprop='forwardReferencesFamily']") {
-			addEdge(domain.FamilyEdge{ParentNumber: source, ChildNumber: child, RelationType: domain.FamilyRelationContinuation})
+			addEdge(domain.FamilyEdge{ParentNumber: domain.PatentNumber(source), ChildNumber: domain.PatentNumber(child), RelationType: domain.FamilyRelationContinuation})
 		}
 		for _, parent := range collectLegacy("[itemprop='backwardReferencesFamily']") {
-			addEdge(domain.FamilyEdge{ParentNumber: parent, ChildNumber: source, RelationType: domain.FamilyRelationContinuation})
+			addEdge(domain.FamilyEdge{ParentNumber: domain.PatentNumber(parent), ChildNumber: domain.PatentNumber(source), RelationType: domain.FamilyRelationContinuation})
 		}
 	}
 
@@ -440,7 +440,7 @@ func extractCitationEdges(doc *goquery.Document, source string, logger *slog.Log
 			return
 		}
 		seen[key] = true
-		edges = append(edges, domain.CitationEdge{SourcePatent: source, TargetPatent: target, RelationType: relation})
+		edges = append(edges, domain.CitationEdge{SourcePatent: domain.PatentNumber(source), TargetPatent: domain.PatentNumber(target), RelationType: relation})
 	}
 
 	extractRows := func(selector, relation string) {

@@ -189,7 +189,7 @@ func (m *Model) viewList() string {
 		b.WriteString(m.styleLine(dimStyle.Render(m.text.T(TextListEmpty))) + "\n")
 		return b.String()
 	}
-	idsByPatent := map[string]string{}
+	idsByPatent := map[domain.PatentNumber]string{}
 	if idsEntries, err := m.repo.ListIDSEntries(m.ctx, m.ProjectID); err == nil {
 		for _, entry := range idsEntries {
 			idsByPatent[entry.PatentNumber] = string(entry.Status)
@@ -246,7 +246,7 @@ func (m *Model) viewList() string {
 		}
 
 		rowValues := map[string]string{
-			domain.SortColumnNumber:      p.Number,
+			domain.SortColumnNumber:      string(p.Number),
 			domain.SortColumnTitle:       p.Title,
 			domain.SortColumnInventor:    formatInventorsShort(p.Inventors),
 			domain.SortColumnCPC:         p.ClassificationLabel,

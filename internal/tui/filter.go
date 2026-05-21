@@ -634,7 +634,7 @@ func (m *Model) compactCommand() (tea.Model, tea.Cmd) {
 			m.err = err.Error()
 			return m, nil
 		}
-		pdfPath := filepath.Join(defaultPDFDir, p.Number+".pdf")
+		pdfPath := filepath.Join(defaultPDFDir, string(p.Number)+".pdf")
 		if removeErr := os.Remove(pdfPath); removeErr != nil && !os.IsNotExist(removeErr) {
 			m.logger.Error("compact: failed to delete pdf", "path", pdfPath, "error", removeErr)
 		}

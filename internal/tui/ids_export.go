@@ -47,7 +47,7 @@ func (m *Model) idsExportCommand(args []string) (tea.Model, tea.Cmd) {
 
 	refs := m.idsExportReferences(append(ids, npl...))
 	if strings.EqualFold(filepath.Ext(filename), ".pdf") {
-		if err := writeIDSPDF(filename, projectName, m.ProjectID, meta, refs, time.Now()); err != nil {
+		if err := writeIDSPDF(filename, projectName, string(m.ProjectID), meta, refs, time.Now()); err != nil {
 			m.err = "export failed: " + err.Error()
 			return m, nil
 		}
@@ -55,7 +55,7 @@ func (m *Model) idsExportCommand(args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	content := renderIDSMarkdown(projectName, m.ProjectID, meta, refs, time.Now())
+	content := renderIDSMarkdown(projectName, string(m.ProjectID), meta, refs, time.Now())
 	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
 		m.err = "export failed: " + err.Error()
 		return m, nil
@@ -89,7 +89,7 @@ func idsReferenceSection(entry domain.IDSEntry) string {
 	if entry.IsNPL {
 		return "Non-Patent Literature"
 	}
-	upper := strings.ToUpper(strings.TrimSpace(entry.PatentNumber))
+	upper := strings.ToUpper(strings.TrimSpace(string(entry.PatentNumber)))
 	cc := strings.ToUpper(strings.TrimSpace(entry.CountryCode))
 	if cc == "US" || strings.HasPrefix(upper, "US") {
 		return "U.S. Patent Documents"
@@ -374,7 +374,7 @@ func writeIDSUSSection(pdf *gofpdf.Fpdf, refs []idsExportReference, usableW floa
 		cells := []string{
 			"",
 			fmt.Sprintf("%d", i+1),
-			ref.Entry.PatentNumber,
+			string(ref.Entry.PatentNumber),
 			ref.Entry.KindCode,
 			formatIDSDate(patentDisplayDate(ref.Patent)),
 			patentPatentee(ref.Patent),
@@ -403,7 +403,7 @@ func writeIDSForeignSection(pdf *gofpdf.Fpdf, refs []idsExportReference, usableW
 		cc := ref.Entry.CountryCode
 		if cc == "" {
 			// try to parse from patent number prefix
-			pn := strings.ToUpper(ref.Entry.PatentNumber)
+			pn := strings.ToUpper(string(ref.Entry.PatentNumber))
 			if len(pn) >= 2 && !('0' <= pn[0] && pn[0] <= '9') {
 				cc = pn[:2]
 			}
@@ -412,7 +412,7 @@ func writeIDSForeignSection(pdf *gofpdf.Fpdf, refs []idsExportReference, usableW
 			"",
 			fmt.Sprintf("%d", i+1),
 			cc,
-			ref.Entry.PatentNumber,
+			string(ref.Entry.PatentNumber),
 			ref.Entry.KindCode,
 			formatIDSDate(patentDisplayDate(ref.Patent)),
 			patentPatentee(ref.Patent),

@@ -1,0 +1,57 @@
+flowchart TD
+    Client["Client requests citation graph<br/>patent=US8164048B2"]
+    Gateway["HTTP lookup boundary<br/>auth token, tenant identity, trace ID, abuse bounds"]
+    Normalize["Normalize patent ID<br/>US prefix, kind-code friendly"]
+    Cache{"Local graph cache"}
+
+    Fresh["Fresh graph<br/>cited + citing edges materialized"]
+    Stale["Stale graph<br/>usable stale data"]
+    Missing["No graph available"]
+
+    FreshResponse["200 OK<br/>data, freshness, provenance"]
+    StaleResponse["200 OK stale-while-revalidate<br/>refresh_pending=true, job_id"]
+    PendingResponse["202 Accepted<br/>pending, job_id, Retry-After"]
+
+    Dedupe{"Active job for patent?"}
+    Coalesce["Coalesce request<br/>trace_count++"]
+    Enqueue["Durable refresh job<br/>dedupe_key, retry_count, priority, desired_depth"]
+    Queue["citation_refresh_jobs"]
+
+    Runner["Bounded worker runner"]
+    Limiter["Global USPTO limiter<br/>token pacing, jitter, max in-flight"]
+    Circuit["Circuit breaker<br/>opens on repeated transient failures"]
+    USPTO["USPTO importer<br/>outside public request path"]
+    Backoff{"429, timeout, transient error?"}
+    Retry["Reschedule<br/>Retry-After or exponential backoff with jitter"]
+    Materialize["Atomic materialization<br/>patent metadata, cited edges, citing edges,<br/>expected totals, page-cap metadata"]
+    MarkFresh["Mark graph fresh<br/>refreshed_at, fresh_until, provenance"]
+
+    Status["/lookup/status<br/>job state + queue/cache metrics"]
+    Poll["Client polls or retries"]
+
+    Client --> Gateway --> Normalize --> Cache
+    Cache -->|fresh| Fresh --> FreshResponse
+    Cache -->|stale| Stale --> StaleResponse
+    Cache -->|missing| Missing --> PendingResponse
+    Stale --> Dedupe
+    Missing --> Dedupe
+    Dedupe -->|yes| Coalesce --> Queue
+    Dedupe -->|no| Enqueue --> Queue
+    Queue --> Runner --> Limiter --> Circuit --> USPTO --> Backoff
+    Backoff -->|yes| Retry --> Queue
+    Backoff -->|no| Materialize --> MarkFresh --> Status
+    PendingResponse --> Poll --> Client
+    StaleResponse --> Poll
+    FreshResponse --> Status
+
+    classDef serving fill:#e8f0ff,stroke:#2563eb,stroke-width:2px,color:#111827
+    classDef async fill:#fff4cc,stroke:#b7791f,stroke-width:2px,color:#111827
+    classDef success fill:#dff7ef,stroke:#047857,stroke-width:2px,color:#111827
+    classDef risk fill:#ffe4e6,stroke:#be123c,stroke-width:2px,color:#111827
+    classDef decision fill:#ffffff,stroke:#374151,stroke-width:1.5px,color:#111827
+
+    class Client,Gateway,Normalize,Fresh,Stale,Missing,FreshResponse,StaleResponse,PendingResponse,Status,Poll serving
+    class Enqueue,Coalesce,Queue,Runner,Limiter,USPTO,Retry,Materialize async
+    class MarkFresh success
+    class Circuit,Backoff risk
+    class Cache,Dedupe decision

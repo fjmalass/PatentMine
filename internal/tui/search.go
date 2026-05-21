@@ -54,13 +54,13 @@ func (m *Model) searchFrom(s searchable, query string, next bool) *Model {
 
 type patentListSearchable struct{ m *Model }
 
-func (s patentListSearchable) ItemCount() int  { return len(s.m.patents) }
-func (s patentListSearchable) GetSelected() int { return s.m.patentSelected }
-func (s patentListSearchable) SetSelected(idx int) { s.m.patentSelected = idx }
-func (s patentListSearchable) MatchLabel(idx int) string { return s.m.patents[idx].Number }
+func (s patentListSearchable) ItemCount() int            { return len(s.m.patents) }
+func (s patentListSearchable) GetSelected() int          { return s.m.patentSelected }
+func (s patentListSearchable) SetSelected(idx int)       { s.m.patentSelected = idx }
+func (s patentListSearchable) MatchLabel(idx int) string { return string(s.m.patents[idx].Number) }
 func (s patentListSearchable) Match(idx int, query string, ignoreCase bool) bool {
 	p := s.m.patents[idx]
-	if containsMatch(p.Number, query, ignoreCase) ||
+	if containsMatch(string(p.Number), query, ignoreCase) ||
 		containsMatch(p.Title, query, ignoreCase) ||
 		containsMatch(p.Abstract, query, ignoreCase) ||
 		containsMatch(p.Assignee, query, ignoreCase) ||
@@ -189,7 +189,7 @@ func (s idsSearchable) ItemCount() int {
 func (s idsSearchable) Match(idx int, query string, ignoreCase bool) bool {
 	entries, _ := s.m.repo.ListIDSEntries(s.m.ctx, s.m.ProjectID)
 	e := entries[idx]
-	return containsMatch(e.PatentNumber, query, ignoreCase) || containsMatch(e.Notes, query, ignoreCase)
+	return containsMatch(string(e.PatentNumber), query, ignoreCase) || containsMatch(e.Notes, query, ignoreCase)
 }
 func (s idsSearchable) SetSelected(idx int)       { s.m.projectIDSSelected = idx }
 func (s idsSearchable) GetSelected() int          { return s.m.projectIDSSelected }
@@ -207,7 +207,7 @@ func (s familySearchable) Match(idx int, query string, ignoreCase bool) bool {
 		return false
 	}
 	node := nodes[idx]
-	return containsMatch(node.number, query, ignoreCase) || containsMatch(node.relType, query, ignoreCase) || containsMatch(node.grantYear, query, ignoreCase)
+	return containsMatch(string(node.number), query, ignoreCase) || containsMatch(node.relType, query, ignoreCase) || containsMatch(node.grantYear, query, ignoreCase)
 }
 func (s familySearchable) SetSelected(idx int) { s.m.familySelected = idx }
 func (s familySearchable) GetSelected() int    { return s.m.familySelected }
@@ -216,7 +216,7 @@ func (s familySearchable) MatchLabel(idx int) string {
 	if idx < 0 || idx >= len(nodes) {
 		return ""
 	}
-	return nodes[idx].number
+	return string(nodes[idx].number)
 }
 
 type citationSearchable struct{ m *Model }
@@ -228,7 +228,7 @@ func (s citationSearchable) filteredEdges() []domain.CitationEdge {
 	}
 	return edges
 }
-func (s citationSearchable) ItemCount() int { return len(s.filteredEdges()) }
+func (s citationSearchable) ItemCount() int   { return len(s.filteredEdges()) }
 func (s citationSearchable) GetSelected() int { return s.m.citationLocalIdx }
 func (s citationSearchable) SetSelected(idx int) {
 	edges := s.filteredEdges()
@@ -242,7 +242,7 @@ func (s citationSearchable) MatchLabel(idx int) string {
 	if idx < 0 || idx >= len(edges) {
 		return ""
 	}
-	return edges[idx].TargetPatent
+	return string(edges[idx].TargetPatent)
 }
 func (s citationSearchable) Match(idx int, query string, ignoreCase bool) bool {
 	edges := s.filteredEdges()
@@ -250,7 +250,7 @@ func (s citationSearchable) Match(idx int, query string, ignoreCase bool) bool {
 		return false
 	}
 	e := edges[idx]
-	if containsMatch(e.TargetPatent, query, ignoreCase) || containsMatch(e.TargetTitle, query, ignoreCase) {
+	if containsMatch(string(e.TargetPatent), query, ignoreCase) || containsMatch(e.TargetTitle, query, ignoreCase) {
 		return true
 	}
 	for _, inv := range e.TargetInventors {

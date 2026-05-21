@@ -101,7 +101,7 @@ func (m *Model) trackVisualEnd(val int) {
 		}
 		m.lastVisualNumbers = make([]string, 0, end-start+1)
 		for i := start; i <= end && i < len(m.patents); i++ {
-			m.lastVisualNumbers = append(m.lastVisualNumbers, m.patents[i].Number)
+			m.lastVisualNumbers = append(m.lastVisualNumbers, string(m.patents[i].Number))
 		}
 	} else {
 		m.lastVisualNumbers = nil
@@ -170,7 +170,7 @@ func (m *Model) restoreVisualSelection() *Model {
 func (m *Model) findVisualRange(numbers []string) (first, last int) {
 	idx := make(map[string]int, len(m.patents))
 	for i, p := range m.patents {
-		idx[p.Number] = i
+		idx[string(p.Number)] = i
 	}
 	first, last = -1, -1
 	for _, num := range numbers {
@@ -259,7 +259,7 @@ type selectionKind int8
 
 const (
 	selKindPatent   selectionKind = iota // indices → patent numbers
-	selKindCitation                       // indices → citation edge targets (lazy fetch)
+	selKindCitation                      // indices → citation edge targets (lazy fetch)
 )
 
 // selectionContext captures selection state at action time so overlay apply
@@ -268,12 +268,12 @@ const (
 // Citation kind: lazy — stores query params; edges fetched at apply time.
 type selectionContext struct {
 	kind       selectionKind
-	indices    []int  // sorted ascending
-	livePatent string // first-selected; already live-mutated (tag space-toggle target)
+	indices    []int               // sorted ascending
+	livePatent domain.PatentNumber // first-selected; already live-mutated (tag space-toggle target)
 	// patent kind:
-	patentNumbers []string
+	patentNumbers []domain.PatentNumber
 	// citation kind:
-	parentNumber string
+	parentNumber domain.PatentNumber
 	relation     string
 	sortColumn   string
 	sortOrder    string
@@ -285,7 +285,7 @@ func (s selectionContext) IsMulti() bool { return len(s.indices) > 1 }
 
 // PatentNumbers returns patent numbers for all selected items.
 // Citation kind: lazily fetches edges from repo.
-func (s selectionContext) PatentNumbers(m *Model) ([]string, error) {
+func (s selectionContext) PatentNumbers(m *Model) ([]domain.PatentNumber, error) {
 	if s.kind == selKindPatent {
 		return s.patentNumbers, nil
 	}
@@ -293,7 +293,7 @@ func (s selectionContext) PatentNumbers(m *Model) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	nums := make([]string, 0, len(s.indices))
+	nums := make([]domain.PatentNumber, 0, len(s.indices))
 	for _, idx := range s.indices {
 		if idx >= 0 && idx < len(edges) {
 			nums = append(nums, edges[idx].TargetPatent)
@@ -327,13 +327,13 @@ func (m *Model) captureSelection() selectionContext {
 	switch {
 	case m.mode == viewList:
 		indices := m.selectedIndices()
-		nums := make([]string, 0, len(indices))
+		nums := make([]domain.PatentNumber, 0, len(indices))
 		for _, idx := range indices {
 			if idx >= 0 && idx < len(m.patents) {
 				nums = append(nums, m.patents[idx].Number)
 			}
 		}
-		live := ""
+		var live domain.PatentNumber
 		if len(nums) > 0 {
 			live = nums[0]
 		}
@@ -345,7 +345,7 @@ func (m *Model) captureSelection() selectionContext {
 			relation = domain.RelationCitedBy
 		}
 		indices := m.selectedIndices()
-		live := ""
+		var live domain.PatentNumber
 		if edges, err := m.citationEdgesForRelation(relation); err == nil && len(edges) > 0 && len(indices) > 0 {
 			live = edges[clamp(indices[0], 0, len(edges)-1)].TargetPatent
 		}
@@ -362,24 +362,24 @@ func (m *Model) captureSelection() selectionContext {
 
 	case m.mode == viewFamily:
 		nodes := m.buildFamilyTree()
-		live := ""
+		var live domain.PatentNumber
 		if m.familySelected >= 0 && m.familySelected < len(nodes) {
 			live = nodes[m.familySelected].number
 		}
 		return selectionContext{
-			kind:       selKindPatent,
-			indices:    []int{m.familySelected},
-			livePatent: live,
-			patentNumbers: []string{live},
+			kind:          selKindPatent,
+			indices:       []int{m.familySelected},
+			livePatent:    live,
+			patentNumbers: []domain.PatentNumber{live},
 		}
 
 	default: // viewDetail, viewReview, or any other — single current patent
 		live := m.current.Number
 		return selectionContext{
-			kind:       selKindPatent,
-			indices:    []int{0},
-			livePatent: live,
-			patentNumbers: []string{live},
+			kind:          selKindPatent,
+			indices:       []int{0},
+			livePatent:    live,
+			patentNumbers: []domain.PatentNumber{live},
 		}
 	}
 }

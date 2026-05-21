@@ -14,7 +14,7 @@ func (m *Model) viewDetail() string {
 	p := m.current
 	style := lipgloss.NewStyle().Width(m.width)
 	var b strings.Builder
-	b.WriteString(style.Bold(true).Render(p.Number) + "\n")
+	b.WriteString(style.Bold(true).Render(string(p.Number)) + "\n")
 	b.WriteString(style.Render(p.Title) + "\n\n")
 	b.WriteString(m.renderDetailFields(m.detailFields(), m.width, true))
 	return b.String()
@@ -204,7 +204,7 @@ func (m *Model) detailFields() []detailField {
 		if len(parents) > 0 {
 			nums := make([]string, len(parents))
 			for i, e := range parents {
-				nums[i] = e.ParentNumber
+				nums[i] = string(e.ParentNumber)
 			}
 			parentValue = strings.Join(nums, ", ")
 			parentDisplay = fmt.Sprintf("(%d) %s", len(parents), parentValue)
@@ -221,7 +221,7 @@ func (m *Model) detailFields() []detailField {
 		if len(children) > 0 {
 			nums := make([]string, len(children))
 			for i, e := range children {
-				nums[i] = e.ChildNumber
+				nums[i] = string(e.ChildNumber)
 			}
 			childValue = strings.Join(nums, ", ")
 			childDisplay = fmt.Sprintf("(%d) %s", len(children), childValue)
@@ -324,8 +324,8 @@ func (m *Model) detailFields() []detailField {
 	return fields
 }
 
-func (m *Model) citationStats(number string) (int, time.Time, int, time.Time) {
-	if strings.TrimSpace(number) == "" || m.repo == nil {
+func (m *Model) citationStats(number domain.PatentNumber) (int, time.Time, int, time.Time) {
+	if strings.TrimSpace(string(number)) == "" || m.repo == nil {
 		return 0, time.Time{}, 0, time.Time{}
 	}
 	citations, _ := m.repo.ListCitations(m.ctx, m.ProjectID, number, domain.RelationCites, storage.ListCitationsOptions{})

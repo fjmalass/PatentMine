@@ -102,7 +102,7 @@ func (m *Model) viewInventors() string {
 	countWidth := 6 // "(NNN)"
 
 	var b strings.Builder
-	b.WriteString(m.renderPopupHeader("Inventors · " + m.current.Number))
+	b.WriteString(m.renderPopupHeader("Inventors · " + string(m.current.Number)))
 	for i, inventor := range inventors {
 		prefix := rowNoCursor
 		if i == selected {
@@ -195,7 +195,7 @@ func (m *Model) viewAI() string {
 	for _, artifact := range artifacts {
 		label := artifact.AnalysisType
 		if artifact.ComparedPatentNumber != "" {
-			label += " vs " + artifact.ComparedPatentNumber
+			label += " vs " + string(artifact.ComparedPatentNumber)
 		}
 		body.WriteString(fmt.Sprintf("[%s, %s]\n%s\n\n", label, artifact.Provider, artifact.Body))
 	}

@@ -11,7 +11,7 @@ func TestTagCRUD(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestRepo(t)
 
-	projectID := "default"
+	projectID := domain.ProjectID("default")
 	tagName := "AI"
 	tagColor := "blue"
 
@@ -29,7 +29,7 @@ func TestTagCRUD(t *testing.T) {
 	if len(tags) != 1 {
 		t.Fatalf("expected 1 tag, got %d", len(tags))
 	}
-	if tags[0].Name != tagName || tags[0].Color != tagColor {
+	if tags[0].Name != "ai" || tags[0].Color != tagColor {
 		t.Errorf("expected tag AI/blue, got %s/%s", tags[0].Name, tags[0].Color)
 	}
 
@@ -39,12 +39,12 @@ func TestTagCRUD(t *testing.T) {
 		t.Fatalf("failed to rename tag: %v", err)
 	}
 	tags, _ = repo.ListTagsWithCounts(ctx, projectID)
-	if tags[0].Name != newName {
+	if tags[0].Name != "machine learning" {
 		t.Errorf("expected renamed tag %s, got %s", newName, tags[0].Name)
 	}
 
 	// Apply to patent
-	patentNum := "US1234567"
+	patentNum := domain.PatentNumber("US1234567")
 	err = repo.UpsertPatentBundle(ctx, projectID, domain.PatentBundle{
 		Patent: domain.Patent{Number: patentNum, Title: "Test Patent"},
 	})

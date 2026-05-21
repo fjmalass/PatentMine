@@ -159,7 +159,7 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		text := strings.Join(command.Args, " ")
-		m.logActivity(activityNoteAdd, m.current.Number, text)
+		m.logActivity(activityNoteAdd, string(m.current.Number), text)
 		m.message = "noted"
 	case commandIDS:
 		return m.idsEditCommand(command.Args)
@@ -198,7 +198,7 @@ func (m *Model) compare(otherNumber string) (tea.Model, tea.Cmd) {
 		m.err = "open a patent before comparing"
 		return m, nil
 	}
-	other, err := m.repo.GetPatent(m.ctx, m.ProjectID, otherNumber)
+	other, err := m.repo.GetPatent(m.ctx, m.ProjectID, domain.PatentNumber(otherNumber))
 	if err != nil {
 		m.err = err.Error()
 		m.logger.Error("comparison target open failed", "patent", otherNumber, "error", err)
@@ -230,7 +230,7 @@ func (m *Model) refCommand(args []string) (tea.Model, tea.Cmd) {
 			m.logger.Error("reference insert failed", "patent", m.current.Number, "error", err)
 			return m, nil
 		}
-		m.logActivity(ActivityRefAdd, m.current.Number, "")
+		m.logActivity(ActivityRefAdd, string(m.current.Number), "")
 		m.message = "reference added"
 	case refActionExport:
 		m.setMode(viewRefs)
@@ -254,7 +254,7 @@ func (m *Model) patentDateCommand(args []string) (tea.Model, tea.Cmd) {
 	if !m.applyChange(changes.SetPatentDate(m.current.Number, dateType, value)) {
 		return m, nil
 	}
-	m.logActivity(ActivityPatentDate, m.current.Number, fmt.Sprintf("%s: %s", dateType, value))
+	m.logActivity(ActivityPatentDate, string(m.current.Number), fmt.Sprintf("%s: %s", dateType, value))
 	m.message = fmt.Sprintf("updated %s date: %s", dateType, value)
 
 	if m.mode == viewDateEdit {
@@ -280,7 +280,7 @@ func (m *Model) patentNumberCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = err.Error()
 		return m, nil
 	}
-	m.logActivity(ActivityPatentNumber, m.current.Number, fmt.Sprintf("%s: %s", numType, value))
+	m.logActivity(ActivityPatentNumber, string(m.current.Number), fmt.Sprintf("%s: %s", numType, value))
 	m.message = fmt.Sprintf("updated %s number: %s", numType, value)
 
 	// Refresh current patent from DB

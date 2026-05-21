@@ -69,25 +69,25 @@ const (
 )
 
 type Model struct {
-	ctx                          context.Context
-	repo                         storage.Repository
-	input                        textinput.Model
-	dateInput                    textinput.Model
-	editDateType                 string // "app", "pub", "grant"
-	noteTA                       textarea.Model
-	spinner                      spinner.Model
-	loading                      bool
-	loadingMsg                   string
+	ctx          context.Context
+	repo         storage.Repository
+	input        textinput.Model
+	dateInput    textinput.Model
+	editDateType string // "app", "pub", "grant"
+	noteTA       textarea.Model
+	spinner      spinner.Model
+	loading      bool
+	loadingMsg   string
 	// pendingDetails counts outstanding async citation-detail imports. The
 	// throbber stays up and the patent list keeps refreshing until it hits 0,
 	// so a bulk import of N patents is not cut short by the first result.
-	pendingDetails int
+	pendingDetails               int
 	lastVisualStart              int
 	lastVisualEnd                int
 	lastVisualValid              bool
 	lastVisualNumbers            []string // patent numbers at save time; nil for non-list views
 	cancel                       context.CancelFunc
-	ProjectID                    string
+	ProjectID                    domain.ProjectID
 	mode                         viewMode
 	patents                      []domain.Patent
 	totalPatents                 int // unfiltered count for the current project
@@ -99,7 +99,7 @@ type Model struct {
 	projectIDSSelected           int
 	detailSelected               int
 	citationLocalIdx             int
-	citationKey               string
+	citationKey                  domain.PatentNumber
 	citesTextFilter              string
 	reviewSelected               int
 	classificationSelected       int
@@ -127,12 +127,12 @@ type Model struct {
 	sortColumn2                  string
 	sortOrder2                   string
 	citesReviewStateFilter       string // "" (all), "stored", "ignored", "under_review"
-	numberColWidth                 int
-	unpaidCounts                 map[string]int
+	numberColWidth               int
+	unpaidCounts                 map[domain.ProjectID]int
 	familyTreeCache              []familyNode
-	familyTreeCacheFor           string
-	familyPatentCache            map[string]domain.Patent
-	familyPatentCacheMisses      map[string]bool
+	familyTreeCacheFor           domain.PatentNumber
+	familyPatentCache            map[domain.PatentNumber]domain.Patent
+	familyPatentCacheMisses      map[domain.PatentNumber]bool
 	helpQuery                    string
 	helpSearchActive             bool
 	helpScroll                   int
@@ -169,7 +169,7 @@ type Model struct {
 }
 
 type detailCache struct {
-	Number              string
+	Number              domain.PatentNumber
 	CitationCount       int
 	CitationRefreshedAt time.Time
 	CitedByCount        int
@@ -194,7 +194,7 @@ type navSnapshot struct {
 	projectIDSSelected           int
 	detailSelected               int
 	citationLocalIdx             int
-	citationKey               string
+	citationKey                  domain.PatentNumber
 	citesTextFilter              string
 	reviewSelected               int
 	classificationSelected       int
@@ -211,13 +211,13 @@ type navSnapshot struct {
 	message                      string
 	err                          string
 	countBuffer                  string
-	ProjectID                    string
+	ProjectID                    domain.ProjectID
 	sortColumn                   string
 	sortOrder                    string
 	sortColumn2                  string
 	sortOrder2                   string
 	citesReviewStateFilter       string
-	numberColWidth                 int
+	numberColWidth               int
 	classificationQuery          string
 	classificationSearchActive   bool
 	listSearchQuery              string
@@ -249,9 +249,9 @@ func New(ctx context.Context, repo storage.Repository, logger *slog.Logger, acti
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorAccent))
 
-	projectID := DefaultProjectID
+	projectID := domain.ProjectID(DefaultProjectID)
 	if last, err := repo.GetSetting(ctx, SettingLastProjectID); err == nil && last != "" {
-		projectID = last
+		projectID = domain.ProjectID(last)
 	}
 
 	patents, _ := repo.ListPatents(ctx, projectID, storage.ListPatentsOptions{
@@ -315,16 +315,16 @@ type classificationEnrichedMsg struct {
 }
 
 type refreshResultMsg struct {
-	err             error
-	message         string
-	patent          domain.Patent
-	mode            viewMode
+	err              error
+	message          string
+	patent           domain.Patent
+	mode             viewMode
 	citationLocalIdx int
 	familySelected   int
-	elapsed         time.Duration
-	withDetails     bool
-	action          string
-	source          string
+	elapsed          time.Duration
+	withDetails      bool
+	action           string
+	source           string
 }
 
 type refreshDetailsResultMsg struct {
@@ -373,7 +373,7 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.action != "" && msg.patent.Number != "" {
-			m.logActivity(msg.action, msg.patent.Number, msg.source)
+			m.logActivity(msg.action, string(msg.patent.Number), msg.source)
 		}
 		m.current = msg.patent
 		m.populateDetailCache()
@@ -418,8 +418,8 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.Err.Error()
 		m.message = ""
 	case classificationEnrichedMsg:
-		if m.current.Number == msg.Number {
-			if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, msg.Number); err == nil {
+		if m.current.Number == domain.PatentNumber(msg.Number) {
+			if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, domain.PatentNumber(msg.Number)); err == nil {
 				m.current = p
 				m.populateDetailCache()
 			}
@@ -512,13 +512,7 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case keyEnter:
-				query := m.listSearchQuery
 				m.listSearchActive = false
-				m.listSearchQuery = ""
-				if query != "" {
-					m.listFilter.FreeFormSearch = query
-					return m.refreshList()
-				}
 				return m, nil
 			default:
 				if len(msg.String()) == 1 {
@@ -676,7 +670,7 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.filterBySelectedDetail()
 			}
 			if m.mode == viewList && len(m.patents) > 0 {
-				return m.openPatent(m.patents[m.patentSelected].Number)
+				return m.openPatent(string(m.patents[m.patentSelected].Number))
 			}
 		case keyDelete:
 			if m.mode == viewFamily {
@@ -690,7 +684,7 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 						nums := make([]string, 0, len(indices))
 						for _, idx := range indices {
 							if idx >= 0 && idx < len(m.patents) {
-								nums = append(nums, m.patents[idx].Number)
+								nums = append(nums, string(m.patents[idx].Number))
 							}
 						}
 						m.bulkActionNumbers = nums
@@ -880,7 +874,7 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 		case keyAddToIDS:
-			var targetNumber string
+			var targetNumber domain.PatentNumber
 			if m.mode == viewList && len(m.patents) > 0 {
 				targetNumber = m.patents[clamp(m.patentSelected, 0, len(m.patents)-1)].Number
 			} else if m.mode == viewDetail && m.current.Number != "" {
@@ -895,8 +889,8 @@ func (m *Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if _, err := m.repo.AddIDSEntry(m.ctx, entry); err != nil {
 					m.err = err.Error()
 				} else {
-					m.logActivity(ActivityIDSAdd, targetNumber, "")
-					m.message = "Added to IDS: " + targetNumber
+					m.logActivity(ActivityIDSAdd, string(targetNumber), "")
+					m.message = "Added to IDS: " + string(targetNumber)
 				}
 				return m, nil
 			}

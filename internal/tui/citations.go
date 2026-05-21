@@ -16,7 +16,6 @@ func (m *Model) isCitationView() bool {
 	return m.mode == viewCites || m.mode == viewCitedBy
 }
 
-
 func (m *Model) citationEdgesForRelation(relation string) ([]domain.CitationEdge, error) {
 	if m.current.Number == EmptyFilter {
 		return nil, nil
@@ -29,12 +28,11 @@ func (m *Model) citationEdgesForRelation(relation string) ([]domain.CitationEdge
 	return m.repo.ListCitations(m.ctx, m.ProjectID, m.current.Number, relation, opts)
 }
 
-
 func (m *Model) filterCitationEdges(edges []domain.CitationEdge, query string) []domain.CitationEdge {
 	ignoreCase := strings.ToLower(query) == query
 	out := edges[:0:len(edges)]
 	for _, e := range edges {
-		if containsMatch(e.TargetPatent, query, ignoreCase) || containsMatch(e.TargetTitle, query, ignoreCase) {
+		if containsMatch(string(e.TargetPatent), query, ignoreCase) || containsMatch(e.TargetTitle, query, ignoreCase) {
 			out = append(out, e)
 			continue
 		}
@@ -117,7 +115,7 @@ func (m *Model) reloadPatents() *Model {
 	}
 	// Capture selected patent number before re-fetch so sort/filter changes
 	// re-resolve the cursor to the same patent rather than the same index.
-	anchorNumber := ""
+	var anchorNumber domain.PatentNumber
 	if m.patentSelected >= 0 && m.patentSelected < len(m.patents) {
 		anchorNumber = m.patents[m.patentSelected].Number
 	}
@@ -141,7 +139,7 @@ func (m *Model) reloadPatents() *Model {
 
 	m.numberColWidth = 6
 	for _, p := range m.patents {
-		w := lipgloss.Width(p.Number)
+		w := lipgloss.Width(string(p.Number))
 		if w > m.numberColWidth {
 			m.numberColWidth = w
 		}
@@ -177,7 +175,7 @@ func (m *Model) openSelectedCitation() (tea.Model, tea.Cmd) {
 	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, target); err == nil {
 		bundle.Patent = p
 	} else {
-		bundle, err = m.importPatent(target)
+		bundle, err = m.importPatent(string(target))
 		if err != nil {
 			m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
 			return m, nil
@@ -227,7 +225,7 @@ func (m *Model) storeSelectedCitation() (tea.Model, tea.Cmd) {
 	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, domain.ReviewStateStored)) {
 		return m, nil
 	}
-	m.logActivityFrom(ActivityCitationStore, edge.TargetPatent, "", m.current.Number)
+	m.logActivityFrom(ActivityCitationStore, string(edge.TargetPatent), "", string(m.current.Number))
 	m.message = fmt.Sprintf(m.text.T(TextMessageStoredPatent), edge.TargetPatent)
 	m.clearVisualMode()
 	return m, nil
@@ -249,13 +247,13 @@ func (m *Model) storePendingCitationPatent(next string) bool {
 			m.err = err.Error()
 			return false
 		}
-		m.logActivity(ActivityPatentImport, number, string(m.importCfg.ImportSource))
+		m.logActivity(ActivityPatentImport, string(number), string(m.importCfg.ImportSource))
 		m.markDirty(dirtyList | dirtyDetail)
 	}
 	if m.pendingCitation.TargetPatent != "" {
 		return m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{m.pendingCitation}, next))
 	}
-	return m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{number}, next))
+	return m.applyChange(changes.SetPatentReviewState(m.ProjectID, []domain.PatentNumber{number}, next))
 }
 
 func (m *Model) storePendingPatent() (tea.Model, tea.Cmd) {
@@ -328,7 +326,7 @@ func (m *Model) updateSelectedCitationReviewState(status string, messageKey Text
 	if !m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, status)) {
 		return m, nil
 	}
-	m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, status, m.current.Number)
+	m.logActivityFrom(ActivityCitationReviewState, string(edge.TargetPatent), status, string(m.current.Number))
 	m.message = fmt.Sprintf(m.text.T(messageKey), edge.TargetPatent)
 
 	m.clearVisualMode()

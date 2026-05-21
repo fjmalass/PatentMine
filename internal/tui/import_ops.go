@@ -82,7 +82,7 @@ func (m *Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
 
 func (m *Model) enrichClassificationDescriptionsCommand(number string) tea.Cmd {
 	return func() tea.Msg {
-		classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, number)
+		classifications, err := m.repo.ListClassifications(m.ctx, m.ProjectID, domain.PatentNumber(number))
 		if err != nil || len(classifications) == 0 {
 			return nil
 		}
@@ -214,7 +214,7 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 		rawURL = m.current.SourceGoogleURL
 		if rawURL == "" {
 			var err error
-			rawURL, err = importer.GooglePatentsURL(m.current.Number)
+			rawURL, err = importer.GooglePatentsURL(string(m.current.Number))
 			if err != nil {
 				m.err = err.Error()
 				return m, nil
@@ -245,7 +245,7 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle, err = importer.ImportUSPTO(currentNumber, apiKey, logger)
+				bundle, err = importer.ImportUSPTO(string(currentNumber), apiKey, logger)
 			} else {
 				bundle, err = importer.ImportGooglePatents(rawURL, logger)
 			}
@@ -349,10 +349,10 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 
 				var bundle domain.PatentBundle
 				if importSource == config.ImportSourceUSPTO {
-					bundle, err = importer.ImportUSPTO(edge.TargetPatent, apiKey, logger)
+					bundle, err = importer.ImportUSPTO(string(edge.TargetPatent), apiKey, logger)
 				} else {
 					var rawURL string
-					rawURL, err = importer.GooglePatentsURL(edge.TargetPatent)
+					rawURL, err = importer.GooglePatentsURL(string(edge.TargetPatent))
 					if err == nil {
 						bundle, err = importer.ImportGooglePatents(rawURL, logger)
 					}
@@ -423,10 +423,10 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO {
-				bundle, err = importer.ImportUSPTO(targetPatent, apiKey, logger)
+				bundle, err = importer.ImportUSPTO(string(targetPatent), apiKey, logger)
 			} else {
 				var rawURL string
-				rawURL, err = importer.GooglePatentsURL(targetPatent)
+				rawURL, err = importer.GooglePatentsURL(string(targetPatent))
 				if err == nil {
 					bundle, err = importer.ImportGooglePatents(rawURL, logger)
 				}
@@ -458,7 +458,7 @@ func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
 	importSource := m.importCfg.ImportSource
 
 	return func() tea.Msg {
-		bundle, err := m.importPatent(target)
+		bundle, err := m.importPatent(string(target))
 		if err != nil {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk import failed for %s: %w", target, err)}
 		}

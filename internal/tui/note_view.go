@@ -21,7 +21,7 @@ func (m *Model) viewNoteEdit() string {
 		year = p.PublicationDate[:4]
 	}
 
-	title := "Note" + sepBullet + p.Number
+	title := "Note" + sepBullet + string(p.Number)
 	if inv := formatInventorsShort(p.Inventors); inv != "-" {
 		title += sepBullet + inv
 	}
@@ -63,7 +63,7 @@ func (m *Model) viewNotes() string {
 			body.WriteString("\n\n")
 		}
 	}
-	return m.renderPopup("Notes"+sepBullet+m.current.Number, body.String())
+	return m.renderPopup("Notes"+sepBullet+string(m.current.Number), body.String())
 }
 
 func (m *Model) handleViewNoteEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -74,7 +74,7 @@ func (m *Model) handleViewNoteEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			stamp := time.Now().Format(dateFmtDateTime)
 			body = fmt.Sprintf("[%s]\n%s", stamp, body)
 			if m.applyChange(changes.AddNote(m.ProjectID, m.current.Number, body)) {
-				m.logActivity(ActivityNoteAdd, m.current.Number, "")
+				m.logActivity(ActivityNoteAdd, string(m.current.Number), "")
 				m.message = "note saved"
 			}
 		}

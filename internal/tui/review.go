@@ -87,7 +87,7 @@ func (m *Model) openSelectedReviewCitation() (tea.Model, tea.Cmd) {
 	if p, err := m.repo.GetPatent(m.ctx, m.ProjectID, target); err == nil {
 		bundle.Patent = p
 	} else {
-		bundle, err = m.importPatent(target)
+		bundle, err = m.importPatent(string(target))
 		if err != nil {
 			m.err = fmt.Sprintf("%s: %v", m.text.T(TextCitationsOpenFailed), err)
 			return m, nil
@@ -191,7 +191,7 @@ func (m *Model) executeBulkAction() (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	importCount := 0
 	for _, edge := range edges {
-		m.logActivityFrom(ActivityBulkPrefix+string(action), edge.TargetPatent, "", edge.SourcePatent)
+		m.logActivityFrom(ActivityBulkPrefix+string(action), string(edge.TargetPatent), "", string(edge.SourcePatent))
 		if action == bulkActionStore {
 			if _, err := m.repo.GetPatent(m.ctx, m.ProjectID, edge.TargetPatent); err != nil {
 				cmds = append(cmds, m.importCitationDetailsCommand(edge))
@@ -235,7 +235,11 @@ func (m *Model) executeBulkDelete(nums []string) (tea.Model, tea.Cmd) {
 	}
 
 	m.logger.Info("bulk delete started", "project", m.ProjectID, "count", len(nums), "patents", nums)
-	if !m.applyChange(changes.SetPatentReviewState(m.ProjectID, nums, domain.ReviewStateDeleted)) {
+	patentNumbers := make([]domain.PatentNumber, 0, len(nums))
+	for _, num := range nums {
+		patentNumbers = append(patentNumbers, domain.PatentNumber(num))
+	}
+	if !m.applyChange(changes.SetPatentReviewState(m.ProjectID, patentNumbers, domain.ReviewStateDeleted)) {
 		return finish("")
 	}
 	for _, num := range nums {

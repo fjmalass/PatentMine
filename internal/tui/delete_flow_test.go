@@ -29,7 +29,7 @@ func newSeededDeleteModel(t *testing.T, seeded int) (*Model, storage.Repository,
 	for i := 0; i < seeded; i++ {
 		num := fmt.Sprintf("US%04d", i)
 		if err := repo.UpsertPatentBundle(ctx, "default", domain.PatentBundle{
-			Patent: domain.Patent{Number: num, Title: "Patent " + num},
+			Patent: domain.Patent{Number: domain.PatentNumber(num), Title: "Patent " + num},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -51,13 +51,13 @@ func newSeededDeleteModel(t *testing.T, seeded int) (*Model, storage.Repository,
 	return m, repo, ctx
 }
 
-func listNumbers(t *testing.T, repo storage.Repository, ctx context.Context, filter string) map[string]bool {
+func listNumbers(t *testing.T, repo storage.Repository, ctx context.Context, filter string) map[domain.PatentNumber]bool {
 	t.Helper()
 	got, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{ReviewStateFilter: filter})
 	if err != nil {
 		t.Fatal(err)
 	}
-	set := make(map[string]bool, len(got))
+	set := make(map[domain.PatentNumber]bool, len(got))
 	for _, p := range got {
 		set[p.Number] = true
 	}
@@ -104,7 +104,7 @@ func TestListDeleteSoftDeletesPatent(t *testing.T) {
 func TestVisualBulkDeleteSoftDeletesPatents(t *testing.T) {
 	const seeded = 25
 	m, repo, ctx := newSeededDeleteModel(t, seeded)
-	targets := []string{m.patents[0].Number, m.patents[1].Number}
+	targets := []domain.PatentNumber{m.patents[0].Number, m.patents[1].Number}
 
 	updated, _ := m.Update(teaKey(keyVisual))
 	updated, _ = updated.(*Model).Update(teaKey(keyVimDown))

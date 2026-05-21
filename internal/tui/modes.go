@@ -55,9 +55,9 @@ func patentSubtitle(m *Model) string {
 		return ""
 	}
 	if t := strings.TrimSpace(m.current.Title); t != "" {
-		return t + sepBullet + m.current.Number
+		return t + sepBullet + string(m.current.Number)
 	}
-	return m.current.Number
+	return string(m.current.Number)
 }
 
 // patentTitleOnly returns just the patent title (viewDetail: number is already prominent).

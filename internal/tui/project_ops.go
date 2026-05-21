@@ -21,7 +21,7 @@ func (m *Model) reloadProjects() *Model {
 
 // importPatent fetches a patent bundle using the configured import source.
 func (m *Model) saveLastProject() {
-	_ = m.repo.SetSetting(m.ctx, SettingLastProjectID, m.ProjectID)
+	_ = m.repo.SetSetting(m.ctx, SettingLastProjectID, string(m.ProjectID))
 }
 
 // logActivity writes one structured line to the monthly activity log.
@@ -49,7 +49,7 @@ func (m *Model) logActivityFrom(action, subject, note, from string) {
 	m.activityLog.Info("activity", args...)
 }
 
-func (m *Model) idsEntryForPatent(number string) *domain.IDSEntry {
+func (m *Model) idsEntryForPatent(number domain.PatentNumber) *domain.IDSEntry {
 	// Try cache first
 	if m.detailCache.Number != "" {
 		for i, e := range m.detailCache.IDSEntries {
@@ -112,7 +112,7 @@ func markdownHeadingSummary(body string) string {
 	return ""
 }
 
-func (m *Model) recentNotesSnippet(number string) string {
+func (m *Model) recentNotesSnippet(number domain.PatentNumber) string {
 	notes, err := m.repo.ListNotes(m.ctx, m.ProjectID, number)
 	if err != nil || len(notes) == 0 {
 		return ""
@@ -180,7 +180,7 @@ func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.populateDetailCache()
-		m.logActivity(ActivityIDSAdd, m.current.Number, string(created.Status))
+		m.logActivity(ActivityIDSAdd, string(m.current.Number), string(created.Status))
 		m.message = "IDS status: " + string(created.Status)
 		return m, nil
 	}
@@ -198,7 +198,7 @@ func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.detailCache.IDSEntries = filtered
-		m.logActivity(ActivityIDSRemove, m.current.Number, "")
+		m.logActivity(ActivityIDSRemove, string(m.current.Number), "")
 		m.message = "IDS entry removed"
 		return m, nil
 	}
@@ -212,7 +212,7 @@ func (m *Model) cycleCurrentPatentIDSStatus() (tea.Model, tea.Cmd) {
 			break
 		}
 	}
-	m.logActivity(ActivityIDSStatus, m.current.Number, string(next))
+	m.logActivity(ActivityIDSStatus, string(m.current.Number), string(next))
 	m.message = "IDS status: " + string(next)
 	return m, nil
 }
@@ -294,17 +294,17 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 		if len(args) > 2 {
 			name = strings.Join(args[2:], " ")
 		}
-		p := domain.Project{ID: id, Name: name}
+		p := domain.Project{ID: domain.ProjectID(id), Name: name}
 		if err := m.repo.CreateProject(m.ctx, p); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
 		m.message = "project created: " + id
 		m = m.reloadProjects()
-		m.ProjectID = id
+		m.ProjectID = domain.ProjectID(id)
 		m.saveLastProject()
 		for i, proj := range m.projects {
-			if proj.ID == id {
+			if proj.ID == domain.ProjectID(id) {
 				m.projectSelected = i
 				break
 			}
@@ -321,7 +321,7 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		targetID := args[1]
-		if err := m.repo.AddPatentToProject(m.ctx, targetID, m.current.Number); err != nil {
+		if err := m.repo.AddPatentToProject(m.ctx, domain.ProjectID(targetID), m.current.Number); err != nil {
 			m.err = err.Error()
 			return m, nil
 		}
@@ -333,7 +333,7 @@ func (m *Model) projectCommand(args []string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		id := args[1]
-		p, err := m.repo.GetProject(m.ctx, id)
+		p, err := m.repo.GetProject(m.ctx, domain.ProjectID(id))
 		if err != nil {
 			m.err = err.Error()
 			return m, nil
@@ -565,11 +565,11 @@ func (m *Model) deleteSelectedPatent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	p := m.patents[m.patentSelected]
-	if !m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{p.Number}, domain.ReviewStateDeleted)) {
+	if !m.applyChange(changes.SetPatentReviewState(m.ProjectID, []domain.PatentNumber{p.Number}, domain.ReviewStateDeleted)) {
 		m.setMode(viewList)
 		return m, nil
 	}
-	m.logActivity(ActivityPatentDelete, p.Number, "")
+	m.logActivity(ActivityPatentDelete, string(p.Number), "")
 	m.message = fmt.Sprintf(m.text.T(TextMessageDeletedPatent), p.Number)
 	m.setMode(viewList)
 	return m, nil
@@ -589,7 +589,7 @@ func (m *Model) idsCommand(args []string) (tea.Model, tea.Cmd) {
 		}
 		entry := domain.IDSEntry{
 			ProjectID:    m.ProjectID,
-			PatentNumber: strings.ToUpper(strings.TrimSpace(args[1])),
+			PatentNumber: domain.PatentNumber(strings.ToUpper(strings.TrimSpace(args[1]))),
 		}
 		rest := args[2:]
 		for i := 0; i < len(rest); i++ {
@@ -602,7 +602,7 @@ func (m *Model) idsCommand(args []string) (tea.Model, tea.Cmd) {
 			m.err = err.Error()
 			return m, nil
 		}
-		m.message = "IDS entry added: " + entry.PatentNumber
+		m.message = "IDS entry added: " + string(entry.PatentNumber)
 	case idsSubMeta:
 		// :project ids meta <field> <value>
 		// fields: app, filed, inventor, art, examiner, docket
@@ -668,7 +668,7 @@ func (m *Model) projectNameForExport() string {
 			return p.Name
 		}
 	}
-	return m.ProjectID
+	return string(m.ProjectID)
 }
 
 func (m *Model) reviewStateExportCommand(args []string) (tea.Model, tea.Cmd) {

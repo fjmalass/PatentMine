@@ -192,7 +192,7 @@ func (m *Model) viewDateEdit() string {
 		title = "Edit Expiration Date"
 	}
 	if m.current.Number != "" {
-		title += sepBullet + m.current.Number
+		title += sepBullet + string(m.current.Number)
 	}
 	return m.renderPopup(title, m.dateInput.View())
 }

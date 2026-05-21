@@ -25,7 +25,7 @@ var validFamilyRelations = map[string]string{
 
 // familyNode is one entry in the rendered flat family tree.
 type familyNode struct {
-	number       string
+	number       domain.PatentNumber
 	depth        int    // negative = ancestor, 0 = current, positive = descendant
 	relType      string // relation type from parent to this node (empty for roots)
 	parentIdx    int    // index in the flat slice of this node's parent (-1 for roots)
@@ -93,20 +93,20 @@ func (m *Model) invalidateFamilyCaches() {
 	m.familyPatentCacheMisses = nil
 }
 
-func (m *Model) loadFamilyPatentMetadata(numbers []string) (map[string]domain.Patent, int, int, int, int, error) {
+func (m *Model) loadFamilyPatentMetadata(numbers []domain.PatentNumber) (map[domain.PatentNumber]domain.Patent, int, int, int, int, error) {
 	if m.familyPatentCache == nil {
-		m.familyPatentCache = make(map[string]domain.Patent)
+		m.familyPatentCache = make(map[domain.PatentNumber]domain.Patent)
 	}
 	if m.familyPatentCacheMisses == nil {
-		m.familyPatentCacheMisses = make(map[string]bool)
+		m.familyPatentCacheMisses = make(map[domain.PatentNumber]bool)
 	}
 
-	result := make(map[string]domain.Patent, len(numbers))
-	toFetch := make([]string, 0, len(numbers))
+	result := make(map[domain.PatentNumber]domain.Patent, len(numbers))
+	toFetch := make([]domain.PatentNumber, 0, len(numbers))
 	cacheHits := 0
 	cacheMisses := 0
 	alreadyMissing := 0
-	seen := make(map[string]bool, len(numbers))
+	seen := make(map[domain.PatentNumber]bool, len(numbers))
 	for _, number := range numbers {
 		if number == "" || seen[number] {
 			continue
@@ -222,7 +222,7 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 
 	// 3. Enrich with patent info (use local cache to avoid redundant lookups)
 	stageStartedAt = time.Now()
-	numbers := make([]string, 0, len(nodes))
+	numbers := make([]domain.PatentNumber, 0, len(nodes))
 	for _, node := range nodes {
 		numbers = append(numbers, node.number)
 	}
@@ -233,7 +233,7 @@ func (m *Model) buildFamilyTreeFresh() []familyNode {
 			"requested_count", len(numbers),
 			"error", err,
 		)
-		patentCache = map[string]domain.Patent{}
+		patentCache = map[domain.PatentNumber]domain.Patent{}
 	}
 	for i := range nodes {
 		num := nodes[i].number
@@ -352,7 +352,7 @@ func (m *Model) viewFamilyOverlay() string {
 			"selected", m.familySelected,
 			"duration_ms", time.Since(startedAt).Milliseconds(),
 		)
-		return m.renderPopup("Family · "+m.current.Number, subtle.Render("No family relationships defined."))
+		return m.renderPopup("Family · "+string(m.current.Number), subtle.Render("No family relationships defined."))
 	}
 
 	sel := clamp(m.familySelected, 0, len(nodes)-1)
@@ -394,7 +394,7 @@ func (m *Model) viewFamilyOverlay() string {
 		if isCurrent {
 			numStyle = accent.Underline(true)
 		}
-		line.WriteString(numStyle.Render(node.number))
+		line.WriteString(numStyle.Render(string(node.number)))
 
 		// Depth badge (compact relative position indicator).
 		if !isCurrent {
@@ -468,7 +468,7 @@ func (m *Model) viewFamilyOverlay() string {
 			label string
 			value string
 		}{
-			{label: "Number", value: selectedPatent.Number},
+			{label: "Number", value: string(selectedPatent.Number)},
 			{label: "Country", value: patentCountryLabel(selectedPatent)},
 			{label: "Expires", value: expiresValue},
 			{label: "Name", value: nameValue},
@@ -491,7 +491,7 @@ func (m *Model) viewFamilyOverlay() string {
 		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 
-	return m.renderPopup("Family · "+m.current.Number, body.String())
+	return m.renderPopup("Family · "+string(m.current.Number), body.String())
 }
 
 func (m *Model) selectedFamilyPatent(node familyNode) (domain.Patent, bool) {
@@ -513,7 +513,7 @@ func selectedFamilyPatentValue(node familyNode) domain.Patent {
 }
 
 func nodeNeedsRefresh(node familyNode, p domain.Patent) bool {
-	if strings.TrimSpace(node.number) == "" {
+	if strings.TrimSpace(string(node.number)) == "" {
 		return false
 	}
 	return strings.TrimSpace(p.Title) == "" && strings.TrimSpace(p.Assignee) == "" && strings.TrimSpace(p.ExpirationDate) == ""
@@ -523,7 +523,7 @@ func patentCountryLabel(p domain.Patent) string {
 	if strings.TrimSpace(p.CountryCode) != "" {
 		return p.CountryCode
 	}
-	code := domain.PatentCountryFromNumber(p.Number)
+	code := domain.PatentCountryFromNumber(string(p.Number))
 	if code == "" {
 		return "-"
 	}
@@ -576,7 +576,7 @@ func (m *Model) refreshSelectedFamilyMember() (tea.Model, tea.Cmd) {
 		m.spinner.Tick,
 		func() tea.Msg {
 			startedAt := time.Now()
-			bundle, err := m.importPatent(targetNumber)
+			bundle, err := m.importPatent(string(targetNumber))
 			if err != nil {
 				return refreshResultMsg{err: fmt.Errorf("family member refresh failed: %w", err)}
 			}
@@ -642,7 +642,7 @@ func (m *Model) openSelectedFamilyMember() (tea.Model, tea.Cmd) {
 	if node.depth == 0 {
 		return m, nil
 	}
-	return m.openPatent(node.number)
+	return m.openPatent(string(node.number))
 }
 
 func (m *Model) removeSelectedFamilyEdge() (tea.Model, tea.Cmd) {
@@ -684,7 +684,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 		m.err = "usage: :family parent|child <number> [continuation|divisional|cip|pct] or :family remove <number>"
 		return m, nil
 	}
-	target := strings.ToUpper(strings.TrimSpace(args[1]))
+	target := domain.PatentNumber(strings.ToUpper(strings.TrimSpace(args[1])))
 
 	if action == familyActionRemove {
 		parents, children := m.familyItems()
@@ -695,7 +695,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.invalidateFamilyCaches()
-				m.message = "removed family edge: " + target + " → " + m.current.Number
+				m.message = "removed family edge: " + string(target) + " → " + string(m.current.Number)
 				return m, nil
 			}
 		}
@@ -706,11 +706,11 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.invalidateFamilyCaches()
-				m.message = "removed family edge: " + m.current.Number + " → " + target
+				m.message = "removed family edge: " + string(m.current.Number) + " → " + string(target)
 				return m, nil
 			}
 		}
-		m.err = "no family relationship found with " + target
+		m.err = "no family relationship found with " + string(target)
 		return m, nil
 	}
 
@@ -749,7 +749,7 @@ func (m *Model) familyCommand(args []string) (tea.Model, tea.Cmd) {
 		relType = canonical
 	}
 
-	var parentNumber, childNumber string
+	var parentNumber, childNumber domain.PatentNumber
 	if action == familyActionParent {
 		parentNumber = target
 		childNumber = m.current.Number
@@ -791,7 +791,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 		rawURL = m.current.SourceGoogleURL
 		if rawURL == "" {
 			var err error
-			rawURL, err = importer.GooglePatentsURL(m.current.Number)
+			rawURL, err = importer.GooglePatentsURL(string(m.current.Number))
 			if err != nil {
 				m.err = err.Error()
 				return m, nil
@@ -817,7 +817,7 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 			var bundle domain.PatentBundle
 			var err error
 			if importSource == config.ImportSourceUSPTO && apiKey != "" {
-				bundle, err = importer.ImportUSPTO(currentNumber, apiKey, logger)
+				bundle, err = importer.ImportUSPTO(string(currentNumber), apiKey, logger)
 			} else {
 				bundle, err = importer.ImportGooglePatents(rawURL, logger)
 			}
@@ -841,16 +841,16 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 					patent:  p,
 					mode:    viewFamily,
 					elapsed: time.Since(startedAt),
-					message: "no family edges found for " + currentNumber,
+					message: "no family edges found for " + string(currentNumber),
 					action:  ActivityFamilyRefresh,
 					source:  source,
 				}
 			}
 
-			seen := map[string]bool{currentNumber: true}
-			var members []string
+			seen := map[domain.PatentNumber]bool{currentNumber: true}
+			var members []domain.PatentNumber
 			for _, e := range bundle.FamilyEdges {
-				for _, num := range []string{e.ParentNumber, e.ChildNumber} {
+				for _, num := range []domain.PatentNumber{e.ParentNumber, e.ChildNumber} {
 					if !seen[num] {
 						seen[num] = true
 						members = append(members, num)
@@ -863,10 +863,10 @@ func (m *Model) pullFamilyCommand() (tea.Model, tea.Cmd) {
 				var memberBundle domain.PatentBundle
 				var err error
 				if importSource == config.ImportSourceUSPTO && apiKey != "" {
-					memberBundle, err = importer.ImportUSPTO(num, apiKey, logger)
+					memberBundle, err = importer.ImportUSPTO(string(num), apiKey, logger)
 				} else {
 					var memberURL string
-					memberURL, err = importer.GooglePatentsURL(num)
+					memberURL, err = importer.GooglePatentsURL(string(num))
 					if err == nil {
 						memberBundle, err = importer.ImportGooglePatents(memberURL, logger)
 					}

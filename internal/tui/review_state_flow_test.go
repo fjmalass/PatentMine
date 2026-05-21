@@ -59,7 +59,7 @@ func TestVisualBulkReviewStateUpdatesAllSelected(t *testing.T) {
 	// Show every state so updated rows stay visible in the list after the change.
 	m.listFilter = PatentFilter{ReviewState: reviewStateFilterNone}
 	m = m.reloadPatents()
-	targets := []string{m.patents[0].Number, m.patents[1].Number, m.patents[2].Number}
+	targets := []domain.PatentNumber{m.patents[0].Number, m.patents[1].Number, m.patents[2].Number}
 
 	updated, _ := m.Update(teaKey(keyVisual))
 	updated, _ = updated.(*Model).Update(teaKey(keyVimDown))
@@ -80,7 +80,7 @@ func TestVisualBulkReviewStateUpdatesAllSelected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dbState := make(map[string]string, len(all))
+	dbState := make(map[domain.PatentNumber]string, len(all))
 	for _, p := range all {
 		dbState[p.Number] = p.ReviewState
 	}
@@ -95,7 +95,7 @@ func TestVisualBulkReviewStateUpdatesAllSelected(t *testing.T) {
 	if got.mode != viewList {
 		t.Fatalf("after Enter expected viewList, got %q", got.mode)
 	}
-	listState := make(map[string]string, len(got.patents))
+	listState := make(map[domain.PatentNumber]string, len(got.patents))
 	for _, p := range got.patents {
 		listState[p.Number] = p.ReviewState
 	}
@@ -107,7 +107,7 @@ func TestVisualBulkReviewStateUpdatesAllSelected(t *testing.T) {
 	}
 }
 
-func patentReviewState(patents []domain.Patent, number string) string {
+func patentReviewState(patents []domain.Patent, number domain.PatentNumber) string {
 	for _, p := range patents {
 		if p.Number == number {
 			return p.ReviewState
@@ -285,7 +285,7 @@ func TestCitationPopupStatusSelectorReflectedAfterReturnToList(t *testing.T) {
 			sel.reviewStateSelected = i
 		}
 	}
-	updated, _ = sel.Update(teaKey(keyEnter))     // commit pick, back in popup
+	updated, _ = sel.Update(teaKey(keyEnter))            // commit pick, back in popup
 	updated, _ = updated.(*Model).Update(teaKey(keyEsc)) // popup -> citations
 	updated, _ = updated.(*Model).Update(teaKey(keyEsc)) // citations -> list
 	got := updated.(*Model)

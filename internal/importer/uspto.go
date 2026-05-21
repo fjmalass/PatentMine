@@ -71,7 +71,7 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 		if len(metaData.ApplicationMetaData.InventorBag) == 0 && len(appData.ApplicationMetaData.InventorBag) > 0 {
 			metaData.ApplicationMetaData.InventorBag = appData.ApplicationMetaData.InventorBag
 		}
-		
+
 		// Merge top-level bags
 		if len(metaData.ReferenceCitedBag) > 0 {
 			appData.ReferenceCitedBag = metaData.ReferenceCitedBag
@@ -85,7 +85,7 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 		if len(metaData.ApplicantBag) > 0 {
 			appData.ApplicantBag = metaData.ApplicantBag
 		}
-		
+
 		appData.ApplicationMetaData = metaData.ApplicationMetaData
 	}
 
@@ -123,7 +123,7 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 	for _, doc := range docs {
 		// Adding as reference entries for visibility
 		bundle.References = append(bundle.References, domain.ReferenceEntry{
-			PatentNumber:  number,
+			PatentNumber:  domain.PatentNumber(number),
 			CitationLabel: fmt.Sprintf("[%s] %s (%s)", doc.DocumentCode, doc.DocumentCodeDescriptionText, doc.OfficialDate),
 		})
 	}
@@ -133,15 +133,15 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 		seen := map[string]bool{}
 		for _, c := range bundle.Citations {
 			if c.RelationType == domain.RelationCites {
-				seen[c.TargetPatent] = true
+				seen[string(c.TargetPatent)] = true
 			}
 		}
 		for _, num := range oaCitations {
-			if !seen[num] && !strings.EqualFold(num, bundle.Patent.Number) {
+			if !seen[num] && !strings.EqualFold(num, string(bundle.Patent.Number)) {
 				seen[num] = true
 				bundle.Citations = append(bundle.Citations, domain.CitationEdge{
 					SourcePatent: bundle.Patent.Number,
-					TargetPatent: num,
+					TargetPatent: domain.PatentNumber(num),
 					RelationType: domain.RelationCites,
 				})
 			}
@@ -191,15 +191,15 @@ type usptoSearchResponse struct {
 }
 
 type usptoApplicationData struct {
-	ApplicationNumberText    string            `json:"applicationNumberText"`
-	ApplicationMetaData      usptoMetaData     `json:"applicationMetaData"`
-	AssignmentBag            []usptoAssignment `json:"assignmentBag"`
-	ApplicantBag             []usptoApplicant  `json:"applicantBag"`
+	ApplicationNumberText    string                `json:"applicationNumberText"`
+	ApplicationMetaData      usptoMetaData         `json:"applicationMetaData"`
+	AssignmentBag            []usptoAssignment     `json:"assignmentBag"`
+	ApplicantBag             []usptoApplicant      `json:"applicantBag"`
 	ReferenceCitedBag        []usptoReferenceCited `json:"referenceCitedBag"`
 	ReferencedCitedBag       []usptoReferenceCited `json:"referencedCitedBag"`
-	ParentContinuityBag      []usptoContinuity `json:"parentContinuityBag"`
-	ChildContinuityBag       []usptoContinuity `json:"childContinuityBag"`
-	PatentTermAdjustmentData *usptoPTA         `json:"patentTermAdjustmentData"`
+	ParentContinuityBag      []usptoContinuity     `json:"parentContinuityBag"`
+	ChildContinuityBag       []usptoContinuity     `json:"childContinuityBag"`
+	PatentTermAdjustmentData *usptoPTA             `json:"patentTermAdjustmentData"`
 }
 
 type usptoPTA struct {
@@ -207,15 +207,15 @@ type usptoPTA struct {
 }
 
 type usptoMetaData struct {
-	PatentNumber                     string                `json:"patentNumber"`
-	InventionTitle                   string                `json:"inventionTitle"`
-	FirstApplicantName               string                `json:"firstApplicantName"`
-	InventorBag                      []usptoInventor       `json:"inventorBag"`
-	CPCClassificationBag             []string              `json:"cpcClassificationBag"`
-	GrantDate                        string                `json:"grantDate"`
-	FilingDate                       string                `json:"filingDate"`
-	EarliestPublicationDate          string                `json:"earliestPublicationDate"`
-	ApplicationStatusDescriptionText string                `json:"applicationStatusDescriptionText"`
+	PatentNumber                     string          `json:"patentNumber"`
+	InventionTitle                   string          `json:"inventionTitle"`
+	FirstApplicantName               string          `json:"firstApplicantName"`
+	InventorBag                      []usptoInventor `json:"inventorBag"`
+	CPCClassificationBag             []string        `json:"cpcClassificationBag"`
+	GrantDate                        string          `json:"grantDate"`
+	FilingDate                       string          `json:"filingDate"`
+	EarliestPublicationDate          string          `json:"earliestPublicationDate"`
+	ApplicationStatusDescriptionText string          `json:"applicationStatusDescriptionText"`
 }
 
 type usptoReferenceCited struct {
@@ -275,13 +275,13 @@ func usptoFetchByPatentNumber(client *http.Client, apiKey, originalNumber string
 	if len(paddedSearchNum) == 7 {
 		paddedSearchNum = "0" + paddedSearchNum
 	}
-	
+
 	pubNum := strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(originalNumber)), "US")
 
 	// Multi-stage search strategy to handle USPTO ODP API quirks
 	// We explicitly request citation bags in all search calls.
 	fields := "applicationNumberText,applicationMetaData,referenceCitedBag,referencedCitedBag,assignmentBag,applicantBag"
-	
+
 	// Stage 1: Simple numeric keyword search (try both formats)
 	for _, sn := range []string{rawSearchNum, paddedSearchNum} {
 		logger.Debug("uspto.search_stage1", "num", sn)
@@ -295,7 +295,7 @@ func usptoFetchByPatentNumber(client *http.Client, apiKey, originalNumber string
 
 	// Stage 2: Prefixed metadata search
 	for _, sn := range []string{rawSearchNum, paddedSearchNum} {
-		q2 := fmt.Sprintf("applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:*%s* OR applicationMetaData.publicationSequenceNumberBag:*%s*", 
+		q2 := fmt.Sprintf("applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:*%s* OR applicationMetaData.publicationSequenceNumberBag:*%s*",
 			sn, sn, pubNum)
 		logger.Debug("uspto.search_stage2", "query", q2)
 		if appNum, data, err := usptoExecuteSearch(client, apiKey, url.QueryEscape(q2), fields, logger); err == nil {
@@ -308,7 +308,7 @@ func usptoFetchByPatentNumber(client *http.Client, apiKey, originalNumber string
 
 	// Stage 3: Non-prefixed raw field search
 	for _, sn := range []string{rawSearchNum, paddedSearchNum} {
-		q3 := fmt.Sprintf("patentNumber:%s OR earliestPublicationNumber:%s OR publicationSequenceNumberBag:%s", 
+		q3 := fmt.Sprintf("patentNumber:%s OR earliestPublicationNumber:%s OR publicationSequenceNumberBag:%s",
 			sn, originalNumber, pubNum)
 		logger.Debug("uspto.search_stage3", "query", q3)
 		if appNum, data, err := usptoExecuteSearch(client, apiKey, url.QueryEscape(q3), fields, logger); err == nil {
@@ -450,7 +450,7 @@ func usptoFetchOfficeActionCitations(client *http.Client, apiKey, appNum string,
 	// Research suggests this endpoint for structured IDS/OA citations.
 	// Note: Using POST as recommended by USPTO documentation for search-like behavior on records.
 	url := "https://api.uspto.gov/api/v1/patent/oa/oa_citations/v2/records"
-	
+
 	payload := fmt.Sprintf(`{"searchText": "patentApplicationNumber:%s", "rows": 500}`, appNum)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(payload))
 	if err != nil {
@@ -697,7 +697,7 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 	sourceURL, _ := GooglePatentsURL(number)
 
 	patent := domain.Patent{
-		Number:            number,
+		Number:            domain.PatentNumber(number),
 		Title:             toTitleCase(meta.InventionTitle),
 		Assignee:          assignee,
 		Inventors:         inventors,
@@ -734,7 +734,7 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 
 	for _, code := range meta.CPCClassificationBag {
 		cls := domain.ParseClassification(code)
-		cls.PatentNumber = number
+		cls.PatentNumber = domain.PatentNumber(number)
 		bundle.Classifications = append(bundle.Classifications, cls)
 	}
 
@@ -753,10 +753,10 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 		if e.ParentNumber == "" || e.ChildNumber == "" {
 			return
 		}
-		if strings.EqualFold(e.ParentNumber, e.ChildNumber) {
+		if strings.EqualFold(string(e.ParentNumber), string(e.ChildNumber)) {
 			return
 		}
-		key := e.ParentNumber + "\x00" + e.ChildNumber
+		key := string(e.ParentNumber) + "\x00" + string(e.ChildNumber)
 		if !edgeSeen[key] {
 			edgeSeen[key] = true
 			bundle.FamilyEdges = append(bundle.FamilyEdges, e)
@@ -772,8 +772,8 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 		}
 		if pNum != "" {
 			addEdge(domain.FamilyEdge{
-				ParentNumber: pNum,
-				ChildNumber:  cNum,
+				ParentNumber: domain.PatentNumber(pNum),
+				ChildNumber:  domain.PatentNumber(cNum),
 				RelationType: mapContinuityType(p.ClaimParentageTypeCode),
 			})
 		}
@@ -786,8 +786,8 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 		}
 		if cNum != "" {
 			addEdge(domain.FamilyEdge{
-				ParentNumber: pNum,
-				ChildNumber:  cNum,
+				ParentNumber: domain.PatentNumber(pNum),
+				ChildNumber:  domain.PatentNumber(cNum),
 				RelationType: mapContinuityType(c.ClaimParentageTypeCode),
 			})
 		}
@@ -807,8 +807,8 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 			}
 			citeSeen[num] = true
 			bundle.Citations = append(bundle.Citations, domain.CitationEdge{
-				SourcePatent: number,
-				TargetPatent: num,
+				SourcePatent: domain.PatentNumber(number),
+				TargetPatent: domain.PatentNumber(num),
 				RelationType: domain.RelationCites,
 			})
 		}
@@ -822,14 +822,14 @@ func buildUSPTOBundle(originalNumber string, data usptoApplicationData, continui
 			continue
 		}
 		bundle.Citations = append(bundle.Citations, domain.CitationEdge{
-			SourcePatent: number,
-			TargetPatent: num,
+			SourcePatent: domain.PatentNumber(number),
+			TargetPatent: domain.PatentNumber(num),
 			RelationType: domain.RelationCitedBy,
 		})
 	}
 
 	bundle.References = append(bundle.References, domain.ReferenceEntry{
-		PatentNumber:  number,
+		PatentNumber:  domain.PatentNumber(number),
 		CitationLabel: fmt.Sprintf("%s, %s", number, patent.Title),
 	})
 

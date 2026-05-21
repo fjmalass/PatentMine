@@ -11,7 +11,7 @@ import (
 func TestDatedPathAddsDateBeforeExtension(t *testing.T) {
 	now := time.Date(2026, 5, 8, 0, 0, 0, 0, time.UTC)
 	got := DatedPath("logs/patentmine.log", now)
-	want := "logs/patentmine-2026-05-08.log"
+	want := filepath.FromSlash("logs/patentmine-2026-05-08.log")
 	if got != want {
 		t.Errorf("expected %q, got %q", want, got)
 	}

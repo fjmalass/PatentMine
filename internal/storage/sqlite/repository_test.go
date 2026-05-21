@@ -325,7 +325,7 @@ func TestRepositoryListFamilyPatentsReturnsLightweightMetadata(t *testing.T) {
 		}
 	}
 
-	got, err := repo.ListFamilyPatents(ctx, "default", []string{"US-FAM-1", "US-FAM-2", "US-MISSING"})
+	got, err := repo.ListFamilyPatents(ctx, "default", []domain.PatentNumber{"US-FAM-1", "US-FAM-2", "US-MISSING"})
 	if err != nil {
 		t.Fatal(err)
 	}

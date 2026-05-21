@@ -362,7 +362,7 @@ func (m *Model) viewProjectInfo() string {
 
 	var body strings.Builder
 	body.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Name:")) + valueStyle.Render(proj.Name) + "\n")
-	body.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "ID:")) + valueStyle.Render(proj.ID) + "\n")
+	body.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "ID:")) + valueStyle.Render(string(proj.ID)) + "\n")
 	body.WriteString(labelStyle.Render(fmt.Sprintf("%-16s", "Status:")) + valueStyle.Render(proj.Status) + "\n")
 
 	if proj.SummaryStatus != "" {
@@ -466,7 +466,7 @@ func (m *Model) viewIDSEdit() string {
 	var body strings.Builder
 	if entry == nil {
 		body.WriteString(dimStyle.Render("No IDS entry.") + "\n")
-		return m.renderPopup("IDS Entry · "+m.current.Number, body.String())
+		return m.renderPopup("IDS Entry · "+string(m.current.Number), body.String())
 	}
 
 	row := func(label string, value string) {
@@ -525,7 +525,7 @@ func (m *Model) viewIDSEdit() string {
 			body.WriteString(hintStyle.Render("fmt: "+domain.IDSPassagesFormatGuide) + "\n")
 		}
 	}
-	return m.renderPopup("IDS Entry · "+m.current.Number, body.String())
+	return m.renderPopup("IDS Entry · "+string(m.current.Number), body.String())
 }
 
 func (m *Model) center(s string) string {
@@ -733,13 +733,13 @@ func (m *Model) handleViewProjectIDSKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.err = err.Error()
 				} else {
 					m.projectIDSSelected = clamp(m.projectIDSSelected, 0, max(0, len(ids)-2))
-					m.logActivity(ActivityIDSRemove, entry.PatentNumber, "")
+					m.logActivity(ActivityIDSRemove, string(entry.PatentNumber), "")
 					m.message = "IDS entry removed"
 				}
 			} else if err := m.repo.UpdateIDSEntryStatus(m.ctx, entry.ID, next); err != nil {
 				m.err = err.Error()
 			} else {
-				m.logActivity(ActivityIDSStatus, entry.PatentNumber, string(next))
+				m.logActivity(ActivityIDSStatus, string(entry.PatentNumber), string(next))
 				m.message = "IDS status: " + string(next)
 			}
 		}

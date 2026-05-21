@@ -55,16 +55,16 @@ func LoadFixture(path string) (domain.PatentBundle, error) {
 		return domain.PatentBundle{}, err
 	}
 	p := domain.Patent{
-		Number:              fixture.Patent.Number,
-		Title:               fixture.Patent.Title,
-		Abstract:            fixture.Patent.Abstract,
-		Assignee:            fixture.Patent.Assignee,
-		Inventors:           fixture.Patent.Inventors,
-		PublicationDate:     fixture.Patent.PublicationDate,
-		GrantDate:           fixture.Patent.GrantDate,
-		ExpirationDate:      fixture.Patent.ExpirationDate,
-		ExpirationSource:    fixture.Patent.ExpirationSource,
-		SourceGoogleURL:     fixture.Patent.SourceGoogleURL,
+		Number:           domain.PatentNumber(fixture.Patent.Number),
+		Title:            fixture.Patent.Title,
+		Abstract:         fixture.Patent.Abstract,
+		Assignee:         fixture.Patent.Assignee,
+		Inventors:        fixture.Patent.Inventors,
+		PublicationDate:  fixture.Patent.PublicationDate,
+		GrantDate:        fixture.Patent.GrantDate,
+		ExpirationDate:   fixture.Patent.ExpirationDate,
+		ExpirationSource: fixture.Patent.ExpirationSource,
+		SourceGoogleURL:  fixture.Patent.SourceGoogleURL,
 	}
 	if p.ExpirationSource == "" {
 		if fixture.Patent.ExpirationEstimated {
@@ -95,10 +95,10 @@ func LoadFixture(path string) (domain.PatentBundle, error) {
 		bundle.Classifications = append(bundle.Classifications, c)
 	}
 	for _, citation := range fixture.Citations {
-		bundle.Citations = append(bundle.Citations, domain.CitationEdge{SourcePatent: p.Number, TargetPatent: citation.TargetPatent, RelationType: citation.RelationType})
+		bundle.Citations = append(bundle.Citations, domain.CitationEdge{SourcePatent: p.Number, TargetPatent: domain.PatentNumber(citation.TargetPatent), RelationType: citation.RelationType})
 	}
 	for _, ref := range fixture.References {
-		bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: ref.PatentNumber, CitationLabel: ref.CitationLabel})
+		bundle.References = append(bundle.References, domain.ReferenceEntry{PatentNumber: domain.PatentNumber(ref.PatentNumber), CitationLabel: ref.CitationLabel})
 	}
 	return bundle, nil
 }

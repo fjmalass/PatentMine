@@ -24,7 +24,7 @@ type Repository struct {
 	migrationReporter func(MigrationEvent)
 }
 
-const currentSchemaVersion = 1
+const currentSchemaVersion = 2
 
 type MigrationEventKind string
 
@@ -363,6 +363,47 @@ func (r *Repository) createTables(ctx context.Context) error {
 			foreign key (project_id) references projects(id),
 			foreign key (source_patent) references patents(number)
 		)`, domain.ReviewStateCached),
+		`create table if not exists patent_graph_cache (
+			project_id text not null,
+			patent_number text not null,
+			requested_patent text not null default '',
+			status text not null,
+			provenance_source text not null default '',
+			provenance_version text not null default '',
+			refreshed_at text not null default '',
+			fresh_until text not null default '',
+			partial_data integer not null default 0,
+			expected_citations integer not null default -1,
+			expected_cited_by integer not null default -1,
+			forward_page_cap integer not null default 0,
+			forward_pages_fetched integer not null default 0,
+			forward_page_cap_hit integer not null default 0,
+			last_error text not null default '',
+			updated_at text not null,
+			primary key (project_id, patent_number),
+			foreign key (project_id) references projects(id),
+			foreign key (patent_number) references patents(number)
+		)`,
+		`create table if not exists citation_refresh_jobs (
+			id integer primary key autoincrement,
+			project_id text not null,
+			patent_number text not null,
+			dedupe_key text not null,
+			status text not null,
+			retry_count integer not null default 0,
+			next_attempt_at text not null,
+			priority integer not null default 0,
+			desired_depth integer not null default 1,
+			trace_count integer not null default 1,
+			last_error text not null default '',
+			created_at text not null,
+			updated_at text not null,
+			claimed_at text not null default '',
+			completed_at text not null default '',
+			foreign key (project_id) references projects(id)
+		)`,
+		`create index if not exists idx_citation_refresh_jobs_due on citation_refresh_jobs (status, next_attempt_at, priority, created_at)`,
+		`create index if not exists idx_citation_refresh_jobs_dedupe on citation_refresh_jobs (dedupe_key, status)`,
 		`create table if not exists patent_classifications (
 			patent_number text not null,
 			system text not null,
@@ -615,6 +656,7 @@ func (r *Repository) DeletePatentCompletely(ctx context.Context, number domain.P
 		{`delete from patent_classifications where patent_number = ?`, []any{number}},
 		{`delete from patent_text_sections where patent_number = ?`, []any{number}},
 		{`delete from citation_edges where source_patent = ? or target_patent = ?`, []any{number, number}},
+		{`delete from patent_graph_cache where patent_number = ?`, []any{number}},
 		{`delete from research_notes where patent_number = ?`, []any{number}},
 		{`delete from reference_entries where patent_number = ?`, []any{number}},
 		{`delete from ai_analyses where patent_number = ?`, []any{number}},
@@ -703,6 +745,14 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID domain.Pr
 			return err
 		}
 	}
+	if err := upsertCitationGraphCacheTx(ctx, tx, projectID, bundle, citationGraphCacheMeta{
+		RequestedPatent:   string(bundle.Patent.Number),
+		ProvenanceSource:  bundle.Patent.ImportSource,
+		ProvenanceVersion: "",
+		FreshFor:          24 * time.Hour,
+	}); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -768,12 +818,15 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID domain.ProjectI
 		return nil
 	}
 	refreshedAt := nowString()
-	refreshedRelations := map[string]bool{}
+	refreshedTargets := map[string]map[domain.PatentNumber]bool{}
 	for _, edge := range edges {
 		source := firstNonEmpty(edge.SourcePatent, number)
 		status := firstNonEmpty(edge.ReviewState, domain.ReviewStateCached)
 
-		refreshedRelations[edge.RelationType] = true
+		if refreshedTargets[edge.RelationType] == nil {
+			refreshedTargets[edge.RelationType] = map[domain.PatentNumber]bool{}
+		}
+		refreshedTargets[edge.RelationType][edge.TargetPatent] = true
 		if _, err := tx.ExecContext(ctx, `insert into citation_edges (project_id, source_patent, target_patent, relation_type, review_state, created_at, refreshed_at, labeled_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?)
 			on conflict(project_id, source_patent, target_patent, relation_type) do update set
@@ -782,9 +835,15 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID domain.ProjectI
 			return err
 		}
 	}
-	for relation := range refreshedRelations {
-		if _, err := tx.ExecContext(ctx, `delete from citation_edges where project_id = ? and source_patent = ? and relation_type = ? and refreshed_at != ?`,
-			projectID, number, relation, refreshedAt); err != nil {
+	for relation, targets := range refreshedTargets {
+		args := []any{projectID, number, relation}
+		placeholders := make([]string, 0, len(targets))
+		for target := range targets {
+			placeholders = append(placeholders, "?")
+			args = append(args, target)
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`delete from citation_edges where project_id = ? and source_patent = ? and relation_type = ? and target_patent not in (%s)`,
+			strings.Join(placeholders, ",")), args...); err != nil {
 			return err
 		}
 	}

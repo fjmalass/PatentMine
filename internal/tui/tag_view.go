@@ -69,7 +69,7 @@ func (m *Model) viewTagSelect() string {
 	subtleStyle := base.Foreground(lipgloss.Color(ColorSubtle))
 	dimStyle := base.Foreground(lipgloss.Color(ColorDim)).Italic(true)
 
-	title := "Tags · " + m.activeSelection.livePatent
+	title := "Tags · " + string(m.activeSelection.livePatent)
 	if m.activeSelection.IsMulti() {
 		title = fmt.Sprintf("Tags · %d patents", m.activeSelection.Count())
 	}
@@ -166,7 +166,7 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 	}
 	// livePatent was already updated live via space-toggle; propagate the same
 	// tag state to the rest of the selection.
-	targets := make([]string, 0, len(patentNumbers))
+	targets := make([]domain.PatentNumber, 0, len(patentNumbers))
 	for _, num := range patentNumbers {
 		if num != sel.livePatent {
 			targets = append(targets, num)
@@ -181,9 +181,9 @@ func (m *Model) applyTagsToSelection() (tea.Model, tea.Cmd) {
 			for _, num := range targets {
 				for _, tag := range m.availableTags {
 					if desired[tag.ID] {
-						m.logActivity(ActivityTagApply, num, tag.Name)
+						m.logActivity(ActivityTagApply, string(num), tag.Name)
 					} else {
-						m.logActivity(ActivityTagRemove, num, tag.Name)
+						m.logActivity(ActivityTagRemove, string(num), tag.Name)
 					}
 				}
 			}
@@ -290,12 +290,12 @@ func (m *Model) handleViewTagSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				liveNum = m.current.Number
 			}
 			want := !m.selectedPatentTags[tag.ID]
-			if m.applyChange(changes.ApplyTags(m.ProjectID, []string{liveNum}, map[int64]bool{tag.ID: want})) {
+			if m.applyChange(changes.ApplyTags(m.ProjectID, []domain.PatentNumber{liveNum}, map[int64]bool{tag.ID: want})) {
 				m.selectedPatentTags[tag.ID] = want
 				if want {
-					m.logActivity(ActivityTagApply, liveNum, tag.Name)
+					m.logActivity(ActivityTagApply, string(liveNum), tag.Name)
 				} else {
-					m.logActivity(ActivityTagRemove, liveNum, tag.Name)
+					m.logActivity(ActivityTagRemove, string(liveNum), tag.Name)
 				}
 			}
 		}

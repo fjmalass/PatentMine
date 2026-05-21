@@ -53,7 +53,7 @@ func (m *Model) renderScreenHeader() string {
 	b.WriteString(" ")
 
 	// Project details
-	pName := m.ProjectID
+	pName := string(m.ProjectID)
 	if m.ProjectID == "default" {
 		pName = "Default"
 	}
@@ -114,11 +114,11 @@ func (m *Model) renderScreenHeader() string {
 		var parts []string
 		for _, snap := range m.backStack {
 			if snap.current.Number != "" {
-				parts = append(parts, snap.current.Number)
+				parts = append(parts, string(snap.current.Number))
 			}
 		}
 		if m.current.Number != "" {
-			parts = append(parts, m.current.Number)
+			parts = append(parts, string(m.current.Number))
 		}
 		if len(parts) > 0 {
 			ellipsis := ""

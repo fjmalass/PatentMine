@@ -112,7 +112,7 @@ func (m *Model) applyJump(key string) (tea.Model, tea.Cmd) {
 		target := window.Start + index
 		if target < len(m.patents) {
 			m.patentSelected = target
-			return m.openPatent(m.patents[target].Number)
+			return m.openPatent(string(m.patents[target].Number))
 		}
 	case m.mode == viewDetail:
 		m.detailSelected = index

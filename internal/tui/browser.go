@@ -72,7 +72,7 @@ func (m *Model) browserURL(args []string) (string, error) {
 		if !ok {
 			return "", errors.New(m.text.T(TextMessageBrowserNoPatent))
 		}
-		return m.patentBrowserURL(edge.TargetPatent)
+		return m.patentBrowserURL(string(edge.TargetPatent))
 	case m.mode == viewReview:
 		edge, ok, err := m.selectedReviewCitationEdge()
 		if err != nil {
@@ -81,7 +81,7 @@ func (m *Model) browserURL(args []string) (string, error) {
 		if !ok {
 			return "", errors.New(m.text.T(TextMessageBrowserNoPatent))
 		}
-		return m.patentBrowserURL(edge.TargetPatent)
+		return m.patentBrowserURL(string(edge.TargetPatent))
 	case m.mode == viewPopupPatentDetail:
 		return m.patentURL(m.current)
 	case m.mode == viewList && len(m.patents) > 0:
@@ -95,7 +95,7 @@ func (m *Model) patentURL(p domain.Patent) (string, error) {
 	if strings.TrimSpace(p.SourceGoogleURL) != "" {
 		return p.SourceGoogleURL, nil
 	}
-	return m.patentBrowserURL(p.Number)
+	return m.patentBrowserURL(string(p.Number))
 }
 
 func (m *Model) patentBrowserURL(value string) (string, error) {
@@ -111,7 +111,7 @@ func (m *Model) patentBrowserURL(value string) (string, error) {
 
 func (m *Model) openPatent(number string) (tea.Model, tea.Cmd) {
 	m.backStack = append(m.backStack, m.snapshot())
-	p, err := m.repo.GetPatent(m.ctx, m.ProjectID, number)
+	p, err := m.repo.GetPatent(m.ctx, m.ProjectID, domain.PatentNumber(number))
 	if err != nil {
 		m.backStack = m.backStack[:len(m.backStack)-1]
 		m.err = err.Error()
@@ -121,7 +121,7 @@ func (m *Model) openPatent(number string) (tea.Model, tea.Cmd) {
 	m.current = p
 	m.populateDetailCache()
 	m.setMode(viewDetail)
-	m.message = "opened " + p.Number
+	m.message = "opened " + string(p.Number)
 	return m, m.enrichClassificationDescriptionsCommand(number)
 }
 

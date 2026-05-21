@@ -26,10 +26,10 @@ func newFakeRepo() *fakeRepo {
 }
 
 func edgeKey(e domain.CitationEdge) string {
-	return e.SourcePatent + "->" + e.TargetPatent
+	return string(e.SourcePatent) + "->" + string(e.TargetPatent)
 }
 
-func (r *fakeRepo) UpdateCitationReviewStates(_ context.Context, _ string, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
+func (r *fakeRepo) UpdateCitationReviewStates(_ context.Context, _ domain.ProjectID, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
 	if r.failCit {
 		return nil, errors.New("boom")
 	}
@@ -43,18 +43,18 @@ func (r *fakeRepo) UpdateCitationReviewStates(_ context.Context, _ string, updat
 	return prior, nil
 }
 
-func (r *fakeRepo) UpdatePatentReviewStates(_ context.Context, _ string, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
+func (r *fakeRepo) UpdatePatentReviewStates(_ context.Context, _ domain.ProjectID, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
 	prior := make([]storage.PatentStateUpdate, len(updates))
 	for i, u := range updates {
-		prior[i] = storage.PatentStateUpdate{Number: u.Number, ReviewState: r.patStates[u.Number]}
+		prior[i] = storage.PatentStateUpdate{Number: u.Number, ReviewState: r.patStates[string(u.Number)]}
 	}
 	for _, u := range updates {
-		r.patStates[u.Number] = u.ReviewState
+		r.patStates[string(u.Number)] = u.ReviewState
 	}
 	return prior, nil
 }
 
-func (r *fakeRepo) AddNote(_ context.Context, _ string, _, _ string) (domain.ResearchNote, error) {
+func (r *fakeRepo) AddNote(_ context.Context, _ domain.ProjectID, _ domain.PatentNumber, _ string) (domain.ResearchNote, error) {
 	r.notes++
 	return domain.ResearchNote{ID: int64(r.notes)}, nil
 }
@@ -66,7 +66,7 @@ func TestPatentReviewApplyUndoRedo(t *testing.T) {
 	h := NewHistory(repo)
 	ctx := context.Background()
 
-	if _, err := h.Apply(ctx, SetPatentReviewState("p", []string{"US1", "US2"}, "ignored")); err != nil {
+	if _, err := h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US1", "US2"}, "ignored")); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if repo.patStates["US1"] != "ignored" || repo.patStates["US2"] != "ignored" {
@@ -148,7 +148,7 @@ func TestRecordingSaveAndReplay(t *testing.T) {
 	ctx := context.Background()
 
 	h.StartRecording()
-	if _, err := h.Apply(ctx, SetPatentReviewState("p", []string{"US1"}, "ignored")); err != nil {
+	if _, err := h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US1"}, "ignored")); err != nil {
 		t.Fatalf("apply patent: %v", err)
 	}
 	if _, err := h.Apply(ctx, SetCitationReviewState("p", []domain.CitationEdge{e}, "ignored")); err != nil {
@@ -183,14 +183,14 @@ func TestRecordingSaveAndReplay(t *testing.T) {
 func TestRecordingCapturesOnlyWhileActive(t *testing.T) {
 	h := NewHistory(newFakeRepo())
 	ctx := context.Background()
-	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US1"}, "ignored"))
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US1"}, "ignored"))
 	if h.RecordingLen() != 0 {
 		t.Fatal("change applied before StartRecording must not be captured")
 	}
 	h.StartRecording()
-	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US2"}, "ignored"))
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US2"}, "ignored"))
 	h.StopRecording()
-	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US3"}, "ignored"))
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US3"}, "ignored"))
 	if h.RecordingLen() != 1 {
 		t.Fatalf("expected exactly 1 captured change, got %d", h.RecordingLen())
 	}
@@ -200,12 +200,12 @@ func TestApplyClearsRedo(t *testing.T) {
 	repo := newFakeRepo()
 	h := NewHistory(repo)
 	ctx := context.Background()
-	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US1"}, "ignored"))
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US1"}, "ignored"))
 	_, _, _ = h.Undo(ctx)
 	if !h.CanRedo() {
 		t.Fatal("expected redo available after undo")
 	}
-	_, _ = h.Apply(ctx, SetPatentReviewState("p", []string{"US2"}, "ignored"))
+	_, _ = h.Apply(ctx, SetPatentReviewState("p", []domain.PatentNumber{"US2"}, "ignored"))
 	if h.CanRedo() {
 		t.Fatal("a fresh apply must clear the redo stack")
 	}

@@ -48,7 +48,7 @@ func (m *Model) reviewStateSelectTitle() string {
 		return fmt.Sprintf("Change Status"+sepBullet+"%d patents", sel.Count())
 	}
 	if sel.livePatent != "" {
-		return "Change Status" + sepBullet + sel.livePatent
+		return "Change Status" + sepBullet + string(sel.livePatent)
 	}
 	return "Change Status"
 }
@@ -70,16 +70,16 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		source := m.pendingCitation.SourcePatent
 		if m.storePendingCitationPatent(next) {
 			m.message = fmt.Sprintf("%s → %s", number, next)
-			m.logActivityFrom(ActivityCitationReviewState, number, next, source)
+			m.logActivityFrom(ActivityCitationReviewState, string(number), next, string(source))
 		}
 		m.activeSelection = selectionContext{}
 		return m.goBack()
 	}
 
 	if prevMode == viewDetail {
-		if m.applyChange(changes.SetPatentReviewState(m.ProjectID, []string{m.current.Number}, next)) {
+		if m.applyChange(changes.SetPatentReviewState(m.ProjectID, []domain.PatentNumber{m.current.Number}, next)) {
 			m.message = fmt.Sprintf("%s → %s", m.current.Number, next)
-			m.logActivity(ActivityPatentReviewState, m.current.Number, next)
+			m.logActivity(ActivityPatentReviewState, string(m.current.Number), next)
 		}
 		m.activeSelection = selectionContext{}
 		return m.goBack()
@@ -94,7 +94,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		}
 		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, []domain.CitationEdge{edge}, next)) {
 			m.message = fmt.Sprintf("%s → %s", edge.TargetPatent, next)
-			m.logActivityFrom(ActivityCitationReviewState, edge.TargetPatent, next, edge.SourcePatent)
+			m.logActivityFrom(ActivityCitationReviewState, string(edge.TargetPatent), next, string(edge.SourcePatent))
 		}
 		m.activeSelection = selectionContext{}
 		return m.goBack()
@@ -113,7 +113,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 		}
 		if m.applyChange(changes.SetCitationReviewState(m.ProjectID, selected, next)) {
 			for _, e := range selected {
-				m.logActivityFrom(ActivityCitationReviewState, e.TargetPatent, next, e.SourcePatent)
+				m.logActivityFrom(ActivityCitationReviewState, string(e.TargetPatent), next, string(e.SourcePatent))
 			}
 			m.logActivity(ActivityBulkPrefix+ActivityCitationReviewState, next, fmt.Sprintf("%d", len(selected)))
 			if len(selected) > 1 {
@@ -138,7 +138,7 @@ func (m *Model) applyReviewStateSelection() (tea.Model, tea.Cmd) {
 	}
 	if m.applyChange(changes.SetPatentReviewState(m.ProjectID, patentNumbers, next)) {
 		for _, num := range patentNumbers {
-			m.logActivity(ActivityPatentReviewState, num, next)
+			m.logActivity(ActivityPatentReviewState, string(num), next)
 		}
 		m.logActivity(ActivityBulkPrefix+ActivityPatentReviewState, next, fmt.Sprintf("%d", len(patentNumbers)))
 		if len(patentNumbers) > 1 {

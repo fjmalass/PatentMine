@@ -16,7 +16,7 @@ func (m *Model) viewClassifications() string {
 		return overlayBase().Render(err.Error()) + "\n"
 	}
 	if len(classifications) == 0 {
-		return overlayBase().Render("No CPC/USPC classification codes stored for "+m.current.Number+".\n"+
+		return overlayBase().Render("No CPC/USPC classification codes stored for "+string(m.current.Number)+".\n"+
 			"Re-import the patent or run :"+commandRefreshRefsDetails+" to fetch row details.") + "\n"
 	}
 
@@ -60,7 +60,7 @@ func (m *Model) viewClassifications() string {
 		}
 		body.WriteString(m.overlayRowStyle(i, selected).Render(row) + "\n")
 	}
-	return m.renderPopup("Classifications · "+m.current.Number, body.String())
+	return m.renderPopup("Classifications · "+string(m.current.Number), body.String())
 }
 
 func (m *Model) viewClassificationDetail() string {
@@ -72,7 +72,7 @@ func (m *Model) viewClassificationDetail() string {
 		return base.Render("Error loading classifications: "+err.Error()) + "\n"
 	}
 	if len(classifications) == 0 {
-		return base.Render("No classification data stored for "+m.current.Number+".\nRun :refresh-refs-details or re-import the patent.") + "\n"
+		return base.Render("No classification data stored for "+string(m.current.Number)+".\nRun :refresh-refs-details or re-import the patent.") + "\n"
 	}
 	selected := clamp(m.classificationSelected, 0, len(classifications)-1)
 	cls := classifications[selected]

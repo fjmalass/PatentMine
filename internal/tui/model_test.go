@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/changes"
@@ -665,7 +665,7 @@ func TestListSearchTypingRestartsFromTop(t *testing.T) {
 		text:             EnglishText(),
 		mode:             viewList,
 		patents:          []domain.Patent{{Number: "CCC", Title: "Gamma"}, {Number: "BBB", Title: "Beta"}, {Number: "AAA", Title: "Alpha"}},
-		patentSelected:         2,
+		patentSelected:   2,
 		listSearchActive: true,
 	}
 	updated, _ := model.Update(teaKey("B"))
@@ -681,7 +681,7 @@ func TestListSearchNextWorksAfterEnter(t *testing.T) {
 		text:             EnglishText(),
 		mode:             viewList,
 		patents:          []domain.Patent{{Number: "AAA"}, {Number: "AAB"}, {Number: "CCC"}},
-		patentSelected:         0,
+		patentSelected:   0,
 		listSearchActive: true,
 		listSearchQuery:  "A",
 	}
@@ -1189,8 +1189,8 @@ func TestClassificationPageKeysMoveByPage(t *testing.T) {
 func TestNumericPrefixMovesSelections(t *testing.T) {
 	model := &Model{repo: stubRepo{},
 
-		mode:     viewList,
-		patents:  []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}},
+		mode:           viewList,
+		patents:        []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}},
 		patentSelected: 0,
 	}
 	updated, _ := model.Update(teaKey("3"))
@@ -1293,13 +1293,13 @@ func TestOpenStoredCitationShowsPreviewOverlay(t *testing.T) {
 
 func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
 	model := &Model{
-		ctx:          t.Context(),
-		text:         EnglishText(),
-		repo:         citationRepo{edges: sampleCitationEdges(3)},
-		mode:         viewReview,
+		ctx:         t.Context(),
+		text:        EnglishText(),
+		repo:        citationRepo{edges: sampleCitationEdges(3)},
+		mode:        viewReview,
 		reviewState: domain.ReviewStateUnderReview,
-		width:        100,
-		height:       20,
+		width:       100,
+		height:      20,
 	}
 	got := model.viewReviewQueue()
 	if !strings.Contains(got, "#") {
@@ -1312,13 +1312,13 @@ func TestViewReviewQueueShowsIndexedRows(t *testing.T) {
 
 func TestVisibleCitationEdgesReturnsCurrentPage(t *testing.T) {
 	model := &Model{
-		ctx:           t.Context(),
-		text:          EnglishText(),
-		repo:          citationRepo{edges: sampleCitationEdges(12)},
-		mode:          viewCites,
-		current:       domain.Patent{Number: "US10218760B2"},
+		ctx:              t.Context(),
+		text:             EnglishText(),
+		repo:             citationRepo{edges: sampleCitationEdges(12)},
+		mode:             viewCites,
+		current:          domain.Patent{Number: "US10218760B2"},
 		citationLocalIdx: 7,
-		height:        12,
+		height:           12,
 	}
 	edges, err := model.visibleCitationEdges()
 	if err != nil {
@@ -1397,7 +1397,7 @@ type emptyClassificationRepo struct {
 	stubRepo
 }
 
-func (emptyClassificationRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
+func (emptyClassificationRepo) ListClassifications(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.Classification, error) {
 	return nil, nil
 }
 
@@ -1406,11 +1406,11 @@ type classificationRepo struct {
 	classifications []domain.Classification
 }
 
-func (r classificationRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
+func (r classificationRepo) ListClassifications(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.Classification, error) {
 	return r.classifications, nil
 }
 
-func (r classificationRepo) GetClassificationStats(context.Context, string, string) (domain.ClassificationStats, error) {
+func (r classificationRepo) GetClassificationStats(context.Context, domain.ProjectID, string) (domain.ClassificationStats, error) {
 	return domain.ClassificationStats{Total: 10, Stored: 5, UnderReview: 3, Ignored: 2}, nil
 }
 
@@ -1420,21 +1420,21 @@ type familyRepo struct {
 	patents map[string]domain.Patent
 }
 
-func (r familyRepo) ListAllFamilyEdges(context.Context, string) ([]domain.FamilyEdge, error) {
+func (r familyRepo) ListAllFamilyEdges(context.Context, domain.ProjectID) ([]domain.FamilyEdge, error) {
 	return append([]domain.FamilyEdge(nil), r.edges...), nil
 }
 
-func (r familyRepo) GetPatent(_ context.Context, _ string, number string) (domain.Patent, error) {
-	if p, ok := r.patents[number]; ok {
+func (r familyRepo) GetPatent(_ context.Context, _ domain.ProjectID, number domain.PatentNumber) (domain.Patent, error) {
+	if p, ok := r.patents[string(number)]; ok {
 		return p, nil
 	}
 	return domain.Patent{}, nil
 }
 
-func (r familyRepo) ListFamilyPatents(_ context.Context, _ string, numbers []string) (map[string]domain.Patent, error) {
-	out := make(map[string]domain.Patent, len(numbers))
+func (r familyRepo) ListFamilyPatents(_ context.Context, _ domain.ProjectID, numbers []domain.PatentNumber) (map[domain.PatentNumber]domain.Patent, error) {
+	out := make(map[domain.PatentNumber]domain.Patent, len(numbers))
 	for _, number := range numbers {
-		if p, ok := r.patents[number]; ok {
+		if p, ok := r.patents[string(number)]; ok {
 			out[number] = p
 		}
 	}
@@ -1446,11 +1446,11 @@ type citationRepo struct {
 	edges []domain.CitationEdge
 }
 
-func (r citationRepo) ListCitations(context.Context, string, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (r citationRepo) ListCitations(context.Context, domain.ProjectID, domain.PatentNumber, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return r.edges, nil
 }
 
-func (r citationRepo) ListCitationsByReviewState(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (r citationRepo) ListCitationsByReviewState(context.Context, domain.ProjectID, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return r.edges, nil
 }
 
@@ -1458,7 +1458,7 @@ type storedCitationRepo struct {
 	citationRepo
 }
 
-func (r storedCitationRepo) GetPatent(_ context.Context, _ string, number string) (domain.Patent, error) {
+func (r storedCitationRepo) GetPatent(_ context.Context, _ domain.ProjectID, number domain.PatentNumber) (domain.Patent, error) {
 	return domain.Patent{
 		Number:           number,
 		Title:            "Stored citation patent",
@@ -1467,7 +1467,7 @@ func (r storedCitationRepo) GetPatent(_ context.Context, _ string, number string
 		GrantDate:        "2020-01-01",
 		ExpirationDate:   "2040-01-01",
 		ExpirationSource: domain.ExpirationSourceEstimated,
-		SourceGoogleURL:  "https://patents.google.com/patent/" + number + "/en",
+		SourceGoogleURL:  "https://patents.google.com/patent/" + string(number) + "/en",
 	}, nil
 }
 
@@ -1488,7 +1488,7 @@ func sampleCitationEdges(count int) []domain.CitationEdge {
 	for i := 0; i < count; i++ {
 		out = append(out, domain.CitationEdge{
 			SourcePatent:         "US10218760B2",
-			TargetPatent:         fmt.Sprintf("US100000%dB2", i+1),
+			TargetPatent:         domain.PatentNumber(fmt.Sprintf("US100000%dB2", i+1)),
 			RelationType:         domain.RelationCites,
 			ReviewState:          domain.ReviewStateUnderReview,
 			TargetTitle:          fmt.Sprintf("Citation %d", i+1),
@@ -1526,7 +1526,7 @@ type dateMutationRepo struct {
 	updatedValue string
 }
 
-func (r *idsMutationRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
+func (r *idsMutationRepo) ListIDSEntries(context.Context, domain.ProjectID) ([]domain.IDSEntry, error) {
 	return append([]domain.IDSEntry(nil), r.entries...), nil
 }
 
@@ -1559,8 +1559,8 @@ func (r *idsMutationRepo) DeleteIDSEntry(_ context.Context, id int64) error {
 	return nil
 }
 
-func (r *idsMutationRepo) DeleteIDSEntriesForPatents(_ context.Context, _ string, nums []string) (int, error) {
-	set := make(map[string]bool, len(nums))
+func (r *idsMutationRepo) DeleteIDSEntriesForPatents(_ context.Context, _ domain.ProjectID, nums []domain.PatentNumber) (int, error) {
+	set := make(map[domain.PatentNumber]bool, len(nums))
 	for _, n := range nums {
 		set[n] = true
 	}
@@ -1577,7 +1577,7 @@ func (r *idsMutationRepo) DeleteIDSEntriesForPatents(_ context.Context, _ string
 	return removed, nil
 }
 
-func (r *idsMutationRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
+func (r *idsMutationRepo) GetIDSMetadata(context.Context, domain.ProjectID) (domain.IDSMetadata, error) {
 	return domain.IDSMetadata{}, nil
 }
 func (r *idsMutationRepo) SaveIDSMetadata(context.Context, domain.IDSMetadata) error { return nil }
@@ -1587,7 +1587,7 @@ func (r *idsMutationRepo) AddIDSNPLEntry(_ context.Context, entry domain.IDSEntr
 	r.entries = append(r.entries, entry)
 	return entry, nil
 }
-func (r *idsMutationRepo) ListIDSNPLEntries(context.Context, string) ([]domain.IDSEntry, error) {
+func (r *idsMutationRepo) ListIDSNPLEntries(context.Context, domain.ProjectID) ([]domain.IDSEntry, error) {
 	return nil, nil
 }
 func (r *idsMutationRepo) DeleteIDSNPLEntry(_ context.Context, id int64) error {
@@ -1601,7 +1601,7 @@ func (r *idsMutationRepo) DeleteIDSNPLEntry(_ context.Context, id int64) error {
 	return nil
 }
 
-func (r *dateMutationRepo) UpdatePatentDate(_ context.Context, number string, dateType string, value string) error {
+func (r *dateMutationRepo) UpdatePatentDate(_ context.Context, number domain.PatentNumber, dateType string, value string) error {
 	r.updatedType = dateType
 	r.updatedValue = value
 	r.patent.Number = number
@@ -1619,150 +1619,182 @@ func (r *dateMutationRepo) UpdatePatentDate(_ context.Context, number string, da
 	return nil
 }
 
-func (r *dateMutationRepo) GetPatent(context.Context, string, string) (domain.Patent, error) {
+func (r *dateMutationRepo) GetPatent(context.Context, domain.ProjectID, domain.PatentNumber) (domain.Patent, error) {
 	return r.patent, nil
 }
 
 func (stubRepo) Close() error                                        { return nil }
 func (stubRepo) Setup(context.Context) error                         { return nil }
 func (stubRepo) CreateProject(context.Context, domain.Project) error { return nil }
-func (stubRepo) GetProject(context.Context, string) (domain.Project, error) {
+func (stubRepo) GetProject(context.Context, domain.ProjectID) (domain.Project, error) {
 	return domain.Project{}, nil
 }
-func (stubRepo) ListProjects(context.Context) ([]domain.Project, error)                { return nil, nil }
-func (stubRepo) UpdateProject(context.Context, domain.Project) error                   { return nil }
-func (stubRepo) DeleteProject(context.Context, string) error                           { return nil }
-func (stubRepo) AddPatentToProject(context.Context, string, string) error              { return nil }
-func (stubRepo) RemovePatentFromProject(context.Context, string, string) error         { return nil }
-func (stubRepo) UpsertPatentBundle(context.Context, string, domain.PatentBundle) error { return nil }
-func (stubRepo) GetPatent(context.Context, string, string) (domain.Patent, error) {
+func (stubRepo) ListProjects(context.Context) ([]domain.Project, error) { return nil, nil }
+func (stubRepo) UpdateProject(context.Context, domain.Project) error    { return nil }
+func (stubRepo) DeleteProject(context.Context, domain.ProjectID) error  { return nil }
+func (stubRepo) AddPatentToProject(context.Context, domain.ProjectID, domain.PatentNumber) error {
+	return nil
+}
+func (stubRepo) RemovePatentFromProject(context.Context, domain.ProjectID, domain.PatentNumber) error {
+	return nil
+}
+func (stubRepo) UpsertPatentBundle(context.Context, domain.ProjectID, domain.PatentBundle) error {
+	return nil
+}
+func (stubRepo) GetPatent(context.Context, domain.ProjectID, domain.PatentNumber) (domain.Patent, error) {
 	return domain.Patent{}, nil
 }
-func (stubRepo) ListFamilyPatents(context.Context, string, []string) (map[string]domain.Patent, error) {
-	return map[string]domain.Patent{}, nil
+func (stubRepo) ListFamilyPatents(context.Context, domain.ProjectID, []domain.PatentNumber) (map[domain.PatentNumber]domain.Patent, error) {
+	return map[domain.PatentNumber]domain.Patent{}, nil
 }
-func (stubRepo) ListPatents(context.Context, string, storage.ListPatentsOptions) ([]domain.Patent, error) {
+func (stubRepo) ListPatents(context.Context, domain.ProjectID, storage.ListPatentsOptions) ([]domain.Patent, error) {
 	return []domain.Patent{{Number: "US1"}, {Number: "US2"}, {Number: "US3"}, {Number: "US4"}}, nil
 }
 
-func (stubRepo) ListCitations(context.Context, string, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (stubRepo) ListCitations(context.Context, domain.ProjectID, domain.PatentNumber, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return nil, nil
 }
-func (stubRepo) ListCitationsByReviewState(context.Context, string, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
+func (stubRepo) ListCitationsByReviewState(context.Context, domain.ProjectID, string, storage.ListCitationsOptions) ([]domain.CitationEdge, error) {
 	return nil, nil
 }
-func (stubRepo) UpdateCitationReviewState(context.Context, string, domain.CitationEdge, string) error {
+func (stubRepo) UpdateCitationReviewState(context.Context, domain.ProjectID, domain.CitationEdge, string) error {
 	return nil
 }
-func (stubRepo) UpdatePatentReviewState(context.Context, string, string, string) error { return nil }
-func (stubRepo) UpdateCitationReviewStates(_ context.Context, _ string, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
+func (stubRepo) UpdatePatentReviewState(context.Context, domain.ProjectID, domain.PatentNumber, string) error {
+	return nil
+}
+func (stubRepo) UpdateCitationReviewStates(_ context.Context, _ domain.ProjectID, updates []storage.CitationStateUpdate) ([]storage.CitationStateUpdate, error) {
 	prior := make([]storage.CitationStateUpdate, len(updates))
 	for i, u := range updates {
 		prior[i] = storage.CitationStateUpdate{Edge: u.Edge}
 	}
 	return prior, nil
 }
-func (stubRepo) UpdatePatentReviewStates(_ context.Context, _ string, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
+func (stubRepo) UpdatePatentReviewStates(_ context.Context, _ domain.ProjectID, updates []storage.PatentStateUpdate) ([]storage.PatentStateUpdate, error) {
 	prior := make([]storage.PatentStateUpdate, len(updates))
 	for i, u := range updates {
 		prior[i] = storage.PatentStateUpdate{Number: u.Number}
 	}
 	return prior, nil
 }
-func (stubRepo) UpdatePatentDate(context.Context, string, string, string) error   { return nil }
-func (stubRepo) UpdatePatentNumber(context.Context, string, string, string) error { return nil }
-func (stubRepo) UpdateClassificationDescription(context.Context, string, string, string, string) error {
+func (stubRepo) UpdatePatentDate(context.Context, domain.PatentNumber, string, string) error {
 	return nil
 }
-func (stubRepo) DeletePatent(context.Context, string, string) error { return nil }
-func (stubRepo) DeletePatentCompletely(context.Context, string) error { return nil }
-func (stubRepo) ListClassifications(context.Context, string, string) ([]domain.Classification, error) {
+func (stubRepo) UpdatePatentNumber(context.Context, domain.PatentNumber, string, string) error {
+	return nil
+}
+func (stubRepo) UpdateClassificationDescription(context.Context, domain.ProjectID, string, string, string) error {
+	return nil
+}
+func (stubRepo) DeletePatent(context.Context, domain.ProjectID, domain.PatentNumber) error {
+	return nil
+}
+func (stubRepo) DeletePatentCompletely(context.Context, domain.PatentNumber) error { return nil }
+func (stubRepo) ListClassifications(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.Classification, error) {
 	return nil, nil
 }
-func (stubRepo) GetClassificationStats(context.Context, string, string) (domain.ClassificationStats, error) {
+func (stubRepo) GetClassificationStats(context.Context, domain.ProjectID, string) (domain.ClassificationStats, error) {
 	return domain.ClassificationStats{}, nil
 }
-func (stubRepo) ListTextSections(context.Context, string, string) ([]domain.PatentTextSection, error) {
+func (stubRepo) ListTextSections(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.PatentTextSection, error) {
 	return nil, nil
 }
-func (stubRepo) AddNote(context.Context, string, string, string) (domain.ResearchNote, error) {
+func (stubRepo) AddNote(context.Context, domain.ProjectID, domain.PatentNumber, string) (domain.ResearchNote, error) {
 	return domain.ResearchNote{}, nil
 }
-func (stubRepo) ListNotes(context.Context, string, string) ([]domain.ResearchNote, error) {
+func (stubRepo) ListNotes(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.ResearchNote, error) {
 	return nil, nil
 }
-func (stubRepo) AddReference(context.Context, string, string, string) (domain.ReferenceEntry, error) {
+func (stubRepo) AddReference(context.Context, domain.ProjectID, domain.PatentNumber, string) (domain.ReferenceEntry, error) {
 	return domain.ReferenceEntry{}, nil
 }
-func (stubRepo) ListReferences(context.Context, string) ([]domain.ReferenceEntry, error) {
+func (stubRepo) ListReferences(context.Context, domain.ProjectID) ([]domain.ReferenceEntry, error) {
 	return nil, nil
 }
-func (stubRepo) AddAIAnalysis(context.Context, string, domain.AIAnalysis) (domain.AIAnalysis, error) {
+func (stubRepo) AddAIAnalysis(context.Context, domain.ProjectID, domain.AIAnalysis) (domain.AIAnalysis, error) {
 	return domain.AIAnalysis{}, nil
 }
-func (stubRepo) ListAIAnalyses(context.Context, string, string) ([]domain.AIAnalysis, error) {
+func (stubRepo) ListAIAnalyses(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.AIAnalysis, error) {
 	return nil, nil
 }
 func (stubRepo) AddProjectEvent(context.Context, domain.ProjectEvent) (domain.ProjectEvent, error) {
 	return domain.ProjectEvent{}, nil
 }
-func (stubRepo) ListProjectEvents(context.Context, string) ([]domain.ProjectEvent, error) {
+func (stubRepo) ListProjectEvents(context.Context, domain.ProjectID) ([]domain.ProjectEvent, error) {
 	return nil, nil
 }
 func (stubRepo) DeleteProjectEvent(context.Context, int64) error { return nil }
 func (stubRepo) AddProjectInvoice(context.Context, domain.ProjectInvoice) (domain.ProjectInvoice, error) {
 	return domain.ProjectInvoice{}, nil
 }
-func (stubRepo) ListProjectInvoices(context.Context, string) ([]domain.ProjectInvoice, error) {
+func (stubRepo) ListProjectInvoices(context.Context, domain.ProjectID) ([]domain.ProjectInvoice, error) {
 	return nil, nil
 }
 func (stubRepo) UpdateProjectInvoice(context.Context, domain.ProjectInvoice) error { return nil }
 func (stubRepo) DeleteProjectInvoice(context.Context, int64) error                 { return nil }
-func (stubRepo) CountUnpaidInvoicesByProject(context.Context) (map[string]int, error) {
+func (stubRepo) CountUnpaidInvoicesByProject(context.Context) (map[domain.ProjectID]int, error) {
 	return nil, nil
 }
 func (stubRepo) GetSetting(context.Context, string) (string, error)     { return "", nil }
 func (stubRepo) SetSetting(context.Context, string, string) error       { return nil }
 func (stubRepo) AddFamilyEdge(context.Context, domain.FamilyEdge) error { return nil }
-func (stubRepo) ListFamilyEdges(context.Context, string, string) ([]domain.FamilyEdge, []domain.FamilyEdge, error) {
+func (stubRepo) ListFamilyEdges(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.FamilyEdge, []domain.FamilyEdge, error) {
 	return nil, nil, nil
 }
-func (stubRepo) ListAllFamilyEdges(context.Context, string) ([]domain.FamilyEdge, error) {
+func (stubRepo) ListAllFamilyEdges(context.Context, domain.ProjectID) ([]domain.FamilyEdge, error) {
 	return nil, nil
 }
-func (stubRepo) RemoveFamilyEdge(context.Context, string, string, string) error { return nil }
-func (stubRepo) PurgeIgnored(context.Context, string) (int, error)              { return 0, nil }
-func (stubRepo) Compact(context.Context) error                                  { return nil }
+func (stubRepo) RemoveFamilyEdge(context.Context, domain.ProjectID, domain.PatentNumber, domain.PatentNumber) error {
+	return nil
+}
+func (stubRepo) PurgeIgnored(context.Context, domain.ProjectID) (int, error) { return 0, nil }
+func (stubRepo) Compact(context.Context) error                               { return nil }
 func (stubRepo) AddIDSEntry(context.Context, domain.IDSEntry) (domain.IDSEntry, error) {
 	return domain.IDSEntry{}, nil
 }
-func (stubRepo) ListIDSEntries(context.Context, string) ([]domain.IDSEntry, error) {
+func (stubRepo) ListIDSEntries(context.Context, domain.ProjectID) ([]domain.IDSEntry, error) {
 	return nil, nil
 }
 func (stubRepo) UpdateIDSEntryStatus(context.Context, int64, domain.IDSStatus) error { return nil }
 func (stubRepo) UpdateIDSEntry(context.Context, domain.IDSEntry) error               { return nil }
-func (stubRepo) DeleteIDSEntry(context.Context, int64) error                              { return nil }
-func (stubRepo) DeleteIDSEntriesForPatents(context.Context, string, []string) (int, error) { return 0, nil }
-func (stubRepo) GetIDSMetadata(context.Context, string) (domain.IDSMetadata, error) {
+func (stubRepo) DeleteIDSEntry(context.Context, int64) error                         { return nil }
+func (stubRepo) DeleteIDSEntriesForPatents(context.Context, domain.ProjectID, []domain.PatentNumber) (int, error) {
+	return 0, nil
+}
+func (stubRepo) GetIDSMetadata(context.Context, domain.ProjectID) (domain.IDSMetadata, error) {
 	return domain.IDSMetadata{}, nil
 }
 func (stubRepo) SaveIDSMetadata(context.Context, domain.IDSMetadata) error { return nil }
 func (stubRepo) AddIDSNPLEntry(context.Context, domain.IDSEntry) (domain.IDSEntry, error) {
 	return domain.IDSEntry{}, nil
 }
-func (stubRepo) ListIDSNPLEntries(context.Context, string) ([]domain.IDSEntry, error) {
+func (stubRepo) ListIDSNPLEntries(context.Context, domain.ProjectID) ([]domain.IDSEntry, error) {
 	return nil, nil
 }
 func (stubRepo) DeleteIDSNPLEntry(context.Context, int64) error { return nil }
 
 // Tag stubs
-func (stubRepo) CreateTag(context.Context, string, string, string) (int64, error)            { return 0, nil }
-func (stubRepo) ListTagsWithCounts(context.Context, string) ([]domain.TagWithCount, error)    { return nil, nil }
-func (stubRepo) DeleteTag(context.Context, int64) error                                       { return nil }
-func (stubRepo) RenameTag(context.Context, int64, string) error                               { return nil }
-func (stubRepo) UpdateTagColor(context.Context, int64, string) error                          { return nil }
-func (stubRepo) GetTagByName(context.Context, string, string) (domain.Tag, error)             { return domain.Tag{}, nil }
-func (stubRepo) ApplyTagToPatent(context.Context, string, int64) error                        { return nil }
-func (stubRepo) RemoveTagFromPatent(context.Context, string, int64) error                     { return nil }
-func (stubRepo) GetPatentTags(context.Context, string, string) ([]domain.Tag, error)          { return nil, nil }
-func (stubRepo) ListPatentTagsForProject(context.Context, string) (map[string][]domain.Tag, error) { return nil, nil }
+func (stubRepo) CreateTag(context.Context, domain.ProjectID, string, string) (int64, error) {
+	return 0, nil
+}
+func (stubRepo) ListTagsWithCounts(context.Context, domain.ProjectID) ([]domain.TagWithCount, error) {
+	return nil, nil
+}
+func (stubRepo) DeleteTag(context.Context, int64) error              { return nil }
+func (stubRepo) RenameTag(context.Context, int64, string) error      { return nil }
+func (stubRepo) UpdateTagColor(context.Context, int64, string) error { return nil }
+func (stubRepo) GetTagByName(context.Context, domain.ProjectID, string) (domain.Tag, error) {
+	return domain.Tag{}, nil
+}
+func (stubRepo) ApplyTagToPatent(context.Context, domain.PatentNumber, int64) error {
+	return nil
+}
+func (stubRepo) RemoveTagFromPatent(context.Context, domain.PatentNumber, int64) error {
+	return nil
+}
+func (stubRepo) GetPatentTags(context.Context, domain.ProjectID, domain.PatentNumber) ([]domain.Tag, error) {
+	return nil, nil
+}
+func (stubRepo) ListPatentTagsForProject(context.Context, domain.ProjectID) (map[domain.PatentNumber][]domain.Tag, error) {
+	return nil, nil
+}

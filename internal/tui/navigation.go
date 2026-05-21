@@ -19,64 +19,64 @@ func (m *Model) navigateTo(mode viewMode) *Model {
 func (m *Model) snapshot() navSnapshot {
 	selectedPatentNumber := ""
 	if m.patentSelected >= 0 && m.patentSelected < len(m.patents) {
-		selectedPatentNumber = m.patents[m.patentSelected].Number
+		selectedPatentNumber = string(m.patents[m.patentSelected].Number)
 	}
 	selectedProjectID := ""
 	if m.projectSelected >= 0 && m.projectSelected < len(m.projects) {
-		selectedProjectID = m.projects[m.projectSelected].ID
+		selectedProjectID = string(m.projects[m.projectSelected].ID)
 	}
 	return navSnapshot{
-		mode:                         m.mode,
-		selectedPatentNumber:         selectedPatentNumber,
-		selectedProjectID:            selectedProjectID,
-		patentSelected:                     m.patentSelected,
-		projectSelected:              m.projectSelected,
-		projectEventsSelected:        m.projectEventsSelected,
-		projectInvoicesSelected:      m.projectInvoicesSelected,
-		projectIDSSelected:           m.projectIDSSelected,
-		detailSelected:               m.detailSelected,
-		citationLocalIdx:             m.citationLocalIdx,
-		citationKey:                  m.citationKey,
-		citesTextFilter:              m.citesTextFilter,
-		reviewSelected:               m.reviewSelected,
-		classificationSelected:       m.classificationSelected,
-		inventorSelected:             m.inventorSelected,
-		familySelected:               m.familySelected,
-		visualMode:                   m.visualMode,
-		selectionStart:               m.selectionStart,
-		current:                      m.current,
-		pendingBundle:                m.pendingBundle,
-		pendingCitation:              m.pendingCitation,
-		reviewState:                  m.reviewState,
+		mode:                    m.mode,
+		selectedPatentNumber:    selectedPatentNumber,
+		selectedProjectID:       selectedProjectID,
+		patentSelected:          m.patentSelected,
+		projectSelected:         m.projectSelected,
+		projectEventsSelected:   m.projectEventsSelected,
+		projectInvoicesSelected: m.projectInvoicesSelected,
+		projectIDSSelected:      m.projectIDSSelected,
+		detailSelected:          m.detailSelected,
+		citationLocalIdx:        m.citationLocalIdx,
+		citationKey:             m.citationKey,
+		citesTextFilter:         m.citesTextFilter,
+		reviewSelected:          m.reviewSelected,
+		classificationSelected:  m.classificationSelected,
+		inventorSelected:        m.inventorSelected,
+		familySelected:          m.familySelected,
+		visualMode:              m.visualMode,
+		selectionStart:          m.selectionStart,
+		current:                 m.current,
+		pendingBundle:           m.pendingBundle,
+		pendingCitation:         m.pendingCitation,
+		reviewState:             m.reviewState,
 		listFilter: PatentFilter{
-			FreeFormSearch: m.listFilter.FreeFormSearch,
-			ReviewState: m.listFilter.ReviewState,
-			Classification: m.listFilter.Classification,
-			Classifications: append([]string(nil), m.listFilter.Classifications...),
+			FreeFormSearch:   m.listFilter.FreeFormSearch,
+			ReviewState:      m.listFilter.ReviewState,
+			Classification:   m.listFilter.Classification,
+			Classifications:  append([]string(nil), m.listFilter.Classifications...),
 			ClassificationOp: m.listFilter.ClassificationOp,
-			Tag:         m.listFilter.Tag,
-			Country:     m.listFilter.Country,
-			Title:       m.listFilter.Title,
-			TitleTerms:  append([]string(nil), m.listFilter.TitleTerms...),
+			Tag:              m.listFilter.Tag,
+			Country:          m.listFilter.Country,
+			Title:            m.listFilter.Title,
+			TitleTerms:       append([]string(nil), m.listFilter.TitleTerms...),
 		},
-		message:                      m.message,
-		err:                          m.err,
-		countBuffer:                  m.countBuffer,
-		ProjectID:                    m.ProjectID,
-		sortColumn:                   m.sortColumn,
-		sortOrder:                    m.sortOrder,
-		sortColumn2:                  m.sortColumn2,
-		sortOrder2:                   m.sortOrder2,
-		citesReviewStateFilter:       m.citesReviewStateFilter,
-		numberColWidth:                 m.numberColWidth,
-		classificationQuery:          m.classificationQuery,
-		classificationSearchActive:   m.classificationSearchActive,
-		listSearchQuery:              m.listSearchQuery,
-		listSearchActive:             m.listSearchActive,
-		popupSearchQuery:             m.popupSearchQuery,
-		popupSearchActive:            m.popupSearchActive,
-		reviewStateSelected:          m.reviewStateSelected,
-		width:                        m.effectiveWidth(),
+		message:                    m.message,
+		err:                        m.err,
+		countBuffer:                m.countBuffer,
+		ProjectID:                  m.ProjectID,
+		sortColumn:                 m.sortColumn,
+		sortOrder:                  m.sortOrder,
+		sortColumn2:                m.sortColumn2,
+		sortOrder2:                 m.sortOrder2,
+		citesReviewStateFilter:     m.citesReviewStateFilter,
+		numberColWidth:             m.numberColWidth,
+		classificationQuery:        m.classificationQuery,
+		classificationSearchActive: m.classificationSearchActive,
+		listSearchQuery:            m.listSearchQuery,
+		listSearchActive:           m.listSearchActive,
+		popupSearchQuery:           m.popupSearchQuery,
+		popupSearchActive:          m.popupSearchActive,
+		reviewStateSelected:        m.reviewStateSelected,
+		width:                      m.effectiveWidth(),
 	}
 }
 
@@ -106,8 +106,8 @@ func findListIndex(id string, prevIndex, count int, idAt func(int) string) int {
 }
 
 func (m *Model) restore(snapshot navSnapshot) *Model {
-	m.patentSelected = findListIndex(snapshot.selectedPatentNumber, snapshot.patentSelected, len(m.patents), func(i int) string { return m.patents[i].Number })
-	m.projectSelected = findListIndex(snapshot.selectedProjectID, snapshot.projectSelected, len(m.projects), func(i int) string { return m.projects[i].ID })
+	m.patentSelected = findListIndex(snapshot.selectedPatentNumber, snapshot.patentSelected, len(m.patents), func(i int) string { return string(m.patents[i].Number) })
+	m.projectSelected = findListIndex(snapshot.selectedProjectID, snapshot.projectSelected, len(m.projects), func(i int) string { return string(m.projects[i].ID) })
 	m.projectEventsSelected = snapshot.projectEventsSelected
 	m.projectInvoicesSelected = snapshot.projectInvoicesSelected
 	m.projectIDSSelected = snapshot.projectIDSSelected
