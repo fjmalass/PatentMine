@@ -72,6 +72,19 @@ func patentActions() map[string]command.ID {
 	}
 }
 
+// viewActions are the bindings shared by scopes that display a patent and
+// its related views (detail, citations, cited-by, IDS, browser, etc.).
+func viewActions() map[string]command.ID {
+	return map[string]command.ID{
+		"I":      command.OpenIDS,
+		"w":      command.OpenBrowser,
+		"c":      command.OpenCitations,
+		"b":      command.OpenCitedBy,
+		"p":      command.OpenProjects,
+		"ctrl+r": command.Refresh,
+	}
+}
+
 // Default returns the shipped keymap.
 func Default() *Keymaps {
 	base := NewLayer("global", false).BindAll(map[string]command.ID{
@@ -87,21 +100,16 @@ func Default() *Keymaps {
 	catalog := NewLayer("catalog", false).
 		BindAll(listMotions()).
 		BindAll(patentActions()).
+		BindAll(viewActions()).
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
-			"I":      command.OpenIDS,
-			"w":      command.OpenBrowser,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
 			".":      command.SortApply,
-			"c":      command.OpenCitations,
-			"b":      command.OpenCitedBy,
-			"p":      command.OpenProjects,
 			"/":      command.FindOpen,
 			"n":      command.NavDown,
 			"N":      command.NavUp,
-			"ctrl+r": command.Refresh,
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"esc":    command.SelectClear,
@@ -112,33 +120,25 @@ func Default() *Keymaps {
 	detail := NewLayer("detail", false).
 		BindAll(listMotions()).
 		BindAll(patentActions()).
+		BindAll(viewActions()).
 		BindAll(map[string]command.ID{
-			"I":      command.OpenIDS,
-			"w":      command.OpenBrowser,
-			"c":      command.OpenCitations,
-			"b":      command.OpenCitedBy,
-			"p":      command.OpenProjects,
-			"/":      command.OpenSearch,
-			";":      command.JumpMode,
-			"ctrl+r": command.Refresh,
+			"/":  command.OpenSearch,
+			";":  command.JumpMode,
 		})
 
 	citations := NewLayer("citations", false).
 		BindAll(listMotions()).
 		BindAll(patentActions()).
+		BindAll(viewActions()).
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
-			"I":      command.OpenIDS,
-			"w":      command.OpenBrowser,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
 			".":      command.SortApply,
-			"p":      command.OpenProjects,
 			"/":      command.FindOpen,
 			"n":      command.NavDown,
 			"N":      command.NavUp,
-			"ctrl+r": command.Refresh,
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"g a":    command.SelectAll,
