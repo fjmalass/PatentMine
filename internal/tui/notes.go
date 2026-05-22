@@ -127,6 +127,57 @@ func (n *notesAccumulator) FlushToIDS(client *rpc.Client, number domain.PatentNu
 	}
 }
 
+// SaveToPatentNote saves the accumulated entries to the persistent patent note
+// (project-scoped markdown). Appends to existing note content if present.
+func (n *notesAccumulator) SaveToPatentNote(client *rpc.Client, number domain.PatentNumber, project domain.ProjectID) tea.Cmd {
+	entries := n.Entries(number)
+	if len(entries) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var existing proto.PatentResult
+		err := client.Call(ctx, proto.MethodPatentGet,
+			proto.PatentGetParams{Number: number, Project: project}, &existing)
+		if err != nil {
+			return pane.StatusMsg{Key: text.StatusClipboardFailed, Args: []any{"save to patent note: " + err.Error()}, Error: true}
+		}
+		var b strings.Builder
+		b.WriteString("## Notes Buffer (" + time.Now().Format(notesTimeLayout) + ")\n\n")
+		for _, e := range entries {
+			stamp := ""
+			if !e.CapturedAt.IsZero() {
+				stamp = " " + e.CapturedAt.Format(notesTimeLayoutBracket)
+			}
+			b.WriteString("### • " + e.Locator + stamp + "\n")
+			if e.Text != "" {
+				b.WriteString(e.Text + "\n\n")
+			}
+		}
+		markdown := b.String()
+		if existing.PatentNote != nil && existing.PatentNote.Markdown != "" {
+			markdown = existing.PatentNote.Markdown + "\n" + markdown
+		}
+		note := domain.PatentNote{
+			Project:  project,
+			Patent:   number,
+			Markdown: markdown,
+		}
+		if existing.PatentNote != nil {
+			note.AddedAt = existing.PatentNote.AddedAt
+		}
+		var result proto.PatentNoteResult
+		err = client.Call(ctx, proto.MethodPatentNoteSave,
+			proto.PatentNoteSaveParams{Note: note}, &result)
+		if err != nil {
+			return pane.StatusMsg{Key: text.StatusClipboardFailed, Args: []any{"save to patent note: " + err.Error()}, Error: true}
+		}
+		n.Clear(number)
+		return pane.StatusMsg{Key: text.StatusNotesSavedToPatentNote, Args: []any{number.String()}}
+	}
+}
+
 // ExportNotes builds the clipboard text for the notes buffer: every captured
 // passage with its locator and timestamp, without patent metadata.
 func (n *notesAccumulator) ExportNotes(number domain.PatentNumber) string {
@@ -214,6 +265,17 @@ func (o *NotesBufferOverlay) HandleKey(msg tea.KeyMsg) (overlay.Overlay, tea.Cmd
 			}, true
 		}
 		return o, o.app.notes.FlushToIDS(o.app.client, o.number, project), true
+	case "s":
+		project := domain.ProjectID("")
+		if o.app.activeProject != nil {
+			project = o.app.activeProject.ID
+		}
+		if project == "" {
+			return o, func() tea.Msg {
+				return pane.StatusMsg{Key: text.StatusNoActiveProject, Error: true}
+			}, true
+		}
+		return o, o.app.notes.SaveToPatentNote(o.app.client, o.number, project), true
 	case "j", "k", "up", "down", "ctrl+d", "ctrl+u", "pgup", "pgdown":
 		return o, nil, true
 	}
@@ -241,7 +303,7 @@ func (o *NotesBufferOverlay) View(maxW, maxH int) string {
 		}
 	}
 	b.WriteString("\n\n")
-	b.WriteString(o.theme.Dim.Render("  [y] copy notes  [Y] copy with patent info  [F] flush to IDS  [esc] close"))
+	b.WriteString(o.theme.Dim.Render("  [y] copy notes  [Y] copy with patent info  [s] save to patent note  [F] flush to IDS  [esc] close"))
 	return b.String()
 }
 

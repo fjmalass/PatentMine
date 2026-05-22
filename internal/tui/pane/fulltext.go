@@ -212,21 +212,36 @@ func (f *FullText) View(w, h int) string {
 	case f.loadErr != "":
 		return f.theme.Error.Render("error: " + f.loadErr)
 	}
-	f.render(w)
+
+	// ── line-number gutter ──────────────────────────────────────
+	// Use a generous fixed estimate for gutter width so we never need
+	// a second render pass.  LineGutter computes the exact width so
+	// numbers are right-aligned; the small gap on the right is harmless.
+	const gutterEstimate = 6 // " 99999 " → up to 99_999 lines
+	contentW := w - gutterEstimate
+	if contentW < 10 {
+		contentW = w
+	}
+	f.render(contentW)
 	f.page.SetTotal(len(f.lines))
 	f.page.SetPageSize(max(h, 1))
 	start, end := f.page.Window()
 	cur := f.page.Cursor()
+	maxLines := len(f.lines)
+
 	out := make([]string, 0, end-start)
 	for i := start; i < end; i++ {
 		line := f.lines[i].text
+		gutter := render.LineGutter(f.theme.Dim, i+1, maxLines)
+
 		isCursor := i == cur
 		inVis := f.visualMode && f.inVisualRange(i)
 		switch {
 		case inVis, isCursor:
-			out = append(out, f.theme.Selected.Render(render.Pad(stripANSI(line), w)))
+			plain := gutter + stripANSI(line)
+			out = append(out, f.theme.Selected.Render(render.Pad(plain, w)))
 		default:
-			out = append(out, line)
+			out = append(out, gutter+line)
 		}
 	}
 	return strings.Join(out, "\n")
@@ -276,6 +291,7 @@ func (f *FullText) render(w int) {
 		add(f.theme.Row.Render("  Expiration: "+expText), "")
 	}
 	add("", "")
+	add(f.theme.Dim.Render("  V: select  y: copy  Y: copy+info  n: notes  N: open notes  ;: jump"), "")
 
 	// Claims.
 	for i, claim := range f.fullText.Claims {
@@ -309,9 +325,6 @@ func (f *FullText) render(w int) {
 		}
 	}
 
-	// Status hint.
-	add("", "")
-	add(f.theme.Dim.Render("  V: select  y: copy  Y: copy+info  n: notes  N: open notes  ;: jump"), "")
 }
 
 // addSectionHeader appends a section header line and registers a jump anchor

@@ -18,6 +18,7 @@ const (
 	OpenDetail          ID = "view.detail"
 	OpenCitations       ID = "view.citations"
 	OpenCitedBy         ID = "view.cited-by"
+	OpenParents         ID = "view.parents"
 	OpenIDS             ID = "view.ids"
 	OpenProjects        ID = "view.projects"
 	OpenInventors       ID = "view.inventors"
@@ -141,6 +142,7 @@ func Default() (*Registry, error) {
 		Command{ID: OpenMetrics, Name: "metrics", Aliases: []string{"open.metrics", "observability"}, Usage: ":metrics", Kind: KindView},
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
+		Command{ID: OpenParents, Name: "open.parents", Aliases: []string{"parents"}, Usage: ":open.parents", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeIDS}},
 		Command{ID: OpenPatentNote, Name: "open.note", Aliases: []string{"patent-note", "project-note"}, Usage: ":open.note", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}},

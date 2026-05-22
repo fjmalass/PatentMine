@@ -37,6 +37,7 @@ const (
 	StatusSetState                Key = "status.set_state"
 	StatusNotesAdded              Key = "status.notes_added"
 	StatusNotesFlushed            Key = "status.notes_flushed"
+	StatusNotesSavedToPatentNote  Key = "status.notes_saved_to_patent_note"
 	StatusCopiedToClipboard       Key = "status.copied_to_clipboard"
 	StatusClipboardFailed         Key = "status.clipboard_failed"
 	StatusExportFailed            Key = "status.export_failed"
@@ -82,6 +83,7 @@ const (
 	HintDetail          Key = "hint.detail"
 	HintCitations       Key = "hint.citations"
 	HintCitedBy         Key = "hint.cited_by"
+	HintParents         Key = "hint.parents"
 	HintIDS             Key = "hint.ids"
 	HintProjects        Key = "hint.projects"
 	HintProjectActions  Key = "hint.project_actions"
@@ -94,6 +96,7 @@ const (
 	HintCrawl           Key = "hint.ingest"
 	HintLookup          Key = "hint.fetch"
 	HintBrowse          Key = "hint.browse"
+	HintFullText        Key = "hint.fulltext"
 	HintJump            Key = "hint.jump"
 	HintHelp            Key = "hint.help"
 	HintQuit            Key = "hint.quit"
@@ -153,6 +156,7 @@ var cmdStrings = map[string][2]string{
 	"view.patent-note":         {"Open patent note", "Open the project-scoped markdown note editor for the selected patent."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
+	"view.parents":             {"Open parents", "Show parent patents of the selected patent."},
 	"view.ids":                 {"Open IDS", "Open the selected patent's IDS entry editor."},
 	"view.projects":            {"Open projects", "Open the project list."},
 	"view.back":                {"Back", "Return to the previous pane."},
@@ -267,6 +271,7 @@ var englishNamed = map[Key]string{
 	StatusBrowserOpened:           "opened %d patent page(s) in browser",
 	StatusNotesAdded:              "added %s to notes buffer",
 	StatusNotesFlushed:            "flushed notes for %s to IDS: %s",
+	StatusNotesSavedToPatentNote:  "saved notes for %s to patent note",
 	StatusCopiedToClipboard:       "copied to clipboard: %d bytes",
 	StatusClipboardFailed:         "clipboard: %s",
 	StatusTagTaxonomyAddFailed:    "add tag to taxonomy failed: %s",
@@ -291,6 +296,7 @@ var englishNamed = map[Key]string{
 	HintDetail:          "detail",
 	HintCitations:       "citations",
 	HintCitedBy:         "cited by",
+	HintParents:         "parents",
 	HintIDS:             "IDS",
 	HintProjects:        "projects",
 	HintProjectActions:  "project actions",
@@ -300,6 +306,7 @@ var englishNamed = map[Key]string{
 	HintSelect:          "select",
 	HintClearActive:     "clear active",
 	HintExportIDS:       "export IDS",
+	HintFullText:        "full text",
 	HintCrawl:           "crawl family",
 	HintLookup:          "lookup patent",
 	HintBrowse:          "open browser",

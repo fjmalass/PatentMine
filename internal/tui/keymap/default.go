@@ -82,7 +82,8 @@ func viewActions() map[string]command.ID {
 		"w":      command.OpenBrowser,
 		"c":      command.OpenCitations,
 		"b":      command.OpenCitedBy,
-		"p":      command.OpenProjects,
+		"p":      command.OpenParents,
+		"P":      command.OpenProjects,
 		"ctrl+r": command.Refresh,
 	}
 }

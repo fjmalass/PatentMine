@@ -106,6 +106,9 @@ func (a *App) cmdOpenCitations(invocation) (tea.Model, tea.Cmd) {
 func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
 	return a.openCitations(domain.RelationCitedBy)
 }
+func (a *App) cmdOpenParents(invocation) (tea.Model, tea.Cmd) {
+	return a.openCitations(domain.RelationParent)
+}
 
 func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) { return a.openIDS() }
 
