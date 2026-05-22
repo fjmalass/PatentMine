@@ -124,6 +124,7 @@ func (c *Catalog) load() tea.Cmd {
 				ReviewState:    c.filter.ReviewState,
 				Search:         c.filter.Search,
 				Classification: c.filter.Classification,
+				Inventor:       c.filter.Inventor,
 				Limit:          limit,
 				Offset:         offset,
 				SortColumn:     c.activeSort,

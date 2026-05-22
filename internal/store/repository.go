@@ -32,6 +32,8 @@ type PatentQuery struct {
 	Search string
 	// Classification, when set, filters patents by prefix matching of their classifications.
 	Classification string
+	// Inventor, when set, filters patents by exact match of their inventors.
+	Inventor string
 	// Limit is the page size; values <= 0 fall back to DefaultPageSize.
 	Limit int
 	// Offset is the number of rows to skip.

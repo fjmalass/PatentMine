@@ -142,6 +142,7 @@ type PatentListParams struct {
 	ReviewState    domain.ReviewState `json:"review_state,omitempty"`
 	Search         string             `json:"search,omitempty"`
 	Classification string             `json:"classification,omitempty"`
+	Inventor       string             `json:"inventor,omitempty"`
 	Limit          int                `json:"limit,omitempty"`
 	Offset         int                `json:"offset,omitempty"`
 	SortColumn     domain.SortColumn  `json:"sort_column,omitempty"`
@@ -301,6 +302,7 @@ type RelationsParams struct {
 	ReviewState    domain.ReviewState  `json:"review_state,omitempty"`
 	Search         string              `json:"search,omitempty"`
 	Classification string              `json:"classification,omitempty"`
+	Inventor       string              `json:"inventor,omitempty"`
 	Limit          int                 `json:"limit,omitempty"`
 	Offset         int                 `json:"offset,omitempty"`
 	SortColumn     domain.SortColumn   `json:"sort_column,omitempty"`

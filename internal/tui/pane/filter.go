@@ -13,11 +13,12 @@ type PatentFilter struct {
 	Search         string
 	ReviewState    domain.ReviewState
 	Classification string
+	Inventor       string
 }
 
 // IsActive reports whether any filter is set.
 func (f PatentFilter) IsActive() bool {
-	return f.Search != "" || f.ReviewState != domain.ReviewStateNone || f.Classification != ""
+	return f.Search != "" || f.ReviewState != domain.ReviewStateNone || f.Classification != "" || f.Inventor != ""
 }
 
 // Labels returns human-readable filter labels for the current state.
@@ -31,6 +32,9 @@ func (f PatentFilter) Labels() []string {
 	}
 	if f.Classification != "" {
 		labels = append(labels, "class:"+f.Classification)
+	}
+	if f.Inventor != "" {
+		labels = append(labels, "inventor:"+f.Inventor)
 	}
 	return labels
 }
@@ -65,13 +69,21 @@ func (f *PatentFilter) parse(args []string) (msg string, err error) {
 		f.ReviewState = state
 		return fmt.Sprintf("filtering by review state: %s", state), nil
 
-	case "search", "find", "inventor", "inv":
+	case "search", "find":
 		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
 			f.Search = ""
 			return "search filter cleared", nil
 		}
 		f.Search = strings.Join(args[1:], " ")
 		return fmt.Sprintf("filtering by search: %s", f.Search), nil
+
+	case "inventor", "inv":
+		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
+			f.Inventor = ""
+			return "inventor filter cleared", nil
+		}
+		f.Inventor = strings.Join(args[1:], " ")
+		return fmt.Sprintf("filtering by inventor: %s", f.Inventor), nil
 
 	case "class", "classification", "cpc", "ipc", "c":
 		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {

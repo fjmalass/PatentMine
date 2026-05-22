@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -221,7 +222,11 @@ func (c *Cache) DeleteTag(ctx context.Context, project domain.ProjectID, name st
 
 // queryKey builds a stable string key for a listing query.
 func queryKey(prefix string, q PatentQuery) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s:%s:%d:%d:%s:%v",
-		prefix, q.Project, q.ReviewState, q.Relation, q.RelationKind,
-		q.Search, q.Limit, q.Offset, q.SortColumn, q.SortAscending)
+	// Marshal the full query so newly added PatentQuery fields automatically
+	// participate in cache keys instead of relying on a hand-maintained format.
+	encoded, err := json.Marshal(q)
+	if err != nil {
+		return fmt.Sprintf("%s:%#v", prefix, q)
+	}
+	return prefix + ":" + string(encoded)
 }

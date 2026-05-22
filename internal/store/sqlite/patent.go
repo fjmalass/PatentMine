@@ -330,6 +330,11 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 		}
 	}
 
+	if q.Inventor != "" {
+		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?)`)
+		args = append(args, q.Inventor)
+	}
+
 	if len(conds) > 0 {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(conds, " AND "))
