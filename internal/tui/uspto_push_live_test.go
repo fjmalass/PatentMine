@@ -40,6 +40,7 @@ func TestLiveUSPTOCitationTargetRefreshPush(t *testing.T) {
 	})
 
 	cfg := config.Load()
+	cfg.ImportSource = config.ImportSourceUSPTO
 	if cfg.USPTO.APIKey == "" {
 		t.Fatal("USPTO API key was not loaded from .env or environment")
 	}
@@ -58,6 +59,7 @@ func TestLiveUSPTOCitationTargetRefreshPush(t *testing.T) {
 	if err := repo.Setup(ctx); err != nil {
 		t.Fatal(err)
 	}
+	model := &Model{importCfg: cfg, logger: logger}
 
 	started := time.Now()
 	rootBundle, err := importer.ImportUSPTO("US8164048B2", cfg.USPTO.APIKey, logger)
@@ -86,17 +88,15 @@ func TestLiveUSPTOCitationTargetRefreshPush(t *testing.T) {
 		limit = len(targets)
 	}
 
-	var succeeded, importFailed, storageFailed int
+	var succeeded, usptoSucceeded, googleSucceeded, importFailed, storageFailed int
 	var failures []string
 	for _, edge := range targets[:limit] {
-		bundle, err := importer.ImportUSPTO(string(edge.TargetPatent), cfg.USPTO.APIKey, logger)
+		bundle, source, err := model.importCitationTarget(edge.TargetPatent)
 		if err != nil {
 			importFailed++
 			failures = append(failures, string(edge.TargetPatent)+": import: "+err.Error())
 			continue
 		}
-		bundle = bundleForCitationTarget(bundle, edge.TargetPatent)
-		bundle.Patent.ImportSource = ImportSourceUSPTO
 		bundle.Patent.ReviewState = domain.ReviewStateCached
 		if err := repo.UpsertPatentBundle(ctx, "default", bundle); err != nil {
 			storageFailed++
@@ -115,14 +115,20 @@ func TestLiveUSPTOCitationTargetRefreshPush(t *testing.T) {
 			continue
 		}
 		succeeded++
+		switch source {
+		case ImportSourceUSPTO:
+			usptoSucceeded++
+		case ImportSourceGoogle:
+			googleSucceeded++
+		}
 	}
 
 	patents, err := repo.ListPatents(ctx, "default", storage.ListPatentsOptions{ReviewStateFilter: storage.ReviewStateFilterNone})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("root=%s stored_as=%s root_cites=%d root_cited_by=%d unique_targets=%d attempted=%d succeeded=%d import_failed=%d storage_failed=%d stored_patents=%d elapsed=%s",
-		"US8164048B2", rootBundle.Patent.Number, len(cited), len(citing), len(targets), limit, succeeded, importFailed, storageFailed, len(patents), time.Since(started).Round(time.Second))
+	t.Logf("root=%s stored_as=%s root_cites=%d root_cited_by=%d unique_targets=%d attempted=%d succeeded=%d uspto_succeeded=%d google_succeeded=%d import_failed=%d storage_failed=%d stored_patents=%d elapsed=%s",
+		"US8164048B2", rootBundle.Patent.Number, len(cited), len(citing), len(targets), limit, succeeded, usptoSucceeded, googleSucceeded, importFailed, storageFailed, len(patents), time.Since(started).Round(time.Second))
 	if len(failures) > 0 {
 		t.Logf("first_failures=%s", strings.Join(failures[:min(len(failures), 5)], " | "))
 	}

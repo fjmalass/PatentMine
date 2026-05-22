@@ -34,6 +34,35 @@ func (m *Model) importPatent(number string) (domain.PatentBundle, error) {
 	return bundle, err
 }
 
+func (m *Model) importCitationTarget(target domain.PatentNumber) (domain.PatentBundle, string, error) {
+	if m.importCfg.ImportSource == config.ImportSourceUSPTO {
+		if m.importCfg.USPTO.APIKey == "" {
+			return domain.PatentBundle{}, "", fmt.Errorf("USPTO import source configured but no API key set (see .env, --uspto-api-key, or config.toml)")
+		}
+		bundle, err := importer.ImportUSPTO(string(target), m.importCfg.USPTO.APIKey, m.logger)
+		if err == nil {
+			bundle = bundleForCitationTarget(bundle, target)
+			bundle.Patent.ImportSource = ImportSourceUSPTO
+			return bundle, ImportSourceUSPTO, nil
+		}
+		if !strings.Contains(err.Error(), "patent not found in USPTO ODP") {
+			return domain.PatentBundle{}, "", err
+		}
+	}
+
+	rawURL, err := importer.GooglePatentsURL(string(target))
+	if err != nil {
+		return domain.PatentBundle{}, "", err
+	}
+	bundle, err := importer.ImportGooglePatents(rawURL, m.logger)
+	if err != nil {
+		return domain.PatentBundle{}, "", err
+	}
+	bundle = bundleForCitationTarget(bundle, target)
+	bundle.Patent.ImportSource = ImportSourceGoogle
+	return bundle, ImportSourceGoogle, nil
+}
+
 func (m *Model) importByNumber(number, verb string) (tea.Model, tea.Cmd) {
 	if verb != importActionRefreshed {
 		m.backStack = append(m.backStack, m.snapshot())
@@ -319,10 +348,8 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 	repo := m.repo
 	projectID := m.ProjectID
 	logger := m.logger
-	importSource := m.importCfg.ImportSource
-	apiKey := m.importCfg.USPTO.APIKey
 
-	if importSource == config.ImportSourceUSPTO && apiKey == "" {
+	if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTO.APIKey == "" {
 		m.err = "USPTO ODP source configured but no API key set (use .env, --uspto-api-key, or config.toml)"
 		return m, nil
 	}
@@ -347,27 +374,11 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 				_, err := repo.GetPatent(ctx, projectID, edge.TargetPatent)
 				exists := err == nil
 
-				var bundle domain.PatentBundle
-				if importSource == config.ImportSourceUSPTO {
-					bundle, err = importer.ImportUSPTO(string(edge.TargetPatent), apiKey, logger)
-				} else {
-					var rawURL string
-					rawURL, err = importer.GooglePatentsURL(string(edge.TargetPatent))
-					if err == nil {
-						bundle, err = importer.ImportGooglePatents(rawURL, logger)
-					}
-				}
+				bundle, _, err := m.importCitationTarget(edge.TargetPatent)
 				if err != nil {
 					logger.Error("citation details import failed", "patent", edge.TargetPatent, "error", err)
 					skippedCount++
 					continue
-				}
-				bundle = bundleForCitationTarget(bundle, edge.TargetPatent)
-
-				if importSource == config.ImportSourceUSPTO && apiKey != "" {
-					bundle.Patent.ImportSource = ImportSourceUSPTO
-				} else {
-					bundle.Patent.ImportSource = ImportSourceGoogle
 				}
 				bundle.Patent.ReviewState = domain.ReviewStateCached
 				if err := repo.UpsertPatentBundle(ctx, projectID, bundle); err != nil {
@@ -409,11 +420,9 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	repo := m.repo
 	projectID := m.ProjectID
 	logger := m.logger
-	importSource := m.importCfg.ImportSource
-	apiKey := m.importCfg.USPTO.APIKey
 	targetPatent := edge.TargetPatent
 
-	if importSource == config.ImportSourceUSPTO && apiKey == "" {
+	if m.importCfg.ImportSource == config.ImportSourceUSPTO && m.importCfg.USPTO.APIKey == "" {
 		m.err = "USPTO ODP source configured but no API key set (use .env, --uspto-api-key, or config.toml)"
 		return m, nil
 	}
@@ -421,22 +430,10 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		m.spinner.Tick,
 		func() tea.Msg {
-			var bundle domain.PatentBundle
-			var err error
-			if importSource == config.ImportSourceUSPTO {
-				bundle, err = importer.ImportUSPTO(string(targetPatent), apiKey, logger)
-			} else {
-				var rawURL string
-				rawURL, err = importer.GooglePatentsURL(string(targetPatent))
-				if err == nil {
-					bundle, err = importer.ImportGooglePatents(rawURL, logger)
-				}
-			}
+			bundle, _, err := m.importCitationTarget(targetPatent)
 			if err != nil {
 				return refreshDetailsResultMsg{err: err}
 			}
-			bundle = bundleForCitationTarget(bundle, targetPatent)
-			bundle.Patent.ImportSource = string(importSource)
 			bundle.Patent.ReviewState = domain.ReviewStateCached
 			_, existsErr := repo.GetPatent(ctx, projectID, edge.TargetPatent)
 			exists := existsErr == nil
@@ -457,17 +454,14 @@ func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
 	repo := m.repo
 	projectID := m.ProjectID
 	target := edge.TargetPatent
-	importSource := m.importCfg.ImportSource
 
 	return func() tea.Msg {
-		bundle, err := m.importPatent(string(target))
+		bundle, _, err := m.importCitationTarget(target)
 		if err != nil {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk import failed for %s: %w", target, err)}
 		}
-		bundle = bundleForCitationTarget(bundle, target)
 
 		bundle.Patent.ReviewState = domain.ReviewStateStored
-		bundle.Patent.ImportSource = string(importSource)
 		if err := repo.UpsertPatentBundle(context.Background(), projectID, bundle); err != nil {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk save failed for %s: %w", target, err)}
 		}
