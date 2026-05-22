@@ -77,6 +77,9 @@ type Repository interface {
 	// DeletePatent permanently removes a patent and all its associated
 	// documents, relations, and memberships.
 	DeletePatent(ctx context.Context, n domain.PatentNumber) error
+	// DeletePatents permanently removes multiple patents and all their associated
+	// documents, relations, and memberships in one transaction.
+	DeletePatents(ctx context.Context, patents []domain.PatentNumber) error
 	// Patent returns one patent, or ErrNotFound.
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
 	// ListPatents returns one page of lightweight listing rows matching q.
@@ -85,7 +88,6 @@ type Repository interface {
 	CountPatents(ctx context.Context, q PatentQuery) (int, error)
 	// PatentInventorStats aggregates database statistics for a set of inventors within a project.
 	PatentInventorStats(ctx context.Context, project domain.ProjectID, inventors []domain.Inventor) ([]domain.InventorStats, error)
-
 
 	// SaveDocument inserts or updates one life-stage document of a record.
 	SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error
@@ -112,7 +114,7 @@ type Repository interface {
 	// ListProjects returns every project, ordered by name.
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 
-		// AddMembership links a patent to a project; an existing link is left as is.
+	// AddMembership links a patent to a project; an existing link is left as is.
 	AddMembership(ctx context.Context, m domain.Membership) error
 	// Membership returns one membership, or ErrNotFound.
 	Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error)
@@ -150,6 +152,13 @@ type Repository interface {
 	DeleteIDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
 	// ListIDSEntries returns every curated IDS entry of a project.
 	ListIDSEntries(ctx context.Context, project domain.ProjectID) ([]domain.IDSEntry, error)
+
+	// PatentNote returns one project-scoped patent note.
+	PatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.PatentNote, error)
+	// SavePatentNote inserts or updates one project-scoped patent note.
+	SavePatentNote(ctx context.Context, note domain.PatentNote) (domain.PatentNote, error)
+	// DeletePatentNote removes one project-scoped patent note.
+	DeletePatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
 
 	// SaveClassificationDefinition inserts or updates a classification definition.
 	SaveClassificationDefinition(ctx context.Context, c domain.Classification) error

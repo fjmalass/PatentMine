@@ -221,15 +221,27 @@ func UntagPatentCmd(client *rpc.Client, project domain.ProjectID, patents []doma
 
 // DeletePatentCmd permanently removes a patent from the database.
 func DeletePatentCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
+	return DeletePatentsCmd(client, []domain.PatentNumber{number})
+}
+
+// DeletePatentsCmd permanently removes one or more patents from the database.
+func DeletePatentsCmd(client *rpc.Client, patents []domain.PatentNumber) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
-		if err := client.Call(ctx, proto.MethodPatentDelete,
-			proto.PatentDeleteParams{Number: number}, &res); err != nil {
+		if len(patents) == 1 {
+			if err := client.Call(ctx, proto.MethodPatentDelete,
+				proto.PatentDeleteParams{Number: patents[0]}, &res); err != nil {
+				return StatusMsg{Key: text.StatusDeleteFailed, Args: []any{err.Error()}, Error: true}
+			}
+			return StatusMsg{Key: text.StatusDeleted, Args: []any{patents[0].String()}}
+		}
+		if err := client.Call(ctx, proto.MethodPatentDeleteBulk,
+			proto.PatentDeleteBulkParams{Patents: patents}, &res); err != nil {
 			return StatusMsg{Key: text.StatusDeleteFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusDeleted, Args: []any{number.String()}}
+		return StatusMsg{Key: text.StatusBatchDeleted, Args: []any{len(patents)}}
 	}
 }
 

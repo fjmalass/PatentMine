@@ -522,6 +522,13 @@ func (o *TagPatentOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.String() {
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	case "N":
+		if len(o.patents) != 1 {
+			return o, func() tea.Msg {
+				return pane.StatusMsg{Key: text.StatusFilter, Args: []any{"patent notes require a single selected patent"}, Error: true}
+			}, true
+		}
+		return o, func() tea.Msg { return pane.PatentNoteOpenMsg{Number: o.patents[0]} }, true
 	case "j", "down":
 		if len(o.available) > 0 {
 			o.selected = (o.selected + 1) % len(o.available)
@@ -697,7 +704,7 @@ func (o *TagPatentOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n\n")
 		b.WriteString(o.theme.Dim.Render("[Enter] Save  [Esc] Cancel"))
 	} else {
-		b.WriteString(o.theme.Dim.Render("[j/k/↑/↓] Scroll  [Space] Toggle  [a/n] Add Tag  [Enter] Apply  [q/Esc] Cancel"))
+		b.WriteString(o.theme.Dim.Render("[j/k/↑/↓] Scroll  [Space] Toggle  [a/n] Add Tag  [N] Note  [Enter] Apply  [q/Esc] Cancel"))
 	}
 
 	return b.String()

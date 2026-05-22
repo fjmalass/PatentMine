@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"patentmine/internal/domain"
@@ -30,7 +31,6 @@ func (e *Engine) PatentInventorStats(ctx context.Context, number domain.PatentNu
 	}
 	return e.repo.PatentInventorStats(ctx, project, p.Inventors)
 }
-
 
 // recordNumber resolves any of a record's document numbers (application,
 // publication, grant) to the record's permanent number. An unknown number is
@@ -120,54 +120,93 @@ type PatentSnapshot struct {
 
 // DeletePatent permanently removes a patent and all associated data.
 func (e *Engine) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
+	return e.DeletePatents(ctx, []domain.PatentNumber{n})
+}
+
+// DeletePatents permanently removes multiple patents and all associated data.
+func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumber) (err error) {
 	defer e.observeDuration("engine.delete_patent", time.Now(), &err)
-
-	record, err := e.recordNumber(ctx, n)
-	if err != nil {
-		return err
+	records := uniquePatentNumbers(patents)
+	if len(records) == 0 {
+		return nil
 	}
 
-	// 1. Fetch the patent and its associated documents.
-	patent, err := e.repo.Patent(ctx, record)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			// If not found in repo, let's execute the repository deletion directly to ensure proper errors/logging behavior.
-			return e.repo.DeletePatent(ctx, record)
+	snapshots := make([]PatentSnapshot, 0, len(records))
+	for _, patent := range records {
+		record, resolveErr := e.recordNumber(ctx, patent)
+		if resolveErr != nil {
+			return resolveErr
 		}
-		return err
+
+		storedPatent, patentErr := e.repo.Patent(ctx, record)
+		if patentErr != nil {
+			if errors.Is(patentErr, store.ErrNotFound) {
+				return store.ErrNotFound
+			}
+			return patentErr
+		}
+
+		relations, relErr := e.repo.AllRelations(ctx, record)
+		if relErr != nil {
+			return relErr
+		}
+
+		records[len(snapshots)] = record
+		snapshots = append(snapshots, PatentSnapshot{Patent: storedPatent, Relations: relations})
 	}
 
-	// 2. Query all relations involving the patent.
-	relations, err := e.repo.AllRelations(ctx, record)
-	if err != nil {
-		return err
+	if len(records) == 1 {
+		if err := e.repo.DeletePatent(ctx, records[0]); err != nil {
+			e.log(ctx, slog.LevelError, "delete patent failed", slog.String("number", records[0].String()), slog.String("error", err.Error()))
+			return err
+		}
+	} else {
+		if err := e.repo.DeletePatents(ctx, records); err != nil {
+			e.log(ctx, slog.LevelError, "delete patents batch failed", slog.Int("count", len(records)), slog.String("error", err.Error()))
+			return err
+		}
 	}
 
-	// 3. Compile the snapshot.
-	snapshot := PatentSnapshot{
-		Patent:    patent,
-		Relations: relations,
+	batchSize := len(records)
+	batchID := ""
+	if batchSize > 1 {
+		batchID = strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	}
-
-	// 4. Delete the patent from repository.
-	if err := e.repo.DeletePatent(ctx, record); err != nil {
-		e.log(ctx, slog.LevelError, "delete patent failed", slog.String("number", record.String()), slog.String("error", err.Error()))
-		return err
+	for i, record := range records {
+		e.log(ctx, slog.LevelInfo, "patent deleted", slog.String("number", record.String()))
+		metadata := map[string]any{"batch_size": batchSize}
+		if batchID != "" {
+			metadata["batch_id"] = batchID
+		}
+		e.recordActivity(ctx, observability.Record{
+			Action:   "patent.delete",
+			Entity:   "patent",
+			EntityID: record.String(),
+			Status:   "committed",
+			Before:   snapshots[i],
+			Metadata: metadata,
+		})
 	}
-
-	e.log(ctx, slog.LevelInfo, "patent deleted", slog.String("number", record.String()))
-
-	// 5. Record activity carrying the snapshot inside Before field.
-	e.recordActivity(ctx, observability.Record{
-		Action:   "patent.delete",
-		Entity:   "patent",
-		EntityID: record.String(),
-		Status:   "committed",
-		Before:   snapshot,
-	})
 
 	e.announceChange()
 	return nil
+}
+
+func uniquePatentNumbers(numbers []domain.PatentNumber) []domain.PatentNumber {
+	seen := make(map[string]struct{}, len(numbers))
+	unique := make([]domain.PatentNumber, 0, len(numbers))
+	for _, number := range numbers {
+		if number.IsZero() {
+			continue
+		}
+		key := number.Normalized()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, number)
+	}
+	return unique
 }
 
 // RestorePatent restores a patent from a backup snapshot.

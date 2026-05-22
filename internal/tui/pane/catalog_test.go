@@ -100,7 +100,7 @@ func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 	c.patents[0].IDSEntry = &domain.IDSEntry{Project: project.ID, Patent: c.patents[0].Number, Status: domain.IDSEntrySubmitted}
 
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "REVIEW STATE", "IDS", "submitted", "under_review"} {
+	for _, want := range []string{"[1/3]", "REVIEW ST", "IDS", "submitt", "under_rev"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog project view missing %q\n%s", want, out)
 		}

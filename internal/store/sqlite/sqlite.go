@@ -28,8 +28,8 @@ const (
 // listings do not queue behind a write. WAL mode lets readers and the writer
 // proceed concurrently.
 type Repo struct {
-	writer *sql.DB
-	reader *sql.DB
+	writer  *sql.DB
+	reader  *sql.DB
 	path    string
 	metrics *observability.Metrics
 }
@@ -93,50 +93,18 @@ func (r *Repo) initSchema(ctx context.Context) error {
 		return err
 	}
 	// Migrate existing database instances if they lack the created_at column in patent_tag.
-	var hasCreatedAt bool
-	rows, err := r.writer.QueryContext(ctx, "PRAGMA table_info(patent_tag)")
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var cid int
-			var name, typeStr string
-			var notnull, pk int
-			var dfltVal any
-			if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err == nil {
-				if name == "created_at" {
-					hasCreatedAt = true
-				}
-			}
-		}
-		if !hasCreatedAt {
-			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent_tag ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
-		}
+	hasCreatedAt, err := r.columnExists(ctx, "patent_tag", "created_at")
+	if err == nil && !hasCreatedAt {
+		_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent_tag ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
 	}
 	// Migrate existing database instances if they lack the classifications column in patent.
-	var hasClassifications bool
-	rowsPat, err := r.writer.QueryContext(ctx, "PRAGMA table_info(patent)")
-	if err == nil {
-		defer rowsPat.Close()
-		for rowsPat.Next() {
-			var cid int
-			var name, typeStr string
-			var notnull, pk int
-			var dfltVal any
-			if err := rowsPat.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err == nil {
-				if name == "classifications" {
-					hasClassifications = true
-				}
-			}
-		}
-		if !hasClassifications {
-			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent ADD COLUMN classifications TEXT NOT NULL DEFAULT '[]'")
-		}
+	hasClassifications, err := r.columnExists(ctx, "patent", "classifications")
+	if err == nil && !hasClassifications {
+		_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent ADD COLUMN classifications TEXT NOT NULL DEFAULT '[]'")
 	}
 	// Migrate existing database instances if they lack the classification_definition table.
-	var hasClassDef bool
-	if err := r.writer.QueryRowContext(ctx,
-		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'classification_definition'`).
-		Scan(&hasClassDef); err == nil && !hasClassDef {
+	hasClassDef, err := r.tableExists(ctx, "classification_definition")
+	if err == nil && !hasClassDef {
 		_, _ = r.writer.ExecContext(ctx, `
 			CREATE TABLE classification_definition (
 				system      TEXT NOT NULL,
@@ -154,7 +122,55 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err := r.syncFTS(ctx); err != nil {
 		return err
 	}
+	hasPatentNotes, err := r.tableExists(ctx, "project_patent_note")
+	if err == nil && !hasPatentNotes {
+		_, _ = r.writer.ExecContext(ctx, `
+			CREATE TABLE project_patent_note (
+				project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+				patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+				markdown      TEXT NOT NULL DEFAULT '',
+				added_at      TEXT NOT NULL,
+				updated_at    TEXT NOT NULL,
+				PRIMARY KEY (project_id, patent_number)
+			)
+		`)
+		_, _ = r.writer.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_project_patent_note_project ON project_patent_note (project_id, updated_at DESC)`)
+	}
 	return nil
+}
+
+func (r *Repo) tableExists(ctx context.Context, name string) (bool, error) {
+	var count int
+	if err := r.writer.QueryRowContext(ctx,
+		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, name).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (r *Repo) columnExists(ctx context.Context, table, column string) (bool, error) {
+	rows, err := r.writer.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid int
+		var name, typeStr string
+		var notnull, pk int
+		var dfltVal any
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // syncFTS rebuilds the patent_fts full-text index from the patent table when

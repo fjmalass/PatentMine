@@ -24,15 +24,27 @@ const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assig
 // included; tags are not selected here — ListPatents fills them for the whole
 // page in one query (see attachTags) rather than a per-row subquery.
 func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
+	relationCounts := `,
+		(SELECT COUNT(1) FROM relation rel WHERE
+			(rel.from_number = p.number AND rel.kind = 'cites') OR
+			(rel.to_number = p.number AND rel.kind = 'cited_by')),
+		(SELECT COUNT(1) FROM relation rel WHERE
+			(rel.from_number = p.number AND rel.kind = 'cited_by') OR
+			(rel.to_number = p.number AND rel.kind = 'cites')),
+		(SELECT COUNT(1) FROM relation rel WHERE
+			(rel.from_number = p.number AND rel.kind = 'parent') OR
+			(rel.to_number = p.number AND rel.kind = 'child'))`
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 				`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_country_code, ''), COALESCE(m.ids_in_full, 0), ` +
-				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, ''), p.classifications`,
+				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, '')` +
+				relationCounts + `, p.classifications`,
 			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', '', p.classifications`, nil
+		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''` +
+		relationCounts + `, p.classifications`, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -78,6 +90,42 @@ func (r *Repo) DeletePatent(ctx context.Context, n domain.PatentNumber) (err err
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {
 		return store.ErrNotFound
+	}
+	return nil
+}
+
+// DeletePatents permanently removes multiple patents and all their associated
+// documents, relations, and memberships in a single transaction.
+func (r *Repo) DeletePatents(ctx context.Context, patents []domain.PatentNumber) (err error) {
+	defer r.observeDuration("delete_patents", time.Now(), &err)
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete patents tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.PrepareContext(ctx, `DELETE FROM patent WHERE number = ?`)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete patents prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, patent := range patents {
+		res, execErr := stmt.ExecContext(ctx, patent.Normalized())
+		if execErr != nil {
+			return fmt.Errorf("store/sqlite: delete patent %s: %w", patent, execErr)
+		}
+		if rows, _ := res.RowsAffected(); rows == 0 {
+			return store.ErrNotFound
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: delete patents commit: %w", err)
 	}
 	return nil
 }
@@ -217,12 +265,14 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		idsRelevant, idsNotes         string
 		idsStatus, idsAddedAt         string
 		idsInFull                     int
+		citationsCount, citedByCount  int
+		parentsCount                  int
 		classificationsJSON           string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &expirationDate, &fetchState, &reviewState, &tagsJSON,
 		&idsKindCode, &idsCountryCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt,
-		&classificationsJSON); err != nil {
+		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -247,6 +297,9 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	if err := json.Unmarshal([]byte(classificationsJSON), &row.Classifications); err != nil {
 		row.Classifications = nil
 	}
+	row.CitationsCount = citationsCount
+	row.CitedByCount = citedByCount
+	row.ParentsCount = parentsCount
 	if idsStatus != "" || idsKindCode != "" || idsCountryCode != "" || idsRelevant != "" || idsNotes != "" || idsAddedAt != "" || idsInFull != 0 {
 		row.IDSEntry = &domain.IDSEntry{
 			Patent:           row.Number,

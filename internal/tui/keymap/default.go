@@ -65,6 +65,7 @@ func patentActions() map[string]command.ID {
 		"r": command.MarkUnderReview,
 		"i": command.MarkIgnored,
 		"x": command.MarkDeleted,
+		"t": command.TagPatentManage,
 		"D": command.PatentDelete,
 		"a": command.AddToProject,
 		"f": command.CrawlFamily,
@@ -77,6 +78,7 @@ func patentActions() map[string]command.ID {
 func viewActions() map[string]command.ID {
 	return map[string]command.ID{
 		"I":      command.OpenIDS,
+		"N":      command.OpenPatentNote,
 		"w":      command.OpenBrowser,
 		"c":      command.OpenCitations,
 		"b":      command.OpenCitedBy,
@@ -111,7 +113,6 @@ func Default() *Keymaps {
 			".":      command.SortApply,
 			"/":      command.FindOpen,
 			"n":      command.NavDown,
-			"N":      command.NavUp,
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"esc":    command.SelectClear,
@@ -126,7 +127,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"/":     command.OpenSearch,
 			";":     command.JumpMode,
-			"t":     command.OpenFullText,
+			"T":     command.OpenFullText,
 			"a":     command.AIAnalyze,
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
@@ -144,7 +145,6 @@ func Default() *Keymaps {
 			".":      command.SortApply,
 			"/":      command.FindOpen,
 			"n":      command.NavDown,
-			"N":      command.NavUp,
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,
 			"g a":    command.SelectAll,

@@ -128,6 +128,8 @@ const (
 	EditIDSPassagesCaption Key = "overlay.ids.passages.caption"
 	EditIDSNotesTitle      Key = "overlay.ids.notes.title"
 	EditIDSNotesCaption    Key = "overlay.ids.notes.caption"
+	EditPatentNoteTitle    Key = "overlay.patent_note.title"
+	EditPatentNoteCaption  Key = "overlay.patent_note.caption"
 	TextInputHint          Key = "overlay.text_input.hint"
 )
 
@@ -148,6 +150,7 @@ var cmdStrings = map[string][2]string{
 	"view.inventors.direct":    {"Open inventors stats direct", "Open the statistics popup for the patent's inventors directly."},
 	"view.browser":             {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
 	"view.metrics":             {"Metrics", "Open the daemon metrics dashboard overlay."},
+	"view.patent-note":         {"Open patent note", "Open the project-scoped markdown note editor for the selected patent."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
 	"view.ids":                 {"Open IDS", "Open the selected patent's IDS entry editor."},
@@ -333,6 +336,8 @@ var englishNamed = map[Key]string{
 	EditIDSPassagesCaption: "Enter the cited passages, or leave blank when citing the full document.",
 	EditIDSNotesTitle:      "IDS notes",
 	EditIDSNotesCaption:    "Enter any IDS note for this patent.",
+	EditPatentNoteTitle:    "Patent notes",
+	EditPatentNoteCaption:  "Edit the project-scoped markdown note for this patent.",
 	TextInputHint:          "enter confirms · esc cancels",
 }
 

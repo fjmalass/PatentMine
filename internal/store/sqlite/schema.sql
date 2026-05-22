@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS membership (
 
 CREATE INDEX IF NOT EXISTS idx_membership_project ON membership (project_id, state);
 
+CREATE TABLE IF NOT EXISTS project_patent_note (
+    project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    markdown      TEXT NOT NULL DEFAULT '',
+    added_at      TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    PRIMARY KEY (project_id, patent_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_patent_note_project ON project_patent_note (project_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS document (
     number        TEXT PRIMARY KEY,
     record_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
@@ -125,4 +136,3 @@ CREATE TABLE IF NOT EXISTS classification_definition (
     description TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (system, code)
 );
-

@@ -10,6 +10,9 @@ const (
 	PatentColumnInventor       PatentTableColumnKey = PatentTableColumnKey(SortByInventor)
 	PatentColumnClassification PatentTableColumnKey = PatentTableColumnKey(SortByClassification)
 	PatentColumnExpires        PatentTableColumnKey = PatentTableColumnKey(SortByExpires)
+	PatentColumnCitations      PatentTableColumnKey = "citations"
+	PatentColumnCitedBy        PatentTableColumnKey = "cited_by"
+	PatentColumnParents        PatentTableColumnKey = "parents"
 	PatentColumnTags           PatentTableColumnKey = PatentTableColumnKey(SortByTags)
 	PatentColumnIDS            PatentTableColumnKey = PatentTableColumnKey(SortByIDS)
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)
@@ -42,6 +45,9 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 		{Key: PatentColumnInventor, Label: "INVENTOR", SortKey: SortByInventor, Sortable: true, Width: 18},
 		{Key: PatentColumnClassification, Label: "CLASS", SortKey: SortByClassification, Sortable: true, Width: 16},
 		{Key: PatentColumnExpires, Label: "EXPIRES", SortKey: SortByExpires, Sortable: true, Width: 10},
+		{Key: PatentColumnCitations, Label: "CITES", Width: 5},
+		{Key: PatentColumnCitedBy, Label: "CITED", Width: 5},
+		{Key: PatentColumnParents, Label: "PARENTS", Width: 7},
 		{Key: PatentColumnTags, Label: "TAGS", SortKey: SortByTags, Sortable: tagsSortable, Width: 14},
 		{Key: PatentColumnIDS, Label: "IDS", SortKey: SortByIDS, Sortable: idsSortable, Width: 12},
 		{Key: PatentColumnReviewState, Label: stateLabel, SortKey: SortByReviewState, Sortable: true, Width: 13},

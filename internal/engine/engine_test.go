@@ -950,3 +950,131 @@ func TestEngineBatchOperations(t *testing.T) {
 		}
 	}
 }
+
+func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
+	logsDir := filepath.Join(t.TempDir(), "logs")
+	runtime, err := observability.Open(logsDir, "test", "test-version")
+	if err != nil {
+		t.Fatalf("Open runtime: %v", err)
+	}
+	defer func() { _ = runtime.Close() }()
+
+	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "engine.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := New(ctx, repo, nil, WithActivityRecorder(runtime.Activity), WithLogger(runtime.Logger))
+	defer eng.Close()
+
+	p1 := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), Title: "P1", FetchState: domain.FetchCached}
+	p2 := domain.Patent{Number: domain.MustParsePatentNumber("US0000001B2"), Title: "P2", FetchState: domain.FetchCached}
+	for _, p := range []domain.Patent{p1, p2} {
+		if err := eng.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+		doc := domain.Document{Number: p.Number, Stage: domain.StageGrant}
+		if err := repo.SaveDocument(ctx, p.Number, doc); err != nil {
+			t.Fatalf("SaveDocument: %v", err)
+		}
+	}
+	if err := repo.SaveRelation(ctx, domain.Relation{From: p1.Number, To: p2.Number, Kind: domain.RelationCites}); err != nil {
+		t.Fatalf("SaveRelation p1->p2: %v", err)
+	}
+	if err := repo.SaveRelation(ctx, domain.Relation{From: p2.Number, To: p1.Number, Kind: domain.RelationCitedBy}); err != nil {
+		t.Fatalf("SaveRelation p2->p1: %v", err)
+	}
+
+	if err := eng.DeletePatents(ctx, []domain.PatentNumber{p1.Number, p2.Number, p1.Number}); err != nil {
+		t.Fatalf("DeletePatents: %v", err)
+	}
+
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		_, err := eng.Patent(ctx, number)
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("Patent %s after delete error = %v, want store.ErrNotFound", number, err)
+		}
+	}
+
+	if err := runtime.Close(); err != nil {
+		t.Fatalf("Close runtime: %v", err)
+	}
+
+	files, err := os.ReadDir(logsDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	var activityPath string
+	for _, f := range files {
+		if filepath.HasPrefix(f.Name(), "activity-") {
+			activityPath = filepath.Join(logsDir, f.Name())
+			break
+		}
+	}
+	if activityPath == "" {
+		t.Fatal("No activity log file found")
+	}
+
+	content, err := os.ReadFile(activityPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	type deleteRecord struct {
+		Action   string         `json:"action"`
+		EntityID string         `json:"entity_id"`
+		Before   PatentSnapshot `json:"before"`
+		Metadata map[string]any `json:"metadata"`
+	}
+	records := map[string]deleteRecord{}
+	for _, line := range bytes.Split(content, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var rec deleteRecord
+		if err := json.Unmarshal(line, &rec); err != nil || rec.Action != "patent.delete" {
+			continue
+		}
+		records[rec.EntityID] = rec
+	}
+
+	if len(records) != 2 {
+		t.Fatalf("delete record count = %d, want 2", len(records))
+	}
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		rec, ok := records[number.String()]
+		if !ok {
+			t.Fatalf("missing delete record for %s", number)
+		}
+		if rec.Before.Patent.Number != number {
+			t.Fatalf("snapshot patent number = %v, want %v", rec.Before.Patent.Number, number)
+		}
+		if _, ok := rec.Metadata["batch_id"]; !ok {
+			t.Fatalf("delete record for %s missing batch_id metadata", number)
+		}
+		if got := int(rec.Metadata["batch_size"].(float64)); got != 2 {
+			t.Fatalf("batch_size = %d, want 2", got)
+		}
+	}
+
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		stub := domain.Patent{Number: number, DisplayNumber: number, FetchState: domain.FetchStub}
+		if err := repo.SavePatent(ctx, stub); err != nil {
+			t.Fatalf("SavePatent stub %s: %v", number, err)
+		}
+	}
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		if err := eng.RestorePatent(ctx, records[number.String()].Before, false); err != nil {
+			t.Fatalf("RestorePatent %s: %v", number, err)
+		}
+	}
+
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		if _, err := eng.Patent(ctx, number); err != nil {
+			t.Fatalf("Patent after restore %s: %v", number, err)
+		}
+	}
+}

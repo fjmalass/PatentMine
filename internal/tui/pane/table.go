@@ -15,12 +15,15 @@ import (
 const (
 	colIndex          = 4
 	colNumber         = 16
-	colInventor       = 18
-	colClassification = 16
-	colExpires        = 10
-	colTags           = 14
-	colIDS            = 12
-	colState          = 13
+	colInventor       = 14
+	colClassification = 12
+	colExpires        = 8
+	colCitations      = 5
+	colCitedBy        = 5
+	colParents        = 7
+	colTags           = 10
+	colIDS            = 8
+	colState          = 10
 	headerRows        = 2
 	defaultPageSize   = 10
 )
@@ -32,7 +35,6 @@ type tableCol struct {
 	sortKey domain.SortColumn // zero = not sortable
 	width   int
 }
-
 
 // patentTableColumns returns the visible columns for a patent table.
 func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tableCol {
@@ -54,6 +56,37 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 
 	var cols []tableCol
 	switch {
+	case bodyWidth >= 145:
+		cols = []tableCol{
+			column(domain.PatentColumnIndex, colIndex),
+			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnTitle, 0),
+			column(domain.PatentColumnInventor, colInventor),
+			column(domain.PatentColumnClassification, colClassification),
+			column(domain.PatentColumnExpires, colExpires),
+			column(domain.PatentColumnCitations, colCitations),
+			column(domain.PatentColumnCitedBy, colCitedBy),
+			column(domain.PatentColumnParents, colParents),
+			column(domain.PatentColumnTags, colTags),
+			column(domain.PatentColumnIDS, colIDS),
+			column(domain.PatentColumnReviewState, colState),
+		}
+
+	case bodyWidth >= 130:
+		cols = []tableCol{
+			column(domain.PatentColumnIndex, colIndex),
+			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnTitle, 0),
+			column(domain.PatentColumnInventor, colInventor),
+			column(domain.PatentColumnClassification, colClassification),
+			column(domain.PatentColumnExpires, colExpires),
+			column(domain.PatentColumnCitations, colCitations),
+			column(domain.PatentColumnCitedBy, colCitedBy),
+			column(domain.PatentColumnParents, colParents),
+			column(domain.PatentColumnIDS, colIDS),
+			column(domain.PatentColumnReviewState, colState),
+		}
+
 	case bodyWidth >= 110:
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
@@ -63,18 +96,6 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 			column(domain.PatentColumnClassification, colClassification),
 			column(domain.PatentColumnExpires, colExpires),
 			column(domain.PatentColumnTags, colTags),
-			column(domain.PatentColumnIDS, colIDS),
-			column(domain.PatentColumnReviewState, colState),
-		}
-
-	case bodyWidth >= 95:
-		cols = []tableCol{
-			column(domain.PatentColumnIndex, colIndex),
-			column(domain.PatentColumnNumber, colNumber),
-			column(domain.PatentColumnTitle, 0),
-			column(domain.PatentColumnInventor, colInventor),
-			column(domain.PatentColumnClassification, colClassification),
-			column(domain.PatentColumnExpires, colExpires),
 			column(domain.PatentColumnIDS, colIDS),
 			column(domain.PatentColumnReviewState, colState),
 		}
@@ -163,6 +184,12 @@ func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, p
 		return formatClassificationsShort(row.Classifications)
 	case domain.PatentColumnExpires:
 		return formatExpires(row.ExpirationDate)
+	case domain.PatentColumnCitations:
+		return strconv.Itoa(row.CitationsCount)
+	case domain.PatentColumnCitedBy:
+		return strconv.Itoa(row.CitedByCount)
+	case domain.PatentColumnParents:
+		return strconv.Itoa(row.ParentsCount)
 	case domain.PatentColumnTags:
 		return formatTags(row.Tags)
 	case domain.PatentColumnIDS:

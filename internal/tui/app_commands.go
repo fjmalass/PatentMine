@@ -40,6 +40,10 @@ func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+func (a *App) cmdOpenPatentNote(inv invocation) (tea.Model, tea.Cmd) {
+	return a.openPatentNote(inv)
+}
+
 // cmdJumpMode toggles jump mode on the focused pane. When jump mode is active
 // the pane renders inline shortcut labels (e.g. "[a] Assignee") and navigation
 // keys (j/k) cycle between labelled sections instead of scrolling line-by-line.
@@ -344,8 +348,8 @@ func (a *App) cmdTagPatentList(inv invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdPatentDelete(invocation) (tea.Model, tea.Cmd) {
-	return a.runAction(command.PatentDelete, func(_ domain.ProjectID, n domain.PatentNumber) tea.Cmd {
-		return pane.DeletePatentCmd(a.client, n)
+	return a.runBulkAction(command.PatentDelete, func(_ domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.DeletePatentsCmd(a.client, patents)
 	})
 }
 

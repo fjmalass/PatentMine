@@ -141,6 +141,11 @@ type NoteOpenMsg struct {
 	Patent domain.Patent
 }
 
+// PatentNoteOpenMsg tells the app to show the persistent project note editor.
+type PatentNoteOpenMsg struct {
+	Number domain.PatentNumber
+}
+
 // FullTextLoadedMsg delivers the result of fetching full patent claims text.
 type FullTextLoadedMsg struct {
 	RequestID uint64

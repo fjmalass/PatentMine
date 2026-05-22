@@ -45,6 +45,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodPatentList:               s.patentList,
 		proto.MethodPatentTableColumns:       s.patentTableColumns,
 		proto.MethodPatentDelete:             s.patentDelete,
+		proto.MethodPatentDeleteBulk:         s.patentDeleteBulk,
 		proto.MethodProjectList:              s.projectList,
 		proto.MethodProjectCreate:            s.projectCreate,
 		proto.MethodMembershipAdd:            s.membershipAdd,
@@ -59,6 +60,9 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodIDSEntryGet:              s.idsEntryGet,
 		proto.MethodIDSEntrySave:             s.idsEntrySave,
 		proto.MethodIDSEntryDelete:           s.idsEntryDelete,
+		proto.MethodPatentNoteGet:            s.patentNoteGet,
+		proto.MethodPatentNoteSave:           s.patentNoteSave,
+		proto.MethodPatentNoteDelete:         s.patentNoteDelete,
 		proto.MethodMetricsGet:               s.metricsGet,
 		proto.MethodTagCreate:                s.tagCreate,
 		proto.MethodTagList:                  s.tagList,
@@ -283,6 +287,13 @@ func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error
 		if ok {
 			result.IDSEntry = &entry
 		}
+		note, ok, err := s.engine.PatentNoteOf(ctx, p.Project, p.Number)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result.PatentNote = &note
+		}
 	}
 	return result, nil
 }
@@ -298,7 +309,6 @@ func (s *Server) patentInventorStats(ctx context.Context, raw json.RawMessage) (
 	}
 	return proto.PatentInventorStatsResult{Stats: stats}, nil
 }
-
 
 func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.PatentListParams](raw)
@@ -393,6 +403,17 @@ func (s *Server) patentDelete(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, err
 	}
 	if err := s.engine.DeletePatent(ctx, p.Number); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) patentDeleteBulk(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentDeleteBulkParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeletePatents(ctx, p.Patents); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil
@@ -654,6 +675,44 @@ func (s *Server) idsEntryDelete(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, err
 	}
 	if err := s.engine.DeleteIDSEntry(ctx, p.Project, p.Patent); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) patentNoteGet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentNoteParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	note, ok, err := s.engine.PatentNoteOf(ctx, p.Project, p.Patent)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return proto.PatentNoteResult{Note: note}, nil
+}
+
+func (s *Server) patentNoteSave(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentNoteSaveParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	note, err := s.engine.SavePatentNote(ctx, p.Note)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentNoteResult{Note: note}, nil
+}
+
+func (s *Server) patentNoteDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentNoteParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeletePatentNote(ctx, p.Project, p.Patent); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil

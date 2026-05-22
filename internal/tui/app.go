@@ -79,6 +79,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenSearch:          (*App).cmdOpenSearch,
 	command.OpenCommand:         (*App).cmdOpenCommand,
 	command.OpenMetrics:         (*App).cmdOpenMetrics,
+	command.OpenPatentNote:      (*App).cmdOpenPatentNote,
 	command.JumpMode:            (*App).cmdJumpMode,
 	command.CloseOverlay:        (*App).cmdCloseOverlay,
 	command.Back:                (*App).cmdBack,
@@ -480,6 +481,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pane.NoteOpenMsg:
 		a.overlays = append(a.overlays, newNotesBufferOverlay(a.theme, m.Number, m.Patent, a))
 		return a, nil
+	case pane.PatentNoteOpenMsg:
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, nil
+		}
+		if a.activeProject == nil {
+			a.setErr(text.StatusNoActiveProject)
+			return a, nil
+		}
+		o := overlay.NewPatentNoteEditor(a.client, a.theme, a.activeProject.ID, m.Number)
+		a.overlays = append(a.overlays, o)
+		return a, o.Init()
 	case busEventMsg:
 		return a, tea.Batch(
 			a.handleEvent(m.event),

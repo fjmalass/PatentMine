@@ -406,7 +406,6 @@ func TestPatentClassifications(t *testing.T) {
 	}
 }
 
-
 func TestTagStore(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()
@@ -546,6 +545,47 @@ func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 	}
 	if _, err := repo.IDSEntry(ctx, project.ID, patent.Number); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("IDSEntry after delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPatentNoteStoreRoundTrip(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	patent := samplePatent("US11611785B2")
+	if err := repo.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	note, err := repo.SavePatentNote(ctx, domain.PatentNote{
+		Project:  project.ID,
+		Patent:   patent.Number,
+		Markdown: "# Summary\n\n- first note",
+	})
+	if err != nil {
+		t.Fatalf("SavePatentNote: %v", err)
+	}
+	if note.AddedAt.IsZero() || note.UpdatedAt.IsZero() {
+		t.Fatalf("saved note timestamps = %+v, want both set", note)
+	}
+
+	got, err := repo.PatentNote(ctx, project.ID, patent.Number)
+	if err != nil {
+		t.Fatalf("PatentNote: %v", err)
+	}
+	if got.Markdown != "# Summary\n\n- first note" {
+		t.Fatalf("PatentNote markdown = %q", got.Markdown)
+	}
+
+	if err := repo.DeletePatentNote(ctx, project.ID, patent.Number); err != nil {
+		t.Fatalf("DeletePatentNote: %v", err)
+	}
+	if _, err := repo.PatentNote(ctx, project.ID, patent.Number); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("PatentNote after delete: err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -854,5 +894,41 @@ func TestPatentInventorStats(t *testing.T) {
 	}
 	if alan.Tags["seminal"] != 1 {
 		t.Errorf("Alan Turing expected tag seminal=1, got: %v", alan.Tags)
+	}
+}
+
+func TestDeletePatentsIsTransactional(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	p1 := samplePatent("US11611785B2")
+	p2 := samplePatent("US0000001B2")
+	for _, p := range []domain.Patent{p1, p2} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+	}
+
+	missing := domain.MustParsePatentNumber("US9999999B2")
+	err := repo.DeletePatents(ctx, []domain.PatentNumber{p1.Number, missing})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("DeletePatents error = %v, want store.ErrNotFound", err)
+	}
+
+	if _, err := repo.Patent(ctx, p1.Number); err != nil {
+		t.Fatalf("Patent after rolled back delete: %v", err)
+	}
+	if _, err := repo.Patent(ctx, p2.Number); err != nil {
+		t.Fatalf("Unrelated patent after rolled back delete: %v", err)
+	}
+
+	if err := repo.DeletePatents(ctx, []domain.PatentNumber{p1.Number, p2.Number}); err != nil {
+		t.Fatalf("DeletePatents success case failed: %v", err)
+	}
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		_, err := repo.Patent(ctx, number)
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("Patent %s after delete error = %v, want store.ErrNotFound", number, err)
+		}
 	}
 }

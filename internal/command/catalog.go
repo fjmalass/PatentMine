@@ -36,6 +36,7 @@ const (
 	SortApply           ID = "col.sort-apply"
 	OpenBrowser         ID = "view.browser"
 	OpenMetrics         ID = "view.metrics"
+	OpenPatentNote      ID = "view.patent-note"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
@@ -141,6 +142,7 @@ func Default() (*Registry, error) {
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeIDS}},
+		Command{ID: OpenPatentNote, Name: "open.note", Aliases: []string{"patent-note", "project-note"}, Usage: ":open.note", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}},
 		Command{ID: OpenInventors, Name: "open.inventors", Aliases: []string{"inventors"}, Usage: ":open.inventors", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: OpenInventorsDirect, Name: "open.inventors.direct", Aliases: []string{"inventors-direct"}, Usage: ":open.inventors.direct", Kind: KindView, Scopes: []Scope{ScopeDetail}},

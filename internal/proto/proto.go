@@ -17,33 +17,37 @@ const Version = "2.0"
 type Method string
 
 const (
-	MethodPing           Method = "ping"
-	MethodPatentGet      Method = "patent.get"
-	MethodPatentInventorStats Method = "patent.inventor_stats"
-	MethodPatentList     Method = "patent.list"
-	MethodPatentTableColumns Method = "patent.table_columns"
-	MethodPatentDelete   Method = "patent.delete"
-	MethodProjectList    Method = "project.list"
-	MethodProjectCreate  Method = "project.create"
-	MethodMembershipAdd  Method = "membership.add"
-	MethodReviewState       Method = "review_state.set"
-	MethodTagPatent         Method = "tag.assign"
-	MethodUntagPatent       Method = "tag.remove"
-	MethodCrawlFamily       Method = "crawl.family"
-	MethodCrawlCancel       Method = "crawl.cancel"
-	MethodImportFile        Method = "import.file"
-	MethodRelations         Method = "patent.relations"
-	MethodIDSExport         Method = "ids.export"
-	MethodIDSEntryGet       Method = "ids.entry.get"
-	MethodIDSEntrySave      Method = "ids.entry.save"
-	MethodIDSEntryDelete    Method = "ids.entry.delete"
-	MethodMetricsGet        Method = "metrics.get"
-	MethodTagCreate         Method = "tag.create"
-	MethodTagList           Method = "tag.list"
-	MethodTagDelete         Method = "tag.delete"
-	MethodTagPatentStrict   Method = "patent.tag.add"
-	MethodUntagPatentStrict Method = "patent.tag.delete"
-	MethodPatentTagList     Method = "patent.tag.list"
+	MethodPing                     Method = "ping"
+	MethodPatentGet                Method = "patent.get"
+	MethodPatentInventorStats      Method = "patent.inventor_stats"
+	MethodPatentList               Method = "patent.list"
+	MethodPatentTableColumns       Method = "patent.table_columns"
+	MethodPatentDelete             Method = "patent.delete"
+	MethodPatentDeleteBulk         Method = "patent.delete_bulk"
+	MethodProjectList              Method = "project.list"
+	MethodProjectCreate            Method = "project.create"
+	MethodMembershipAdd            Method = "membership.add"
+	MethodReviewState              Method = "review_state.set"
+	MethodTagPatent                Method = "tag.assign"
+	MethodUntagPatent              Method = "tag.remove"
+	MethodCrawlFamily              Method = "crawl.family"
+	MethodCrawlCancel              Method = "crawl.cancel"
+	MethodImportFile               Method = "import.file"
+	MethodRelations                Method = "patent.relations"
+	MethodIDSExport                Method = "ids.export"
+	MethodIDSEntryGet              Method = "ids.entry.get"
+	MethodIDSEntrySave             Method = "ids.entry.save"
+	MethodIDSEntryDelete           Method = "ids.entry.delete"
+	MethodPatentNoteGet            Method = "patent.note.get"
+	MethodPatentNoteSave           Method = "patent.note.save"
+	MethodPatentNoteDelete         Method = "patent.note.delete"
+	MethodMetricsGet               Method = "metrics.get"
+	MethodTagCreate                Method = "tag.create"
+	MethodTagList                  Method = "tag.list"
+	MethodTagDelete                Method = "tag.delete"
+	MethodTagPatentStrict          Method = "patent.tag.add"
+	MethodUntagPatentStrict        Method = "patent.tag.delete"
+	MethodPatentTagList            Method = "patent.tag.list"
 	MethodClassificationGet        Method = "classification.get"
 	MethodClassificationList       Method = "classification.list"
 	MethodClassificationSave       Method = "classification.save"
@@ -58,7 +62,7 @@ type EventKind string
 const (
 	EventCrawlProgress EventKind = "crawl.progress"
 	EventCrawlDone     EventKind = "crawl.done"
-	EventDBChanged      EventKind = "db.changed"
+	EventDBChanged     EventKind = "db.changed"
 )
 
 // JSON-RPC error codes. The negative range follows the spec; -32000 down is
@@ -119,6 +123,11 @@ type PatentDeleteParams struct {
 	Number domain.PatentNumber `json:"number"`
 }
 
+// PatentDeleteBulkParams identifies the patents to permanently remove.
+type PatentDeleteBulkParams struct {
+	Patents []domain.PatentNumber `json:"patents"`
+}
+
 // PatentGetParams selects a single patent. Project, when set, scopes the
 // project-relative fields of the result — review state and tags — to that
 // project; the patent record itself is project-independent.
@@ -135,6 +144,7 @@ type PatentResult struct {
 	ReviewState domain.ReviewState `json:"review_state,omitempty"`
 	Tags        []domain.Tag       `json:"tags,omitempty"`
 	IDSEntry    *domain.IDSEntry   `json:"ids_entry,omitempty"`
+	PatentNote  *domain.PatentNote `json:"patent_note,omitempty"`
 }
 
 // PatentListParams selects and paginates a patent listing.
@@ -160,7 +170,6 @@ type PatentListResult struct {
 type PatentInventorStatsResult struct {
 	Stats []domain.InventorStats `json:"stats"`
 }
-
 
 // ProjectListResult carries every project.
 type ProjectListResult struct {
@@ -269,7 +278,6 @@ type PatentClassificationListParams struct {
 	Patent  domain.PatentNumber `json:"patent"`
 }
 
-
 // CrawlFamilyParams starts a family-graph crawl rooted at one patent. Depth 0
 // fetches only the root; a negative depth uses the configured family depth.
 // Force bypasses the local file cache and re-fetches from the web.
@@ -343,6 +351,22 @@ type IDSEntryResult struct {
 	Entry domain.IDSEntry `json:"entry"`
 }
 
+// PatentNoteParams identifies one project-scoped patent note.
+type PatentNoteParams struct {
+	Project domain.ProjectID    `json:"project"`
+	Patent  domain.PatentNumber `json:"patent"`
+}
+
+// PatentNoteSaveParams carries the patent note to insert or update.
+type PatentNoteSaveParams struct {
+	Note domain.PatentNote `json:"note"`
+}
+
+// PatentNoteResult carries one project-scoped patent note.
+type PatentNoteResult struct {
+	Note domain.PatentNote `json:"note"`
+}
+
 // MetricsResult carries the daemon's current in-memory timing/counter snapshot.
 type MetricsResult struct {
 	Metrics MetricsSnapshot `json:"metrics"`
@@ -379,7 +403,7 @@ type Empty struct{}
 // CrawlProgress reports incremental progress of a crawl job.
 type CrawlProgress struct {
 	JobID           string `json:"job_id"`
-	CrawledCount   int    `json:"crawled_count"`
+	CrawledCount    int    `json:"crawled_count"`
 	DiscoveredCount int    `json:"discovered_count"`
 	PendingCount    int    `json:"pending_count"`
 	CitationsCount  int    `json:"citations_count,omitempty"`

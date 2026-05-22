@@ -125,6 +125,149 @@ func TestDetailPaneJumpActive(t *testing.T) {
 	}
 }
 
+func TestDetailPaneMultilineSectionsHighlightAsOneGroup(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	d.patent = domain.Patent{
+		Number:     num,
+		Title:      "Test Patent Title",
+		FirstClaim: "A method for coordinating a distributed processing system across multiple independent compute nodes with replicated state synchronization.",
+		Abstract:   "A system and method for coordinating a distributed processing system across multiple independent compute nodes with replicated state synchronization.",
+	}
+
+	body := d.body(36)
+	lines := strings.Split(body, "\n")
+	d.page.SetTotal(len(lines))
+	d.page.SetPageSize(10)
+	firstClaimLine := -1
+	abstractLine := -1
+	for i, line := range lines {
+		switch strings.TrimSpace(line) {
+		case "First claim":
+			firstClaimLine = i
+		case "Abstract":
+			abstractLine = i
+		}
+	}
+	if firstClaimLine < 0 || abstractLine < 0 {
+		t.Fatalf("expected section headings in detail body, got:\n%s", body)
+	}
+
+	firstClaimGroup := d.highlightGroup(firstClaimLine)
+	if firstClaimGroup.start != firstClaimLine || firstClaimGroup.end <= firstClaimLine {
+		t.Fatalf("first claim group = %+v, want heading plus wrapped content", firstClaimGroup)
+	}
+	if got := d.highlightGroup(firstClaimGroup.end); got != firstClaimGroup {
+		t.Fatalf("wrapped first claim line group = %+v, want %+v", got, firstClaimGroup)
+	}
+
+	abstractGroup := d.highlightGroup(abstractLine)
+	if abstractGroup.start != abstractLine || abstractGroup.end <= abstractLine {
+		t.Fatalf("abstract group = %+v, want heading plus wrapped content", abstractGroup)
+	}
+	if got := d.highlightGroup(abstractGroup.end); got != abstractGroup {
+		t.Fatalf("wrapped abstract line group = %+v, want %+v", got, abstractGroup)
+	}
+}
+
+func TestDetailPaneDocumentsHighlightAsOneGroup(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	d.patent = domain.Patent{
+		Number: num,
+		Title:  "Test Patent Title",
+		Documents: []domain.Document{
+			{Stage: domain.StageApplication, Number: domain.MustParsePatentNumber("US1234567A1")},
+			{Stage: domain.StageGrant, Number: domain.MustParsePatentNumber("US1234567B2")},
+		},
+	}
+
+	body := d.body(80)
+	lines := strings.Split(body, "\n")
+	docLine := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "Documents" {
+			docLine = i
+			break
+		}
+	}
+	if docLine < 0 {
+		t.Fatalf("expected documents heading in detail body, got:\n%s", body)
+	}
+
+	docGroup := d.highlightGroup(docLine)
+	if docGroup.start != docLine || docGroup.end <= docLine {
+		t.Fatalf("documents group = %+v, want heading plus document rows", docGroup)
+	}
+	if got := d.highlightGroup(docGroup.end); got != docGroup {
+		t.Fatalf("document row group = %+v, want %+v", got, docGroup)
+	}
+}
+
+func TestDetailPaneNavMovesBetweenGroups(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	d.patent = domain.Patent{
+		Number:     num,
+		Title:      "Test Patent Title",
+		FirstClaim: "A method for coordinating a distributed processing system across multiple independent compute nodes with replicated state synchronization.",
+		Abstract:   "A system and method for coordinating a distributed processing system across multiple independent compute nodes with replicated state synchronization.",
+	}
+
+	body := d.body(36)
+	lines := strings.Split(body, "\n")
+	d.page.SetTotal(len(lines))
+	d.page.SetPageSize(10)
+	firstClaimLine := -1
+	abstractLine := -1
+	for i, line := range lines {
+		switch strings.TrimSpace(line) {
+		case "First claim":
+			firstClaimLine = i
+		case "Abstract":
+			abstractLine = i
+		}
+	}
+	if firstClaimLine < 0 || abstractLine < 0 {
+		t.Fatalf("expected section headings in detail body, got:\n%s", body)
+	}
+
+	d.page.ScrollTo(firstClaimLine)
+	d.Command(command.NavDown, Invocation{Repeat: 1})
+	if got := d.page.Cursor(); got != abstractLine {
+		t.Fatalf("cursor after NavDown from first claim = %d, want %d", got, abstractLine)
+	}
+
+	d.Command(command.NavUp, Invocation{Repeat: 1})
+	if got := d.page.Cursor(); got != firstClaimLine {
+		t.Fatalf("cursor after NavUp from abstract = %d, want %d", got, firstClaimLine)
+	}
+}
+
+func TestDetailPaneShowsProjectPatentNote(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "p1", nil)
+	d.loading = false
+	d.patent = domain.Patent{Number: num, Title: "Test Patent Title"}
+	d.patentNote = &domain.PatentNote{
+		Project:   "p1",
+		Patent:    num,
+		Markdown:  "# Overview\n\nImportant note.",
+		AddedAt:   time.Date(2026, 5, 22, 10, 30, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 5, 22, 11, 0, 0, 0, time.UTC),
+	}
+
+	body := d.body(80)
+	for _, want := range []string{"Note added", "2026-05-22 10:30:00", "Note updated", "# Overview", "Important note."} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("detail body missing %q\n%s", want, body)
+		}
+	}
+}
+
 func TestCitationsPaneClassificationColumn(t *testing.T) {
 	root := domain.MustParsePatentNumber("US0000001B2")
 	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
@@ -140,7 +283,7 @@ func TestCitationsPaneClassificationColumn(t *testing.T) {
 	c = updated.(*Citations)
 
 	out := c.View(testCitationsPaneWidth, testCitationsPaneHeight)
-	for _, want := range []string{"CLASS", "G06F 17/30, H04"} {
+	for _, want := range []string{"CLASS", "G06F 17/30"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("citations view missing expected content %q\n%s", want, out)
 		}
@@ -152,8 +295,9 @@ func TestPatentTableColumnsResponsive(t *testing.T) {
 		width       int
 		wantColumns []string
 	}{
+		{150, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "TAGS", "IDS", "FETCH"}},
+		{135, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "IDS", "FETCH"}},
 		{120, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "TAGS", "IDS", "FETCH"}},
-		{100, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "IDS", "FETCH"}},
 		{85, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "FETCH"}},
 		{70, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "FETCH"}},
 		{50, []string{"#", "NUMBER", "TITLE", "FETCH"}},
@@ -179,7 +323,7 @@ func TestMoveSortableColumnSkipsUnsortableVisibleColumns(t *testing.T) {
 		t.Fatalf("moveSortableColumn next from none = %d, want 1 for NUMBER", got)
 	}
 	if got := moveSortableColumn(cols, 5, 1); got != 8 {
-		t.Fatalf("moveSortableColumn next from EXPIRES = %d, want 8 for FETCH", got)
+		t.Fatalf("moveSortableColumn next from EXPIRES = %d, want 8 for IDS", got)
 	}
 	if got := moveSortableColumn(cols, 8, 1); got != 1 {
 		t.Fatalf("moveSortableColumn should wrap to NUMBER, got %d", got)

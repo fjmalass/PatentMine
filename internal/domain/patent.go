@@ -9,13 +9,13 @@ import (
 type SortColumn string
 
 const (
-	SortByNumber      SortColumn = "number"
-	SortByTitle       SortColumn = "title"
-	SortByInventor    SortColumn = "inventor"
-	SortByExpires     SortColumn = "expires"
-	SortByReviewState SortColumn = "review_state"
-	SortByIDS         SortColumn = "ids"
-	SortByTags        SortColumn = "tags"
+	SortByNumber         SortColumn = "number"
+	SortByTitle          SortColumn = "title"
+	SortByInventor       SortColumn = "inventor"
+	SortByExpires        SortColumn = "expires"
+	SortByReviewState    SortColumn = "review_state"
+	SortByIDS            SortColumn = "ids"
+	SortByTags           SortColumn = "tags"
 	SortByClassification SortColumn = "classification"
 )
 
@@ -89,7 +89,6 @@ type InventorStats struct {
 	Tags     map[string]int `json:"tags"`
 }
 
-
 // Patent is the core business object: one patent record. One record spans the
 // invention's whole life — its application, publication, and grant are all
 // Documents of the same record. It carries no I/O or UI concerns: persistence
@@ -130,16 +129,19 @@ type Patent struct {
 // record key and display number separate so list UIs stay cheap without losing
 // the application/publication/grant distinction.
 type PatentRow struct {
-	Number         PatentNumber `json:"number"`
-	DisplayNumber  PatentNumber `json:"display_number"`
-	Title          string       `json:"title"`
-	Inventors      []Inventor   `json:"inventors"`
-	ExpirationDate time.Time    `json:"expiration_date"`
-	Tags           []string     `json:"tags"`
-	Classifications []string    `json:"classifications"`
-	FetchState     FetchState   `json:"fetch_state"`
-	ReviewState    ReviewState  `json:"review_state,omitempty"`
-	IDSEntry       *IDSEntry    `json:"ids_entry,omitempty"`
+	Number          PatentNumber `json:"number"`
+	DisplayNumber   PatentNumber `json:"display_number"`
+	Title           string       `json:"title"`
+	Inventors       []Inventor   `json:"inventors"`
+	ExpirationDate  time.Time    `json:"expiration_date"`
+	Tags            []string     `json:"tags"`
+	Classifications []string     `json:"classifications"`
+	FetchState      FetchState   `json:"fetch_state"`
+	ReviewState     ReviewState  `json:"review_state,omitempty"`
+	IDSEntry        *IDSEntry    `json:"ids_entry,omitempty"`
+	CitationsCount  int          `json:"citations_count,omitempty"`
+	CitedByCount    int          `json:"cited_by_count,omitempty"`
+	ParentsCount    int          `json:"parents_count,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.

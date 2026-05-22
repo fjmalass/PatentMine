@@ -20,12 +20,13 @@ const detailDateLayout = "2006-01-02"
 // detailLoadedMsg delivers a finished patent.get result. state and tags are
 // project-scoped and empty when the detail pane has no project.
 type detailLoadedMsg struct {
-	requestID uint64
-	patent    domain.Patent
-	state     domain.ReviewState
-	tags      []domain.Tag
-	idsEntry  *domain.IDSEntry
-	err       error
+	requestID  uint64
+	patent     domain.Patent
+	state      domain.ReviewState
+	tags       []domain.Tag
+	idsEntry   *domain.IDSEntry
+	patentNote *domain.PatentNote
+	err        error
 }
 
 // detailRelationsMsg delivers the family-graph edge counts for the detail view.
@@ -50,19 +51,26 @@ type Detail struct {
 	project  domain.ProjectID
 	handlers map[command.ID]cmdHandler
 
-	patent     domain.Patent
-	state      domain.ReviewState
-	tags       []domain.Tag
-	idsEntry   *domain.IDSEntry
-	relCounts  map[domain.RelationKind]int
-	anchors    []render.JumpAnchor // jump targets, rebuilt on every body render
-	jumpKeys   map[string]rune    // label -> assigned jump key, stable for pane lifetime
-	page       render.Paginator
-	loading    bool
-	loadErr    string
-	loadID     uint64
+	patent       domain.Patent
+	state        domain.ReviewState
+	tags         []domain.Tag
+	idsEntry     *domain.IDSEntry
+	patentNote   *domain.PatentNote
+	relCounts    map[domain.RelationKind]int
+	anchors      []render.JumpAnchor // jump targets, rebuilt on every body render
+	jumpKeys     map[string]rune     // label -> assigned jump key, stable for pane lifetime
+	lineGroups   []detailLineGroup
+	page         render.Paginator
+	loading      bool
+	loadErr      string
+	loadID       uint64
 	jumpActive   bool
 	inventorLine int
+}
+
+type detailLineGroup struct {
+	start int
+	end   int
 }
 
 // detailAnchorLabels are the section labels in display order. The jump key
@@ -75,6 +83,7 @@ var detailAnchorLabels = []string{
 	"Review state",
 	"IDS",
 	"Tags",
+	"Notes",
 	"Citations",
 	"Documents",
 	"First claim",
@@ -101,7 +110,9 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			if d.jumpActive && len(d.anchors) > 0 {
 				d.page.ScrollTo(d.nextAnchorLine())
 			} else {
-				d.page.ScrollTo(d.page.Cursor() + inv.Repeat)
+				for range inv.Repeat {
+					d.page.ScrollTo(d.nextGroupLine())
+				}
 			}
 			return nil
 		},
@@ -109,7 +120,9 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			if d.jumpActive && len(d.anchors) > 0 {
 				d.page.ScrollTo(d.prevAnchorLine())
 			} else {
-				d.page.ScrollTo(d.page.Cursor() - inv.Repeat)
+				for range inv.Repeat {
+					d.page.ScrollTo(d.prevGroupLine())
+				}
 			}
 			return nil
 		},
@@ -164,12 +177,13 @@ func (d *Detail) load() tea.Cmd {
 		err := client.Call(ctx, proto.MethodPatentGet,
 			proto.PatentGetParams{Number: number, Project: project}, &res)
 		return detailLoadedMsg{
-			requestID: requestID,
-			patent:    res.Patent,
-			state:     res.ReviewState,
-			tags:      res.Tags,
-			idsEntry:  res.IDSEntry,
-			err:       err,
+			requestID:  requestID,
+			patent:     res.Patent,
+			state:      res.ReviewState,
+			tags:       res.Tags,
+			idsEntry:   res.IDSEntry,
+			patentNote: res.PatentNote,
+			err:        err,
 		}
 	}
 }
@@ -220,6 +234,7 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.state = m.state
 		d.tags = m.tags
 		d.idsEntry = m.idsEntry
+		d.patentNote = m.patentNote
 		d.page.Top()
 	case detailRelationsMsg:
 		if m.requestID == d.loadID {
@@ -260,9 +275,11 @@ func (d *Detail) View(w, h int) string {
 	d.page.SetPageSize(max(h, 1))
 	start, end := d.page.Window()
 	cursor := d.page.Cursor()
+	highlight := d.highlightGroup(cursor)
 	out := make([]string, 0, end-start)
 	for i, line := range lines[start:end] {
-		if start+i == cursor {
+		lineIndex := start + i
+		if lineIndex == cursor || (highlight.start >= 0 && lineIndex >= highlight.start && lineIndex <= highlight.end) {
 			out = append(out, d.theme.Selected.Render(render.Pad(line, w)))
 		} else {
 			out = append(out, line)
@@ -277,6 +294,7 @@ func (d *Detail) View(w, h int) string {
 func (d *Detail) body(w int) string {
 	p := d.patent
 	d.anchors = d.anchors[:0]
+	d.lineGroups = d.lineGroups[:0]
 	var b strings.Builder
 	d.field(&b, w, "Shown as", numberToShow(p).String())
 	d.field(&b, w, "Record key", p.Number.String())
@@ -309,6 +327,14 @@ func (d *Detail) body(w int) string {
 		d.field(&b, w, "IDS", detailIDSText(d.idsEntry))
 		d.addAnchor(&b, d.jumpKey("Tags"), "Tags", 0)
 		d.field(&b, w, "Tags", tagsText(d.tags))
+		d.addAnchor(&b, d.jumpKey("Notes"), "Notes", 0)
+		if d.patentNote == nil || strings.TrimSpace(d.patentNote.Markdown) == "" {
+			d.field(&b, w, "Notes", "—")
+		} else {
+			d.field(&b, w, "Note added", detailDateTimeText(d.patentNote.AddedAt))
+			d.field(&b, w, "Note updated", detailDateTimeText(d.patentNote.UpdatedAt))
+			d.section(&b, w, "Notes", d.patentNote.Markdown)
+		}
 	}
 
 	// Family-graph edge counts. The dedicated panes (c/b) list the edges.
@@ -322,6 +348,7 @@ func (d *Detail) body(w int) string {
 	// Every life-stage document — the application stays visible here even once
 	// the patent has published.
 	d.addAnchor(&b, d.jumpKey("Documents"), "Documents", 1)
+	docStart := strings.Count(b.String(), "\n") + 1
 	b.WriteByte('\n')
 	displayDocs := "Documents"
 	if d.jumpActive {
@@ -332,12 +359,17 @@ func (d *Detail) body(w int) string {
 	if len(p.Documents) == 0 {
 		b.WriteString(d.theme.Dim.Render("  (none)"))
 		b.WriteByte('\n')
+		d.lineGroups = append(d.lineGroups, detailLineGroup{start: docStart, end: docStart + 1})
 	}
 	for _, doc := range p.Documents {
 		line := "  " + render.Pad(string(doc.Stage), 13) + " " +
 			render.Pad(doc.Number.String(), 20) + " " + dateText(doc.Dated)
 		b.WriteString(d.theme.Row.Render(render.Truncate(line, w)))
 		b.WriteByte('\n')
+	}
+	if len(p.Documents) > 0 {
+		docEnd := strings.Count(b.String(), "\n") - 1
+		d.lineGroups = append(d.lineGroups, detailLineGroup{start: docStart, end: docEnd})
 	}
 
 	d.addAnchor(&b, d.jumpKey("First claim"), "First claim", 1)
@@ -350,13 +382,22 @@ func (d *Detail) body(w int) string {
 	if key != 0 {
 		b.WriteString(d.theme.Warn.Render(fmt.Sprintf("[%s] %s — press '%s' to open full text viewer", string(key), fullTextLabel, string(key))))
 	} else {
-		b.WriteString(d.theme.Dim.Render("Full claims text — press 't' to open full text viewer"))
+		b.WriteString(d.theme.Dim.Render("Full claims text — press 'T' to open full text viewer"))
 	}
 	b.WriteByte('\n')
 
 	d.addAnchor(&b, d.jumpKey("Abstract"), "Abstract", 1)
 	d.section(&b, w, "Abstract", p.Abstract)
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (d *Detail) highlightGroup(cursor int) detailLineGroup {
+	for _, group := range d.lineGroups {
+		if cursor >= group.start && cursor <= group.end {
+			return group
+		}
+	}
+	return detailLineGroup{start: -1, end: -1}
 }
 
 // addAnchor records a jump anchor for the next labelled line b will write.
@@ -397,6 +438,22 @@ func (d *Detail) nextAnchorLine() int {
 	return d.anchors[0].Line
 }
 
+func (d *Detail) nextGroupLine() int {
+	cursor := d.page.Cursor()
+	for _, group := range d.lineGroups {
+		if group.start > cursor {
+			return group.start
+		}
+		if cursor >= group.start && cursor < group.end {
+			continue
+		}
+	}
+	if len(d.lineGroups) == 0 {
+		return cursor + 1
+	}
+	return d.lineGroups[len(d.lineGroups)-1].start
+}
+
 // prevAnchorLine returns the line of the last anchor before the cursor, or the
 // last anchor when the cursor is at or before the first anchor.
 func (d *Detail) prevAnchorLine() int {
@@ -407,6 +464,23 @@ func (d *Detail) prevAnchorLine() int {
 		}
 	}
 	return d.anchors[len(d.anchors)-1].Line
+}
+
+func (d *Detail) prevGroupLine() int {
+	cursor := d.page.Cursor()
+	for i := len(d.lineGroups) - 1; i >= 0; i-- {
+		group := d.lineGroups[i]
+		if group.end < cursor {
+			return group.start
+		}
+		if cursor > group.start && cursor <= group.end {
+			continue
+		}
+	}
+	if len(d.lineGroups) == 0 {
+		return cursor - 1
+	}
+	return d.lineGroups[0].start
 }
 
 // computeJumpKeys assigns a stable jump key to each anchor label, avoiding
@@ -496,6 +570,7 @@ func numberToShow(p domain.Patent) domain.PatentNumber {
 
 // field writes one "Label: value" line, truncated to the body width.
 func (d *Detail) field(b *strings.Builder, w int, label, value string) {
+	start := strings.Count(b.String(), "\n")
 	labelW := 14
 	displayLabel := label
 	if d.jumpActive {
@@ -513,11 +588,13 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 	b.WriteString(" ")
 	b.WriteString(d.theme.Row.Render(render.Truncate(value, max(w-labelW-1, 0))))
 	b.WriteByte('\n')
+	d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: start})
 }
 
 // section writes a heading followed by word-wrapped body text, so long fields
 // like the first claim and abstract are readable in the scrolling view.
 func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
+	start := strings.Count(b.String(), "\n") + 1
 	b.WriteByte('\n')
 	displayHeading := heading
 	if d.jumpActive {
@@ -530,12 +607,15 @@ func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 	if strings.TrimSpace(text) == "" {
 		b.WriteString(d.theme.Dim.Render("  (none)"))
 		b.WriteByte('\n')
+		d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: start + 1})
 		return
 	}
 	for _, line := range wrapText(text, max(w-2, 1)) {
 		b.WriteString(d.theme.Row.Render("  " + line))
 		b.WriteByte('\n')
 	}
+	end := strings.Count(b.String(), "\n") - 1
+	d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: end})
 }
 
 // wrapText greedily word-wraps s to lines no wider than width.
@@ -644,6 +724,12 @@ func dateText(t time.Time) string {
 	return t.Format(detailDateLayout)
 }
 
-func (d *Detail) Patent() domain.Patent { return d.patent }
-func (d *Detail) IsCursorOnInventors() bool { return d.page.Cursor() == d.inventorLine }
+func detailDateTimeText(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
 
+func (d *Detail) Patent() domain.Patent     { return d.patent }
+func (d *Detail) IsCursorOnInventors() bool { return d.page.Cursor() == d.inventorLine }
