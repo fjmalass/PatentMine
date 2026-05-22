@@ -17,7 +17,7 @@ import (
 const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assignee,
 	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
 	p.grant_date, p.fetched_at, p.display_number,
-	p.first_claim, p.expiration_date, p.expiration_source, p.source_url`
+	p.first_claim, p.expiration_date, p.expiration_source, p.source_url, p.classifications`
 
 // patentRowColumns returns the SELECT column list for scanPatentRow. When
 // project is non-empty the membership state and curated IDS columns are
@@ -28,11 +28,11 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 				`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_country_code, ''), COALESCE(m.ids_in_full, 0), ` +
-				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, '')`,
+				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, ''), p.classifications`,
 			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''`, nil
+		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', '', p.classifications`, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -44,36 +44,11 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	if !p.FetchState.Valid() {
 		return fmt.Errorf("store/sqlite: invalid fetch state %q", p.FetchState)
 	}
-	inventors, err := json.Marshal(p.Inventors)
+	args, err := patentUpsertArgs(p)
 	if err != nil {
-		return fmt.Errorf("store/sqlite: encode inventors: %w", err)
+		return err
 	}
-	// The display number defaults to the record number until documents set it.
-	display := p.DisplayNumber
-	if display.IsZero() {
-		display = p.Number
-	}
-	_, err = r.writer.ExecContext(ctx, `
-		INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
-			inventors, fetch_state, source, application_date, publication_date,
-			grant_date, fetched_at, display_number,
-			first_claim, expiration_date, expiration_source, source_url)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(number) DO UPDATE SET
-			country=excluded.country, serial=excluded.serial, kind=excluded.kind,
-			title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
-			inventors=excluded.inventors, fetch_state=excluded.fetch_state,
-			source=excluded.source, application_date=excluded.application_date,
-			publication_date=excluded.publication_date, grant_date=excluded.grant_date,
-			fetched_at=excluded.fetched_at, display_number=excluded.display_number,
-			first_claim=excluded.first_claim, expiration_date=excluded.expiration_date,
-			expiration_source=excluded.expiration_source, source_url=excluded.source_url`,
-		p.Number.Normalized(), p.Number.Country, p.Number.Serial, p.Number.Kind,
-		p.Title, p.Abstract, p.Assignee, string(inventors),
-		string(p.FetchState), string(p.Source),
-		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
-		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized(),
-		p.FirstClaim, encodeTime(p.ExpirationDate), p.ExpirationSource, p.SourceURL)
+	_, err = r.writer.ExecContext(ctx, patentUpsertSQL, args...)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
 	}
@@ -220,10 +195,12 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		idsRelevant, idsNotes         string
 		idsStatus, idsAddedAt         string
 		idsInFull                     int
+		classificationsJSON           string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &expirationDate, &fetchState, &reviewState, &tagsJSON,
-		&idsKindCode, &idsCountryCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt); err != nil {
+		&idsKindCode, &idsCountryCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt,
+		&classificationsJSON); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -244,6 +221,9 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	}
 	if err := json.Unmarshal([]byte(tagsJSON), &row.Tags); err != nil {
 		row.Tags = nil
+	}
+	if err := json.Unmarshal([]byte(classificationsJSON), &row.Classifications); err != nil {
+		row.Classifications = nil
 	}
 	if idsStatus != "" || idsKindCode != "" || idsCountryCode != "" || idsRelevant != "" || idsNotes != "" || idsAddedAt != "" || idsInFull != 0 {
 		row.IDSEntry = &domain.IDSEntry{
@@ -283,6 +263,8 @@ func patentSortExpr(col domain.SortColumn, asc bool) string {
 		return "COALESCE(m.state, p.fetch_state) " + dir
 	case domain.SortByIDS:
 		return "COALESCE(m.ids_status, '') " + dir
+	case domain.SortByClassification:
+		return "json_extract(p.classifications, '$[0]') " + dir
 	default:
 		return "p.number " + dir
 	}
@@ -341,11 +323,30 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 		args = append(args, "%"+q.Search+"%", ftsQuery(q.Search))
 	}
 
+	if q.Classification != "" {
+		for _, part := range splitClassifications(q.Classification) {
+			conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE json_each.value LIKE ?)`)
+			args = append(args, part+"%")
+		}
+	}
+
 	if len(conds) > 0 {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(conds, " AND "))
 	}
 	return sb.String(), args
+}
+
+func splitClassifications(s string) []string {
+	var parts []string
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	}) {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return parts
 }
 
 // ftsQuery turns a user's search string into an FTS5 MATCH expression: each
@@ -378,10 +379,11 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 		inventors, fetchState, source    string
 		appDate, pubDate, grant, fetched string
 		displayNumber, expiration        string
+		classifications                  string
 	)
 	if err := s.Scan(&country, &serial, &kind, &p.Title, &p.Abstract, &p.Assignee,
 		&inventors, &fetchState, &source, &appDate, &pubDate, &grant, &fetched,
-		&displayNumber, &p.FirstClaim, &expiration, &p.ExpirationSource, &p.SourceURL); err != nil {
+		&displayNumber, &p.FirstClaim, &expiration, &p.ExpirationSource, &p.SourceURL, &classifications); err != nil {
 		return domain.Patent{}, err
 	}
 	p.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -396,6 +398,9 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 	}
 	if err := json.Unmarshal([]byte(inventors), &p.Inventors); err != nil {
 		return domain.Patent{}, fmt.Errorf("decode inventors: %w", err)
+	}
+	if err := json.Unmarshal([]byte(classifications), &p.Classifications); err != nil {
+		return domain.Patent{}, fmt.Errorf("decode classifications: %w", err)
 	}
 	var err error
 	if p.ApplicationDate, err = decodeTime(appDate); err != nil {

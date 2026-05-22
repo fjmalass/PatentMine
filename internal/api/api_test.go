@@ -54,7 +54,7 @@ func testAPIEnv(t *testing.T) apiEnv {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	go func() { _ = rpc.NewServer(eng).Serve(ctx, ln) }()
+	go func() { _ = rpc.NewServer(eng, false).Serve(ctx, ln) }()
 
 	client, err := rpc.Dial(socket)
 	if err != nil {

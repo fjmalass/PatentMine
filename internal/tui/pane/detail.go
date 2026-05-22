@@ -70,6 +70,7 @@ var detailAnchorLabels = []string{
 	"Assignee",
 	"Inventors",
 	"Expiration",
+	"Classifications",
 	"Review state",
 	"IDS",
 	"Tags",
@@ -293,6 +294,8 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, "Source URL", p.SourceURL)
 	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", 0)
 	d.field(&b, w, "Expiration", expirationText(p))
+	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", 0)
+	d.field(&b, w, "Classifications", strings.Join(p.Classifications, ", "))
 
 	// Project-scoped fields. Review state and tags describe the patent within
 	// one project, so they appear only when the pane has an active project.

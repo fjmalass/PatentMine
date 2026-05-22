@@ -294,6 +294,112 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestPatentClassifications(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	p1 := samplePatent("US0000001A1")
+	p1.Classifications = []string{"G06F16/245", "A61K31/00"}
+	if err := repo.SavePatent(ctx, p1); err != nil {
+		t.Fatalf("SavePatent p1: %v", err)
+	}
+
+	p2 := samplePatent("US0000002A1")
+	p2.Classifications = []string{"A61K31/00", "B64C27/00"}
+	if err := repo.SavePatent(ctx, p2); err != nil {
+		t.Fatalf("SavePatent p2: %v", err)
+	}
+
+	// 1. Verify roundtrip in Patent
+	got1, err := repo.Patent(ctx, p1.Number)
+	if err != nil {
+		t.Fatalf("Patent p1: %v", err)
+	}
+	if len(got1.Classifications) != 2 || got1.Classifications[0] != "G06F16/245" || got1.Classifications[1] != "A61K31/00" {
+		t.Fatalf("p1 Classifications roundtrip failed: %v", got1.Classifications)
+	}
+
+	// 2. Verify roundtrip in ListPatents
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{})
+	if err != nil {
+		t.Fatalf("ListPatents: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 patents, got %d", len(rows))
+	}
+	// Verify p1 row classifications
+	var r1 domain.PatentRow
+	for _, r := range rows {
+		if r.Number == p1.Number {
+			r1 = r
+		}
+	}
+	if len(r1.Classifications) != 2 || r1.Classifications[0] != "G06F16/245" {
+		t.Fatalf("r1 row Classifications roundtrip failed: %v", r1.Classifications)
+	}
+
+	// 3. Verify filtering by Classification prefix
+	res, err := repo.ListPatents(ctx, store.PatentQuery{Classification: "G06F"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 1 || res[0].Number != p1.Number {
+		t.Fatalf("filtering by G06F: got %v, want p1", res)
+	}
+
+	res, err = repo.ListPatents(ctx, store.PatentQuery{Classification: "A61K"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 2 {
+		t.Fatalf("filtering by A61K: got %v, want both p1 and p2", res)
+	}
+
+	res, err = repo.ListPatents(ctx, store.PatentQuery{Classification: "B64C27/00"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 1 || res[0].Number != p2.Number {
+		t.Fatalf("filtering by B64C27/00: got %v, want p2", res)
+	}
+
+	res, err = repo.ListPatents(ctx, store.PatentQuery{Classification: "H01L"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 0 {
+		t.Fatalf("filtering by non-matching H01L: got %v, want empty", res)
+	}
+
+	// 4. Verify multiple classifications AND filtering (space-separated)
+	res, err = repo.ListPatents(ctx, store.PatentQuery{Classification: "G06F A61K"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 1 || res[0].Number != p1.Number {
+		t.Fatalf("filtering by multiple G06F A61K (AND): got %v, want p1", res)
+	}
+
+	// 5. Verify multiple classifications AND filtering (comma-separated)
+	res, err = repo.ListPatents(ctx, store.PatentQuery{Classification: "G06F, A61K"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 1 || res[0].Number != p1.Number {
+		t.Fatalf("filtering by multiple G06F, A61K (AND): got %v, want p1", res)
+	}
+
+	// 6. Verify multiple classifications AND filtering returns empty when no patent matches all
+	res, err = repo.ListPatents(ctx, store.PatentQuery{Classification: "G06F B64C"})
+	if err != nil {
+		t.Fatalf("ListPatents filter: %v", err)
+	}
+	if len(res) != 0 {
+		t.Fatalf("filtering by multiple G06F B64C (AND): got %v, want empty", res)
+	}
+}
+
+
 func TestTagStore(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()

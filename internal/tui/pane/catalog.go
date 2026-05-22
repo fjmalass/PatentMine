@@ -120,13 +120,14 @@ func (c *Catalog) load() tea.Cmd {
 		}
 		err := client.Call(ctx, proto.MethodPatentList,
 			proto.PatentListParams{
-				Project:       project,
-				ReviewState:   c.filter.ReviewState,
-				Search:        c.filter.Search,
-				Limit:         limit,
-				Offset:        offset,
-				SortColumn:    c.activeSort,
-				SortAscending: c.sortAscending,
+				Project:        project,
+				ReviewState:    c.filter.ReviewState,
+				Search:         c.filter.Search,
+				Classification: c.filter.Classification,
+				Limit:          limit,
+				Offset:         offset,
+				SortColumn:     c.activeSort,
+				SortAscending:  c.sortAscending,
 			}, &res)
 		return catalogLoadedMsg{
 			requestID: requestID,

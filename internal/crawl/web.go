@@ -27,6 +27,7 @@ type httpSource struct {
 	client  *http.Client
 	limiter *limiter
 	urlFor  func(number domain.PatentNumber) string
+	headers func() http.Header
 	parse   parseFunc
 }
 
@@ -53,6 +54,14 @@ func (s *httpSource) Fetch(ctx context.Context, number domain.PatentNumber) (Res
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.urlFor(number), nil)
 	if err != nil {
 		return Result{}, fmt.Errorf("crawl/%s: build request: %w", s.name, err)
+	}
+	if s.headers != nil {
+		h := s.headers()
+		for k, vv := range h {
+			for _, v := range vv {
+				req.Header.Add(k, v)
+			}
+		}
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {

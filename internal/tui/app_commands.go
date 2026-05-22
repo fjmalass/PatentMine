@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/proto"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
@@ -97,7 +100,7 @@ func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
 func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) { return a.openIDS() }
 
 func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
-	return a.pushPane(pane.NewProjects(a.client, a.theme))
+	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()))
 }
 
 func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
@@ -326,4 +329,38 @@ func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {
 // isFixturePath reports whether arg names a fixture file rather than a patent.
 func isFixturePath(arg string) bool {
 	return strings.ContainsAny(arg, `/\`) || strings.HasSuffix(strings.ToLower(arg), ".json")
+}
+
+type aiPatentLoadedMsg struct {
+	patent domain.Patent
+	err    error
+}
+
+func (a *App) cmdAIAnalyze(invocation) (tea.Model, tea.Cmd) {
+	number, ok := a.focusedPane().Selection()
+	if !ok {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	a.setStatus(text.StatusAIAnalysisStarted, number.String(), string(a.aiProvider))
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var res proto.PatentResult
+		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
+		if err != nil {
+			return aiPatentLoadedMsg{err: err}
+		}
+		return aiPatentLoadedMsg{patent: res.Patent}
+	}
+}
+
+func (a *App) cmdSettingsAI(invocation) (tea.Model, tea.Cmd) {
+	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.usptoConfigured)
+	a.overlays = append(a.overlays, o)
+	return a, nil
 }

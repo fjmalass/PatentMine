@@ -81,7 +81,7 @@ func runServe(_ []string) int {
 
 	fmt.Printf("patentmine daemon %s listening on %s\n", appversion.String(), cfg.SocketPath)
 	telemetry.Logger.InfoContext(ctx, "daemon listening", slog.String("socket_path", string(cfg.SocketPath)))
-	if err := rpc.NewServer(eng).Serve(ctx, ln); err != nil {
+	if err := rpc.NewServer(eng, cfg.USPTOAPIKey != "").Serve(ctx, ln); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "rpc server stopped with error", slog.String("error", err.Error()))
 		return fail(err)
 	}
@@ -98,6 +98,7 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	}
 	registry := crawl.NewRegistry(
 		crawl.NewFileSource(patentsDir),
+		crawl.NewUSPTOSource(cfg.USPTOAPIKey),
 		crawl.NewGoogleSource(),
 	).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	cachingRepo := store.NewCache(repo)

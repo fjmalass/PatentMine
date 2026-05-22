@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS patent (
     first_claim       TEXT NOT NULL DEFAULT '',
     expiration_date   TEXT NOT NULL DEFAULT '',
     expiration_source TEXT NOT NULL DEFAULT '',
-    source_url        TEXT NOT NULL DEFAULT ''
+    source_url        TEXT NOT NULL DEFAULT '',
+    classifications   TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS relation (

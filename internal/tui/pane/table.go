@@ -11,17 +11,16 @@ import (
 
 // column widths for patent tables.
 const (
-	colIndex        = 4
-	colNumber       = 16
-	colInventor     = 18
-	colExpires      = 10
-	colTags         = 14
-	colIDS          = 12
-	colState        = 13
-	colCount        = 8
-	colGaps         = colCount - 1
-	headerRows      = 2
-	defaultPageSize = 10
+	colIndex          = 4
+	colNumber         = 16
+	colInventor       = 18
+	colClassification = 16
+	colExpires        = 10
+	colTags           = 14
+	colIDS            = 12
+	colState          = 13
+	headerRows        = 2
+	defaultPageSize   = 10
 )
 
 // tableCol is one table column descriptor.
@@ -33,22 +32,83 @@ type tableCol struct {
 
 // patentTableColumns returns the columns for a patent table.
 func patentTableColumns(bodyWidth int, projectID domain.ProjectID) []tableCol {
-	fixedW := colIndex + colNumber + colInventor + colExpires + colTags + colIDS + colState + colGaps
-	titleW := max(bodyWidth-fixedW, 1)
 	idsSort := domain.SortByIDS
 	if projectID == "" {
 		idsSort = ""
 	}
-	return []tableCol{
-		{"#", "", colIndex},
-		{"NUMBER", domain.SortByNumber, colNumber},
-		{"TITLE", domain.SortByTitle, titleW},
-		{"INVENTOR", domain.SortByInventor, colInventor},
-		{"EXPIRES", domain.SortByExpires, colExpires},
-		{"TAGS", "", colTags},
-		{"IDS", idsSort, colIDS},
-		{tableStateHeading(projectID), domain.SortByReviewState, colState},
+
+	var cols []tableCol
+	switch {
+	case bodyWidth >= 110:
+		// Wide Tier: Retain all columns at preferred/full widths
+		cols = []tableCol{
+			{"#", "", colIndex},
+			{"NUMBER", domain.SortByNumber, colNumber},
+			{"TITLE", domain.SortByTitle, 0},
+			{"INVENTOR", domain.SortByInventor, colInventor},
+			{"CLASS", domain.SortByClassification, colClassification},
+			{"EXPIRES", domain.SortByExpires, colExpires},
+			{"TAGS", "", colTags},
+			{"IDS", idsSort, colIDS},
+			{tableStateHeading(projectID), domain.SortByReviewState, colState},
+		}
+
+	case bodyWidth >= 95:
+		// Medium Tier: Drop lowest-priority column TAGS
+		cols = []tableCol{
+			{"#", "", colIndex},
+			{"NUMBER", domain.SortByNumber, colNumber},
+			{"TITLE", domain.SortByTitle, 0},
+			{"INVENTOR", domain.SortByInventor, colInventor},
+			{"CLASS", domain.SortByClassification, colClassification},
+			{"EXPIRES", domain.SortByExpires, colExpires},
+			{"IDS", idsSort, colIDS},
+			{tableStateHeading(projectID), domain.SortByReviewState, colState},
+		}
+
+	case bodyWidth >= 80:
+		// Narrow Tier: Drop TAGS, IDS. Shrink INVENTOR and CLASS down to 12.
+		cols = []tableCol{
+			{"#", "", colIndex},
+			{"NUMBER", domain.SortByNumber, colNumber},
+			{"TITLE", domain.SortByTitle, 0},
+			{"INVENTOR", domain.SortByInventor, 12},
+			{"CLASS", domain.SortByClassification, 12},
+			{"EXPIRES", domain.SortByExpires, colExpires},
+			{tableStateHeading(projectID), domain.SortByReviewState, colState},
+		}
+
+	case bodyWidth >= 65:
+		// Very Narrow Tier: Drop TAGS, IDS, EXPIRES. Shrink INVENTOR and CLASS down to 10.
+		cols = []tableCol{
+			{"#", "", colIndex},
+			{"NUMBER", domain.SortByNumber, colNumber},
+			{"TITLE", domain.SortByTitle, 0},
+			{"INVENTOR", domain.SortByInventor, 10},
+			{"CLASS", domain.SortByClassification, 10},
+			{tableStateHeading(projectID), domain.SortByReviewState, colState},
+		}
+
+	default:
+		// Super Narrow Tier: Keep only the essential core columns.
+		cols = []tableCol{
+			{"#", "", colIndex},
+			{"NUMBER", domain.SortByNumber, colNumber},
+			{"TITLE", domain.SortByTitle, 0},
+			{tableStateHeading(projectID), domain.SortByReviewState, colState},
+		}
 	}
+
+	// Calculate total fixed width of other columns plus gaps
+	fixedW := 0
+	for _, col := range cols {
+		fixedW += col.width
+	}
+	fixedW += len(cols) - 1
+
+	// TITLE is flexible and takes the remaining space (minimum of 1)
+	cols[2].width = max(bodyWidth-fixedW, 1)
+	return cols
 }
 
 // renderTableHeader builds the column header row with sort indicators and focus highlighting.
@@ -80,45 +140,59 @@ func renderTableHeader(theme render.Theme, cols []tableCol, activeSortKey domain
 	return b.String()
 }
 
+// patentCellValue returns the display string for a patent's specific column by its header label.
+func patentCellValue(row domain.PatentRow, colLabel string, projectID domain.ProjectID, absoluteIndex int) string {
+	switch colLabel {
+	case "#":
+		return formatViewIndex(absoluteIndex)
+	case "NUMBER":
+		return numberToShowRow(row).String()
+	case "TITLE":
+		return row.Title
+	case "INVENTOR":
+		return formatInventorsShort(row.Inventors)
+	case "CLASS":
+		return formatClassificationsShort(row.Classifications)
+	case "EXPIRES":
+		return formatExpires(row.ExpirationDate)
+	case "TAGS":
+		return formatTags(row.Tags)
+	case "IDS":
+		return formatIDSSummary(row.IDSEntry)
+	default: // tableStateHeading(projectID) -> "REVIEW STATE" or "FETCH"
+		return tableStateText(row, projectID)
+	}
+}
+
+// patentCellStyledValue returns the styled display string for a patent's specific column by its header label.
+func patentCellStyledValue(theme render.Theme, row domain.PatentRow, colLabel string, projectID domain.ProjectID, absoluteIndex int) string {
+	if colLabel == tableStateHeading(projectID) {
+		return styleStateText(theme, row, projectID)
+	}
+	return patentCellValue(row, colLabel, projectID, absoluteIndex)
+}
+
 // renderTableRow formats one patent row across all columns.
 func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int) string {
-	vals := [8]string{
-		formatViewIndex(absoluteIndex),
-		numberToShowRow(row).String(),
-		row.Title,
-		formatInventorsShort(row.Inventors),
-		formatExpires(row.ExpirationDate),
-		formatTags(row.Tags),
-		formatIDSSummary(row.IDSEntry),
-		tableStateText(row, projectID),
-	}
 	var b strings.Builder
 	for i, col := range cols {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		b.WriteString(render.Pad(render.Truncate(vals[i], col.width), col.width))
+		val := patentCellValue(row, col.label, projectID, absoluteIndex)
+		b.WriteString(render.Pad(render.Truncate(val, col.width), col.width))
 	}
 	return b.String()
 }
 
 func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int) string {
-	vals := [8]string{
-		formatViewIndex(absoluteIndex),
-		numberToShowRow(row).String(),
-		row.Title,
-		formatInventorsShort(row.Inventors),
-		formatExpires(row.ExpirationDate),
-		formatTags(row.Tags),
-		formatIDSSummary(row.IDSEntry),
-		styleStateText(theme, row, projectID),
-	}
 	var b strings.Builder
 	for i, col := range cols {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		b.WriteString(render.Pad(render.Truncate(vals[i], col.width), col.width))
+		val := patentCellStyledValue(theme, row, col.label, projectID, absoluteIndex)
+		b.WriteString(render.Pad(render.Truncate(val, col.width), col.width))
 	}
 	return b.String()
 }
@@ -226,4 +300,12 @@ func formatIDSSummary(entry *domain.IDSEntry) string {
 		return "-"
 	}
 	return entry.SummaryText()
+}
+
+// formatClassificationsShort formats a patent's classification list for display; returns "-" when empty.
+func formatClassificationsShort(classifications []string) string {
+	if len(classifications) == 0 {
+		return "-"
+	}
+	return strings.Join(classifications, ", ")
 }

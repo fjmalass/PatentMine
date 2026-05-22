@@ -29,13 +29,14 @@ type handlerFunc func(ctx context.Context, params json.RawMessage) (any, error)
 // Server dispatches proto requests to engine operations and forwards engine
 // events to every connected client.
 type Server struct {
-	engine   *engine.Engine
-	handlers map[proto.Method]handlerFunc
+	engine          *engine.Engine
+	handlers        map[proto.Method]handlerFunc
+	usptoConfigured bool
 }
 
 // NewServer wires the dispatch table for an engine.
-func NewServer(eng *engine.Engine) *Server {
-	s := &Server{engine: eng}
+func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
+	s := &Server{engine: eng, usptoConfigured: usptoConfigured}
 	s.handlers = map[proto.Method]handlerFunc{
 		proto.MethodPing:           s.ping,
 		proto.MethodPatentGet:      s.patentGet,
@@ -236,7 +237,7 @@ func decodeParams[T any](raw json.RawMessage) (T, error) {
 // --- handlers ---
 
 func (s *Server) ping(context.Context, json.RawMessage) (any, error) {
-	return proto.PingResult{Pong: true, Version: appversion.String()}, nil
+	return proto.PingResult{Pong: true, Version: appversion.String(), USPTOConfigured: s.usptoConfigured}, nil
 }
 
 func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -281,13 +282,14 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, err
 	}
 	patents, total, err := s.engine.ListPatents(ctx, store.PatentQuery{
-		Project:       p.Project,
-		ReviewState:   p.ReviewState,
-		Search:        p.Search,
-		Limit:         p.Limit,
-		Offset:        p.Offset,
-		SortColumn:    p.SortColumn,
-		SortAscending: p.SortAscending,
+		Project:        p.Project,
+		ReviewState:    p.ReviewState,
+		Search:         p.Search,
+		Classification: p.Classification,
+		Limit:          p.Limit,
+		Offset:         p.Offset,
+		SortColumn:     p.SortColumn,
+		SortAscending:  p.SortAscending,
 	})
 	if err != nil {
 		return nil, err
@@ -484,15 +486,16 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	q := store.PatentQuery{
-		Relation:      p.Number,
-		RelationKind:  p.Kind,
-		Project:       p.Project,
-		ReviewState:   p.ReviewState,
-		Search:        p.Search,
-		Limit:         p.Limit,
-		Offset:        p.Offset,
-		SortColumn:    p.SortColumn,
-		SortAscending: p.SortAscending,
+		Relation:       p.Number,
+		RelationKind:   p.Kind,
+		Project:        p.Project,
+		ReviewState:    p.ReviewState,
+		Search:         p.Search,
+		Classification: p.Classification,
+		Limit:          p.Limit,
+		Offset:         p.Offset,
+		SortColumn:     p.SortColumn,
+		SortAscending:  p.SortAscending,
 	}
 	patents, total, err := s.engine.Relations(ctx, q)
 	if err != nil {

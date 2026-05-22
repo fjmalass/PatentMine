@@ -101,8 +101,9 @@ type Event struct {
 
 // PingResult confirms the daemon is alive.
 type PingResult struct {
-	Pong    bool   `json:"pong"`
-	Version string `json:"version"`
+	Pong            bool   `json:"pong"`
+	Version         string `json:"version"`
+	USPTOConfigured bool   `json:"uspto_configured"`
 }
 
 // PatentDeleteParams identifies the patent to permanently remove.
@@ -130,13 +131,14 @@ type PatentResult struct {
 
 // PatentListParams selects and paginates a patent listing.
 type PatentListParams struct {
-	Project       domain.ProjectID   `json:"project,omitempty"`
-	ReviewState   domain.ReviewState `json:"review_state,omitempty"`
-	Search        string             `json:"search,omitempty"`
-	Limit         int                `json:"limit,omitempty"`
-	Offset        int                `json:"offset,omitempty"`
-	SortColumn    domain.SortColumn  `json:"sort_column,omitempty"`
-	SortAscending bool               `json:"sort_ascending,omitempty"`
+	Project        domain.ProjectID   `json:"project,omitempty"`
+	ReviewState    domain.ReviewState `json:"review_state,omitempty"`
+	Search         string             `json:"search,omitempty"`
+	Classification string             `json:"classification,omitempty"`
+	Limit          int                `json:"limit,omitempty"`
+	Offset         int                `json:"offset,omitempty"`
+	SortColumn     domain.SortColumn  `json:"sort_column,omitempty"`
+	SortAscending  bool               `json:"sort_ascending,omitempty"`
 }
 
 // PatentListResult carries one page of patents plus the unpaged total.
@@ -247,15 +249,16 @@ type CrawlCancelParams struct {
 
 // RelationsParams selects family-graph edges of one kind from one patent.
 type RelationsParams struct {
-	Number        domain.PatentNumber `json:"number"`
-	Kind          domain.RelationKind `json:"kind"`
-	Project       domain.ProjectID    `json:"project,omitempty"`
-	ReviewState   domain.ReviewState  `json:"review_state,omitempty"`
-	Search        string              `json:"search,omitempty"`
-	Limit         int                 `json:"limit,omitempty"`
-	Offset        int                 `json:"offset,omitempty"`
-	SortColumn    domain.SortColumn   `json:"sort_column,omitempty"`
-	SortAscending bool                `json:"sort_ascending,omitempty"`
+	Number         domain.PatentNumber `json:"number"`
+	Kind           domain.RelationKind `json:"kind"`
+	Project        domain.ProjectID    `json:"project,omitempty"`
+	ReviewState    domain.ReviewState  `json:"review_state,omitempty"`
+	Search         string              `json:"search,omitempty"`
+	Classification string              `json:"classification,omitempty"`
+	Limit          int                 `json:"limit,omitempty"`
+	Offset         int                 `json:"offset,omitempty"`
+	SortColumn     domain.SortColumn   `json:"sort_column,omitempty"`
+	SortAscending  bool                `json:"sort_ascending,omitempty"`
 }
 
 // RelationsResult carries the requested family-graph edges.

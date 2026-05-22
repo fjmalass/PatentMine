@@ -22,6 +22,9 @@ const (
 	StatusUnhandledCommand     Key = "status.unhandled_command"
 	StatusInvalidPatentNumber  Key = "status.invalid_patent_number"
 	StatusDaemonClosed         Key = "status.daemon_closed"
+	StatusAIAnalysisStarted    Key = "status.ai_analysis_started"
+	StatusAIAnalysisFailed     Key = "status.ai_analysis_failed"
+	StatusAIAnalysisComplete   Key = "status.ai_analysis_complete"
 	StatusCrawlProgress       Key = "status.ingest_progress"
 	StatusCrawlFailed         Key = "status.ingest_failed"
 	StatusCrawlComplete       Key = "status.ingest_complete"
@@ -132,6 +135,8 @@ var cmdStrings = map[string][2]string{
 	"nav.bottom":               {"Bottom", "Jump to the last row."},
 	"nav.reselect-last":        {"Reselect last", "Jump back to the last active patent."},
 	"view.detail":              {"Open detail", "Open the selected patent's detail view."},
+	"view.ai-menu":             {"AI Curation Menu", "Open the AI curation and analysis popup menu."},
+	"view.settings-ai":         {"AI & Search Settings", "Open the AI engines and search crawls configuration settings."},
 	"view.browser":             {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
@@ -174,7 +179,7 @@ var cmdStrings = map[string][2]string{
 	"project.create":           {"Create project", "Create a new project."},
 	"project.activate":         {"Use project", "Make the selected project the active project for patent actions."},
 	"project.clear-active":     {"Clear active project", "Clear the active project filter and target."},
-	"view.filter":              {"Filter", "Apply a filter to the current list (e.g. :filter state cached)."},
+	"view.filter":              {"Filter", "Apply a filter to the current list (e.g. :filter state cached, :filter class G06F A61K)."},
 	"find.open":                {"Find", "Open the inline find bar; type to search, n/N to navigate, Enter to keep, Esc to cancel."},
 	"ids.edit-field":           {"Edit IDS field", "Edit the selected IDS field."},
 	"ids.toggle-full":          {"Toggle IDS full", "Toggle whether the full document is cited on the IDS."},
@@ -212,6 +217,9 @@ var englishNamed = map[Key]string{
 	StatusUnhandledCommand:     "unhandled command: %s",
 	StatusInvalidPatentNumber:  "invalid patent number: %s",
 	StatusDaemonClosed:         "daemon connection closed",
+	StatusAIAnalysisStarted:    "AI analysis starting on patent %s via %s...",
+	StatusAIAnalysisFailed:     "AI curation failed: %s",
+	StatusAIAnalysisComplete:   "AI analysis complete for %s. Report saved in session notes.",
 	StatusCrawlProgress:       "crawl %s — crawled %d, discovered %d: %s",
 	StatusCrawlFailed:         "crawl %s failed: %s",
 	StatusCrawlComplete:       "crawl %s complete",

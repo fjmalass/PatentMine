@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	testPaneWidth  = 100
+	testPaneWidth  = 120
 	testPaneHeight = 10
 )
 

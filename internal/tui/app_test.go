@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"patentmine/internal/ai"
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
@@ -340,3 +341,61 @@ func TestBrowseCommandAcceptsExplicitPatentArgs(t *testing.T) {
 		t.Fatalf("opened URLs = %v", opened)
 	}
 }
+
+func TestAppSettingsAIKeys(t *testing.T) {
+	app := newTestApp(t)
+
+	// Trigger open Settings AI
+	_, cmd := app.invoke(command.SettingsAI, invocation{})
+	if cmd != nil {
+		app.Update(cmd())
+	}
+
+	if len(app.overlays) != 1 {
+		t.Fatalf("after SettingsAI command, overlays = %d, want 1", len(app.overlays))
+	}
+
+	settings, ok := app.focusedOverlay().(*overlay.SettingsOverlay)
+	if !ok {
+		t.Fatalf("expected SettingsOverlay, got %T", app.focusedOverlay())
+	}
+
+	// Make sure initial provider is Gemini
+	app.aiProvider = ai.ProviderGemini
+	settings.SetActiveAI(ai.ProviderGemini)
+
+	// Press 'o' to change to Ollama
+	_, cmd = app.Update(runeKey('o'))
+	if cmd == nil {
+		t.Fatal("pressing 'o' should return a command")
+	}
+
+	// Process the message returned by the command
+	msg := cmd()
+	app.Update(msg)
+
+	// Check if app.aiProvider is now Ollama
+	if app.aiProvider != ai.ProviderOllama {
+		t.Errorf("expected app.aiProvider to be ollama, got %s", app.aiProvider)
+	}
+
+	// Check if overlay has updated provider
+	if settings.View(80, 20) == "" {
+		t.Error("expected non-empty overlay view")
+	}
+
+	// Press 'g' to change to Gemini
+	_, cmd = app.Update(runeKey('g'))
+	if cmd == nil {
+		t.Fatal("pressing 'g' should return a command")
+	}
+
+	msg = cmd()
+	app.Update(msg)
+
+	// Check if app.aiProvider is now Gemini
+	if app.aiProvider != ai.ProviderGemini {
+		t.Errorf("expected app.aiProvider to be gemini, got %s", app.aiProvider)
+	}
+}
+

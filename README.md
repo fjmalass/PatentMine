@@ -301,7 +301,105 @@ The `?` help overlay (`internal/tui/overlay/help.go`) groups bindings as:
 
 ---
 
-## 7. CLI Subcommands & TUI Shortcut Reference
+## 7. AI Patent Curation & Analysis
+
+PatentMine incorporates a multi-provider AI Curation engine designed to generate automated novelty summaries, claims analyses, legal/risk assessments, and custom-instructed evaluations. The engine operates entirely locally or via secure cloud API gateways.
+
+### Key Capabilities
+* **Dual-Provider Architecture**:
+  * **Google Gemini (Cloud)**: High-speed, high-context curation powered by the `gemini-2.5-flash` model.
+  * **Local Ollama (Offline)**: Private, offline technical curation powered by a local Ollama instance running the `mistral` model by default.
+* **TUI Integration & Workflow**:
+  * Pressing `a` in the **Detail View** opens the AI Popup Menu overlay.
+  * You can select from preset analysis templates (Novelty summary, Claims breakdown, Legal/risk takeaways) or type a custom prompt.
+  * Generated reports are instantly added to your session notes buffer under descriptive headings (e.g. `AI Novelty Summary`) and displayed in the notes popup overlay (`o` key in Detail view).
+  * You can copy AI notes to your clipboard (`y`/`Y` in the notes overlay) or flush them directly to your project's Information Disclosure Statement (IDS) reference passage list (`F` key).
+* **Onboarding & Credential Recovery**:
+  * If your API keys are not configured or the local Ollama daemon is unreachable, the TUI displays a friendly onboarding view outlining the exact steps and Makefile commands required to get started.
+
+### Step-by-Step Usage Guide
+
+#### Step 1: Configure Your AI Provider
+Define your AI preferences in your `.env` file. The application automatically searches, parses, and loads config from:
+1. Current working directory `.env`
+2. Secure home folder `~/.ssh/patentmine/.env`
+3. Home config folder `~/.config/patentmine/.env`
+
+Create or edit your `.env` file with the following variables:
+```ini
+# Choose active provider: "gemini" or "ollama"
+PATENTMINE_AI_PROVIDER=gemini
+
+# Google Gemini API key (Required if using "gemini")
+GEMINI_API_KEY=AIzaSyYourSecretAPIKeyHere
+
+# Local Ollama configuration (Required if using "ollama")
+OLLAMA_MODEL=mistral
+OLLAMA_HOST=http://localhost:11434
+```
+
+> [!TIP]
+> If you choose the local **Ollama** provider, you can run the automated helper task to install the Ollama daemon and download the `mistral` model in one command:
+> ```bash
+> cargo make ollama-setup
+> ```
+
+#### Step 2: Open a Patent in the Detail View
+1. Start the TUI by running:
+   ```bash
+   cargo make run-tui
+   ```
+2. Navigate the patent catalog list using the arrow keys or `j`/`k`.
+3. Press `Enter` or `l` on a selected patent to open the **Detail View**.
+
+#### Step 3: Trigger the AI Curation Overlay
+1. Press **`a`** inside the Detail View. This will open the **AI Patent Curation & Analysis** popup menu.
+2. If the chosen provider is unconfigured or offline, the menu will show a **Warning Onboarding View** with recovery steps. You can press **`g`** to switch to Gemini or **`o`** to switch to Ollama instantly.
+3. If configured correctly, select one of the analysis templates:
+   - **`1`**: Novelty & Legal/Tech takeaways summary.
+   - **`2`**: Deep Claims & Technical boundaries breakdown.
+   - **`3`**: Legal & Infringement Risk assessment.
+   - **`4`**: Custom Instruction (opens a prompt input to enter custom directives).
+
+#### Step 4: Review and Export Generated Summaries
+1. Once selected, the AI analysis runs in a background thread so the TUI remains perfectly responsive.
+2. Upon completion, the TUI will automatically display the **Notes Buffer Overlay** showing your generated AI summary.
+3. Use the following keys in the Notes Overlay to act on the summary:
+   - **`y`**: Copy the currently selected note to your clipboard.
+   - **`Y`**: Copy all session notes to your clipboard.
+   - **`F`**: Flush the summary directly to your project's Information Disclosure Statement (IDS) references list.
+   - **`q`** or **`esc`**: Close the overlay and return to the patent details.
+
+> [!NOTE]
+> For a highly detailed overview of the system architecture, logging redaction mechanisms, pros/cons, and advanced troubleshooting, read the [AI.md Architectural & Setup Guide](file:///mnt/d/Repos/PatentMineNew/AI.md).
+
+### API Credentials & Key Management
+Keys are securely loaded using a zero-dependency environment variables loader that scans:
+1. Current working directory `.env`
+2. Secure home directory `~/.ssh/patentmine/.env`
+3. Default user home directory `~/.config/patentmine/.env`
+
+Define the following environment variables to configure your provider:
+```ini
+# Choose active provider: "gemini" or "ollama"
+PATENTMINE_AI_PROVIDER=gemini
+
+# Google Gemini API key
+GEMINI_API_KEY=AIzaSy...
+
+# Local Ollama config (if using ollama provider)
+OLLAMA_MODEL=mistral
+OLLAMA_HOST=http://localhost:11434
+```
+
+### Automation & Deployment
+Automate your local AI setups using `cargo-make` commands:
+* **`cargo make ollama-setup`**: Automated setup that checks/installs Ollama on Linux, registers the daemon via systemctl, and pulls the `mistral` model.
+* **`cargo make ollama-update`**: Updates the local Ollama binary and pulls/refreshes the `mistral` model.
+
+---
+
+## 8. CLI Subcommands & TUI Shortcut Reference
 
 For complete operational visibility, the command-line interface subcommands and the Terminal User Interface (TUI) keyboard shortcuts are cataloged below.
 
@@ -364,6 +462,8 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 * `p` : Navigate to the Projects list.
 * `/` : Open query prompt to search/highlight text inside details.
 * `;` : Open jump mode to instantly scroll to headings, claims, or section anchors.
+* `a` : Open the interactive **AI Patent Curation & Analysis** menu overlay.
+* `o` : Open the visual **Notes Buffer** overlay to view, copy, or export accumulated notes (including AI reports).
 * `ctrl+r` : Refresh the current detail views.
 
 #### F. IDS Curation Pane Bindings

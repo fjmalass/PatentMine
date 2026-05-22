@@ -30,6 +30,8 @@ type PatentQuery struct {
 	RelationKind domain.RelationKind
 	// Search, when set, is a case-insensitive substring match on number/title.
 	Search string
+	// Classification, when set, filters patents by prefix matching of their classifications.
+	Classification string
 	// Limit is the page size; values <= 0 fall back to DefaultPageSize.
 	Limit int
 	// Offset is the number of rows to skip.

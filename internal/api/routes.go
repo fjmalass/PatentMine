@@ -102,15 +102,16 @@ func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
 	var res proto.RelationsResult
 	s.call(w, r, proto.MethodRelations,
 		proto.RelationsParams{
-			Number:        number,
-			Kind:          kind,
-			Project:       domain.ProjectID(q.Get("project")),
-			ReviewState:   domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
-			Search:        q.Get("search"),
-			Limit:         limit,
-			Offset:        offset,
-			SortColumn:    domain.SortColumn(q.Get("sort_column")),
-			SortAscending: sortAscending,
+			Number:         number,
+			Kind:           kind,
+			Project:        domain.ProjectID(q.Get("project")),
+			ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
+			Search:         q.Get("search"),
+			Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),
+			Limit:          limit,
+			Offset:         offset,
+			SortColumn:     domain.SortColumn(q.Get("sort_column")),
+			SortAscending:  sortAscending,
 		}, &res)
 }
 

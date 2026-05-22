@@ -79,6 +79,7 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 		Abstract:        clean(googleText(doc.Selection, "div.abstract", "section[itemprop='abstract']", "meta[name='DC.description']")),
 		Assignee:        clean(googleText(doc.Selection, "dd[itemprop='assigneeOriginal']", "span[itemprop='assigneeOriginal']", "dd[itemprop='assigneeCurrent']")),
 		Inventors:       googleTexts(doc.Selection, "dd[itemprop='inventor']", "span[itemprop='inventor']"),
+		Classifications: googleClassifications(doc),
 		FetchState:      domain.FetchCached,
 		Source:          domain.SourceGoogle,
 		FetchedAt:       time.Now().UTC(),
@@ -221,6 +222,63 @@ func googleTexts(s *goquery.Selection, selectors ...string) []domain.Inventor {
 		})
 	}
 	return out
+}
+
+// googleClassifications returns the parsed and de-duplicated classification codes for a patent.
+func googleClassifications(doc *goquery.Document) []string {
+	seen := map[string]bool{}
+	var out []string
+
+	// 1. Try finding elements with itemprop="classification"
+	doc.Find("[itemprop='classification']").Each(func(_ int, s *goquery.Selection) {
+		// It might be a meta tag with content attribute:
+		if content, ok := s.Attr("content"); ok {
+			c := cleanClassification(content)
+			if c != "" && !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+			}
+		}
+		// It might contain text directly:
+		text := cleanClassification(s.Text())
+		if text != "" && !seen[text] {
+			seen[text] = true
+			out = append(out, text)
+		}
+	})
+
+	// 2. Also look inside sub-elements of itemprop="classification" or general itemprop="code" / itemprop="Code"
+	doc.Find("[itemprop='code'], [itemprop='Code']").Each(func(_ int, s *goquery.Selection) {
+		text := cleanClassification(s.Text())
+		if text != "" && !seen[text] {
+			seen[text] = true
+			out = append(out, text)
+		}
+	})
+
+	return out
+}
+
+// cleanClassification strips whitespace and prefixes from classification strings.
+func cleanClassification(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Join(strings.Fields(s), "") // Remove all spaces
+	if s == "" {
+		return ""
+	}
+	// Strip prefixes like CPC/IPC/US (case-insensitive) followed by : or /
+	lower := strings.ToLower(s)
+	for _, prefix := range []string{"cpc:", "ipc:", "us:", "cpc/", "ipc/", "us/"} {
+		if strings.HasPrefix(lower, prefix) {
+			s = s[len(prefix):]
+			lower = lower[len(prefix):]
+		}
+	}
+	s = strings.Trim(s, " /:-")
+	if len(s) < 3 || len(s) > 25 {
+		return ""
+	}
+	return s
 }
 
 // googleAttrDate parses the datetime attribute of the first matched element.

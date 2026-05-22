@@ -55,6 +55,8 @@ func runTUI(_ []string) int {
 	app, err := tui.New(client, registry, keymap.Default(), text.English(),
 		tui.WithLastProject(lastProjectID),
 		tui.WithTelemetry(telemetry),
+		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel),
+		tui.WithUSPTOKey(cfg.USPTOAPIKey),
 		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))
 	if err != nil {
 		telemetry.Logger.Error("build tui failed", slog.String("error", err.Error()))

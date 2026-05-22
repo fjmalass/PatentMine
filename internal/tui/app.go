@@ -19,6 +19,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"patentmine/internal/ai"
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/keys"
@@ -55,9 +56,12 @@ type eventsClosedMsg struct{}
 
 // pingLoadedMsg carries the daemon's reported build version.
 type pingLoadedMsg struct {
-	version string
-	err     error
+	version         string
+	usptoConfigured bool
+	err             error
 }
+
+
 
 // invocation carries the arguments of one command request: empty for a key
 // chord, populated for a typed command.
@@ -105,6 +109,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.TagPatentDelete:    (*App).cmdTagPatentDelete,
 	command.TagPatentList:      (*App).cmdTagPatentList,
 	command.PatentDelete:       (*App).cmdPatentDelete,
+	command.AIAnalyze:          (*App).cmdAIAnalyze,
+	command.SettingsAI:         (*App).cmdSettingsAI,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -151,6 +157,13 @@ type App struct {
 	notes         *notesAccumulator
 	logger        *slog.Logger
 	metrics       *observability.Metrics
+
+	aiProvider      ai.Provider
+	geminiAPIKey    string
+	ollamaHost      string
+	ollamaModel     string
+	aiTargetPatent  domain.Patent
+	usptoConfigured bool
 }
 
 type Option func(*App)
@@ -161,6 +174,41 @@ func WithLastProject(id domain.ProjectID) Option {
 
 func WithLastProjectSaver(save func(domain.ProjectID) error) Option {
 	return func(a *App) { a.saveLastProject = save }
+}
+
+func WithAIConfig(provider string, geminiKey string, ollamaHost string, ollamaModel string) Option {
+	return func(a *App) {
+		a.aiProvider = ai.Provider(provider)
+		a.geminiAPIKey = geminiKey
+		a.ollamaHost = ollamaHost
+		a.ollamaModel = ollamaModel
+	}
+}
+
+func WithUSPTOKey(key string) Option {
+	return func(a *App) {
+		if key != "" {
+			a.usptoConfigured = true
+		}
+	}
+}
+
+func (a *App) activeAIString() string {
+	switch a.aiProvider {
+	case ai.ProviderGemini:
+		return "AI: Gemini"
+	case ai.ProviderOllama:
+		return "AI: Ollama"
+	default:
+		return "AI: None"
+	}
+}
+
+func (a *App) activeSearchString() string {
+	if a.usptoConfigured {
+		return "Search: Google, USPTO"
+	}
+	return "Search: Google"
 }
 
 // WithTelemetry attaches the process observability runtime so the App can log
@@ -213,13 +261,22 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		opt(app)
 	}
 	app.panes = []pane.Pane{pane.NewSplash(client, theme, app.lastProjectID,
-		app.splashFooterHint(), app.splashEmptyHint())}
+		app.splashFooterHint(), app.splashEmptyHint(), app.activeAIString(), app.activeSearchString())}
 	return app, nil
 }
 
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
-	cmds := []tea.Cmd{a.panes[0].Init(), a.fetchPing()}
+	cmds := []tea.Cmd{
+		a.panes[0].Init(),
+		a.fetchPing(),
+		func() tea.Msg {
+			return pane.ServiceStatusChangedMsg{
+				ActiveAI:     a.activeAIString(),
+				ActiveSearch: a.activeSearchString(),
+			}
+		},
+	}
 	if a.client != nil {
 		cmds = append(cmds, a.listen())
 	}
@@ -249,13 +306,60 @@ func (a *App) fetchPing() tea.Cmd {
 		defer cancel()
 		var res proto.PingResult
 		err := client.Call(ctx, proto.MethodPing, nil, &res)
-		return pingLoadedMsg{version: res.Version, err: err}
+		return pingLoadedMsg{version: res.Version, usptoConfigured: res.USPTOConfigured, err: err}
 	}
 }
 
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case aiPatentLoadedMsg:
+		if m.err != nil {
+			a.setErr(text.StatusAIAnalysisFailed, m.err.Error())
+			return a, nil
+		}
+		a.aiTargetPatent = m.patent
+		var analyzer ai.Analyzer
+		if a.aiProvider == ai.ProviderGemini {
+			analyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
+		} else {
+			analyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
+		}
+		o := overlay.NewAIMenu(a.theme, m.patent, a.aiProvider, analyzer)
+		a.overlays = append(a.overlays, o)
+		return a, nil
+	case overlay.AISwitchProviderMsg:
+		a.aiProvider = ai.Provider(m.NewProvider)
+		if len(a.overlays) > 0 {
+			if menu, ok := a.overlays[len(a.overlays)-1].(*overlay.AIMenu); ok {
+				var analyzer ai.Analyzer
+				if a.aiProvider == ai.ProviderGemini {
+					analyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
+				} else {
+					analyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
+				}
+				a.overlays[len(a.overlays)-1] = overlay.NewAIMenu(a.theme, menu.Patent(), a.aiProvider, analyzer)
+			} else if settings, ok := a.overlays[len(a.overlays)-1].(*overlay.SettingsOverlay); ok {
+				settings.SetActiveAI(a.aiProvider)
+			}
+		}
+		return a, a.broadcast(pane.ServiceStatusChangedMsg{
+			ActiveAI:     a.activeAIString(),
+			ActiveSearch: a.activeSearchString(),
+		})
+	case overlay.AIAnalyzeTriggerMsg:
+		a.popOverlay()
+		a.setStatus(text.StatusAIAnalysisStarted, m.Patent.Number.String(), string(a.aiProvider))
+		return a, a.runAIAnalysis(m.Patent, m.ActionType, m.CustomPrompt)
+	case aiAnalysisResultMsg:
+		if m.err != nil {
+			a.setErr(text.StatusAIAnalysisFailed, m.err.Error())
+			return a, nil
+		}
+		a.notes.Add(m.number, m.locator, time.Now(), m.result)
+		a.setStatus(text.StatusAIAnalysisComplete, m.number.String())
+		a.overlays = append(a.overlays, newNotesBufferOverlay(a.theme, m.number, m.patent, a))
+		return a, nil
 	case tea.WindowSizeMsg:
 		a.width, a.height = m.Width, m.Height
 		return a, a.broadcast(pane.ResizeMsg{Width: m.Width, Height: max(m.Height-statusRows, 1)})
@@ -324,7 +428,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.daemonVersion = m.version
-		return a, nil
+		a.usptoConfigured = m.usptoConfigured
+		return a, a.broadcast(pane.ServiceStatusChangedMsg{
+			ActiveAI:     a.activeAIString(),
+			ActiveSearch: a.activeSearchString(),
+		})
 	case pane.FullTextLoadedMsg:
 		failed := m.Err != nil
 		a.metrics.ObserveDuration("tui.fulltext.fetch", m.Duration, failed)
@@ -493,3 +601,56 @@ func (a *App) unhandled(id command.ID) (tea.Model, tea.Cmd) {
 	a.setErr(text.StatusUnhandledCommand, string(id))
 	return a, nil
 }
+
+type aiAnalysisResultMsg struct {
+	number  domain.PatentNumber
+	patent  domain.Patent
+	locator string
+	result  string
+	err     error
+}
+
+func (a *App) runAIAnalysis(patent domain.Patent, actionType, customPrompt string) tea.Cmd {
+	return func() tea.Msg {
+		var analyzer ai.Analyzer
+		if a.aiProvider == ai.ProviderGemini {
+			analyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
+		} else {
+			analyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
+		}
+
+		prompt := customPrompt
+		locator := "AI Analysis (" + string(a.aiProvider) + ")"
+		if actionType != "" && prompt == "" {
+			switch actionType {
+			case "novelty":
+				prompt = "Summarize the core technical novelty of this patent and highlight key legal/technology design takeaways."
+				locator = "AI Novelty Summary"
+			case "claims":
+				prompt = "Perform a detailed claims and technical breakdown. Explain the scope and boundaries of the independent claims."
+				locator = "AI Claims Breakdown"
+			case "risk":
+				prompt = "Evaluate potential legal & risk factors. Identify prior art exposure, design-around vectors, or potential infringement vulnerabilities."
+				locator = "AI Legal & Risk takeaways"
+			}
+		} else if prompt != "" {
+			locator = "AI Custom: " + prompt
+			if len(prompt) > 20 {
+				locator = "AI Custom: " + prompt[:20] + "..."
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		res, err := analyzer.AnalyzePatent(ctx, patent, prompt)
+		return aiAnalysisResultMsg{
+			number:  patent.Number,
+			patent:  patent,
+			locator: locator,
+			result:  res,
+			err:     err,
+		}
+	}
+}
+

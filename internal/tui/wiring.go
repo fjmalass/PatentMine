@@ -127,7 +127,7 @@ func paneHandlerSets() map[command.Scope][]command.ID {
 		pane.NewDetail(nil, theme, domain.PatentNumber{}, "", nil),
 		pane.NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
 		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
-		pane.NewProjects(nil, theme),
+		pane.NewProjects(nil, theme, "", ""),
 		pane.NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
 	}
 	out := make(map[command.Scope][]command.ID, len(panes))

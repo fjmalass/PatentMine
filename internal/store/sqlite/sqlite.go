@@ -112,6 +112,26 @@ func (r *Repo) initSchema(ctx context.Context) error {
 			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent_tag ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
 		}
 	}
+	// Migrate existing database instances if they lack the classifications column in patent.
+	var hasClassifications bool
+	rowsPat, err := r.writer.QueryContext(ctx, "PRAGMA table_info(patent)")
+	if err == nil {
+		defer rowsPat.Close()
+		for rowsPat.Next() {
+			var cid int
+			var name, typeStr string
+			var notnull, pk int
+			var dfltVal any
+			if err := rowsPat.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err == nil {
+				if name == "classifications" {
+					hasClassifications = true
+				}
+			}
+		}
+		if !hasClassifications {
+			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent ADD COLUMN classifications TEXT NOT NULL DEFAULT '[]'")
+		}
+	}
 	if err := r.syncFTS(ctx); err != nil {
 		return err
 	}

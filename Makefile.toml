@@ -214,3 +214,52 @@ go run -ldflags "$ldflags" ${BINARY} migrate
 [tasks.ci]
 description = "Full check: formatting, vet, lint, tests."
 dependencies = ["fmt-check", "vet", "lint", "test"]
+
+[tasks.ollama-setup]
+description = "Install Ollama and pull the mistral LLM model."
+script = '''
+if ! command -v ollama >/dev/null 2>&1; then
+  echo "Ollama is not installed. Installing Ollama..."
+  curl -fsSL https://ollama.com/install.sh | sh
+else
+  echo "Ollama is already installed."
+fi
+
+echo "Starting Ollama service (if not already running)..."
+if command -v systemctl >/dev/null 2>&1; then
+  if systemctl is-active --quiet ollama; then
+    echo "Ollama service is active."
+  else
+    echo "Starting Ollama via systemd..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable ollama
+    sudo systemctl start ollama
+  fi
+else
+  echo "systemd not detected. Please ensure 'ollama serve' is running in the background."
+fi
+
+echo "Waiting for Ollama to be ready..."
+for i in $(seq 1 10); do
+  if curl -s http://localhost:11434 >/dev/null; then
+    echo "Ollama is up and running!"
+    break
+  fi
+  sleep 1
+done
+
+echo "Pulling the mistral LLM model..."
+ollama pull mistral
+echo "Ollama and mistral LLM are successfully configured!"
+'''
+
+[tasks.ollama-update]
+description = "Update the mistral LLM model and Ollama."
+script = '''
+echo "Updating Ollama binary..."
+curl -fsSL https://ollama.com/install.sh | sh
+echo "Updating mistral LLM model..."
+ollama pull mistral
+echo "Update complete!"
+'''
+

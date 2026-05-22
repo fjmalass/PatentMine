@@ -97,6 +97,8 @@ const (
 
 	// Full text viewer.
 	OpenFullText ID = "view.fulltext"
+	AIAnalyze    ID = "view.ai-menu"
+	SettingsAI   ID = "view.settings-ai"
 	CopyYank     ID = "edit.copy"
 	CopyYankMeta ID = "edit.copy-meta"
 	NoteAdd      ID = "edit.note-add"
@@ -194,6 +196,8 @@ func Default() (*Registry, error) {
 
 		// --- full text viewer (view) ---
 		Command{ID: OpenFullText, Name: "open.fulltext", Aliases: []string{"fulltext", "claims", "all-claims"}, Usage: ":open.fulltext", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: AIAnalyze, Name: "ai.analyze", Aliases: []string{"ai", "analyze"}, Usage: ":ai.analyze", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: SettingsAI, Name: "settings.ai", Aliases: []string{"settings", "config"}, Usage: ":settings.ai", Kind: KindView},
 		Command{ID: CopyYank, Name: "copy", Aliases: []string{"yank", "clipboard"}, Usage: ":copy", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: CopyYankMeta, Name: "copy.meta", Aliases: []string{"yank-meta", "copy-with-patent"}, Usage: ":copy.meta", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: NoteAdd, Name: "note.add", Aliases: []string{"add-note", "note"}, Usage: ":note.add", Kind: KindView, Scopes: []Scope{ScopeFullText}},

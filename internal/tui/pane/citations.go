@@ -127,15 +127,16 @@ func (c *Citations) load() tea.Cmd {
 		}
 		err := client.Call(ctx, proto.MethodRelations,
 			proto.RelationsParams{
-				Number:        root,
-				Kind:          kind,
-				Project:       project,
-				ReviewState:   c.filter.ReviewState,
-				Search:        c.filter.Search,
-				Limit:         limit,
-				Offset:        offset,
-				SortColumn:    c.activeSort,
-				SortAscending: c.sortAscending,
+				Number:         root,
+				Kind:           kind,
+				Project:        project,
+				ReviewState:    c.filter.ReviewState,
+				Search:         c.filter.Search,
+				Classification: c.filter.Classification,
+				Limit:          limit,
+				Offset:         offset,
+				SortColumn:     c.activeSort,
+				SortAscending:  c.sortAscending,
 			}, &res)
 		return citationsLoadedMsg{
 			requestID: requestID,

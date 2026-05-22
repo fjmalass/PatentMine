@@ -15,6 +15,7 @@ const (
 	SortByExpires     SortColumn = "expires"
 	SortByReviewState SortColumn = "review_state"
 	SortByIDS         SortColumn = "ids"
+	SortByClassification SortColumn = "classification"
 )
 
 // CrawlProfile defines which family-graph edges to follow during a crawl.
@@ -109,6 +110,8 @@ type Patent struct {
 	ExpirationSource string `json:"expiration_source,omitempty"`
 	// SourceURL is the provider page the record was fetched from.
 	SourceURL string `json:"source_url,omitempty"`
+	// Classifications is the set of classification codes (e.g. CPC, IPC) for this patent.
+	Classifications []string `json:"classifications"`
 	// Documents is the open-ended set of life-stage documents for this record.
 	Documents []Document `json:"documents"`
 }
@@ -123,6 +126,7 @@ type PatentRow struct {
 	Inventors      []Inventor   `json:"inventors"`
 	ExpirationDate time.Time    `json:"expiration_date"`
 	Tags           []string     `json:"tags"`
+	Classifications []string    `json:"classifications"`
 	FetchState     FetchState   `json:"fetch_state"`
 	ReviewState    ReviewState  `json:"review_state,omitempty"`
 	IDSEntry       *IDSEntry    `json:"ids_entry,omitempty"`

@@ -155,3 +155,9 @@ type FullTextLoadedMsg struct {
 func status(key text.Key, isErr bool, args ...any) tea.Cmd {
 	return func() tea.Msg { return StatusMsg{Key: key, Args: args, Error: isErr} }
 }
+
+// ServiceStatusChangedMsg broadcasts active capabilities to all active panes.
+type ServiceStatusChangedMsg struct {
+	ActiveAI     string
+	ActiveSearch string
+}

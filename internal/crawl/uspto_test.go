@@ -7,14 +7,14 @@ import (
 	"patentmine/internal/domain"
 )
 
-const usptoSampleResponse = `{"patents":[{
-	"patent_number":"10000000",
-	"patent_title":"Widget apparatus",
-	"patent_abstract":"An improved widget.",
-	"patent_date":"2018-06-19",
-	"inventors":[{"inventor_first_name":"Jane","inventor_last_name":"Doe"}],
-	"assignees":[{"assignee_organization":"Acme Corp"}]
-}],"count":1}`
+const usptoSampleResponse = `{"results":[{
+	"patentNumberText":"10000000",
+	"inventionTitle":"Widget apparatus",
+	"abstractText":"An improved widget.",
+	"patentGrantDate":"2018-06-19",
+	"inventorNameBag":[{"nameText":"Jane Doe"}],
+	"assigneeBag":[{"organizationName":"Acme Corp"}]
+}]}`
 
 func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
 	number := domain.MustParsePatentNumber("US10000000B2")
@@ -41,7 +41,7 @@ func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
 
 func TestParseUSPTOEmptyResultIsNotAvailable(t *testing.T) {
 	number := domain.MustParsePatentNumber("US10000000B2")
-	_, err := parseUSPTO(number, []byte(`{"patents":[],"count":0}`))
+	_, err := parseUSPTO(number, []byte(`{"results":[]}`))
 	if !errors.Is(err, ErrNotAvailable) {
 		t.Fatalf("parseUSPTO on an empty result = %v, want ErrNotAvailable", err)
 	}

@@ -18,8 +18,8 @@ const patentUpsertSQL = `
 	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
 		grant_date, fetched_at, display_number,
-		first_claim, expiration_date, expiration_source, source_url)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		first_claim, expiration_date, expiration_source, source_url, classifications)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO UPDATE SET
 		country=excluded.country, serial=excluded.serial, kind=excluded.kind,
 		title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
@@ -28,7 +28,8 @@ const patentUpsertSQL = `
 		publication_date=excluded.publication_date, grant_date=excluded.grant_date,
 		fetched_at=excluded.fetched_at, display_number=excluded.display_number,
 		first_claim=excluded.first_claim, expiration_date=excluded.expiration_date,
-		expiration_source=excluded.expiration_source, source_url=excluded.source_url`
+		expiration_source=excluded.expiration_source, source_url=excluded.source_url,
+		classifications=excluded.classifications`
 
 // documentUpsertSQL inserts or updates one life-stage document.
 const documentUpsertSQL = `
@@ -45,6 +46,10 @@ func patentUpsertArgs(p domain.Patent) ([]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: encode inventors: %w", err)
 	}
+	classifications, err := json.Marshal(p.Classifications)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: encode classifications: %w", err)
+	}
 	display := p.DisplayNumber
 	if display.IsZero() {
 		display = p.Number
@@ -56,6 +61,7 @@ func patentUpsertArgs(p domain.Patent) ([]any, error) {
 		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
 		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized(),
 		p.FirstClaim, encodeTime(p.ExpirationDate), p.ExpirationSource, p.SourceURL,
+		string(classifications),
 	}, nil
 }
 
@@ -150,8 +156,8 @@ const patentInsertOrIgnoreSQL = `
 	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
 		grant_date, fetched_at, display_number,
-		first_claim, expiration_date, expiration_source, source_url)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		first_claim, expiration_date, expiration_source, source_url, classifications)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO NOTHING`
 
 // documentInsertOrIgnoreSQL inserts a document only when its number is new.

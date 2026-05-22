@@ -95,6 +95,7 @@ func Default() *Keymaps {
 		"left":   command.Back,
 		"esc":    command.Back,
 		":":      command.OpenCommand,
+		"ctrl+s": command.SettingsAI,
 	})
 
 	catalog := NewLayer("catalog", false).
@@ -125,6 +126,7 @@ func Default() *Keymaps {
 			"/":  command.OpenSearch,
 			";":  command.JumpMode,
 			"t":  command.OpenFullText,
+			"a":  command.AIAnalyze,
 		})
 
 	citations := NewLayer("citations", false).

@@ -3,88 +3,101 @@ package crawl
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
+	"net/http"
 	"strings"
 	"time"
 
 	"patentmine/internal/domain"
 )
 
-// usptoMinInterval keeps requests to the USPTO data endpoint polite.
+// usptoMinInterval keeps requests to the USPTO ODP API polite.
 const usptoMinInterval = 1 * time.Second
 
-// usptoFields are the PatentsView fields the parser consumes.
-const usptoFields = `["patent_number","patent_title","patent_abstract","patent_date",` +
-	`"inventor_first_name","inventor_last_name","assignee_organization"]`
-
-// NewUSPTOSource builds a Source backed by the PatentsView API, which serves
-// USPTO grant data as JSON.
-func NewUSPTOSource() Source {
-	return newHTTPSource(
-		domain.SourceUSPTO,
-		usptoMinInterval,
-		func(n domain.PatentNumber) string {
-			query := `{"patent_number":"` + n.Serial + `"}`
-			return "https://api.patentsview.org/patents/query?q=" +
-				url.QueryEscape(query) + "&f=" + url.QueryEscape(usptoFields)
+// NewUSPTOSource builds a Source backed by the USPTO Open Data Portal (ODP) API.
+func NewUSPTOSource(apiKey string) Source {
+	return &httpSource{
+		name:    domain.SourceUSPTO,
+		client:  &http.Client{Timeout: httpTimeout},
+		limiter: newLimiter(usptoMinInterval),
+		urlFor: func(n domain.PatentNumber) string {
+			return "https://api.uspto.gov/api/v1/patent/applications/search?q=patentNumberText:" + n.Serial
 		},
-		parseUSPTO,
-	)
+		headers: func() http.Header {
+			h := make(http.Header)
+			h.Set("x-api-key", apiKey)
+			h.Set("Accept", "application/json")
+			return h
+		},
+		parse: parseUSPTO,
+	}
 }
 
-// usptoResponse is the PatentsView query response shape.
+// usptoResponse is the USPTO ODP search query response shape.
 type usptoResponse struct {
-	Patents []struct {
-		Number    string `json:"patent_number"`
-		Title     string `json:"patent_title"`
-		Abstract  string `json:"patent_abstract"`
-		Date      string `json:"patent_date"`
-		Inventors []struct {
-			First string `json:"inventor_first_name"`
-			Last  string `json:"inventor_last_name"`
-		} `json:"inventors"`
-		Assignees []struct {
-			Organization string `json:"assignee_organization"`
-		} `json:"assignees"`
-	} `json:"patents"`
+	Results []struct {
+		PatentNumberText      string `json:"patentNumberText"`
+		InventionTitle        string `json:"inventionTitle"`
+		AbstractText          string `json:"abstractText"`
+		PatentGrantDate       string `json:"patentGrantDate"`
+		GrantDate             string `json:"grantDate"`
+		FilingDate            string `json:"filingDate"`
+		PublicationDate       string `json:"publicationDate"`
+		InventorNameBag       []struct {
+			NameText string `json:"nameText"`
+		} `json:"inventorNameBag"`
+		AssigneeBag           []struct {
+			OrganizationName string `json:"organizationName"`
+		} `json:"assigneeBag"`
+	} `json:"results"`
 }
 
-// parseUSPTO extracts a patent from a PatentsView API response.
+// parseUSPTO extracts a patent from a USPTO ODP API response.
 func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 	var resp usptoResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return Result{}, fmt.Errorf("crawl/uspto: decode response: %w", err)
 	}
-	if len(resp.Patents) == 0 {
+	if len(resp.Results) == 0 {
 		return Result{}, ErrNotAvailable
 	}
-	p := resp.Patents[0]
+	p := resp.Results[0]
 
 	var inventors []domain.Inventor
-	for _, inv := range p.Inventors {
-		if name := strings.TrimSpace(inv.First + " " + inv.Last); name != "" {
+	for _, inv := range p.InventorNameBag {
+		if name := strings.TrimSpace(inv.NameText); name != "" {
 			inventors = append(inventors, domain.Inventor(name))
 		}
 	}
 	var assignees []string
-	for _, a := range p.Assignees {
-		if org := strings.TrimSpace(a.Organization); org != "" {
+	for _, a := range p.AssigneeBag {
+		if org := strings.TrimSpace(a.OrganizationName); org != "" {
 			assignees = append(assignees, org)
 		}
 	}
 
-	grantDate := parseGoogleDate(p.Date)
+	dateStr := p.PatentGrantDate
+	if dateStr == "" {
+		dateStr = p.GrantDate
+	}
+	if dateStr == "" {
+		dateStr = p.PublicationDate
+	}
+	grantDate := parseISODate(dateStr)
+	filingDate := parseISODate(p.FilingDate)
+
 	patent := domain.Patent{
-		Number:        number,
-		DisplayNumber: number,
-		Title:         strings.TrimSpace(p.Title),
-		Abstract:      strings.TrimSpace(p.Abstract),
-		Assignee:      strings.Join(assignees, "; "),
-		Inventors:     inventors,
-		FetchState:    domain.FetchCached,
-		Source:        domain.SourceUSPTO,
-		FetchedAt:     time.Now().UTC(),
-		GrantDate:     grantDate,
+		Number:          number,
+		DisplayNumber:   number,
+		Title:           strings.TrimSpace(p.InventionTitle),
+		Abstract:        strings.TrimSpace(p.AbstractText),
+		Assignee:        strings.Join(assignees, "; "),
+		Inventors:       inventors,
+		FetchState:      domain.FetchCached,
+		Source:          domain.SourceUSPTO,
+		FetchedAt:       time.Now().UTC(),
+		ApplicationDate: filingDate,
+		PublicationDate: grantDate,
+		GrantDate:       grantDate,
 	}
 	doc := domain.Document{
 		Number: number,
@@ -92,4 +105,15 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		Dated:  grantDate,
 	}
 	return Result{Patent: patent, Documents: []domain.Document{doc}}, nil
+}
+
+// parseISODate converts an ISO date string to a time.Time object.
+func parseISODate(s string) time.Time {
+	s = strings.TrimSpace(s)
+	for _, layout := range []string{"2006-01-02", "2006/01/02", time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }

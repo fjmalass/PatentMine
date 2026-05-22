@@ -10,13 +10,14 @@ import (
 
 // PatentFilter holds all filters applied to a patent list or relation view.
 type PatentFilter struct {
-	Search      string
-	ReviewState domain.ReviewState
+	Search         string
+	ReviewState    domain.ReviewState
+	Classification string
 }
 
 // IsActive reports whether any filter is set.
 func (f PatentFilter) IsActive() bool {
-	return f.Search != "" || f.ReviewState != domain.ReviewStateNone
+	return f.Search != "" || f.ReviewState != domain.ReviewStateNone || f.Classification != ""
 }
 
 // Labels returns human-readable filter labels for the current state.
@@ -27,6 +28,9 @@ func (f PatentFilter) Labels() []string {
 	}
 	if f.Search != "" {
 		labels = append(labels, "search:"+f.Search)
+	}
+	if f.Classification != "" {
+		labels = append(labels, "class:"+f.Classification)
 	}
 	return labels
 }
@@ -69,7 +73,15 @@ func (f *PatentFilter) parse(args []string) (msg string, err error) {
 		f.Search = strings.Join(args[1:], " ")
 		return fmt.Sprintf("filtering by search: %s", f.Search), nil
 
+	case "class", "classification", "cpc", "ipc", "c":
+		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
+			f.Classification = ""
+			return "classification filter cleared", nil
+		}
+		f.Classification = strings.Join(args[1:], " ")
+		return fmt.Sprintf("filtering by classification: %s", f.Classification), nil
+
 	default:
-		return "", fmt.Errorf("unknown filter type %q (try: state, search, inventor, clear)", args[0])
+		return "", fmt.Errorf("unknown filter type %q (try: state, search, class, clear)", args[0])
 	}
 }

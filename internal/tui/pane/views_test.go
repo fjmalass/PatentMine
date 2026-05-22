@@ -15,7 +15,7 @@ const (
 	testProjectPaneHeight   = 10
 	testSplashPaneWidth     = 100
 	testSplashPaneHeight    = 24
-	testCitationsPaneWidth  = 100
+	testCitationsPaneWidth  = 120
 	testCitationsPaneHeight = 10
 )
 
@@ -24,7 +24,7 @@ func TestProjectsPaneSelectsLastUsed(t *testing.T) {
 		{ID: "p-1", Name: "Project 1", CreatedAt: time.Now().UTC()},
 		{ID: "p-2", Name: "Project 2", CreatedAt: time.Now().UTC()},
 	}
-	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint")
+	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint", "AI: Gemini", "Search: Google, USPTO")
 
 	updated, _ := p.Update(projectsLoadedMsg{requestID: 0, projects: projects})
 	p = updated.(*Projects)
@@ -122,6 +122,54 @@ func TestDetailPaneJumpActive(t *testing.T) {
 	outNormal2 := d.body(80)
 	if strings.Contains(outNormal2, "[") {
 		t.Errorf("expected no inline shortcuts after deactivating jump mode, but found some: %s", outNormal2)
+	}
+}
+
+func TestCitationsPaneClassificationColumn(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
+
+	patents := []domain.PatentRow{
+		{
+			Number:          domain.MustParsePatentNumber("US0000002B2"),
+			Title:           "Second",
+			Classifications: []string{"G06F 17/30", "H04L 29/06"},
+		},
+	}
+	updated, _ := c.Update(citationsLoadedMsg{patents: patents, total: 1})
+	c = updated.(*Citations)
+
+	out := c.View(testCitationsPaneWidth, testCitationsPaneHeight)
+	for _, want := range []string{"CLASS", "G06F 17/30, H04"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("citations view missing expected content %q\n%s", want, out)
+		}
+	}
+}
+
+func TestPatentTableColumnsResponsive(t *testing.T) {
+	tests := []struct {
+		width       int
+		wantColumns []string
+	}{
+		{120, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "TAGS", "IDS", "FETCH"}},
+		{100, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "IDS", "FETCH"}},
+		{85, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "FETCH"}},
+		{70, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "FETCH"}},
+		{50, []string{"#", "NUMBER", "TITLE", "FETCH"}},
+	}
+
+	for _, tt := range tests {
+		cols := patentTableColumns(tt.width, "")
+		if len(cols) != len(tt.wantColumns) {
+			t.Errorf("width %d: got %d columns, want %d", tt.width, len(cols), len(tt.wantColumns))
+			continue
+		}
+		for i, col := range cols {
+			if col.label != tt.wantColumns[i] {
+				t.Errorf("width %d column %d: got label %q, want %q", tt.width, i, col.label, tt.wantColumns[i])
+			}
+		}
 	}
 }
 

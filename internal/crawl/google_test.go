@@ -9,12 +9,14 @@ import (
 
 const googleSamplePage = `<!doctype html><html><head>
 <meta name="DC.title" content="Fallback title"/>
+<meta itemprop="classification" content="CPC: G06F 16/245" />
 </head><body>
 <span itemprop="title">Widget apparatus and method </span>
 <section itemprop="abstract"><div class="abstract">An improved widget.</div></section>
 <dd itemprop="assigneeOriginal">Acme Corp</dd>
 <dd itemprop="inventor">Jane Doe</dd>
 <dd itemprop="inventor">John Roe</dd>
+<dd itemprop="classification"><span itemprop="code">A61K31/00</span></dd>
 <time itemprop="filingDate" datetime="2016-06-19">June 19, 2016</time>
 <time itemprop="publicationDate" datetime="2018-03-10">March 10, 2018</time>
 <section itemprop="claims">
@@ -52,6 +54,9 @@ func TestParseGoogleExtractsBibliographicFields(t *testing.T) {
 	}
 	if len(res.Patent.Inventors) != 2 || res.Patent.Inventors[0] != "Jane Doe" {
 		t.Errorf("inventors = %v", res.Patent.Inventors)
+	}
+	if len(res.Patent.Classifications) != 2 || res.Patent.Classifications[0] != "G06F16/245" || res.Patent.Classifications[1] != "A61K31/00" {
+		t.Errorf("classifications = %v", res.Patent.Classifications)
 	}
 	if res.Patent.ApplicationDate.Year() != 2016 || res.Patent.PublicationDate.Year() != 2018 {
 		t.Errorf("dates = app %v pub %v", res.Patent.ApplicationDate, res.Patent.PublicationDate)
