@@ -41,6 +41,7 @@ const (
 	OpenPatentNote      ID = "view.patent-note"
 	FamilyDepthMore     ID = "view.family-depth-more"
 	FamilyDepthLess     ID = "view.family-depth-less"
+	FamilyExportMermaid ID = "view.family-export-mermaid"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
@@ -151,6 +152,7 @@ func Default() (*Registry, error) {
 		Command{ID: OpenFamilyGraph, Name: "open.family", Aliases: []string{"family-tree", "tree"}, Usage: ":open.family [depth] [COUNTRY ...]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: FamilyDepthMore, Name: "family.depth.more", Aliases: []string{"family-depth-more"}, Usage: ":family.depth.more", Kind: KindView, Scopes: []Scope{ScopeFamily}},
 		Command{ID: FamilyDepthLess, Name: "family.depth.less", Aliases: []string{"family-depth-less"}, Usage: ":family.depth.less", Kind: KindView, Scopes: []Scope{ScopeFamily}},
+		Command{ID: FamilyExportMermaid, Name: "family.mermaid", Aliases: []string{"export-mermaid", "copy-mermaid"}, Usage: ":family.mermaid", Kind: KindView, Scopes: []Scope{ScopeFamily}},
 		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeIDS}},
 		Command{ID: OpenPatentNote, Name: "open.note", Aliases: []string{"patent-note", "project-note"}, Usage: ":open.note", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}},

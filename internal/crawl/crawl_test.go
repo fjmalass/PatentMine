@@ -1,11 +1,15 @@
 package crawl
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/store/sqlite"
 )
 
@@ -147,6 +151,31 @@ func TestCrawlerImportFile(t *testing.T) {
 	}
 	if len(cites) != 1 {
 		t.Fatalf("imported citation edges = %v, want one", cites)
+	}
+}
+
+func TestCrawlReportsDepthMetricsAndLogs(t *testing.T) {
+	repo := openRepo(t)
+	ctx := context.Background()
+	metrics := observability.NewMetrics()
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	crawler := newFileCrawler(t, repo, CrawlConfig{}).WithMetrics(metrics).WithLogger(logger)
+
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1, domain.CrawlProfileAll, false, nil); err != nil {
+		t.Fatalf("Crawl: %v", err)
+	}
+
+	snap := metrics.Snapshot()
+	if snap.Gauges["crawl.crawler.depth"] != 1 {
+		t.Fatalf("depth gauge = %d, want 1", snap.Gauges["crawl.crawler.depth"])
+	}
+	if snap.Gauges["crawl.crawler.max_depth"] != 1 {
+		t.Fatalf("max depth gauge = %d, want 1", snap.Gauges["crawl.crawler.max_depth"])
+	}
+	logs := logBuf.String()
+	if !strings.Contains(logs, `"msg":"crawl progress"`) || !strings.Contains(logs, `"depth":1`) || !strings.Contains(logs, `"max_depth":1`) {
+		t.Fatalf("crawl logs missing depth fields\n%s", logs)
 	}
 }
 

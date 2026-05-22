@@ -197,6 +197,21 @@ func TestAppCrawlDepthMaxCommandSetsStatus(t *testing.T) {
 	}
 }
 
+func TestAppCrawlProgressStatusIncludesDepth(t *testing.T) {
+	app := newTestApp(t)
+	app.handleEvent(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
+		JobID:           "job-1",
+		Depth:           2,
+		MaxDepth:        4,
+		CrawledCount:    3,
+		DiscoveredCount: 8,
+		Message:         "crawled US123",
+	}))
+	if !strings.Contains(app.status, "depth 2/4") {
+		t.Fatalf("status %q missing depth", app.status)
+	}
+}
+
 type refreshProbePane struct{ refreshes int }
 
 func (p *refreshProbePane) Scope() command.Scope                { return command.ScopeCatalog }

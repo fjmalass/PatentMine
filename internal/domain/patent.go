@@ -133,6 +133,7 @@ type PatentRow struct {
 	DisplayNumber   PatentNumber `json:"display_number"`
 	Title           string       `json:"title"`
 	Inventors       []Inventor   `json:"inventors"`
+	PublicationDate time.Time    `json:"publication_date"`
 	ExpirationDate  time.Time    `json:"expiration_date"`
 	Tags            []string     `json:"tags"`
 	Classifications []string     `json:"classifications"`

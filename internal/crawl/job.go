@@ -29,6 +29,8 @@ func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile
 				CrawledCount:    p.CrawledCount,
 				DiscoveredCount: p.DiscoveredCount,
 				PendingCount:    p.PendingCount,
+				Depth:           p.Depth,
+				MaxDepth:        p.MaxDepth,
 				CitationsCount:  p.CitationsCount,
 				CitedByCount:    p.CitedByCount,
 				ParentsCount:    p.ParentsCount,

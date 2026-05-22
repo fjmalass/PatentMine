@@ -162,6 +162,7 @@ func Default() *Keymaps {
 			"enter":  command.OpenDetail,
 			"l":      command.OpenDetail,
 			"/":      command.OpenSearch,
+			"y":      command.FamilyExportMermaid,
 			"]":      command.FamilyDepthMore,
 			"[":      command.FamilyDepthLess,
 			"+":      command.FamilyDepthMore,

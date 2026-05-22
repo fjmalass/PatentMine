@@ -170,6 +170,20 @@ Examples:
 3. `store.sqlite.list_patents`
 4. `store.sqlite.count_patents`
 
+For crawl progress specifically, the daemon also records live gauges such as:
+
+1. `crawl.crawler.crawled`
+2. `crawl.crawler.discovered`
+3. `crawl.crawler.pending`
+4. `crawl.crawler.depth`
+5. `crawl.crawler.max_depth`
+6. `crawl.crawler.citations`
+7. `crawl.crawler.cited_by`
+8. `crawl.crawler.parents`
+9. `crawl.crawler.children`
+
+These are the latest values reported by the active crawl loop, so they are useful for checking whether a crawl is still making progress and which BFS depth it is currently processing.
+
 This lets you see whether a slowdown is mostly:
 
 1. request handling overhead

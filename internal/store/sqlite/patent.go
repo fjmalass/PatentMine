@@ -36,14 +36,14 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 			(rel.to_number = p.number AND rel.kind = 'child'))`
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-				`p.inventors, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
+				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_country_code, ''), COALESCE(m.ids_in_full, 0), ` +
 				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, '')` +
 				relationCounts + `, p.classifications`,
 			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-		`p.inventors, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''` +
+		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''` +
 		relationCounts + `, p.classifications`, nil
 }
 
@@ -258,7 +258,8 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	var (
 		row                           domain.PatentRow
 		country, serial, kind, shown  string
-		inventorsJSON, expirationDate string
+		inventorsJSON, pubDate        string
+		expirationDate                string
 		fetchState, reviewState       string
 		tagsJSON                      string
 		idsKindCode, idsCountryCode   string
@@ -270,7 +271,7 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		classificationsJSON           string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
-		&inventorsJSON, &expirationDate, &fetchState, &reviewState, &tagsJSON,
+		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
 		&idsKindCode, &idsCountryCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt,
 		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON); err != nil {
 		return domain.PatentRow{}, err
@@ -278,6 +279,9 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
 	row.FetchState = domain.FetchState(fetchState)
 	row.ReviewState = domain.ReviewState(reviewState)
+	if t, err := decodeTime(pubDate); err == nil {
+		row.PublicationDate = t
+	}
 	if shown != "" {
 		display, err := domain.ParsePatentNumber(shown)
 		if err != nil {
@@ -382,7 +386,7 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 		// project members. When we are listing relations, we show all related
 		// patents and use the project JOIN to decorate them with state/tags.
 		joinType := "JOIN"
-		if !q.Relation.IsZero() && q.ReviewState == domain.ReviewStateNone {
+		if (!q.Relation.IsZero() || q.Inventor != "") && q.ReviewState == domain.ReviewStateNone {
 			joinType = "LEFT JOIN"
 		}
 		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")

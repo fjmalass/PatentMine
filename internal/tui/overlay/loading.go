@@ -152,6 +152,22 @@ func (l *Loading) sumProgress(fn func(proto.CrawlProgress) int) int {
 	return total
 }
 
+func (l *Loading) depthLabel() string {
+	current, maxDepth := 0, 0
+	for _, p := range l.progresses {
+		if p.MaxDepth > maxDepth {
+			maxDepth = p.MaxDepth
+		}
+		if p.Depth > current {
+			current = p.Depth
+		}
+	}
+	if maxDepth <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("  depth %d/%d", current, maxDepth)
+}
+
 func (l *Loading) View(w, h int) string {
 	var b strings.Builder
 	b.WriteString("\n")
@@ -186,6 +202,7 @@ func (l *Loading) View(w, h int) string {
 		}
 	} else {
 		totalDiscovered := l.sumProgress(func(p proto.CrawlProgress) int { return p.DiscoveredCount })
+		depthLabel := l.depthLabel()
 
 		if totalDiscovered > 0 {
 			pct := float64(totalCrawled) / float64(totalDiscovered)
@@ -195,6 +212,7 @@ func (l *Loading) View(w, h int) string {
 			if nJobs > 1 {
 				label = fmt.Sprintf(" %d/%d (%d patents)", totalCrawled, totalDiscovered, nJobs)
 			}
+			label += depthLabel
 			if barWidth > 0 {
 				filled := int(math.Round(pct * float64(barWidth)))
 				filled = max(filled, 0)

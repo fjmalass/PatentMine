@@ -413,7 +413,7 @@ func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 	case proto.EventCrawlProgress:
 		var p proto.CrawlProgress
 		if json.Unmarshal(ev.Params, &p) == nil {
-			a.setStatus(text.StatusCrawlProgress, p.JobID, p.CrawledCount, p.DiscoveredCount, p.Message)
+			a.setStatus(text.StatusCrawlProgress, p.JobID, p.Depth, p.MaxDepth, p.CrawledCount, p.DiscoveredCount, p.Message)
 		}
 		return nil
 	case proto.EventCrawlDone:

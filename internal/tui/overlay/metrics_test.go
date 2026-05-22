@@ -71,13 +71,13 @@ func TestMetricsOverlayTabSwitchAndStaleUpdate(t *testing.T) {
 			Timestamp: time.Unix(200, 0).UTC(),
 			Timings:   map[string]proto.TimingMetric{"rpc.method.ping": {Count: 1, AvgMillis: 1, LastMillis: 1}},
 			Counters:  map[string]int64{"crawl.crawler.fetch_total": 9},
-			Gauges:    map[string]int64{"crawl.crawler.pending": 2},
+			Gauges:    map[string]int64{"crawl.crawler.pending": 2, "crawl.crawler.depth": 1, "crawl.crawler.max_depth": 4},
 		},
 		history: []proto.MetricsSnapshot{{
 			Timestamp: time.Unix(200, 0).UTC(),
 			Timings:   map[string]proto.TimingMetric{"rpc.method.ping": {Count: 1, AvgMillis: 1, LastMillis: 1}},
 			Counters:  map[string]int64{"crawl.crawler.fetch_total": 9},
-			Gauges:    map[string]int64{"crawl.crawler.pending": 2},
+			Gauges:    map[string]int64{"crawl.crawler.pending": 2, "crawl.crawler.depth": 1, "crawl.crawler.max_depth": 4},
 		}},
 		requestID: 3,
 	}
@@ -94,6 +94,15 @@ func TestMetricsOverlayTabSwitchAndStaleUpdate(t *testing.T) {
 		t.Fatalf("expected counter metric on counters tab, view:\n%s", view)
 	}
 
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if !handled {
+		t.Fatal("expected tab key to be handled for gauges tab")
+	}
+	view = o.View(120, 16)
+	if !strings.Contains(view, "crawl.crawler.pending") {
+		t.Fatalf("expected existing crawl gauge on gauges tab, view:\n%s", view)
+	}
+
 	_, _ = o.Update(metricsLoadedMsg{requestID: 2, snapshot: proto.MetricsSnapshot{Counters: map[string]int64{"ignored": 99}}})
 	if _, ok := o.current.Counters["ignored"]; ok {
 		t.Fatal("stale metrics response should be ignored")
@@ -103,8 +112,15 @@ func TestMetricsOverlayTabSwitchAndStaleUpdate(t *testing.T) {
 	if !handled {
 		t.Fatal("expected h to be handled for previous tab")
 	}
+	if o.tab != metricsTabCounters {
+		t.Fatalf("expected counters tab after moving back, got %d", o.tab)
+	}
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if !handled {
+		t.Fatal("expected second h to be handled for timings tab")
+	}
 	if o.tab != metricsTabTimings {
-		t.Fatalf("expected timings tab after moving back, got %d", o.tab)
+		t.Fatalf("expected timings tab after second move back, got %d", o.tab)
 	}
 }
 

@@ -26,6 +26,8 @@ type Progress struct {
 	CrawledCount    int    // Total full records saved to the database.
 	DiscoveredCount int    // Total unique patent numbers seen (crawled + stubs).
 	PendingCount    int    // Items currently in the crawl queue.
+	Depth           int    // Current BFS depth being processed.
+	MaxDepth        int    // Maximum BFS depth this crawl will reach.
 	CitationsCount  int    // Total citation edges found.
 	CitedByCount    int    // Total cited-by edges found.
 	ParentsCount    int    // Total parent/continuation edges found.
@@ -178,6 +180,15 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		p.ParentsCount = stats.parents
 		p.ChildrenCount = stats.children
 
+		log.Info("crawl progress",
+			slog.String("root", root.String()),
+			slog.Int("depth", p.Depth),
+			slog.Int("max_depth", p.MaxDepth),
+			slog.Int("crawled", p.CrawledCount),
+			slog.Int("discovered", p.DiscoveredCount),
+			slog.Int("pending", p.PendingCount),
+			slog.String("message", p.Message))
+
 		if emit != nil {
 			emit(p)
 		}
@@ -185,6 +196,8 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			c.metrics.SetGauge("crawl.crawler.crawled", int64(p.CrawledCount))
 			c.metrics.SetGauge("crawl.crawler.discovered", int64(p.DiscoveredCount))
 			c.metrics.SetGauge("crawl.crawler.pending", int64(p.PendingCount))
+			c.metrics.SetGauge("crawl.crawler.depth", int64(p.Depth))
+			c.metrics.SetGauge("crawl.crawler.max_depth", int64(p.MaxDepth))
 			c.metrics.SetGauge("crawl.crawler.citations", int64(p.CitationsCount))
 			c.metrics.SetGauge("crawl.crawler.cited_by", int64(p.CitedByCount))
 			c.metrics.SetGauge("crawl.crawler.parents", int64(p.ParentsCount))
@@ -230,7 +243,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				return stubErr
 			}
 			report(Progress{
-				CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
+				CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue), Depth: cur.depth, MaxDepth: depthLimit,
 				Message: fmt.Sprintf("%s unavailable: %v", cur.number, err),
 			})
 			continue
@@ -261,7 +274,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 		ingested++
 		report(Progress{
-			CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue),
+			CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue), Depth: cur.depth, MaxDepth: depthLimit,
 			Message: fmt.Sprintf("crawled %s", recordNumber),
 		})
 	}

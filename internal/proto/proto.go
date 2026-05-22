@@ -450,6 +450,8 @@ type CrawlProgress struct {
 	CrawledCount    int    `json:"crawled_count"`
 	DiscoveredCount int    `json:"discovered_count"`
 	PendingCount    int    `json:"pending_count"`
+	Depth           int    `json:"depth"`
+	MaxDepth        int    `json:"max_depth"`
 	CitationsCount  int    `json:"citations_count,omitempty"`
 	CitedByCount    int    `json:"cited_by_count,omitempty"`
 	ParentsCount    int    `json:"parents_count,omitempty"`

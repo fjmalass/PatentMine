@@ -370,7 +370,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case tea.WindowSizeMsg:
 		a.width, a.height = m.Width, m.Height
-		return a, a.broadcast(pane.ResizeMsg{Width: m.Width, Height: max(m.Height-statusRows, 1)})
+		return a, tea.Batch(
+			a.broadcast(pane.ResizeMsg{Width: m.Width, Height: max(m.Height-statusRows, 1)}),
+			a.broadcastOverlays(m),
+		)
 	case tea.KeyMsg:
 		return a.handleKey(m)
 	case overlay.ConfirmAcceptMsg:

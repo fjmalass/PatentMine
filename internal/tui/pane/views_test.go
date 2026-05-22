@@ -95,7 +95,7 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.jumpToFirstNode()
 
 	out := g.View(120, 12)
-	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "stub  Child"} {
+	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "stub  Child", "y: copy Mermaid"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("family graph view missing %q\n%s", want, out)
 		}
@@ -136,6 +136,35 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.Command(command.FamilyDepthLess, Invocation{Repeat: 1})
 	if g.depth != 2 {
 		t.Fatalf("depth after FamilyDepthLess = %d, want 2", g.depth)
+	}
+}
+
+func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	parent := domain.MustParsePatentNumber("EP0000002A1")
+	child := domain.MustParsePatentNumber("JP0000003A1")
+	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
+	g.loading = false
+	g.nodes = []proto.FamilyGraphNode{
+		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root patent", FetchState: domain.FetchCached}, Depth: 0},
+		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent patent", FetchState: domain.FetchCached}, Depth: 1},
+		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "", FetchState: domain.FetchStub}, Depth: 1},
+	}
+	g.edges = []proto.FamilyGraphEdge{{Parent: parent, Child: root}, {Parent: root, Child: child, Inconsistent: true}}
+	g.rebuildRows()
+
+	out := g.mermaidGraph()
+	for _, want := range []string{
+		"flowchart TD",
+		"p_us_0000001_b2((\"US0000001B2<br/>Root patent\"))",
+		"p_ep_0000002_a1[\"EP0000002A1<br/>Parent patent\"]",
+		"p_jp_0000003_a1[\"JP0000003A1\"]",
+		"p_ep_0000002_a1 --> p_us_0000001_b2",
+		"p_us_0000001_b2 -.-> p_jp_0000003_a1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("mermaid export missing %q\n%s", want, out)
+		}
 	}
 }
 

@@ -102,13 +102,14 @@ func NewFamilyGraph(client *rpc.Client, theme render.Theme, root domain.PatentNu
 			}
 			return nil
 		},
-		command.FamilyDepthMore: func(Invocation) tea.Cmd { return g.adjustDepth(1) },
-		command.FamilyDepthLess: func(Invocation) tea.Cmd { return g.adjustDepth(-1) },
-		command.CrawlFamily:     func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileFamily) },
-		command.CrawlCitations:  func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileCitations) },
-		command.CrawlCitedBy:    func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileCitedBy) },
-		command.CrawlAll:        func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileAll) },
-		command.LookupPatent:    func(Invocation) tea.Cmd { return g.crawlSelected("") },
+		command.FamilyExportMermaid: func(Invocation) tea.Cmd { return g.copyMermaid() },
+		command.FamilyDepthMore:     func(Invocation) tea.Cmd { return g.adjustDepth(1) },
+		command.FamilyDepthLess:     func(Invocation) tea.Cmd { return g.adjustDepth(-1) },
+		command.CrawlFamily:         func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileFamily) },
+		command.CrawlCitations:      func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileCitations) },
+		command.CrawlCitedBy:        func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileCitedBy) },
+		command.CrawlAll:            func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileAll) },
+		command.LookupPatent:        func(Invocation) tea.Cmd { return g.crawlSelected("") },
 	}
 	return g
 }
@@ -357,9 +358,75 @@ func (g *FamilyGraph) summaryLine(w int) string {
 
 func (g *FamilyGraph) filterLine(w int) string {
 	if len(g.countries) == 0 {
-		return g.theme.Dim.Render(render.Truncate(" depth: use [ ] or -/+  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+		return g.theme.Dim.Render(render.Truncate(" depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
 	}
-	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  ·  depth: use [ ] or -/+  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  ·  depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+}
+
+func (g *FamilyGraph) copyMermaid() tea.Cmd {
+	if len(g.nodes) == 0 {
+		return status(text.StatusNoPatentSelected, false, "family graph is empty")
+	}
+	out := g.mermaidGraph()
+	return func() tea.Msg { return CopyToClipboardMsg{Text: out} }
+}
+
+func (g *FamilyGraph) mermaidGraph() string {
+	var b strings.Builder
+	b.WriteString("flowchart TD\n")
+	for _, node := range g.nodes {
+		id := mermaidNodeID(node.Patent.Number)
+		shapeOpen, shapeClose := "[\"", "\"]"
+		if node.Patent.Number == g.root {
+			shapeOpen, shapeClose = "((\"", "\"))"
+		}
+		fmt.Fprintf(&b, "  %s%s%s%s\n", id, shapeOpen, mermaidNodeText(node), shapeClose)
+	}
+	for _, edge := range g.edges {
+		parentLabel := mermaidNodeID(edge.Parent)
+		childLabel := mermaidNodeID(edge.Child)
+		arrow := " --> "
+		if edge.Inconsistent {
+			arrow = " -.-> "
+		}
+		b.WriteString("  ")
+		b.WriteString(parentLabel)
+		b.WriteString(arrow)
+		b.WriteString(childLabel)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func mermaidNodeText(node proto.FamilyGraphNode) string {
+	number := node.Patent.DisplayNumber
+	if number.IsZero() {
+		number = node.Patent.Number
+	}
+	title := strings.TrimSpace(node.Patent.Title)
+	if title == "" {
+		return mermaidEscape(number.String())
+	}
+	if len(title) > 48 {
+		title = strings.TrimSpace(title[:45]) + "..."
+	}
+	return mermaidEscape(number.String() + "<br/>" + title)
+}
+
+func mermaidNodeID(number domain.PatentNumber) string {
+	parts := []string{strings.ToLower(number.Country), strings.ToLower(number.Serial)}
+	if number.Kind != "" {
+		parts = append(parts, strings.ToLower(number.Kind))
+	}
+	return "p_" + strings.Join(parts, "_")
+}
+
+func mermaidEscape(text string) string {
+	replacer := strings.NewReplacer(
+		`\\`, `\\\\`,
+		`"`, `\\"`,
+	)
+	return replacer.Replace(text)
 }
 
 func (g *FamilyGraph) renderRow(row familyGraphRow, w int) string {
