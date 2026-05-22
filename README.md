@@ -76,6 +76,21 @@ The `makers run` task reads the same settings from environment variables:
 PATENTMINE_LOG_FILE=./logs/patentmine.log PATENTMINE_MAX_LOGS=5 makers run
 ```
 
+## Local Configuration
+
+PatentMine loads local secrets from `.env` if the file exists. `.env` is ignored by git; start from `.env.example` and keep real keys local.
+
+Supported `.env` keys:
+
+```sh
+PATENTMINE_IMPORT_SOURCE=uspto
+USPTO_API_KEY=your-uspto-odp-key
+# or:
+USPTO_API_KEY_FILE=~/.ssh/uspto_odp_key
+```
+
+Process environment variables and CLI flags still take precedence over `.env`.
+
 Back up the current dated log:
 
 ```sh

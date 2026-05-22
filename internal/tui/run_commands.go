@@ -59,7 +59,7 @@ func (m *Model) runCommand(command Command) (tea.Model, tea.Cmd) {
 		}
 		if m.importCfg.ImportSource == config.ImportSourceUSPTO {
 			if m.importCfg.USPTO.APIKey == "" {
-				m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+				m.err = "USPTO ODP source configured but no API key set (use .env, --uspto-api-key, or config.toml)"
 				return m, nil
 			}
 			return m.importByNumber(command.Args[0], importActionAdded)

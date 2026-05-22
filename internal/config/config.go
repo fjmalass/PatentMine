@@ -35,13 +35,15 @@ type Config struct {
 // Load reads config with the following priority (highest wins):
 //
 //  1. PATENTMINE_IMPORT_SOURCE / USPTO_API_KEY / USPTO_API_KEY_FILE env vars
-//  2. configs/config.toml (project-relative)
-//  3. ~/.config/patentmine/config.toml sections (user-global)
-//  4. ~/.ssh/uspto_odp_key (standard key file)
-//  5. Built-in defaults (ImportSource = google)
+//  2. .env (project-relative, local-only)
+//  3. configs/config.toml (project-relative)
+//  4. ~/.config/patentmine/config.toml sections (user-global)
+//  5. ~/.ssh/uspto_odp_key (standard key file)
+//  6. Built-in defaults (ImportSource = google)
 func Load() Config {
 	cfg := Config{ImportSource: ImportSourceGoogle}
 	applyFile(&cfg)
+	applyDotEnv(&cfg)
 	applyEnv(&cfg)
 	return cfg
 }
@@ -105,6 +107,68 @@ func applyEnv(cfg *Config) {
 			}
 		}
 	}
+}
+
+func applyDotEnv(cfg *Config) {
+	values, err := loadDotEnv(".env")
+	if err != nil {
+		return
+	}
+	if path := values["USPTO_API_KEY_FILE"]; path != "" {
+		if key := readFile(path); key != "" {
+			cfg.USPTO.APIKey = key
+		}
+	}
+	if v := values["USPTO_API_KEY"]; v != "" {
+		cfg.USPTO.APIKey = v
+	}
+	if v := values["PATENTMINE_IMPORT_SOURCE"]; v != "" {
+		cfg.ImportSource = ImportSource(v)
+	}
+}
+
+func loadDotEnv(path string) (map[string]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	values := map[string]string{}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := trimDotEnvValue(strings.TrimSpace(parts[1]))
+		if key != "" {
+			values[key] = value
+		}
+	}
+	return values, scanner.Err()
+}
+
+func trimDotEnvValue(value string) string {
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) && len(value) >= 2 {
+		return strings.Trim(value, `"`)
+	}
+	if strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`) && len(value) >= 2 {
+		return strings.Trim(value, `'`)
+	}
+	if i := strings.Index(value, " #"); i >= 0 {
+		value = value[:i]
+	}
+	return strings.TrimSpace(value)
 }
 
 // loadFile parses the configuration from the first available location.

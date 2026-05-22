@@ -5,6 +5,10 @@
 /backups/
 /build/
 
+.env
+.env.*
+!.env.example
+
 .claude
 .gemeni
 .agents

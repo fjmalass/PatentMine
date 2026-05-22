@@ -15,7 +15,7 @@ import (
 func (m *Model) importPatent(number string) (domain.PatentBundle, error) {
 	if m.importCfg.ImportSource == config.ImportSourceUSPTO {
 		if m.importCfg.USPTO.APIKey == "" {
-			return domain.PatentBundle{}, fmt.Errorf("USPTO import source configured but no API key set (see --uspto-api-key or config.toml)")
+			return domain.PatentBundle{}, fmt.Errorf("USPTO import source configured but no API key set (see .env, --uspto-api-key, or config.toml)")
 		}
 		bundle, err := importer.ImportUSPTO(number, m.importCfg.USPTO.APIKey, m.logger)
 		if err == nil {
@@ -205,7 +205,7 @@ func (m *Model) refreshCommand(args []string) (tea.Model, tea.Cmd) {
 	apiKey := m.importCfg.USPTO.APIKey
 
 	if importSource == config.ImportSourceUSPTO && apiKey == "" {
-		m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+		m.err = "USPTO ODP source configured but no API key set (use .env, --uspto-api-key, or config.toml)"
 		return m, nil
 	}
 
@@ -323,7 +323,7 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 	apiKey := m.importCfg.USPTO.APIKey
 
 	if importSource == config.ImportSourceUSPTO && apiKey == "" {
-		m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+		m.err = "USPTO ODP source configured but no API key set (use .env, --uspto-api-key, or config.toml)"
 		return m, nil
 	}
 
@@ -413,7 +413,7 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 	targetPatent := edge.TargetPatent
 
 	if importSource == config.ImportSourceUSPTO && apiKey == "" {
-		m.err = "USPTO ODP source configured but no API key set (use --uspto-api-key or config.toml)"
+		m.err = "USPTO ODP source configured but no API key set (use .env, --uspto-api-key, or config.toml)"
 		return m, nil
 	}
 

@@ -203,7 +203,7 @@ func (m *Model) viewUSPTOKeyWarning() string {
 	body.WriteString("but no API key was found in your configuration.\n\n")
 	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTheme)).Render("Fallback: Switching to Google Patents for this session."))
 	body.WriteString("\n\n")
-	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("To fix this, add your key to configs/config.toml or ~/.ssh/uspto_odp_key"))
+	body.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSubtle)).Render("To fix this, add your key to .env, configs/config.toml, or ~/.ssh/uspto_odp_key"))
 	return m.renderPopup("USPTO API Key Missing", body.String())
 }
 
