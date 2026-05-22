@@ -18,6 +18,7 @@ import (
 )
 
 const patentNoteTimeLayout = "2006-01-02 15:04:05"
+const patentNoteTimeBracket = "[" + patentNoteTimeLayout + "]"
 
 type patentNoteLoadedMsg struct {
 	patent domain.Patent
@@ -243,6 +244,10 @@ func (o *PatentNoteEditor) saveCmd() tea.Cmd {
 	if markdown == "" {
 		o.msg = "enter note text first or press D to clear"
 		return nil
+	}
+	if o.note == nil {
+		now := time.Now().Format(patentNoteTimeBracket)
+		markdown = now + " " + markdown
 	}
 	note := domain.PatentNote{Project: o.project, Patent: o.number, Markdown: markdown}
 	if o.note != nil {

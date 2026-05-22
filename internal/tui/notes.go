@@ -21,6 +21,7 @@ import (
 
 // notesTimeLayout formats note capture timestamps for display and export.
 const notesTimeLayout = "2006-01-02 15:04:05"
+const notesTimeLayoutBracket = "[" + notesTimeLayout + "]"
 
 // noteEntry is one captured passage: a locator, the time it was captured, and
 // the selected text.
@@ -155,7 +156,7 @@ func writeNotes(b *strings.Builder, entries []noteEntry) {
 	for _, e := range entries {
 		stamp := ""
 		if !e.CapturedAt.IsZero() {
-			stamp = "  (" + e.CapturedAt.Format(notesTimeLayout) + ")"
+			stamp = " " + e.CapturedAt.Format(notesTimeLayoutBracket)
 		}
 		b.WriteString("• " + e.Locator + stamp + "\n")
 		if e.Text != "" {
@@ -228,7 +229,7 @@ func (o *NotesBufferOverlay) View(maxW, maxH int) string {
 		for _, e := range entries {
 			stamp := ""
 			if !e.CapturedAt.IsZero() {
-				stamp = "  " + e.CapturedAt.Format(notesTimeLayout)
+				stamp = " " + e.CapturedAt.Format(notesTimeLayoutBracket)
 			}
 			b.WriteString(o.theme.Header.Render("  · " + e.Locator))
 			b.WriteString(o.theme.Dim.Render(stamp))
