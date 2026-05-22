@@ -339,33 +339,69 @@ func usptoFetchByPatentNumber(client *http.Client, apiKey, originalNumber string
 		}
 	}
 
-	// Stage 2: Prefixed metadata search
+	// Stage 2: Prefixed metadata search. ODP can return zero results for combined
+	// OR queries that match when run as individual field searches.
+	var stage2Queries []string
 	for _, sn := range []string{rawSearchNum, paddedSearchNum} {
-		q2 := fmt.Sprintf("applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:*%s* OR applicationMetaData.publicationSequenceNumberBag:*%s*",
-			sn, sn, pubNum)
+		stage2Queries = append(stage2Queries,
+			fmt.Sprintf("applicationMetaData.patentNumber:%s", sn),
+			fmt.Sprintf("applicationMetaData.earliestPublicationNumber:*%s*", sn),
+			fmt.Sprintf("applicationMetaData.publicationSequenceNumberBag:*%s*", sn),
+		)
+		if sn == paddedSearchNum {
+			break
+		}
+	}
+	stage2Queries = append(stage2Queries,
+		fmt.Sprintf("applicationMetaData.earliestPublicationNumber:*%s*", pubNum),
+		fmt.Sprintf("applicationMetaData.publicationSequenceNumberBag:*%s*", pubNum),
+	)
+	for _, q2 := range uniqueNonEmpty(stage2Queries) {
 		logger.Debug("uspto.search_stage2", "query", q2)
 		if appNum, data, err := usptoExecuteSearch(client, apiKey, url.QueryEscape(q2), fields, logger); err == nil {
 			return appNum, data, nil
 		}
+	}
+
+	// Stage 3: Non-prefixed raw field search
+	var stage3Queries []string
+	for _, sn := range []string{rawSearchNum, paddedSearchNum} {
+		stage3Queries = append(stage3Queries,
+			fmt.Sprintf("patentNumber:%s", sn),
+			fmt.Sprintf("earliestPublicationNumber:%s", sn),
+			fmt.Sprintf("publicationSequenceNumberBag:%s", sn),
+		)
 		if sn == paddedSearchNum {
 			break
 		}
 	}
-
-	// Stage 3: Non-prefixed raw field search
-	for _, sn := range []string{rawSearchNum, paddedSearchNum} {
-		q3 := fmt.Sprintf("patentNumber:%s OR earliestPublicationNumber:%s OR publicationSequenceNumberBag:%s",
-			sn, originalNumber, pubNum)
+	stage3Queries = append(stage3Queries,
+		fmt.Sprintf("earliestPublicationNumber:%s", originalNumber),
+		fmt.Sprintf("earliestPublicationNumber:%s", pubNum),
+		fmt.Sprintf("publicationSequenceNumberBag:%s", pubNum),
+	)
+	for _, q3 := range uniqueNonEmpty(stage3Queries) {
 		logger.Debug("uspto.search_stage3", "query", q3)
 		if appNum, data, err := usptoExecuteSearch(client, apiKey, url.QueryEscape(q3), fields, logger); err == nil {
 			return appNum, data, nil
 		}
-		if sn == paddedSearchNum {
-			break
-		}
 	}
 
 	return "", usptoApplicationData{}, fmt.Errorf("patent not found in USPTO ODP: %s (Tried numeric keyword, prefixed fields, and raw fields)", originalNumber)
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func usptoExecuteSearch(client *http.Client, apiKey, encodedQuery, fields string, logger *slog.Logger) (string, usptoApplicationData, error) {

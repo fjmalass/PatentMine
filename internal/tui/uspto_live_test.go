@@ -97,6 +97,14 @@ func TestLiveUSPTOTUIAddAndRefreshCommandsViaDotEnv(t *testing.T) {
 	if !strings.Contains(model.message, "refresh complete:") {
 		t.Fatalf("expected refresh confirmation message, got %q", model.message)
 	}
+
+	model = refreshFirstLiveCitationDetail(t, model, repo, ctx)
+	if model.err != "" {
+		t.Fatalf("unexpected TUI error after selected citation refresh: %s", model.err)
+	}
+	if !strings.Contains(model.message, "refreshed ") {
+		t.Fatalf("expected selected citation refresh confirmation, got %q", model.message)
+	}
 }
 
 func runLiveTUICommand(t *testing.T, model *Model, command Command) *Model {
@@ -130,6 +138,70 @@ func runLiveTUICommand(t *testing.T, model *Model, command Command) *Model {
 		t.Fatalf("command %q did not produce a refresh result", command.Name)
 	}
 	return next
+}
+
+func runLiveTUIKey(t *testing.T, model *Model, key string) (*Model, []tea.Msg) {
+	t.Helper()
+	updated, cmd := model.Update(teaKey(key))
+	next, ok := updated.(*Model)
+	if !ok {
+		t.Fatalf("expected *Model from key %q, got %T", key, updated)
+	}
+	msgs := collectLiveTUIMessages(t, cmd)
+	for _, msg := range msgs {
+		switch msg := msg.(type) {
+		case refreshResultMsg, refreshDetailsResultMsg:
+			updated, _ = next.Update(msg)
+			next = updated.(*Model)
+		}
+	}
+	return next, msgs
+}
+
+func refreshFirstLiveCitationDetail(t *testing.T, model *Model, repo *sqliterepo.Repository, ctx context.Context) *Model {
+	t.Helper()
+	relations := []struct {
+		key      string
+		mode     viewMode
+		relation string
+	}{
+		{key: keyCites, mode: viewCites, relation: domain.RelationCites},
+		{key: keyCitedBy, mode: viewCitedBy, relation: domain.RelationCitedBy},
+	}
+	var lastErr string
+	for _, relation := range relations {
+		updated, _ := model.Update(teaKey(relation.key))
+		viewModel := updated.(*Model)
+		edges, err := repo.ListCitations(ctx, viewModel.ProjectID, viewModel.current.Number, relation.relation, storage.ListCitationsOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(edges) > 5 {
+			edges = edges[:5]
+		}
+		for idx, edge := range edges {
+			candidate := *viewModel
+			candidate.mode = relation.mode
+			candidate.citationLocalIdx = idx
+			refreshed, _ := runLiveTUIKey(t, &candidate, keyRefresh)
+			if refreshed.err != "" {
+				lastErr = refreshed.err
+				continue
+			}
+			patent, err := repo.GetPatent(ctx, refreshed.ProjectID, edge.TargetPatent)
+			if err != nil {
+				lastErr = err.Error()
+				continue
+			}
+			if patent.Title == "" || patent.Title == string(edge.TargetPatent) || patent.ImportSource != ImportSourceUSPTO {
+				lastErr = "selected citation target did not get USPTO metadata"
+				continue
+			}
+			return refreshed
+		}
+	}
+	t.Fatalf("no live citation target refreshed through selected TUI path; last error: %s", lastErr)
+	return model
 }
 
 func collectLiveTUIMessages(t *testing.T, cmd tea.Cmd) []tea.Msg {

@@ -252,6 +252,48 @@ func TestImportUSPTOUsesAPIKey(t *testing.T) {
 	}
 }
 
+func TestUSPTOFetchByPublicationNumberTriesIndividualFieldQueries(t *testing.T) {
+	apiKey := "test-secret-key"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-API-KEY"); got != apiKey {
+			t.Errorf("expected X-API-KEY %q, got %q", apiKey, got)
+		}
+		if !strings.Contains(r.URL.Path, "/applications/search") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		query := r.URL.Query().Get("q")
+		if query == "applicationMetaData.earliestPublicationNumber:*20090250599*" {
+			json.NewEncoder(w).Encode(usptoSearchResponse{
+				Count: 1,
+				PatentFileWrapperDataBag: []usptoApplicationData{{
+					ApplicationNumberText: "12348841",
+					ApplicationMetaData: usptoMetaData{
+						PatentNumber:   "8164048",
+						InventionTitle: "Publication lookup match",
+					},
+				}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(usptoSearchResponse{Count: 0})
+	}))
+	defer server.Close()
+
+	oldURL := usptoBaseURL
+	usptoBaseURL = server.URL
+	defer func() { usptoBaseURL = oldURL }()
+
+	appNum, data, err := usptoFetchByPatentNumber(http.DefaultClient, apiKey, "US20090250599A1", nil)
+	if err != nil {
+		t.Fatalf("expected publication-number lookup to resolve, got %v", err)
+	}
+	if appNum != "12348841" || data.ApplicationMetaData.InventionTitle != "Publication lookup match" {
+		t.Fatalf("unexpected lookup result app=%q data=%+v", appNum, data)
+	}
+}
+
 func TestImportUSPTORespectsMissingAPIKey(t *testing.T) {
 	_, err := ImportUSPTO("US11611785B2", "  ", nil)
 	if err == nil || !strings.Contains(err.Error(), "API key is required") {

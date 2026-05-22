@@ -362,6 +362,7 @@ func (m *Model) refreshVisibleCitationDetails() (tea.Model, tea.Cmd) {
 					skippedCount++
 					continue
 				}
+				bundle = bundleForCitationTarget(bundle, edge.TargetPatent)
 
 				if importSource == config.ImportSourceUSPTO && apiKey != "" {
 					bundle.Patent.ImportSource = ImportSourceUSPTO
@@ -434,6 +435,7 @@ func (m *Model) refreshSelectedCitationDetail() (tea.Model, tea.Cmd) {
 			if err != nil {
 				return refreshDetailsResultMsg{err: err}
 			}
+			bundle = bundleForCitationTarget(bundle, targetPatent)
 			bundle.Patent.ImportSource = string(importSource)
 			bundle.Patent.ReviewState = domain.ReviewStateCached
 			_, existsErr := repo.GetPatent(ctx, projectID, edge.TargetPatent)
@@ -462,6 +464,7 @@ func (m *Model) importCitationDetailsCommand(edge domain.CitationEdge) tea.Cmd {
 		if err != nil {
 			return refreshDetailsResultMsg{err: fmt.Errorf("bulk import failed for %s: %w", target, err)}
 		}
+		bundle = bundleForCitationTarget(bundle, target)
 
 		bundle.Patent.ReviewState = domain.ReviewStateStored
 		bundle.Patent.ImportSource = string(importSource)
@@ -482,4 +485,41 @@ func nextCitationDetailReviewState(current string, exists bool) string {
 		return current
 	}
 	return domain.ReviewStateCached
+}
+
+func bundleForCitationTarget(bundle domain.PatentBundle, target domain.PatentNumber) domain.PatentBundle {
+	original := bundle.Patent.Number
+	if target == "" || original == "" || strings.EqualFold(string(original), string(target)) {
+		return bundle
+	}
+	bundle.Patent.Number = target
+	for i := range bundle.Sections {
+		if bundle.Sections[i].PatentNumber == "" || strings.EqualFold(string(bundle.Sections[i].PatentNumber), string(original)) {
+			bundle.Sections[i].PatentNumber = target
+		}
+	}
+	for i := range bundle.Classifications {
+		if bundle.Classifications[i].PatentNumber == "" || strings.EqualFold(string(bundle.Classifications[i].PatentNumber), string(original)) {
+			bundle.Classifications[i].PatentNumber = target
+		}
+	}
+	for i := range bundle.References {
+		if bundle.References[i].PatentNumber == "" || strings.EqualFold(string(bundle.References[i].PatentNumber), string(original)) {
+			bundle.References[i].PatentNumber = target
+		}
+	}
+	for i := range bundle.Citations {
+		if bundle.Citations[i].SourcePatent == "" || strings.EqualFold(string(bundle.Citations[i].SourcePatent), string(original)) {
+			bundle.Citations[i].SourcePatent = target
+		}
+	}
+	for i := range bundle.FamilyEdges {
+		if strings.EqualFold(string(bundle.FamilyEdges[i].ParentNumber), string(original)) {
+			bundle.FamilyEdges[i].ParentNumber = target
+		}
+		if strings.EqualFold(string(bundle.FamilyEdges[i].ChildNumber), string(original)) {
+			bundle.FamilyEdges[i].ChildNumber = target
+		}
+	}
+	return bundle
 }
