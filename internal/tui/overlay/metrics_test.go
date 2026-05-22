@@ -47,6 +47,12 @@ func TestMetricsOverlayDefaultsToTimings(t *testing.T) {
 	if !strings.Contains(view, "rpc.method.patent.list") {
 		t.Fatalf("expected timing metric name, view:\n%s", view)
 	}
+	if !strings.Contains(view, "AVG") || !strings.Contains(view, "COUNT") || !strings.Contains(view, "HIST") {
+		t.Fatalf("expected timing column header, view:\n%s", view)
+	}
+	if !strings.Contains(view, historyLegendLine()) {
+		t.Fatalf("expected history legend, view:\n%s", view)
+	}
 	if strings.Contains(view, "engine.worker.submit_total") {
 		t.Fatalf("expected counters to stay hidden on default timings tab, view:\n%s", view)
 	}
@@ -99,5 +105,48 @@ func TestMetricsOverlayTabSwitchAndStaleUpdate(t *testing.T) {
 	}
 	if o.tab != metricsTabTimings {
 		t.Fatalf("expected timings tab after moving back, got %d", o.tab)
+	}
+}
+
+func TestFormatTimingSummaryUsesFixedWidthColumns(t *testing.T) {
+	summary := formatTimingSummary(proto.TimingMetric{
+		Count:      12,
+		Errors:     3,
+		AvgMillis:  7,
+		MaxMillis:  123,
+		LastMillis: 1400,
+	})
+
+	want := "avg [  7ms]  max [123ms]  last [ 1.4s]  cnt    12  err    3"
+	if summary != want {
+		t.Fatalf("unexpected summary:\nwant: %q\n got: %q", want, summary)
+	}
+}
+
+func TestFormatTimingSummaryColumnsCompactsLargeCounts(t *testing.T) {
+	summary := formatTimingSummaryColumns(proto.TimingMetric{
+		Count:      2320,
+		Errors:     14742,
+		AvgMillis:  27,
+		MaxMillis:  116,
+		LastMillis: 9,
+	})
+
+	want := "[ 27ms]  [116ms]  [  9ms]  [2320]  [ 14k]"
+	if summary != want {
+		t.Fatalf("unexpected column summary:\nwant: %q\n got: %q", want, summary)
+	}
+}
+
+func TestSparklineUsesUnicodeBlocksAndMissingSampleMarker(t *testing.T) {
+	got := sparkline([]float64{1, 2, 3}, 5)
+	want := "··▁▅█"
+	if got != want {
+		t.Fatalf("unexpected sparkline:\nwant: %q\n got: %q", want, got)
+	}
+
+	empty := sparkline(nil, 4)
+	if empty != "····" {
+		t.Fatalf("unexpected empty sparkline: %q", empty)
 	}
 }

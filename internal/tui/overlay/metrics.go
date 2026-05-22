@@ -181,6 +181,7 @@ func (o *MetricsOverlay) View(maxW, maxH int) string {
 	var lines []string
 	lines = append(lines, o.renderTabs(maxW))
 	lines = append(lines, o.theme.Dim.Render(render.Truncate(o.statusLine(), maxW)))
+	lines = append(lines, o.theme.Dim.Render(render.Truncate(historyLegendLine(), maxW)))
 	if o.err != nil {
 		lines = append(lines, o.theme.Error.Render(render.Truncate("Error: "+o.err.Error(), maxW)))
 	}
@@ -319,6 +320,9 @@ func (o *MetricsOverlay) renderSectionLines(sections []metricsSection, maxW int)
 	lines := make([]metricsRenderLine, 0, len(sections)*4)
 	for _, section := range sections {
 		lines = append(lines, metricsRenderLine{text: section.title})
+		if header := metricsSummaryHeader(o.tab, nameWidth); header != "" {
+			lines = append(lines, metricsRenderLine{text: header})
+		}
 		for _, row := range section.rows {
 			line := fmt.Sprintf("  %s  %s  %s", render.Pad(row.name, nameWidth), row.summary, row.history)
 			lines = append(lines, metricsRenderLine{text: line, selected: rowIndex == selectedRow, row: true})
@@ -351,7 +355,7 @@ func buildTimingSections(current proto.MetricsSnapshot, history []proto.MetricsS
 			name:       formatMetricLabel(name),
 			group:      group,
 			tags:       metricTags(name),
-			summary:    fmt.Sprintf("%s  cnt %d  err %d", formatTimingSummary(metric), metric.Count, metric.Errors),
+			summary:    formatTimingSummaryColumns(metric),
 			history:    fmt.Sprintf("hist %s", sparkline(timingIntervalSeries(history, name), metricsBarWidth)),
 			importance: timingImportance(metric),
 		})
@@ -478,15 +482,81 @@ func formatMetricLabel(name string) string {
 	return name + " " + strings.Join(parts, "")
 }
 
-func formatTimingSummary(metric proto.TimingMetric) string {
-	return fmt.Sprintf("avg %s  max %s  last %s", formatMillis(metric.AvgMillis), formatMillis(metric.MaxMillis), formatMillis(metric.LastMillis))
+func metricsSummaryHeader(tab metricsTab, nameWidth int) string {
+	switch tab {
+	case metricsTabTimings:
+		return fmt.Sprintf("  %s  %7s  %7s  %7s  %6s  %6s  HIST", render.Pad("", nameWidth), "AVG", "MAX", "LAST", "COUNT", "ERR")
+	default:
+		return ""
+	}
 }
 
-func formatMillis(ms int64) string {
+func formatTimingSummary(metric proto.TimingMetric) string {
+	return fmt.Sprintf(
+		"avg %s  max %s  last %s  cnt %5s  err %4s",
+		formatMillisColumn(metric.AvgMillis),
+		formatMillisColumn(metric.MaxMillis),
+		formatMillisColumn(metric.LastMillis),
+		formatCountCompact(metric.Count),
+		formatCountCompact(metric.Errors),
+	)
+}
+
+func formatTimingSummaryColumns(metric proto.TimingMetric) string {
+	return fmt.Sprintf(
+		"%7s  %7s  %7s  %6s  %6s",
+		formatMillisColumn(metric.AvgMillis),
+		formatMillisColumn(metric.MaxMillis),
+		formatMillisColumn(metric.LastMillis),
+		formatCountColumn(metric.Count),
+		formatCountColumn(metric.Errors),
+	)
+}
+
+func formatMillisColumn(ms int64) string {
+	return fmt.Sprintf("[%5s]", formatMillisCompact(ms))
+}
+
+func formatMillisCompact(ms int64) string {
 	if ms < 1000 {
 		return fmt.Sprintf("%dms", ms)
 	}
+	if ms >= 100_000 {
+		return fmt.Sprintf("%.0fs", float64(ms)/1000)
+	}
 	return fmt.Sprintf("%.1fs", float64(ms)/1000)
+}
+
+func formatCountColumn(v int64) string {
+	return fmt.Sprintf("[%4s]", formatCountCompact(v))
+}
+
+func formatCountCompact(v int64) string {
+	neg := v < 0
+	if neg {
+		v = -v
+	}
+
+	var out string
+	switch {
+	case v < 10_000:
+		out = fmt.Sprintf("%d", v)
+	case v < 1_000_000:
+		out = fmt.Sprintf("%dk", v/1000)
+	default:
+		whole := v / 1_000_000
+		frac := (v % 1_000_000) / 100_000
+		if whole >= 10 || frac == 0 {
+			out = fmt.Sprintf("%dm", whole)
+		} else {
+			out = fmt.Sprintf("%d.%dm", whole, frac)
+		}
+	}
+
+	if neg {
+		return "-" + out
+	}
+	return out
 }
 
 func timingImportance(metric proto.TimingMetric) int64 {
@@ -581,9 +651,9 @@ func latestGaugeTrend(history []proto.MetricsSnapshot, name string) int64 {
 
 func sparkline(series []float64, width int) string {
 	if len(series) == 0 {
-		return strings.Repeat(".", width)
+		return strings.Repeat("·", width)
 	}
-	ramp := []rune(".-:=+*#%@")
+	ramp := []rune("▁▂▃▄▅▆▇█")
 	if len(series) > width {
 		series = series[len(series)-width:]
 	}
@@ -597,7 +667,7 @@ func sparkline(series []float64, width int) string {
 	}
 	var b strings.Builder
 	if pad := width - len(series); pad > 0 {
-		b.WriteString(strings.Repeat(".", pad))
+		b.WriteString(strings.Repeat("·", pad))
 	}
 	for _, value := range series {
 		scaled := int(math.Round((value - minValue) / (maxValue - minValue) * float64(len(ramp)-1)))
@@ -605,6 +675,10 @@ func sparkline(series []float64, width int) string {
 		b.WriteRune(ramp[scaled])
 	}
 	return b.String()
+}
+
+func historyLegendLine() string {
+	return "History: ▁ low  █ high  · no sample"
 }
 
 func appendMetricsHistory(history []proto.MetricsSnapshot, snapshot proto.MetricsSnapshot) []proto.MetricsSnapshot {
