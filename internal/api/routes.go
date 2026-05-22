@@ -186,7 +186,7 @@ func (s *Server) handleReviewState(w http.ResponseWriter, r *http.Request) {
 	}
 	params := proto.ReviewStateParams{
 		Project: domain.ProjectID(body.Project),
-		Patent:  number,
+		Patents: []domain.PatentNumber{number},
 		State:   body.State,
 	}
 	var res proto.Empty
@@ -292,7 +292,7 @@ func (s *Server) handlePatentTagAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	params := proto.TagParams{
 		Project: domain.ProjectID(r.PathValue("id")),
-		Patent:  number,
+		Patents: []domain.PatentNumber{number},
 		Name:    body.Name,
 	}
 	var res proto.Empty
@@ -308,7 +308,7 @@ func (s *Server) handlePatentTagDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	params := proto.TagParams{
 		Project: domain.ProjectID(r.PathValue("id")),
-		Patent:  number,
+		Patents: []domain.PatentNumber{number},
 		Name:    r.PathValue("name"),
 	}
 	var res proto.Empty

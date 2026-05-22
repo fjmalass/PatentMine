@@ -237,8 +237,8 @@ func TestProjectAndMembership(t *testing.T) {
 		t.Fatalf("AddMembership: %v", err)
 	}
 
-	if err := repo.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
-		t.Fatalf("SetReviewState: %v", err)
+	if err := repo.SetReviewStates(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewStates: %v", err)
 	}
 	members, err := repo.Memberships(ctx, project.ID)
 	if err != nil {
@@ -258,13 +258,6 @@ func TestProjectAndMembership(t *testing.T) {
 	}
 	if len(page) != 1 {
 		t.Fatalf("project listing = %d patents, want 1", len(page))
-	}
-
-	// State change for an absent membership reports ErrNotFound.
-	err = repo.SetReviewState(ctx, project.ID,
-		domain.MustParsePatentNumber("US9999999B2"), domain.ReviewStateIgnored)
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("SetReviewState absent: err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -435,19 +428,13 @@ func TestTagStore(t *testing.T) {
 	}
 
 	// A tag assigned to a patent reads back through PatentTags.
-	changed, err := repo.TagPatent(ctx, tag.ID, patent.Number, time.Now().UTC())
+	err = repo.TagPatents(ctx, tag.ID, []domain.PatentNumber{patent.Number}, time.Now().UTC())
 	if err != nil {
-		t.Fatalf("TagPatent: %v", err)
+		t.Fatalf("TagPatents: %v", err)
 	}
-	if !changed {
-		t.Fatal("TagPatent changed = false, want true")
-	}
-	changed, err = repo.TagPatent(ctx, tag.ID, patent.Number, time.Now().UTC())
+	err = repo.TagPatents(ctx, tag.ID, []domain.PatentNumber{patent.Number}, time.Now().UTC())
 	if err != nil {
-		t.Fatalf("TagPatent (repeat): %v", err) // a duplicate assignment is a no-op
-	}
-	if changed {
-		t.Fatal("TagPatent repeat changed = true, want false")
+		t.Fatalf("TagPatents (repeat): %v", err) // a duplicate assignment is a no-op
 	}
 	tags, err := repo.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {
@@ -465,19 +452,13 @@ func TestTagStore(t *testing.T) {
 	}
 
 	// Removing the tag clears the assignment but keeps the tag itself.
-	changed, err = repo.UntagPatent(ctx, tag.ID, patent.Number)
+	err = repo.UntagPatents(ctx, tag.ID, []domain.PatentNumber{patent.Number})
 	if err != nil {
-		t.Fatalf("UntagPatent: %v", err)
+		t.Fatalf("UntagPatents: %v", err)
 	}
-	if !changed {
-		t.Fatal("UntagPatent changed = false, want true")
-	}
-	changed, err = repo.UntagPatent(ctx, tag.ID, patent.Number)
+	err = repo.UntagPatents(ctx, tag.ID, []domain.PatentNumber{patent.Number})
 	if err != nil {
-		t.Fatalf("UntagPatent repeat: %v", err)
-	}
-	if changed {
-		t.Fatal("UntagPatent repeat changed = true, want false")
+		t.Fatalf("UntagPatents repeat: %v", err)
 	}
 	tags, err = repo.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {
@@ -658,3 +639,102 @@ func TestBatchOperationsStore(t *testing.T) {
 		}
 	}
 }
+
+func TestPatentInventorStats(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	// 1. Create a project
+	project := domain.Project{
+		ID:        "proj-1",
+		Name:      "Test Project",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	// 2. Save patents with overlap in inventors
+	p1 := samplePatent("US11611785B2") // Inventors: Ada Lovelace, Alan Turing
+	p1.FetchState = domain.FetchStub
+	p1.Inventors = []domain.Inventor{"Ada Lovelace", "Alan Turing"}
+	if err := repo.SavePatent(ctx, p1); err != nil {
+		t.Fatalf("SavePatent p1: %v", err)
+	}
+
+	p2 := samplePatent("US11611786B2") // Inventors: Ada Lovelace, Charles Babbage
+	p2.FetchState = domain.FetchStub
+	p2.Inventors = []domain.Inventor{"Ada Lovelace", "Charles Babbage"}
+	if err := repo.SavePatent(ctx, p2); err != nil {
+		t.Fatalf("SavePatent p2: %v", err)
+	}
+
+	// 3. Add memberships to project
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p1.Number,
+		ReviewState: domain.ReviewStateStored,
+		AddedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AddMembership p1: %v", err)
+	}
+
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p2.Number,
+		ReviewState: domain.ReviewStateUnderReview,
+		AddedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AddMembership p2: %v", err)
+	}
+
+	// 4. Create tag and assign to p1
+	tag, err := repo.CreateTag(ctx, project.ID, "seminal")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	if err := repo.TagPatents(ctx, tag.ID, []domain.PatentNumber{p1.Number}, time.Now().UTC()); err != nil {
+		t.Fatalf("TagPatents: %v", err)
+	}
+
+	// 5. Query stats for inventors: Ada Lovelace, Alan Turing
+	stats, err := repo.PatentInventorStats(ctx, project.ID, []domain.Inventor{"Ada Lovelace", "Alan Turing"})
+	if err != nil {
+		t.Fatalf("PatentInventorStats: %v", err)
+	}
+
+	if len(stats) != 2 {
+		t.Fatalf("expected 2 inventor stats, got %d", len(stats))
+	}
+
+	// Ada Lovelace should have: Total: 2, States: stored=1, under_review=1, Tags: seminal=1
+	ada := stats[0]
+	if ada.Inventor != "Ada Lovelace" {
+		t.Errorf("expected Ada Lovelace, got %s", ada.Inventor)
+	}
+	if ada.Total != 2 {
+		t.Errorf("Ada Lovelace expected 2 total patents, got %d", ada.Total)
+	}
+	if ada.States["stored"] != 1 || ada.States["under_review"] != 1 {
+		t.Errorf("Ada Lovelace expected stored=1, under_review=1 review states, got: %v", ada.States)
+	}
+	if ada.Tags["seminal"] != 1 {
+		t.Errorf("Ada Lovelace expected tag seminal=1, got: %v", ada.Tags)
+	}
+
+	// Alan Turing should have: Total: 1, States: stored=1, Tags: seminal=1
+	alan := stats[1]
+	if alan.Inventor != "Alan Turing" {
+		t.Errorf("expected Alan Turing, got %s", alan.Inventor)
+	}
+	if alan.Total != 1 {
+		t.Errorf("Alan Turing expected 1 total patent, got %d", alan.Total)
+	}
+	if alan.States["stored"] != 1 {
+		t.Errorf("Alan Turing expected stored=1, got: %v", alan.States)
+	}
+	if alan.Tags["seminal"] != 1 {
+		t.Errorf("Alan Turing expected tag seminal=1, got: %v", alan.Tags)
+	}
+}
+

@@ -255,7 +255,7 @@ func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {
 
 func (a *App) runReviewState(id command.ID, target domain.ReviewState) (tea.Model, tea.Cmd) {
 	return a.runBulkAction(id, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
-		return pane.SetReviewStatesCmd(a.client, project, patents, target)
+		return pane.SetReviewStateCmd(a.client, project, patents, target)
 	})
 }
 

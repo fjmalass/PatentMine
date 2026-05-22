@@ -507,3 +507,68 @@ func (r *Repo) AllRelations(ctx context.Context, n domain.PatentNumber) (out []d
 	}
 	return out, nil
 }
+
+// PatentInventorStats aggregates database statistics for a set of inventors within a project.
+func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID, inventors []domain.Inventor) (out []domain.InventorStats, err error) {
+	defer r.observeDuration("patent_inventor_stats", time.Now(), &err)
+	if len(inventors) == 0 {
+		return nil, nil
+	}
+
+	out = make([]domain.InventorStats, len(inventors))
+	for idx, inv := range inventors {
+		stats := domain.InventorStats{
+			Inventor: string(inv),
+			States:   make(map[string]int),
+			Tags:     make(map[string]int),
+		}
+
+		query := `SELECT p.number, COALESCE(m.state, '') AS state, COALESCE(t.name, '') AS tag_name
+			FROM patent p
+			LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
+			LEFT JOIN patent_tag pt ON pt.patent_number = p.number
+			LEFT JOIN tag t ON t.id = pt.tag_id AND t.project_id = ?
+			WHERE EXISTS (
+				SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?
+			)`
+
+		rows, err := r.reader.QueryContext(ctx, query, string(project), string(project), string(inv))
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: query inventor stats for %q: %w", inv, err)
+		}
+
+		err = func() error {
+			defer rows.Close()
+			seen := make(map[string]bool)
+			for rows.Next() {
+				var number, state, tagName string
+				if err := rows.Scan(&number, &state, &tagName); err != nil {
+					return fmt.Errorf("store/sqlite: scan inventor stats row: %w", err)
+				}
+
+				if !seen[number] {
+					stats.Total++
+					seen[number] = true
+
+					if state != string(domain.ReviewStateStored) && state != string(domain.ReviewStateUnderReview) {
+						state = "other"
+					}
+					stats.States[state]++
+				}
+
+				if tagName != "" {
+					stats.Tags[tagName]++
+				}
+			}
+			return rows.Err()
+		}()
+		if err != nil {
+			return nil, err
+		}
+
+		out[idx] = stats
+	}
+
+	return out, nil
+}
+

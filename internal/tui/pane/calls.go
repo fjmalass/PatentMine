@@ -144,58 +144,33 @@ func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain
 	}
 }
 
-// SetReviewStateCmd changes a patent's state in the active project.
-func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, state domain.ReviewState) tea.Cmd {
+// SetReviewStateCmd changes multiple memberships' states. When a single patent is targeted,
+// it is passed in a slice of length 1.
+func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
 		if err := client.Call(ctx, proto.MethodReviewState,
-			proto.ReviewStateParams{Project: project, Patent: number, State: string(state)}, &res); err != nil {
+			proto.ReviewStateParams{Project: project, Patents: patents, State: string(state)}, &res); err != nil {
 			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusSetState, Args: []any{number.String(), string(state), string(project)}}
+		if len(patents) == 1 {
+			return StatusMsg{Key: text.StatusSetState, Args: []any{patents[0].String(), string(state), string(project)}}
+		}
+		return StatusMsg{Key: text.StatusSetState, Args: []any{fmt.Sprintf("%d patents", len(patents)), string(state), string(project)}}
 	}
 }
 
-// TagPatentCmd tags a patent within the active project, creating the tag when
-// the project does not have it yet.
-func TagPatentCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+// TagPatentCmd tags multiple patents within the active project, creating the tag when
+// the project does not have it yet. When a single patent is targeted, it is passed in a slice of length 1.
+func TagPatentCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
 		if err := client.Call(ctx, proto.MethodTagPatent,
-			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
-			return StatusMsg{Key: text.StatusTagFailed, Args: []any{err.Error()}, Error: true}
-		}
-		return StatusMsg{Key: text.StatusTagged, Args: []any{number.String(), name, string(project)}}
-	}
-}
-
-// UntagPatentCmd removes a tag from a patent within the active project.
-func UntagPatentCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := callContext()
-		defer cancel()
-		var res proto.Empty
-		if err := client.Call(ctx, proto.MethodUntagPatent,
-			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
-			return StatusMsg{Key: text.StatusUntagFailed, Args: []any{err.Error()}, Error: true}
-		}
-		return StatusMsg{Key: text.StatusUntagged, Args: []any{name, number.String()}}
-	}
-}
-
-// TagPatentsCmd tags multiple patents within the active project, creating the tag when
-// the project does not have it yet.
-func TagPatentsCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := callContext()
-		defer cancel()
-		var res proto.Empty
-		if err := client.Call(ctx, proto.MethodTagPatents,
-			proto.TagBatchParams{Project: project, Patents: patents, Name: name}, &res); err != nil {
+			proto.TagParams{Project: project, Patents: patents, Name: name}, &res); err != nil {
 			return StatusMsg{Key: text.StatusTagFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if len(patents) == 1 {
@@ -205,37 +180,20 @@ func TagPatentsCmd(client *rpc.Client, project domain.ProjectID, patents []domai
 	}
 }
 
-// UntagPatentsCmd removes a tag from multiple patents within the active project.
-func UntagPatentsCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {
+// UntagPatentCmd removes a tag from multiple patents within the active project.
+func UntagPatentCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
-		if err := client.Call(ctx, proto.MethodUntagPatents,
-			proto.TagBatchParams{Project: project, Patents: patents, Name: name}, &res); err != nil {
+		if err := client.Call(ctx, proto.MethodUntagPatent,
+			proto.TagParams{Project: project, Patents: patents, Name: name}, &res); err != nil {
 			return StatusMsg{Key: text.StatusUntagFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if len(patents) == 1 {
 			return StatusMsg{Key: text.StatusUntagged, Args: []any{name, patents[0].String()}}
 		}
 		return StatusMsg{Key: text.StatusUntagged, Args: []any{name, fmt.Sprintf("%d patents", len(patents))}}
-	}
-}
-
-// SetReviewStatesCmd changes multiple memberships' states.
-func SetReviewStatesCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := callContext()
-		defer cancel()
-		var res proto.Empty
-		if err := client.Call(ctx, proto.MethodReviewStates,
-			proto.ReviewStateBatchParams{Project: project, Patents: patents, State: string(state)}, &res); err != nil {
-			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
-		}
-		if len(patents) == 1 {
-			return StatusMsg{Key: text.StatusSetState, Args: []any{patents[0].String(), string(state), string(project)}}
-		}
-		return StatusMsg{Key: text.StatusSetState, Args: []any{fmt.Sprintf("%d patents", len(patents)), string(state), string(project)}}
 	}
 }
 
@@ -316,31 +274,37 @@ func ListTagTaxonomyCmd(client *rpc.Client, project domain.ProjectID) tea.Cmd {
 	}
 }
 
-// TagPatentStrictCmd assigns a taxonomy tag to a patent.
-func TagPatentStrictCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+// TagPatentStrictCmd assigns a taxonomy tag to multiple patents.
+func TagPatentStrictCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
 		if err := client.Call(ctx, proto.MethodTagPatentStrict,
-			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
+			proto.TagParams{Project: project, Patents: patents, Name: name}, &res); err != nil {
 			return StatusMsg{Key: text.StatusTagPatentAddFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusTagPatentAdded, Args: []any{name, number.String()}}
+		if len(patents) == 1 {
+			return StatusMsg{Key: text.StatusTagPatentAdded, Args: []any{name, patents[0].String()}}
+		}
+		return StatusMsg{Key: text.StatusTagPatentAdded, Args: []any{name, fmt.Sprintf("%d patents", len(patents))}}
 	}
 }
 
-// UntagPatentStrictCmd removes a tag assignment from a patent.
-func UntagPatentStrictCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, name string) tea.Cmd {
+// UntagPatentStrictCmd removes a tag assignment from multiple patents.
+func UntagPatentStrictCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.Empty
 		if err := client.Call(ctx, proto.MethodUntagPatentStrict,
-			proto.TagParams{Project: project, Patent: number, Name: name}, &res); err != nil {
+			proto.TagParams{Project: project, Patents: patents, Name: name}, &res); err != nil {
 			return StatusMsg{Key: text.StatusTagPatentDeleteFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusTagPatentDeleted, Args: []any{name, number.String()}}
+		if len(patents) == 1 {
+			return StatusMsg{Key: text.StatusTagPatentDeleted, Args: []any{name, patents[0].String()}}
+		}
+		return StatusMsg{Key: text.StatusTagPatentDeleted, Args: []any{name, fmt.Sprintf("%d patents", len(patents))}}
 	}
 }
 

@@ -572,7 +572,7 @@ func (o *TagPatentOverlay) applyTagsCmd() tea.Cmd {
 			if finalState == CheckChecked {
 				// Assign tag to all selected patents using the batch method
 				var empty proto.Empty
-				if err := o.client.Call(ctx, proto.MethodTagPatents, proto.TagBatchParams{
+				if err := o.client.Call(ctx, proto.MethodTagPatent, proto.TagParams{
 					Project: o.project,
 					Patents: o.patents,
 					Name:    tagName,
@@ -582,7 +582,7 @@ func (o *TagPatentOverlay) applyTagsCmd() tea.Cmd {
 			} else if finalState == CheckUnchecked {
 				// Remove tag from all selected patents using the batch method
 				var empty proto.Empty
-				if err := o.client.Call(ctx, proto.MethodUntagPatents, proto.TagBatchParams{
+				if err := o.client.Call(ctx, proto.MethodUntagPatent, proto.TagParams{
 					Project: o.project,
 					Patents: o.patents,
 					Name:    tagName,

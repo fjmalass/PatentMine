@@ -141,29 +141,6 @@ func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent 
 	}, nil
 }
 
-// SetReviewState changes a membership's state, or returns store.ErrNotFound
-// when the patent is not a member of the project.
-func (r *Repo) SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.ReviewState) (err error) {
-	defer r.observeDuration("set_review_state", time.Now(), &err)
-	if !state.Valid() {
-		return fmt.Errorf("store/sqlite: invalid review state %q", state)
-	}
-	res, err := r.writer.ExecContext(ctx,
-		`UPDATE membership SET state = ? WHERE project_id = ? AND patent_number = ?`,
-		string(state), string(project), patent.Normalized())
-	if err != nil {
-		return fmt.Errorf("store/sqlite: set review state: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("store/sqlite: set review state: %w", err)
-	}
-	if affected == 0 {
-		return store.ErrNotFound
-	}
-	return nil
-}
-
 // SetReviewStates changes multiple memberships' states in a single transaction, or returns store.ErrNotFound.
 func (r *Repo) SetReviewStates(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) (err error) {
 	defer r.observeDuration("set_review_states", time.Now(), &err)

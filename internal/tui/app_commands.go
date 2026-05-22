@@ -99,6 +99,40 @@ func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
 
 func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) { return a.openIDS() }
 
+func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
+	detail, ok := a.focusedPane().(*pane.Detail)
+	if !ok {
+		return a, nil
+	}
+
+	// Only activate on Enter if the cursor is actually on the Inventors field
+	if !detail.IsCursorOnInventors() {
+		return a, nil
+	}
+
+	return a.openInventors(detail.Patent())
+}
+
+func (a *App) cmdOpenInventorsDirect(invocation) (tea.Model, tea.Cmd) {
+	detail, ok := a.focusedPane().(*pane.Detail)
+	if !ok {
+		return a, nil
+	}
+	// Direct shortcut v lands directly in the popup
+	return a.openInventors(detail.Patent())
+}
+
+func (a *App) openInventors(p domain.Patent) (tea.Model, tea.Cmd) {
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	o, cmd := overlay.NewInventorStatsOverlay(a.client, a.theme, a.text, p, project)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+
 func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()))
 }
@@ -167,7 +201,7 @@ func (a *App) cmdTag(inv invocation) (tea.Model, tea.Cmd) {
 	}
 	name := strings.Join(inv.args, " ")
 	return a.runBulkAction(command.Tag, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
-		return pane.TagPatentsCmd(a.client, project, patents, name)
+		return pane.TagPatentCmd(a.client, project, patents, name)
 	})
 }
 
@@ -178,7 +212,7 @@ func (a *App) cmdUntag(inv invocation) (tea.Model, tea.Cmd) {
 	}
 	name := strings.Join(inv.args, " ")
 	return a.runBulkAction(command.Untag, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
-		return pane.UntagPatentsCmd(a.client, project, patents, name)
+		return pane.UntagPatentCmd(a.client, project, patents, name)
 	})
 }
 
@@ -276,25 +310,25 @@ func (a *App) cmdTagTaxonomyDelete(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.DeleteTagTaxonomyCmd(a.client, a.activeProject.ID, name)
 }
 
-// cmdTagStrict assigns a tag to the selected patent within the active project.
+// cmdTagStrict assigns a tag to the selected patent(s) within the active project.
 func (a *App) cmdTagStrict(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
 		return a.usageError(command.TagStrict)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runAction(command.TagStrict, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.TagPatentStrictCmd(a.client, project, patent, name)
+	return a.runBulkAction(command.TagStrict, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.TagPatentStrictCmd(a.client, project, patents, name)
 	})
 }
 
-// cmdUntagStrict removes a tag assignment from the selected patent within the active project.
+// cmdUntagStrict removes a tag assignment from the selected patent(s) within the active project.
 func (a *App) cmdUntagStrict(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
 		return a.usageError(command.UntagStrict)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runAction(command.UntagStrict, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.UntagPatentStrictCmd(a.client, project, patent, name)
+	return a.runBulkAction(command.UntagStrict, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.UntagPatentStrictCmd(a.client, project, patents, name)
 	})
 }
 

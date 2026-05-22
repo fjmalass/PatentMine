@@ -19,17 +19,15 @@ type Method string
 const (
 	MethodPing           Method = "ping"
 	MethodPatentGet      Method = "patent.get"
+	MethodPatentInventorStats Method = "patent.inventor_stats"
 	MethodPatentList     Method = "patent.list"
 	MethodPatentDelete   Method = "patent.delete"
 	MethodProjectList    Method = "project.list"
 	MethodProjectCreate  Method = "project.create"
 	MethodMembershipAdd  Method = "membership.add"
 	MethodReviewState       Method = "review_state.set"
-	MethodReviewStates      Method = "review_state.set_batch"
 	MethodTagPatent         Method = "tag.assign"
-	MethodTagPatents        Method = "tag.assign_batch"
 	MethodUntagPatent       Method = "tag.remove"
-	MethodUntagPatents      Method = "tag.remove_batch"
 	MethodCrawlFamily       Method = "crawl.family"
 	MethodCrawlCancel       Method = "crawl.cancel"
 	MethodImportFile        Method = "import.file"
@@ -156,6 +154,12 @@ type PatentListResult struct {
 	Total   int                `json:"total"`
 }
 
+// PatentInventorStatsResult carries database statistics for multiple inventors.
+type PatentInventorStatsResult struct {
+	Stats []domain.InventorStats `json:"stats"`
+}
+
+
 // ProjectListResult carries every project.
 type ProjectListResult struct {
 	Projects []domain.Project `json:"projects"`
@@ -182,30 +186,16 @@ type MembershipAddResult struct {
 	FetchStarted bool `json:"fetch_started"`
 }
 
-// ReviewStateParams sets a membership's state.
+// ReviewStateParams sets one or more memberships' states.
 type ReviewStateParams struct {
-	Project domain.ProjectID    `json:"project"`
-	Patent  domain.PatentNumber `json:"patent"`
-	State   string              `json:"state"`
-}
-
-// ReviewStateBatchParams sets multiple memberships' states.
-type ReviewStateBatchParams struct {
 	Project domain.ProjectID      `json:"project"`
 	Patents []domain.PatentNumber `json:"patents"`
 	State   string                `json:"state"`
 }
 
-// TagParams names a tag to assign to, or remove from, a patent within a
+// TagParams names a tag to assign to, or remove from, one or more patents within a
 // project. On assign an unknown name creates the tag.
 type TagParams struct {
-	Project domain.ProjectID    `json:"project"`
-	Patent  domain.PatentNumber `json:"patent"`
-	Name    string              `json:"name"`
-}
-
-// TagBatchParams names a tag to assign to, or remove from, multiple patents within a project.
-type TagBatchParams struct {
 	Project domain.ProjectID      `json:"project"`
 	Patents []domain.PatentNumber `json:"patents"`
 	Name    string                `json:"name"`

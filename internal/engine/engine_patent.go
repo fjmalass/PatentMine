@@ -21,6 +21,17 @@ func (e *Engine) Patent(ctx context.Context, n domain.PatentNumber) (patent doma
 	return e.repo.Patent(ctx, record)
 }
 
+// PatentInventorStats fetches the patent and aggregates metrics for all its inventors.
+func (e *Engine) PatentInventorStats(ctx context.Context, number domain.PatentNumber, project domain.ProjectID) (stats []domain.InventorStats, err error) {
+	defer e.observeDuration("engine.patent_inventor_stats", time.Now(), &err)
+	p, err := e.Patent(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	return e.repo.PatentInventorStats(ctx, project, p.Inventors)
+}
+
+
 // recordNumber resolves any of a record's document numbers (application,
 // publication, grant) to the record's permanent number. An unknown number is
 // returned unchanged, so the caller's own lookup reports it as missing.

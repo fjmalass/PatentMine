@@ -99,44 +99,6 @@ func (r *Repo) TagByName(ctx context.Context, project domain.ProjectID, name str
 	return t, nil
 }
 
-// TagPatent assigns a tag to a patent. An existing assignment is left as is.
-func (r *Repo) TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (changed bool, err error) {
-	defer r.observeDuration("tag_patent", time.Now(), &err)
-	if patent.IsZero() {
-		return false, errors.New("store/sqlite: tag assignment needs a patent")
-	}
-	if assignedAt.IsZero() {
-		assignedAt = time.Now()
-	}
-	res, err := r.writer.ExecContext(ctx,
-		`INSERT INTO patent_tag (tag_id, patent_number, created_at) VALUES (?,?,?)
-		 ON CONFLICT(tag_id, patent_number) DO NOTHING`,
-		tagID, patent.Normalized(), encodeTime(assignedAt))
-	if err != nil {
-		return false, fmt.Errorf("store/sqlite: tag patent: %w", err)
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("store/sqlite: tag patent: %w", err)
-	}
-	return rows > 0, nil
-}
-
-// UntagPatent removes a tag from a patent. A missing assignment is a no-op.
-func (r *Repo) UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (changed bool, err error) {
-	defer r.observeDuration("untag_patent", time.Now(), &err)
-	res, err := r.writer.ExecContext(ctx,
-		`DELETE FROM patent_tag WHERE tag_id = ? AND patent_number = ?`,
-		tagID, patent.Normalized())
-	if err != nil {
-		return false, fmt.Errorf("store/sqlite: untag patent: %w", err)
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("store/sqlite: untag patent: %w", err)
-	}
-	return rows > 0, nil
-}
 
 // TagPatents assigns a tag to multiple patents in a single transaction.
 func (r *Repo) TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) (err error) {

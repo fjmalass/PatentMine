@@ -210,8 +210,8 @@ func TestAPIPatentListHonorsReviewStateAlias(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
 	}
-	if err := env.repo.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
-		t.Fatalf("SetReviewState: %v", err)
+	if err := env.repo.SetReviewStates(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewStates: %v", err)
 	}
 
 	w := do(t, env.handler, http.MethodGet, "/patents?project=p1&review_state=under_review", "")

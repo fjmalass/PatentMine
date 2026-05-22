@@ -145,60 +145,10 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 	}
 }
 
-// SetReviewState changes a membership's state, rejecting transitions the
-// domain rules disallow. This is where the state machine is enforced.
-func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, target domain.ReviewState) (err error) {
+// SetReviewState changes multiple memberships' states, enforcing domain rules and announcing changes once.
+// When a single patent is targeted, it is passed in a slice of length 1.
+func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, target domain.ReviewState) (err error) {
 	defer e.observeDuration("engine.set_review_state", time.Now(), &err)
-	if !target.Valid() {
-		return fmt.Errorf("engine: invalid review state %q", target)
-	}
-	record, err := e.recordNumber(ctx, patent)
-	if err != nil {
-		return err
-	}
-	current, err := e.repo.Membership(ctx, project, record)
-	if errors.Is(err, store.ErrNotFound) {
-		// Patent not yet in the project — add it so the state change can proceed.
-		if _, addErr := e.AddToProject(ctx, project, record); addErr != nil {
-			return addErr
-		}
-		current, err = e.repo.Membership(ctx, project, record)
-	}
-	if err != nil {
-		return err
-	}
-	if !current.ReviewState.CanTransitionTo(target) {
-		return fmt.Errorf("engine: cannot move membership from %q to %q", current.ReviewState, target)
-	}
-	if current.ReviewState == target {
-		e.incCounter("engine.review_state.noop_total", 1)
-		e.log(ctx, slog.LevelDebug, "review state unchanged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("state", string(target)))
-		return nil
-	}
-	if err := e.repo.SetReviewState(ctx, project, record, target); err != nil {
-		e.log(ctx, slog.LevelError, "set review state failed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("target", string(target)), slog.String("error", err.Error()))
-		return err
-	}
-	after := current
-	after.ReviewState = target
-	e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("from", string(current.ReviewState)), slog.String("to", string(target)))
-	e.recordActivity(ctx, observability.Record{
-		Action:   "membership.set_state",
-		Entity:   "membership",
-		EntityID: string(project) + "/" + record.String(),
-		Status:   "committed",
-		Before:   current,
-		After:    after,
-		Metadata: map[string]any{"requested_number": patent.String()},
-	})
-	e.announceChange()
-	e.incCounter("engine.review_state.changed_total", 1)
-	return nil
-}
-
-// SetReviewStateBatch changes multiple memberships' states, enforcing domain rules and announcing changes once.
-func (e *Engine) SetReviewStateBatch(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, target domain.ReviewState) (err error) {
-	defer e.observeDuration("engine.set_review_state_batch", time.Now(), &err)
 	if !target.Valid() {
 		return fmt.Errorf("engine: invalid review state %q", target)
 	}
@@ -231,14 +181,35 @@ func (e *Engine) SetReviewStateBatch(ctx context.Context, project domain.Project
 		beforeMemberships[record] = current
 	}
 
+	// Segregate actual changes from no-ops
+	changedRecords := make([]domain.PatentNumber, 0, len(records))
+	noopsCount := 0
+	for _, record := range records {
+		current := beforeMemberships[record]
+		if current.ReviewState == target {
+			noopsCount++
+			e.log(ctx, slog.LevelDebug, "review state unchanged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("state", string(target)))
+			continue
+		}
+		changedRecords = append(changedRecords, record)
+	}
+
+	if noopsCount > 0 {
+		e.incCounter("engine.review_state.noop_total", int64(noopsCount))
+	}
+
+	if len(changedRecords) == 0 {
+		return nil
+	}
+
 	// Update states
-	if err := e.repo.SetReviewStates(ctx, project, records, target); err != nil {
-		e.log(ctx, slog.LevelError, "set review state batch failed", slog.String("project_id", string(project)), slog.Int("count", len(records)), slog.String("target", string(target)), slog.String("error", err.Error()))
+	if err := e.repo.SetReviewStates(ctx, project, changedRecords, target); err != nil {
+		e.log(ctx, slog.LevelError, "set review state batch failed", slog.String("project_id", string(project)), slog.Int("count", len(changedRecords)), slog.String("target", string(target)), slog.String("error", err.Error()))
 		return err
 	}
 
 	// Record activities
-	for _, record := range records {
+	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
 		rec := observability.Record{
 			Action:   "membership.set_state",
@@ -257,7 +228,7 @@ func (e *Engine) SetReviewStateBatch(ctx context.Context, project domain.Project
 	}
 
 	e.announceChange()
-	e.incCounter("engine.review_state.changed_total", int64(len(records)))
+	e.incCounter("engine.review_state.changed_total", int64(len(changedRecords)))
 	return nil
 }
 

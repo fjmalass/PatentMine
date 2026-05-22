@@ -184,14 +184,23 @@ func (a *App) statusText() string {
 	return a.status + versionText + visual
 }
 
+// DynamicSize is implemented by overlays that wish to customize their own size
+// rather than use the default bounding box.
+type DynamicSize interface {
+	OverlaySize(termW, termH int) (w, h int)
+}
+
 // compositeOverlay draws the focused overlay centred over the dimmed screen.
 func (a *App) compositeOverlay(screen string) string {
 	boxWidth := min(a.width-overlayMargin, overlayMaxWidth)
 	boxHeight := min(a.height-overlayMargin, overlayMaxHeight)
+	ov := a.focusedOverlay()
+	if ds, ok := ov.(DynamicSize); ok {
+		boxWidth, boxHeight = ds.OverlaySize(a.width, a.height)
+	}
 	if boxWidth < 16 || boxHeight < 6 {
 		return screen // terminal too small to frame an overlay
 	}
-	ov := a.focusedOverlay()
 	innerWidth := boxWidth - overlayChrome
 	content := a.theme.Title.Render(ov.Title()) + "\n\n" +
 		ov.View(innerWidth, boxHeight-overlayChrome)

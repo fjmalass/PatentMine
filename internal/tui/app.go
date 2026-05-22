@@ -113,6 +113,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.PatentDelete:       (*App).cmdPatentDelete,
 	command.AIAnalyze:          (*App).cmdAIAnalyze,
 	command.SettingsAI:         (*App).cmdSettingsAI,
+	command.OpenInventors:       (*App).cmdOpenInventors,
+	command.OpenInventorsDirect: (*App).cmdOpenInventorsDirect,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every

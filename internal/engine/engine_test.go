@@ -165,15 +165,15 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 	}
 
 	// stored -> deleted is allowed.
-	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateDeleted); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateDeleted); err != nil {
 		t.Fatalf("stored->deleted: %v", err)
 	}
 	// deleted -> ignored is rejected by the domain transition rules.
-	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateIgnored); err == nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateIgnored); err == nil {
 		t.Fatal("deleted->ignored should be rejected")
 	}
 	// deleted -> stored (undelete) is allowed.
-	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateStored); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateStored); err != nil {
 		t.Fatalf("deleted->stored: %v", err)
 	}
 }
@@ -238,7 +238,7 @@ func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	patent := domain.MustParsePatentNumber("US9999999B2")
-	if err := eng.SetReviewState(ctx, project.ID, patent, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateUnderReview); err != nil {
 		t.Fatalf("SetReviewState: %v", err)
 	}
 
@@ -429,7 +429,7 @@ func TestEngineResolvesDocumentNumberToRecord(t *testing.T) {
 	}
 
 	// Changing state by the application number resolves too.
-	if err := eng.SetReviewState(ctx, project.ID, application, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{application}, domain.ReviewStateUnderReview); err != nil {
 		t.Fatalf("SetReviewState by application number: %v", err)
 	}
 
@@ -519,24 +519,24 @@ func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
 	events, unsub := eng.Subscribe()
 	defer unsub()
 
-	if err := eng.TagPatentStrict(ctx, project.ID, patent.Number, "prior_art"); err != nil {
+	if err := eng.TagPatentStrict(ctx, project.ID, []domain.PatentNumber{patent.Number}, "prior_art"); err != nil {
 		t.Fatalf("TagPatentStrict: %v", err)
 	}
 	expectDBChanged(t, events, "tag assignment")
-	if err := eng.TagPatentStrict(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
+	if err := eng.TagPatentStrict(ctx, project.ID, []domain.PatentNumber{patent.Number}, "PRIOR_ART"); err != nil {
 		t.Fatalf("TagPatentStrict repeat: %v", err)
 	}
 	expectNoDBChanged(t, events, "repeat tag assignment")
-	if err := eng.UntagPatentStrict(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
+	if err := eng.UntagPatentStrict(ctx, project.ID, []domain.PatentNumber{patent.Number}, "PRIOR_ART"); err != nil {
 		t.Fatalf("UntagPatentStrict: %v", err)
 	}
 	expectDBChanged(t, events, "tag removal")
 
-	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
 		t.Fatalf("SetReviewState: %v", err)
 	}
 	expectDBChanged(t, events, "review state change")
-	if err := eng.SetReviewState(ctx, project.ID, patent.Number, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
 		t.Fatalf("SetReviewState repeat: %v", err)
 	}
 	expectNoDBChanged(t, events, "repeat review state")
@@ -600,7 +600,7 @@ func TestEngineTagging(t *testing.T) {
 	}
 
 	// TagPatent creates the named tag and links it to the patent.
-	if err := eng.TagPatent(ctx, project.ID, patent.Number, "key_reference"); err != nil {
+	if err := eng.TagPatent(ctx, project.ID, []domain.PatentNumber{patent.Number}, "key_reference"); err != nil {
 		t.Fatalf("TagPatent: %v", err)
 	}
 	tags, err := eng.PatentTags(ctx, project.ID, patent.Number)
@@ -612,7 +612,7 @@ func TestEngineTagging(t *testing.T) {
 	}
 
 	// UntagPatent matches the name case-insensitively.
-	if err := eng.UntagPatent(ctx, project.ID, patent.Number, "KEY_REFERENCE"); err != nil {
+	if err := eng.UntagPatent(ctx, project.ID, []domain.PatentNumber{patent.Number}, "KEY_REFERENCE"); err != nil {
 		t.Fatalf("UntagPatent: %v", err)
 	}
 	tags, err = eng.PatentTags(ctx, project.ID, patent.Number)
@@ -624,11 +624,11 @@ func TestEngineTagging(t *testing.T) {
 	}
 
 	// Removing a tag the patent does not carry is an error.
-	if err := eng.UntagPatent(ctx, project.ID, patent.Number, "missing"); err == nil {
+	if err := eng.UntagPatent(ctx, project.ID, []domain.PatentNumber{patent.Number}, "missing"); err == nil {
 		t.Fatal("UntagPatent of an unassigned tag should fail")
 	}
 	// A blank name is rejected on assign.
-	if err := eng.TagPatent(ctx, project.ID, patent.Number, "  "); err == nil {
+	if err := eng.TagPatent(ctx, project.ID, []domain.PatentNumber{patent.Number}, "  "); err == nil {
 		t.Fatal("TagPatent with a blank name should fail")
 	}
 }
@@ -887,10 +887,10 @@ func TestEngineBatchOperations(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	// 1. Test SetReviewStateBatch.
-	err = eng.SetReviewStateBatch(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, domain.ReviewStateUnderReview)
+	// 1. Test SetReviewState.
+	err = eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, domain.ReviewStateUnderReview)
 	if err != nil {
-		t.Fatalf("SetReviewStateBatch: %v", err)
+		t.Fatalf("SetReviewState: %v", err)
 	}
 
 	// Verify states are updated.
@@ -905,21 +905,21 @@ func TestEngineBatchOperations(t *testing.T) {
 	}
 
 	// Transition p1 to Deleted (allowed from UnderReview).
-	err = eng.SetReviewStateBatch(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateDeleted)
+	err = eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateDeleted)
 	if err != nil {
 		t.Fatalf("failed to transition to Deleted: %v", err)
 	}
 
 	// Verify invalid transition rules: transition from Deleted to Ignored is forbidden.
-	err = eng.SetReviewStateBatch(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateIgnored)
+	err = eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateIgnored)
 	if err == nil {
 		t.Fatal("expected error when attempting forbidden review state transition Ignored from Deleted")
 	}
 
-	// 2. Test TagPatents.
-	err = eng.TagPatents(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, "batch_tag")
+	// 2. Test TagPatent.
+	err = eng.TagPatent(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, "batch_tag")
 	if err != nil {
-		t.Fatalf("TagPatents: %v", err)
+		t.Fatalf("TagPatent: %v", err)
 	}
 
 	// Verify they are tagged.
@@ -933,10 +933,10 @@ func TestEngineBatchOperations(t *testing.T) {
 		}
 	}
 
-	// 3. Test UntagPatents.
-	err = eng.UntagPatents(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, "batch_tag")
+	// 3. Test UntagPatent.
+	err = eng.UntagPatent(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, "batch_tag")
 	if err != nil {
-		t.Fatalf("UntagPatents: %v", err)
+		t.Fatalf("UntagPatent: %v", err)
 	}
 
 	// Verify they are untagged.

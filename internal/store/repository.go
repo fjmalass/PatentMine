@@ -81,6 +81,9 @@ type Repository interface {
 	ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error)
 	// CountPatents returns the total rows matching q, ignoring its paging.
 	CountPatents(ctx context.Context, q PatentQuery) (int, error)
+	// PatentInventorStats aggregates database statistics for a set of inventors within a project.
+	PatentInventorStats(ctx context.Context, project domain.ProjectID, inventors []domain.Inventor) ([]domain.InventorStats, error)
+
 
 	// SaveDocument inserts or updates one life-stage document of a record.
 	SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error
@@ -107,12 +110,10 @@ type Repository interface {
 	// ListProjects returns every project, ordered by name.
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 
-	// AddMembership links a patent to a project; an existing link is left as is.
+		// AddMembership links a patent to a project; an existing link is left as is.
 	AddMembership(ctx context.Context, m domain.Membership) error
 	// Membership returns one membership, or ErrNotFound.
 	Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error)
-	// SetReviewState changes a membership's state, or returns ErrNotFound.
-	SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.ReviewState) error
 	// SetReviewStates changes multiple memberships' states in a transaction, or returns ErrNotFound.
 	SetReviewStates(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) error
 	// DeleteMembership permanently removes a patent from a project. No-op if not a member.
@@ -129,12 +130,8 @@ type Repository interface {
 	ProjectTags(ctx context.Context, project domain.ProjectID) ([]domain.Tag, error)
 	// TagByName returns one taxonomy tag in a project, matching name case-insensitively.
 	TagByName(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error)
-	// TagPatent assigns a tag to a patent; an existing assignment is left as is.
-	TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (bool, error)
 	// TagPatents assigns a tag to multiple patents in a transaction.
 	TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) error
-	// UntagPatent removes a tag from a patent; a missing assignment is a no-op.
-	UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (bool, error)
 	// UntagPatents removes a tag from multiple patents in a transaction.
 	UntagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber) error
 	// PatentTag returns one assigned tag on a patent in a project, matching name case-insensitively.

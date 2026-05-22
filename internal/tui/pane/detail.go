@@ -61,7 +61,8 @@ type Detail struct {
 	loading    bool
 	loadErr    string
 	loadID     uint64
-	jumpActive bool
+	jumpActive   bool
+	inventorLine int
 }
 
 // detailAnchorLabels are the section labels in display order. The jump key
@@ -283,6 +284,7 @@ func (d *Detail) body(w int) string {
 	d.addAnchor(&b, d.jumpKey("Assignee"), "Assignee", 0)
 	d.field(&b, w, "Assignee", p.Assignee)
 	d.addAnchor(&b, d.jumpKey("Inventors"), "Inventors", 0)
+	d.inventorLine = strings.Count(b.String(), "\n")
 	var names []string
 	for _, inv := range p.Inventors {
 		names = append(names, string(inv))
@@ -641,3 +643,7 @@ func dateText(t time.Time) string {
 	}
 	return t.Format(detailDateLayout)
 }
+
+func (d *Detail) Patent() domain.Patent { return d.patent }
+func (d *Detail) IsCursorOnInventors() bool { return d.page.Cursor() == d.inventorLine }
+

@@ -127,6 +127,8 @@ func Default() *Keymaps {
 			";":  command.JumpMode,
 			"t":  command.OpenFullText,
 			"a":  command.AIAnalyze,
+			"enter": command.OpenInventors,
+			"v":     command.OpenInventorsDirect,
 		})
 
 	citations := NewLayer("citations", false).

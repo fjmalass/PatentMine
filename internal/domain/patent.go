@@ -80,6 +80,15 @@ func ParseSource(s string) (Source, error) {
 // Inventor is one human creator of a patented invention.
 type Inventor string
 
+// InventorStats carries aggregated database statistics for an inventor.
+type InventorStats struct {
+	Inventor string         `json:"inventor"`
+	Total    int            `json:"total"`
+	States   map[string]int `json:"states"`
+	Tags     map[string]int `json:"tags"`
+}
+
+
 // Patent is the core business object: one patent record. One record spans the
 // invention's whole life — its application, publication, and grant are all
 // Documents of the same record. It carries no I/O or UI concerns: persistence

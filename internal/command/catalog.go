@@ -15,12 +15,14 @@ const (
 	ReselectLast    ID = "nav.reselect-last"
 
 	// Moving between panes and overlays.
-	OpenDetail    ID = "view.detail"
-	OpenCitations ID = "view.citations"
-	OpenCitedBy   ID = "view.cited-by"
-	OpenIDS       ID = "view.ids"
-	OpenProjects  ID = "view.projects"
-	Back          ID = "view.back"
+	OpenDetail          ID = "view.detail"
+	OpenCitations       ID = "view.citations"
+	OpenCitedBy         ID = "view.cited-by"
+	OpenIDS             ID = "view.ids"
+	OpenProjects        ID = "view.projects"
+	OpenInventors       ID = "view.inventors"
+	OpenInventorsDirect ID = "view.inventors.direct"
+	Back                ID = "view.back"
 	CloseOverlay  ID = "view.close-overlay"
 	Refresh       ID = "view.refresh"
 	OpenSearch    ID = "search.open"
@@ -138,6 +140,8 @@ func Default() (*Registry, error) {
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeIDS}},
 		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}},
+		Command{ID: OpenInventors, Name: "open.inventors", Aliases: []string{"inventors"}, Usage: ":open.inventors", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: OpenInventorsDirect, Name: "open.inventors.direct", Aliases: []string{"inventors-direct"}, Usage: ":open.inventors.direct", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: Back, Kind: KindView},
 		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Scope{ScopeOverlay}},
 		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects, ScopeIDS}},

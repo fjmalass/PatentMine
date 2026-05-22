@@ -155,8 +155,8 @@ func (e *Engine) ListTaxonomyTags(ctx context.Context, project domain.ProjectID)
 	return e.repo.ProjectTags(ctx, project)
 }
 
-// TagPatentStrict tags a patent within a project, verifying that the tag exists in the taxonomy.
-func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
+// TagPatentStrict tags multiple patents within a project, verifying that the tag exists in the taxonomy.
+func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, name string) (err error) {
 	defer e.observeDuration("engine.tag_patent_strict", time.Now(), &err)
 	name = strings.TrimSpace(name)
 	if project == "" {
@@ -165,111 +165,11 @@ func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, 
 	if name == "" {
 		return errors.New("engine: tag name must not be empty")
 	}
-	record, err := e.recordNumber(ctx, patent)
-	if err != nil {
-		return err
-	}
 
 	matchedTag, err := e.repo.TagByName(ctx, project, name)
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("engine: tag %q does not exist in the project taxonomy; create it first", name)
 	}
-	if err != nil {
-		return err
-	}
-
-	assignedAt := time.Now().UTC()
-	changed, err := e.repo.TagPatent(ctx, matchedTag.ID, record, assignedAt)
-	if err != nil {
-		e.log(ctx, slog.LevelError, "tag patent strict failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
-		return err
-	}
-	if !changed {
-		e.incCounter("engine.patent_tag.assign.noop_total", 1)
-		e.log(ctx, slog.LevelDebug, "patent tag already assigned", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
-		return nil
-	}
-
-	e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
-	e.recordActivity(ctx, observability.Record{
-		Action:   "patent.tag_assign",
-		Entity:   "patent_tag",
-		EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
-		Status:   "committed",
-		After:    map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID, "assigned_at": assignedAt.UTC().Format(time.RFC3339)},
-		Metadata: map[string]any{"requested_number": patent.String()},
-	})
-	e.announceChange()
-	e.incCounter("engine.patent_tag.assign.changed_total", 1)
-	return nil
-}
-
-// UntagPatentStrict removes a tag assignment from a patent.
-func (e *Engine) UntagPatentStrict(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
-	defer e.observeDuration("engine.untag_patent_strict", time.Now(), &err)
-	name = strings.TrimSpace(name)
-	if project == "" {
-		return errors.New("engine: tag needs a project")
-	}
-	record, err := e.recordNumber(ctx, patent)
-	if err != nil {
-		return err
-	}
-	t, err := e.repo.PatentTag(ctx, project, record, name)
-	if errors.Is(err, store.ErrNotFound) {
-		return fmt.Errorf("engine: patent %s has no tag %q", record, name)
-	}
-	if err != nil {
-		return err
-	}
-	changed, err := e.repo.UntagPatent(ctx, t.ID, record)
-	if err != nil {
-		e.log(ctx, slog.LevelError, "untag patent strict failed", slog.String("record", record.String()), slog.String("name", name), slog.String("error", err.Error()))
-		return err
-	}
-	if !changed {
-		e.incCounter("engine.patent_tag.remove.noop_total", 1)
-		e.log(ctx, slog.LevelDebug, "patent tag already absent", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
-		return nil
-	}
-	e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", t.Name))
-	e.recordActivity(ctx, observability.Record{
-		Action:   "patent.tag_remove",
-		Entity:   "patent_tag",
-		EntityID: string(project) + "/" + record.String() + "/" + t.Name,
-		Status:   "committed",
-		Before:   map[string]any{"tag_name": t.Name, "tag_id": t.ID, "assigned_at": t.AssignedAt.UTC().Format(time.RFC3339)},
-	})
-	e.announceChange()
-	e.incCounter("engine.patent_tag.remove.changed_total", 1)
-	return nil
-}
-
-// TagPatent tags a patent within a project, creating the named tag when the
-// project does not have it yet.
-func (e *Engine) TagPatent(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
-	_, _ = e.CreateTaxonomyTag(ctx, project, name)
-	return e.TagPatentStrict(ctx, project, patent, name)
-}
-
-// UntagPatent removes a tag from a patent within a project.
-func (e *Engine) UntagPatent(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (err error) {
-	return e.UntagPatentStrict(ctx, project, patent, name)
-}
-
-// TagPatents tags multiple patents within a project, creating the tag first in the taxonomy if needed, and announcing once.
-func (e *Engine) TagPatents(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, name string) (err error) {
-	defer e.observeDuration("engine.tag_patents", time.Now(), &err)
-	name = strings.TrimSpace(name)
-	if project == "" {
-		return errors.New("engine: tag needs a project")
-	}
-	if name == "" {
-		return errors.New("engine: tag name must not be empty")
-	}
-
-	// Create tag in taxonomy if it doesn't exist
-	matchedTag, err := e.CreateTaxonomyTag(ctx, project, name)
 	if err != nil {
 		return err
 	}
@@ -283,13 +183,36 @@ func (e *Engine) TagPatents(ctx context.Context, project domain.ProjectID, paten
 		records = append(records, record)
 	}
 
+	// Segregate records that actually need to be tagged from no-ops
+	changedRecords := make([]domain.PatentNumber, 0, len(records))
+	noopsCount := 0
+	for _, record := range records {
+		_, err := e.repo.PatentTag(ctx, project, record, name)
+		if err == nil {
+			// Tag is already present
+			noopsCount++
+			e.log(ctx, slog.LevelDebug, "patent tag already present", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
+		} else {
+			changedRecords = append(changedRecords, record)
+		}
+	}
+
+	if noopsCount > 0 {
+		e.incCounter("engine.patent_tag.assign.noop_total", int64(noopsCount))
+	}
+
+	if len(changedRecords) == 0 {
+		return nil
+	}
+
 	assignedAt := time.Now().UTC()
-	if err := e.repo.TagPatents(ctx, matchedTag.ID, records, assignedAt); err != nil {
+	if err := e.repo.TagPatents(ctx, matchedTag.ID, changedRecords, assignedAt); err != nil {
+		e.log(ctx, slog.LevelError, "tag patents strict failed", slog.String("project_id", string(project)), slog.Int("count", len(changedRecords)), slog.String("name", name), slog.String("error", err.Error()))
 		return err
 	}
 
-	// Record activities for each
-	for _, record := range records {
+	// Record activities for each changed record
+	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
 		e.recordActivity(ctx, observability.Record{
 			Action:   "patent.tag_assign",
@@ -302,13 +225,15 @@ func (e *Engine) TagPatents(ctx context.Context, project domain.ProjectID, paten
 	}
 
 	e.announceChange()
-	e.incCounter("engine.patent_tag.assign.changed_total", int64(len(records)))
+	e.incCounter("engine.patent_tag.assign.changed_total", int64(len(changedRecords)))
 	return nil
 }
 
-// UntagPatents removes a tag from multiple patents in a project, announcing once.
-func (e *Engine) UntagPatents(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, name string) (err error) {
-	defer e.observeDuration("engine.untag_patents", time.Now(), &err)
+// UntagPatentStrict removes a tag assignment from multiple patents.
+// If len(patents) == 1, it should fail if the patent lacks the tag.
+// If len(patents) > 1, it should succeed as long as *at least one* patent had the tag assigned, and fail with a clear error only if *none* did.
+func (e *Engine) UntagPatentStrict(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, name string) (err error) {
+	defer e.observeDuration("engine.untag_patent_strict", time.Now(), &err)
 	name = strings.TrimSpace(name)
 	if project == "" {
 		return errors.New("engine: tag needs a project")
@@ -333,19 +258,52 @@ func (e *Engine) UntagPatents(ctx context.Context, project domain.ProjectID, pat
 
 	// Look up the tag for each patent before removing, to record in the Before journal for review/replay
 	beforeStates := make(map[domain.PatentNumber]domain.Tag)
+	hasAny := false
 	for _, record := range records {
 		t, err := e.repo.PatentTag(ctx, project, record, name)
 		if err == nil {
 			beforeStates[record] = t
+			hasAny = true
 		}
 	}
 
-	if err := e.repo.UntagPatents(ctx, matchedTag.ID, records); err != nil {
+	if len(records) == 1 {
+		if !hasAny {
+			return fmt.Errorf("engine: patent %s has no tag %q", records[0], name)
+		}
+	} else if len(records) > 1 {
+		if !hasAny {
+			return fmt.Errorf("engine: none of the %d selected patents have tag %q", len(records), name)
+		}
+	}
+
+	// Segregate records that actually need to be untagged from no-ops
+	changedRecords := make([]domain.PatentNumber, 0, len(records))
+	noopsCount := 0
+	for _, record := range records {
+		if _, ok := beforeStates[record]; ok {
+			changedRecords = append(changedRecords, record)
+		} else {
+			noopsCount++
+			e.log(ctx, slog.LevelDebug, "patent tag already absent", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
+		}
+	}
+
+	if noopsCount > 0 {
+		e.incCounter("engine.patent_tag.remove.noop_total", int64(noopsCount))
+	}
+
+	if len(changedRecords) == 0 {
+		return nil
+	}
+
+	if err := e.repo.UntagPatents(ctx, matchedTag.ID, changedRecords); err != nil {
+		e.log(ctx, slog.LevelError, "untag patents strict failed", slog.String("project_id", string(project)), slog.Int("count", len(changedRecords)), slog.String("name", name), slog.String("error", err.Error()))
 		return err
 	}
 
-	// Record activities for each
-	for _, record := range records {
+	// Record activities for each changed record
+	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
 		rec := observability.Record{
 			Action:   "patent.tag_remove",
@@ -365,6 +323,19 @@ func (e *Engine) UntagPatents(ctx context.Context, project domain.ProjectID, pat
 	}
 
 	e.announceChange()
-	e.incCounter("engine.patent_tag.remove.changed_total", int64(len(records)))
+	e.incCounter("engine.patent_tag.remove.changed_total", int64(len(changedRecords)))
 	return nil
+}
+
+// TagPatent tags multiple patents within a project, creating the named tag when the
+// project does not have it yet. When a single patent is targeted, it is passed in a slice of length 1.
+func (e *Engine) TagPatent(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, name string) (err error) {
+	_, _ = e.CreateTaxonomyTag(ctx, project, name)
+	return e.TagPatentStrict(ctx, project, patents, name)
+}
+
+// UntagPatent removes a tag from multiple patents within a project. When a single patent is targeted,
+// it is passed in a slice of length 1.
+func (e *Engine) UntagPatent(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, name string) (err error) {
+	return e.UntagPatentStrict(ctx, project, patents, name)
 }
