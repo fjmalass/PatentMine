@@ -1,6 +1,10 @@
 package render
 
-import "github.com/charmbracelet/x/ansi"
+import (
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+)
 
 // ellipsis marks text shortened by Truncate.
 const ellipsis = "…"
@@ -18,6 +22,22 @@ func Truncate(s string, w int) string {
 		return ellipsis
 	}
 	return ansi.Cut(s, 0, w-1) + ellipsis
+}
+
+// MarkdownHeadings extracts # and ## headings from markdown text, joined by
+// "; ". Returns "—" when there are no headings.
+func MarkdownHeadings(markdown string) string {
+	var headings []string
+	for _, line := range strings.Split(markdown, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "# ") || strings.HasPrefix(trimmed, "## ") {
+			headings = append(headings, trimmed)
+		}
+	}
+	if len(headings) == 0 {
+		return "—"
+	}
+	return strings.Join(headings, "; ")
 }
 
 // Pad right-pads s with spaces to exactly w display columns, truncating when

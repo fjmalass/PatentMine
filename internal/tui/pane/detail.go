@@ -331,9 +331,7 @@ func (d *Detail) body(w int) string {
 		if d.patentNote == nil || strings.TrimSpace(d.patentNote.Markdown) == "" {
 			d.field(&b, w, "Notes", "—")
 		} else {
-			d.field(&b, w, "Note added", detailDateTimeText(d.patentNote.AddedAt))
-			d.field(&b, w, "Note updated", detailDateTimeText(d.patentNote.UpdatedAt))
-			d.section(&b, w, "Notes", d.patentNote.Markdown)
+			d.field(&b, w, "Notes", render.MarkdownHeadings(d.patentNote.Markdown))
 		}
 	}
 
@@ -693,7 +691,23 @@ func detailIDSText(entry *domain.IDSEntry) string {
 	if entry == nil {
 		return "not on IDS"
 	}
-	return entry.SummaryText()
+	if entry.Project == "" || entry.Patent.IsZero() {
+		return "—"
+	}
+	parts := []string{string(entry.Status)}
+	if !entry.Status.Valid() {
+		parts[0] = string(domain.IDSEntryPending)
+	}
+	switch {
+	case entry.InFull:
+		parts = append(parts, "full")
+	case strings.TrimSpace(entry.RelevantPassages) != "":
+		parts = append(parts, strings.TrimSpace(entry.RelevantPassages))
+	}
+	if note := strings.TrimSpace(entry.Notes); note != "" {
+		parts = append(parts, render.MarkdownHeadings(note))
+	}
+	return strings.Join(parts, " | ")
 }
 
 // countryOrDash returns the country code, or a dash when it is blank.

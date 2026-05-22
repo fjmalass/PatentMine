@@ -261,10 +261,11 @@ func TestDetailPaneShowsProjectPatentNote(t *testing.T) {
 	}
 
 	body := d.body(80)
-	for _, want := range []string{"Note added", "2026-05-22 10:30:00", "Note updated", "# Overview", "Important note."} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("detail body missing %q\n%s", want, body)
-		}
+	if !strings.Contains(body, "# Overview") {
+		t.Fatalf("detail body missing heading summary, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Notes") {
+		t.Fatalf("detail body missing Notes field, got:\n%s", body)
 	}
 }
 

@@ -87,3 +87,18 @@ type TextSubmitMsg struct {
 
 // CloseOverlayMsg asks the app to close the focused overlay.
 type CloseOverlayMsg struct{}
+
+// PctSize computes an overlay size as a percentage of the terminal, clamped
+// between min and term-2. Every overlay that implements DynamicSize should
+// delegate to this rather than hand-rolling the arithmetic.
+func PctSize(termW, termH, pctW, pctH, minW, minH int) (w, h int) {
+	w = max(minW, termW*pctW/100)
+	h = max(minH, termH*pctH/100)
+	if termW > 2 {
+		w = min(w, termW-2)
+	}
+	if termH > 2 {
+		h = min(h, termH-2)
+	}
+	return w, h
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -19,6 +20,14 @@ import (
 
 const patentNoteTimeLayout = "2006-01-02 15:04:05"
 const patentNoteTimeBracket = "[" + patentNoteTimeLayout + "]"
+const patentNotePageRows = 10
+
+const (
+	patentNoteOverlayWidthPct  = 60
+	patentNoteOverlayHeightPct = 60
+	patentNoteMinWidth         = 76
+	patentNoteMinHeight        = 22
+)
 
 type patentNoteLoadedMsg struct {
 	patent domain.Patent
@@ -32,6 +41,12 @@ type patentNoteSavedMsg struct {
 }
 
 type patentNoteDeletedMsg struct{ err error }
+
+type vimUndo struct {
+	value  string
+	line   int
+	column int
+}
 
 // PatentNoteEditor edits one project-scoped markdown note for a patent.
 type PatentNoteEditor struct {
@@ -51,6 +66,11 @@ type PatentNoteEditor struct {
 	msg          string
 	dirty        bool
 	confirmClear bool
+
+	vimMode    bool      // ctrl+v toggles vim mode
+	vimInsert  bool      // true=insert, false=normal
+	vimPending rune      // non-zero when waiting for second key (g→gg, d→dd/d$/dw)
+	undos      []vimUndo
 }
 
 func NewPatentNoteEditor(client *rpc.Client, theme render.Theme, project domain.ProjectID, number domain.PatentNumber) *PatentNoteEditor {
@@ -135,6 +155,21 @@ func (o *PatentNoteEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			return o, nil, true
 		}
 	}
+	if msg.Type == tea.KeyF2 {
+		o.vimMode = !o.vimMode
+		if o.vimMode {
+			o.vimInsert = false
+			o.vimPending = 0
+			o.saveUndo()
+			o.msg = "vim on"
+		} else {
+			o.msg = ""
+		}
+		return o, nil, true
+	}
+	if o.vimMode {
+		return o.handleVimKey(msg)
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -161,7 +196,21 @@ func (o *PatentNoteEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	case tea.KeyDown:
 		o.moveVertical(1)
 		return o, nil, true
+	case tea.KeyPgUp:
+		o.pageVertical(-patentNotePageRows)
+		return o, nil, true
+	case tea.KeyPgDown:
+		o.pageVertical(patentNotePageRows)
+		return o, nil, true
 	case tea.KeyRunes, tea.KeySpace:
+		switch msg.String() {
+		case "j":
+			o.moveVertical(1)
+			return o, nil, true
+		case "k":
+			o.moveVertical(-1)
+			return o, nil, true
+		}
 		if msg.String() == "D" {
 			if strings.TrimSpace(o.value) != "" || o.note != nil {
 				o.confirmClear = true
@@ -172,6 +221,178 @@ func (o *PatentNoteEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		return o, nil, true
 	}
 	return o, nil, true
+}
+
+func (o *PatentNoteEditor) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if o.vimPending != 0 {
+		return o.handleVimPending(msg)
+	}
+	if o.vimInsert {
+		switch msg.Type {
+		case tea.KeyEsc:
+			o.vimInsert = false
+			o.msg = ""
+			return o, nil, true
+		case tea.KeyCtrlS:
+			return o, o.saveCmd(), true
+		case tea.KeyEnter:
+			o.insertText("\n")
+			return o, nil, true
+		case tea.KeyBackspace:
+			o.backspace()
+			return o, nil, true
+		case tea.KeyDelete:
+			o.deleteForward()
+			return o, nil, true
+		case tea.KeyLeft:
+			o.moveLeft()
+			return o, nil, true
+		case tea.KeyRight:
+			o.moveRight()
+			return o, nil, true
+		case tea.KeyUp:
+			o.moveVertical(-1)
+			return o, nil, true
+		case tea.KeyDown:
+			o.moveVertical(1)
+			return o, nil, true
+		case tea.KeyRunes, tea.KeySpace:
+			o.insertText(msg.String())
+			return o, nil, true
+		}
+		return o, nil, true
+	}
+	switch msg.Type {
+	case tea.KeyEsc:
+		return o, nil, true
+	case tea.KeyCtrlS:
+		return o, o.saveCmd(), true
+	case tea.KeyLeft:
+		o.moveLeft()
+		return o, nil, true
+	case tea.KeyRight:
+		o.moveRight()
+		return o, nil, true
+	case tea.KeyUp:
+		o.moveVertical(-1)
+		return o, nil, true
+	case tea.KeyDown:
+		o.moveVertical(1)
+		return o, nil, true
+	case tea.KeyPgUp:
+		o.pageVertical(-patentNotePageRows)
+		return o, nil, true
+	case tea.KeyPgDown:
+		o.pageVertical(patentNotePageRows)
+		return o, nil, true
+	case tea.KeyCtrlU:
+		o.pageVertical(-patentNotePageRows / 2)
+		return o, nil, true
+	case tea.KeyCtrlD:
+		o.pageVertical(patentNotePageRows / 2)
+		return o, nil, true
+	case tea.KeyRunes, tea.KeySpace:
+		switch msg.String() {
+		case "h":
+			o.moveLeft()
+		case "j":
+			o.moveVertical(1)
+		case "k":
+			o.moveVertical(-1)
+		case "l":
+			o.moveRight()
+		case "w":
+			o.moveWordForward()
+		case "b":
+			o.moveWordBackward()
+		case "0":
+			o.column = 0
+		case "$":
+			o.column = len([]rune(o.lines()[o.line]))
+		case "i":
+			o.vimInsert = true
+			o.saveUndo()
+		case "a":
+			o.moveRight()
+			o.vimInsert = true
+			o.saveUndo()
+		case "I":
+			o.column = 0
+			o.vimInsert = true
+			o.saveUndo()
+		case "A":
+			o.column = len([]rune(o.lines()[o.line]))
+			o.vimInsert = true
+			o.saveUndo()
+		case "o":
+			o.openLineBelow()
+			o.vimInsert = true
+			o.saveUndo()
+		case "O":
+			o.openLineAbove()
+			o.vimInsert = true
+			o.saveUndo()
+		case "x":
+			o.saveUndo()
+			o.deleteForward()
+		case "X":
+			o.saveUndo()
+			o.backspace()
+		case "d":
+			o.vimPending = 'd'
+			return o, nil, true
+		case "D":
+			o.saveUndo()
+			o.deleteToEndOfLine()
+		case "u":
+			o.undo()
+		case "g":
+			o.vimPending = 'g'
+			return o, nil, true
+		case "G":
+			o.line = len(o.lines()) - 1
+			o.column = min(o.column, len([]rune(o.lines()[o.line])))
+		}
+		return o, nil, true
+	}
+	return o, nil, true
+}
+
+func (o *PatentNoteEditor) handleVimPending(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	switch o.vimPending {
+	case 'g':
+		if msg.String() == "g" {
+			o.line = 0
+			o.column = 0
+		}
+		o.vimPending = 0
+		return o, nil, true
+	case 'd':
+		switch msg.String() {
+		case "d":
+			o.saveUndo()
+			o.deleteCurrentLine()
+		case "$":
+			o.saveUndo()
+			o.deleteToEndOfLine()
+		case "w":
+			o.saveUndo()
+			o.deleteWordForward()
+		case "G":
+			o.saveUndo()
+			o.deleteToEndOfFile()
+		}
+		o.vimPending = 0
+		return o, nil, true
+	}
+	o.vimPending = 0
+	return o, nil, true
+}
+
+// OverlaySize implements tui.DynamicSize, requesting at least 60% of the
+// terminal so there is room to read and edit longer notes.
+func (o *PatentNoteEditor) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, patentNoteOverlayWidthPct, patentNoteOverlayHeightPct, patentNoteMinWidth, patentNoteMinHeight)
 }
 
 func (o *PatentNoteEditor) View(maxW, maxH int) string {
@@ -216,7 +437,16 @@ func (o *PatentNoteEditor) View(maxW, maxH int) string {
 		b.WriteString(o.theme.Selected.Render(render.Pad("  1 "+o.theme.Title.Render("█"), maxW)))
 	}
 	b.WriteString("\n")
-	b.WriteString(o.theme.Dim.Render(render.Truncate("markdown editor · ctrl+s save · D clear · esc close", maxW)))
+	if o.vimMode {
+		mode := "NORMAL"
+		if o.vimInsert {
+			mode = "INSERT"
+		}
+		fmt.Fprintf(&b, "%s",
+			o.theme.Dim.Render(render.Truncate(fmt.Sprintf("-- %s -- · f2 off · ctrl+s save · esc close", mode), maxW)))
+	} else {
+		b.WriteString(o.theme.Dim.Render(render.Truncate("markdown editor · ctrl+s save · D clear · esc close · f2 vim", maxW)))
+	}
 	return b.String()
 }
 
@@ -412,4 +642,178 @@ func (o *PatentNoteEditor) moveVertical(delta int) {
 	lines := o.lines()
 	o.line = max(0, min(o.line+delta, len(lines)-1))
 	o.column = min(o.column, len([]rune(lines[o.line])))
+}
+
+func (o *PatentNoteEditor) pageVertical(delta int) {
+	lines := o.lines()
+	o.line = max(0, min(o.line+delta, len(lines)-1))
+	o.column = min(o.column, len([]rune(lines[o.line])))
+}
+
+func (o *PatentNoteEditor) saveUndo() {
+	e := vimUndo{value: o.value, line: o.line, column: o.column}
+	o.undos = append(o.undos, e)
+	if len(o.undos) > 100 {
+		o.undos = o.undos[1:]
+	}
+}
+
+func (o *PatentNoteEditor) undo() {
+	if len(o.undos) == 0 {
+		return
+	}
+	e := o.undos[len(o.undos)-1]
+	o.undos = o.undos[:len(o.undos)-1]
+	o.value = e.value
+	o.line = e.line
+	o.column = e.column
+	o.dirty = true
+}
+
+func (o *PatentNoteEditor) moveWordForward() {
+	lines := o.lines()
+	runes := []rune(lines[o.line])
+	col := o.column
+	if col >= len(runes) {
+		if o.line+1 < len(lines) {
+			o.line++
+			o.column = 0
+		}
+		return
+	}
+	wordType := isWordChar(runes[col])
+	for col < len(runes) && isWordChar(runes[col]) == wordType {
+		col++
+	}
+	for col < len(runes) && (runes[col] == ' ' || runes[col] == '\t') {
+		col++
+	}
+	if col < len(runes) {
+		o.column = col
+	} else if o.line+1 < len(lines) {
+		o.line++
+		o.column = 0
+	}
+}
+
+func (o *PatentNoteEditor) moveWordBackward() {
+	if o.column == 0 && o.line == 0 {
+		return
+	}
+	lines := o.lines()
+	col := o.column
+	line := o.line
+	if col == 0 {
+		line--
+		col = len([]rune(lines[line]))
+	}
+	runes := []rune(lines[line])
+	if len(runes) == 0 {
+		o.line = line
+		o.column = 0
+		return
+	}
+	col = min(col, len(runes))
+	if col > 0 {
+		col--
+	}
+	for col > 0 && (runes[col] == ' ' || runes[col] == '\t') {
+		col--
+	}
+	if runes[col] == ' ' || runes[col] == '\t' {
+		o.line = line
+		o.column = col
+		return
+	}
+	wordType := isWordChar(runes[col])
+	for col > 0 && isWordChar(runes[col]) == wordType {
+		col--
+	}
+	if col == 0 && isWordChar(runes[0]) == wordType {
+		o.line = line
+		o.column = 0
+		return
+	}
+	if isWordChar(runes[col]) != wordType {
+		col++
+	}
+	o.line = line
+	o.column = col
+}
+
+func (o *PatentNoteEditor) deleteCurrentLine() {
+	lines := o.lines()
+	if len(lines) <= 1 {
+		o.value = ""
+		o.line = 0
+		o.column = 0
+		o.dirty = true
+		return
+	}
+	lines = append(lines[:o.line], lines[o.line+1:]...)
+	if o.line >= len(lines) {
+		o.line = len(lines) - 1
+	}
+	o.column = 0
+	o.value = strings.Join(lines, "\n")
+	o.dirty = true
+}
+
+func (o *PatentNoteEditor) deleteToEndOfLine() {
+	lines := o.lines()
+	runes := []rune(lines[o.line])
+	col := min(o.column, len(runes))
+	lines[o.line] = string(runes[:col])
+	o.value = strings.Join(lines, "\n")
+	o.dirty = true
+}
+
+func (o *PatentNoteEditor) deleteWordForward() {
+	lines := o.lines()
+	runes := []rune(lines[o.line])
+	col := min(o.column, len(runes))
+	if col >= len(runes) {
+		return
+	}
+	wordType := isWordChar(runes[col])
+	end := col
+	for end < len(runes) && isWordChar(runes[end]) == wordType {
+		end++
+	}
+	for end < len(runes) && (runes[end] == ' ' || runes[end] == '\t') {
+		end++
+	}
+	lines[o.line] = string(runes[:col]) + string(runes[end:])
+	o.value = strings.Join(lines, "\n")
+	o.dirty = true
+}
+
+func (o *PatentNoteEditor) deleteToEndOfFile() {
+	lines := o.lines()
+	runes := []rune(lines[o.line])
+	col := min(o.column, len(runes))
+	lines[o.line] = string(runes[:col])
+	o.value = strings.Join(lines[:o.line+1], "\n")
+	o.dirty = true
+}
+
+func (o *PatentNoteEditor) openLineAbove() {
+	lines := o.lines()
+	lines = append(lines[:o.line], append([]string{""}, lines[o.line:]...)...)
+	o.value = strings.Join(lines, "\n")
+	o.column = 0
+	o.dirty = true
+}
+
+func (o *PatentNoteEditor) openLineBelow() {
+	lines := o.lines()
+	lines = append(lines[:o.line+1], append([]string{""}, lines[o.line+1:]...)...)
+	o.value = strings.Join(lines, "\n")
+	o.line++
+	o.column = 0
+	o.dirty = true
+}
+
+func isWordChar(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }

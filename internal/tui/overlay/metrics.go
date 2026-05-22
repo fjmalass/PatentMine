@@ -165,16 +165,8 @@ func (o *MetricsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	return o, nil
 }
 
-func (o *MetricsOverlay) OverlaySize(termW, termH int) (w, h int) {
-	w = max(metricsMinWidth, termW*metricsOverlayWidthPct/100)
-	h = max(metricsMinHeight, termH*metricsOverlayHeightPct/100)
-	if termW > 2 {
-		w = min(w, termW-2)
-	}
-	if termH > 2 {
-		h = min(h, termH-2)
-	}
-	return w, h
+func (o *MetricsOverlay) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, metricsOverlayWidthPct, metricsOverlayHeightPct, metricsMinWidth, metricsMinHeight)
 }
 
 func (o *MetricsOverlay) View(maxW, maxH int) string {
