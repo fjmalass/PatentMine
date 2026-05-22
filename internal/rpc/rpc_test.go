@@ -34,7 +34,7 @@ func testHarness(t *testing.T) *rpc.Client {
 			return nil
 		})
 	}
-	eng := engine.New(ctx, repo, factory)
+	eng := engine.New(ctx, repo, factory, engine.WithCrawlMaxDepth(4))
 
 	socket := filepath.Join(t.TempDir(), "rpc.sock")
 	ln, err := net.Listen("unix", socket)
@@ -161,5 +161,16 @@ func TestRPCCrawlStreamsEvents(t *testing.T) {
 		case <-deadline:
 			t.Fatalf("timed out (progress=%v done=%v)", gotProgress, gotDone)
 		}
+	}
+}
+
+func TestRPCCrawlConfig(t *testing.T) {
+	client := testHarness(t)
+	var res proto.CrawlConfigResult
+	if err := client.Call(context.Background(), proto.MethodCrawlConfig, nil, &res); err != nil {
+		t.Fatalf("crawl.config: %v", err)
+	}
+	if res.MaxDepth != 4 {
+		t.Fatalf("crawl max depth = %d, want 4", res.MaxDepth)
 	}
 }

@@ -39,6 +39,11 @@ func (e *Engine) StartFamilyCrawl(root domain.PatentNumber, depth int, profile d
 	return id, nil
 }
 
+// CrawlConfig reports the daemon's default family-crawl depth.
+func (e *Engine) CrawlConfig() proto.CrawlConfigResult {
+	return proto.CrawlConfigResult{MaxDepth: e.crawlMaxDepth}
+}
+
 // ImportFile loads a patent record from a local fixture file into the store.
 func (e *Engine) ImportFile(ctx context.Context, path string) (err error) {
 	defer e.observeDuration("engine.import_file", time.Now(), &err)

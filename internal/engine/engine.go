@@ -46,15 +46,16 @@ type Option func(*Engine)
 // Engine is the daemon core. Its methods are the single set of operations the
 // system supports; RPC handlers and embedded callers both go through them.
 type Engine struct {
-	repo         store.Repository
-	bus          *Bus
-	pool         *workerPool
-	crawl        CrawlFactory
-	fileImporter FileImporter
-	cpcLookup    CPCLookup
-	logger       *slog.Logger
-	activities   *observability.Recorder
-	metrics      *observability.Metrics
+	repo          store.Repository
+	bus           *Bus
+	pool          *workerPool
+	crawl         CrawlFactory
+	fileImporter  FileImporter
+	cpcLookup     CPCLookup
+	logger        *slog.Logger
+	activities    *observability.Recorder
+	metrics       *observability.Metrics
+	crawlMaxDepth int
 
 	// changeMu guards the EventDBChanged debounce state below.
 	changeMu      sync.Mutex
@@ -92,6 +93,13 @@ func WithActivityRecorder(rec *observability.Recorder) Option {
 func WithMetrics(metrics *observability.Metrics) Option {
 	return func(e *Engine) {
 		e.metrics = metrics
+	}
+}
+
+// WithCrawlMaxDepth records the daemon's default family-crawl depth.
+func WithCrawlMaxDepth(maxDepth int) Option {
+	return func(e *Engine) {
+		e.crawlMaxDepth = maxDepth
 	}
 }
 

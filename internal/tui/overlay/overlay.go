@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
+	"patentmine/internal/domain"
 )
 
 // Overlay is one modal layer.
@@ -87,6 +88,11 @@ type TextSubmitMsg struct {
 
 // CloseOverlayMsg asks the app to close the focused overlay.
 type CloseOverlayMsg struct{}
+
+// OpenTagPatentOverlayMsg asks the app to open the patent tag manager.
+type OpenTagPatentOverlayMsg struct {
+	Patents []domain.PatentNumber
+}
 
 // PctSize computes an overlay size as a percentage of the terminal, clamped
 // between min and term-2. Every overlay that implements DynamicSize should

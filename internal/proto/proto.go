@@ -31,6 +31,7 @@ const (
 	MethodTagPatent                Method = "tag.assign"
 	MethodUntagPatent              Method = "tag.remove"
 	MethodCrawlFamily              Method = "crawl.family"
+	MethodCrawlConfig              Method = "crawl.config"
 	MethodCrawlCancel              Method = "crawl.cancel"
 	MethodImportFile               Method = "import.file"
 	MethodRelations                Method = "patent.relations"
@@ -292,6 +293,11 @@ type CrawlFamilyParams struct {
 // CrawlStartResult returns the id of an enqueued job.
 type CrawlStartResult struct {
 	JobID string `json:"job_id"`
+}
+
+// CrawlConfigResult reports daemon-owned crawl defaults.
+type CrawlConfigResult struct {
+	MaxDepth int `json:"max_depth"`
 }
 
 // ImportFileParams loads a patent record from a local fixture file.

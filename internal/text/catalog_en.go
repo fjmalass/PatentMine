@@ -30,6 +30,7 @@ const (
 	StatusCrawlComplete           Key = "status.ingest_complete"
 	StatusCrawlStarted            Key = "status.ingest_started"
 	StatusCrawlStartFailed        Key = "status.ingest_start_failed"
+	StatusCrawlDepthMax           Key = "status.ingest_depth_max"
 	StatusAddFailed               Key = "status.add_failed"
 	StatusAdded                   Key = "status.added"
 	StatusAddedNoCrawl            Key = "status.added_no_ingest"
@@ -162,6 +163,7 @@ var cmdStrings = map[string][2]string{
 	"view.family":              {"Open family graph", "Show a bounded BFS parent/child family graph for the selected patent."},
 	"view.family-depth-more":   {"Increase family depth", "Increase the family graph BFS depth and reload the graph."},
 	"view.family-depth-less":   {"Decrease family depth", "Decrease the family graph BFS depth and reload the graph."},
+	"crawl.depth.max":          {"Show crawl depth max", "Show the daemon's default maximum family-crawl depth."},
 	"view.ids":                 {"Open IDS", "Open the selected patent's IDS entry editor."},
 	"view.projects":            {"Open projects", "Open the project list."},
 	"view.back":                {"Back", "Return to the previous pane."},
@@ -251,6 +253,7 @@ var englishNamed = map[Key]string{
 	StatusCrawlComplete:           "crawl %s complete",
 	StatusCrawlStarted:            "crawl started for %s (%s)",
 	StatusCrawlStartFailed:        "crawl failed: %s",
+	StatusCrawlDepthMax:           "crawl family depth max: %d",
 	StatusAddFailed:               "add to project failed: %s",
 	StatusAdded:                   "added %s to %s",
 	StatusAddedNoCrawl:            "added %s — press L to lookup",

@@ -161,6 +161,25 @@ func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()))
 }
 
+func (a *App) cmdCrawlDepthMax(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) > 0 {
+		return a.usageError(command.CrawlDepthMax)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var res proto.CrawlConfigResult
+		if err := a.client.Call(ctx, proto.MethodCrawlConfig, nil, &res); err != nil {
+			return pane.StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return pane.StatusMsg{Key: text.StatusCrawlDepthMax, Args: []any{res.MaxDepth}}
+	}
+}
+
 func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
 	a.activeProject = nil
 	a.setStatus(text.StatusClearedProject)

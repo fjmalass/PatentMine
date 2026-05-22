@@ -38,7 +38,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)                   // command.ProjectCreate
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)          // command.AddToProject
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                     // command.ExportIDS
-	s.mux.HandleFunc("POST /crawl", s.handleCrawl)                              // command.CrawlFamily
+	s.mux.HandleFunc("GET /crawl/config", s.handleCrawlConfig)
+	s.mux.HandleFunc("POST /crawl", s.handleCrawl) // command.CrawlFamily
 
 	// Fixed Tag Taxonomy endpoints
 	s.mux.HandleFunc("POST /projects/{id}/tags", s.handleTagCreate)
@@ -55,6 +56,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /classifications/{system}/{code}", s.handleClassificationDelete)
 	s.mux.HandleFunc("POST /classifications/lookup", s.handleClassificationLookup)
 	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/classifications", s.handlePatentClassificationList)
+}
+
+// handleCrawlConfig returns daemon-owned crawl defaults.
+func (s *Server) handleCrawlConfig(w http.ResponseWriter, r *http.Request) {
+	var res proto.CrawlConfigResult
+	s.call(w, r, proto.MethodCrawlConfig, nil, &res)
 }
 
 // handleMetrics returns the daemon's current in-memory timing/counter snapshot.

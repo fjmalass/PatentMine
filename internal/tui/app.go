@@ -97,6 +97,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.ProjectCreate:       (*App).cmdProjectCreate,
 	command.AddToProject:        (*App).cmdAddToProject,
 	command.Import:              (*App).cmdImport,
+	command.CrawlDepthMax:       (*App).cmdCrawlDepthMax,
 	command.MarkStored:          (*App).cmdMarkStored,
 	command.MarkUnderReview:     (*App).cmdMarkUnderReview,
 	command.MarkIgnored:         (*App).cmdMarkIgnored,
@@ -401,6 +402,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.CloseOverlayMsg:
 		a.popOverlay()
 		return a, nil
+	case overlay.OpenTagPatentOverlayMsg:
+		o, cmd := overlay.NewTagPatentOverlay(a.client, a.theme, a.text, a.activeProject.ID, m.Patents)
+		a.overlays = append(a.overlays, o)
+		return a, cmd
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		if m.Key == text.StatusCrawlStarted && len(m.Args) >= 2 {

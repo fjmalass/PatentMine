@@ -12,8 +12,8 @@ import (
 	"syscall"
 
 	"patentmine/internal/config"
-	"patentmine/internal/engine"
 	"patentmine/internal/crawl"
+	"patentmine/internal/engine"
 	"patentmine/internal/observability"
 	"patentmine/internal/rpc"
 	"patentmine/internal/store"
@@ -103,8 +103,10 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	cachingRepo := store.NewCache(repo)
 	crawler := crawl.NewCrawler(registry, cachingRepo, crawl.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	crawlCfg := crawler.Config()
 	return engine.New(ctx, cachingRepo, crawl.Factory(crawler),
 		engine.WithFileImporter(crawler),
+		engine.WithCrawlMaxDepth(crawlCfg.MaxDepth),
 		engine.WithCPCLookup(crawl.LookupCPCDescription),
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),

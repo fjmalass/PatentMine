@@ -53,6 +53,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodTagPatent:                s.tagPatent,
 		proto.MethodUntagPatent:              s.untagPatent,
 		proto.MethodCrawlFamily:              s.crawlFamily,
+		proto.MethodCrawlConfig:              s.crawlConfig,
 		proto.MethodCrawlCancel:              s.crawlCancel,
 		proto.MethodImportFile:               s.importFile,
 		proto.MethodRelations:                s.relations,
@@ -548,6 +549,10 @@ func (s *Server) crawlFamily(_ context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.CrawlStartResult{JobID: string(id)}, nil
+}
+
+func (s *Server) crawlConfig(_ context.Context, _ json.RawMessage) (any, error) {
+	return s.engine.CrawlConfig(), nil
 }
 
 func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -47,7 +47,7 @@ func testAPIEnv(t *testing.T) apiEnv {
 			return nil
 		})
 	}
-	eng := engine.New(ctx, repo, factory)
+	eng := engine.New(ctx, repo, factory, engine.WithCrawlMaxDepth(4))
 
 	socket := filepath.Join(t.TempDir(), "api.sock")
 	ln, err := net.Listen("unix", socket)
@@ -189,6 +189,21 @@ func TestAPICrawlStartsJob(t *testing.T) {
 	var res proto.CrawlStartResult
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil || res.JobID == "" {
 		t.Fatalf("crawl body = %s", w.Body.String())
+	}
+}
+
+func TestAPICrawlConfig(t *testing.T) {
+	h := testAPI(t)
+	w := do(t, h, http.MethodGet, "/crawl/config", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /crawl/config = %d: %s", w.Code, w.Body.String())
+	}
+	var res proto.CrawlConfigResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode crawl config: %v", err)
+	}
+	if res.MaxDepth != 4 {
+		t.Fatalf("crawl max depth = %d, want 4", res.MaxDepth)
 	}
 }
 

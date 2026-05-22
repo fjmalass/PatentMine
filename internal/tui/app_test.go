@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"context"
+	"net"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,7 +12,10 @@ import (
 	"patentmine/internal/ai"
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/engine"
 	"patentmine/internal/proto"
+	"patentmine/internal/rpc"
+	"patentmine/internal/store/sqlite"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/overlay"
@@ -30,6 +36,48 @@ func newTestApp(t *testing.T) *App {
 		t.Fatalf("command.Default: %v", err)
 	}
 	app, err := New(nil, reg, keymap.Default(), text.English())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	app.Update(tea.WindowSizeMsg{Width: testAppWidth, Height: testAppHeight})
+	return app
+}
+
+func newRPCBackedTestApp(t *testing.T) *App {
+	t.Helper()
+	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "tui.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) engine.Job {
+		return engine.JobFunc(func(_ context.Context, id engine.JobID, emit func(proto.Event)) error {
+			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{JobID: string(id), Message: root.String()}))
+			return nil
+		})
+	}
+	eng := engine.New(ctx, repo, factory, engine.WithCrawlMaxDepth(4))
+	socket := filepath.Join(t.TempDir(), "tui.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = rpc.NewServer(eng, false).Serve(ctx, ln) }()
+	client, err := rpc.Dial(socket)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.Close()
+		cancel()
+		eng.Close()
+		_ = repo.Close()
+	})
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	app, err := New(client, reg, keymap.Default(), text.English())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -137,9 +185,21 @@ func TestAppOpensCommandPaletteAndPrompt(t *testing.T) {
 	}
 }
 
+func TestAppCrawlDepthMaxCommandSetsStatus(t *testing.T) {
+	app := newRPCBackedTestApp(t)
+	_, cmd := app.cmdCrawlDepthMax(invocation{})
+	if cmd == nil {
+		t.Fatal("cmdCrawlDepthMax returned nil command")
+	}
+	app.Update(cmd())
+	if app.status != "crawl family depth max: 4" {
+		t.Fatalf("status = %q, want crawl family depth max: 4", app.status)
+	}
+}
+
 type refreshProbePane struct{ refreshes int }
 
-func (p *refreshProbePane) Scope() command.Scope            { return command.ScopeCatalog }
+func (p *refreshProbePane) Scope() command.Scope                { return command.ScopeCatalog }
 func (p *refreshProbePane) Title() string                       { return "probe" }
 func (p *refreshProbePane) Init() tea.Cmd                       { return nil }
 func (p *refreshProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }
@@ -161,7 +221,7 @@ type mountProbePane struct {
 	inited  bool
 }
 
-func (p *mountProbePane) Scope() command.Scope               { return command.ScopeCatalog }
+func (p *mountProbePane) Scope() command.Scope                   { return command.ScopeCatalog }
 func (p *mountProbePane) Title() string                          { return "mount" }
 func (p *mountProbePane) Init() tea.Cmd                          { p.inited = true; return nil }
 func (p *mountProbePane) View(int, int) string                   { return "" }
@@ -180,7 +240,7 @@ func (p *mountProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
 
 type projectProbePane struct{ project domain.Project }
 
-func (p *projectProbePane) Scope() command.Scope            { return command.ScopeProjects }
+func (p *projectProbePane) Scope() command.Scope                { return command.ScopeProjects }
 func (p *projectProbePane) Title() string                       { return "projects" }
 func (p *projectProbePane) Init() tea.Cmd                       { return nil }
 func (p *projectProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }
@@ -197,7 +257,7 @@ type patentProbePane struct {
 	selections []domain.PatentNumber
 }
 
-func (p *patentProbePane) Scope() command.Scope            { return command.ScopeCatalog }
+func (p *patentProbePane) Scope() command.Scope                { return command.ScopeCatalog }
 func (p *patentProbePane) Title() string                       { return "patents" }
 func (p *patentProbePane) Init() tea.Cmd                       { return nil }
 func (p *patentProbePane) Update(tea.Msg) (pane.Pane, tea.Cmd) { return p, nil }
@@ -398,4 +458,3 @@ func TestAppSettingsAIKeys(t *testing.T) {
 		t.Errorf("expected app.aiProvider to be gemini, got %s", app.aiProvider)
 	}
 }
-

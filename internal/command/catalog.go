@@ -86,6 +86,7 @@ const (
 
 	// Crawling.
 	CrawlFamily    ID = "crawl.family"
+	CrawlDepthMax  ID = "crawl.depth.max"
 	CrawlCitations ID = "crawl.citations"
 	CrawlCitedBy   ID = "crawl.citedby"
 	CrawlAll       ID = "crawl.all"
@@ -213,6 +214,7 @@ func Default() (*Registry, error) {
 
 		// --- crawling (engine) ---
 		Command{ID: CrawlFamily, Name: "crawl.family", Aliases: []string{"family"}, Usage: ":crawl.family", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
+		Command{ID: CrawlDepthMax, Name: "crawl.depth.max", Aliases: []string{"family.depth.max", "crawl-depth-max"}, Usage: ":crawl.depth.max", Kind: KindView},
 		Command{ID: CrawlCitations, Name: "crawl.citations", Aliases: []string{"crawl-citations"}, Usage: ":crawl.citations", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: CrawlCitedBy, Name: "crawl.citedby", Aliases: []string{"crawl-citedby"}, Usage: ":crawl.citedby", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: CrawlAll, Name: "crawl.all", Aliases: []string{"crawl", "recursion"}, Usage: ":crawl.all", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},

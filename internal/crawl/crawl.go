@@ -74,6 +74,11 @@ func (c *Crawler) WithLogger(logger *slog.Logger) *Crawler {
 	return c
 }
 
+// Config returns the crawler's resolved limits after defaults are applied.
+func (c *Crawler) Config() CrawlConfig {
+	return c.cfg
+}
+
 // node is one queued patent number and its BFS depth from the root.
 type node struct {
 	number domain.PatentNumber
