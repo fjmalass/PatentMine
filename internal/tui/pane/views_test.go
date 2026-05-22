@@ -160,7 +160,7 @@ func TestPatentTableColumnsResponsive(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		cols := patentTableColumns(tt.width, "")
+		cols := patentTableColumns(tt.width, domain.PatentTableColumns(""))
 		if len(cols) != len(tt.wantColumns) {
 			t.Errorf("width %d: got %d columns, want %d", tt.width, len(cols), len(tt.wantColumns))
 			continue
@@ -173,3 +173,29 @@ func TestPatentTableColumnsResponsive(t *testing.T) {
 	}
 }
 
+func TestMoveSortableColumnSkipsUnsortableVisibleColumns(t *testing.T) {
+	cols := patentTableColumns(120, domain.PatentTableColumns(""))
+	if got := moveSortableColumn(cols, -1, 1); got != 1 {
+		t.Fatalf("moveSortableColumn next from none = %d, want 1 for NUMBER", got)
+	}
+	if got := moveSortableColumn(cols, 5, 1); got != 8 {
+		t.Fatalf("moveSortableColumn next from EXPIRES = %d, want 8 for FETCH", got)
+	}
+	if got := moveSortableColumn(cols, 8, 1); got != 1 {
+		t.Fatalf("moveSortableColumn should wrap to NUMBER, got %d", got)
+	}
+	if got := moveSortableColumn(cols, 8, -1); got != 5 {
+		t.Fatalf("moveSortableColumn prev from FETCH = %d, want 5 for EXPIRES", got)
+	}
+}
+
+func TestClampFocusedSortableColumnSkipsUnsortableCurrentColumn(t *testing.T) {
+	cols := patentTableColumns(120, domain.PatentTableColumns(""))
+	if got := clampFocusedSortableColumn(cols, 0); got != 1 {
+		t.Fatalf("clampFocusedSortableColumn from index column = %d, want NUMBER column index 1", got)
+	}
+	projectCols := patentTableColumns(120, domain.PatentTableColumns("p1"))
+	if got := clampFocusedSortableColumn(projectCols, 6); got != 6 {
+		t.Fatalf("clampFocusedSortableColumn should keep sortable TAGS focus, got %d", got)
+	}
+}

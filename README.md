@@ -4,6 +4,10 @@ PatentMine is a high-performance patent curation and crawling engine. At its cor
 
 This manual details the architecture, dynamic value-type systems, lifecycle phases of a patent, database cascades, deletion models, and codebase navigation.
 
+Related docs:
+
+1. [Metrics Guide](./metrics.md)
+
 ---
 
 ## 1. The Core Challenge: The Multi-Stage Patent Identifier
@@ -419,6 +423,7 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 #### A. Global Key Bindings (Active Everywhere)
 * `ctrl+c` / `Q` : Quit the TUI application completely.
 * `?` : Open the interactive Help overlay.
+* `M` : Open the daemon metrics overlay.
 * `q` / `h` / `left` : Go back to the previous screen or close the focused overlay panel.
 * `:` : Open the CLI direct command prompt palette.
 
@@ -486,9 +491,13 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 
 When in the TUI, pressing `:` opens the CLI command prompt palette where you can type commands directly to execute engine functions. The following tag taxonomy and assignment commands are fully supported:
 
+* `:metrics` : Open the daemon metrics overlay with `Timings`, `Counters`, and `Gauges` tabs.
+
 * `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
 * `:tag.list` : List all tags currently registered in the active project's taxonomy.
 * `:tag.delete <name>` : Remove a tag from the active project's taxonomy (cascades to delete all patent assignments for this tag).
 * `:tag.patent.add <name>` : Assign a taxonomy-registered tag to the selected patent. (Fails if the tag does not exist in the taxonomy).
 * `:tag.patent.delete <name>` : Remove a tag assignment from the selected patent.
 * `:tag.patent.list` : List all tags assigned to the selected patent, along with their assignment timestamps.
+
+For fuller metrics details, including API access paths, overlay behavior, limitations, and follow-up work, see [`metrics.md`](./metrics.md).

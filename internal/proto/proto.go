@@ -21,6 +21,7 @@ const (
 	MethodPatentGet      Method = "patent.get"
 	MethodPatentInventorStats Method = "patent.inventor_stats"
 	MethodPatentList     Method = "patent.list"
+	MethodPatentTableColumns Method = "patent.table_columns"
 	MethodPatentDelete   Method = "patent.delete"
 	MethodProjectList    Method = "project.list"
 	MethodProjectCreate  Method = "project.create"

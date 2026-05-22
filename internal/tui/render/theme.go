@@ -6,6 +6,10 @@ import "github.com/charmbracelet/lipgloss"
 const (
 	colorAccent   = "63"  // headings, highlights
 	colorAltRow   = "235" // alternating row background
+	colorFocus    = "22"  // focused sortable column background
+	colorFocusAlt = "28"  // focused column on alternating rows
+	colorFocusHdr = "29"  // focused column header background
+	colorFocusSel = "35"  // focused column on selected rows
 	colorSelected = "237" // selected-row background
 	colorVisual   = "17"  // visual-range background (dark navy)
 	colorDim      = "242" // de-emphasised text
@@ -21,9 +25,13 @@ type Theme struct {
 	Title       lipgloss.Style
 	Header      lipgloss.Style
 	SortActive  lipgloss.Style
+	FocusHeader lipgloss.Style
 	Row         lipgloss.Style
 	RowAlt      lipgloss.Style
 	Selected    lipgloss.Style
+	FocusCell   lipgloss.Style
+	FocusCellAlt lipgloss.Style
+	FocusSelected lipgloss.Style
 	Visual      lipgloss.Style
 	Dim         lipgloss.Style
 	Status      lipgloss.Style
@@ -42,7 +50,7 @@ func NewTheme() Theme {
 			Foreground(lipgloss.Color(colorAccent)),
 		Header: lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color(colorDim)),
-		SortActive: lipgloss.NewStyle().Bold(true).Underline(true).
+		SortActive: lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color(colorAccent)),
 		Row: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorText)),
@@ -52,6 +60,18 @@ func NewTheme() Theme {
 		Selected: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorSelected)).Bold(true),
+		FocusHeader: lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFocusHdr)),
+		FocusCell: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFocus)),
+		FocusCellAlt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFocusAlt)),
+		FocusSelected: lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFocusSel)),
 		Visual: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorVisual)),

@@ -19,6 +19,7 @@ import (
 )
 
 const slowRPCMethod = 150 * time.Millisecond
+const slowTagSortRPC = 150 * time.Millisecond
 
 // ErrBadParams marks a request whose params failed to decode.
 var ErrBadParams = errors.New("rpc: bad params")
@@ -42,6 +43,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodPatentGet:                s.patentGet,
 		proto.MethodPatentInventorStats:      s.patentInventorStats,
 		proto.MethodPatentList:               s.patentList,
+		proto.MethodPatentTableColumns:       s.patentTableColumns,
 		proto.MethodPatentDelete:             s.patentDelete,
 		proto.MethodProjectList:              s.projectList,
 		proto.MethodProjectCreate:            s.projectCreate,
@@ -185,6 +187,7 @@ func (s *Server) observeRPC(method proto.Method, start time.Time, failed bool) {
 func (s *Server) engineMetrics() interface {
 	ObserveDuration(string, time.Duration, bool)
 	IncCounter(string, int64)
+	SetGauge(string, int64)
 } {
 	return s.engineMetricsRef()
 }
@@ -192,6 +195,7 @@ func (s *Server) engineMetrics() interface {
 func (s *Server) engineMetricsRef() interface {
 	ObserveDuration(string, time.Duration, bool)
 	IncCounter(string, int64)
+	SetGauge(string, int64)
 } {
 	if s.engine == nil {
 		return nil
@@ -301,6 +305,43 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 	if err != nil {
 		return nil, err
 	}
+	if !domain.PatentTableAllowsSort(p.Project, p.SortColumn) {
+		s.Logger().Warn("unsupported patent list sort",
+			slog.String("project", string(p.Project)),
+			slog.String("sort_column", string(p.SortColumn)))
+		if metrics := s.engineMetrics(); metrics != nil {
+			metrics.IncCounter("patent_list.sort_unsupported_total", 1)
+		}
+		return nil, fmt.Errorf("%w: unsupported patent list sort %q", ErrBadParams, p.SortColumn)
+	}
+	if p.SortColumn != "" {
+		if metrics := s.engineMetrics(); metrics != nil {
+			metrics.IncCounter("patent_list.sort_request_total", 1)
+		}
+	}
+	var tagSortStart time.Time
+	if p.SortColumn == domain.SortByTags {
+		tagSortStart = time.Now()
+		if metrics := s.engineMetrics(); metrics != nil {
+			metrics.IncCounter("patent_list.sort_tags_total", 1)
+		}
+		defer func() {
+			d := time.Since(tagSortStart)
+			if metrics := s.engineMetrics(); metrics != nil {
+				metrics.ObserveDuration("rpc.method.patent.list.sort_tags", d, err != nil)
+				metrics.SetGauge("rpc.method.patent.list.sort_tags.limit", int64(p.Limit))
+				metrics.SetGauge("rpc.method.patent.list.sort_tags.offset", int64(p.Offset))
+			}
+			if d >= slowTagSortRPC {
+				s.Logger().Warn("slow patent list tag sort",
+					slog.String("project", string(p.Project)),
+					slog.Int("limit", p.Limit),
+					slog.Int("offset", p.Offset),
+					slog.Int64("duration_ms", d.Milliseconds()),
+					slog.Bool("failed", err != nil))
+			}
+		}()
+	}
 	patents, total, err := s.engine.ListPatents(ctx, store.PatentQuery{
 		Project:        p.Project,
 		ReviewState:    p.ReviewState,
@@ -316,6 +357,14 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, err
 	}
 	return proto.PatentListResult{Patents: patents, Total: total}, nil
+}
+
+func (s *Server) patentTableColumns(_ context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentTableColumnsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentTableColumnsResult{Columns: domain.PatentTableColumns(p.Project)}, nil
 }
 
 func (s *Server) projectList(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -505,6 +554,40 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 	p, err := decodeParams[proto.RelationsParams](raw)
 	if err != nil {
 		return nil, err
+	}
+	if !domain.PatentTableAllowsSort(p.Project, p.SortColumn) {
+		s.Logger().Warn("unsupported patent relations sort",
+			slog.String("project", string(p.Project)),
+			slog.String("sort_column", string(p.SortColumn)),
+			slog.String("kind", string(p.Kind)))
+		if metrics := s.engineMetrics(); metrics != nil {
+			metrics.IncCounter("patent_relations.sort_unsupported_total", 1)
+		}
+		return nil, fmt.Errorf("%w: unsupported patent relations sort %q", ErrBadParams, p.SortColumn)
+	}
+	var tagSortStart time.Time
+	if p.SortColumn == domain.SortByTags {
+		tagSortStart = time.Now()
+		if metrics := s.engineMetrics(); metrics != nil {
+			metrics.IncCounter("patent_relations.sort_tags_total", 1)
+		}
+		defer func() {
+			d := time.Since(tagSortStart)
+			if metrics := s.engineMetrics(); metrics != nil {
+				metrics.ObserveDuration("rpc.method.patent.relations.sort_tags", d, err != nil)
+				metrics.SetGauge("rpc.method.patent.relations.sort_tags.limit", int64(p.Limit))
+				metrics.SetGauge("rpc.method.patent.relations.sort_tags.offset", int64(p.Offset))
+			}
+			if d >= slowTagSortRPC {
+				s.Logger().Warn("slow patent relations tag sort",
+					slog.String("project", string(p.Project)),
+					slog.String("kind", string(p.Kind)),
+					slog.Int("limit", p.Limit),
+					slog.Int("offset", p.Offset),
+					slog.Int64("duration_ms", d.Milliseconds()),
+					slog.Bool("failed", err != nil))
+			}
+		}()
 	}
 	q := store.PatentQuery{
 		Relation:       p.Number,

@@ -10,7 +10,7 @@ import (
 // composes a Stack from these; Default() builds the shipped bindings, but the
 // same shape could be loaded from a user config file.
 type Keymaps struct {
-	base     *Layer
+	base   *Layer
 	scopes map[command.Scope]*Layer
 }
 
@@ -91,6 +91,7 @@ func Default() *Keymaps {
 		"ctrl+c": command.Quit,
 		"Q":      command.Quit,
 		"?":      command.Help,
+		"M":      command.OpenMetrics,
 		"h":      command.Back,
 		"left":   command.Back,
 		"esc":    command.Back,
@@ -123,10 +124,10 @@ func Default() *Keymaps {
 		BindAll(patentActions()).
 		BindAll(viewActions()).
 		BindAll(map[string]command.ID{
-			"/":  command.OpenSearch,
-			";":  command.JumpMode,
-			"t":  command.OpenFullText,
-			"a":  command.AIAnalyze,
+			"/":     command.OpenSearch,
+			";":     command.JumpMode,
+			"t":     command.OpenFullText,
+			"a":     command.AIAnalyze,
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
 		})
@@ -181,15 +182,15 @@ func Default() *Keymaps {
 	fullText := NewLayer("fulltext", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
-			";":  command.JumpMode,
-			"V":  command.SelectVisual,
-			"y":  command.CopyYank,
-			"Y":  command.CopyYankMeta,
-			"n":  command.NoteAdd,
-			"N":  command.NoteOpen,
-			"w":  command.OpenBrowser,
-			"/":  command.OpenSearch,
-			"h":  command.Back,
+			";":   command.JumpMode,
+			"V":   command.SelectVisual,
+			"y":   command.CopyYank,
+			"Y":   command.CopyYankMeta,
+			"n":   command.NoteAdd,
+			"N":   command.NoteOpen,
+			"w":   command.OpenBrowser,
+			"/":   command.OpenSearch,
+			"h":   command.Back,
 			"esc": command.Back,
 		})
 

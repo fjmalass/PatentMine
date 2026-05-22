@@ -6,13 +6,13 @@ import "patentmine/internal/proto"
 // file spells a command identifier as a bare string.
 const (
 	// Navigation within a list or scrollable pane.
-	NavDown     ID = "nav.down"
-	NavUp       ID = "nav.up"
-	NavPageDown ID = "nav.page-down"
-	NavPageUp   ID = "nav.page-up"
-	NavTop          ID = "nav.top"
-	NavBottom       ID = "nav.bottom"
-	ReselectLast    ID = "nav.reselect-last"
+	NavDown      ID = "nav.down"
+	NavUp        ID = "nav.up"
+	NavPageDown  ID = "nav.page-down"
+	NavPageUp    ID = "nav.page-up"
+	NavTop       ID = "nav.top"
+	NavBottom    ID = "nav.bottom"
+	ReselectLast ID = "nav.reselect-last"
 
 	// Moving between panes and overlays.
 	OpenDetail          ID = "view.detail"
@@ -23,18 +23,19 @@ const (
 	OpenInventors       ID = "view.inventors"
 	OpenInventorsDirect ID = "view.inventors.direct"
 	Back                ID = "view.back"
-	CloseOverlay  ID = "view.close-overlay"
-	Refresh       ID = "view.refresh"
-	OpenSearch    ID = "search.open"
-	OpenCommand   ID = "command.open"
-	JumpMode      ID = "view.jump"
-	SelectVisual  ID = "select.visual"
-	SelectClear   ID = "select.clear"
-	SelectAll     ID = "select.all"
-	ColNext       ID = "col.next"
-	ColPrev       ID = "col.prev"
-	SortApply     ID = "col.sort-apply"
-	OpenBrowser   ID = "view.browser"
+	CloseOverlay        ID = "view.close-overlay"
+	Refresh             ID = "view.refresh"
+	OpenSearch          ID = "search.open"
+	OpenCommand         ID = "command.open"
+	JumpMode            ID = "view.jump"
+	SelectVisual        ID = "select.visual"
+	SelectClear         ID = "select.clear"
+	SelectAll           ID = "select.all"
+	ColNext             ID = "col.next"
+	ColPrev             ID = "col.prev"
+	SortApply           ID = "col.sort-apply"
+	OpenBrowser         ID = "view.browser"
+	OpenMetrics         ID = "view.metrics"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
@@ -58,15 +59,15 @@ const (
 	AddToProject    ID = "patent.add-to-project"
 
 	// Tagging. Both act on the selected patent within the active project.
-	Tag    ID = "patent.tag"
+	Tag   ID = "patent.tag"
 	Untag ID = "patent.untag"
 
 	// Tag taxonomy and patent tag assignments.
 	TagTaxonomyAdd    ID = "tag.add"
 	TagTaxonomyList   ID = "tag.list"
 	TagTaxonomyDelete ID = "tag.delete"
-	TagStrict      ID = "tag.patent.add"
-	UntagStrict   ID = "tag.patent.delete"
+	TagStrict         ID = "tag.patent.add"
+	UntagStrict       ID = "tag.patent.delete"
 	TagPatentList     ID = "tag.patent.list"
 	TagPatentManage   ID = "tag.patent"
 
@@ -84,7 +85,7 @@ const (
 	CrawlAll       ID = "crawl.all"
 	CrawlCancel    ID = "crawl.cancel"
 	LookupPatent   ID = "patent.lookup"
-	Import          ID = "patent.import"
+	Import         ID = "patent.import"
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -136,6 +137,7 @@ func Default() (*Registry, error) {
 		// --- panes and overlays (view) ---
 		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: OpenBrowser, Name: "browse", Aliases: []string{"open.browser", "web"}, Usage: ":browse [PATENT ...]", Kind: KindView, Scopes: patentScopes},
+		Command{ID: OpenMetrics, Name: "metrics", Aliases: []string{"open.metrics", "observability"}, Usage: ":metrics", Kind: KindView},
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
 		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeIDS}},

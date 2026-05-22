@@ -106,15 +106,25 @@ func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (patent domain
 // ListPatents returns one page of lightweight listing rows matching q.
 func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []domain.PatentRow, err error) {
 	defer r.observeDuration("list_patents", time.Now(), &err)
+	var tagSortStart time.Time
+	if q.SortColumn == domain.SortByTags {
+		tagSortStart = time.Now()
+		defer func() { r.observeTagSortDuration(tagSortStart, &err, len(out), q) }()
+	}
 	cols, colArgs := patentRowColumns(q.Project)
 	where, whereArgs := patentFilter(q)
+	orderBy, orderArgs, err := patentSortExpr(q)
+	if err != nil {
+		return nil, err
+	}
 	limit := q.Limit
 	if limit <= 0 {
 		limit = store.DefaultPageSize
 	}
 	query := `SELECT ` + cols + ` FROM patent p` + where +
-		` ORDER BY ` + patentSortExpr(q.SortColumn, q.SortAscending) + ` LIMIT ? OFFSET ?`
+		` ORDER BY ` + orderBy + ` LIMIT ? OFFSET ?`
 	args := append(colArgs, whereArgs...)
+	args = append(args, orderArgs...)
 	args = append(args, limit, max(q.Offset, 0))
 
 	rows, err := r.reader.QueryContext(ctx, query, args...)
@@ -140,6 +150,18 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 		}
 	}
 	return out, nil
+}
+
+func (r *Repo) observeTagSortDuration(start time.Time, errp *error, rows int, q store.PatentQuery) {
+	if r.metrics == nil {
+		return
+	}
+	failed := errp != nil && *errp != nil
+	r.metrics.IncCounter("store.sqlite.list_patents.sort_tags_total", 1)
+	r.metrics.ObserveDuration("store.sqlite.list_patents.sort_tags", time.Since(start), failed)
+	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.limit", int64(q.Limit))
+	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.offset", int64(q.Offset))
+	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.rows", int64(rows))
 }
 
 // attachTags fills the Tags field of every row in one query. It replaces a
@@ -242,31 +264,45 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	return row, nil
 }
 
-// patentSortExpr returns an ORDER BY expression for the given sort column and
-// direction. An empty col always returns number ASC (the default stable order).
-func patentSortExpr(col domain.SortColumn, asc bool) string {
-	if col == "" {
-		return "p.number ASC"
+// patentSortExpr returns an ORDER BY expression for the given query. The RPC
+// layer should validate sort support before this runs; this check keeps the
+// repository explicit if a caller bypasses that contract.
+func patentSortExpr(q store.PatentQuery) (string, []any, error) {
+	if q.SortColumn == "" {
+		return "p.number ASC", nil, nil
+	}
+	if !domain.PatentTableAllowsSort(q.Project, q.SortColumn) {
+		return "", nil, fmt.Errorf("store/sqlite: unsupported sort column %q for project %q", q.SortColumn, q.Project)
 	}
 	dir := "ASC"
-	if !asc {
+	if !q.SortAscending {
 		dir = "DESC"
 	}
-	switch col {
+	switch q.SortColumn {
+	case domain.SortByNumber:
+		return "p.number " + dir, nil, nil
 	case domain.SortByTitle:
-		return "p.title " + dir
+		return "p.title " + dir, nil, nil
 	case domain.SortByInventor:
-		return "json_extract(p.inventors, '$[0]') " + dir
+		return "json_extract(p.inventors, '$[0]') " + dir, nil, nil
 	case domain.SortByExpires:
-		return "p.expiration_date " + dir
+		return "p.expiration_date " + dir, nil, nil
 	case domain.SortByReviewState:
-		return "COALESCE(m.state, p.fetch_state) " + dir
+		if q.Project != "" {
+			return "COALESCE(m.state, p.fetch_state) " + dir, nil, nil
+		}
+		return "p.fetch_state " + dir, nil, nil
 	case domain.SortByIDS:
-		return "COALESCE(m.ids_status, '') " + dir
+		return "COALESCE(m.ids_status, '') " + dir, nil, nil
+	case domain.SortByTags:
+		return `COALESCE((SELECT group_concat(name, ' ') FROM (` +
+			`SELECT t.name AS name FROM patent_tag pt JOIN tag t ON t.id = pt.tag_id ` +
+			`WHERE t.project_id = ? AND pt.patent_number = p.number ORDER BY t.name` +
+			`)), '') ` + dir, []any{string(q.Project)}, nil
 	case domain.SortByClassification:
-		return "json_extract(p.classifications, '$[0]') " + dir
+		return "json_extract(p.classifications, '$[0]') " + dir, nil, nil
 	default:
-		return "p.number " + dir
+		return "", nil, fmt.Errorf("store/sqlite: unsupported sort column %q", q.SortColumn)
 	}
 }
 
@@ -576,4 +612,3 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 
 	return out, nil
 }
-

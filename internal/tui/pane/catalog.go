@@ -29,6 +29,8 @@ type Catalog struct {
 	handlers map[command.ID]cmdHandler
 
 	activeProject *domain.Project
+	columns       []domain.PatentTableColumn
+	columnsProject domain.ProjectID
 
 	patents       []domain.PatentRow
 	page          render.Paginator
@@ -36,6 +38,7 @@ type Catalog struct {
 	loading       bool
 	loadErr       string
 	loadID        uint64
+	columnsLoadID uint64
 	visualMode    bool
 	visualAnchor  int
 	lastActive        domain.PatentNumber
@@ -56,6 +59,8 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 	c := &Catalog{
 		client:        client,
 		theme:         theme,
+		columns:       domain.PatentTableColumns(""),
+		columnsProject: "",
 		page:          render.NewPaginator(defaultPageSize),
 		loading:       true,
 		activeSort:    domain.SortByReviewState,
@@ -101,7 +106,17 @@ func (c *Catalog) Scope() command.Scope { return command.ScopeCatalog }
 func (c *Catalog) Title() string { return "Patents" }
 
 // Init implements Pane.
-func (c *Catalog) Init() tea.Cmd { return c.load() }
+func (c *Catalog) Init() tea.Cmd { return tea.Batch(c.loadColumns(), c.load()) }
+
+func (c *Catalog) loadColumns() tea.Cmd {
+	requestID := nextAsyncID()
+	c.columnsLoadID = requestID
+	var project domain.ProjectID
+	if c.activeProject != nil {
+		project = c.activeProject.ID
+	}
+	return LoadPatentTableColumnsCmd(c.client, project, requestID)
+}
 
 // load fetches the patent list from the daemon.
 func (c *Catalog) load() tea.Cmd {
@@ -181,23 +196,13 @@ func (c *Catalog) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 
 // focusNext moves the visual focus to the next column.
 func (c *Catalog) focusNext() tea.Cmd {
-	cols := c.currentCols()
-	if c.focusedColIdx < 0 {
-		c.focusedColIdx = 0
-	} else {
-		c.focusedColIdx = (c.focusedColIdx + 1) % len(cols)
-	}
+	c.focusedColIdx = moveSortableColumn(c.currentCols(), c.focusedColIdx, 1)
 	return nil
 }
 
 // focusPrev moves the visual focus to the previous column.
 func (c *Catalog) focusPrev() tea.Cmd {
-	cols := c.currentCols()
-	if c.focusedColIdx < 0 {
-		c.focusedColIdx = len(cols) - 1
-	} else {
-		c.focusedColIdx = (c.focusedColIdx - 1 + len(cols)) % len(cols)
-	}
+	c.focusedColIdx = moveSortableColumn(c.currentCols(), c.focusedColIdx, -1)
 	return nil
 }
 
@@ -228,7 +233,11 @@ func (c *Catalog) currentCols() []tableCol {
 	if c.activeProject != nil {
 		projectID = c.activeProject.ID
 	}
-	return patentTableColumns(max(c.lastWidth, 80), projectID)
+	schema := c.columns
+	if len(schema) == 0 || c.columnsProject != projectID {
+		schema = domain.PatentTableColumns(projectID)
+	}
+	return patentTableColumns(max(c.lastWidth, 80), schema)
 }
 
 // Command implements Pane.
@@ -335,6 +344,7 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	switch m := msg.(type) {
 	case ResizeMsg:
 		pageSize := max(m.Height-headerRows, 1)
+		c.focusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.focusedColIdx)
 		if pageSize != c.page.PageSize() {
 			before := c.page.Offset()
 			c.page.SetPageSize(pageSize)
@@ -351,7 +361,16 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.loadedBase = 0
 			c.loading = true
 			c.clearVisual()
-			return c, c.load()
+			return c, tea.Batch(c.loadColumns(), c.load())
+		}
+	case patentTableColumnsLoadedMsg:
+		if m.requestID != c.columnsLoadID {
+			return c, nil
+		}
+		if m.err == nil && len(m.columns) > 0 {
+			c.columns = m.columns
+			c.columnsProject = m.project
+			c.focusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.focusedColIdx)
 		}
 	case catalogLoadedMsg:
 		if m.requestID != c.loadID {
@@ -473,7 +492,8 @@ func (c *Catalog) View(w, h int) string {
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
-		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute)
+		isSelectedRow := absolute == c.page.Cursor()
+		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow)
 		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {
@@ -481,7 +501,7 @@ func (c *Catalog) View(w, h int) string {
 			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
 		case c.visualMode && c.inVisualRange(absolute):
 			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
-		case absolute == c.page.Cursor():
+		case isSelectedRow:
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
 		default:
 			b.WriteString(rowStyle(render.Pad(line, w)))

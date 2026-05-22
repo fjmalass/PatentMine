@@ -15,6 +15,7 @@ const (
 	SortByExpires     SortColumn = "expires"
 	SortByReviewState SortColumn = "review_state"
 	SortByIDS         SortColumn = "ids"
+	SortByTags        SortColumn = "tags"
 	SortByClassification SortColumn = "classification"
 )
 

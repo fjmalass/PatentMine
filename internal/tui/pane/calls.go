@@ -29,6 +29,28 @@ func nextAsyncID() uint64 {
 	return asyncSeq.Add(1)
 }
 
+type patentTableColumnsLoadedMsg struct {
+	requestID uint64
+	project   domain.ProjectID
+	columns   []domain.PatentTableColumn
+	err       error
+}
+
+// LoadPatentTableColumnsCmd loads the server-owned patent-table schema.
+func LoadPatentTableColumnsCmd(client *rpc.Client, project domain.ProjectID, requestID uint64) tea.Cmd {
+	if client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentTableColumnsResult
+		err := client.Call(ctx, proto.MethodPatentTableColumns,
+			proto.PatentTableColumnsParams{Project: project}, &res)
+		return patentTableColumnsLoadedMsg{requestID: requestID, project: project, columns: res.Columns, err: err}
+	}
+}
+
 // crawl depth selectors. A negative depth crawls the configured family depth;
 // zero looks up only the named patent.
 const (
@@ -346,4 +368,3 @@ func LookupClassificationCmd(client *rpc.Client, code string) tea.Cmd {
 		return StatusMsg{Key: text.StatusClassificationLookupSuccess, Args: []any{res.Code, res.Description}}
 	}
 }
-

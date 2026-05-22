@@ -267,3 +267,28 @@ func TestAPIRelationsHonorsProjectAndReviewState(t *testing.T) {
 		t.Fatalf("relations result = %+v, want one under_review related patent", res.Patents)
 	}
 }
+
+func TestAPIPatentTableColumns(t *testing.T) {
+	env := testAPIEnv(t)
+	w := do(t, env.handler, http.MethodGet, "/patents/columns?project=p1", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /patents/columns = %d: %s", w.Code, w.Body.String())
+	}
+	var res proto.PatentTableColumnsResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode columns: %v", err)
+	}
+	if len(res.Columns) == 0 {
+		t.Fatal("expected patent table columns")
+	}
+	var tags domain.PatentTableColumn
+	for _, col := range res.Columns {
+		if col.Key == domain.PatentColumnTags {
+			tags = col
+			break
+		}
+	}
+	if !tags.Sortable || tags.SortKey != domain.SortByTags {
+		t.Fatalf("tags column = %+v, want sortable tags sort", tags)
+	}
+}

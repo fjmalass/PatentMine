@@ -3,11 +3,13 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/store"
 )
 
@@ -21,6 +23,18 @@ func openTestRepo(t *testing.T) *Repo {
 	}
 	t.Cleanup(func() { _ = repo.Close() })
 	return repo
+}
+
+func openTestRepoWithMetrics(t testing.TB) (*Repo, *observability.Metrics) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test.db")
+	metrics := observability.NewMetrics()
+	repo, err := OpenWithMetrics(context.Background(), path, metrics)
+	if err != nil {
+		t.Fatalf("OpenWithMetrics: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	return repo, metrics
 }
 
 func samplePatent(number string) domain.Patent {
@@ -535,6 +549,111 @@ func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 	}
 }
 
+func TestListPatentsSortByTags(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project, p1, p2 := seedTagSortFixture(t, repo, ctx, 2)
+
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, SortColumn: domain.SortByTags, SortAscending: true})
+	if err != nil {
+		t.Fatalf("ListPatents sort asc: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Number != p2.Number || rows[1].Number != p1.Number {
+		t.Fatalf("tag asc order = %+v, want alpha then beta", rows)
+	}
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, SortColumn: domain.SortByTags, SortAscending: false})
+	if err != nil {
+		t.Fatalf("ListPatents sort desc: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Number != p1.Number || rows[1].Number != p2.Number {
+		t.Fatalf("tag desc order = %+v, want beta then alpha", rows)
+	}
+}
+
+func TestListPatentsSortByTagsMetrics(t *testing.T) {
+	repo, metrics := openTestRepoWithMetrics(t)
+	ctx := context.Background()
+	project, _, _ := seedTagSortFixture(t, repo, ctx, 3)
+	if _, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, SortColumn: domain.SortByTags, SortAscending: true, Limit: 2, Offset: 1}); err != nil {
+		t.Fatalf("ListPatents sort asc: %v", err)
+	}
+	snap := metrics.Snapshot()
+	if snap.Counters["store.sqlite.list_patents.sort_tags_total"] != 1 {
+		t.Fatalf("sort_tags_total = %d, want 1", snap.Counters["store.sqlite.list_patents.sort_tags_total"])
+	}
+	if snap.Timings["store.sqlite.list_patents.sort_tags"].Count != 1 {
+		t.Fatalf("sort_tags timing = %+v, want count 1", snap.Timings["store.sqlite.list_patents.sort_tags"])
+	}
+	if snap.Gauges["store.sqlite.list_patents.sort_tags.limit"] != 2 {
+		t.Fatalf("sort_tags limit gauge = %d, want 2", snap.Gauges["store.sqlite.list_patents.sort_tags.limit"])
+	}
+	if snap.Gauges["store.sqlite.list_patents.sort_tags.offset"] != 1 {
+		t.Fatalf("sort_tags offset gauge = %d, want 1", snap.Gauges["store.sqlite.list_patents.sort_tags.offset"])
+	}
+}
+
+func BenchmarkListPatentsSortByTags(b *testing.B) {
+	repo, _ := openTestRepoWithMetrics(b)
+	ctx := context.Background()
+	project, _, _ := seedTagSortFixture(b, repo, ctx, 250)
+	q := store.PatentQuery{Project: project.ID, SortColumn: domain.SortByTags, SortAscending: true, Limit: 100, Offset: 0}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rows, err := repo.ListPatents(ctx, q)
+		if err != nil {
+			b.Fatalf("ListPatents: %v", err)
+		}
+		if len(rows) == 0 {
+			b.Fatal("expected rows")
+		}
+	}
+}
+
+func seedTagSortFixture(t testing.TB, repo *Repo, ctx context.Context, count int) (domain.Project, domain.Patent, domain.Patent) {
+	t.Helper()
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	alpha, err := repo.CreateTag(ctx, project.ID, "alpha")
+	if err != nil {
+		t.Fatalf("CreateTag alpha: %v", err)
+	}
+	beta, err := repo.CreateTag(ctx, project.ID, "beta")
+	if err != nil {
+		t.Fatalf("CreateTag beta: %v", err)
+	}
+	var first, second domain.Patent
+	for i := 0; i < count; i++ {
+		number := domain.MustParsePatentNumber("US" + sevenDigits(i+1) + "A1")
+		p := samplePatent(number.String())
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent(%s): %v", p.Number, err)
+		}
+		if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p.Number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+			t.Fatalf("AddMembership(%s): %v", p.Number, err)
+		}
+		tagID := alpha.ID
+		if i%2 == 0 {
+			tagID = beta.ID
+		}
+		if err := repo.TagPatents(ctx, tagID, []domain.PatentNumber{p.Number}, time.Now().UTC()); err != nil {
+			t.Fatalf("TagPatents(%s): %v", p.Number, err)
+		}
+		if i == 0 {
+			first = p
+		}
+		if i == 1 {
+			second = p
+		}
+	}
+	return project, first, second
+}
+
+func sevenDigits(n int) string {
+	return fmt.Sprintf("%07d", n)
+}
+
 func TestBatchOperationsStore(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()
@@ -737,4 +856,3 @@ func TestPatentInventorStats(t *testing.T) {
 		t.Errorf("Alan Turing expected tag seminal=1, got: %v", alan.Tags)
 	}
 }
-

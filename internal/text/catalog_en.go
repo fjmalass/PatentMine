@@ -6,58 +6,58 @@ import "maps"
 // lines are keyed by ID through CmdTitle/CmdHelp and need no constant here.
 const (
 	// Status-line messages.
-	StatusWelcome              Key = "status.welcome"
-	StatusActiveProject        Key = "status.active_project"
-	StatusActiveProjectSaveErr Key = "status.active_project_save_err"
-	StatusClearedProject       Key = "status.cleared_project"
-	StatusProjectNotFound      Key = "status.project_not_found"
-	StatusNoPatentSelected     Key = "status.no_patent_selected"
-	StatusNoActiveProject      Key = "status.no_active_project"
-	StatusDaemonUnavailable    Key = "status.daemon_unavailable"
-	StatusNoProjectSelection   Key = "status.no_project_selection"
-	StatusNoProjectSelected    Key = "status.no_project_selected"
-	StatusUnknownCommand       Key = "status.unknown_command"
-	StatusCommandNotHere       Key = "status.command_not_here"
-	StatusUsage                Key = "status.usage"
-	StatusUnhandledCommand     Key = "status.unhandled_command"
-	StatusInvalidPatentNumber  Key = "status.invalid_patent_number"
-	StatusDaemonClosed         Key = "status.daemon_closed"
-	StatusAIAnalysisStarted    Key = "status.ai_analysis_started"
-	StatusAIAnalysisFailed     Key = "status.ai_analysis_failed"
-	StatusAIAnalysisComplete   Key = "status.ai_analysis_complete"
-	StatusCrawlProgress       Key = "status.ingest_progress"
-	StatusCrawlFailed         Key = "status.ingest_failed"
-	StatusCrawlComplete       Key = "status.ingest_complete"
-	StatusCrawlStarted        Key = "status.ingest_started"
-	StatusCrawlStartFailed    Key = "status.ingest_start_failed"
-	StatusAddFailed            Key = "status.add_failed"
-	StatusAdded                Key = "status.added"
-	StatusAddedNoCrawl        Key = "status.added_no_ingest"
-	StatusSetStateFailed       Key = "status.set_state_failed"
-	StatusSetState             Key = "status.set_state"
-	StatusNotesAdded          Key = "status.notes_added"
-	StatusNotesFlushed        Key = "status.notes_flushed"
-	StatusCopiedToClipboard   Key = "status.copied_to_clipboard"
-	StatusClipboardFailed     Key = "status.clipboard_failed"
-	StatusExportFailed         Key = "status.export_failed"
-	StatusExportDone           Key = "status.export_done"
-	StatusProjectCreateFailed  Key = "status.project_create_failed"
-	StatusProjectCreated       Key = "status.project_created"
-	StatusProjectNameEmpty     Key = "status.project_name_empty"
-	StatusImportFailed         Key = "status.import_failed"
-	StatusImported             Key = "status.imported"
-	StatusTagFailed            Key = "status.tag_failed"
-	StatusTagged               Key = "status.tagged"
-	StatusUntagFailed          Key = "status.untag_failed"
-	StatusUntagged             Key = "status.untagged"
-	StatusDeleteFailed         Key = "status.delete_failed"
-	StatusDeleted              Key = "status.deleted"
-	StatusBatchDeleted         Key = "status.batch_deleted"
-	StatusBatchSetState        Key = "status.batch_set_state"
-	StatusBatchAdded           Key = "status.batch_added"
-	StatusFilter               Key = "status.filter"
-	StatusBrowserOpenFailed    Key = "status.browser_open_failed"
-	StatusBrowserOpened        Key = "status.browser_opened"
+	StatusWelcome                 Key = "status.welcome"
+	StatusActiveProject           Key = "status.active_project"
+	StatusActiveProjectSaveErr    Key = "status.active_project_save_err"
+	StatusClearedProject          Key = "status.cleared_project"
+	StatusProjectNotFound         Key = "status.project_not_found"
+	StatusNoPatentSelected        Key = "status.no_patent_selected"
+	StatusNoActiveProject         Key = "status.no_active_project"
+	StatusDaemonUnavailable       Key = "status.daemon_unavailable"
+	StatusNoProjectSelection      Key = "status.no_project_selection"
+	StatusNoProjectSelected       Key = "status.no_project_selected"
+	StatusUnknownCommand          Key = "status.unknown_command"
+	StatusCommandNotHere          Key = "status.command_not_here"
+	StatusUsage                   Key = "status.usage"
+	StatusUnhandledCommand        Key = "status.unhandled_command"
+	StatusInvalidPatentNumber     Key = "status.invalid_patent_number"
+	StatusDaemonClosed            Key = "status.daemon_closed"
+	StatusAIAnalysisStarted       Key = "status.ai_analysis_started"
+	StatusAIAnalysisFailed        Key = "status.ai_analysis_failed"
+	StatusAIAnalysisComplete      Key = "status.ai_analysis_complete"
+	StatusCrawlProgress           Key = "status.ingest_progress"
+	StatusCrawlFailed             Key = "status.ingest_failed"
+	StatusCrawlComplete           Key = "status.ingest_complete"
+	StatusCrawlStarted            Key = "status.ingest_started"
+	StatusCrawlStartFailed        Key = "status.ingest_start_failed"
+	StatusAddFailed               Key = "status.add_failed"
+	StatusAdded                   Key = "status.added"
+	StatusAddedNoCrawl            Key = "status.added_no_ingest"
+	StatusSetStateFailed          Key = "status.set_state_failed"
+	StatusSetState                Key = "status.set_state"
+	StatusNotesAdded              Key = "status.notes_added"
+	StatusNotesFlushed            Key = "status.notes_flushed"
+	StatusCopiedToClipboard       Key = "status.copied_to_clipboard"
+	StatusClipboardFailed         Key = "status.clipboard_failed"
+	StatusExportFailed            Key = "status.export_failed"
+	StatusExportDone              Key = "status.export_done"
+	StatusProjectCreateFailed     Key = "status.project_create_failed"
+	StatusProjectCreated          Key = "status.project_created"
+	StatusProjectNameEmpty        Key = "status.project_name_empty"
+	StatusImportFailed            Key = "status.import_failed"
+	StatusImported                Key = "status.imported"
+	StatusTagFailed               Key = "status.tag_failed"
+	StatusTagged                  Key = "status.tagged"
+	StatusUntagFailed             Key = "status.untag_failed"
+	StatusUntagged                Key = "status.untagged"
+	StatusDeleteFailed            Key = "status.delete_failed"
+	StatusDeleted                 Key = "status.deleted"
+	StatusBatchDeleted            Key = "status.batch_deleted"
+	StatusBatchSetState           Key = "status.batch_set_state"
+	StatusBatchAdded              Key = "status.batch_added"
+	StatusFilter                  Key = "status.filter"
+	StatusBrowserOpenFailed       Key = "status.browser_open_failed"
+	StatusBrowserOpened           Key = "status.browser_opened"
 	StatusTagTaxonomyAddFailed    Key = "status.tag_taxonomy_add_failed"
 	StatusTagTaxonomyAdded        Key = "status.tag_taxonomy_added"
 	StatusTagTaxonomyDeleteFailed Key = "status.tag_taxonomy_delete_failed"
@@ -72,9 +72,9 @@ const (
 	// Classification definitions.
 	StatusClassificationLookupFailed  Key = "status.classification_lookup_failed"
 	StatusClassificationLookupSuccess Key = "status.classification_lookup_success"
-	StatusClassificationListFailed   Key = "status.classification_list_failed"
-	StatusClassificationDeleteFailed Key = "status.classification_delete_failed"
-	StatusClassificationDeleted      Key = "status.classification_deleted"
+	StatusClassificationListFailed    Key = "status.classification_list_failed"
+	StatusClassificationDeleteFailed  Key = "status.classification_delete_failed"
+	StatusClassificationDeleted       Key = "status.classification_deleted"
 
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
@@ -91,8 +91,8 @@ const (
 	HintSelect          Key = "hint.select"
 	HintClearActive     Key = "hint.clear_active"
 	HintExportIDS       Key = "hint.export_ids"
-	HintCrawl          Key = "hint.ingest"
-	HintLookup           Key = "hint.fetch"
+	HintCrawl           Key = "hint.ingest"
+	HintLookup          Key = "hint.fetch"
 	HintBrowse          Key = "hint.browse"
 	HintJump            Key = "hint.jump"
 	HintHelp            Key = "hint.help"
@@ -147,6 +147,7 @@ var cmdStrings = map[string][2]string{
 	"view.inventors":           {"Open inventors stats", "Open the statistics popup for the patent's inventors when cursor is on the inventors line."},
 	"view.inventors.direct":    {"Open inventors stats direct", "Open the statistics popup for the patent's inventors directly."},
 	"view.browser":             {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
+	"view.metrics":             {"Metrics", "Open the daemon metrics dashboard overlay."},
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
 	"view.ids":                 {"Open IDS", "Open the selected patent's IDS entry editor."},
@@ -178,13 +179,13 @@ var cmdStrings = map[string][2]string{
 	"patent.add-to-project":    {"Add to project", "Add the selected patent to the active project."},
 	"patent.tag":               {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":             {"Untag patent", "Remove a tag from the selected patent within the active project."},
-	"crawl.family":            {"Crawl family", "Recursively crawl the selected patent's family graph (parents and children)."},
-	"crawl.citations":         {"Crawl citations", "Crawl patents the selected patent cites."},
-	"crawl.citedby":           {"Crawl cited-by", "Crawl patents that cite the selected patent."},
-	"crawl.all":               {"Crawl all", "Crawl the full family graph including citations and cited-by."},
-	"patent.lookup":           {"Lookup patent", "Fetch the selected patent's record from the web."},
+	"crawl.family":             {"Crawl family", "Recursively crawl the selected patent's family graph (parents and children)."},
+	"crawl.citations":          {"Crawl citations", "Crawl patents the selected patent cites."},
+	"crawl.citedby":            {"Crawl cited-by", "Crawl patents that cite the selected patent."},
+	"crawl.all":                {"Crawl all", "Crawl the full family graph including citations and cited-by."},
+	"patent.lookup":            {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":            {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
-	"crawl.cancel":            {"Cancel crawl", "Cancel a running crawl job."},
+	"crawl.cancel":             {"Cancel crawl", "Cancel a running crawl job."},
 	"project.create":           {"Create project", "Create a new project."},
 	"project.activate":         {"Use project", "Make the selected project the active project for patent actions."},
 	"project.clear-active":     {"Clear active project", "Clear the active project filter and target."},
@@ -207,64 +208,64 @@ var cmdStrings = map[string][2]string{
 	"tag.patent.list":          {"List patent tags", "List tags assigned to the selected patent."},
 	"tag.patent":               {"Manage patent tags", "Open the interactive tag selector popup for the selected patent(s)."},
 
-	"class.list":               {"List classifications", "List all cached patent classification definitions."},
-	"class.lookup":             {"Lookup classification", "Lookup classification code details from the EPO Linked Open Data SPARQL Endpoint."},
+	"class.list":   {"List classifications", "List all cached patent classification definitions."},
+	"class.lookup": {"Lookup classification", "Lookup classification code details from the EPO Linked Open Data SPARQL Endpoint."},
 }
 
 // englishNamed is the English text for every named key.
 var englishNamed = map[Key]string{
-	StatusWelcome:              "select a project to begin — press ? for help",
-	StatusActiveProject:        "active project: %s",
-	StatusActiveProjectSaveErr: "active project: %s (save failed: %s)",
-	StatusClearedProject:       "cleared active project",
-	StatusProjectNotFound:      "project not found: %s",
-	StatusNoPatentSelected:     "no patent selected",
-	StatusNoActiveProject:      "select an active project first",
-	StatusDaemonUnavailable:    "daemon connection unavailable",
-	StatusNoProjectSelection:   "focused pane has no project selection",
-	StatusNoProjectSelected:    "no project selected",
-	StatusUnknownCommand:       "unknown command: %s",
-	StatusCommandNotHere:       "%s is not available here",
-	StatusUsage:                "usage: %s",
-	StatusUnhandledCommand:     "unhandled command: %s",
-	StatusInvalidPatentNumber:  "invalid patent number: %s",
-	StatusDaemonClosed:         "daemon connection closed",
-	StatusAIAnalysisStarted:    "AI analysis starting on patent %s via %s...",
-	StatusAIAnalysisFailed:     "AI curation failed: %s",
-	StatusAIAnalysisComplete:   "AI analysis complete for %s. Report saved in session notes.",
-	StatusCrawlProgress:       "crawl %s — crawled %d, discovered %d: %s",
-	StatusCrawlFailed:         "crawl %s failed: %s",
-	StatusCrawlComplete:       "crawl %s complete",
-	StatusCrawlStarted:        "crawl started for %s (%s)",
-	StatusCrawlStartFailed:    "crawl failed: %s",
-	StatusAddFailed:            "add to project failed: %s",
-	StatusAdded:                "added %s to %s",
-	StatusAddedNoCrawl:        "added %s — press L to lookup",
-	StatusSetStateFailed:       "set state failed: %s",
-	StatusSetState:             "set %s to %s review state in %s",
-	StatusExportFailed:         "IDS export failed: %s",
-	StatusExportDone:           "IDS for %q: %d disclosed reference(s)",
-	StatusProjectCreateFailed:  "create project failed: %s",
-	StatusProjectCreated:       "created project %s",
-	StatusProjectNameEmpty:     "project name cannot be empty",
-	StatusImportFailed:         "import failed: %s",
-	StatusImported:             "imported %s",
-	StatusTagFailed:            "tag failed: %s",
-	StatusTagged:               "tagged %s as %q in %s",
-	StatusUntagFailed:          "untag failed: %s",
-	StatusUntagged:             "removed tag %q from %s",
-	StatusDeleteFailed:         "delete failed: %s",
-	StatusDeleted:              "deleted %s",
-	StatusBatchDeleted:         "deleted %d patents",
-	StatusBatchSetState:        "set %d patents to %s in %s",
-	StatusBatchAdded:           "added %d patents to %s",
-	StatusFilter:               "%s",
-	StatusBrowserOpenFailed:    "open browser failed: %s",
-	StatusBrowserOpened:    "opened %d patent page(s) in browser",
-	StatusNotesAdded:       "added %s to notes buffer",
-	StatusNotesFlushed:     "flushed notes for %s to IDS: %s",
-	StatusCopiedToClipboard: "copied to clipboard: %d bytes",
-	StatusClipboardFailed:   "clipboard: %s",
+	StatusWelcome:                 "select a project to begin — press ? for help",
+	StatusActiveProject:           "active project: %s",
+	StatusActiveProjectSaveErr:    "active project: %s (save failed: %s)",
+	StatusClearedProject:          "cleared active project",
+	StatusProjectNotFound:         "project not found: %s",
+	StatusNoPatentSelected:        "no patent selected",
+	StatusNoActiveProject:         "select an active project first",
+	StatusDaemonUnavailable:       "daemon connection unavailable",
+	StatusNoProjectSelection:      "focused pane has no project selection",
+	StatusNoProjectSelected:       "no project selected",
+	StatusUnknownCommand:          "unknown command: %s",
+	StatusCommandNotHere:          "%s is not available here",
+	StatusUsage:                   "usage: %s",
+	StatusUnhandledCommand:        "unhandled command: %s",
+	StatusInvalidPatentNumber:     "invalid patent number: %s",
+	StatusDaemonClosed:            "daemon connection closed",
+	StatusAIAnalysisStarted:       "AI analysis starting on patent %s via %s...",
+	StatusAIAnalysisFailed:        "AI curation failed: %s",
+	StatusAIAnalysisComplete:      "AI analysis complete for %s. Report saved in session notes.",
+	StatusCrawlProgress:           "crawl %s — crawled %d, discovered %d: %s",
+	StatusCrawlFailed:             "crawl %s failed: %s",
+	StatusCrawlComplete:           "crawl %s complete",
+	StatusCrawlStarted:            "crawl started for %s (%s)",
+	StatusCrawlStartFailed:        "crawl failed: %s",
+	StatusAddFailed:               "add to project failed: %s",
+	StatusAdded:                   "added %s to %s",
+	StatusAddedNoCrawl:            "added %s — press L to lookup",
+	StatusSetStateFailed:          "set state failed: %s",
+	StatusSetState:                "set %s to %s review state in %s",
+	StatusExportFailed:            "IDS export failed: %s",
+	StatusExportDone:              "IDS for %q: %d disclosed reference(s)",
+	StatusProjectCreateFailed:     "create project failed: %s",
+	StatusProjectCreated:          "created project %s",
+	StatusProjectNameEmpty:        "project name cannot be empty",
+	StatusImportFailed:            "import failed: %s",
+	StatusImported:                "imported %s",
+	StatusTagFailed:               "tag failed: %s",
+	StatusTagged:                  "tagged %s as %q in %s",
+	StatusUntagFailed:             "untag failed: %s",
+	StatusUntagged:                "removed tag %q from %s",
+	StatusDeleteFailed:            "delete failed: %s",
+	StatusDeleted:                 "deleted %s",
+	StatusBatchDeleted:            "deleted %d patents",
+	StatusBatchSetState:           "set %d patents to %s in %s",
+	StatusBatchAdded:              "added %d patents to %s",
+	StatusFilter:                  "%s",
+	StatusBrowserOpenFailed:       "open browser failed: %s",
+	StatusBrowserOpened:           "opened %d patent page(s) in browser",
+	StatusNotesAdded:              "added %s to notes buffer",
+	StatusNotesFlushed:            "flushed notes for %s to IDS: %s",
+	StatusCopiedToClipboard:       "copied to clipboard: %d bytes",
+	StatusClipboardFailed:         "clipboard: %s",
 	StatusTagTaxonomyAddFailed:    "add tag to taxonomy failed: %s",
 	StatusTagTaxonomyAdded:        "added taxonomy tag %q to %s",
 	StatusTagTaxonomyDeleteFailed: "delete tag from taxonomy failed: %s",
@@ -278,9 +279,9 @@ var englishNamed = map[Key]string{
 
 	StatusClassificationLookupFailed:  "classification lookup failed: %s",
 	StatusClassificationLookupSuccess: "crawled classification %s: %s",
-	StatusClassificationListFailed:   "list classifications failed: %s",
-	StatusClassificationDeleteFailed: "delete classification failed: %s",
-	StatusClassificationDeleted:      "deleted classification %s",
+	StatusClassificationListFailed:    "list classifications failed: %s",
+	StatusClassificationDeleteFailed:  "delete classification failed: %s",
+	StatusClassificationDeleted:       "deleted classification %s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",
@@ -296,8 +297,8 @@ var englishNamed = map[Key]string{
 	HintSelect:          "select",
 	HintClearActive:     "clear active",
 	HintExportIDS:       "export IDS",
-	HintCrawl:          "crawl family",
-	HintLookup:           "lookup patent",
+	HintCrawl:           "crawl family",
+	HintLookup:          "lookup patent",
 	HintBrowse:          "open browser",
 	HintJump:            "jump",
 	HintHelp:            "help",

@@ -34,6 +34,12 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 	return a.openPrompt(overlay.PromptDirect)
 }
 
+func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
+	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
 // cmdJumpMode toggles jump mode on the focused pane. When jump mode is active
 // the pane renders inline shortcut labels (e.g. "[a] Assignee") and navigation
 // keys (j/k) cycle between labelled sections instead of scrolling line-by-line.
@@ -131,7 +137,6 @@ func (a *App) openInventors(p domain.Patent) (tea.Model, tea.Cmd) {
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }
-
 
 func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()))
@@ -271,7 +276,6 @@ func (a *App) cmdClassLookup(inv invocation) (tea.Model, tea.Cmd) {
 	}
 	return a, pane.LookupClassificationCmd(a.client, code)
 }
-
 
 // cmdTagPatentManage opens the interactive tag manager popup for the selected patent(s).
 func (a *App) cmdTagPatentManage(inv invocation) (tea.Model, tea.Cmd) {

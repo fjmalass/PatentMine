@@ -61,8 +61,6 @@ type pingLoadedMsg struct {
 	err             error
 }
 
-
-
 // invocation carries the arguments of one command request: empty for a key
 // chord, populated for a typed command.
 type invocation struct {
@@ -76,43 +74,44 @@ type invocation struct {
 type appHandler func(*App, invocation) (tea.Model, tea.Cmd)
 
 var appHandlers = map[command.ID]appHandler{
-	command.Quit:               (*App).cmdQuit,
-	command.Help:               (*App).cmdHelp,
-	command.OpenSearch:         (*App).cmdOpenSearch,
-	command.OpenCommand:        (*App).cmdOpenCommand,
-	command.JumpMode:           (*App).cmdJumpMode,
-	command.CloseOverlay:       (*App).cmdCloseOverlay,
-	command.Back:               (*App).cmdBack,
-	command.OpenDetail:         (*App).cmdOpenDetail,
-	command.OpenFullText:       (*App).cmdOpenFullText,
-	command.OpenBrowser:        (*App).cmdOpenBrowser,
-	command.OpenCitations:      (*App).cmdOpenCitations,
-	command.OpenCitedBy:        (*App).cmdOpenCitedBy,
-	command.OpenIDS:            (*App).cmdOpenIDS,
-	command.OpenProjects:       (*App).cmdOpenProjects,
-	command.ProjectActivate:    (*App).cmdProjectActivate,
-	command.ProjectClearActive: (*App).cmdProjectClear,
-	command.ProjectCreate:      (*App).cmdProjectCreate,
-	command.AddToProject:       (*App).cmdAddToProject,
-	command.Import:             (*App).cmdImport,
-	command.MarkStored:         (*App).cmdMarkStored,
-	command.MarkUnderReview:    (*App).cmdMarkUnderReview,
-	command.MarkIgnored:        (*App).cmdMarkIgnored,
-	command.MarkDeleted:        (*App).cmdMarkDeleted,
-	command.Tag:                (*App).cmdTag,
-	command.Untag:              (*App).cmdUntag,
-	command.TagTaxonomyAdd:     (*App).cmdTagTaxonomyAdd,
-	command.TagTaxonomyList:    (*App).cmdTagTaxonomyList,
-	command.TagPatentManage:    (*App).cmdTagPatentManage,
-	command.TagTaxonomyDelete:  (*App).cmdTagTaxonomyDelete,
-	command.TagStrict:          (*App).cmdTagStrict,
-	command.UntagStrict:        (*App).cmdUntagStrict,
-	command.TagPatentList:      (*App).cmdTagPatentList,
+	command.Quit:                (*App).cmdQuit,
+	command.Help:                (*App).cmdHelp,
+	command.OpenSearch:          (*App).cmdOpenSearch,
+	command.OpenCommand:         (*App).cmdOpenCommand,
+	command.OpenMetrics:         (*App).cmdOpenMetrics,
+	command.JumpMode:            (*App).cmdJumpMode,
+	command.CloseOverlay:        (*App).cmdCloseOverlay,
+	command.Back:                (*App).cmdBack,
+	command.OpenDetail:          (*App).cmdOpenDetail,
+	command.OpenFullText:        (*App).cmdOpenFullText,
+	command.OpenBrowser:         (*App).cmdOpenBrowser,
+	command.OpenCitations:       (*App).cmdOpenCitations,
+	command.OpenCitedBy:         (*App).cmdOpenCitedBy,
+	command.OpenIDS:             (*App).cmdOpenIDS,
+	command.OpenProjects:        (*App).cmdOpenProjects,
+	command.ProjectActivate:     (*App).cmdProjectActivate,
+	command.ProjectClearActive:  (*App).cmdProjectClear,
+	command.ProjectCreate:       (*App).cmdProjectCreate,
+	command.AddToProject:        (*App).cmdAddToProject,
+	command.Import:              (*App).cmdImport,
+	command.MarkStored:          (*App).cmdMarkStored,
+	command.MarkUnderReview:     (*App).cmdMarkUnderReview,
+	command.MarkIgnored:         (*App).cmdMarkIgnored,
+	command.MarkDeleted:         (*App).cmdMarkDeleted,
+	command.Tag:                 (*App).cmdTag,
+	command.Untag:               (*App).cmdUntag,
+	command.TagTaxonomyAdd:      (*App).cmdTagTaxonomyAdd,
+	command.TagTaxonomyList:     (*App).cmdTagTaxonomyList,
+	command.TagPatentManage:     (*App).cmdTagPatentManage,
+	command.TagTaxonomyDelete:   (*App).cmdTagTaxonomyDelete,
+	command.TagStrict:           (*App).cmdTagStrict,
+	command.UntagStrict:         (*App).cmdUntagStrict,
+	command.TagPatentList:       (*App).cmdTagPatentList,
 	command.ClassTaxonomyList:   (*App).cmdClassTaxonomyList,
 	command.ClassLookup:         (*App).cmdClassLookup,
-	command.PatentDelete:       (*App).cmdPatentDelete,
-	command.AIAnalyze:          (*App).cmdAIAnalyze,
-	command.SettingsAI:         (*App).cmdSettingsAI,
+	command.PatentDelete:        (*App).cmdPatentDelete,
+	command.AIAnalyze:           (*App).cmdAIAnalyze,
+	command.SettingsAI:          (*App).cmdSettingsAI,
 	command.OpenInventors:       (*App).cmdOpenInventors,
 	command.OpenInventorsDirect: (*App).cmdOpenInventorsDirect,
 }
@@ -658,4 +657,3 @@ func (a *App) runAIAnalysis(patent domain.Patent, actionType, customPrompt strin
 		}
 	}
 }
-
