@@ -254,9 +254,44 @@ func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {
 }
 
 func (a *App) runReviewState(id command.ID, target domain.ReviewState) (tea.Model, tea.Cmd) {
-	return a.runAction(id, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.SetReviewStateCmd(a.client, project, patent, target)
+	return a.runBulkAction(id, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.SetReviewStatesCmd(a.client, project, patents, target)
 	})
+}
+
+// runBulkAction is the canonical dispatcher for bulk/batch actions on patents.
+func (a *App) runBulkAction(
+	id command.ID,
+	build func(domain.ProjectID, []domain.PatentNumber) tea.Cmd,
+) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	if len(numbers) >= 2 {
+		if vs, ok := a.focusedPane().(pane.VisualSelectionSaver); ok {
+			vs.SaveVisualSelection()
+		}
+	}
+	cmd := build(a.activeProject.ID, numbers)
+
+	if policy := commandPolicies[id]; policy.Confirm != nil {
+		if msg, needs := policy.Confirm(numbers); needs {
+			a.confirmCmd = cmd
+			a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
+			return a, nil
+		}
+	}
+	return a, cmd
 }
 
 // runAction is the canonical dispatcher for single-patent and multi-patent

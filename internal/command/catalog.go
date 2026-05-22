@@ -56,17 +56,21 @@ const (
 	AddToProject    ID = "patent.add-to-project"
 
 	// Tagging. Both act on the selected patent within the active project.
-	TagAdd    ID = "patent.tag"
-	TagRemove ID = "patent.untag"
+	Tag    ID = "patent.tag"
+	Untag ID = "patent.untag"
 
 	// Tag taxonomy and patent tag assignments.
 	TagTaxonomyAdd    ID = "tag.add"
 	TagTaxonomyList   ID = "tag.list"
 	TagTaxonomyDelete ID = "tag.delete"
-	TagPatentAdd      ID = "tag.patent.add"
-	TagPatentDelete   ID = "tag.patent.delete"
+	TagStrict      ID = "tag.patent.add"
+	UntagStrict   ID = "tag.patent.delete"
 	TagPatentList     ID = "tag.patent.list"
 	TagPatentManage   ID = "tag.patent"
+
+	// Classification definitions.
+	ClassTaxonomyList ID = "class.list"
+	ClassLookup       ID = "class.lookup"
 
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
@@ -175,15 +179,19 @@ func Default() (*Registry, error) {
 		Command{ID: MarkDeleted, Name: "review_state.deleted", Aliases: []string{"deleted"}, Usage: ":review_state.deleted", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
 		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
-		Command{ID: TagAdd, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagAssign, Scopes: patentScopes},
-		Command{ID: TagRemove, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodTagRemove, Scopes: patentScopes},
+		Command{ID: Tag, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagPatent, Scopes: patentScopes},
+		Command{ID: Untag, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodUntagPatent, Scopes: patentScopes},
 		Command{ID: TagTaxonomyAdd, Name: "tag.add", Aliases: []string{"create-tag"}, Usage: ":tag.add <name>", Kind: KindEngine, Method: proto.MethodTagCreate, Scopes: projectScopes},
 		Command{ID: TagTaxonomyList, Name: "tag.list", Aliases: []string{"list-tags"}, Usage: ":tag.list", Kind: KindEngine, Method: proto.MethodTagList, Scopes: projectScopes},
 		Command{ID: TagTaxonomyDelete, Name: "tag.delete", Aliases: []string{"delete-tag"}, Usage: ":tag.delete <name>", Kind: KindEngine, Method: proto.MethodTagDelete, Scopes: projectScopes},
-		Command{ID: TagPatentAdd, Name: "tag.patent.add", Aliases: []string{"patent-tag"}, Usage: ":tag.patent.add <name>", Kind: KindEngine, Method: proto.MethodPatentTagAdd, Scopes: patentScopes},
-		Command{ID: TagPatentDelete, Name: "tag.patent.delete", Aliases: []string{"patent-untag"}, Usage: ":tag.patent.delete <name>", Kind: KindEngine, Method: proto.MethodPatentTagDelete, Scopes: patentScopes},
+		Command{ID: TagStrict, Name: "tag.patent.add", Aliases: []string{"patent-tag"}, Usage: ":tag.patent.add <name>", Kind: KindEngine, Method: proto.MethodTagPatentStrict, Scopes: patentScopes},
+		Command{ID: UntagStrict, Name: "tag.patent.delete", Aliases: []string{"patent-untag"}, Usage: ":tag.patent.delete <name>", Kind: KindEngine, Method: proto.MethodUntagPatentStrict, Scopes: patentScopes},
 		Command{ID: TagPatentList, Name: "tag.patent.list", Aliases: []string{"patent-tags"}, Usage: ":tag.patent.list", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
 		Command{ID: TagPatentManage, Name: "tag.patent", Aliases: []string{"tag-manage"}, Usage: ":tag.patent", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
+
+		// --- classification definitions ---
+		Command{ID: ClassTaxonomyList, Name: "class.list", Aliases: []string{"classifications"}, Usage: ":class.list", Kind: KindEngine, Method: proto.MethodClassificationList},
+		Command{ID: ClassLookup, Name: "class.lookup", Aliases: []string{"lookup-class"}, Usage: ":class.lookup <code>", Kind: KindEngine, Method: proto.MethodClassificationLookup},
 
 		// --- crawling (engine) ---
 		Command{ID: CrawlFamily, Name: "crawl.family", Aliases: []string{"family"}, Usage: ":crawl.family", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},

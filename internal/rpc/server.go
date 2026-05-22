@@ -38,31 +38,40 @@ type Server struct {
 func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 	s := &Server{engine: eng, usptoConfigured: usptoConfigured}
 	s.handlers = map[proto.Method]handlerFunc{
-		proto.MethodPing:           s.ping,
-		proto.MethodPatentGet:      s.patentGet,
-		proto.MethodPatentList:     s.patentList,
-		proto.MethodPatentDelete:   s.patentDelete,
-		proto.MethodProjectList:    s.projectList,
-		proto.MethodProjectCreate:  s.projectCreate,
-		proto.MethodMembershipAdd:  s.membershipAdd,
-		proto.MethodReviewState:    s.reviewState,
-		proto.MethodTagAssign:      s.tagAssign,
-		proto.MethodTagRemove:      s.tagRemove,
-		proto.MethodCrawlFamily:   s.crawlFamily,
-		proto.MethodCrawlCancel:   s.crawlCancel,
-		proto.MethodImportFile:     s.importFile,
-		proto.MethodRelations:      s.relations,
-		proto.MethodIDSExport:      s.idsExport,
-		proto.MethodIDSEntryGet:    s.idsEntryGet,
-		proto.MethodIDSEntrySave:   s.idsEntrySave,
-		proto.MethodIDSEntryDelete: s.idsEntryDelete,
-		proto.MethodMetricsGet:     s.metricsGet,
-		proto.MethodTagCreate:      s.tagCreate,
-		proto.MethodTagList:        s.tagList,
-		proto.MethodTagDelete:      s.tagDelete,
-		proto.MethodPatentTagAdd:    s.patentTagAdd,
-		proto.MethodPatentTagDelete: s.patentTagDelete,
-		proto.MethodPatentTagList:   s.patentTagList,
+		proto.MethodPing:                     s.ping,
+		proto.MethodPatentGet:                s.patentGet,
+		proto.MethodPatentList:               s.patentList,
+		proto.MethodPatentDelete:             s.patentDelete,
+		proto.MethodProjectList:              s.projectList,
+		proto.MethodProjectCreate:            s.projectCreate,
+		proto.MethodMembershipAdd:            s.membershipAdd,
+		proto.MethodReviewState:              s.reviewState,
+		proto.MethodReviewStates:             s.reviewStateBatch,
+		proto.MethodTagPatent:                s.tagPatent,
+		proto.MethodTagPatents:               s.tagPatents,
+		proto.MethodUntagPatent:              s.untagPatent,
+		proto.MethodUntagPatents:             s.untagPatents,
+		proto.MethodCrawlFamily:              s.crawlFamily,
+		proto.MethodCrawlCancel:              s.crawlCancel,
+		proto.MethodImportFile:               s.importFile,
+		proto.MethodRelations:                s.relations,
+		proto.MethodIDSExport:                s.idsExport,
+		proto.MethodIDSEntryGet:              s.idsEntryGet,
+		proto.MethodIDSEntrySave:             s.idsEntrySave,
+		proto.MethodIDSEntryDelete:           s.idsEntryDelete,
+		proto.MethodMetricsGet:               s.metricsGet,
+		proto.MethodTagCreate:                s.tagCreate,
+		proto.MethodTagList:                  s.tagList,
+		proto.MethodTagDelete:                s.tagDelete,
+		proto.MethodTagPatentStrict:          s.tagPatentStrict,
+		proto.MethodUntagPatentStrict:        s.untagPatentStrict,
+		proto.MethodPatentTagList:            s.patentTagList,
+		proto.MethodClassificationGet:        s.classificationGet,
+		proto.MethodClassificationList:       s.classificationList,
+		proto.MethodClassificationSave:       s.classificationSave,
+		proto.MethodClassificationDelete:     s.classificationDelete,
+		proto.MethodClassificationLookup:     s.classificationLookup,
+		proto.MethodPatentClassificationList: s.patentClassificationList,
 	}
 	return s
 }
@@ -355,23 +364,60 @@ func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, err
 	return proto.Empty{}, nil
 }
 
-func (s *Server) tagAssign(ctx context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) tagPatent(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.TagParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.AssignTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+	if err := s.engine.TagPatent(ctx, p.Project, p.Patent, p.Name); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil
 }
 
-func (s *Server) tagRemove(ctx context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) untagPatent(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.TagParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.RemoveTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+	if err := s.engine.UntagPatent(ctx, p.Project, p.Patent, p.Name); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) reviewStateBatch(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ReviewStateBatchParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	state, err := domain.ParseReviewState(p.State)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadParams, err)
+	}
+	if err := s.engine.SetReviewStateBatch(ctx, p.Project, p.Patents, state); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) tagPatents(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagBatchParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.TagPatents(ctx, p.Project, p.Patents, p.Name); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) untagPatents(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TagBatchParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.UntagPatents(ctx, p.Project, p.Patents, p.Name); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil
@@ -412,23 +458,23 @@ func (s *Server) tagDelete(ctx context.Context, raw json.RawMessage) (any, error
 	return proto.Empty{}, nil
 }
 
-func (s *Server) patentTagAdd(ctx context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) tagPatentStrict(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.TagParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.AssignPatentTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+	if err := s.engine.TagPatentStrict(ctx, p.Project, p.Patent, p.Name); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil
 }
 
-func (s *Server) patentTagDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) untagPatentStrict(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.TagParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.RemovePatentTag(ctx, p.Project, p.Patent, p.Name); err != nil {
+	if err := s.engine.UntagPatentStrict(ctx, p.Project, p.Patent, p.Name); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil
@@ -556,4 +602,62 @@ func (s *Server) idsEntryDelete(ctx context.Context, raw json.RawMessage) (any, 
 
 func (s *Server) metricsGet(context.Context, json.RawMessage) (any, error) {
 	return proto.MetricsResult{Metrics: s.engine.MetricsSnapshot()}, nil
+}
+
+func (s *Server) classificationGet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ClassificationGetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.ClassificationDefinition(ctx, p.System, p.Code)
+}
+
+func (s *Server) classificationList(ctx context.Context, _ json.RawMessage) (any, error) {
+	classifications, err := s.engine.ListClassificationDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ClassificationListResult{Classifications: classifications}, nil
+}
+
+func (s *Server) classificationSave(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ClassificationParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.SaveClassificationDefinition(ctx, p.Classification); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) classificationDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ClassificationDeleteParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteClassificationDefinition(ctx, p.System, p.Code); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
+}
+
+func (s *Server) classificationLookup(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ClassificationLookupParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.LookupClassification(ctx, p.Code)
+}
+
+func (s *Server) patentClassificationList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentClassificationListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	classifications, err := s.engine.ListPatentClassifications(ctx, p.Project, p.Patent)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ClassificationListResult{Classifications: classifications}, nil
 }

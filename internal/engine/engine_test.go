@@ -519,16 +519,16 @@ func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
 	events, unsub := eng.Subscribe()
 	defer unsub()
 
-	if err := eng.AssignPatentTag(ctx, project.ID, patent.Number, "prior_art"); err != nil {
-		t.Fatalf("AssignPatentTag: %v", err)
+	if err := eng.TagPatentStrict(ctx, project.ID, patent.Number, "prior_art"); err != nil {
+		t.Fatalf("TagPatentStrict: %v", err)
 	}
 	expectDBChanged(t, events, "tag assignment")
-	if err := eng.AssignPatentTag(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
-		t.Fatalf("AssignPatentTag repeat: %v", err)
+	if err := eng.TagPatentStrict(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
+		t.Fatalf("TagPatentStrict repeat: %v", err)
 	}
 	expectNoDBChanged(t, events, "repeat tag assignment")
-	if err := eng.RemovePatentTag(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
-		t.Fatalf("RemovePatentTag: %v", err)
+	if err := eng.UntagPatentStrict(ctx, project.ID, patent.Number, "PRIOR_ART"); err != nil {
+		t.Fatalf("UntagPatentStrict: %v", err)
 	}
 	expectDBChanged(t, events, "tag removal")
 
@@ -554,7 +554,7 @@ func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
 			t.Fatalf("counter %s = %d, want %d", name, got, want)
 		}
 	}
-	if got := snap.Timings["engine.assign_patent_tag"].Count; got != 2 {
+	if got := snap.Timings["engine.tag_patent_strict"].Count; got != 2 {
 		t.Fatalf("assign tag timing count = %d, want 2", got)
 	}
 	if got := snap.Timings["engine.set_review_state"].Count; got != 2 {
@@ -599,9 +599,9 @@ func TestEngineTagging(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	// AssignTag creates the named tag and links it to the patent.
-	if err := eng.AssignTag(ctx, project.ID, patent.Number, "key_reference"); err != nil {
-		t.Fatalf("AssignTag: %v", err)
+	// TagPatent creates the named tag and links it to the patent.
+	if err := eng.TagPatent(ctx, project.ID, patent.Number, "key_reference"); err != nil {
+		t.Fatalf("TagPatent: %v", err)
 	}
 	tags, err := eng.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {
@@ -611,9 +611,9 @@ func TestEngineTagging(t *testing.T) {
 		t.Fatalf("PatentTags = %v, want one key_reference tag", tags)
 	}
 
-	// RemoveTag matches the name case-insensitively.
-	if err := eng.RemoveTag(ctx, project.ID, patent.Number, "KEY_REFERENCE"); err != nil {
-		t.Fatalf("RemoveTag: %v", err)
+	// UntagPatent matches the name case-insensitively.
+	if err := eng.UntagPatent(ctx, project.ID, patent.Number, "KEY_REFERENCE"); err != nil {
+		t.Fatalf("UntagPatent: %v", err)
 	}
 	tags, err = eng.PatentTags(ctx, project.ID, patent.Number)
 	if err != nil {
@@ -624,12 +624,12 @@ func TestEngineTagging(t *testing.T) {
 	}
 
 	// Removing a tag the patent does not carry is an error.
-	if err := eng.RemoveTag(ctx, project.ID, patent.Number, "missing"); err == nil {
-		t.Fatal("RemoveTag of an unassigned tag should fail")
+	if err := eng.UntagPatent(ctx, project.ID, patent.Number, "missing"); err == nil {
+		t.Fatal("UntagPatent of an unassigned tag should fail")
 	}
 	// A blank name is rejected on assign.
-	if err := eng.AssignTag(ctx, project.ID, patent.Number, "  "); err == nil {
-		t.Fatal("AssignTag with a blank name should fail")
+	if err := eng.TagPatent(ctx, project.ID, patent.Number, "  "); err == nil {
+		t.Fatal("TagPatent with a blank name should fail")
 	}
 }
 
@@ -865,5 +865,88 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 	}
 	if len(softRels) != 2 {
 		t.Fatalf("Soft restored relations count = %d, want 2", len(softRels))
+	}
+}
+
+func TestEngineBatchOperations(t *testing.T) {
+	eng, _ := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	p1 := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), FetchState: domain.FetchCached}
+	p2 := domain.Patent{Number: domain.MustParsePatentNumber("US0000001B2"), FetchState: domain.FetchCached}
+	p3 := domain.Patent{Number: domain.MustParsePatentNumber("US0000002B2"), FetchState: domain.FetchCached}
+
+	for _, p := range []domain.Patent{p1, p2, p3} {
+		if err := eng.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+	}
+
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// 1. Test SetReviewStateBatch.
+	err = eng.SetReviewStateBatch(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, domain.ReviewStateUnderReview)
+	if err != nil {
+		t.Fatalf("SetReviewStateBatch: %v", err)
+	}
+
+	// Verify states are updated.
+	for _, num := range []domain.PatentNumber{p1.Number, p2.Number} {
+		state, _, err := eng.ReviewStateOf(ctx, project.ID, num)
+		if err != nil {
+			t.Fatalf("ReviewStateOf: %v", err)
+		}
+		if state != domain.ReviewStateUnderReview {
+			t.Fatalf("expected state %s, got %s", domain.ReviewStateUnderReview, state)
+		}
+	}
+
+	// Transition p1 to Deleted (allowed from UnderReview).
+	err = eng.SetReviewStateBatch(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateDeleted)
+	if err != nil {
+		t.Fatalf("failed to transition to Deleted: %v", err)
+	}
+
+	// Verify invalid transition rules: transition from Deleted to Ignored is forbidden.
+	err = eng.SetReviewStateBatch(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateIgnored)
+	if err == nil {
+		t.Fatal("expected error when attempting forbidden review state transition Ignored from Deleted")
+	}
+
+	// 2. Test TagPatents.
+	err = eng.TagPatents(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, "batch_tag")
+	if err != nil {
+		t.Fatalf("TagPatents: %v", err)
+	}
+
+	// Verify they are tagged.
+	for _, num := range []domain.PatentNumber{p1.Number, p2.Number} {
+		tags, err := eng.PatentTags(ctx, project.ID, num)
+		if err != nil {
+			t.Fatalf("PatentTags: %v", err)
+		}
+		if len(tags) != 1 || tags[0].Name != "batch_tag" {
+			t.Fatalf("expected tag 'batch_tag', got %v", tags)
+		}
+	}
+
+	// 3. Test UntagPatents.
+	err = eng.UntagPatents(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, "batch_tag")
+	if err != nil {
+		t.Fatalf("UntagPatents: %v", err)
+	}
+
+	// Verify they are untagged.
+	for _, num := range []domain.PatentNumber{p1.Number, p2.Number} {
+		tags, err := eng.PatentTags(ctx, project.ID, num)
+		if err != nil {
+			t.Fatalf("PatentTags: %v", err)
+		}
+		if len(tags) != 0 {
+			t.Fatalf("expected 0 tags after untagging, got %v", tags)
+		}
 	}
 }

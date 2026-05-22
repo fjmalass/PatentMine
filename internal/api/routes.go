@@ -45,6 +45,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /projects/{id}/patents/{number}/tags", s.handlePatentTagAdd)
 	s.mux.HandleFunc("DELETE /projects/{id}/patents/{number}/tags/{name}", s.handlePatentTagDelete)
 	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/tags", s.handlePatentTagList)
+
+	// Patent Classification endpoints
+	s.mux.HandleFunc("GET /classifications", s.handleClassificationList)
+	s.mux.HandleFunc("GET /classifications/{system}/{code}", s.handleClassificationGet)
+	s.mux.HandleFunc("POST /classifications", s.handleClassificationSave)
+	s.mux.HandleFunc("DELETE /classifications/{system}/{code}", s.handleClassificationDelete)
+	s.mux.HandleFunc("POST /classifications/lookup", s.handleClassificationLookup)
+	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/classifications", s.handlePatentClassificationList)
 }
 
 // handleMetrics returns the daemon's current in-memory timing/counter snapshot.
@@ -140,11 +148,12 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	params := proto.PatentListParams{
-		Project:     domain.ProjectID(q.Get("project")),
-		ReviewState: domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
-		Search:      q.Get("search"),
-		Limit:       limit,
-		Offset:      offset,
+		Project:        domain.ProjectID(q.Get("project")),
+		ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
+		Search:         q.Get("search"),
+		Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),
+		Limit:          limit,
+		Offset:         offset,
 	}
 	var res proto.PatentListResult
 	s.call(w, r, proto.MethodPatentList, params, &res)
@@ -287,7 +296,7 @@ func (s *Server) handlePatentTagAdd(w http.ResponseWriter, r *http.Request) {
 		Name:    body.Name,
 	}
 	var res proto.Empty
-	s.call(w, r, proto.MethodPatentTagAdd, params, &res)
+	s.call(w, r, proto.MethodTagPatentStrict, params, &res)
 }
 
 // handlePatentTagDelete removes a tag from a patent in a project.
@@ -303,7 +312,7 @@ func (s *Server) handlePatentTagDelete(w http.ResponseWriter, r *http.Request) {
 		Name:    r.PathValue("name"),
 	}
 	var res proto.Empty
-	s.call(w, r, proto.MethodPatentTagDelete, params, &res)
+	s.call(w, r, proto.MethodUntagPatentStrict, params, &res)
 }
 
 // handlePatentTagList lists tags assigned to a patent in a project.
@@ -329,4 +338,63 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Server) handleClassificationList(w http.ResponseWriter, r *http.Request) {
+	var res proto.ClassificationListResult
+	s.call(w, r, proto.MethodClassificationList, nil, &res)
+}
+
+func (s *Server) handleClassificationGet(w http.ResponseWriter, r *http.Request) {
+	params := proto.ClassificationGetParams{
+		System: r.PathValue("system"),
+		Code:   r.PathValue("code"),
+	}
+	var res domain.Classification
+	s.call(w, r, proto.MethodClassificationGet, params, &res)
+}
+
+func (s *Server) handleClassificationSave(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Classification domain.Classification `json:"classification"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodClassificationSave, proto.ClassificationParams{Classification: body.Classification}, &res)
+}
+
+func (s *Server) handleClassificationDelete(w http.ResponseWriter, r *http.Request) {
+	params := proto.ClassificationDeleteParams{
+		System: r.PathValue("system"),
+		Code:   r.PathValue("code"),
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodClassificationDelete, params, &res)
+}
+
+func (s *Server) handleClassificationLookup(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Code string `json:"code"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res domain.Classification
+	s.call(w, r, proto.MethodClassificationLookup, proto.ClassificationLookupParams{Code: body.Code}, &res)
+}
+
+func (s *Server) handlePatentClassificationList(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	params := proto.PatentClassificationListParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Patent:  number,
+	}
+	var res proto.ClassificationListResult
+	s.call(w, r, proto.MethodPatentClassificationList, params, &res)
 }

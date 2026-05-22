@@ -207,7 +207,7 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 // View implements Pane.
 func (f *FullText) View(w, h int) string {
 	switch {
-	case f.loading:
+	case f.loading && f.patent.Number.Serial == "":
 		return f.theme.Dim.Render("loading full text for " + f.number.String() + "…")
 	case f.loadErr != "":
 		return f.theme.Error.Render("error: " + f.loadErr)

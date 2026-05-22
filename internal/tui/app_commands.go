@@ -159,26 +159,26 @@ func (a *App) cmdAddToProject(inv invocation) (tea.Model, tea.Cmd) {
 	}
 }
 
-// cmdTagAdd tags the selected patent within the active project. The tag name
+// cmdTag tags the selected patent(s) within the active project. The tag name
 // is the typed argument; it may contain spaces.
-func (a *App) cmdTagAdd(inv invocation) (tea.Model, tea.Cmd) {
+func (a *App) cmdTag(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
-		return a.usageError(command.TagAdd)
+		return a.usageError(command.Tag)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runAction(command.TagAdd, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.AssignTagCmd(a.client, project, patent, name)
+	return a.runBulkAction(command.Tag, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.TagPatentsCmd(a.client, project, patents, name)
 	})
 }
 
-// cmdTagRemove removes a tag from the selected patent within the active project.
-func (a *App) cmdTagRemove(inv invocation) (tea.Model, tea.Cmd) {
+// cmdUntag removes a tag from the selected patent(s) within the active project.
+func (a *App) cmdUntag(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
-		return a.usageError(command.TagRemove)
+		return a.usageError(command.Untag)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runAction(command.TagRemove, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.RemoveTagCmd(a.client, project, patent, name)
+	return a.runBulkAction(command.Untag, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.UntagPatentsCmd(a.client, project, patents, name)
 	})
 }
 
@@ -213,6 +213,31 @@ func (a *App) cmdTagTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }
+
+// cmdClassTaxonomyList lists all cached patent classifications.
+func (a *App) cmdClassTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o, cmd := overlay.NewClassificationListOverlay(a.client, a.theme, a.text)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+// cmdClassLookup looks up details for a classification code.
+func (a *App) cmdClassLookup(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) == 0 {
+		return a.usageError(command.ClassLookup)
+	}
+	code := strings.Join(inv.args, " ")
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.LookupClassificationCmd(a.client, code)
+}
+
 
 // cmdTagPatentManage opens the interactive tag manager popup for the selected patent(s).
 func (a *App) cmdTagPatentManage(inv invocation) (tea.Model, tea.Cmd) {
@@ -251,25 +276,25 @@ func (a *App) cmdTagTaxonomyDelete(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.DeleteTagTaxonomyCmd(a.client, a.activeProject.ID, name)
 }
 
-// cmdTagPatentAdd assigns a tag to the selected patent within the active project.
-func (a *App) cmdTagPatentAdd(inv invocation) (tea.Model, tea.Cmd) {
+// cmdTagStrict assigns a tag to the selected patent within the active project.
+func (a *App) cmdTagStrict(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
-		return a.usageError(command.TagPatentAdd)
+		return a.usageError(command.TagStrict)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runAction(command.TagPatentAdd, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.AssignPatentTagCmd(a.client, project, patent, name)
+	return a.runAction(command.TagStrict, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.TagPatentStrictCmd(a.client, project, patent, name)
 	})
 }
 
-// cmdTagPatentDelete removes a tag assignment from the selected patent within the active project.
-func (a *App) cmdTagPatentDelete(inv invocation) (tea.Model, tea.Cmd) {
+// cmdUntagStrict removes a tag assignment from the selected patent within the active project.
+func (a *App) cmdUntagStrict(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
-		return a.usageError(command.TagPatentDelete)
+		return a.usageError(command.UntagStrict)
 	}
 	name := strings.Join(inv.args, " ")
-	return a.runAction(command.TagPatentDelete, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-		return pane.RemovePatentTagCmd(a.client, project, patent, name)
+	return a.runAction(command.UntagStrict, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.UntagPatentStrictCmd(a.client, project, patent, name)
 	})
 }
 

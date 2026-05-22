@@ -69,6 +69,13 @@ const (
 	StatusTagPatentDeleted        Key = "status.tag_patent_deleted"
 	StatusTagPatentListFailed     Key = "status.tag_patent_list_failed"
 
+	// Classification definitions.
+	StatusClassificationLookupFailed  Key = "status.classification_lookup_failed"
+	StatusClassificationLookupSuccess Key = "status.classification_lookup_success"
+	StatusClassificationListFailed   Key = "status.classification_list_failed"
+	StatusClassificationDeleteFailed Key = "status.classification_delete_failed"
+	StatusClassificationDeleted      Key = "status.classification_deleted"
+
 	// Header / footer navigation hints.
 	HintCommands        Key = "hint.commands"
 	HintCommand         Key = "hint.command"
@@ -197,6 +204,9 @@ var cmdStrings = map[string][2]string{
 	"tag.patent.delete":        {"Remove patent tag", "Remove a tag assignment from the selected patent."},
 	"tag.patent.list":          {"List patent tags", "List tags assigned to the selected patent."},
 	"tag.patent":               {"Manage patent tags", "Open the interactive tag selector popup for the selected patent(s)."},
+
+	"class.list":               {"List classifications", "List all cached patent classification definitions."},
+	"class.lookup":             {"Lookup classification", "Lookup classification code details from the EPO Linked Open Data SPARQL Endpoint."},
 }
 
 // englishNamed is the English text for every named key.
@@ -263,6 +273,12 @@ var englishNamed = map[Key]string{
 	StatusTagPatentDeleteFailed:   "remove tag from patent failed: %s",
 	StatusTagPatentDeleted:        "removed tag %q from patent %s",
 	StatusTagPatentListFailed:     "list patent tags failed: %s",
+
+	StatusClassificationLookupFailed:  "classification lookup failed: %s",
+	StatusClassificationLookupSuccess: "crawled classification %s: %s",
+	StatusClassificationListFailed:   "list classifications failed: %s",
+	StatusClassificationDeleteFailed: "delete classification failed: %s",
+	StatusClassificationDeleted:      "deleted classification %s",
 
 	HintCommands:        "commands",
 	HintCommand:         "command",

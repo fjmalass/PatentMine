@@ -162,6 +162,14 @@ func (c *Cache) SetReviewState(ctx context.Context, project domain.ProjectID, pa
 	return nil
 }
 
+func (c *Cache) SetReviewStates(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) error {
+	if err := c.Repository.SetReviewStates(ctx, project, patents, state); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 func (c *Cache) TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (bool, error) {
 	changed, err := c.Repository.TagPatent(ctx, tagID, patent, assignedAt)
 	if err != nil {
@@ -173,6 +181,14 @@ func (c *Cache) TagPatent(ctx context.Context, tagID int64, patent domain.Patent
 	return changed, nil
 }
 
+func (c *Cache) TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) error {
+	if err := c.Repository.TagPatents(ctx, tagID, patents, assignedAt); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 func (c *Cache) UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (bool, error) {
 	changed, err := c.Repository.UntagPatent(ctx, tagID, patent)
 	if err != nil {
@@ -182,6 +198,14 @@ func (c *Cache) UntagPatent(ctx context.Context, tagID int64, patent domain.Pate
 		c.flush()
 	}
 	return changed, nil
+}
+
+func (c *Cache) UntagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber) error {
+	if err := c.Repository.UntagPatents(ctx, tagID, patents); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
 }
 
 func (c *Cache) SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error {

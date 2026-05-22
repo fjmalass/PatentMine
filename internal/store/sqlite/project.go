@@ -164,6 +164,41 @@ func (r *Repo) SetReviewState(ctx context.Context, project domain.ProjectID, pat
 	return nil
 }
 
+// SetReviewStates changes multiple memberships' states in a single transaction, or returns store.ErrNotFound.
+func (r *Repo) SetReviewStates(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) (err error) {
+	defer r.observeDuration("set_review_states", time.Now(), &err)
+	if !state.Valid() {
+		return fmt.Errorf("store/sqlite: invalid review state %q", state)
+	}
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: set review states tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.PrepareContext(ctx, `UPDATE membership SET state = ? WHERE project_id = ? AND patent_number = ?`)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: set review states prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, patent := range patents {
+		_, err := stmt.ExecContext(ctx, string(state), string(project), patent.Normalized())
+		if err != nil {
+			return fmt.Errorf("store/sqlite: set review states exec: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: set review states commit: %w", err)
+	}
+	return nil
+}
+
 // DeleteMembership permanently removes a patent from a project.
 func (r *Repo) DeleteMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
 	defer r.observeDuration("delete_membership", time.Now(), &err)

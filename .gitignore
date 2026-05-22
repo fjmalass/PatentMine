@@ -4,6 +4,7 @@
 /pdfs/
 /backups/
 /build/
+/bin/
 
 .claude
 .gemeni

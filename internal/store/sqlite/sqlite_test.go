@@ -553,3 +553,108 @@ func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 		t.Fatalf("IDSEntry after delete: err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestBatchOperationsStore(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	// 1. Setup project and multiple patents.
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	p1 := samplePatent("US11611785B2")
+	p2 := samplePatent("US0000001B2")
+	p3 := samplePatent("US0000002B2")
+
+	for _, p := range []domain.Patent{p1, p2, p3} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+		if err := repo.AddMembership(ctx, domain.Membership{
+			Project:     project.ID,
+			Patent:      p.Number,
+			ReviewState: domain.ReviewStateStored,
+			AddedAt:     time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("AddMembership: %v", err)
+		}
+	}
+
+	// 2. Verify SetReviewStates transactional batch updates.
+	err := repo.SetReviewStates(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, domain.ReviewStateUnderReview)
+	if err != nil {
+		t.Fatalf("SetReviewStates success case failed: %v", err)
+	}
+
+	// Verify states are updated.
+	for _, num := range []domain.PatentNumber{p1.Number, p2.Number} {
+		m, err := repo.Membership(ctx, project.ID, num)
+		if err != nil {
+			t.Fatalf("Membership: %v", err)
+		}
+		if m.ReviewState != domain.ReviewStateUnderReview {
+			t.Fatalf("expected state %s, got %s", domain.ReviewStateUnderReview, m.ReviewState)
+		}
+	}
+	// p3 state should remain Cached.
+	m3, err := repo.Membership(ctx, project.ID, p3.Number)
+	if err != nil {
+		t.Fatalf("Membership: %v", err)
+	}
+	if m3.ReviewState != domain.ReviewStateCached {
+		t.Fatalf("expected state %s, got %s", domain.ReviewStateCached, m3.ReviewState)
+	}
+
+	// 3. Verify SetReviewStates transactional safety (rollback).
+	err = repo.SetReviewStates(ctx, project.ID, []domain.PatentNumber{p1.Number, p2.Number}, domain.ReviewState("INVALID_STATE"))
+	if err == nil {
+		t.Fatal("expected failure when setting invalid review state")
+	}
+
+	// 4. Verify TagPatents and UntagPatents transactional batch updates.
+	tag, err := repo.CreateTag(ctx, project.ID, "test-tag")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+
+	err = repo.TagPatents(ctx, tag.ID, []domain.PatentNumber{p1.Number, p2.Number}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("TagPatents failed: %v", err)
+	}
+
+	// Verify they are tagged.
+	for _, num := range []domain.PatentNumber{p1.Number, p2.Number} {
+		tags, err := repo.PatentTags(ctx, project.ID, num)
+		if err != nil {
+			t.Fatalf("PatentTags: %v", err)
+		}
+		if len(tags) != 1 || tags[0].Name != "test-tag" {
+			t.Fatalf("expected 1 tag 'test-tag' for patent %s, got %v", num, tags)
+		}
+	}
+
+	// Verify rollback on TagPatents with invalid tag ID (violating foreign key constraint).
+	err = repo.TagPatents(ctx, 99999, []domain.PatentNumber{p3.Number}, time.Now().UTC())
+	if err == nil {
+		t.Fatal("expected error on foreign key violation for invalid tag ID, but got nil")
+	}
+
+	// Verify UntagPatents.
+	err = repo.UntagPatents(ctx, tag.ID, []domain.PatentNumber{p1.Number, p2.Number})
+	if err != nil {
+		t.Fatalf("UntagPatents failed: %v", err)
+	}
+
+	// Verify they are untagged.
+	for _, num := range []domain.PatentNumber{p1.Number, p2.Number} {
+		tags, err := repo.PatentTags(ctx, project.ID, num)
+		if err != nil {
+			t.Fatalf("PatentTags: %v", err)
+		}
+		if len(tags) != 0 {
+			t.Fatalf("expected 0 tags after untagging, got %v", tags)
+		}
+	}
+}

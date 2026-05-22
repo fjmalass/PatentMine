@@ -81,9 +81,9 @@ func TestTagTaxonomyEngineDecoupled(t *testing.T) {
 	}
 
 	// 1. Assigning a tag that does not exist in taxonomy should fail
-	err = eng.AssignPatentTag(ctx, project.ID, patent.Number, "prior_art")
+	err = eng.TagPatentStrict(ctx, project.ID, patent.Number, "prior_art")
 	if err == nil {
-		t.Fatal("expected AssignPatentTag to fail for non-existent taxonomy tag")
+		t.Fatal("expected TagPatentStrict to fail for non-existent taxonomy tag")
 	}
 	if !strings.Contains(err.Error(), "does not exist in the project taxonomy") {
 		t.Fatalf("unexpected error message: %v", err)
@@ -99,9 +99,9 @@ func TestTagTaxonomyEngineDecoupled(t *testing.T) {
 	}
 
 	// 3. Assigning should now succeed
-	err = eng.AssignPatentTag(ctx, project.ID, patent.Number, "prior_art")
+	err = eng.TagPatentStrict(ctx, project.ID, patent.Number, "prior_art")
 	if err != nil {
-		t.Fatalf("expected AssignPatentTag to succeed, got: %v", err)
+		t.Fatalf("expected TagPatentStrict to succeed, got: %v", err)
 	}
 
 	// 4. Listing patent tags should show the assigned tag and non-zero AssignedAt
@@ -181,8 +181,8 @@ func TestTagTaxonomyActivityLoggingAndReplay(t *testing.T) {
 
 	// Make changes that generate activity records
 	_, _ = eng.CreateTaxonomyTag(ctx, project.ID, "prior_art")
-	_ = eng.AssignPatentTag(ctx, project.ID, patent.Number, "prior_art")
-	_ = eng.RemovePatentTag(ctx, project.ID, patent.Number, "prior_art")
+	_ = eng.TagPatentStrict(ctx, project.ID, patent.Number, "prior_art")
+	_ = eng.UntagPatentStrict(ctx, project.ID, patent.Number, "prior_art")
 	_ = eng.DeleteTaxonomyTag(ctx, project.ID, "prior_art")
 
 	date := time.Now().In(time.Local).Format("2006-01-02")

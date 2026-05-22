@@ -439,7 +439,7 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 func (c *Catalog) View(w, h int) string {
 	c.lastWidth = w
 	switch {
-	case c.loading:
+	case c.loading && len(c.patents) == 0:
 		return c.theme.Dim.Render("loading patents…")
 	case c.loadErr != "":
 		return c.theme.Error.Render("error: " + c.loadErr)

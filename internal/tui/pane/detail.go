@@ -249,7 +249,7 @@ func (d *Detail) Selection() (domain.PatentNumber, bool) {
 // windowed to the visible height by the paginator.
 func (d *Detail) View(w, h int) string {
 	switch {
-	case d.loading:
+	case d.loading && d.patent.Number.Serial == "":
 		return d.theme.Dim.Render("loading " + d.number.String() + "…")
 	case d.loadErr != "":
 		return d.theme.Error.Render("error: " + d.loadErr)

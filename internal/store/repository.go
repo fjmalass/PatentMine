@@ -113,6 +113,8 @@ type Repository interface {
 	Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error)
 	// SetReviewState changes a membership's state, or returns ErrNotFound.
 	SetReviewState(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, state domain.ReviewState) error
+	// SetReviewStates changes multiple memberships' states in a transaction, or returns ErrNotFound.
+	SetReviewStates(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) error
 	// DeleteMembership permanently removes a patent from a project. No-op if not a member.
 	DeleteMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
 	// Memberships returns every membership of a project.
@@ -129,8 +131,12 @@ type Repository interface {
 	TagByName(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error)
 	// TagPatent assigns a tag to a patent; an existing assignment is left as is.
 	TagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber, assignedAt time.Time) (bool, error)
+	// TagPatents assigns a tag to multiple patents in a transaction.
+	TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) error
 	// UntagPatent removes a tag from a patent; a missing assignment is a no-op.
 	UntagPatent(ctx context.Context, tagID int64, patent domain.PatentNumber) (bool, error)
+	// UntagPatents removes a tag from multiple patents in a transaction.
+	UntagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber) error
 	// PatentTag returns one assigned tag on a patent in a project, matching name case-insensitively.
 	PatentTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (domain.Tag, error)
 	// PatentTags returns the tags a patent carries within a project, ordered by
@@ -145,6 +151,15 @@ type Repository interface {
 	DeleteIDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
 	// ListIDSEntries returns every curated IDS entry of a project.
 	ListIDSEntries(ctx context.Context, project domain.ProjectID) ([]domain.IDSEntry, error)
+
+	// SaveClassificationDefinition inserts or updates a classification definition.
+	SaveClassificationDefinition(ctx context.Context, c domain.Classification) error
+	// ClassificationDefinition returns one classification definition, or ErrNotFound.
+	ClassificationDefinition(ctx context.Context, system, code string) (domain.Classification, error)
+	// ListClassificationDefinitions returns all classification definitions.
+	ListClassificationDefinitions(ctx context.Context) ([]domain.Classification, error)
+	// DeleteClassificationDefinition removes a classification definition.
+	DeleteClassificationDefinition(ctx context.Context, system, code string) error
 
 	// Close releases all database resources.
 	Close() error

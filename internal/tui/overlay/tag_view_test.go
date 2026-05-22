@@ -108,8 +108,11 @@ func TestTagPatentOverlayTogglingAndMultiSelection(t *testing.T) {
 			{ID: 1, Name: "tag_one"},
 			{ID: 2, Name: "tag_two"},
 		},
-		checked: map[string]bool{
-			"tag_one": true,
+		checked: map[string]CheckState{
+			"tag_one": CheckChecked,
+		},
+		initial: map[string]CheckState{
+			"tag_one": CheckChecked,
 		},
 	}
 
@@ -124,7 +127,7 @@ func TestTagPatentOverlayTogglingAndMultiSelection(t *testing.T) {
 	if !handled {
 		t.Fatal("Expected spacebar to be handled")
 	}
-	if o.checked["tag_one"] {
+	if o.checked["tag_one"] != CheckUnchecked {
 		t.Fatal("Expected tag_one to be unchecked after space toggle")
 	}
 
@@ -137,7 +140,7 @@ func TestTagPatentOverlayTogglingAndMultiSelection(t *testing.T) {
 	if !handled {
 		t.Fatal("Expected spacebar to be handled")
 	}
-	if !o.checked["tag_two"] {
+	if o.checked["tag_two"] != CheckChecked {
 		t.Fatal("Expected tag_two to be checked after space toggle")
 	}
 }

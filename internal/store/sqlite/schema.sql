@@ -113,3 +113,16 @@ CREATE TRIGGER IF NOT EXISTS patent_fts_update AFTER UPDATE ON patent BEGIN
     INSERT INTO patent_fts (rowid, title, abstract)
     VALUES (new.rowid, new.title, new.abstract);
 END;
+
+CREATE TABLE IF NOT EXISTS classification_definition (
+    system      TEXT NOT NULL,
+    code        TEXT NOT NULL,
+    section     TEXT NOT NULL DEFAULT '',
+    class       TEXT NOT NULL DEFAULT '',
+    subclass    TEXT NOT NULL DEFAULT '',
+    main_group  TEXT NOT NULL DEFAULT '',
+    subgroup    TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (system, code)
+);
+

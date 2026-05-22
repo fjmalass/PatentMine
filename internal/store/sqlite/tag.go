@@ -138,6 +138,77 @@ func (r *Repo) UntagPatent(ctx context.Context, tagID int64, patent domain.Paten
 	return rows > 0, nil
 }
 
+// TagPatents assigns a tag to multiple patents in a single transaction.
+func (r *Repo) TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) (err error) {
+	defer r.observeDuration("tag_patents", time.Now(), &err)
+	if assignedAt.IsZero() {
+		assignedAt = time.Now()
+	}
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: tag patents tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO patent_tag (tag_id, patent_number, created_at) VALUES (?,?,?) ON CONFLICT(tag_id, patent_number) DO NOTHING`)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: tag patents prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	encodedTimeStr := encodeTime(assignedAt)
+	for _, patent := range patents {
+		if patent.IsZero() {
+			continue
+		}
+		_, err := stmt.ExecContext(ctx, tagID, patent.Normalized(), encodedTimeStr)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: tag patent exec: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: tag patents commit: %w", err)
+	}
+	return nil
+}
+
+// UntagPatents removes a tag from multiple patents in a single transaction.
+func (r *Repo) UntagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber) (err error) {
+	defer r.observeDuration("untag_patents", time.Now(), &err)
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: untag patents tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.PrepareContext(ctx, `DELETE FROM patent_tag WHERE tag_id = ? AND patent_number = ?`)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: untag patents prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, patent := range patents {
+		_, err := stmt.ExecContext(ctx, tagID, patent.Normalized())
+		if err != nil {
+			return fmt.Errorf("store/sqlite: untag patent exec: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: untag patents commit: %w", err)
+	}
+	return nil
+}
+
 // PatentTag returns a single assigned tag without loading every tag on the patent.
 func (r *Repo) PatentTag(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, name string) (tag domain.Tag, err error) {
 	defer r.observeDuration("patent_tag", time.Now(), &err)

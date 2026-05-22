@@ -196,6 +196,71 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 	return nil
 }
 
+// SetReviewStateBatch changes multiple memberships' states, enforcing domain rules and announcing changes once.
+func (e *Engine) SetReviewStateBatch(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, target domain.ReviewState) (err error) {
+	defer e.observeDuration("engine.set_review_state_batch", time.Now(), &err)
+	if !target.Valid() {
+		return fmt.Errorf("engine: invalid review state %q", target)
+	}
+
+	records := make([]domain.PatentNumber, 0, len(patents))
+	for _, patent := range patents {
+		record, err := e.recordNumber(ctx, patent)
+		if err != nil {
+			return err
+		}
+		records = append(records, record)
+	}
+
+	// First, check memberships and add missing ones
+	beforeMemberships := make(map[domain.PatentNumber]domain.Membership)
+	for _, record := range records {
+		current, err := e.repo.Membership(ctx, project, record)
+		if errors.Is(err, store.ErrNotFound) {
+			if _, addErr := e.AddToProject(ctx, project, record); addErr != nil {
+				return addErr
+			}
+			current, err = e.repo.Membership(ctx, project, record)
+		}
+		if err != nil {
+			return err
+		}
+		if !current.ReviewState.CanTransitionTo(target) {
+			return fmt.Errorf("engine: cannot move membership from %q to %q", current.ReviewState, target)
+		}
+		beforeMemberships[record] = current
+	}
+
+	// Update states
+	if err := e.repo.SetReviewStates(ctx, project, records, target); err != nil {
+		e.log(ctx, slog.LevelError, "set review state batch failed", slog.String("project_id", string(project)), slog.Int("count", len(records)), slog.String("target", string(target)), slog.String("error", err.Error()))
+		return err
+	}
+
+	// Record activities
+	for _, record := range records {
+		e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
+		rec := observability.Record{
+			Action:   "membership.set_state",
+			Entity:   "membership",
+			EntityID: string(project) + "/" + record.String(),
+			Status:   "committed",
+			Metadata: map[string]any{"requested_number": record.String()},
+		}
+		if current, ok := beforeMemberships[record]; ok {
+			after := current
+			after.ReviewState = target
+			rec.Before = current
+			rec.After = after
+		}
+		e.recordActivity(ctx, rec)
+	}
+
+	e.announceChange()
+	e.incCounter("engine.review_state.changed_total", int64(len(records)))
+	return nil
+}
+
 // ReviewStateOf returns a patent's workflow state in a project. ok is
 // false when no project is named or the patent is not one of its members —
 // review state is a property of the (patent, project) pair, not the patent.

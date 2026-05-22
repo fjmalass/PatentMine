@@ -168,7 +168,7 @@ func (p *IDSDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 
 func (p *IDSDetail) View(w, h int) string {
 	switch {
-	case p.loading:
+	case p.loading && p.patent.Number.Serial == "":
 		return p.theme.Dim.Render("loading IDS…")
 	case p.loadErr != "":
 		return p.theme.Error.Render("error: " + p.loadErr)

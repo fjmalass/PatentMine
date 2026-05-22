@@ -132,6 +132,25 @@ func (r *Repo) initSchema(ctx context.Context) error {
 			_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent ADD COLUMN classifications TEXT NOT NULL DEFAULT '[]'")
 		}
 	}
+	// Migrate existing database instances if they lack the classification_definition table.
+	var hasClassDef bool
+	if err := r.writer.QueryRowContext(ctx,
+		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'classification_definition'`).
+		Scan(&hasClassDef); err == nil && !hasClassDef {
+		_, _ = r.writer.ExecContext(ctx, `
+			CREATE TABLE classification_definition (
+				system      TEXT NOT NULL,
+				code        TEXT NOT NULL,
+				section     TEXT NOT NULL DEFAULT '',
+				class       TEXT NOT NULL DEFAULT '',
+				subclass    TEXT NOT NULL DEFAULT '',
+				main_group  TEXT NOT NULL DEFAULT '',
+				subgroup    TEXT NOT NULL DEFAULT '',
+				description TEXT NOT NULL DEFAULT '',
+				PRIMARY KEY (system, code)
+			)
+		`)
+	}
 	if err := r.syncFTS(ctx); err != nil {
 		return err
 	}

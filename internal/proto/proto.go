@@ -24,24 +24,33 @@ const (
 	MethodProjectList    Method = "project.list"
 	MethodProjectCreate  Method = "project.create"
 	MethodMembershipAdd  Method = "membership.add"
-	MethodReviewState    Method = "review_state.set"
-	MethodTagAssign      Method = "tag.assign"
-	MethodTagRemove      Method = "tag.remove"
-	MethodCrawlFamily   Method = "crawl.family"
-	MethodCrawlCancel   Method = "crawl.cancel"
-	MethodImportFile     Method = "import.file"
-	MethodRelations      Method = "patent.relations"
-	MethodIDSExport      Method = "ids.export"
-	MethodIDSEntryGet    Method = "ids.entry.get"
-	MethodIDSEntrySave   Method = "ids.entry.save"
-	MethodIDSEntryDelete Method = "ids.entry.delete"
-	MethodMetricsGet     Method = "metrics.get"
-	MethodTagCreate      Method = "tag.create"
-	MethodTagList        Method = "tag.list"
-	MethodTagDelete      Method = "tag.delete"
-	MethodPatentTagAdd    Method = "patent.tag.add"
-	MethodPatentTagDelete Method = "patent.tag.delete"
-	MethodPatentTagList   Method = "patent.tag.list"
+	MethodReviewState       Method = "review_state.set"
+	MethodReviewStates      Method = "review_state.set_batch"
+	MethodTagPatent         Method = "tag.assign"
+	MethodTagPatents        Method = "tag.assign_batch"
+	MethodUntagPatent       Method = "tag.remove"
+	MethodUntagPatents      Method = "tag.remove_batch"
+	MethodCrawlFamily       Method = "crawl.family"
+	MethodCrawlCancel       Method = "crawl.cancel"
+	MethodImportFile        Method = "import.file"
+	MethodRelations         Method = "patent.relations"
+	MethodIDSExport         Method = "ids.export"
+	MethodIDSEntryGet       Method = "ids.entry.get"
+	MethodIDSEntrySave      Method = "ids.entry.save"
+	MethodIDSEntryDelete    Method = "ids.entry.delete"
+	MethodMetricsGet        Method = "metrics.get"
+	MethodTagCreate         Method = "tag.create"
+	MethodTagList           Method = "tag.list"
+	MethodTagDelete         Method = "tag.delete"
+	MethodTagPatentStrict   Method = "patent.tag.add"
+	MethodUntagPatentStrict Method = "patent.tag.delete"
+	MethodPatentTagList     Method = "patent.tag.list"
+	MethodClassificationGet        Method = "classification.get"
+	MethodClassificationList       Method = "classification.list"
+	MethodClassificationSave       Method = "classification.save"
+	MethodClassificationDelete     Method = "classification.delete"
+	MethodClassificationLookup     Method = "classification.lookup"
+	MethodPatentClassificationList Method = "patent.classification.list"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -180,12 +189,26 @@ type ReviewStateParams struct {
 	State   string              `json:"state"`
 }
 
+// ReviewStateBatchParams sets multiple memberships' states.
+type ReviewStateBatchParams struct {
+	Project domain.ProjectID      `json:"project"`
+	Patents []domain.PatentNumber `json:"patents"`
+	State   string                `json:"state"`
+}
+
 // TagParams names a tag to assign to, or remove from, a patent within a
 // project. On assign an unknown name creates the tag.
 type TagParams struct {
 	Project domain.ProjectID    `json:"project"`
 	Patent  domain.PatentNumber `json:"patent"`
 	Name    string              `json:"name"`
+}
+
+// TagBatchParams names a tag to assign to, or remove from, multiple patents within a project.
+type TagBatchParams struct {
+	Project domain.ProjectID      `json:"project"`
+	Patents []domain.PatentNumber `json:"patents"`
+	Name    string                `json:"name"`
 }
 
 // TagCreateParams registers a new tag in the project's taxonomy.
@@ -219,6 +242,39 @@ type PatentTagListParams struct {
 // PatentTagListResult carries the list of tags assigned to a patent.
 type PatentTagListResult struct {
 	Tags []domain.Tag `json:"tags"`
+}
+
+// ClassificationGetParams selects a single classification definition.
+type ClassificationGetParams struct {
+	System string `json:"system"`
+	Code   string `json:"code"`
+}
+
+// ClassificationListResult carries all classification definitions.
+type ClassificationListResult struct {
+	Classifications []domain.Classification `json:"classifications"`
+}
+
+// ClassificationParams contains a classification definition to save.
+type ClassificationParams struct {
+	Classification domain.Classification `json:"classification"`
+}
+
+// ClassificationDeleteParams identifies the classification to delete.
+type ClassificationDeleteParams struct {
+	System string `json:"system"`
+	Code   string `json:"code"`
+}
+
+// ClassificationLookupParams contains the CPC code to lookup.
+type ClassificationLookupParams struct {
+	Code string `json:"code"`
+}
+
+// PatentClassificationListParams lists classifications for a patent.
+type PatentClassificationListParams struct {
+	Project domain.ProjectID    `json:"project"`
+	Patent  domain.PatentNumber `json:"patent"`
 }
 
 

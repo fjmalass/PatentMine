@@ -105,6 +105,7 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	crawler := crawl.NewCrawler(registry, cachingRepo, crawl.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	return engine.New(ctx, cachingRepo, crawl.Factory(crawler),
 		engine.WithFileImporter(crawler),
+		engine.WithCPCLookup(crawl.LookupCPCDescription),
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),
 		engine.WithMetrics(telemetry.Metrics)), nil

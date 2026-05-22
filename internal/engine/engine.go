@@ -37,6 +37,9 @@ type FileImporter interface {
 	ImportFile(ctx context.Context, path string) error
 }
 
+// CPCLookup fetches classification descriptions from an external service.
+type CPCLookup func(ctx context.Context, code string) (string, error)
+
 // Option customizes an Engine.
 type Option func(*Engine)
 
@@ -48,6 +51,7 @@ type Engine struct {
 	pool         *workerPool
 	crawl        CrawlFactory
 	fileImporter FileImporter
+	cpcLookup    CPCLookup
 	logger       *slog.Logger
 	activities   *observability.Recorder
 	metrics      *observability.Metrics
@@ -61,6 +65,11 @@ type Engine struct {
 // WithFileImporter wires the file-import backend used by ImportFile.
 func WithFileImporter(fi FileImporter) Option {
 	return func(e *Engine) { e.fileImporter = fi }
+}
+
+// WithCPCLookup wires the CPC lookup function used by LookupClassification.
+func WithCPCLookup(l CPCLookup) Option {
+	return func(e *Engine) { e.cpcLookup = l }
 }
 
 // WithLogger records structured logs for engine operations.

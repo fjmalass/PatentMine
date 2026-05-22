@@ -198,7 +198,7 @@ func (p *Projects) ProjectByArg(arg string) (domain.Project, bool) {
 // View implements Pane.
 func (p *Projects) View(w, h int) string {
 	switch {
-	case p.loading:
+	case p.loading && len(p.projects) == 0:
 		return p.theme.Dim.Render("loading projects…")
 	case p.loadErr != "":
 		return p.theme.Error.Render("error: " + p.loadErr)
