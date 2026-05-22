@@ -148,10 +148,24 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 		}
 	}
 
+	if len(bundle.Citations) == 0 {
+		if fallback, err := importGoogleCitationFallback(number, logger); err == nil {
+			mergeCitationFallback(&bundle, fallback)
+		} else {
+			logger.Warn("uspto.google_citation_fallback failed", "patent", number, "error", err)
+		}
+	}
+
 	// Calculate Expected Citations for logging (sum of API reported counts)
 	// Backward = ReferenceCitedBag + ReferencedCitedBag (merged in buildUSPTOBundle)
-	bundle.Patent.ExpectedCitations = len(appData.ReferenceCitedBag) + len(appData.ReferencedCitedBag)
-	bundle.Patent.ExpectedCitedBy = forwardCount
+	if bundle.ExpectedCitations == 0 {
+		bundle.Patent.ExpectedCitations = len(appData.ReferenceCitedBag) + len(appData.ReferencedCitedBag)
+		bundle.ExpectedCitations = bundle.Patent.ExpectedCitations
+	}
+	if bundle.ExpectedCitedBy == 0 {
+		bundle.Patent.ExpectedCitedBy = forwardCount
+		bundle.ExpectedCitedBy = bundle.Patent.ExpectedCitedBy
+	}
 
 	// Format counts for logging
 	countStr := func(actual, expected int) string {
@@ -181,6 +195,34 @@ func ImportUSPTO(patentNumber, apiKey string, logger *slog.Logger) (domain.Paten
 
 	logger.Info("uspto.import ok", "patent", bundle.Patent.Number, "citations", countStr(backActual, bundle.Patent.ExpectedCitations), "cited_by", countStr(fwdActual, bundle.Patent.ExpectedCitedBy), "family_edges", len(bundle.FamilyEdges), "classifications", len(bundle.Classifications))
 	return bundle, nil
+}
+
+func importGoogleCitationFallback(number string, logger *slog.Logger) (domain.PatentBundle, error) {
+	rawURL, err := GooglePatentsURL(number)
+	if err != nil {
+		return domain.PatentBundle{}, err
+	}
+	return ImportGooglePatents(rawURL, logger)
+}
+
+func mergeCitationFallback(bundle *domain.PatentBundle, fallback domain.PatentBundle) {
+	if len(bundle.Citations) == 0 {
+		bundle.Citations = fallback.Citations
+	}
+	if bundle.ExpectedCitations == 0 && fallback.ExpectedCitations != 0 {
+		bundle.ExpectedCitations = fallback.ExpectedCitations
+		bundle.Patent.ExpectedCitations = fallback.ExpectedCitations
+	}
+	if bundle.ExpectedCitedBy == 0 && fallback.ExpectedCitedBy != 0 {
+		bundle.ExpectedCitedBy = fallback.ExpectedCitedBy
+		bundle.Patent.ExpectedCitedBy = fallback.ExpectedCitedBy
+	}
+	if len(bundle.FamilyEdges) == 0 {
+		bundle.FamilyEdges = fallback.FamilyEdges
+	}
+	if bundle.Patent.SourceGoogleURL == "" {
+		bundle.Patent.SourceGoogleURL = fallback.Patent.SourceGoogleURL
+	}
 }
 
 // --- JSON response types ---

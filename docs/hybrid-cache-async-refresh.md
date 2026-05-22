@@ -4,8 +4,8 @@ This design implements the workflow in `C:\Users\timot\Documents\projects\patent
 
 Quick visibility:
 
-- Mermaid source: `docs/solution-2-hybrid-cache-async-refresh.mmd`
-- PNG render: `docs/solution-2-hybrid-cache-async-refresh.png`
+- Mermaid source: `docs/hybrid-cache-async-refresh.mmd`
+- PNG render: `docs/hybrid-cache-async-refresh.png`
 
 ## Architecture
 

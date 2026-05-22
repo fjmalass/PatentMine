@@ -149,6 +149,42 @@ func TestBuildUSPTOBundleWithApplicantFallback(t *testing.T) {
 	}
 }
 
+func TestMergeCitationFallbackPreservesUSPTOMetadata(t *testing.T) {
+	bundle := domain.PatentBundle{
+		Patent: domain.Patent{
+			Number:   "US8164048",
+			Title:    "USPTO Title",
+			Assignee: "USPTO Assignee",
+		},
+	}
+	fallback := domain.PatentBundle{
+		Patent: domain.Patent{
+			Number:          "US8164048B2",
+			Title:           "Google Title",
+			SourceGoogleURL: "https://patents.google.com/patent/US8164048B2/en",
+		},
+		Citations: []domain.CitationEdge{{
+			SourcePatent: "US8164048B2",
+			TargetPatent: "US1",
+			RelationType: domain.RelationCites,
+		}},
+		ExpectedCitations: 1,
+		ExpectedCitedBy:   2,
+	}
+
+	mergeCitationFallback(&bundle, fallback)
+
+	if bundle.Patent.Title != "USPTO Title" || bundle.Patent.Assignee != "USPTO Assignee" {
+		t.Fatalf("expected USPTO metadata to be preserved, got %+v", bundle.Patent)
+	}
+	if len(bundle.Citations) != 1 || bundle.ExpectedCitations != 1 || bundle.ExpectedCitedBy != 2 {
+		t.Fatalf("expected fallback citation graph to merge, got %+v", bundle)
+	}
+	if bundle.Patent.SourceGoogleURL == "" {
+		t.Fatal("expected fallback source URL")
+	}
+}
+
 func TestImportUSPTOUsesAPIKey(t *testing.T) {
 	apiKey := "test-secret-key"
 	patentNum := "US11611785B2"
