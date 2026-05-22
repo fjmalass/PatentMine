@@ -738,10 +738,14 @@ func (r *Repository) UpsertPatentBundle(ctx context.Context, projectID domain.Pr
 		if label == "" {
 			label = CitationLabel(bundle.Patent)
 		}
+		refNumber := firstNonEmpty(ref.PatentNumber, bundle.Patent.Number)
+		if err := insertPatentStub(ctx, tx, refNumber); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `insert into reference_entries (project_id, patent_number, citation_label, created_at)
 			values (?, ?, ?, ?)
 			on conflict(project_id, patent_number) do update set citation_label = excluded.citation_label`,
-			projectID, firstNonEmpty(ref.PatentNumber, bundle.Patent.Number), label, nowString()); err != nil {
+			projectID, refNumber, label, nowString()); err != nil {
 			return err
 		}
 	}
@@ -821,6 +825,15 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID domain.ProjectI
 	refreshedTargets := map[string]map[domain.PatentNumber]bool{}
 	for _, edge := range edges {
 		source := firstNonEmpty(edge.SourcePatent, number)
+		if edge.TargetPatent == "" {
+			continue
+		}
+		if err := insertPatentStub(ctx, tx, source); err != nil {
+			return err
+		}
+		if err := insertPatentStub(ctx, tx, edge.TargetPatent); err != nil {
+			return err
+		}
 		status := firstNonEmpty(edge.ReviewState, domain.ReviewStateCached)
 
 		if refreshedTargets[edge.RelationType] == nil {
@@ -848,6 +861,19 @@ func replaceCitations(ctx context.Context, tx *sql.Tx, projectID domain.ProjectI
 		}
 	}
 	return nil
+}
+
+func insertPatentStub(ctx context.Context, tx *sql.Tx, number domain.PatentNumber) error {
+	if number == "" {
+		return nil
+	}
+	now := nowString()
+	_, err := tx.ExecContext(ctx, `insert into patents
+		(number, country_code, title, abstract, assignee, inventors_json, publication_date, grant_date, source_google_url, created_at, updated_at)
+		values (?, ?, ?, '', '', '[]', '', '', '', ?, ?)
+		on conflict(number) do nothing`,
+		number, domain.PatentCountryFromNumber(string(number)), string(number), now, now)
+	return err
 }
 
 func replaceClassifications(ctx context.Context, tx *sql.Tx, number domain.PatentNumber, classifications []domain.Classification, logger *slog.Logger) error {

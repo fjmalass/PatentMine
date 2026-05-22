@@ -167,6 +167,78 @@ func TestRepositoryRefreshPrunesStaleCitationsAndPreservesStatus(t *testing.T) {
 	}
 }
 
+func TestRepositoryCreatesCitationPatentStubsWithoutOverwritingMetadata(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepo(t)
+	target := domain.PatentBundle{
+		Patent: domain.Patent{
+			Number:   "US-TARGET",
+			Title:    "Known target metadata",
+			Assignee: "Example Assignee",
+		},
+	}
+	if err := repo.UpsertPatentBundle(ctx, "default", target); err != nil {
+		t.Fatal(err)
+	}
+
+	source := domain.PatentBundle{
+		Patent: domain.Patent{Number: "US-SOURCE", Title: "Source patent"},
+		Citations: []domain.CitationEdge{
+			{SourcePatent: "US-SOURCEB2", TargetPatent: "US-TARGET", RelationType: domain.RelationCites},
+			{TargetPatent: "US-UNKNOWN", RelationType: domain.RelationCitedBy},
+		},
+		References: []domain.ReferenceEntry{{
+			PatentNumber:  "US-SOURCEB2",
+			CitationLabel: "requested kind-code reference",
+		}},
+	}
+	if err := repo.UpsertPatentBundle(ctx, "default", source); err != nil {
+		t.Fatal(err)
+	}
+
+	known, err := repo.GetPatent(ctx, "default", "US-TARGET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if known.Title != "Known target metadata" || known.Assignee != "Example Assignee" {
+		t.Fatalf("expected citation stub insert to preserve existing target metadata, got %+v", known)
+	}
+	alias, err := repo.GetPatent(ctx, "default", "US-SOURCEB2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alias.Title != "US-SOURCEB2" {
+		t.Fatalf("expected source alias stub title, got %+v", alias)
+	}
+	unknown, err := repo.GetPatent(ctx, "default", "US-UNKNOWN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknown.Title != "US-UNKNOWN" {
+		t.Fatalf("expected target stub title, got %+v", unknown)
+	}
+	cited, err := repo.ListCitations(ctx, "default", "US-SOURCEB2", domain.RelationCites, storage.ListCitationsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cited) != 1 || cited[0].TargetPatent != "US-TARGET" || cited[0].TargetTitle != "Known target metadata" {
+		t.Fatalf("expected citation edge with preserved target metadata, got %+v", cited)
+	}
+	refs, err := repo.ListReferences(ctx, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundRef := false
+	for _, ref := range refs {
+		if ref.PatentNumber == "US-SOURCEB2" && ref.CitationLabel == "requested kind-code reference" {
+			foundRef = true
+		}
+	}
+	if !foundRef {
+		t.Fatalf("expected kind-code reference row, got %+v", refs)
+	}
+}
+
 func TestRepositoryOperations(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestRepo(t)

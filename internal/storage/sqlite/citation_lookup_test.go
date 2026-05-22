@@ -47,6 +47,29 @@ func TestCitationGraphCacheMaterializedWithBundle(t *testing.T) {
 	}
 }
 
+func TestCitationGraphLookupMatchesUSKindCodeAlias(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepo(t)
+	if err := repo.UpsertPatentBundle(ctx, "default", domain.PatentBundle{
+		Patent: domain.Patent{Number: "US8164048", Title: "Citation graph source", ImportSource: "uspto"},
+		Citations: []domain.CitationEdge{{
+			SourcePatent: "US8164048",
+			TargetPatent: "US1",
+			RelationType: domain.RelationCites,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, ok, err := repo.GetCitationGraph(ctx, "default", "US8164048B2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || graph.Cache.PatentNumber != "US8164048" || len(graph.Cited) != 1 {
+		t.Fatalf("expected kind-code alias lookup to resolve canonical graph, ok=%v graph=%+v", ok, graph)
+	}
+}
+
 func TestCitationRefreshQueueDedupesActiveJobs(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestRepo(t)

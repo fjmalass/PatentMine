@@ -26,6 +26,17 @@ type citationGraphCacheMeta struct {
 }
 
 func (r *Repository) GetCitationGraph(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) (domain.CitationGraph, bool, error) {
+	graph, ok, err := r.getCitationGraphExact(ctx, projectID, number)
+	if err != nil || ok {
+		return graph, ok, err
+	}
+	if alias := citationGraphLookupAlias(number); alias != "" && alias != number {
+		return r.getCitationGraphExact(ctx, projectID, alias)
+	}
+	return domain.CitationGraph{}, false, nil
+}
+
+func (r *Repository) getCitationGraphExact(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber) (domain.CitationGraph, bool, error) {
 	var graph domain.CitationGraph
 	var refreshedAt, freshUntil, updatedAt string
 	var partial, capHit int
@@ -63,6 +74,28 @@ func (r *Repository) GetCitationGraph(ctx context.Context, projectID domain.Proj
 	graph.Cited = cited
 	graph.Citing = citing
 	return graph, true, nil
+}
+
+func citationGraphLookupAlias(number domain.PatentNumber) domain.PatentNumber {
+	value := strings.ToUpper(strings.TrimSpace(string(number)))
+	if !strings.HasPrefix(value, "US") || len(value) < 5 {
+		return ""
+	}
+	last := value[len(value)-1]
+	prev := value[len(value)-2]
+	if last < '0' || last > '9' || prev < 'A' || prev > 'Z' {
+		return ""
+	}
+	base := value[:len(value)-2]
+	if len(base) <= 2 {
+		return ""
+	}
+	for _, r := range base[2:] {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return domain.PatentNumber(base)
 }
 
 func (r *Repository) EnqueueCitationRefresh(ctx context.Context, projectID domain.ProjectID, number domain.PatentNumber, opts citationlookup.EnqueueOptions) (domain.CitationRefreshJob, bool, error) {

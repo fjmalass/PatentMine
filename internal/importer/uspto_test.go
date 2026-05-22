@@ -180,6 +180,9 @@ func TestMergeCitationFallbackPreservesUSPTOMetadata(t *testing.T) {
 	if len(bundle.Citations) != 1 || bundle.ExpectedCitations != 1 || bundle.ExpectedCitedBy != 2 {
 		t.Fatalf("expected fallback citation graph to merge, got %+v", bundle)
 	}
+	if bundle.Citations[0].SourcePatent != bundle.Patent.Number {
+		t.Fatalf("expected fallback citation source to be rewritten to stored patent number, got %+v", bundle.Citations[0])
+	}
 	if bundle.Patent.SourceGoogleURL == "" {
 		t.Fatal("expected fallback source URL")
 	}

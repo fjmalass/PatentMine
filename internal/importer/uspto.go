@@ -207,7 +207,11 @@ func importGoogleCitationFallback(number string, logger *slog.Logger) (domain.Pa
 
 func mergeCitationFallback(bundle *domain.PatentBundle, fallback domain.PatentBundle) {
 	if len(bundle.Citations) == 0 {
-		bundle.Citations = fallback.Citations
+		bundle.Citations = make([]domain.CitationEdge, 0, len(fallback.Citations))
+		for _, edge := range fallback.Citations {
+			edge.SourcePatent = bundle.Patent.Number
+			bundle.Citations = append(bundle.Citations, edge)
+		}
 	}
 	if bundle.ExpectedCitations == 0 && fallback.ExpectedCitations != 0 {
 		bundle.ExpectedCitations = fallback.ExpectedCitations
