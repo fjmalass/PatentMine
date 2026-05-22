@@ -34,6 +34,7 @@ const (
 	MethodCrawlCancel              Method = "crawl.cancel"
 	MethodImportFile               Method = "import.file"
 	MethodRelations                Method = "patent.relations"
+	MethodFamilyGraph              Method = "patent.family_graph"
 	MethodIDSExport                Method = "ids.export"
 	MethodIDSEntryGet              Method = "ids.entry.get"
 	MethodIDSEntrySave             Method = "ids.entry.save"
@@ -322,6 +323,43 @@ type RelationsParams struct {
 type RelationsResult struct {
 	Patents []domain.PatentRow `json:"patents"`
 	Total   int                `json:"total"`
+}
+
+// FamilyGraphParams selects a bounded family-only DAG around one patent.
+type FamilyGraphParams struct {
+	Root      domain.PatentNumber `json:"root"`
+	Depth     int                 `json:"depth,omitempty"`
+	MaxNodes  int                 `json:"max_nodes,omitempty"`
+	Project   domain.ProjectID    `json:"project,omitempty"`
+	Countries []string            `json:"countries,omitempty"`
+}
+
+// FamilyGraphNode is one patent in a family DAG result.
+type FamilyGraphNode struct {
+	Patent   domain.PatentRow      `json:"patent"`
+	Depth    int                   `json:"depth"`
+	Parents  []domain.PatentNumber `json:"parents,omitempty"`
+	Children []domain.PatentNumber `json:"children,omitempty"`
+}
+
+// FamilyGraphEdge is one canonical parent->child edge in a family DAG.
+type FamilyGraphEdge struct {
+	Parent       domain.PatentNumber `json:"parent"`
+	Child        domain.PatentNumber `json:"child"`
+	Inconsistent bool                `json:"inconsistent,omitempty"`
+}
+
+// FamilyGraphResult carries a bounded parent/child graph plus traversal metadata.
+type FamilyGraphResult struct {
+	Root               domain.PatentNumber `json:"root"`
+	Depth              int                 `json:"depth"`
+	MaxNodes           int                 `json:"max_nodes"`
+	Countries          []string            `json:"countries,omitempty"`
+	Nodes              []FamilyGraphNode   `json:"nodes"`
+	Edges              []FamilyGraphEdge   `json:"edges"`
+	Truncated          bool                `json:"truncated,omitempty"`
+	HiddenByCountry    int                 `json:"hidden_by_country,omitempty"`
+	InconsistencyCount int                 `json:"inconsistency_count,omitempty"`
 }
 
 // IDSExportParams selects the project to build an Information Disclosure

@@ -42,6 +42,7 @@ const (
 	ScopeCatalog   Scope = "catalog"   // the main patent list
 	ScopeDetail    Scope = "detail"    // one patent's detail view
 	ScopeCitations Scope = "citations" // a citations / cited-by list
+	ScopeFamily    Scope = "family"    // a bounded family DAG view
 	ScopeIDS       Scope = "ids"       // one patent's IDS entry editor
 	ScopeProjects  Scope = "projects"  // the project list
 	ScopeFullText  Scope = "fulltext"  // full claims text viewer

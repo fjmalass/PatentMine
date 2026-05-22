@@ -89,6 +89,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenCitations:       (*App).cmdOpenCitations,
 	command.OpenCitedBy:         (*App).cmdOpenCitedBy,
 	command.OpenParents:         (*App).cmdOpenParents,
+	command.OpenFamilyGraph:     (*App).cmdOpenFamilyGraph,
 	command.OpenIDS:             (*App).cmdOpenIDS,
 	command.OpenProjects:        (*App).cmdOpenProjects,
 	command.ProjectActivate:     (*App).cmdProjectActivate,

@@ -83,6 +83,8 @@ func viewActions() map[string]command.ID {
 		"c":      command.OpenCitations,
 		"b":      command.OpenCitedBy,
 		"p":      command.OpenParents,
+		"F":      command.OpenFamilyGraph,
+		"g f":    command.OpenFamilyGraph,
 		"P":      command.OpenProjects,
 		"ctrl+r": command.Refresh,
 	}
@@ -152,6 +154,24 @@ func Default() *Keymaps {
 			"ctrl+a": command.SelectAll,
 		})
 
+	family := NewLayer("family", false).
+		BindAll(listMotions()).
+		BindAll(patentActions()).
+		BindAll(viewActions()).
+		BindAll(map[string]command.ID{
+			"enter":  command.OpenDetail,
+			"l":      command.OpenDetail,
+			"/":      command.OpenSearch,
+			"]":      command.FamilyDepthMore,
+			"[":      command.FamilyDepthLess,
+			"+":      command.FamilyDepthMore,
+			"-":      command.FamilyDepthLess,
+			"g v":    command.ReselectLast,
+			"v":      command.SelectVisual,
+			"g a":    command.SelectAll,
+			"ctrl+a": command.SelectAll,
+		})
+
 	ids := NewLayer("ids", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
@@ -212,6 +232,7 @@ func Default() *Keymaps {
 			command.ScopeCatalog:   catalog,
 			command.ScopeDetail:    detail,
 			command.ScopeCitations: citations,
+			command.ScopeFamily:    family,
 			command.ScopeIDS:       ids,
 			command.ScopeProjects:  projects,
 			command.ScopeFullText:  fullText,

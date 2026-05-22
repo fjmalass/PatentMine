@@ -28,16 +28,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /metrics", s.handleMetricsProm)
 	s.mux.HandleFunc("GET /metricsz", s.handleMetrics)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
-	s.mux.HandleFunc("GET /patents", s.handlePatentList)                        // command.PatentList
+	s.mux.HandleFunc("GET /patents", s.handlePatentList) // command.PatentList
 	s.mux.HandleFunc("GET /patents/columns", s.handlePatentTableColumns)
-	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)                // command.PatentGet
-	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations)      // command.PatentRelations
+	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)           // command.PatentGet
+	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations) // command.PatentRelations
+	s.mux.HandleFunc("GET /patents/{number}/family", s.handleFamilyGraph)
 	s.mux.HandleFunc("PUT /patents/{number}/review_state", s.handleReviewState) // command.Mark*
 	s.mux.HandleFunc("GET /projects", s.handleProjectList)                      // command.ProjectList
 	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)                   // command.ProjectCreate
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)          // command.AddToProject
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)                     // command.ExportIDS
-	s.mux.HandleFunc("POST /crawl", s.handleCrawl)                             // command.CrawlFamily
+	s.mux.HandleFunc("POST /crawl", s.handleCrawl)                              // command.CrawlFamily
 
 	// Fixed Tag Taxonomy endpoints
 	s.mux.HandleFunc("POST /projects/{id}/tags", s.handleTagCreate)
@@ -121,6 +122,26 @@ func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
 			Offset:         offset,
 			SortColumn:     domain.SortColumn(q.Get("sort_column")),
 			SortAscending:  sortAscending,
+		}, &res)
+}
+
+// handleFamilyGraph returns a bounded parent/child family DAG around one patent.
+func (s *Server) handleFamilyGraph(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	q := r.URL.Query()
+	depth, _ := strconv.Atoi(q.Get("depth"))
+	maxNodes, _ := strconv.Atoi(firstNonEmpty(q.Get("max_nodes"), q.Get("limit")))
+	var res proto.FamilyGraphResult
+	s.call(w, r, proto.MethodFamilyGraph,
+		proto.FamilyGraphParams{
+			Root:      number,
+			Depth:     depth,
+			MaxNodes:  maxNodes,
+			Countries: q["country"],
 		}, &res)
 }
 

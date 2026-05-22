@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
@@ -155,7 +156,7 @@ func (o *PatentNoteEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			return o, nil, true
 		}
 	}
-	if msg.Type == tea.KeyF2 {
+	if isVimToggleKey(msg) {
 		o.vimMode = !o.vimMode
 		if o.vimMode {
 			o.vimInsert = false
@@ -404,9 +405,8 @@ func (o *PatentNoteEditor) View(maxW, maxH int) string {
 	}
 	lines := o.lines()
 	bodyRows := max(maxH-8, 3)
-	o.keepCursorVisible(bodyRows)
-	start := o.offset
-	end := min(start+bodyRows, len(lines))
+	o.keepCursorVisible(maxW, bodyRows)
+	rows := o.visibleRows(lines, maxW, bodyRows)
 	var b strings.Builder
 	b.WriteString(o.theme.Header.Render(render.Truncate(o.number.String()+" · "+o.patent.Title, maxW)))
 	b.WriteString("\n")
@@ -420,20 +420,17 @@ func (o *PatentNoteEditor) View(maxW, maxH int) string {
 		b.WriteString(o.theme.Warn.Render(render.Truncate("clear this patent note? [y] yes  [n] no", maxW)))
 		b.WriteString("\n")
 	}
-	for i := start; i < end; i++ {
-		line := lines[i]
-		prefix := fmt.Sprintf("%3d ", i+1)
-		if i == o.line {
-			line = o.renderCursorLine(line)
-			b.WriteString(o.theme.Selected.Render(render.Pad(render.Truncate(prefix+line, maxW), maxW)))
+	for i, row := range rows {
+		if row.selected {
+			b.WriteString(o.theme.Selected.Render(render.Pad(render.Truncate(row.text, maxW), maxW)))
 		} else {
-			b.WriteString(o.theme.Row.Render(render.Truncate(prefix+line, maxW)))
+			b.WriteString(o.theme.Row.Render(render.Truncate(row.text, maxW)))
 		}
-		if i < end-1 {
+		if i < len(rows)-1 {
 			b.WriteByte('\n')
 		}
 	}
-	if end == start {
+	if len(rows) == 0 {
 		b.WriteString(o.theme.Selected.Render(render.Pad("  1 "+o.theme.Title.Render("█"), maxW)))
 	}
 	b.WriteString("\n")
@@ -443,11 +440,16 @@ func (o *PatentNoteEditor) View(maxW, maxH int) string {
 			mode = "INSERT"
 		}
 		fmt.Fprintf(&b, "%s",
-			o.theme.Dim.Render(render.Truncate(fmt.Sprintf("-- %s -- · f2 off · ctrl+s save · esc close", mode), maxW)))
+			o.theme.Dim.Render(render.Truncate(fmt.Sprintf("-- %s -- · ctrl+] off · ctrl+s save · esc close", mode), maxW)))
 	} else {
-		b.WriteString(o.theme.Dim.Render(render.Truncate("markdown editor · ctrl+s save · D clear · esc close · f2 vim", maxW)))
+		b.WriteString(o.theme.Dim.Render(render.Truncate("markdown editor · ctrl+s save · D clear · esc close · ctrl+] vim", maxW)))
 	}
 	return b.String()
+}
+
+type patentNoteViewRow struct {
+	text     string
+	selected bool
 }
 
 func (o *PatentNoteEditor) loadCmd() tea.Cmd {
@@ -534,16 +536,107 @@ func (o *PatentNoteEditor) renderCursorLine(line string) string {
 	return string(runes[:col]) + o.theme.Title.Render("█") + string(runes[col:])
 }
 
-func (o *PatentNoteEditor) keepCursorVisible(bodyRows int) {
+
+func (o *PatentNoteEditor) keepCursorVisible(maxW, bodyRows int) {
 	if o.line < o.offset {
 		o.offset = o.line
 	}
-	if o.line >= o.offset+bodyRows {
-		o.offset = o.line - bodyRows + 1
+	for o.offset < o.line && o.visualRowsBetween(o.offset, o.line, maxW)+o.editorLineRows(o.line, maxW) > bodyRows {
+		o.offset++
 	}
 	if o.offset < 0 {
 		o.offset = 0
 	}
+}
+
+func (o *PatentNoteEditor) visibleRows(lines []string, maxW, bodyRows int) []patentNoteViewRow {
+	rows := make([]patentNoteViewRow, 0, bodyRows)
+	for i := o.offset; i < len(lines) && len(rows) < bodyRows; i++ {
+		prefix := fmt.Sprintf("%3d ", i+1)
+		line := lines[i]
+		selected := i == o.line
+		contentW := max(maxW-ansi.StringWidth(prefix), 1)
+		wrapped := wrapPatentNoteLine(line, contentW)
+		if selected {
+			wrapped = wrapPatentNoteCursor(wrapped, contentW, o.column, o.theme.Title.Render("█"))
+		}
+		for j, part := range wrapped {
+			linePrefix := prefix
+			if j > 0 {
+				linePrefix = strings.Repeat(" ", ansi.StringWidth(prefix))
+			}
+			rows = append(rows, patentNoteViewRow{text: linePrefix + part, selected: selected})
+			if len(rows) >= bodyRows {
+				break
+			}
+		}
+	}
+	return rows
+}
+
+func (o *PatentNoteEditor) visualRowsBetween(start, end, maxW int) int {
+	lines := o.lines()
+	rows := 0
+	for i := start; i < end && i < len(lines); i++ {
+		rows += o.editorLineRows(i, maxW)
+	}
+	return rows
+}
+
+func (o *PatentNoteEditor) editorLineRows(index, maxW int) int {
+	lines := o.lines()
+	if index < 0 || index >= len(lines) {
+		return 0
+	}
+	prefix := fmt.Sprintf("%3d ", index+1)
+	contentW := max(maxW-ansi.StringWidth(prefix), 1)
+	return len(wrapPatentNoteLine(lines[index], contentW))
+}
+
+func wrapPatentNoteLine(line string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	runes := []rune(line)
+	if len(runes) == 0 {
+		return []string{""}
+	}
+	parts := make([]string, 0, (len(runes)+width-1)/width)
+	for len(runes) > width {
+		parts = append(parts, string(runes[:width]))
+		runes = runes[width:]
+	}
+	parts = append(parts, string(runes))
+	return parts
+}
+
+func wrapPatentNoteCursor(parts []string, width, col int, cursor string) []string {
+	if len(parts) == 0 {
+		return []string{cursor}
+	}
+	if width < 1 {
+		width = 1
+	}
+	wrapped := make([]string, 0, len(parts))
+	pos := max(col, 0)
+	inserted := false
+	for i, part := range parts {
+		runes := []rune(part)
+		segmentLen := len(runes)
+		atEnd := i == len(parts)-1
+		if !inserted && (pos < segmentLen || (atEnd && pos == segmentLen)) {
+			offset := min(pos, segmentLen)
+			wrapped = append(wrapped, string(runes[:offset])+cursor+string(runes[offset:]))
+			inserted = true
+			continue
+		}
+		wrapped = append(wrapped, part)
+		pos -= segmentLen
+	}
+	if !inserted {
+		wrapped[len(wrapped)-1] += cursor
+	}
+	return wrapped
 }
 
 func (o *PatentNoteEditor) insertText(s string) {

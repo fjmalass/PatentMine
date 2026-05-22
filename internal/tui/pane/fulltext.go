@@ -459,7 +459,7 @@ func (f *FullText) copyYank(meta bool) tea.Cmd {
 
 // noteAdd adds the current selection (or section) to the notes buffer.
 func (f *FullText) noteAdd() tea.Cmd {
-	body, locator := f.selection()
+	body, locator := f.noteSelection()
 	if locator == "" {
 		return status(text.StatusNoPatentSelected, false, "move cursor to a claim or paragraph first")
 	}
@@ -468,6 +468,35 @@ func (f *FullText) noteAdd() tea.Cmd {
 	return func() tea.Msg {
 		return NoteAddMsg{Number: number, Locator: locator, Text: body, CapturedAt: captured}
 	}
+}
+
+// noteSelection resolves the current note target. Disclosure notes use the
+// active paragraph locator rather than the top-level Disclosure header.
+func (f *FullText) noteSelection() (body string, locator string) {
+	body, locator = f.selection()
+	if f.visualMode || locator != disclosureLocator {
+		return body, locator
+	}
+	if paraLocator := f.nearestParagraphLocator(f.page.Cursor()); paraLocator != "" {
+		return f.sectionText(paraLocator), paraLocator
+	}
+	return body, locator
+}
+
+func (f *FullText) nearestParagraphLocator(index int) string {
+	for i := index + 1; i < len(f.lines); i++ {
+		locator := f.lines[i].locator
+		if strings.HasPrefix(locator, disclosureLocator+" ") {
+			return locator
+		}
+	}
+	for i := index - 1; i >= 0; i-- {
+		locator := f.lines[i].locator
+		if strings.HasPrefix(locator, disclosureLocator+" ") {
+			return locator
+		}
+	}
+	return ""
 }
 
 // noteOpen shows the notes buffer overlay.

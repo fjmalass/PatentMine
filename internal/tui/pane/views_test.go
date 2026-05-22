@@ -7,6 +7,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/proto"
 	"patentmine/internal/tui/render"
 )
 
@@ -75,6 +76,88 @@ func TestCitationsTitleReflectsKind(t *testing.T) {
 	cited := NewCitations(nil, render.NewTheme(), root, domain.RelationCitedBy)
 	if !strings.HasPrefix(cited.Title(), "Cited by") {
 		t.Fatalf("cited-by pane title = %q, want a 'Cited by' prefix", cited.Title())
+	}
+}
+
+func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	parent := domain.MustParsePatentNumber("EP0000002A1")
+	child := domain.MustParsePatentNumber("JP0000003A1")
+	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
+	g.loading = false
+	g.nodes = []proto.FamilyGraphNode{
+		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root", FetchState: domain.FetchCached}, Depth: 0, Parents: []domain.PatentNumber{parent}},
+		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent", FetchState: domain.FetchCached}, Depth: 1, Children: []domain.PatentNumber{root}},
+		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchStub}, Depth: 1},
+	}
+	g.rebuildRows()
+	g.page.SetTotal(len(g.rows))
+	g.jumpToFirstNode()
+
+	out := g.View(120, 12)
+	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "stub  Child"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("family graph view missing %q\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "depth:2/6") {
+		t.Fatalf("family graph summary missing current/max depth\n%s", out)
+	}
+
+	if sel, ok := g.Selection(); !ok || sel != root {
+		t.Fatalf("initial selection = %v ok=%v, want root", sel, ok)
+	}
+	g.Command(command.NavDown, Invocation{Repeat: 1})
+	if sel, ok := g.Selection(); !ok || sel != parent {
+		t.Fatalf("selection after NavDown = %v ok=%v, want parent", sel, ok)
+	}
+	g.Command(command.NavDown, Invocation{Repeat: 1})
+	if sel, ok := g.Selection(); !ok || sel != child {
+		t.Fatalf("selection after second NavDown = %v ok=%v, want child", sel, ok)
+	}
+
+	g.Command(command.NavTop, Invocation{Repeat: 1})
+	g.Command(command.SelectVisual, Invocation{Repeat: 1})
+	g.Command(command.NavDown, Invocation{Repeat: 2})
+	selected := g.Selections()
+	if len(selected) != 3 {
+		t.Fatalf("visual selections len = %d, want 3", len(selected))
+	}
+	for i, want := range []domain.PatentNumber{root, parent, child} {
+		if selected[i] != want {
+			t.Fatalf("selection[%d] = %v, want %v", i, selected[i], want)
+		}
+	}
+
+	g.Command(command.FamilyDepthMore, Invocation{Repeat: 1})
+	if g.depth != 3 {
+		t.Fatalf("depth after FamilyDepthMore = %d, want 3", g.depth)
+	}
+	g.Command(command.FamilyDepthLess, Invocation{Repeat: 1})
+	if g.depth != 2 {
+		t.Fatalf("depth after FamilyDepthLess = %d, want 2", g.depth)
+	}
+}
+
+func TestFamilyGraphViewUsesReviewStateForActiveProject(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
+	g.loading = false
+	g.project = "p1"
+	g.nodes = []proto.FamilyGraphNode{{
+		Patent: domain.PatentRow{
+			Number:        root,
+			DisplayNumber: root,
+			Title:         "Root",
+			FetchState:    domain.FetchCached,
+			ReviewState:   domain.ReviewStateUnderReview,
+		},
+		Depth: 0,
+	}}
+	g.rebuildRows()
+	out := g.View(120, 8)
+	if !strings.Contains(out, "under_review") {
+		t.Fatalf("family graph view should show project review state, got:\n%s", out)
 	}
 }
 

@@ -214,6 +214,7 @@ func buildHelpLines(reg *command.Registry, km *keymap.Keymaps, theme render.Them
 		{text.HelpSectionCatalog, command.ScopeCatalog},
 		{text.HelpSectionDetail, command.ScopeDetail},
 		{text.HelpSectionCitations, command.ScopeCitations},
+		{text.HelpSectionFamily, command.ScopeFamily},
 		{text.HelpSectionIDS, command.ScopeIDS},
 		{text.HelpSectionProjects, command.ScopeProjects},
 		{text.HelpSectionOverlay, command.ScopeOverlay},

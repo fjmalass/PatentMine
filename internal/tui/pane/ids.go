@@ -102,6 +102,21 @@ func (p *IDSDetail) Handles() []command.ID { return handlerIDs(p.handlers) }
 
 func (p *IDSDetail) Selection() (domain.PatentNumber, bool) { return p.number, true }
 
+func (p *IDSDetail) CurrentTextValue(field string) string {
+	switch idsField(field) {
+	case idsFieldKind:
+		return p.entry.KindCode
+	case idsFieldCountry:
+		return p.entry.CountryCode
+	case idsFieldPassages:
+		return p.entry.RelevantPassages
+	case idsFieldNotes:
+		return p.entry.Notes
+	default:
+		return ""
+	}
+}
+
 func (p *IDSDetail) load() tea.Cmd {
 	client, number, project := p.client, p.number, p.project
 	requestID := nextAsyncID()

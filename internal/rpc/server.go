@@ -56,6 +56,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodCrawlCancel:              s.crawlCancel,
 		proto.MethodImportFile:               s.importFile,
 		proto.MethodRelations:                s.relations,
+		proto.MethodFamilyGraph:              s.familyGraph,
 		proto.MethodIDSExport:                s.idsExport,
 		proto.MethodIDSEntryGet:              s.idsEntryGet,
 		proto.MethodIDSEntrySave:             s.idsEntrySave,
@@ -628,6 +629,14 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.RelationsResult{Patents: patents, Total: total}, nil
+}
+
+func (s *Server) familyGraph(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.FamilyGraphParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.FamilyGraph(ctx, p)
 }
 
 func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error) {

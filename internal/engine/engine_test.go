@@ -951,6 +951,107 @@ func TestEngineBatchOperations(t *testing.T) {
 	}
 }
 
+func TestFamilyGraphAppliesBFSCountryFilter(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	root := domain.MustParsePatentNumber("US1000001A1")
+	parent := domain.MustParsePatentNumber("EP2000002A1")
+	child := domain.MustParsePatentNumber("JP3000003A1")
+
+	for _, patent := range []domain.Patent{
+		{Number: root, DisplayNumber: root, Title: "Root", FetchState: domain.FetchCached},
+		{Number: parent, DisplayNumber: parent, Title: "Parent", FetchState: domain.FetchCached},
+		{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchCached},
+	} {
+		if err := eng.SavePatent(ctx, patent); err != nil {
+			t.Fatalf("SavePatent(%s): %v", patent.Number, err)
+		}
+	}
+
+	for _, rel := range []domain.Relation{
+		{From: root, To: parent, Kind: domain.RelationParent},
+		{From: parent, To: root, Kind: domain.RelationChild},
+		{From: root, To: child, Kind: domain.RelationChild},
+		{From: child, To: root, Kind: domain.RelationParent},
+	} {
+		if err := repo.SaveRelation(ctx, rel); err != nil {
+			t.Fatalf("SaveRelation(%+v): %v", rel, err)
+		}
+	}
+
+	graph, err := eng.FamilyGraph(ctx, proto.FamilyGraphParams{
+		Root:      root,
+		Depth:     1,
+		Countries: []string{"US", "EP"},
+	})
+	if err != nil {
+		t.Fatalf("FamilyGraph: %v", err)
+	}
+	if len(graph.Nodes) != 2 {
+		t.Fatalf("len(graph.Nodes) = %d, want 2", len(graph.Nodes))
+	}
+	if len(graph.Edges) != 1 {
+		t.Fatalf("len(graph.Edges) = %d, want 1 visible edge", len(graph.Edges))
+	}
+	if graph.HiddenByCountry != 1 {
+		t.Fatalf("HiddenByCountry = %d, want 1", graph.HiddenByCountry)
+	}
+	if graph.Nodes[0].Patent.Number != root || graph.Nodes[0].Depth != 0 {
+		t.Fatalf("root node = %+v, want root depth 0", graph.Nodes[0])
+	}
+	if len(graph.Nodes[0].Parents) != 1 || graph.Nodes[0].Parents[0] != parent {
+		t.Fatalf("root parents = %v, want [%s]", graph.Nodes[0].Parents, parent)
+	}
+	if len(graph.Nodes[0].Children) != 0 {
+		t.Fatalf("root children = %v, want filtered child omitted", graph.Nodes[0].Children)
+	}
+	if graph.Edges[0].Parent != parent || graph.Edges[0].Child != root {
+		t.Fatalf("edge = %+v, want %s -> %s", graph.Edges[0], parent, root)
+	}
+}
+
+func TestFamilyGraphReportsInconsistentRelations(t *testing.T) {
+	metrics := observability.NewMetrics()
+	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "family-graph.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	eng := New(ctx, repo, nil, WithMetrics(metrics))
+	t.Cleanup(func() {
+		eng.Close()
+		cancel()
+		_ = repo.Close()
+	})
+
+	root := domain.MustParsePatentNumber("US4000004A1")
+	parent := domain.MustParsePatentNumber("US5000005A1")
+	for _, patent := range []domain.Patent{
+		{Number: root, DisplayNumber: root, FetchState: domain.FetchCached},
+		{Number: parent, DisplayNumber: parent, FetchState: domain.FetchCached},
+	} {
+		if err := eng.SavePatent(context.Background(), patent); err != nil {
+			t.Fatalf("SavePatent(%s): %v", patent.Number, err)
+		}
+	}
+	if err := repo.SaveRelation(context.Background(), domain.Relation{From: root, To: parent, Kind: domain.RelationParent}); err != nil {
+		t.Fatalf("SaveRelation: %v", err)
+	}
+
+	graph, err := eng.FamilyGraph(context.Background(), proto.FamilyGraphParams{Root: root, Depth: 1})
+	if err != nil {
+		t.Fatalf("FamilyGraph: %v", err)
+	}
+	if graph.InconsistencyCount != 1 {
+		t.Fatalf("InconsistencyCount = %d, want 1", graph.InconsistencyCount)
+	}
+	snap := metrics.Snapshot()
+	if snap.Counters["engine.family_graph.inconsistent_edges_total"] != 1 {
+		t.Fatalf("inconsistent edge counter = %d, want 1", snap.Counters["engine.family_graph.inconsistent_edges_total"])
+	}
+}
+
 func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 	logsDir := filepath.Join(t.TempDir(), "logs")
 	runtime, err := observability.Open(logsDir, "test", "test-version")

@@ -48,7 +48,7 @@ func (t *TextInput) Handles() []command.ID { return nil }
 // HandleKey implements KeyHandler: the overlay consumes every key as text so
 // no key press leaks to the keymap while a field is focused.
 func (t *TextInput) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	if msg.Type == tea.KeyF2 {
+	if isVimToggleKey(msg) {
 		t.vimMode = !t.vimMode
 		if t.vimMode {
 			t.vimInsert = false
@@ -306,9 +306,10 @@ func (t *TextInput) View(maxW, _ int) string {
 		if t.vimInsert {
 			mode = "INSERT"
 		}
-		b.WriteString(t.theme.Dim.Render(render.Truncate(fmt.Sprintf("-- %s -- · enter confirms · esc cancels", mode), maxW)))
+		b.WriteString(t.theme.Dim.Render(render.Truncate(fmt.Sprintf("-- %s -- · enter confirms · esc cancels · ctrl+] off", mode), maxW)))
 	} else {
-		b.WriteString(t.theme.Dim.Render(render.Truncate(t.catalog.T(text.TextInputHint), maxW)))
+		hint := t.catalog.T(text.TextInputHint) + " · ctrl+] vim"
+		b.WriteString(t.theme.Dim.Render(render.Truncate(hint, maxW)))
 	}
 	return b.String()
 }

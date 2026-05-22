@@ -42,6 +42,10 @@ func (a *App) openIDSEditInput(field string) (tea.Model, tea.Cmd) {
 		title   text.Key
 		caption text.Key
 	)
+	currentValue := ""
+	if provider, ok := a.focusedPane().(interface{ CurrentTextValue(string) string }); ok {
+		currentValue = provider.CurrentTextValue(field)
+	}
 	switch field {
 	case "kind":
 		purpose, title, caption = overlay.PurposeEditIDSKind, text.EditIDSKindTitle, text.EditIDSKindCaption
@@ -52,6 +56,10 @@ func (a *App) openIDSEditInput(field string) (tea.Model, tea.Cmd) {
 	case "notes":
 		purpose, title, caption = overlay.PurposeEditIDSNotes, text.EditIDSNotesTitle, text.EditIDSNotesCaption
 	default:
+		return a, nil
+	}
+	if field == "notes" {
+		a.overlays = append(a.overlays, overlay.NewTextArea(a.theme, a.text, purpose, title, caption, currentValue))
 		return a, nil
 	}
 	a.overlays = append(a.overlays, overlay.NewTextInput(a.theme, a.text, purpose, title, caption))
@@ -176,6 +184,15 @@ func (a *App) openCitations(kind domain.RelationKind) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind))
+}
+
+func (a *App) openFamilyGraph(depth int, countries []string) (tea.Model, tea.Cmd) {
+	number, ok := a.focusedPane().Selection()
+	if !ok {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries))
 }
 
 func (a *App) activateProject() (tea.Model, tea.Cmd) {

@@ -96,7 +96,7 @@ func validateWiring(reg *command.Registry, keymaps *keymap.Keymaps, catalog *tex
 // paneScopes are the scopes backed by a focusable pane.
 var paneScopes = []command.Scope{
 	command.ScopeCatalog, command.ScopeDetail,
-	command.ScopeCitations, command.ScopeIDS, command.ScopeProjects,
+	command.ScopeCitations, command.ScopeFamily, command.ScopeIDS, command.ScopeProjects,
 	command.ScopeFullText,
 }
 
@@ -126,6 +126,7 @@ func paneHandlerSets() map[command.Scope][]command.ID {
 		pane.NewCatalog(nil, theme),
 		pane.NewDetail(nil, theme, domain.PatentNumber{}, "", nil),
 		pane.NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
+		pane.NewFamilyGraph(nil, theme, domain.PatentNumber{}, 0, nil),
 		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		pane.NewProjects(nil, theme, "", ""),
 		pane.NewFullText(nil, theme, domain.PatentNumber{}, "", nil),

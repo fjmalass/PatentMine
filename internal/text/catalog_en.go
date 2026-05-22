@@ -84,6 +84,7 @@ const (
 	HintCitations       Key = "hint.citations"
 	HintCitedBy         Key = "hint.cited_by"
 	HintParents         Key = "hint.parents"
+	HintFamily          Key = "hint.family"
 	HintIDS             Key = "hint.ids"
 	HintProjects        Key = "hint.projects"
 	HintProjectActions  Key = "hint.project_actions"
@@ -117,6 +118,7 @@ const (
 	HelpSectionCatalog     Key = "help.section.catalog"
 	HelpSectionDetail      Key = "help.section.detail"
 	HelpSectionCitations   Key = "help.section.citations"
+	HelpSectionFamily      Key = "help.section.family"
 	HelpSectionIDS         Key = "help.section.ids"
 	HelpSectionProjects    Key = "help.section.projects"
 	HelpSectionOverlay     Key = "help.section.overlay"
@@ -157,6 +159,9 @@ var cmdStrings = map[string][2]string{
 	"view.citations":           {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":            {"Open cited by", "Show patents that cite the selected patent."},
 	"view.parents":             {"Open parents", "Show parent patents of the selected patent."},
+	"view.family":              {"Open family graph", "Show a bounded BFS parent/child family graph for the selected patent."},
+	"view.family-depth-more":   {"Increase family depth", "Increase the family graph BFS depth and reload the graph."},
+	"view.family-depth-less":   {"Decrease family depth", "Decrease the family graph BFS depth and reload the graph."},
 	"view.ids":                 {"Open IDS", "Open the selected patent's IDS entry editor."},
 	"view.projects":            {"Open projects", "Open the project list."},
 	"view.back":                {"Back", "Return to the previous pane."},
@@ -170,6 +175,7 @@ var cmdStrings = map[string][2]string{
 	"patent.list":              {"List patents", "List stored patents."},
 	"patent.get":               {"Get patent", "Fetch one patent's record."},
 	"patent.relations":         {"Patent relations", "List a patent's family-graph edges."},
+	"patent.family_graph":      {"Patent family graph", "Load a bounded parent/child family DAG around one patent."},
 	"project.list":             {"List projects", "List all projects."},
 	"ids.export":               {"Export IDS", "Build the Information Disclosure Statement for the selected project."},
 	"patent.mark-stored":       {"Mark stored", "Set the selected patent to the stored review state."},
@@ -297,6 +303,7 @@ var englishNamed = map[Key]string{
 	HintCitations:       "citations",
 	HintCitedBy:         "cited by",
 	HintParents:         "parents",
+	HintFamily:          "family graph",
 	HintIDS:             "IDS",
 	HintProjects:        "projects",
 	HintProjectActions:  "project actions",
@@ -329,6 +336,7 @@ var englishNamed = map[Key]string{
 	HelpSectionCatalog:     "Catalog",
 	HelpSectionDetail:      "Detail",
 	HelpSectionCitations:   "Citations",
+	HelpSectionFamily:      "Family Graph",
 	HelpSectionIDS:         "IDS",
 	HelpSectionProjects:    "Projects",
 	HelpSectionOverlay:     "Overlay",

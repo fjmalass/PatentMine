@@ -19,6 +19,7 @@ const (
 	OpenCitations       ID = "view.citations"
 	OpenCitedBy         ID = "view.cited-by"
 	OpenParents         ID = "view.parents"
+	OpenFamilyGraph     ID = "view.family"
 	OpenIDS             ID = "view.ids"
 	OpenProjects        ID = "view.projects"
 	OpenInventors       ID = "view.inventors"
@@ -38,16 +39,19 @@ const (
 	OpenBrowser         ID = "view.browser"
 	OpenMetrics         ID = "view.metrics"
 	OpenPatentNote      ID = "view.patent-note"
+	FamilyDepthMore     ID = "view.family-depth-more"
+	FamilyDepthLess     ID = "view.family-depth-less"
 
 	// Application-wide actions.
 	Quit ID = "app.quit"
 	Help ID = "app.help"
 
 	// Engine reads, backing both pane data loads and web API routes.
-	PatentList      ID = "patent.list"
-	PatentGet       ID = "patent.get"
-	PatentRelations ID = "patent.relations"
-	ProjectList     ID = "project.list"
+	PatentList        ID = "patent.list"
+	PatentGet         ID = "patent.get"
+	PatentRelations   ID = "patent.relations"
+	PatentFamilyGraph ID = "patent.family_graph"
+	ProjectList       ID = "project.list"
 
 	// ExportIDS builds an Information Disclosure Statement for a project.
 	ExportIDS ID = "ids.export"
@@ -115,13 +119,13 @@ const (
 )
 
 // listScopes are the scopes that behave as scrollable lists.
-var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText}
+var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText}
 
 // patentScopes are the scopes where a patent is selected and can be acted on.
-var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}
+var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}
 
 // projectScopes are the scopes where project-focused actions are relevant.
-var projectScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects}
+var projectScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects}
 
 // Default returns the registry of every command the system supports. It is the
 // single source of truth: build it once at startup and inject it.
@@ -134,29 +138,32 @@ func Default() (*Registry, error) {
 		Command{ID: NavPageUp, Kind: KindView, Scopes: listScopes},
 		Command{ID: NavTop, Kind: KindView, Scopes: listScopes},
 		Command{ID: NavBottom, Kind: KindView, Scopes: listScopes},
-		Command{ID: ReselectLast, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: ReselectLast, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 
 		// --- panes and overlays (view) ---
-		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: OpenBrowser, Name: "browse", Aliases: []string{"open.browser", "web"}, Usage: ":browse [PATENT ...]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenMetrics, Name: "metrics", Aliases: []string{"open.metrics", "observability"}, Usage: ":metrics", Kind: KindView},
-		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
-		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
-		Command{ID: OpenParents, Name: "open.parents", Aliases: []string{"parents"}, Usage: ":open.parents", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail}},
-		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeIDS}},
+		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
+		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
+		Command{ID: OpenParents, Name: "open.parents", Aliases: []string{"parents"}, Usage: ":open.parents", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
+		Command{ID: OpenFamilyGraph, Name: "open.family", Aliases: []string{"family-tree", "tree"}, Usage: ":open.family [depth] [COUNTRY ...]", Kind: KindView, Scopes: patentScopes},
+		Command{ID: FamilyDepthMore, Name: "family.depth.more", Aliases: []string{"family-depth-more"}, Usage: ":family.depth.more", Kind: KindView, Scopes: []Scope{ScopeFamily}},
+		Command{ID: FamilyDepthLess, Name: "family.depth.less", Aliases: []string{"family-depth-less"}, Usage: ":family.depth.less", Kind: KindView, Scopes: []Scope{ScopeFamily}},
+		Command{ID: OpenProjects, Name: "open.projects", Aliases: []string{"projects"}, Usage: ":open.projects", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeIDS}},
 		Command{ID: OpenPatentNote, Name: "open.note", Aliases: []string{"patent-note", "project-note"}, Usage: ":open.note", Kind: KindView, Scopes: patentScopes},
-		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations}},
+		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}},
 		Command{ID: OpenInventors, Name: "open.inventors", Aliases: []string{"inventors"}, Usage: ":open.inventors", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: OpenInventorsDirect, Name: "open.inventors.direct", Aliases: []string{"inventors-direct"}, Usage: ":open.inventors.direct", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: Back, Kind: KindView},
 		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Scope{ScopeOverlay}},
-		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects, ScopeIDS}},
-		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeProjects}},
+		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects, ScopeIDS}},
+		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects}},
 		Command{ID: OpenCommand, Kind: KindView},
 		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Scope{ScopeDetail}},
-		Command{ID: SelectVisual, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
-		Command{ID: SelectClear, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
-		Command{ID: SelectAll, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: SelectVisual, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
+		Command{ID: SelectClear, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
+		Command{ID: SelectAll, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
@@ -164,7 +171,7 @@ func Default() (*Registry, error) {
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
 		// --- filtering (view) ---
-		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: IDSEditField, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Scope{ScopeIDS}},
@@ -179,6 +186,7 @@ func Default() (*Registry, error) {
 		Command{ID: PatentList, Kind: KindEngine, Method: proto.MethodPatentList},
 		Command{ID: PatentGet, Kind: KindEngine, Method: proto.MethodPatentGet},
 		Command{ID: PatentRelations, Kind: KindEngine, Method: proto.MethodRelations},
+		Command{ID: PatentFamilyGraph, Kind: KindEngine, Method: proto.MethodFamilyGraph},
 		Command{ID: ProjectList, Kind: KindEngine, Method: proto.MethodProjectList},
 		Command{ID: ExportIDS, Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Scope{ScopeProjects}},
 

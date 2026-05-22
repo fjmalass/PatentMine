@@ -23,6 +23,13 @@ import (
 const notesTimeLayout = "2006-01-02 15:04:05"
 const notesTimeLayoutBracket = "[" + notesTimeLayout + "]"
 
+const (
+	notesOverlayWidthPct  = 60
+	notesOverlayHeightPct = 60
+	notesOverlayMinWidth  = 76
+	notesOverlayMinHeight = 18
+)
+
 // noteEntry is one captured passage: a locator, the time it was captured, and
 // the selected text.
 type noteEntry struct {
@@ -236,6 +243,12 @@ func newNotesBufferOverlay(theme render.Theme, number domain.PatentNumber, paten
 }
 
 func (o *NotesBufferOverlay) Title() string { return "Notes Buffer · " + o.number.String() }
+
+// OverlaySize implements DynamicSize so the notes buffer gets a readable popup
+// footprint for longer captured passages.
+func (o *NotesBufferOverlay) OverlaySize(termW, termH int) (int, int) {
+	return overlay.PctSize(termW, termH, notesOverlayWidthPct, notesOverlayHeightPct, notesOverlayMinWidth, notesOverlayMinHeight)
+}
 
 // Handles returns no command IDs: the overlay consumes its keys directly as a
 // KeyHandler, so there are no overlay-scoped keymap bindings to validate.

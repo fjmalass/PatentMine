@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,6 +109,17 @@ func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
 }
 func (a *App) cmdOpenParents(invocation) (tea.Model, tea.Cmd) {
 	return a.openCitations(domain.RelationParent)
+}
+func (a *App) cmdOpenFamilyGraph(inv invocation) (tea.Model, tea.Cmd) {
+	depth := 0
+	args := inv.args
+	if len(args) > 0 {
+		if parsed, err := strconv.Atoi(args[0]); err == nil {
+			depth = parsed
+			args = args[1:]
+		}
+	}
+	return a.openFamilyGraph(depth, args)
 }
 
 func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) { return a.openIDS() }
