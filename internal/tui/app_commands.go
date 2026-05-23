@@ -135,7 +135,17 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	return a.openInventors(detail.Patent())
+	p := detail.Patent()
+	if num, ok := detail.Selection(); ok {
+		if p.Number.Serial == "" {
+			p.Number = num
+		}
+		if p.DisplayNumber.Serial == "" {
+			p.DisplayNumber = num
+		}
+	}
+
+	return a.openInventors(p, false)
 }
 
 func (a *App) cmdOpenInventorsDirect(invocation) (tea.Model, tea.Cmd) {
@@ -143,16 +153,25 @@ func (a *App) cmdOpenInventorsDirect(invocation) (tea.Model, tea.Cmd) {
 	if !ok {
 		return a, nil
 	}
+	p := detail.Patent()
+	if num, ok := detail.Selection(); ok {
+		if p.Number.Serial == "" {
+			p.Number = num
+		}
+		if p.DisplayNumber.Serial == "" {
+			p.DisplayNumber = num
+		}
+	}
 	// Direct shortcut v lands directly in the popup
-	return a.openInventors(detail.Patent())
+	return a.openInventors(p, true)
 }
 
-func (a *App) openInventors(p domain.Patent) (tea.Model, tea.Cmd) {
+func (a *App) openInventors(p domain.Patent, focusPatents bool) (tea.Model, tea.Cmd) {
 	var project domain.ProjectID
 	if a.activeProject != nil {
 		project = a.activeProject.ID
 	}
-	o, cmd := overlay.NewInventorStatsOverlay(a.client, a.theme, a.text, p, project)
+	o, cmd := overlay.NewInventorStatsOverlay(a.client, a.theme, a.text, p, project, focusPatents)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }

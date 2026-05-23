@@ -405,6 +405,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.CloseOverlayMsg:
 		a.popOverlay()
 		return a, nil
+	case overlay.OpenPatentDetailMsg:
+		a.popOverlay()
+		var project domain.ProjectID
+		if a.activeProject != nil {
+			project = a.activeProject.ID
+		}
+		bound := a.keymaps.BoundLetters(command.ScopeDetail)
+		return a.pushPane(pane.NewDetail(a.client, a.theme, m.Number, project, bound))
 	case overlay.OpenTagPatentOverlayMsg:
 		o, cmd := overlay.NewTagPatentOverlay(a.client, a.theme, a.text, a.activeProject.ID, m.Patents)
 		a.overlays = append(a.overlays, o)

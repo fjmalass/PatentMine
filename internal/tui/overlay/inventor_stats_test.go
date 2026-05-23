@@ -114,18 +114,18 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 
 	// 6. Test shifting column focus and sorting
 	// Move column focus right (should focus Title at idx 1)
-	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
 	if !handled {
-		t.Fatal("Expected key 'l' to move column focus right")
+		t.Fatal("Expected key 'right' to move column focus right")
 	}
 	if o.focusedColIdx != 1 {
 		t.Errorf("Expected focused column to be 1 (Title), got %d", o.focusedColIdx)
 	}
 
 	// Move column focus left (should focus Number at idx 0)
-	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	if !handled {
-		t.Fatal("Expected key 'h' to move column focus left")
+		t.Fatal("Expected key 'left' to move column focus left")
 	}
 	if o.focusedColIdx != 0 {
 		t.Errorf("Expected focused column to be 0 (Number), got %d", o.focusedColIdx)
@@ -135,6 +135,18 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 	_, sortCmd, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(".")})
 	if !handled || sortCmd == nil {
 		t.Fatal("Expected key '.' to trigger sorting on focused column")
+	}
+
+	// Test structural pane side-by-side navigation using 'h'
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if !handled || o.focus != focusInventors {
+		t.Fatal("Expected key 'h' to move focus back to inventors list")
+	}
+
+	// Focus back to patents using 'l'
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
+	if !handled || o.focus != focusPatents {
+		t.Fatal("Expected key 'l' on inventors to focus patents list")
 	}
 
 	// 7. Provide patents data to test patent list interactions
@@ -288,4 +300,108 @@ func TestAdaptiveColumnHidingAndClamping(t *testing.T) {
 		t.Errorf("Expected focused column to be clamped to a valid index, got %d", o.focusedColIdx)
 	}
 }
+
+func TestInventorStatsOverlayPaging(t *testing.T) {
+	theme := render.NewTheme()
+	catalog := text.English()
+	patent := domain.Patent{
+		Number: domain.MustParsePatentNumber("US10000000B2"),
+	}
+
+	o := &InventorStatsOverlay{
+		theme:         theme,
+		catalog:       catalog,
+		patent:        patent,
+		project:       "proj-1",
+		stats: []domain.InventorStats{
+			{Inventor: "John Doe", Total: 12},
+		},
+		selected:      0,
+		loading:       false,
+		focus:         focusPatents,
+		patentsPage:   render.NewPaginator(5),
+		activeSort:    domain.SortByNumber,
+		sortAscending: true,
+		focusedColIdx: -1,
+		lastWidth:     120,
+	}
+
+	// Suppose total matching is 7, page size is 5.
+	o.patentsPage.SetTotal(7)
+
+	// Set patents to hold the second page (indices 5, 6)
+	// We simulate page 2 being loaded. In Paginator, offset is 5, page size is 5.
+	// So we scroll to index 5
+	o.patentsPage.ScrollTo(5)
+
+	// Now o.patents holds the 5 patents for the page starting at offset 2 (indices 2 to 6)
+	o.patents = []domain.PatentRow{
+		{Number: domain.MustParsePatentNumber("US1000000B1")},
+		{Number: domain.MustParsePatentNumber("US2000000B1")},
+		{Number: domain.MustParsePatentNumber("US3000000B1")},
+		{
+			Number:      domain.MustParsePatentNumber("US6000000B1"),
+			Title:       "Patent Page 2 Item 1",
+			ReviewState: domain.ReviewStateStored,
+			FetchState:  domain.FetchCached,
+		},
+		{
+			Number:      domain.MustParsePatentNumber("US7000000B1"),
+			Title:       "Patent Page 2 Item 2",
+			ReviewState: domain.ReviewStateStored,
+			FetchState:  domain.FetchCached,
+		},
+	}
+
+	// Verify that o.patentsPage.CursorInPage() is 3 (cursor is 5, offset is 2)
+	if o.patentsPage.CursorInPage() != 3 {
+		t.Errorf("Expected CursorInPage to be 3, got %d", o.patentsPage.CursorInPage())
+	}
+
+	// Pressing 's' on the first item of page 2 should succeed and not early-exit!
+	_, stateCmd, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if !handled || stateCmd == nil {
+		t.Fatal("Expected state transition key 's' to be handled when cursor is on page 2")
+	}
+
+	// Move cursor down inside page 2 (index 6, which is CursorInPage = 4)
+	o.patentsPage.MoveDown(1)
+	if o.patentsPage.CursorInPage() != 4 {
+		t.Errorf("Expected CursorInPage to be 4, got %d", o.patentsPage.CursorInPage())
+	}
+
+	// Pressing 's' on the second item should also succeed
+	_, stateCmd, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if !handled || stateCmd == nil {
+		t.Fatal("Expected state transition key 's' to be handled on second item of page 2")
+	}
+
+	// View rendering check for page 2
+	viewStr := o.View(120, 20)
+	if !strings.Contains(viewStr, "Patent Page 2 Item 1") {
+		t.Errorf("Expected view to render 'Patent Page 2 Item 1' when page 2 is active")
+	}
+	if !strings.Contains(viewStr, "Patent Page 2 Item 2") {
+		t.Errorf("Expected view to render 'Patent Page 2 Item 2' when page 2 is active")
+	}
+}
+
+func TestNewInventorStatsOverlayDirectFocus(t *testing.T) {
+	theme := render.NewTheme()
+	catalog := text.English()
+	patent := domain.Patent{
+		Number: domain.MustParsePatentNumber("US10000000B2"),
+	}
+
+	o, _ := NewInventorStatsOverlay(nil, theme, catalog, patent, "proj-1", true)
+
+	if o.focus != focusPatents {
+		t.Errorf("Expected focus to be focusPatents, got %v", o.focus)
+	}
+	if o.focusedColIdx != 0 {
+		t.Errorf("Expected initial focusedColIdx to be 0, got %d", o.focusedColIdx)
+	}
+}
+
+
 

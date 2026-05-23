@@ -39,6 +39,10 @@ const (
 	focusPatents
 )
 
+// statsTableMargin is the horizontal padding kept inside the overlay borders
+// to completely prevent character wrapping inside the Lipgloss box.
+const statsTableMargin = 2
+
 // InventorStatsOverlay presents interactive statistics for the patent's inventors.
 type InventorStatsOverlay struct {
 	client         *rpc.Client
@@ -68,7 +72,7 @@ type InventorStatsOverlay struct {
 }
 
 // NewInventorStatsOverlay initializes and triggers an async query for inventor stats.
-func NewInventorStatsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID) (*InventorStatsOverlay, tea.Cmd) {
+func NewInventorStatsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID, startFocusPatents bool) (*InventorStatsOverlay, tea.Cmd) {
 	o := &InventorStatsOverlay{
 		client:         client,
 		theme:          theme,
@@ -81,6 +85,12 @@ func NewInventorStatsOverlay(client *rpc.Client, theme render.Theme, catalog *te
 		sortAscending:  true,
 		focusedColIdx:  -1,
 		lastWidth:      90,
+	}
+	if startFocusPatents {
+		o.focus = focusPatents
+		o.focusedColIdx = 0 // Initial column focus on Number
+	} else {
+		o.focus = focusInventors
 	}
 	return o, o.loadStatsCmd()
 }
@@ -158,15 +168,10 @@ func (o *InventorStatsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		w, h := o.OverlaySize(m.Width, m.Height)
 		o.lastWidth = w - 4 // innerWidth
 		innerHeight := h - 4
-		availH := innerHeight - 6
-		if availH < 2 {
-			availH = 2
-		}
-		statsH := max(1, availH/3)
-		patentsH := max(1, availH-statsH)
 
 		o.focusedColIdx = clampFocusedStatsColumn(o.currentCols(), o.focusedColIdx)
 
+		_, patentsH := o.calcHeights(innerHeight)
 		if patentsH != o.patentsPage.PageSize() {
 			o.patentsPage.SetPageSize(patentsH)
 			if len(o.stats) > 0 && o.selected < len(o.stats) {
@@ -188,7 +193,7 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 	o.patentsErr = nil
 
 	switch msg.String() {
-	case "q", "esc":
+	case "q", "Q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "tab":
 		if o.focus == focusInventors {
@@ -221,15 +226,23 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 				o.patentsLoading = true
 				return o, o.loadPatentsCmd(o.stats[o.selected].Inventor, o.loadID), true
 			}
+		case "l", "right", "enter":
+			o.focus = focusPatents
+			o.focusedColIdx = 0
+			return o, nil, true
 		}
 	} else { // focus == focusPatents
 		// 1. Keys that DO NOT require patents to be populated
 		switch msg.String() {
-		case "left", "h":
+		case "left":
 			o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, -1)
 			return o, nil, true
-		case "right", "l":
+		case "right":
 			o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, 1)
+			return o, nil, true
+		case "h":
+			o.focus = focusInventors
+			o.focusedColIdx = -1
 			return o, nil, true
 		case ".":
 			if o.focusedColIdx >= 0 {
@@ -261,13 +274,17 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			return o, nil, true
 		}
 
-		cursor := o.patentsPage.Cursor()
+		cursor := o.patentsPage.CursorInPage()
 		if cursor < 0 || cursor >= len(o.patents) {
 			return o, nil, true
 		}
 		selectedPatent := o.patents[cursor]
 
 		switch msg.String() {
+		case "l", "enter":
+			return o, func() tea.Msg {
+				return OpenPatentDetailMsg{Number: selectedPatent.Number}
+			}, true
 		case "j", "down":
 			before := o.patentsPage.Offset()
 			o.patentsPage.MoveDown(1)
@@ -352,7 +369,10 @@ func (o *InventorStatsOverlay) OverlaySize(termW, termH int) (w, h int) {
 }
 
 func (o *InventorStatsOverlay) currentCols() []render.TableColumn {
-	w := o.lastWidth
+	w := o.lastWidth - statsTableMargin
+	if w < 40 {
+		w = 40
+	}
 	switch {
 	case w >= 80:
 		fixedWidth := 70
@@ -398,10 +418,14 @@ func (o *InventorStatsOverlay) currentCols() []render.TableColumn {
 // View renders the list of inventors and their respective metrics.
 func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 	o.lastWidth = maxW
+	targetW := maxW - statsTableMargin
+	if targetW < 40 {
+		targetW = 40
+	}
 	var b strings.Builder
 
 	if o.err != nil {
-		b.WriteString(o.theme.Error.Render(render.Truncate("Error: "+o.err.Error(), maxW)))
+		b.WriteString(o.theme.Error.Render(render.Truncate("Error: "+o.err.Error(), targetW)))
 		b.WriteString("\n\n")
 		b.WriteString(o.theme.Dim.Render("[q/Esc] Close"))
 		return b.String()
@@ -415,17 +439,11 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 	}
 
 	titleText := fmt.Sprintf("  Inventor Stats for Patent %s (%d inventors)", o.patent.DisplayNumber.String(), len(o.stats))
-	b.WriteString(o.theme.Dim.Render(titleText))
+	b.WriteString(o.theme.Dim.Render(render.Truncate(titleText, targetW)))
 	b.WriteString("\n\n")
 
 	// 2. Calculate heights and update Paginator dynamically
-	availH := maxH - 10
-	if availH < 2 {
-		availH = 2
-	}
-	statsH := max(1, availH/3)
-	patentsH := max(1, availH-statsH)
-
+	statsH, patentsH := o.calcHeights(maxH)
 	o.patentsPage.SetPageSize(patentsH)
 
 	// 3. Render Inventor Stats List
@@ -455,12 +473,12 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 		line := fmt.Sprintf("%s%s%s", prefix, paddedName, statsStr)
 
 		if isSelectedRow && o.focus == focusInventors {
-			b.WriteString(o.theme.Selected.Render(render.Truncate(line, maxW)))
+			b.WriteString(o.theme.Selected.Render(render.Truncate(line, targetW)))
 		} else {
 			if i%2 == 1 {
-				b.WriteString(o.theme.RowAlt.Render(render.Truncate(line, maxW)))
+				b.WriteString(o.theme.RowAlt.Render(render.Truncate(line, targetW)))
 			} else {
-				b.WriteString(o.theme.Row.Render(render.Truncate(line, maxW)))
+				b.WriteString(o.theme.Row.Render(render.Truncate(line, targetW)))
 			}
 		}
 		b.WriteString("\n")
@@ -469,16 +487,16 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 	// 4. Divider / Patents Header
 	b.WriteString("\n")
 	dividerText := fmt.Sprintf("─── Patents by Selected Inventor (%s) ───", o.stats[o.selected].Inventor)
-	dashCount := maxW - len(dividerText)
+	dashCount := targetW - len(dividerText)
 	if dashCount > 0 {
 		dividerText += strings.Repeat("─", dashCount)
 	}
-	b.WriteString(o.theme.Header.Render(render.Truncate(dividerText, maxW)))
+	b.WriteString(o.theme.Header.Render(render.Truncate(dividerText, targetW)))
 	b.WriteString("\n")
 
 	// 5. Render Patents Table
 	if o.patentsErr != nil {
-		b.WriteString(o.theme.Error.Render(render.Truncate("Error loading patents: "+o.patentsErr.Error(), maxW)))
+		b.WriteString(o.theme.Error.Render(render.Truncate("Error loading patents: "+o.patentsErr.Error(), targetW)))
 		b.WriteString("\n")
 	} else if o.patentsLoading && len(o.patents) == 0 {
 		b.WriteString(o.theme.MutedItalic.Render("Loading patents..."))
@@ -503,12 +521,11 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 			PrefixNormal:  "  ",
 		}
 
-		tableStr := render.RenderTable(params, maxW, func(rowIdx, colIdx int) string {
-			pIdx := startPat + rowIdx
-			if pIdx >= len(o.patents) {
+		tableStr := render.RenderTable(params, targetW, func(rowIdx, colIdx int) string {
+			if rowIdx < 0 || rowIdx >= len(o.patents) {
 				return ""
 			}
-			p := o.patents[pIdx]
+			p := o.patents[rowIdx]
 			col := cols[colIdx]
 
 			switch col.Key {
@@ -549,11 +566,19 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 	b.WriteString("\n")
 	var footnote string
 	if o.focus == focusInventors {
-		footnote = "[Tab] Switch Focus  [j/k/↑/↓] Select Inventor  [q/Esc] Close"
+		status := "[0/0]"
+		if len(o.stats) > 0 {
+			status = fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))
+		}
+		footnote = fmt.Sprintf("%s  [Tab/l/→/Enter] Focus Patents  [j/k/↑/↓] Select Inventor  [q/Q/Esc] Close", status)
 	} else {
-		footnote = "[Tab] Switch Focus  [j/k/↑/↓] Scroll Patents  [h/l/←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Esc] Close"
+		status := "[0/0]"
+		if o.patentsPage.Total() > 0 {
+			status = fmt.Sprintf("[%d/%d]", o.patentsPage.Cursor()+1, o.patentsPage.Total())
+		}
+		footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
 	}
-	b.WriteString(o.theme.Dim.Render(footnote))
+	b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 
 	return b.String()
 }
@@ -661,4 +686,14 @@ func clampFocusedStatsColumn(cols []render.TableColumn, current int) int {
 		}
 	}
 	return -1
+}
+
+func (o *InventorStatsOverlay) calcHeights(innerHeight int) (statsH, patentsH int) {
+	availH := innerHeight - 10
+	if availH < 2 {
+		availH = 2
+	}
+	statsH = max(1, availH/3)
+	patentsH = max(1, availH-statsH)
+	return statsH, patentsH
 }

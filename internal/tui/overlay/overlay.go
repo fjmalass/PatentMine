@@ -89,6 +89,11 @@ type TextSubmitMsg struct {
 // CloseOverlayMsg asks the app to close the focused overlay.
 type CloseOverlayMsg struct{}
 
+// OpenPatentDetailMsg asks the app to open the detail view of a patent.
+type OpenPatentDetailMsg struct {
+	Number domain.PatentNumber
+}
+
 // OpenTagPatentOverlayMsg asks the app to open the patent tag manager.
 type OpenTagPatentOverlayMsg struct {
 	Patents []domain.PatentNumber
