@@ -71,6 +71,11 @@ const (
 	StatusTagPatentDeleted        Key = "status.tag_patent_deleted"
 	StatusTagPatentListFailed     Key = "status.tag_patent_list_failed"
 
+	// History navigation.
+	StatusHistoryEmpty             Key = "status.history_empty"
+	StatusHistoryAtEnd             Key = "status.history_at_end"
+	StatusHistoryPatentUnavailable Key = "status.history_patent_unavailable"
+
 	// Classification definitions.
 	StatusClassificationLookupFailed  Key = "status.classification_lookup_failed"
 	StatusClassificationLookupSuccess Key = "status.classification_lookup_success"
@@ -85,6 +90,7 @@ const (
 	HintCitations       Key = "hint.citations"
 	HintCitedBy         Key = "hint.cited_by"
 	HintParents         Key = "hint.parents"
+	HintChildren        Key = "hint.children"
 	HintFamily          Key = "hint.family"
 	HintIDS             Key = "hint.ids"
 	HintProjects        Key = "hint.projects"
@@ -105,6 +111,7 @@ const (
 	HintQuit            Key = "hint.quit"
 	HintMove            Key = "hint.move"
 	HintSlashCommands   Key = "hint.slash_commands"
+	HintHistory         Key = "hint.history"
 	SplashCreateHint    Key = "splash.create_hint"
 	SplashCreateKeyHint Key = "splash.create_key_hint"
 
@@ -192,6 +199,7 @@ var cmdStrings = map[string][2]string{
 	"select.clear":               {"Clear selection", "Exit visual mode and clear the selection range."},
 	"select.all":                 {"Select all", "Select every patent in the current list."},
 	"highlight.family":           {"Highlight family", "Toggle inline highlight of parent/child rows of the selected patent."},
+	"highlight.citations":        {"Highlight citations", "Toggle inline highlight of citations and cited-by rows of the selected patent."},
 	"col.next":                   {"Next column", "Move the visual focus to the next column."},
 	"col.prev":                   {"Prev column", "Move the visual focus to the previous column."},
 	"col.sort-apply":             {"Apply sort", "Apply sorting to the currently focused column."},
@@ -230,6 +238,9 @@ var cmdStrings = map[string][2]string{
 	"class.list":            {"List classifications", "List all cached patent classification definitions."},
 	"class.lookup":          {"Lookup classification", "Lookup classification code details from the EPO Linked Open Data SPARQL Endpoint."},
 	"patent.classifications": {"Show patent classifications", "Open the selected patent's classification codes with their cached descriptions; press L inside to fetch any missing ones."},
+	"history.back":           {"History back", "Go back to the previously viewed patent details."},
+	"history.forward":        {"History forward", "Go forward in the history of viewed patent details."},
+	"view.history":           {"History", "Open the interactive history popup overlay."},
 }
 
 // englishNamed is the English text for every named key.
@@ -296,8 +307,11 @@ var englishNamed = map[Key]string{
 	StatusTagPatentAddFailed:      "assign tag to patent failed: %s",
 	StatusTagPatentAdded:          "assigned tag %q to patent %s",
 	StatusTagPatentDeleteFailed:   "remove tag from patent failed: %s",
-	StatusTagPatentDeleted:        "removed tag %q from patent %s",
 	StatusTagPatentListFailed:     "list patent tags failed: %s",
+
+	StatusHistoryEmpty:             "history is empty",
+	StatusHistoryAtEnd:             "reached the end of history",
+	StatusHistoryPatentUnavailable: "patent %s is no longer available in the database",
 
 	StatusClassificationLookupFailed:  "classification lookup failed: %s",
 	StatusClassificationLookupSuccess: "crawled classification %s: %s",
@@ -311,6 +325,7 @@ var englishNamed = map[Key]string{
 	HintCitations:       "citations",
 	HintCitedBy:         "cited by",
 	HintParents:         "parents",
+	HintChildren:        "children",
 	HintFamily:          "family graph",
 	HintIDS:             "IDS",
 	HintProjects:        "projects",
@@ -331,6 +346,7 @@ var englishNamed = map[Key]string{
 	HintQuit:            "quit",
 	HintMove:            "move",
 	HintSlashCommands:   "/ commands",
+	HintHistory:         "history",
 	SplashCreateHint:    "Create one with %s.",
 	SplashCreateKeyHint: "Create one with %s or %s.",
 

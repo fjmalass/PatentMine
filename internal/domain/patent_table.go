@@ -18,6 +18,14 @@ const (
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)
 )
 
+// ColumnCellType identifies standard cell rendering/content types.
+type ColumnCellType string
+
+const (
+	CellTypeDefault ColumnCellType = ""
+	CellTypeState   ColumnCellType = "state"
+)
+
 // PatentTableColumn is the server-owned table contract consumed by frontends.
 type PatentTableColumn struct {
 	Key      PatentTableColumnKey `json:"key"`
@@ -25,6 +33,7 @@ type PatentTableColumn struct {
 	SortKey  SortColumn           `json:"sort_key,omitempty"`
 	Sortable bool                 `json:"sortable"`
 	Width    int                  `json:"width,omitempty"`
+	CellType ColumnCellType       `json:"cell_type,omitempty"`
 }
 
 // PatentTableColumns returns the authoritative patent table column list for the
@@ -50,7 +59,7 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 		{Key: PatentColumnParents, Label: "PARENTS", Width: 7},
 		{Key: PatentColumnTags, Label: "TAGS", SortKey: SortByTags, Sortable: tagsSortable, Width: 14},
 		{Key: PatentColumnIDS, Label: "IDS", SortKey: SortByIDS, Sortable: idsSortable, Width: 12},
-		{Key: PatentColumnReviewState, Label: stateLabel, SortKey: SortByReviewState, Sortable: true, Width: 13},
+		{Key: PatentColumnReviewState, Label: stateLabel, SortKey: SortByReviewState, Sortable: true, Width: 13, CellType: CellTypeState},
 	}
 }
 

@@ -61,7 +61,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "cached", "stub"} {
+	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "⚡", "🔗"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
 		}
@@ -100,7 +100,7 @@ func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 	c.patents[0].IDSEntry = &domain.IDSEntry{Project: project.ID, Patent: c.patents[0].Number, Status: domain.IDSEntrySubmitted}
 
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "REVIEW ST", "IDS", "submitt", "under_rev"} {
+	for _, want := range []string{"[1/3]", "REVIEW ST", "IDS", "submitt", "🔍"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog project view missing %q\n%s", want, out)
 		}
@@ -128,5 +128,58 @@ func TestCatalogEmptyAndErrorStates(t *testing.T) {
 	loaded, _ := c.Update(catalogLoadedMsg{requestID: 1, patents: nil})
 	if got := loaded.(*Catalog).View(testPaneWidth, testPaneHeight); !strings.Contains(got, "no patents") {
 		t.Errorf("empty catalog should show an empty state, got %q", got)
+	}
+}
+
+func TestCatalogRelationHighlightsAndCache(t *testing.T) {
+	c := loadedCatalog(t)
+
+	// Initially no highlights are present
+	if c.highlights.Len() != 0 {
+		t.Fatalf("expected no highlights initially, got %d", c.highlights.Len())
+	}
+
+	// Pressing highlight family (g h) toggles loading state
+	c.Command(command.HighlightFamily, Invocation{})
+	if c.activeHighlight.Group != HighlightGroupFamily || !c.activeHighlight.Loading {
+		t.Fatalf("expected family highlight loading, got %+v", c.activeHighlight)
+	}
+
+	// Simulate relations load message callback
+	anchor := c.activeHighlight.Anchor
+	loadID := c.activeHighlight.LoadID
+	msg := relationHighlightLoadedMsg{
+		requestID: loadID,
+		group:     HighlightGroupFamily,
+		anchor:    anchor,
+		forward:   []domain.PatentNumber{domain.MustParsePatentNumber("US16000002")},
+		reverse:   []domain.PatentNumber{domain.MustParsePatentNumber("US16000003")},
+	}
+	updated, _ := c.Update(msg)
+	c = updated.(*Catalog)
+
+	// Highlights should be updated and loading finished
+	if c.activeHighlight.Loading {
+		t.Fatalf("expected activeHighlight loading to be false")
+	}
+	if c.highlights.Kind(domain.MustParsePatentNumber("US16000002")) != HighlightFamilyParent {
+		t.Fatalf("expected US16000002 to be HighlightFamilyParent, got %v", c.highlights.Kind(domain.MustParsePatentNumber("US16000002")))
+	}
+	if c.highlights.Kind(domain.MustParsePatentNumber("US16000003")) != HighlightFamilyChild {
+		t.Fatalf("expected US16000003 to be HighlightFamilyChild, got %v", c.highlights.Kind(domain.MustParsePatentNumber("US16000003")))
+	}
+
+	// Cache should be populated
+	if len(c.relationCache) != 1 {
+		t.Fatalf("expected relation cache to have 1 entry, got %d", len(c.relationCache))
+	}
+
+	// Pressing highlight citations (g c) should clear previous highlights and toggle citations highlight
+	c.Command(command.HighlightCitations, Invocation{})
+	if c.activeHighlight.Group != HighlightGroupCitations || !c.activeHighlight.Loading {
+		t.Fatalf("expected citations highlight loading")
+	}
+	if c.highlights.Len() != 0 {
+		t.Fatalf("expected previous family highlights cleared on toggle citation")
 	}
 }

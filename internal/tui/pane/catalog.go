@@ -33,21 +33,34 @@ type catalogLoadedMsg struct {
 	err       error
 }
 
-// familyHighlightLoadedMsg delivers the parent/child neighbours of the family
-// anchor patent. The pane drops the result when anchor no longer matches —
-// the user moved on or toggled highlighting off before the RPC came back.
-// Timing fields feed per-stage metrics so a slow lookup can be attributed
-// to the parents call, the children call, or the apply pass.
-type familyHighlightLoadedMsg struct {
+// HighlightState tracks the active relation highlighting.
+type HighlightState struct {
+	Group   HighlightGroup
+	Anchor  domain.PatentNumber
+	LoadID  uint64
+	Loading bool
+}
+
+// relationHighlightLoadedMsg delivers the neighbours of the anchor patent for
+// the selected highlight group.
+type relationHighlightLoadedMsg struct {
 	requestID    uint64
+	group        HighlightGroup
 	anchor       domain.PatentNumber
-	parents      []domain.PatentNumber
-	children     []domain.PatentNumber
-	dispatchedAt time.Time     // when toggleFamilyHighlight returned
-	parentsRPC   time.Duration // time spent in the parents RelationsResult call
-	childrenRPC  time.Duration // time spent in the children RelationsResult call
-	rpcTotal     time.Duration // wall-clock of both calls together
+	forward      []domain.PatentNumber // parents or citations
+	reverse      []domain.PatentNumber // children or citedby
+	dispatchedAt time.Time
+	forwardRPC   time.Duration
+	reverseRPC   time.Duration
+	rpcTotal     time.Duration
 	err          error
+}
+
+type relationCacheEntry struct {
+	group      HighlightGroup
+	forward    []domain.PatentNumber
+	reverse    []domain.PatentNumber
+	lastAccess time.Time
 }
 
 // Catalog is the main patent list pane.
@@ -74,9 +87,8 @@ type Catalog struct {
 	savedVisualAnchor int
 	savedVisualCursor int
 	highlights        HighlightSet
-	familyAnchor      domain.PatentNumber
-	familyLoadID      uint64
-	familyLoading     bool
+	activeHighlight   HighlightState
+	relationCache     map[domain.PatentNumber]relationCacheEntry
 	activeSort    domain.SortColumn
 	sortAscending bool
 	filter        PatentFilter
@@ -134,12 +146,13 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 				c.saveVisual()
 				c.clearVisual()
 			}
-			if c.highlights.HasFamily() {
-				c.clearFamilyHighlight()
+			if c.highlights.HasRelation() {
+				c.clearRelationHighlight()
 			}
 			return nil
 		},
-		command.HighlightFamily: func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
+		command.HighlightFamily:    func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
+		command.HighlightCitations: func(Invocation) tea.Cmd { return c.toggleCitationsHighlight() },
 		command.CrawlFamily:    func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
 		command.CrawlCitations: func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
 		command.CrawlCitedBy:   func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
@@ -470,48 +483,85 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if m.requestID == c.classDescsID && m.err == nil {
 			c.classDescs = m.descs
 		}
-	case familyHighlightLoadedMsg:
+	case relationHighlightLoadedMsg:
 		// Drop stale results: a different anchor or a newer request supersedes.
-		if m.requestID != c.familyLoadID || m.anchor != c.familyAnchor {
-			c.metrics.IncCounter("tui.highlight.family.stale", 1)
+		if m.requestID != c.activeHighlight.LoadID || m.anchor != c.activeHighlight.Anchor {
+			c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.stale", m.group.Key()), 1)
 			return c, nil
 		}
-		c.familyLoading = false
-		c.metrics.ObserveDuration("tui.highlight.family.fetch.parents", m.parentsRPC, m.err != nil)
-		c.metrics.ObserveDuration("tui.highlight.family.fetch.children", m.childrenRPC, m.err != nil)
-		c.metrics.ObserveDuration("tui.highlight.family.fetch", m.rpcTotal, m.err != nil)
+		c.activeHighlight.Loading = false
+		c.metrics.ObserveDuration(fmt.Sprintf("tui.highlight.%s.fetch.forward", m.group.Key()), m.forwardRPC, m.err != nil)
+		c.metrics.ObserveDuration(fmt.Sprintf("tui.highlight.%s.fetch.reverse", m.group.Key()), m.reverseRPC, m.err != nil)
+		c.metrics.ObserveDuration(fmt.Sprintf("tui.highlight.%s.fetch", m.group.Key()), m.rpcTotal, m.err != nil)
 		if m.err != nil {
-			c.clearFamilyHighlight()
-			c.log().Error("tui.highlight.family.load",
+			c.clearRelationHighlight()
+			c.log().Error("tui.highlight.load",
+				slog.String("group", m.group.String()),
 				slog.String("anchor", m.anchor.Normalized()),
 				slog.String("error", m.err.Error()))
-			c.metrics.IncCounter("tui.highlight.family.error", 1)
+			c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.error", m.group.Key()), 1)
 			return c, status(text.StatusUsage, true, m.err.Error())
 		}
-		applyStart := time.Now()
-		for _, p := range m.parents {
-			c.highlights.Upgrade(p, HighlightFamilyParent)
+
+		// Save to cache (limit size to 50 entries)
+		if c.relationCache == nil {
+			c.relationCache = make(map[domain.PatentNumber]relationCacheEntry)
 		}
-		for _, p := range m.children {
-			c.highlights.Upgrade(p, HighlightFamilyChild)
+		if len(c.relationCache) >= 50 {
+			// Find oldest entry to evict
+			var oldestKey domain.PatentNumber
+			var oldestTime time.Time
+			first := true
+			for k, v := range c.relationCache {
+				if first || v.lastAccess.Before(oldestTime) {
+					oldestKey = k
+					oldestTime = v.lastAccess
+					first = false
+				}
+			}
+			delete(c.relationCache, oldestKey)
+		}
+		c.relationCache[m.anchor] = relationCacheEntry{
+			group:      m.group,
+			forward:    m.forward,
+			reverse:    m.reverse,
+			lastAccess: time.Now(),
+		}
+
+		applyStart := time.Now()
+		var fKind, rKind HighlightKind
+		if m.group == HighlightGroupFamily {
+			fKind = HighlightFamilyParent
+			rKind = HighlightFamilyChild
+		} else {
+			fKind = HighlightCitationCites
+			rKind = HighlightCitationCitedBy
+		}
+
+		for _, p := range m.forward {
+			c.highlights.Upgrade(p, fKind)
+		}
+		for _, p := range m.reverse {
+			c.highlights.Upgrade(p, rKind)
 		}
 		applyDuration := time.Since(applyStart)
 		totalDuration := time.Since(m.dispatchedAt)
-		c.metrics.ObserveDuration("tui.highlight.family.apply", applyDuration, false)
-		c.metrics.ObserveDuration("tui.highlight.family.total", totalDuration, false)
-		c.metrics.SetGauge("tui.highlight.family.last.parents", int64(len(m.parents)))
-		c.metrics.SetGauge("tui.highlight.family.last.children", int64(len(m.children)))
-		c.log().Info("tui.highlight.family.toggle",
+		c.metrics.ObserveDuration(fmt.Sprintf("tui.highlight.%s.apply", m.group.Key()), applyDuration, false)
+		c.metrics.ObserveDuration(fmt.Sprintf("tui.highlight.%s.total", m.group.Key()), totalDuration, false)
+		c.metrics.SetGauge(fmt.Sprintf("tui.highlight.%s.last.forward", m.group.Key()), int64(len(m.forward)))
+		c.metrics.SetGauge(fmt.Sprintf("tui.highlight.%s.last.reverse", m.group.Key()), int64(len(m.reverse)))
+		c.log().Info("tui.highlight.toggle",
+			slog.String("group", m.group.String()),
 			slog.String("anchor", m.anchor.Normalized()),
-			slog.Int("parents", len(m.parents)),
-			slog.Int("children", len(m.children)),
-			slog.Duration("rpc_parents", m.parentsRPC),
-			slog.Duration("rpc_children", m.childrenRPC),
+			slog.Int("forward", len(m.forward)),
+			slog.Int("reverse", len(m.reverse)),
+			slog.Duration("rpc_forward", m.forwardRPC),
+			slog.Duration("rpc_reverse", m.reverseRPC),
 			slog.Duration("rpc_total", m.rpcTotal),
 			slog.Duration("apply", applyDuration),
 			slog.Duration("total", totalDuration),
 			slog.String("action", "on"))
-		c.metrics.IncCounter("tui.highlight.family.on", 1)
+		c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.on", m.group.Key()), 1)
 	}
 	return c, nil
 }
@@ -612,71 +662,131 @@ func (c *Catalog) clearGotoVisualHighlight() {
 	}
 }
 
-// clearFamilyHighlight drops the family overlay and forgets the anchor.
-func (c *Catalog) clearFamilyHighlight() {
-	c.highlights.ClearFamily()
-	c.familyAnchor = domain.PatentNumber{}
-	c.familyLoading = false
+// clearRelationHighlight drops the relation overlay and forgets the anchor.
+func (c *Catalog) clearRelationHighlight() {
+	c.highlights.ClearRelation()
+	c.activeHighlight = HighlightState{}
 }
 
-// toggleFamilyHighlight is the H-key handler. If a highlight is already
-// active for the cursor's patent it is cleared; otherwise an async lookup
-// of the patent's family edges is dispatched. The result lands as
-// familyHighlightLoadedMsg.
+// toggleFamilyHighlight triggers the Family highlight group (g h).
 func (c *Catalog) toggleFamilyHighlight() tea.Cmd {
+	return c.toggleHighlight(HighlightGroupFamily, domain.RelationParent, domain.RelationChild)
+}
+
+// toggleCitationsHighlight triggers the Citation highlight group (g c).
+func (c *Catalog) toggleCitationsHighlight() tea.Cmd {
+	return c.toggleHighlight(HighlightGroupCitations, domain.RelationCites, domain.RelationCitedBy)
+}
+
+// toggleHighlight is the generic key handler for relation highlights.
+func (c *Catalog) toggleHighlight(group HighlightGroup, forwardKind, reverseKind domain.RelationKind) tea.Cmd {
 	sel, ok := c.Selection()
 	if !ok {
 		return status(text.StatusNoPatentSelected, true)
 	}
-	if c.highlights.HasFamily() && c.familyAnchor == sel {
-		c.clearFamilyHighlight()
-		c.log().Info("tui.highlight.family.toggle",
+
+	// Toggle OFF if already active for this anchor
+	if c.activeHighlight.Group == group && c.activeHighlight.Anchor == sel {
+		c.clearRelationHighlight()
+		c.log().Info("tui.highlight.toggle",
+			slog.String("group", group.String()),
 			slog.String("anchor", sel.Normalized()),
 			slog.String("action", "off"))
-		c.metrics.IncCounter("tui.highlight.family.off", 1)
+		c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.off", group.Key()), 1)
 		return nil
 	}
-	c.clearFamilyHighlight()
-	c.familyAnchor = sel
-	c.familyLoading = true
-	client := c.client
+
+	c.clearRelationHighlight()
+
+	// Check bounded cache first
+	if c.relationCache != nil {
+		if cached, found := c.relationCache[sel]; found && cached.group == group {
+			// Update last access time
+			cached.lastAccess = time.Now()
+			c.relationCache[sel] = cached
+
+			c.activeHighlight = HighlightState{
+				Group:   group,
+				Anchor:  sel,
+				Loading: false,
+			}
+
+			// Apply instantly
+			var fKind, rKind HighlightKind
+			if group == HighlightGroupFamily {
+				fKind = HighlightFamilyParent
+				rKind = HighlightFamilyChild
+			} else {
+				fKind = HighlightCitationCites
+				rKind = HighlightCitationCitedBy
+			}
+
+			for _, p := range cached.forward {
+				c.highlights.Upgrade(p, fKind)
+			}
+			for _, p := range cached.reverse {
+				c.highlights.Upgrade(p, rKind)
+			}
+			c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.cache_hit", group.Key()), 1)
+			c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.on", group.Key()), 1)
+			return nil
+		}
+	}
+
 	requestID := nextAsyncID()
-	c.familyLoadID = requestID
+	c.activeHighlight = HighlightState{
+		Group:   group,
+		Anchor:  sel,
+		Loading: true,
+		LoadID:  requestID,
+	}
+
+	client := c.client
 	dispatchedAt := time.Now()
+
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		var parents proto.RelationsResult
-		var children proto.RelationsResult
+
+		var forward proto.RelationsResult
+		var reverse proto.RelationsResult
+
 		startAll := time.Now()
-		tP := time.Now()
-		errP := client.Call(ctx, proto.MethodRelations,
-			proto.RelationsParams{Number: sel, Kind: domain.RelationParent}, &parents)
-		parentsRPC := time.Since(tP)
-		tC := time.Now()
-		errC := client.Call(ctx, proto.MethodRelations,
-			proto.RelationsParams{Number: sel, Kind: domain.RelationChild}, &children)
-		childrenRPC := time.Since(tC)
-		err := errP
+
+		tF := time.Now()
+		errF := client.Call(ctx, proto.MethodRelations,
+			proto.RelationsParams{Number: sel, Kind: forwardKind}, &forward)
+		forwardRPC := time.Since(tF)
+
+		tR := time.Now()
+		errR := client.Call(ctx, proto.MethodRelations,
+			proto.RelationsParams{Number: sel, Kind: reverseKind}, &reverse)
+		reverseRPC := time.Since(tR)
+
+		err := errF
 		if err == nil {
-			err = errC
+			err = errR
 		}
-		ps := make([]domain.PatentNumber, 0, len(parents.Patents))
-		for _, p := range parents.Patents {
-			ps = append(ps, p.Number)
+
+		fList := make([]domain.PatentNumber, 0, len(forward.Patents))
+		for _, p := range forward.Patents {
+			fList = append(fList, p.Number)
 		}
-		cs := make([]domain.PatentNumber, 0, len(children.Patents))
-		for _, p := range children.Patents {
-			cs = append(cs, p.Number)
+
+		rList := make([]domain.PatentNumber, 0, len(reverse.Patents))
+		for _, p := range reverse.Patents {
+			rList = append(rList, p.Number)
 		}
-		return familyHighlightLoadedMsg{
+
+		return relationHighlightLoadedMsg{
 			requestID:    requestID,
+			group:        group,
 			anchor:       sel,
-			parents:      ps,
-			children:     cs,
+			forward:      fList,
+			reverse:      rList,
 			dispatchedAt: dispatchedAt,
-			parentsRPC:   parentsRPC,
-			childrenRPC:  childrenRPC,
+			forwardRPC:   forwardRPC,
+			reverseRPC:   reverseRPC,
 			rpcTotal:     time.Since(startAll),
 			err:          err,
 		}
@@ -748,17 +858,29 @@ func (c *Catalog) View(w, h int) string {
 	if c.filter.IsActive() && !c.find.active {
 		segments = append(segments, "filters: "+strings.Join(c.filter.Labels(), " · "))
 	}
-	if !c.familyAnchor.IsZero() {
+	if !c.activeHighlight.Anchor.IsZero() {
 		g := c.theme.Glyphs
-		switch {
-		case c.familyLoading:
-			segments = append(segments, g.FamilyLoading+" fetching family of "+c.familyAnchor.Normalized())
-		default:
-			parents := c.highlights.CountKind(HighlightFamilyParent)
-			children := c.highlights.CountKind(HighlightFamilyChild)
-			segments = append(segments, fmt.Sprintf("%s %s: %d%s %d%s",
-				g.FamilyAnchor, c.familyAnchor.Normalized(),
-				parents, g.FamilyParent, children, g.FamilyChild))
+		switch c.activeHighlight.Group {
+		case HighlightGroupFamily:
+			if c.activeHighlight.Loading {
+				segments = append(segments, g.FamilyLoading+" fetching family of "+c.activeHighlight.Anchor.Normalized())
+			} else {
+				parents := c.highlights.CountKind(HighlightFamilyParent)
+				children := c.highlights.CountKind(HighlightFamilyChild)
+				segments = append(segments, fmt.Sprintf("%s %s: %d%s %d%s",
+					g.FamilyAnchor, c.activeHighlight.Anchor.Normalized(),
+					parents, g.FamilyParent, children, g.FamilyChild))
+			}
+		case HighlightGroupCitations:
+			if c.activeHighlight.Loading {
+				segments = append(segments, g.CitationLoading+" fetching citations of "+c.activeHighlight.Anchor.Normalized())
+			} else {
+				cites := c.highlights.CountKind(HighlightCitationCites)
+				citedby := c.highlights.CountKind(HighlightCitationCitedBy)
+				segments = append(segments, fmt.Sprintf("%s %s: %d%s %d%s",
+					g.CitationAnchor, c.activeHighlight.Anchor.Normalized(),
+					cites, g.CitationCites, citedby, g.CitationCitedBy))
+			}
 		}
 	}
 	filterSummary := strings.Join(segments, "  ")
@@ -767,7 +889,7 @@ func (c *Catalog) View(w, h int) string {
 	// Only reserve a leading glyph column when at least one highlight is
 	// active; this keeps the default catalog layout (and its tests) byte-
 	// identical until the user toggles a highlight.
-	showGlyphCol := c.highlights.Len() > 0 || c.familyLoading
+	showGlyphCol := c.highlights.Len() > 0 || c.activeHighlight.Loading
 	if showGlyphCol {
 		b.WriteString(c.theme.Header.Render("  "))
 	}
@@ -776,7 +898,8 @@ func (c *Catalog) View(w, h int) string {
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
 		isSelectedRow := absolute == c.page.Cursor()
-		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, c.classDescs)
+		highlightKind := c.highlights.Kind(p.Number)
+		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, highlightKind, c.classDescs)
 		if showGlyphCol {
 			line = c.highlights.Glyph(c.theme, p.Number) + " " + line
 		}

@@ -473,3 +473,55 @@ func TestAppSettingsAIKeys(t *testing.T) {
 		t.Errorf("expected app.aiProvider to be gemini, got %s", app.aiProvider)
 	}
 }
+
+func TestAppNavigationHistory(t *testing.T) {
+	app := newTestApp(t)
+
+	// History should start empty
+	if len(app.history) != 0 {
+		t.Fatalf("expected history to be empty, got %d", len(app.history))
+	}
+
+	numA := domain.MustParsePatentNumber("US0000001B2")
+	numB := domain.MustParsePatentNumber("US0000002B2")
+
+	// Manually record history
+	app.recordHistory(numA)
+	app.recordHistory(numB)
+
+	if len(app.history) != 2 {
+		t.Fatalf("expected history length 2, got %d", len(app.history))
+	}
+	if app.historyCursor != 1 {
+		t.Fatalf("expected historyCursor to be 1, got %d", app.historyCursor)
+	}
+
+	// Test back boundary
+	app.historyCursor = 0
+	app.recordHistory(numB) // should truncate and append, so history becomes [numA, numB]
+	if len(app.history) != 2 || app.history[1] != numB {
+		t.Fatalf("expected history to truncate on new record after back")
+	}
+
+	// Press Shift+H to open history overlay
+	app.Update(runeKey('H'))
+	if len(app.overlays) != 1 {
+		t.Fatalf("expected history overlay to be open, got %d overlays", len(app.overlays))
+	}
+	o, ok := app.focusedOverlay().(*overlay.HistoryOverlay)
+	if !ok {
+		t.Fatalf("focused overlay should be HistoryOverlay")
+	}
+	if o.Title() != "Patent History" {
+		t.Errorf("expected title 'Patent History', got %q", o.Title())
+	}
+
+	// Test pressing Esc to close overlay
+	_, cmd := app.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if cmd != nil {
+		app.Update(cmd())
+	}
+	if len(app.overlays) != 0 {
+		t.Fatalf("expected overlays to be closed, got %d", len(app.overlays))
+	}
+}

@@ -676,3 +676,5 @@ func stripANSI(s string) string {
 	}
 	return out.String()
 }
+
+func (f *FullText) PatentNumber() domain.PatentNumber { return f.number }

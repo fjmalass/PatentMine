@@ -84,6 +84,7 @@ func viewActions() map[string]command.ID {
 		"c":      command.OpenCitations,
 		"b":      command.OpenCitedBy,
 		"p":      command.OpenParents,
+		"C":      command.OpenChildren,
 		"F":      command.OpenFamilyGraph,
 		"g f":    command.OpenFamilyGraph,
 		"P":      command.OpenProjects,
@@ -103,6 +104,11 @@ func Default() *Keymaps {
 		"esc":    command.Back,
 		":":      command.OpenCommand,
 		"ctrl+s": command.SettingsAI,
+		"ctrl+o": command.HistoryBack,
+		"ctrl+left": command.HistoryBack,
+		"ctrl+i": command.HistoryForward,
+		"ctrl+right": command.HistoryForward,
+		"H":      command.OpenHistory,
 	})
 
 	catalog := NewLayer("catalog", false).
@@ -122,7 +128,8 @@ func Default() *Keymaps {
 			"esc":    command.SelectClear,
 			"g a":    command.SelectAll,
 			"ctrl+a": command.SelectAll,
-			"H":      command.HighlightFamily,
+			"g h":    command.HighlightFamily,
+			"g c":    command.HighlightCitations,
 		})
 
 	detail := NewLayer("detail", false).

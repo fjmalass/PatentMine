@@ -35,6 +35,6 @@ func FormatEntityStats(total int, states map[string]int, tags map[string]int) st
 	totalLabel := fmt.Sprintf("[%d]:", total)
 	paddedTotal := Pad(totalLabel, 6)
 
-	return fmt.Sprintf("%s state: [%d] stored, [%d] under_review, [%d] other, tags: %s",
+	return fmt.Sprintf("%s state: [%d] 📥, [%d] 🔍, [%d] other, tags: %s",
 		paddedTotal, stored, underReview, other, tagsStr)
 }

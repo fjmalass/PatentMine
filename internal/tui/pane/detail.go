@@ -364,7 +364,7 @@ func (d *Detail) body(w int) string {
 	// one project, so they appear only when the pane has an active project.
 	if d.project != "" {
 		b.WriteByte('\n')
-		revVal := reviewStateText(d.state)
+		revVal := reviewStateText(d.theme, d.state)
 		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", revVal, true, 0)
 		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
 		
@@ -782,15 +782,15 @@ func wrapText(s string, width int) []string {
 
 // reviewStateText renders a patent's review state within the pane's project,
 // or a note when the patent is not a member of that project.
-func reviewStateText(state domain.ReviewState) string {
+func reviewStateText(theme render.Theme, state domain.ReviewState) string {
 	if state == "" {
 		return "not in project"
 	}
-	return string(state)
+	return theme.ReviewStateGlyph(string(state))
 }
 
 func styledReviewStateText(theme render.Theme, state domain.ReviewState) string {
-	text := reviewStateText(state)
+	text := reviewStateText(theme, state)
 	switch state {
 	case domain.ReviewStateUnderReview:
 		return theme.Warn.Render(text)
@@ -804,7 +804,7 @@ func styledReviewStateText(theme render.Theme, state domain.ReviewState) string 
 }
 
 func fetchStateText(theme render.Theme, state domain.FetchState) string {
-	text := string(state)
+	text := theme.FetchStateGlyph(string(state))
 	switch state {
 	case domain.FetchCached:
 		return theme.Dim.Render(text)
@@ -909,3 +909,5 @@ func (d *Detail) ResolveCursorRelation() (domain.RelationKind, bool) {
 	}
 	return "", false
 }
+
+func (d *Detail) PatentNumber() domain.PatentNumber { return d.number }

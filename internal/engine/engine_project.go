@@ -154,27 +154,70 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 	}
 
 	records := make([]domain.PatentNumber, 0, len(patents))
+	createdMap := make(map[domain.PatentNumber]bool)
 	for _, patent := range patents {
-		record, err := e.recordNumber(ctx, patent)
+		record, created, err := e.ensureRecord(ctx, patent)
 		if err != nil {
 			return err
 		}
 		records = append(records, record)
+		createdMap[record] = created
 	}
 
 	// First, check memberships and add missing ones
 	beforeMemberships := make(map[domain.PatentNumber]domain.Membership)
+	var addedRecords []domain.PatentNumber
+
 	for _, record := range records {
 		current, err := e.repo.Membership(ctx, project, record)
 		if errors.Is(err, store.ErrNotFound) {
-			if _, addErr := e.AddToProject(ctx, project, record); addErr != nil {
-				return addErr
+			initialState := domain.ReviewStateStored
+			created := createdMap[record]
+			if !created {
+				if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
+					initialState = domain.ReviewStateCached
+				}
 			}
+
+			m := domain.Membership{
+				Project:     project,
+				Patent:      record,
+				ReviewState: initialState,
+				AddedAt:     time.Now().UTC(),
+			}
+			if err := e.repo.AddMembership(ctx, m); err != nil {
+				e.log(ctx, slog.LevelError, "add membership in SetReviewState failed",
+					slog.String("project_id", string(project)),
+					slog.String("patent", record.String()),
+					slog.String("error", err.Error()))
+				return err
+			}
+
+			e.log(ctx, slog.LevelInfo, "membership added",
+				slog.String("project_id", string(project)),
+				slog.String("record", record.String()),
+				slog.String("requested", record.String()))
+
+			e.recordActivity(ctx, observability.Record{
+				Action:   "membership.add",
+				Entity:   "membership",
+				EntityID: string(project) + "/" + record.String(),
+				Status:   "committed",
+				Before:   domain.Membership{},
+				After:    m,
+				Metadata: map[string]any{"requested_number": record.String()},
+			})
+
+			addedRecords = append(addedRecords, record)
+
 			current, err = e.repo.Membership(ctx, project, record)
-		}
-		if err != nil {
+			if err != nil {
+				return err
+			}
+		} else if err != nil {
 			return err
 		}
+
 		if !current.ReviewState.CanTransitionTo(target) {
 			return fmt.Errorf("engine: cannot move membership from %q to %q", current.ReviewState, target)
 		}
@@ -198,37 +241,57 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		e.incCounter("engine.review_state.noop_total", int64(noopsCount))
 	}
 
-	if len(changedRecords) == 0 {
-		return nil
+	if len(changedRecords) > 0 {
+		// Update states
+		if err := e.repo.SetReviewStates(ctx, project, changedRecords, target); err != nil {
+			e.log(ctx, slog.LevelError, "set review state batch failed", slog.String("project_id", string(project)), slog.Int("count", len(changedRecords)), slog.String("target", string(target)), slog.String("error", err.Error()))
+			return err
+		}
+
+		// Record activities
+		for _, record := range changedRecords {
+			e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
+			rec := observability.Record{
+				Action:   "membership.set_state",
+				Entity:   "membership",
+				EntityID: string(project) + "/" + record.String(),
+				Status:   "committed",
+				Metadata: map[string]any{"requested_number": record.String()},
+			}
+			if current, ok := beforeMemberships[record]; ok {
+				after := current
+				after.ReviewState = target
+				rec.Before = current
+				rec.After = after
+			}
+			e.recordActivity(ctx, rec)
+		}
+		e.incCounter("engine.review_state.changed_total", int64(len(changedRecords)))
 	}
 
-	// Update states
-	if err := e.repo.SetReviewStates(ctx, project, changedRecords, target); err != nil {
-		e.log(ctx, slog.LevelError, "set review state batch failed", slog.String("project_id", string(project)), slog.Int("count", len(changedRecords)), slog.String("target", string(target)), slog.String("error", err.Error()))
-		return err
-	}
+	// Start family crawls for newly added stub memberships that start as "stored".
+	if e.crawl != nil {
+		for _, record := range addedRecords {
+			initialState := domain.ReviewStateStored
+			created := createdMap[record]
+			if !created {
+				if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
+					initialState = domain.ReviewStateCached
+				}
+			}
 
-	// Record activities
-	for _, record := range changedRecords {
-		e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
-		rec := observability.Record{
-			Action:   "membership.set_state",
-			Entity:   "membership",
-			EntityID: string(project) + "/" + record.String(),
-			Status:   "committed",
-			Metadata: map[string]any{"requested_number": record.String()},
+			if initialState == domain.ReviewStateStored {
+				if jobID, fetchErr := e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
+					e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
+						slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
+				} else {
+					go e.cleanupIfNotFound(project, record, created, jobID)
+				}
+			}
 		}
-		if current, ok := beforeMemberships[record]; ok {
-			after := current
-			after.ReviewState = target
-			rec.Before = current
-			rec.After = after
-		}
-		e.recordActivity(ctx, rec)
 	}
 
 	e.announceChange()
-	e.incCounter("engine.review_state.changed_total", int64(len(changedRecords)))
 	return nil
 }
 

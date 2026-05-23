@@ -12,6 +12,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -59,6 +60,13 @@ type pingLoadedMsg struct {
 	version         string
 	usptoConfigured bool
 	err             error
+}
+
+type historyCheckResultMsg struct {
+	targetIndex int
+	number      domain.PatentNumber
+	exists      bool
+	err         error
 }
 
 // invocation carries the arguments of one command request: empty for a key
@@ -120,6 +128,9 @@ var appHandlers = map[command.ID]appHandler{
 	command.SettingsAI:          (*App).cmdSettingsAI,
 	command.OpenInventors:       (*App).cmdOpenInventors,
 	command.OpenInventorsDirect: (*App).cmdOpenInventorsDirect,
+	command.HistoryBack:         (*App).cmdHistoryBack,
+	command.HistoryForward:      (*App).cmdHistoryForward,
+	command.OpenHistory:         (*App).cmdOpenHistory,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -154,6 +165,9 @@ type App struct {
 	panes      []pane.Pane
 	overlays   []overlay.Overlay
 	confirmCmd tea.Cmd // pending action awaiting confirmation
+
+	history       []domain.PatentNumber
+	historyCursor int
 
 	status        string
 	statusErr     bool
@@ -410,6 +424,39 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			provider.JumpTo(m.Line)
 		}
 		return a, nil
+	case historyCheckResultMsg:
+		if m.err != nil || !m.exists {
+			isNotFound := false
+			var rpcErr *proto.Error
+			if errors.As(m.err, &rpcErr) {
+				if rpcErr.Code == proto.CodeNotFound {
+					isNotFound = true
+				}
+			}
+			if isNotFound {
+				if m.targetIndex >= 0 && m.targetIndex < len(a.history) {
+					a.history = append(a.history[:m.targetIndex], a.history[m.targetIndex+1:]...)
+					if a.historyCursor >= len(a.history) {
+						a.historyCursor = len(a.history) - 1
+					}
+				}
+			}
+			var errMessage string
+			if isNotFound {
+				errMessage = fmt.Sprintf("Patent %s is no longer available in the database (it may have been deleted).", m.number.String())
+			} else if m.err != nil {
+				errMessage = fmt.Sprintf("Failed to load patent %s: %s", m.number.String(), m.err.Error())
+			} else {
+				errMessage = fmt.Sprintf("Patent %s is not available.", m.number.String())
+			}
+			a.overlays = append(a.overlays, overlay.NewErrorOverlay(a.theme, errMessage))
+			return a, nil
+		}
+		a.historyCursor = m.targetIndex
+		return a.navigateHistory(m.number)
+	case overlay.HistorySelectMsg:
+		a.popOverlay()
+		return a, a.checkPatentExists(m.Index, m.Number)
 	case overlay.CloseOverlayMsg:
 		a.popOverlay()
 		return a, nil
@@ -678,6 +725,27 @@ func (a *App) runAIAnalysis(patent domain.Patent, actionType, customPrompt strin
 			locator: locator,
 			result:  res,
 			err:     err,
+		}
+	}
+}
+
+func (a *App) checkPatentExists(targetIndex int, number domain.PatentNumber) tea.Cmd {
+	client := a.client
+	project := ""
+	if a.activeProject != nil {
+		project = string(a.activeProject.ID)
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.PatentResult
+		err := client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: domain.ProjectID(project)}, &res)
+		exists := err == nil
+		return historyCheckResultMsg{
+			targetIndex: targetIndex,
+			number:      number,
+			exists:      exists,
+			err:         err,
 		}
 	}
 }

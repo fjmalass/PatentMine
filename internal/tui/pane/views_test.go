@@ -95,7 +95,7 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.jumpToFirstNode()
 
 	out := g.View(120, 12)
-	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "stub  Child", "y: copy Mermaid"} {
+	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "🔗  Child", "y: copy Mermaid"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("family graph view missing %q\n%s", want, out)
 		}
@@ -185,7 +185,7 @@ func TestFamilyGraphViewUsesReviewStateForActiveProject(t *testing.T) {
 	}}
 	g.rebuildRows()
 	out := g.View(120, 8)
-	if !strings.Contains(out, "under_review") {
+	if !strings.Contains(out, "🔍") {
 		t.Fatalf("family graph view should show project review state, got:\n%s", out)
 	}
 }
@@ -456,3 +456,16 @@ func TestClampFocusedSortableColumnSkipsUnsortableCurrentColumn(t *testing.T) {
 		t.Fatalf("clampFocusedSortableColumn should keep sortable TAGS focus, got %d", got)
 	}
 }
+
+func TestDetailJumpKeysDump(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "test-project", nil)
+	t.Log("JUMP KEYS:")
+	for label, key := range d.jumpKeys {
+		t.Logf("  %s -> %q", label, string(key))
+	}
+	if got := d.jumpKeys["Children"]; got != 'C' {
+		t.Errorf("jump key for Children = %q, want 'C'", string(got))
+	}
+}
+

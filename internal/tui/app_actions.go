@@ -124,6 +124,9 @@ func (a *App) preparePane(p pane.Pane) (pane.Pane, []tea.Cmd) {
 // pushPane adds a pane to the stack and returns its init command.
 func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 	p, cmds := a.preparePane(p)
+	if pv, ok := p.(interface{ PatentNumber() domain.PatentNumber }); ok {
+		a.recordHistory(pv.PatentNumber())
+	}
 	a.panes = append(a.panes, p)
 	if len(cmds) == 0 {
 		cmds = append(cmds, p.Init())
@@ -467,4 +470,72 @@ func (a *App) setStatus(key text.Key, args ...any) {
 
 func (a *App) setErr(key text.Key, args ...any) {
 	a.status, a.statusErr = a.text.Tf(key, args...), true
+}
+
+func (a *App) recordHistory(num domain.PatentNumber) {
+	if num.Serial == "" {
+		return
+	}
+	if a.historyCursor < len(a.history)-1 {
+		a.history = a.history[:a.historyCursor+1]
+	}
+	if len(a.history) > 0 && a.history[a.historyCursor] == num {
+		return
+	}
+	a.history = append(a.history, num)
+	if len(a.history) > 100 {
+		a.history = a.history[1:]
+	}
+	a.historyCursor = len(a.history) - 1
+}
+
+func (a *App) syncHistoryCursor() {
+	if len(a.history) == 0 {
+		return
+	}
+	current := a.focusedPane()
+	if pv, ok := current.(interface{ PatentNumber() domain.PatentNumber }); ok {
+		num := pv.PatentNumber()
+		for i := len(a.history) - 1; i >= 0; i-- {
+			if a.history[i] == num {
+				a.historyCursor = i
+				break
+			}
+		}
+	}
+}
+
+func (a *App) navigateHistory(number domain.PatentNumber) (tea.Model, tea.Cmd) {
+	current := a.focusedPane()
+	var nextPane pane.Pane
+
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+
+	switch p := current.(type) {
+	case *pane.Detail:
+		bound := a.keymaps.BoundLetters(command.ScopeDetail)
+		nextPane = pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log())
+	case *pane.FullText:
+		bound := a.keymaps.BoundLetters(command.ScopeFullText)
+		nextPane = pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log())
+	case *pane.IDSDetail:
+		nextPane = pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log())
+	case *pane.Citations:
+		nextPane = pane.NewCitations(a.client, a.theme, number, p.Kind()).WithLogger(a.log())
+	case *pane.FamilyGraph:
+		nextPane = pane.NewFamilyGraph(a.client, a.theme, number, p.Depth(), p.Countries()).WithLogger(a.log())
+	default:
+		bound := a.keymaps.BoundLetters(command.ScopeDetail)
+		return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+	}
+
+	a.panes[len(a.panes)-1] = nextPane
+	nextPane, cmds := a.preparePane(nextPane)
+	if len(cmds) == 0 {
+		cmds = append(cmds, nextPane.Init())
+	}
+	return a, tea.Batch(cmds...)
 }

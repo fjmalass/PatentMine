@@ -31,10 +31,11 @@ const (
 
 // tableCol is one table column descriptor.
 type tableCol struct {
-	key     domain.PatentTableColumnKey
-	label   string
-	sortKey domain.SortColumn // zero = not sortable
-	width   int
+	key      domain.PatentTableColumnKey
+	label    string
+	sortKey  domain.SortColumn // zero = not sortable
+	width    int
+	cellType domain.ColumnCellType
 }
 
 // patentTableColumns returns the visible columns for a patent table.
@@ -52,7 +53,13 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		if width == 0 {
 			width = spec.Width
 		}
-		return tableCol{key: key, label: spec.Label, sortKey: sortKey, width: width}
+		return tableCol{
+			key:      key,
+			label:    spec.Label,
+			sortKey:  sortKey,
+			width:    width,
+			cellType: spec.CellType,
+		}
 	}
 
 	var cols []tableCol
@@ -174,8 +181,17 @@ func renderTableHeader(theme render.Theme, cols []tableCol, activeSortKey domain
 // classDescs (when non-nil) supplies cached classification descriptions keyed
 // by lower-cased code; it enriches the Classification column with the first
 // code's description.
-func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
-	switch colKey {
+func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
+	if col.cellType == domain.CellTypeState {
+		raw := tableStateText(row, projectID)
+		resolved := theme.ReviewStateGlyph(raw)
+		if resolved == raw {
+			resolved = theme.FetchStateGlyph(raw)
+		}
+		return resolved
+	}
+
+	switch col.key {
 	case domain.PatentColumnIndex:
 		return formatViewIndex(absoluteIndex)
 	case domain.PatentColumnNumber:
@@ -199,26 +215,26 @@ func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, p
 	case domain.PatentColumnIDS:
 		return formatIDSSummary(row.IDSEntry)
 	default:
-		return tableStateText(row, projectID)
+		return ""
 	}
 }
 
 // renderTableRow formats one patent row across all columns.
-func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
+func renderTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
 	var b strings.Builder
 	for i, col := range cols {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		val := patentCellValue(row, col.key, projectID, absoluteIndex, classDescs)
+		val := patentCellValue(theme, row, col, projectID, absoluteIndex, classDescs)
 		b.WriteString(render.Pad(render.Truncate(val, col.width), col.width))
 	}
 	return b.String()
 }
 
-func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, focusedColIdx int, selected bool, classDescs map[string]string) string {
-	return renderGenericTableRow(theme, cols, absoluteIndex, focusedColIdx, selected, func(col tableCol) string {
-		return patentCellValue(row, col.key, projectID, absoluteIndex, classDescs)
+func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, focusedColIdx int, selected bool, highlight HighlightKind, classDescs map[string]string) string {
+	return renderGenericTableRow(theme, cols, absoluteIndex, focusedColIdx, selected, highlight, func(col tableCol) string {
+		return patentCellValue(theme, row, col, projectID, absoluteIndex, classDescs)
 	})
 }
 
@@ -227,7 +243,7 @@ func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []table
 // and returns the raw cell text. Padding, truncation, and focused-column
 // styling match renderStyledTableRow so overlays that build their own column
 // schema get the same visuals as the catalog/citations panes.
-func renderGenericTableRow(theme render.Theme, cols []tableCol, absoluteIndex int, focusedColIdx int, selected bool, cellValue func(col tableCol) string) string {
+func renderGenericTableRow(theme render.Theme, cols []tableCol, absoluteIndex int, focusedColIdx int, selected bool, highlight HighlightKind, cellValue func(col tableCol) string) string {
 	var b strings.Builder
 	for i, col := range cols {
 		if i > 0 {
@@ -235,17 +251,33 @@ func renderGenericTableRow(theme render.Theme, cols []tableCol, absoluteIndex in
 		}
 		cell := render.Pad(render.Truncate(cellValue(col), col.width), col.width)
 		if focusedColIdx >= 0 && i == focusedColIdx {
-			cell = focusedCellStyle(theme, absoluteIndex, selected).Render(cell)
+			cell = focusedCellStyleWithHighlight(theme, absoluteIndex, selected, highlight).Render(cell)
 		}
 		b.WriteString(cell)
 	}
 	return b.String()
 }
 
-func focusedCellStyle(theme render.Theme, absoluteIndex int, selected bool) lipgloss.Style {
+func focusedCellStyleWithHighlight(theme render.Theme, absoluteIndex int, selected bool, highlight HighlightKind) lipgloss.Style {
 	if selected {
 		return theme.FocusSelected
 	}
+
+	switch highlight {
+	case HighlightFamilyParent:
+		return theme.FocusFamilyParent
+	case HighlightFamilyChild:
+		return theme.FocusFamilyChild
+	case HighlightFamilyBoth:
+		return theme.FocusFamilyBoth
+	case HighlightCitationCites:
+		return theme.FocusCitationCites
+	case HighlightCitationCitedBy:
+		return theme.FocusCitationCitedBy
+	case HighlightCitationBoth:
+		return theme.FocusCitationBoth
+	}
+
 	if absoluteIndex%2 != 0 {
 		return theme.FocusCellAlt
 	}

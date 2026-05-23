@@ -1179,3 +1179,44 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 		}
 	}
 }
+
+func TestEngineSetReviewStateSingleBroadcast(t *testing.T) {
+	eng, _ := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "SingleBroadcastProj")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	events, unsub := eng.Subscribe()
+	defer unsub()
+
+	patent := domain.MustParsePatentNumber("US8888888B2")
+
+	// SetReviewState on a patent that is not a member yet.
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateUnderReview); err != nil {
+		t.Fatalf("SetReviewState: %v", err)
+	}
+
+	// We expect exactly ONE EventDBChanged broadcast.
+	// Since e.announceChange is only called once at the end, it should trigger exactly one leading-edge publish.
+	var changeEventsCount int
+	timeout := time.After(400 * time.Millisecond) // Wait longer than the 200ms debounce window
+loop:
+	for {
+		select {
+		case ev := <-events:
+			if ev.Method == proto.EventDBChanged {
+				changeEventsCount++
+			}
+		case <-timeout:
+			break loop
+		}
+	}
+
+	if changeEventsCount != 1 {
+		t.Errorf("expected exactly 1 change event, got %d", changeEventsCount)
+	}
+}
+

@@ -587,11 +587,14 @@ func (c *Citations) View(w, h int) string {
 	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
 	b.WriteByte('\n')
 	b.WriteString(renderTableHeader(c.theme, cols, c.activeSort, c.sortAscending, c.focusedColIdx))
-
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
 		isSelectedRow := absolute == c.page.Cursor()
-		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, c.classDescs)
+		hl := HighlightNone
+		if c.gvHighlight != nil && c.gvHighlight[p.Number] {
+			hl = HighlightGotoVisual
+		}
+		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, hl, c.classDescs)
 		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {
@@ -627,3 +630,6 @@ func relationLabel(k domain.RelationKind) string {
 		return "Relations"
 	}
 }
+
+func (c *Citations) PatentNumber() domain.PatentNumber { return c.root }
+func (c *Citations) Kind() domain.RelationKind         { return c.kind }

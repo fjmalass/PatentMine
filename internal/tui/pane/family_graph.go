@@ -842,3 +842,7 @@ func (g *FamilyGraph) jumpToLastNode() {
 		g.page.Bottom()
 	}
 }
+
+func (g *FamilyGraph) PatentNumber() domain.PatentNumber { return g.root }
+func (g *FamilyGraph) Depth() int                        { return g.depth }
+func (g *FamilyGraph) Countries() []string               { return g.countries }

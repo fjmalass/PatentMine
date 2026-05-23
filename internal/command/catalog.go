@@ -35,6 +35,7 @@ const (
 	SelectClear         ID = "select.clear"
 	SelectAll           ID = "select.all"
 	HighlightFamily     ID = "highlight.family"
+	HighlightCitations  ID = "highlight.citations"
 	ColNext             ID = "col.next"
 	ColPrev             ID = "col.prev"
 	SortApply           ID = "col.sort-apply"
@@ -121,6 +122,11 @@ const (
 	CopyYankMeta ID = "edit.copy-meta"
 	NoteAdd      ID = "edit.note-add"
 	NoteOpen     ID = "edit.note-open"
+
+	// History navigation and visual popup.
+	HistoryBack    ID = "history.back"
+	HistoryForward ID = "history.forward"
+	OpenHistory    ID = "view.history"
 )
 
 // listScopes are the scopes that behave as scrollable lists.
@@ -164,6 +170,9 @@ func Default() (*Registry, error) {
 		Command{ID: OpenInventorsDirect, Name: "open.inventors.direct", Aliases: []string{"inventors-direct"}, Usage: ":open.inventors.direct", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: Back, Kind: KindView},
 		Command{ID: CloseOverlay, Kind: KindView, Scopes: []Scope{ScopeOverlay}},
+		Command{ID: HistoryBack, Name: "history.back", Aliases: []string{"back-history"}, Usage: ":history.back", Kind: KindView},
+		Command{ID: HistoryForward, Name: "history.forward", Aliases: []string{"forward-history"}, Usage: ":history.forward", Kind: KindView},
+		Command{ID: OpenHistory, Name: "open.history", Aliases: []string{"history", "visits"}, Usage: ":open.history", Kind: KindView},
 		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects, ScopeIDS}},
 		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects}},
 		Command{ID: OpenCommand, Kind: KindView},
@@ -172,6 +181,7 @@ func Default() (*Registry, error) {
 		Command{ID: SelectClear, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: SelectAll, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: HighlightFamily, Name: "highlight.family", Aliases: []string{"hl-family"}, Usage: ":highlight.family", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
+		Command{ID: HighlightCitations, Name: "highlight.citations", Aliases: []string{"hl-citations", "hl-references"}, Usage: ":highlight.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},

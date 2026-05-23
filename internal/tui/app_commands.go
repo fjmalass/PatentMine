@@ -72,6 +72,7 @@ func (a *App) cmdBack(invocation) (tea.Model, tea.Cmd) {
 		a.popOverlay()
 	} else if len(a.panes) > 1 {
 		a.panes = a.panes[:len(a.panes)-1]
+		a.syncHistoryCursor()
 	}
 	return a, nil
 }
@@ -510,6 +511,44 @@ func (a *App) cmdAIAnalyze(invocation) (tea.Model, tea.Cmd) {
 
 func (a *App) cmdSettingsAI(invocation) (tea.Model, tea.Cmd) {
 	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.usptoConfigured)
+	a.overlays = append(a.overlays, o)
+	return a, nil
+}
+
+func (a *App) cmdHistoryBack(invocation) (tea.Model, tea.Cmd) {
+	if len(a.history) == 0 {
+		a.setErr(text.StatusHistoryEmpty)
+		return a, nil
+	}
+	targetIndex := a.historyCursor - 1
+	if targetIndex < 0 {
+		a.setErr(text.StatusHistoryAtEnd)
+		return a, nil
+	}
+	targetNumber := a.history[targetIndex]
+	return a, a.checkPatentExists(targetIndex, targetNumber)
+}
+
+func (a *App) cmdHistoryForward(invocation) (tea.Model, tea.Cmd) {
+	if len(a.history) == 0 {
+		a.setErr(text.StatusHistoryEmpty)
+		return a, nil
+	}
+	targetIndex := a.historyCursor + 1
+	if targetIndex >= len(a.history) {
+		a.setErr(text.StatusHistoryAtEnd)
+		return a, nil
+	}
+	targetNumber := a.history[targetIndex]
+	return a, a.checkPatentExists(targetIndex, targetNumber)
+}
+
+func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
+	if len(a.history) == 0 {
+		a.setErr(text.StatusHistoryEmpty)
+		return a, nil
+	}
+	o := overlay.NewHistoryOverlay(a.theme, a.history, a.historyCursor)
 	a.overlays = append(a.overlays, o)
 	return a, nil
 }

@@ -593,11 +593,10 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 				}
 				return "-"
 			case "state":
-				valState := string(p.FetchState)
 				if o.project != "" && p.ReviewState.Valid() {
-					valState = string(p.ReviewState)
+					return o.theme.ReviewStateGlyph(string(p.ReviewState))
 				}
-				return valState
+				return o.theme.FetchStateGlyph(string(p.FetchState))
 			default:
 				return ""
 			}

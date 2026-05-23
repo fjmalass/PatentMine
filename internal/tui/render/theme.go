@@ -26,11 +26,24 @@ const (
 	colorMarkedFocusBg  = "55"  // focus cell background on marked rows
 	colorMarkedFocusSelBg = "129" // focus cell background on marked row under cursor
 
-	// Family highlight backgrounds: tint the row when a "highlight family"
-	// toggle (H) marks it as a parent or child of the anchor patent.
-	colorFamilyParent = "94" // dark amber — ancestor / parent application
-	colorFamilyChild  = "25" // dark blue-cyan — descendant / child application
-	colorFamilyBoth   = "89" // deep magenta — both parent and child (cycle)
+	// Relation highlight backgrounds (Nordic Minimalist): tint the row
+	// when relationship highlighting is toggled (g h or g c).
+
+	// Family
+	colorFamilyParent      = "180" // dusty terracotta
+	colorFamilyChild       = "109" // frosted teal
+	colorFamilyBoth        = "138" // vintage rose
+	colorFamilyParentFocus = "137" // terracotta focus
+	colorFamilyChildFocus  = "72"  // teal focus
+	colorFamilyBothFocus   = "95"  // rose focus
+
+	// Citations
+	colorCitationCites       = "110" // glacier slate blue
+	colorCitationCitedBy     = "142" // muted olive gold
+	colorCitationBoth        = "143" // dusty khaki
+	colorCitationCitesFocus  = "146" // slate blue focus
+	colorCitationCitedByFocus = "101" // olive gold focus
+	colorCitationBothFocus   = "107" // khaki focus
 )
 
 // Default glyphs. Hoisted here so call sites never embed icon characters
@@ -42,6 +55,13 @@ const (
 	glyphFamilyNone    = " "
 	glyphFamilyLoading = "…"
 	glyphFamilyAnchor  = "•"
+
+	glyphCitationCites    = "→"
+	glyphCitationCitedBy  = "←"
+	glyphCitationBoth     = "↔"
+	glyphCitationNone     = " "
+	glyphCitationLoading  = "…"
+	glyphCitationAnchor   = "•"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -75,10 +95,26 @@ type Theme struct {
 	FocusMarkedSelectedCell lipgloss.Style
 
 	// Family highlight overlays: applied to catalog/relations rows when the
-	// user toggles "highlight family of anchor" with the H keybinding.
+	// user toggles "highlight family of anchor" with the g h keybinding.
 	FamilyParent lipgloss.Style
 	FamilyChild  lipgloss.Style
 	FamilyBoth   lipgloss.Style
+
+	// Blended family focus cells: applied to the focused sort column in highlighted family rows
+	FocusFamilyParent lipgloss.Style
+	FocusFamilyChild  lipgloss.Style
+	FocusFamilyBoth   lipgloss.Style
+
+	// Citation highlight overlays: applied to catalog/relations rows when the
+	// user toggles "highlight citations of anchor" with the g c keybinding.
+	CitationCites   lipgloss.Style
+	CitationCitedBy lipgloss.Style
+	CitationBoth    lipgloss.Style
+
+	// Blended citation focus cells: applied to the focused sort column in highlighted citation rows
+	FocusCitationCites    lipgloss.Style
+	FocusCitationCitedBy  lipgloss.Style
+	FocusCitationBoth     lipgloss.Style
 
 	// Jump Overlay Styles
 	JumpGlobalLabel lipgloss.Style
@@ -102,6 +138,18 @@ type ThemeGlyphs struct {
 	FamilyNone    string
 	FamilyLoading string
 	FamilyAnchor  string
+
+	CitationCites   string
+	CitationCitedBy string
+	CitationBoth    string
+	CitationNone    string
+	CitationLoading string
+	CitationAnchor  string
+
+	StateStored      string
+	StateUnderReview string
+	StateCached      string
+	StateStub        string
 }
 
 // NewTheme builds the default theme.
@@ -183,6 +231,39 @@ func NewTheme() Theme {
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorFamilyBoth)).Bold(true),
 
+		// Blended family focus cells
+		FocusFamilyParent: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFamilyParentFocus)),
+		FocusFamilyChild: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFamilyChildFocus)),
+		FocusFamilyBoth: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFamilyBothFocus)).Bold(true),
+
+		// Citation highlight overlays
+		CitationCites: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorCitationCites)),
+		CitationCitedBy: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorCitationCitedBy)),
+		CitationBoth: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorCitationBoth)).Bold(true),
+
+		// Blended citation focus cells
+		FocusCitationCites: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorCitationCitesFocus)),
+		FocusCitationCitedBy: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorCitationCitedByFocus)),
+		FocusCitationBoth: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorCitationBothFocus)).Bold(true),
+
 		// Jump Overlay Styles
 		JumpGlobalLabel: lipgloss.NewStyle().Foreground(lipgloss.Color(colorText)).Bold(true),
 		JumpGlobalValue: lipgloss.NewStyle().Foreground(lipgloss.Color(colorDim)),
@@ -196,6 +277,44 @@ func NewTheme() Theme {
 			FamilyNone:    glyphFamilyNone,
 			FamilyLoading: glyphFamilyLoading,
 			FamilyAnchor:  glyphFamilyAnchor,
+
+			CitationCites:   glyphCitationCites,
+			CitationCitedBy: glyphCitationCitedBy,
+			CitationBoth:    glyphCitationBoth,
+			CitationNone:    glyphCitationNone,
+			CitationLoading: glyphCitationLoading,
+			CitationAnchor:  glyphCitationAnchor,
+
+			StateStored:      "📥",
+			StateUnderReview: "🔍",
+			StateCached:      "⚡",
+			StateStub:        "🔗",
 		},
+	}
+}
+
+// ReviewStateGlyph returns the glyph corresponding to the review state.
+func (t Theme) ReviewStateGlyph(state string) string {
+	switch state {
+	case "stored":
+		return t.Glyphs.StateStored
+	case "under_review":
+		return t.Glyphs.StateUnderReview
+	case "cached":
+		return t.Glyphs.StateCached
+	default:
+		return state
+	}
+}
+
+// FetchStateGlyph returns the glyph corresponding to the fetch state.
+func (t Theme) FetchStateGlyph(state string) string {
+	switch state {
+	case "cached":
+		return t.Glyphs.StateCached
+	case "stub":
+		return t.Glyphs.StateStub
+	default:
+		return state
 	}
 }

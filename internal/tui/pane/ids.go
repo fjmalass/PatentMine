@@ -320,3 +320,5 @@ func yesNo(v bool) string {
 	}
 	return "no"
 }
+
+func (p *IDSDetail) PatentNumber() domain.PatentNumber { return p.number }
