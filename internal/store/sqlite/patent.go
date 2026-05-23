@@ -516,6 +516,11 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 			return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\')`, []any{wildcardLikePattern(term.Inventor.Raw, false)}, nil
 		}
 		return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?)`, []any{term.Value}, nil
+	case filterexpr.FieldAssignee:
+		if term.Assignee.Wildcard {
+			return `p.assignee LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Assignee.Raw, false)}, nil
+		}
+		return `p.assignee = ?`, []any{term.Value}, nil
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
 	}

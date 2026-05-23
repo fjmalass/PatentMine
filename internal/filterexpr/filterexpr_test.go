@@ -32,6 +32,16 @@ func TestParseSupportsInventorWildcard(t *testing.T) {
 	}
 }
 
+func TestParseSupportsAssigneeWildcard(t *testing.T) {
+	expr, err := Parse(`assignee:"Acme*" and owner:*Corp`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := CanonicalString(expr), `assignee:Acme* and assignee:*Corp`; got != want {
+		t.Fatalf("CanonicalString = %q, want %q", got, want)
+	}
+}
+
 func TestParseRejectsLegacySyntax(t *testing.T) {
 	_, err := Parse("state stored")
 	if err == nil {

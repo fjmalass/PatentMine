@@ -579,6 +579,22 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 		t.Fatalf("inventor prefix wildcard rows = %v, want 3", rows)
 	}
 
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `assignee:"Acme*"`})
+	if err != nil {
+		t.Fatalf("ListPatents assignee prefix wildcard: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("assignee prefix wildcard rows = %v, want 3", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `assignee:*Corp`})
+	if err != nil {
+		t.Fatalf("ListPatents assignee suffix wildcard: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("assignee suffix wildcard rows = %v, want 3", rows)
+	}
+
 	if _, err := repo.ListPatents(ctx, store.PatentQuery{Filter: "not state:under_review"}); err == nil {
 		t.Fatal("expected state filter without project to fail")
 	}

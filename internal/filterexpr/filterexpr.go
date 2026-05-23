@@ -16,6 +16,7 @@ const (
 	FieldClass    Field = "class"
 	FieldSearch   Field = "search"
 	FieldInventor Field = "inventor"
+	FieldAssignee Field = "assignee"
 )
 
 const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:stored"
@@ -32,6 +33,7 @@ var fieldSpecs = []fieldSpec{
 	{name: FieldState, aliases: []string{"status", "review_state"}, parse: parseStateTerm},
 	{name: FieldClass, aliases: []string{"classification", "cpc", "ipc"}, parse: parseClassTerm},
 	{name: FieldInventor, aliases: []string{"inv"}, parse: parseInventorTerm},
+	{name: FieldAssignee, aliases: []string{"owner"}, parse: parseAssigneeTerm},
 }
 
 var fieldByName = func() map[string]fieldSpec {
@@ -56,6 +58,7 @@ type TermExpr struct {
 	Value    string
 	Class    ClassificationPattern
 	Inventor ValuePattern
+	Assignee ValuePattern
 	State    domain.ReviewState
 }
 
@@ -375,6 +378,14 @@ func parseInventorTerm(value string) (TermExpr, error) {
 		return TermExpr{}, fmt.Errorf("inventor filter requires a value")
 	}
 	return TermExpr{Field: FieldInventor, Value: value, Inventor: ValuePattern{Raw: value, Wildcard: strings.Contains(value, "*")}}, nil
+}
+
+func parseAssigneeTerm(value string) (TermExpr, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return TermExpr{}, fmt.Errorf("assignee filter requires a value")
+	}
+	return TermExpr{Field: FieldAssignee, Value: value, Assignee: ValuePattern{Raw: value, Wildcard: strings.Contains(value, "*")}}, nil
 }
 
 func unsupportedClassPatternError() error {
