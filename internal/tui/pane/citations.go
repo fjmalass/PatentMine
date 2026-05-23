@@ -40,33 +40,33 @@ type Citations struct {
 	kind     domain.RelationKind
 	handlers map[command.ID]cmdHandler
 
-	activeProject *domain.Project
-	columns       []domain.PatentTableColumn
+	activeProject  *domain.Project
+	columns        []domain.PatentTableColumn
 	columnsProject domain.ProjectID
 
-	patents       []domain.PatentRow
-	page          render.Paginator
-	loadedBase    int
-	loading       bool
-	loadErr       string
-	loadID        uint64
-	columnsLoadID uint64
-	visualMode    bool
-	visualAnchor  int
+	patents           []domain.PatentRow
+	page              render.Paginator
+	loadedBase        int
+	loading           bool
+	loadErr           string
+	loadID            uint64
+	columnsLoadID     uint64
+	visualMode        bool
+	visualAnchor      int
 	lastActive        domain.PatentNumber
 	savedVisual       []domain.PatentNumber
 	savedVisualAnchor int
 	savedVisualCursor int
 	gvHighlight       map[domain.PatentNumber]bool
-	activeSort    domain.SortColumn
-	sortAscending bool
-	filter        PatentFilter
-	find          findBar
-	focusedColIdx int
-	lastWidth     int
-	logger        *slog.Logger
-	classDescs    map[string]string
-	classDescsID  uint64
+	activeSort        domain.SortColumn
+	sortAscending     bool
+	filter            PatentFilter
+	find              findBar
+	focusedColIdx     int
+	lastWidth         int
+	logger            *slog.Logger
+	classDescs        map[string]string
+	classDescsID      uint64
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -82,29 +82,29 @@ func (c *Citations) log() *slog.Logger {
 // NewCitations builds a family-edge pane for one patent and relation kind.
 func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumber, kind domain.RelationKind) *Citations {
 	c := &Citations{
-		client:        client,
-		theme:         theme,
-		root:          root,
-		kind:          kind,
-		columns:       domain.PatentTableColumns(""),
+		client:         client,
+		theme:          theme,
+		root:           root,
+		kind:           kind,
+		columns:        domain.PatentTableColumns(""),
 		columnsProject: "",
-		page:          render.NewPaginator(defaultPageSize),
-		loading:       true,
-		activeSort:    domain.SortByNumber,
-		sortAscending: true,
-		focusedColIdx: -1,
+		page:           render.NewPaginator(defaultPageSize),
+		loading:        true,
+		activeSort:     domain.SortByNumber,
+		sortAscending:  true,
+		focusedColIdx:  -1,
 	}
 	c.handlers = map[command.ID]cmdHandler{
-		command.NavDown:         func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
-		command.NavUp:           func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
-		command.NavPageDown:     func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
-		command.NavPageUp:       func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
-		command.NavTop:          func(Invocation) tea.Cmd { return c.move(c.page.Top) },
-		command.NavBottom:       func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
-		command.ReselectLast:    func(Invocation) tea.Cmd { return c.reselectLast() },
-		command.Refresh:         func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
-		command.SelectVisual:    func(Invocation) tea.Cmd { return c.toggleVisual() },
-		command.SelectAll:       func(Invocation) tea.Cmd { return c.selectAllVisual() },
+		command.NavDown:      func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
+		command.NavUp:        func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
+		command.NavPageDown:  func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
+		command.NavPageUp:    func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
+		command.NavTop:       func(Invocation) tea.Cmd { return c.move(c.page.Top) },
+		command.NavBottom:    func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
+		command.ReselectLast: func(Invocation) tea.Cmd { return c.reselectLast() },
+		command.Refresh:      func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
+		command.SelectVisual: func(Invocation) tea.Cmd { return c.toggleVisual() },
+		command.SelectAll:    func(Invocation) tea.Cmd { return c.selectAllVisual() },
 		command.SelectClear: func(Invocation) tea.Cmd {
 			if c.visualMode {
 				c.saveVisual()
@@ -117,11 +117,11 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		command.CrawlCitedBy:   func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
 		command.CrawlAll:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
 		command.LookupPatent:   func(Invocation) tea.Cmd { return c.crawlSelected("") },
-		command.ColNext:         func(Invocation) tea.Cmd { return c.focusNext() },
-		command.ColPrev:         func(Invocation) tea.Cmd { return c.focusPrev() },
-		command.SortApply:       func(Invocation) tea.Cmd { return c.applySort() },
-		command.Filter:          c.applyFilter,
-		command.FindOpen:        func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
+		command.ColNext:        func(Invocation) tea.Cmd { return c.focusNext() },
+		command.ColPrev:        func(Invocation) tea.Cmd { return c.focusPrev() },
+		command.SortApply:      func(Invocation) tea.Cmd { return c.applySort() },
+		command.Filter:         c.applyFilter,
+		command.FindOpen:       func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
 	}
 	return c
 }
@@ -163,17 +163,15 @@ func (c *Citations) load() tea.Cmd {
 		}
 		err := client.Call(ctx, proto.MethodRelations,
 			proto.RelationsParams{
-				Number:         root,
-				Kind:           kind,
-				Project:        project,
-				ReviewState:    c.filter.ReviewState,
-				Search:         c.filter.Search,
-				Classification: c.filter.Classification,
-				Inventor:       c.filter.Inventor,
-				Limit:          limit,
-				Offset:         offset,
-				SortColumn:     c.activeSort,
-				SortAscending:  c.sortAscending,
+				Number:        root,
+				Kind:          kind,
+				Project:       project,
+				Filter:        c.filter.Expression,
+				Search:        c.filter.Search,
+				Limit:         limit,
+				Offset:        offset,
+				SortColumn:    c.activeSort,
+				SortAscending: c.sortAscending,
 			}, &res)
 		return citationsLoadedMsg{
 			requestID: requestID,
@@ -186,7 +184,7 @@ func (c *Citations) load() tea.Cmd {
 }
 
 func (c *Citations) applyFilter(inv Invocation) tea.Cmd {
-	msg, err := c.filter.parse(inv.Args)
+	msg, err := c.filter.parse(inv.Args, c.activeProject != nil)
 	if err != nil {
 		return func() tea.Msg { return StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true} }
 	}
@@ -225,9 +223,11 @@ func (c *Citations) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 }
 
 // ApplyClassificationFilter implements ClassificationFilterTarget. It sets the
-// pane's classification filter to the given codes and reloads.
+// pane's classification filter terms and reloads.
 func (c *Citations) ApplyClassificationFilter(codes []string) tea.Cmd {
-	c.filter.Classification = strings.Join(codes, " ")
+	if err := c.filter.replaceClassifications(codes); err != nil {
+		return func() tea.Msg { return StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true} }
+	}
 	c.filter.Search = ""
 	c.loading = true
 	c.page.Top()
@@ -235,16 +235,17 @@ func (c *Citations) ApplyClassificationFilter(codes []string) tea.Cmd {
 }
 
 // applyFindInput routes the find-bar input into filter fields. Input prefixed
-// with "class:" populates Classification (clearing Search); anything else
-// populates Search (clearing Classification).
+// with "class:" replaces the class terms in the boolean filter; anything else
+// becomes plain search text.
 func (c *Citations) applyFindInput(input string) {
 	if cls, ok := parseClassFindInput(input); ok {
-		c.filter.Classification = cls
-		c.filter.Search = ""
-		return
+		if cls == "" || c.filter.replaceClassifications([]string{cls}) == nil {
+			c.filter.Search = ""
+			return
+		}
 	}
 	c.filter.Search = input
-	c.filter.Classification = ""
+	_ = c.filter.replaceClassifications(nil)
 }
 
 // focusNext moves the visual focus to the next column.

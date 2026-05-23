@@ -6,6 +6,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/filterexpr"
 	"patentmine/internal/tui/render"
 )
 
@@ -110,9 +111,9 @@ func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 func TestCatalogStatusLineShowsFilters(t *testing.T) {
 	c := loadedCatalog(t)
 	c.filter.Search = "widget"
-	c.filter.ReviewState = domain.ReviewStateUnderReview
+	c.filter.setExpression(filterexpr.TermExpr{Field: filterexpr.FieldState, Value: string(domain.ReviewStateUnderReview), State: domain.ReviewStateUnderReview})
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "filters: state:under_review", "search:widget"} {
+	for _, want := range []string{"[1/3]", "filters:", "state:under_review", "search:widget"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog status line missing %q\n%s", want, out)
 		}

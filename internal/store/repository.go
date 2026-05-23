@@ -22,6 +22,8 @@ const DefaultPageSize = 100
 type PatentQuery struct {
 	// Project, when set, restricts results to that project's members.
 	Project domain.ProjectID
+	// Filter is the boolean patent filter expression used by the TUI command path.
+	Filter string
 	// ReviewState, when set together with Project, filters by review state.
 	ReviewState domain.ReviewState
 	// Relation, when set together with RelationKind, restricts results to

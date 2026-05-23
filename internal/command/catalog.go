@@ -189,7 +189,7 @@ func Default() (*Registry, error) {
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 
 		// --- filtering (view) ---
-		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <type> <value>", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
+		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <expr>", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: IDSEditField, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Scope{ScopeIDS}},

@@ -123,6 +123,7 @@ func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
 			Number:         number,
 			Kind:           kind,
 			Project:        domain.ProjectID(q.Get("project")),
+			Filter:         q.Get("filter"),
 			ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
 			Search:         q.Get("search"),
 			Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),
@@ -180,6 +181,7 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	sortAscending, _ := strconv.ParseBool(q.Get("sort_ascending"))
 	params := proto.PatentListParams{
 		Project:        domain.ProjectID(q.Get("project")),
+		Filter:         q.Get("filter"),
 		ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
 		Search:         q.Get("search"),
 		Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),

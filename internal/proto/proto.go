@@ -17,46 +17,46 @@ const Version = "2.0"
 type Method string
 
 const (
-	MethodPing                     Method = "ping"
-	MethodPatentGet                Method = "patent.get"
-	MethodPatentInventorStats      Method = "patent.inventor_stats"
-	MethodPatentList               Method = "patent.list"
-	MethodPatentTableColumns       Method = "patent.table_columns"
-	MethodPatentDelete             Method = "patent.delete"
-	MethodPatentDeleteBulk         Method = "patent.delete_bulk"
-	MethodProjectList              Method = "project.list"
-	MethodProjectCreate            Method = "project.create"
-	MethodMembershipAdd            Method = "membership.add"
-	MethodReviewState              Method = "review_state.set"
-	MethodTagPatent                Method = "tag.assign"
-	MethodUntagPatent              Method = "tag.remove"
-	MethodCrawlFamily              Method = "crawl.family"
-	MethodCrawlConfig              Method = "crawl.config"
-	MethodCrawlCancel              Method = "crawl.cancel"
-	MethodImportFile               Method = "import.file"
-	MethodRelations                Method = "patent.relations"
-	MethodFamilyGraph              Method = "patent.family_graph"
-	MethodIDSExport                Method = "ids.export"
-	MethodIDSEntryGet              Method = "ids.entry.get"
-	MethodIDSEntrySave             Method = "ids.entry.save"
-	MethodIDSEntryDelete           Method = "ids.entry.delete"
-	MethodPatentNoteGet            Method = "patent.note.get"
-	MethodPatentNoteSave           Method = "patent.note.save"
-	MethodPatentNoteDelete         Method = "patent.note.delete"
-	MethodMetricsGet               Method = "metrics.get"
-	MethodTagCreate                Method = "tag.create"
-	MethodTagList                  Method = "tag.list"
-	MethodTagDelete                Method = "tag.delete"
-	MethodTagPatentStrict          Method = "patent.tag.add"
-	MethodUntagPatentStrict        Method = "patent.tag.delete"
-	MethodPatentTagList            Method = "patent.tag.list"
-	MethodClassificationGet        Method = "classification.get"
-	MethodClassificationList       Method = "classification.list"
-	MethodClassificationSave       Method = "classification.save"
-	MethodClassificationDelete     Method = "classification.delete"
-	MethodClassificationLookup     Method = "classification.lookup"
+	MethodPing                      Method = "ping"
+	MethodPatentGet                 Method = "patent.get"
+	MethodPatentInventorStats       Method = "patent.inventor_stats"
+	MethodPatentList                Method = "patent.list"
+	MethodPatentTableColumns        Method = "patent.table_columns"
+	MethodPatentDelete              Method = "patent.delete"
+	MethodPatentDeleteBulk          Method = "patent.delete_bulk"
+	MethodProjectList               Method = "project.list"
+	MethodProjectCreate             Method = "project.create"
+	MethodMembershipAdd             Method = "membership.add"
+	MethodReviewState               Method = "review_state.set"
+	MethodTagPatent                 Method = "tag.assign"
+	MethodUntagPatent               Method = "tag.remove"
+	MethodCrawlFamily               Method = "crawl.family"
+	MethodCrawlConfig               Method = "crawl.config"
+	MethodCrawlCancel               Method = "crawl.cancel"
+	MethodImportFile                Method = "import.file"
+	MethodRelations                 Method = "patent.relations"
+	MethodFamilyGraph               Method = "patent.family_graph"
+	MethodIDSExport                 Method = "ids.export"
+	MethodIDSEntryGet               Method = "ids.entry.get"
+	MethodIDSEntrySave              Method = "ids.entry.save"
+	MethodIDSEntryDelete            Method = "ids.entry.delete"
+	MethodPatentNoteGet             Method = "patent.note.get"
+	MethodPatentNoteSave            Method = "patent.note.save"
+	MethodPatentNoteDelete          Method = "patent.note.delete"
+	MethodMetricsGet                Method = "metrics.get"
+	MethodTagCreate                 Method = "tag.create"
+	MethodTagList                   Method = "tag.list"
+	MethodTagDelete                 Method = "tag.delete"
+	MethodTagPatentStrict           Method = "patent.tag.add"
+	MethodUntagPatentStrict         Method = "patent.tag.delete"
+	MethodPatentTagList             Method = "patent.tag.list"
+	MethodClassificationGet         Method = "classification.get"
+	MethodClassificationList        Method = "classification.list"
+	MethodClassificationSave        Method = "classification.save"
+	MethodClassificationDelete      Method = "classification.delete"
+	MethodClassificationLookup      Method = "classification.lookup"
 	MethodClassificationListByCodes Method = "classification.list_by_codes"
-	MethodPatentClassificationList Method = "patent.classification.list"
+	MethodPatentClassificationList  Method = "patent.classification.list"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -153,6 +153,7 @@ type PatentResult struct {
 // PatentListParams selects and paginates a patent listing.
 type PatentListParams struct {
 	Project        domain.ProjectID   `json:"project,omitempty"`
+	Filter         string             `json:"filter,omitempty"`
 	ReviewState    domain.ReviewState `json:"review_state,omitempty"`
 	Search         string             `json:"search,omitempty"`
 	Classification string             `json:"classification,omitempty"`
@@ -323,6 +324,7 @@ type RelationsParams struct {
 	Number         domain.PatentNumber `json:"number"`
 	Kind           domain.RelationKind `json:"kind"`
 	Project        domain.ProjectID    `json:"project,omitempty"`
+	Filter         string              `json:"filter,omitempty"`
 	ReviewState    domain.ReviewState  `json:"review_state,omitempty"`
 	Search         string              `json:"search,omitempty"`
 	Classification string              `json:"classification,omitempty"`

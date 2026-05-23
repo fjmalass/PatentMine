@@ -489,6 +489,77 @@ func TestTagStore(t *testing.T) {
 	}
 }
 
+func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p1 := samplePatent("US0000001A1")
+	p1.Classifications = []string{"S04A", "A61K"}
+	p2 := samplePatent("US0000002A1")
+	p2.Classifications = []string{"S04B"}
+	p3 := samplePatent("US0000003A1")
+	p3.Classifications = []string{"H01L"}
+	for _, p := range []domain.Patent{p1, p2, p3} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent(%s): %v", p.Number, err)
+		}
+	}
+	for patent, state := range map[domain.PatentNumber]domain.ReviewState{
+		p1.Number: domain.ReviewStateStored,
+		p2.Number: domain.ReviewStateUnderReview,
+		p3.Number: domain.ReviewStateStored,
+	} {
+		if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: patent, ReviewState: state, AddedAt: time.Now().UTC()}); err != nil {
+			t.Fatalf("AddMembership(%s): %v", patent, err)
+		}
+	}
+	priorArt, err := repo.CreateTag(ctx, project.ID, "prior_art")
+	if err != nil {
+		t.Fatalf("CreateTag prior_art: %v", err)
+	}
+	blocker, err := repo.CreateTag(ctx, project.ID, "blocker")
+	if err != nil {
+		t.Fatalf("CreateTag blocker: %v", err)
+	}
+	if err := repo.TagPatents(ctx, priorArt.ID, []domain.PatentNumber{p1.Number, p2.Number}, time.Now().UTC()); err != nil {
+		t.Fatalf("TagPatents prior_art: %v", err)
+	}
+	if err := repo.TagPatents(ctx, blocker.ID, []domain.PatentNumber{p1.Number}, time.Now().UTC()); err != nil {
+		t.Fatalf("TagPatents blocker: %v", err)
+	}
+
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "tag:prior_art and tag:blocker"})
+	if err != nil {
+		t.Fatalf("ListPatents tag and tag: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p1.Number {
+		t.Fatalf("tag and tag rows = %v, want only p1", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "(tag:prior_art or tag:blocker) and not state:under_review"})
+	if err != nil {
+		t.Fatalf("ListPatents boolean filter: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p1.Number {
+		t.Fatalf("boolean filter rows = %v, want only p1", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: "class:S04*"})
+	if err != nil {
+		t.Fatalf("ListPatents class wildcard: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("class wildcard rows = %v, want 2", rows)
+	}
+
+	if _, err := repo.ListPatents(ctx, store.PatentQuery{Filter: "not state:under_review"}); err == nil {
+		t.Fatal("expected state filter without project to fail")
+	}
+}
+
 func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()

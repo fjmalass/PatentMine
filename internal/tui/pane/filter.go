@@ -2,39 +2,37 @@ package pane
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
-	"patentmine/internal/domain"
+	"patentmine/internal/filterexpr"
 	"patentmine/internal/tui/render"
 )
 
 // PatentFilter holds all filters applied to a patent list or relation view.
 type PatentFilter struct {
-	Search         string
-	ReviewState    domain.ReviewState
-	Classification string
-	Inventor       string
+	Search     string
+	Expression string
+	expr       filterexpr.Expr
 }
+
+const patentFilterClearName = "clear"
+
+var patentFilterClearAliases = []string{"clear", "none", "default", "reset"}
 
 // IsActive reports whether any filter is set.
 func (f PatentFilter) IsActive() bool {
-	return f.Search != "" || f.ReviewState != domain.ReviewStateNone || f.Classification != "" || f.Inventor != ""
+	return f.Search != "" || f.expr != nil || f.Expression != ""
 }
 
 // Labels returns human-readable filter labels for the current state.
 func (f PatentFilter) Labels() []string {
 	var labels []string
-	if f.ReviewState != domain.ReviewStateNone {
-		labels = append(labels, "state:"+string(f.ReviewState))
-	}
 	if f.Search != "" {
 		labels = append(labels, "search:"+f.Search)
 	}
-	if f.Classification != "" {
-		labels = append(labels, "class:"+f.Classification)
-	}
-	if f.Inventor != "" {
-		labels = append(labels, "inventor:"+f.Inventor)
+	if f.Expression != "" {
+		labels = append(labels, f.Expression)
 	}
 	return labels
 }
@@ -49,51 +47,50 @@ func (f PatentFilter) View(w int, theme render.Theme) string {
 	return theme.Dim.Render(render.Pad(s, w))
 }
 
-// parseFilter updates the filter from a command argument slice.
-func (f *PatentFilter) parse(args []string) (msg string, err error) {
-	if len(args) == 0 || args[0] == "clear" || args[0] == "none" || args[0] == "default" || args[0] == "reset" {
+func (f *PatentFilter) parse(args []string, projectActive bool) (string, error) {
+	if len(args) == 0 || isPatentFilterClearToken(args[0]) {
 		*f = PatentFilter{}
 		return "filters cleared", nil
 	}
-
-	switch args[0] {
-	case "state", "status", "review_state", "s":
-		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
-			f.ReviewState = domain.ReviewStateNone
-			return "review state filter cleared", nil
-		}
-		state, err := domain.ParseReviewState(args[1])
-		if err != nil {
-			return "", err
-		}
-		f.ReviewState = state
-		return fmt.Sprintf("filtering by review state: %s", state), nil
-
-	case "search", "find":
-		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
-			f.Search = ""
-			return "search filter cleared", nil
-		}
-		f.Search = strings.Join(args[1:], " ")
-		return fmt.Sprintf("filtering by search: %s", f.Search), nil
-
-	case "inventor", "inv":
-		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
-			f.Inventor = ""
-			return "inventor filter cleared", nil
-		}
-		f.Inventor = strings.Join(args[1:], " ")
-		return fmt.Sprintf("filtering by inventor: %s", f.Inventor), nil
-
-	case "class", "classification", "cpc", "ipc", "c":
-		if len(args) < 2 || args[1] == "clear" || args[1] == "none" {
-			f.Classification = ""
-			return "classification filter cleared", nil
-		}
-		f.Classification = strings.Join(args[1:], " ")
-		return fmt.Sprintf("filtering by classification: %s", f.Classification), nil
-
-	default:
-		return "", fmt.Errorf("unknown filter type %q (try: state, search, class, clear)", args[0])
+	expr, err := filterexpr.Parse(strings.Join(args, " "))
+	if err != nil {
+		return "", err
 	}
+	if err := filterexpr.ValidateProjectScope(expr, projectActive); err != nil {
+		return "", err
+	}
+	f.setExpression(expr)
+	return fmt.Sprintf("filtering: %s", f.Expression), nil
+}
+
+func (f *PatentFilter) setExpression(expr filterexpr.Expr) {
+	if expr == nil {
+		f.Expression = ""
+		f.expr = nil
+		return
+	}
+	f.Expression = filterexpr.CanonicalString(expr)
+	f.expr = expr
+}
+
+func (f *PatentFilter) replaceClassifications(codes []string) error {
+	base := filterexpr.RemoveField(f.expr, filterexpr.FieldClass)
+	var classExpr filterexpr.Expr
+	for _, code := range codes {
+		term, err := filterexpr.ParseClassTerm(code)
+		if err != nil {
+			return err
+		}
+		classExpr = filterexpr.JoinAnd(classExpr, term)
+	}
+	f.setExpression(filterexpr.JoinAnd(base, classExpr))
+	return nil
+}
+
+func isPatentFilterClearToken(s string) bool {
+	return slices.Contains(patentFilterClearAliases, s)
+}
+
+func patentFilterUsage() string {
+	return strings.Join([]string{patentFilterClearName, "tag:prior_art and not state:under_review", "(tag:prior_art or tag:blocker) and state:under_review", "class:S04*"}, " | ")
 }

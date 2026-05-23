@@ -1,0 +1,367 @@
+package filterexpr
+
+import (
+	"fmt"
+	"strings"
+
+	"patentmine/internal/domain"
+)
+
+type Field string
+
+const (
+	FieldTag   Field = "tag"
+	FieldState Field = "state"
+	FieldClass Field = "class"
+)
+
+const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:stored"
+
+type fieldSpec struct {
+	name    Field
+	aliases []string
+	parse   func(string) (TermExpr, error)
+}
+
+var fieldSpecs = []fieldSpec{
+	{name: FieldTag, parse: parseTagTerm},
+	{name: FieldState, aliases: []string{"status", "review_state"}, parse: parseStateTerm},
+	{name: FieldClass, aliases: []string{"classification", "cpc", "ipc"}, parse: parseClassTerm},
+}
+
+var fieldByName = func() map[string]fieldSpec {
+	lookup := make(map[string]fieldSpec, len(fieldSpecs))
+	for _, spec := range fieldSpecs {
+		lookup[string(spec.name)] = spec
+		for _, alias := range spec.aliases {
+			lookup[alias] = spec
+		}
+	}
+	return lookup
+}()
+
+type Expr interface{ exprNode() }
+
+type AndExpr struct{ Left, Right Expr }
+type OrExpr struct{ Left, Right Expr }
+type NotExpr struct{ Child Expr }
+
+type TermExpr struct {
+	Field Field
+	Value string
+	Class ClassificationPattern
+	State domain.ReviewState
+}
+
+type ClassificationPattern struct {
+	Raw      string
+	Wildcard bool
+}
+
+func (AndExpr) exprNode()  {}
+func (OrExpr) exprNode()   {}
+func (NotExpr) exprNode()  {}
+func (TermExpr) exprNode() {}
+
+type tokenKind int
+
+const (
+	tokenEOF tokenKind = iota
+	tokenWord
+	tokenLParen
+	tokenRParen
+	tokenAnd
+	tokenOr
+	tokenNot
+)
+
+type token struct {
+	kind tokenKind
+	text string
+}
+
+func Parse(input string) (Expr, error) {
+	tokens := tokenize(input)
+	p := parser{tokens: tokens}
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if tok := p.peek(); tok.kind != tokenEOF {
+		return nil, fmt.Errorf("unexpected token %q", tok.text)
+	}
+	return expr, nil
+}
+
+func CanonicalString(expr Expr) string {
+	return renderExpr(expr, 0)
+}
+
+func ValidateProjectScope(expr Expr, projectActive bool) error {
+	if projectActive {
+		return nil
+	}
+	if UsesField(expr, FieldState) {
+		return fmt.Errorf("state filters require an active project")
+	}
+	if UsesField(expr, FieldTag) {
+		return fmt.Errorf("tag filters require an active project")
+	}
+	return nil
+}
+
+func UsesField(expr Expr, field Field) bool {
+	switch e := expr.(type) {
+	case AndExpr:
+		return UsesField(e.Left, field) || UsesField(e.Right, field)
+	case OrExpr:
+		return UsesField(e.Left, field) || UsesField(e.Right, field)
+	case NotExpr:
+		return UsesField(e.Child, field)
+	case TermExpr:
+		return e.Field == field
+	default:
+		return false
+	}
+}
+
+func RemoveField(expr Expr, field Field) Expr {
+	switch e := expr.(type) {
+	case nil:
+		return nil
+	case AndExpr:
+		return join(false, RemoveField(e.Left, field), RemoveField(e.Right, field), true)
+	case OrExpr:
+		return join(false, RemoveField(e.Left, field), RemoveField(e.Right, field), false)
+	case NotExpr:
+		child := RemoveField(e.Child, field)
+		if child == nil {
+			return nil
+		}
+		return NotExpr{Child: child}
+	case TermExpr:
+		if e.Field == field {
+			return nil
+		}
+		return e
+	default:
+		return nil
+	}
+}
+
+func JoinAnd(left, right Expr) Expr {
+	return join(false, left, right, true)
+}
+
+func ParseClassTerm(value string) (TermExpr, error) { return parseClassTerm(value) }
+
+func tokenize(input string) []token {
+	var tokens []token
+	for i := 0; i < len(input); {
+		switch input[i] {
+		case ' ', '\t', '\n', '\r':
+			i++
+		case '(':
+			tokens = append(tokens, token{kind: tokenLParen, text: "("})
+			i++
+		case ')':
+			tokens = append(tokens, token{kind: tokenRParen, text: ")"})
+			i++
+		default:
+			start := i
+			for i < len(input) && !isSpace(input[i]) && input[i] != '(' && input[i] != ')' {
+				i++
+			}
+			text := input[start:i]
+			switch strings.ToLower(text) {
+			case "and":
+				tokens = append(tokens, token{kind: tokenAnd, text: text})
+			case "or":
+				tokens = append(tokens, token{kind: tokenOr, text: text})
+			case "not":
+				tokens = append(tokens, token{kind: tokenNot, text: text})
+			default:
+				tokens = append(tokens, token{kind: tokenWord, text: text})
+			}
+		}
+	}
+	tokens = append(tokens, token{kind: tokenEOF})
+	return tokens
+}
+
+func isSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+type parser struct {
+	tokens []token
+	pos    int
+}
+
+func (p *parser) parseExpr() (Expr, error) { return p.parseOr() }
+
+func (p *parser) parseOr() (Expr, error) {
+	left, err := p.parseAnd()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().kind == tokenOr {
+		p.next()
+		right, err := p.parseAnd()
+		if err != nil {
+			return nil, err
+		}
+		left = OrExpr{Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseAnd() (Expr, error) {
+	left, err := p.parseUnary()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().kind == tokenAnd {
+		p.next()
+		right, err := p.parseUnary()
+		if err != nil {
+			return nil, err
+		}
+		left = AndExpr{Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseUnary() (Expr, error) {
+	if p.peek().kind == tokenNot {
+		p.next()
+		child, err := p.parseUnary()
+		if err != nil {
+			return nil, err
+		}
+		return NotExpr{Child: child}, nil
+	}
+	return p.parsePrimary()
+}
+
+func (p *parser) parsePrimary() (Expr, error) {
+	switch tok := p.peek(); tok.kind {
+	case tokenLParen:
+		p.next()
+		expr, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		if p.peek().kind != tokenRParen {
+			return nil, fmt.Errorf("missing closing parenthesis")
+		}
+		p.next()
+		return expr, nil
+	case tokenWord:
+		p.next()
+		return parseTerm(tok.text)
+	case tokenEOF:
+		return nil, fmt.Errorf("missing filter expression")
+	default:
+		return nil, fmt.Errorf("unexpected token %q", tok.text)
+	}
+}
+
+func (p *parser) peek() token { return p.tokens[p.pos] }
+
+func (p *parser) next() token {
+	tok := p.tokens[p.pos]
+	p.pos++
+	return tok
+}
+
+func parseTerm(raw string) (Expr, error) {
+	fieldName, value, ok := strings.Cut(raw, ":")
+	if !ok {
+		return nil, fmt.Errorf(LegacySyntaxHint)
+	}
+	if value == "" {
+		return nil, fmt.Errorf("missing value after %q", fieldName+":")
+	}
+	spec, ok := fieldByName[strings.ToLower(fieldName)]
+	if !ok {
+		return nil, fmt.Errorf("unknown filter field %q", fieldName)
+	}
+	term, err := spec.parse(value)
+	if err != nil {
+		return nil, err
+	}
+	term.Field = spec.name
+	return term, nil
+}
+
+func parseTagTerm(value string) (TermExpr, error) {
+	if err := domain.ValidateTagName(value); err != nil {
+		return TermExpr{}, err
+	}
+	return TermExpr{Field: FieldTag, Value: value}, nil
+}
+
+func parseStateTerm(value string) (TermExpr, error) {
+	state, err := domain.ParseReviewState(strings.ToLower(value))
+	if err != nil {
+		return TermExpr{}, err
+	}
+	if state == domain.ReviewStateNone {
+		return TermExpr{}, fmt.Errorf("state filter requires a non-empty review state")
+	}
+	return TermExpr{Field: FieldState, Value: string(state), State: state}, nil
+}
+
+func parseClassTerm(value string) (TermExpr, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	if normalized == "" {
+		return TermExpr{}, fmt.Errorf("classification filter requires a value")
+	}
+	if strings.HasPrefix(normalized, "/") && strings.HasSuffix(normalized, "/") {
+		return TermExpr{}, unsupportedClassPatternError()
+	}
+	if strings.ContainsAny(normalized, "[]?\\+{}|^$") {
+		return TermExpr{}, unsupportedClassPatternError()
+	}
+	return TermExpr{Field: FieldClass, Value: normalized, Class: ClassificationPattern{Raw: normalized, Wildcard: strings.Contains(normalized, "*")}}, nil
+}
+
+func unsupportedClassPatternError() error {
+	return fmt.Errorf("unsupported classification filter syntax: only literal values and '*' wildcard are supported right now (examples: class:S04, class:S04*)")
+}
+
+func renderExpr(expr Expr, parentPrec int) string {
+	switch e := expr.(type) {
+	case AndExpr:
+		return renderWithParen(parentPrec, 2, renderExpr(e.Left, 2)+" and "+renderExpr(e.Right, 2))
+	case OrExpr:
+		return renderWithParen(parentPrec, 1, renderExpr(e.Left, 1)+" or "+renderExpr(e.Right, 1))
+	case NotExpr:
+		return renderWithParen(parentPrec, 3, "not "+renderExpr(e.Child, 3))
+	case TermExpr:
+		return string(e.Field) + ":" + e.Value
+	default:
+		return ""
+	}
+}
+
+func renderWithParen(parentPrec, prec int, text string) string {
+	if prec < parentPrec {
+		return "(" + text + ")"
+	}
+	return text
+}
+
+func join(_ bool, left, right Expr, and bool) Expr {
+	if left == nil {
+		return right
+	}
+	if right == nil {
+		return left
+	}
+	if and {
+		return AndExpr{Left: left, Right: right}
+	}
+	return OrExpr{Left: left, Right: right}
+}

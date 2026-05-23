@@ -69,19 +69,19 @@ type Catalog struct {
 	theme    render.Theme
 	handlers map[command.ID]cmdHandler
 
-	activeProject *domain.Project
-	columns       []domain.PatentTableColumn
+	activeProject  *domain.Project
+	columns        []domain.PatentTableColumn
 	columnsProject domain.ProjectID
 
-	patents       []domain.PatentRow
-	page          render.Paginator
-	loadedBase    int
-	loading       bool
-	loadErr       string
-	loadID        uint64
-	columnsLoadID uint64
-	visualMode    bool
-	visualAnchor  int
+	patents           []domain.PatentRow
+	page              render.Paginator
+	loadedBase        int
+	loading           bool
+	loadErr           string
+	loadID            uint64
+	columnsLoadID     uint64
+	visualMode        bool
+	visualAnchor      int
 	lastActive        domain.PatentNumber
 	savedVisual       []domain.PatentNumber
 	savedVisualAnchor int
@@ -89,19 +89,19 @@ type Catalog struct {
 	highlights        HighlightSet
 	activeHighlight   HighlightState
 	relationCache     map[domain.PatentNumber]relationCacheEntry
-	activeSort    domain.SortColumn
-	sortAscending bool
-	filter        PatentFilter
-	find          findBar
-	focusedColIdx  int
-	lastWidth      int
-	logger         *slog.Logger
-	metrics        *observability.Metrics
-	cachedCols     []tableCol
-	cachedColWidth int
-	cachedColProj  domain.ProjectID
-	classDescs     map[string]string
-	classDescsID   uint64
+	activeSort        domain.SortColumn
+	sortAscending     bool
+	filter            PatentFilter
+	find              findBar
+	focusedColIdx     int
+	lastWidth         int
+	logger            *slog.Logger
+	metrics           *observability.Metrics
+	cachedCols        []tableCol
+	cachedColWidth    int
+	cachedColProj     domain.ProjectID
+	classDescs        map[string]string
+	classDescsID      uint64
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -120,27 +120,27 @@ func (c *Catalog) log() *slog.Logger {
 // NewCatalog builds an empty catalog pane bound to a daemon client.
 func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 	c := &Catalog{
-		client:        client,
-		theme:         theme,
-		columns:       domain.PatentTableColumns(""),
+		client:         client,
+		theme:          theme,
+		columns:        domain.PatentTableColumns(""),
 		columnsProject: "",
-		page:          render.NewPaginator(defaultPageSize),
-		loading:       true,
-		activeSort:    domain.SortByReviewState,
-		sortAscending: true,
-		focusedColIdx: -1,
+		page:           render.NewPaginator(defaultPageSize),
+		loading:        true,
+		activeSort:     domain.SortByReviewState,
+		sortAscending:  true,
+		focusedColIdx:  -1,
 	}
 	c.handlers = map[command.ID]cmdHandler{
-		command.NavDown:         func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
-		command.NavUp:           func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
-		command.NavPageDown:     func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
-		command.NavPageUp:       func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
-		command.NavTop:          func(Invocation) tea.Cmd { return c.move(c.page.Top) },
-		command.NavBottom:       func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
-		command.ReselectLast:    func(Invocation) tea.Cmd { return c.reselectLast() },
-		command.Refresh:         func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
-		command.SelectVisual:    func(Invocation) tea.Cmd { return c.toggleVisual() },
-		command.SelectAll:       func(Invocation) tea.Cmd { return c.selectAllVisual() },
+		command.NavDown:      func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
+		command.NavUp:        func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
+		command.NavPageDown:  func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
+		command.NavPageUp:    func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
+		command.NavTop:       func(Invocation) tea.Cmd { return c.move(c.page.Top) },
+		command.NavBottom:    func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
+		command.ReselectLast: func(Invocation) tea.Cmd { return c.reselectLast() },
+		command.Refresh:      func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
+		command.SelectVisual: func(Invocation) tea.Cmd { return c.toggleVisual() },
+		command.SelectAll:    func(Invocation) tea.Cmd { return c.selectAllVisual() },
 		command.SelectClear: func(Invocation) tea.Cmd {
 			if c.visualMode {
 				c.saveVisual()
@@ -153,16 +153,16 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		},
 		command.HighlightFamily:    func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
 		command.HighlightCitations: func(Invocation) tea.Cmd { return c.toggleCitationsHighlight() },
-		command.CrawlFamily:    func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
-		command.CrawlCitations: func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
-		command.CrawlCitedBy:   func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
-		command.CrawlAll:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
-		command.LookupPatent:   func(Invocation) tea.Cmd { return c.crawlSelected("") },
-		command.ColNext:         func(Invocation) tea.Cmd { return c.focusNext() },
-		command.ColPrev:         func(Invocation) tea.Cmd { return c.focusPrev() },
-		command.SortApply:       func(Invocation) tea.Cmd { return c.applySort() },
-		command.Filter:          c.applyFilter,
-		command.FindOpen:        func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
+		command.CrawlFamily:        func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
+		command.CrawlCitations:     func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
+		command.CrawlCitedBy:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
+		command.CrawlAll:           func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
+		command.LookupPatent:       func(Invocation) tea.Cmd { return c.crawlSelected("") },
+		command.ColNext:            func(Invocation) tea.Cmd { return c.focusNext() },
+		command.ColPrev:            func(Invocation) tea.Cmd { return c.focusPrev() },
+		command.SortApply:          func(Invocation) tea.Cmd { return c.applySort() },
+		command.Filter:             c.applyFilter,
+		command.FindOpen:           func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
 	}
 	return c
 }
@@ -203,15 +203,13 @@ func (c *Catalog) load() tea.Cmd {
 		}
 		err := client.Call(ctx, proto.MethodPatentList,
 			proto.PatentListParams{
-				Project:        project,
-				ReviewState:    c.filter.ReviewState,
-				Search:         c.filter.Search,
-				Classification: c.filter.Classification,
-				Inventor:       c.filter.Inventor,
-				Limit:          limit,
-				Offset:         offset,
-				SortColumn:     c.activeSort,
-				SortAscending:  c.sortAscending,
+				Project:       project,
+				Filter:        c.filter.Expression,
+				Search:        c.filter.Search,
+				Limit:         limit,
+				Offset:        offset,
+				SortColumn:    c.activeSort,
+				SortAscending: c.sortAscending,
 			}, &res)
 		return catalogLoadedMsg{
 			requestID: requestID,
@@ -224,7 +222,7 @@ func (c *Catalog) load() tea.Cmd {
 }
 
 func (c *Catalog) applyFilter(inv Invocation) tea.Cmd {
-	msg, err := c.filter.parse(inv.Args)
+	msg, err := c.filter.parse(inv.Args, c.activeProject != nil)
 	if err != nil {
 		return func() tea.Msg { return StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true} }
 	}
@@ -263,16 +261,17 @@ func (c *Catalog) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 }
 
 // applyFindInput routes the find-bar input into filter fields. Input prefixed
-// with "class:" populates Classification (clearing Search); anything else
-// populates Search (clearing Classification).
+// with "class:" replaces the class terms in the boolean filter; anything else
+// becomes plain search text.
 func (c *Catalog) applyFindInput(input string) {
 	if cls, ok := parseClassFindInput(input); ok {
-		c.filter.Classification = cls
-		c.filter.Search = ""
-		return
+		if cls == "" || c.filter.replaceClassifications([]string{cls}) == nil {
+			c.filter.Search = ""
+			return
+		}
 	}
 	c.filter.Search = input
-	c.filter.Classification = ""
+	_ = c.filter.replaceClassifications(nil)
 }
 
 // focusNext moves the visual focus to the next column.
@@ -610,10 +609,11 @@ func (c *Catalog) loadClassDescs() tea.Cmd {
 }
 
 // ApplyClassificationFilter implements ClassificationFilterTarget. It sets the
-// pane's classification filter to the given codes (space-separated; the
-// existing list query parser already accepts that format) and reloads.
+// pane's classification filter terms and reloads.
 func (c *Catalog) ApplyClassificationFilter(codes []string) tea.Cmd {
-	c.filter.Classification = strings.Join(codes, " ")
+	if err := c.filter.replaceClassifications(codes); err != nil {
+		return func() tea.Msg { return StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true} }
+	}
 	c.filter.Search = ""
 	c.loading = true
 	c.page.Top()

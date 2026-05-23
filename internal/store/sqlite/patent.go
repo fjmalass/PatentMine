@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/filterexpr"
 	"patentmine/internal/store"
 )
 
@@ -166,7 +167,10 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 		defer func() { r.observeTagSortDuration(tagSortStart, &err, len(out), q) }()
 	}
 	cols, colArgs := patentRowColumns(q.Project)
-	where, whereArgs := patentFilter(q)
+	where, whereArgs, err := patentFilter(q)
+	if err != nil {
+		return nil, err
+	}
 	orderBy, orderArgs, err := patentSortExpr(q)
 	if err != nil {
 		return nil, err
@@ -262,19 +266,19 @@ func (r *Repo) attachTags(ctx context.Context, project domain.ProjectID, rows []
 // scanPatentRow reads one lightweight listing row.
 func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	var (
-		row                           domain.PatentRow
-		country, serial, kind, shown  string
-		inventorsJSON, pubDate        string
-		expirationDate                string
-		fetchState, reviewState       string
-		tagsJSON                      string
-		idsKindCode, idsCountryCode   string
-		idsRelevant, idsNotes         string
-		idsStatus, idsAddedAt         string
-		idsInFull                     int
-		citationsCount, citedByCount  int
-		parentsCount                  int
-		classificationsJSON           string
+		row                          domain.PatentRow
+		country, serial, kind, shown string
+		inventorsJSON, pubDate       string
+		expirationDate               string
+		fetchState, reviewState      string
+		tagsJSON                     string
+		idsKindCode, idsCountryCode  string
+		idsRelevant, idsNotes        string
+		idsStatus, idsAddedAt        string
+		idsInFull                    int
+		citationsCount, citedByCount int
+		parentsCount                 int
+		classificationsJSON          string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
@@ -372,7 +376,10 @@ func patentSortExpr(q store.PatentQuery) (string, []any, error) {
 // CountPatents returns the total rows matching q, ignoring its paging.
 func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (count int, err error) {
 	defer r.observeDuration("count_patents", time.Now(), &err)
-	where, args := patentFilter(q)
+	where, args, err := patentFilter(q)
+	if err != nil {
+		return 0, err
+	}
 	var n int
 	if err := r.reader.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM patent p`+where, args...).Scan(&n); err != nil {
@@ -382,17 +389,28 @@ func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (count int
 }
 
 // patentFilter builds the shared FROM-suffix (JOIN + WHERE) for list and count.
-func patentFilter(q store.PatentQuery) (string, []any) {
+func patentFilter(q store.PatentQuery) (string, []any, error) {
 	var sb strings.Builder
 	var args []any
 	var conds []string
+	var expr filterexpr.Expr
+	if q.Filter != "" {
+		var err error
+		expr, err = filterexpr.Parse(q.Filter)
+		if err != nil {
+			return "", nil, err
+		}
+		if err := filterexpr.ValidateProjectScope(expr, q.Project != ""); err != nil {
+			return "", nil, err
+		}
+	}
 
 	if q.Project != "" {
 		// When we are in the main catalog (no relation filter), we only show
 		// project members. When we are listing relations, we show all related
 		// patents and use the project JOIN to decorate them with state/tags.
 		joinType := "JOIN"
-		if (!q.Relation.IsZero() || q.Inventor != "") && q.ReviewState == domain.ReviewStateNone {
+		if !q.Relation.IsZero() && q.ReviewState == domain.ReviewStateNone && !filterexpr.UsesField(expr, filterexpr.FieldState) {
 			joinType = "LEFT JOIN"
 		}
 		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")
@@ -424,8 +442,8 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 
 	if q.Classification != "" {
 		for _, part := range splitClassifications(q.Classification) {
-			conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE json_each.value LIKE ?)`)
-			args = append(args, part+"%")
+			conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE UPPER(json_each.value) LIKE ? ESCAPE '\')`)
+			args = append(args, classificationLikePattern(part, false))
 		}
 	}
 
@@ -434,11 +452,85 @@ func patentFilter(q store.PatentQuery) (string, []any) {
 		args = append(args, q.Inventor)
 	}
 
+	if expr != nil {
+		exprSQL, exprArgs, err := compileFilterExpr(expr, q)
+		if err != nil {
+			return "", nil, err
+		}
+		conds = append(conds, exprSQL)
+		args = append(args, exprArgs...)
+	}
+
 	if len(conds) > 0 {
 		sb.WriteString(" WHERE ")
 		sb.WriteString(strings.Join(conds, " AND "))
 	}
-	return sb.String(), args
+	return sb.String(), args, nil
+}
+
+func compileFilterExpr(expr filterexpr.Expr, q store.PatentQuery) (string, []any, error) {
+	switch e := expr.(type) {
+	case filterexpr.AndExpr:
+		return compileBooleanExpr("AND", e.Left, e.Right, q)
+	case filterexpr.OrExpr:
+		return compileBooleanExpr("OR", e.Left, e.Right, q)
+	case filterexpr.NotExpr:
+		sql, args, err := compileFilterExpr(e.Child, q)
+		if err != nil {
+			return "", nil, err
+		}
+		return "(NOT (" + sql + "))", args, nil
+	case filterexpr.TermExpr:
+		return compileFilterTerm(e, q)
+	default:
+		return "", nil, fmt.Errorf("store/sqlite: unsupported filter expression %T", expr)
+	}
+}
+
+func compileBooleanExpr(op string, left, right filterexpr.Expr, q store.PatentQuery) (string, []any, error) {
+	leftSQL, leftArgs, err := compileFilterExpr(left, q)
+	if err != nil {
+		return "", nil, err
+	}
+	rightSQL, rightArgs, err := compileFilterExpr(right, q)
+	if err != nil {
+		return "", nil, err
+	}
+	args := append(leftArgs, rightArgs...)
+	return "(" + leftSQL + " " + op + " " + rightSQL + ")", args, nil
+}
+
+func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, []any, error) {
+	switch term.Field {
+	case filterexpr.FieldState:
+		return "m.state = ?", []any{string(term.State)}, nil
+	case filterexpr.FieldTag:
+		return `EXISTS (SELECT 1 FROM patent_tag pt JOIN tag t ON t.id = pt.tag_id ` +
+			`WHERE t.project_id = ? AND pt.patent_number = p.number AND LOWER(t.name) = LOWER(?))`, []any{string(q.Project), term.Value}, nil
+	case filterexpr.FieldClass:
+		return `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE UPPER(json_each.value) LIKE ? ESCAPE '\')`, []any{classificationLikePattern(term.Class.Raw, term.Class.Wildcard)}, nil
+	default:
+		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
+	}
+}
+
+func classificationLikePattern(part string, wildcard bool) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(part) {
+		switch r {
+		case '*':
+			b.WriteByte('%')
+		case '%', '_', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if !wildcard {
+		b.WriteByte('%')
+	}
+	return b.String()
 }
 
 func splitClassifications(s string) []string {
