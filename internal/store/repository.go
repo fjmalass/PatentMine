@@ -166,6 +166,8 @@ type Repository interface {
 	ClassificationDefinition(ctx context.Context, system, code string) (domain.Classification, error)
 	// ListClassificationDefinitions returns all classification definitions.
 	ListClassificationDefinitions(ctx context.Context) ([]domain.Classification, error)
+	// ListClassificationDefinitionsByCodes returns cached definitions matching the given raw codes.
+	ListClassificationDefinitionsByCodes(ctx context.Context, codes []string) ([]domain.Classification, error)
 	// DeleteClassificationDefinition removes a classification definition.
 	DeleteClassificationDefinition(ctx context.Context, system, code string) error
 

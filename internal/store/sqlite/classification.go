@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"patentmine/internal/domain"
@@ -70,6 +71,59 @@ func (r *Repo) ListClassificationDefinitions(ctx context.Context) (out []domain.
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: list classification definitions: %w", err)
+	}
+	return out, nil
+}
+
+// ListClassificationDefinitionsByCodes returns cached definitions for the given
+// raw codes. Codes are parsed to (system, code) and matched case-insensitively
+// against the cache; codes that do not parse or are not cached are skipped.
+func (r *Repo) ListClassificationDefinitionsByCodes(ctx context.Context, codes []string) (out []domain.Classification, err error) {
+	defer r.observeDuration("list_classification_definitions_by_codes", time.Now(), &err)
+	if len(codes) == 0 {
+		return nil, nil
+	}
+
+	type key struct{ system, code string }
+	want := make(map[key]struct{}, len(codes))
+	args := make([]any, 0, len(codes)*2)
+	placeholders := make([]string, 0, len(codes))
+	for _, raw := range codes {
+		parsed := domain.ParseClassification(raw)
+		if parsed.System == "" || parsed.Code == "" {
+			continue
+		}
+		k := key{strings.ToLower(parsed.System), strings.ToLower(parsed.Code)}
+		if _, dup := want[k]; dup {
+			continue
+		}
+		want[k] = struct{}{}
+		placeholders = append(placeholders, "(LOWER(?), LOWER(?))")
+		args = append(args, parsed.System, parsed.Code)
+	}
+	if len(placeholders) == 0 {
+		return nil, nil
+	}
+
+	q := `SELECT system, code, section, class, subclass, main_group, subgroup, description
+	      FROM classification_definition
+	      WHERE (LOWER(system), LOWER(code)) IN (` + strings.Join(placeholders, ", ") + `)
+	      ORDER BY system, code`
+	rows, err := r.reader.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list classification definitions by codes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var c domain.Classification
+		if err := rows.Scan(&c.System, &c.Code, &c.Section, &c.Class, &c.Subclass, &c.MainGroup, &c.Subgroup, &c.Description); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan classification definition: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: list classification definitions by codes: %w", err)
 	}
 	return out, nil
 }

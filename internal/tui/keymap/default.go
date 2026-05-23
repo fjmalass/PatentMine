@@ -70,6 +70,7 @@ func patentActions() map[string]command.ID {
 		"a": command.AddToProject,
 		"f": command.CrawlFamily,
 		"L": command.LookupPatent,
+		"K": command.OpenPatentClassifications,
 	}
 }
 

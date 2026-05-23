@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -170,7 +171,10 @@ func renderTableHeader(theme render.Theme, cols []tableCol, activeSortKey domain
 }
 
 // patentCellValue returns the display string for a patent's specific column.
-func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, projectID domain.ProjectID, absoluteIndex int) string {
+// classDescs (when non-nil) supplies cached classification descriptions keyed
+// by lower-cased code; it enriches the Classification column with the first
+// code's description.
+func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
 	switch colKey {
 	case domain.PatentColumnIndex:
 		return formatViewIndex(absoluteIndex)
@@ -181,7 +185,7 @@ func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, p
 	case domain.PatentColumnInventor:
 		return formatInventorsShort(row.Inventors)
 	case domain.PatentColumnClassification:
-		return formatClassificationsShort(row.Classifications)
+		return formatClassificationsShort(row.Classifications, classDescs)
 	case domain.PatentColumnExpires:
 		return formatExpires(row.ExpirationDate)
 	case domain.PatentColumnCitations:
@@ -200,26 +204,36 @@ func patentCellValue(row domain.PatentRow, colKey domain.PatentTableColumnKey, p
 }
 
 // renderTableRow formats one patent row across all columns.
-func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int) string {
+func renderTableRow(row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
 	var b strings.Builder
 	for i, col := range cols {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		val := patentCellValue(row, col.key, projectID, absoluteIndex)
+		val := patentCellValue(row, col.key, projectID, absoluteIndex, classDescs)
 		b.WriteString(render.Pad(render.Truncate(val, col.width), col.width))
 	}
 	return b.String()
 }
 
-func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, focusedColIdx int, selected bool) string {
+func renderStyledTableRow(theme render.Theme, row domain.PatentRow, cols []tableCol, projectID domain.ProjectID, absoluteIndex int, focusedColIdx int, selected bool, classDescs map[string]string) string {
+	return renderGenericTableRow(theme, cols, absoluteIndex, focusedColIdx, selected, func(col tableCol) string {
+		return patentCellValue(row, col.key, projectID, absoluteIndex, classDescs)
+	})
+}
+
+// renderGenericTableRow renders one row whose cell values are supplied by a
+// callback. The callback receives each column descriptor in left-to-right order
+// and returns the raw cell text. Padding, truncation, and focused-column
+// styling match renderStyledTableRow so overlays that build their own column
+// schema get the same visuals as the catalog/citations panes.
+func renderGenericTableRow(theme render.Theme, cols []tableCol, absoluteIndex int, focusedColIdx int, selected bool, cellValue func(col tableCol) string) string {
 	var b strings.Builder
 	for i, col := range cols {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		val := patentCellValue(row, col.key, projectID, absoluteIndex)
-		cell := render.Pad(render.Truncate(val, col.width), col.width)
+		cell := render.Pad(render.Truncate(cellValue(col), col.width), col.width)
 		if focusedColIdx >= 0 && i == focusedColIdx {
 			cell = focusedCellStyle(theme, absoluteIndex, selected).Render(cell)
 		}
@@ -356,10 +370,29 @@ func formatIDSSummary(entry *domain.IDSEntry) string {
 	return entry.SummaryText()
 }
 
-// formatClassificationsShort formats a patent's classification list for display; returns "-" when empty.
-func formatClassificationsShort(classifications []string) string {
+// formatClassificationsShort formats a patent's classification list for
+// display in a narrow column. With no cached descriptions it returns a
+// comma-separated list of codes. When descriptions are available, the first
+// code is shown as "CODE — description" with a "(+N)" suffix counting the
+// remaining codes.
+func formatClassificationsShort(classifications []string, descs map[string]string) string {
 	if len(classifications) == 0 {
 		return "-"
 	}
-	return strings.Join(classifications, ", ")
+	if len(descs) == 0 {
+		return strings.Join(classifications, ", ")
+	}
+	first := classifications[0]
+	desc := descs[strings.ToLower(first)]
+	if desc == "" {
+		desc = descs[first]
+	}
+	head := first
+	if desc != "" {
+		head = first + " — " + desc
+	}
+	if len(classifications) == 1 {
+		return head
+	}
+	return fmt.Sprintf("%s (+%d)", head, len(classifications)-1)
 }

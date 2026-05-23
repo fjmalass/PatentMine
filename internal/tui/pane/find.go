@@ -9,6 +9,39 @@ import (
 	"patentmine/internal/tui/render"
 )
 
+// parseClassFindInput reports whether input is a "class:<term>" filter
+// expression. When true it returns the trimmed term; an empty term still
+// clears any prior classification filter.
+func parseClassFindInput(input string) (string, bool) {
+	const prefix = "class:"
+	if len(input) < len(prefix) {
+		return "", false
+	}
+	if !equalFoldPrefix(input, prefix) {
+		return "", false
+	}
+	return strings.TrimSpace(input[len(prefix):]), true
+}
+
+func equalFoldPrefix(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	for i := 0; i < len(prefix); i++ {
+		a, b := s[i], prefix[i]
+		if 'A' <= a && a <= 'Z' {
+			a += 'a' - 'A'
+		}
+		if 'A' <= b && b <= 'Z' {
+			b += 'a' - 'A'
+		}
+		if a != b {
+			return false
+		}
+	}
+	return true
+}
+
 // findBar is the inline / search bar state shared by catalog and citations.
 // The zero value is inactive.
 type findBar struct {

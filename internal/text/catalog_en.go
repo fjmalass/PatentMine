@@ -97,6 +97,7 @@ const (
 	HintExportIDS       Key = "hint.export_ids"
 	HintCrawl           Key = "hint.ingest"
 	HintLookup          Key = "hint.fetch"
+	HintClassifications Key = "hint.classifications"
 	HintBrowse          Key = "hint.browse"
 	HintFullText        Key = "hint.fulltext"
 	HintJump            Key = "hint.jump"
@@ -225,8 +226,9 @@ var cmdStrings = map[string][2]string{
 	"tag.patent.list":            {"List patent tags", "List tags assigned to the selected patent."},
 	"tag.patent":                 {"Manage patent tags", "Open the interactive tag selector popup for the selected patent(s)."},
 
-	"class.list":   {"List classifications", "List all cached patent classification definitions."},
-	"class.lookup": {"Lookup classification", "Lookup classification code details from the EPO Linked Open Data SPARQL Endpoint."},
+	"class.list":            {"List classifications", "List all cached patent classification definitions."},
+	"class.lookup":          {"Lookup classification", "Lookup classification code details from the EPO Linked Open Data SPARQL Endpoint."},
+	"patent.classifications": {"Show patent classifications", "Open the selected patent's classification codes with their cached descriptions; press L inside to fetch any missing ones."},
 }
 
 // englishNamed is the English text for every named key.
@@ -321,6 +323,7 @@ var englishNamed = map[Key]string{
 	HintFullText:        "full text",
 	HintCrawl:           "crawl family",
 	HintLookup:          "lookup patent",
+	HintClassifications: "classifications",
 	HintBrowse:          "open browser",
 	HintJump:            "jump",
 	HintHelp:            "help",

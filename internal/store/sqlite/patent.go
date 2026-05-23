@@ -60,14 +60,20 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	if err != nil {
 		return err
 	}
+	// Read prior fetch_state before the upsert so we can detect a genuine
+	// stub→cached transition (as opposed to re-saving an already-cached patent).
+	var priorFetchState string
+	_ = r.reader.QueryRowContext(ctx,
+		`SELECT fetch_state FROM patent WHERE number = ?`, p.Number.Normalized()).Scan(&priorFetchState)
+
 	_, err = r.writer.ExecContext(ctx, patentUpsertSQL, args...)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
 	}
-	// When a patent is fully fetched, every project membership that is currently
-	// "stored" (the default for numbers discovered from family edges) moves to
-	// "cached".
-	if p.FetchState == domain.FetchCached {
+	// Only promote stored memberships to cached on a genuine first fetch
+	// (stub→cached). Re-saving an already-cached patent must not touch
+	// memberships that the user explicitly placed in stored, under_review, etc.
+	if p.FetchState == domain.FetchCached && domain.FetchState(priorFetchState) != domain.FetchCached {
 		_, err = r.writer.ExecContext(ctx,
 			`UPDATE membership SET state = ? WHERE patent_number = ? AND state = ?`,
 			string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateStored))

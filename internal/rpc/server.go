@@ -76,8 +76,9 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodClassificationList:       s.classificationList,
 		proto.MethodClassificationSave:       s.classificationSave,
 		proto.MethodClassificationDelete:     s.classificationDelete,
-		proto.MethodClassificationLookup:     s.classificationLookup,
-		proto.MethodPatentClassificationList: s.patentClassificationList,
+		proto.MethodClassificationLookup:        s.classificationLookup,
+		proto.MethodClassificationListByCodes:   s.classificationListByCodes,
+		proto.MethodPatentClassificationList:    s.patentClassificationList,
 	}
 	return s
 }
@@ -780,6 +781,18 @@ func (s *Server) classificationLookup(ctx context.Context, raw json.RawMessage) 
 		return nil, err
 	}
 	return s.engine.LookupClassification(ctx, p.Code)
+}
+
+func (s *Server) classificationListByCodes(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ClassificationListByCodesParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	classifications, err := s.engine.ListClassificationDefinitionsByCodes(ctx, p.Codes)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ClassificationListResult{Classifications: classifications}, nil
 }
 
 func (s *Server) patentClassificationList(ctx context.Context, raw json.RawMessage) (any, error) {

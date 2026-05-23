@@ -80,8 +80,9 @@ const (
 	TagPatentManage   ID = "tag.patent"
 
 	// Classification definitions.
-	ClassTaxonomyList ID = "class.list"
-	ClassLookup       ID = "class.lookup"
+	ClassificationTaxonomyList ID = "class.list"
+	ClassificationLookup       ID = "class.lookup"
+	OpenPatentClassifications  ID = "patent.classifications"
 
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
@@ -213,8 +214,9 @@ func Default() (*Registry, error) {
 		Command{ID: TagPatentManage, Name: "tag.patent", Aliases: []string{"tag-manage"}, Usage: ":tag.patent", Kind: KindEngine, Method: proto.MethodPatentTagList, Scopes: patentScopes},
 
 		// --- classification definitions ---
-		Command{ID: ClassTaxonomyList, Name: "class.list", Aliases: []string{"classifications"}, Usage: ":class.list", Kind: KindEngine, Method: proto.MethodClassificationList},
-		Command{ID: ClassLookup, Name: "class.lookup", Aliases: []string{"lookup-class"}, Usage: ":class.lookup <code>", Kind: KindEngine, Method: proto.MethodClassificationLookup},
+		Command{ID: ClassificationTaxonomyList, Name: "class.list", Aliases: []string{"classifications"}, Usage: ":class.list", Kind: KindEngine, Method: proto.MethodClassificationList},
+		Command{ID: ClassificationLookup, Name: "class.lookup", Aliases: []string{"lookup-class"}, Usage: ":class.lookup <code>", Kind: KindEngine, Method: proto.MethodClassificationLookup},
+		Command{ID: OpenPatentClassifications, Name: "open.classifications", Aliases: []string{"class", "patent-classifications"}, Usage: ":open.classifications", Kind: KindView, Scopes: patentScopes},
 
 		// --- crawling (engine) ---
 		Command{ID: CrawlFamily, Name: "crawl.family", Aliases: []string{"family"}, Usage: ":crawl.family", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},

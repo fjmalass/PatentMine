@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -17,20 +18,30 @@ type Classification struct {
 	Description string `json:"description"`
 }
 
-// ParseClassification attempts to determine the system (CPC or USPC) and 
-// break down the code into its hierarchical components.
+// cpcCodeRE matches a syntactically valid CPC code. CPC sections are A–H and Y
+// only; class is exactly two digits; subclass is one letter; group is 1–4
+// digits with an optional 1–6 digit subgroup after a "/". Spaces between the
+// subclass and the group are tolerated (some sources render "G06F 17/30").
+var cpcCodeRE = regexp.MustCompile(`^[A-HY][0-9]{2}[A-Z]( ?[0-9]{1,4}(/[0-9]{1,6})?)?$`)
+
+// ParseClassification determines the system (CPC, USPC, or Other) and breaks
+// CPC codes into their hierarchical components. Strings that begin with a
+// letter but don't satisfy the CPC syntax (e.g. USPTO status codes like
+// "STCB") are returned with System="Other" so callers know to skip the
+// CPC-only EPO lookup.
 func ParseClassification(rawCode string) Classification {
 	code := strings.TrimSpace(rawCode)
 	if code == "" {
 		return Classification{}
 	}
 
-	// Basic heuristic: CPC codes usually start with a letter (A-H, Y).
-	// USPC codes usually start with digits.
-	if len(code) > 0 && unicode.IsLetter(rune(code[0])) {
+	if unicode.IsDigit(rune(code[0])) {
+		return parseUSPC(code)
+	}
+	if cpcCodeRE.MatchString(strings.ReplaceAll(code, " ", "")) {
 		return parseCPC(code)
 	}
-	return parseUSPC(code)
+	return Classification{System: "Other", Code: code}
 }
 
 func parseCPC(code string) Classification {

@@ -55,6 +55,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /classifications", s.handleClassificationSave)
 	s.mux.HandleFunc("DELETE /classifications/{system}/{code}", s.handleClassificationDelete)
 	s.mux.HandleFunc("POST /classifications/lookup", s.handleClassificationLookup)
+	s.mux.HandleFunc("POST /classifications/by_codes", s.handleClassificationListByCodes)
 	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/classifications", s.handlePatentClassificationList)
 }
 
@@ -422,6 +423,17 @@ func (s *Server) handleClassificationLookup(w http.ResponseWriter, r *http.Reque
 	}
 	var res domain.Classification
 	s.call(w, r, proto.MethodClassificationLookup, proto.ClassificationLookupParams{Code: body.Code}, &res)
+}
+
+func (s *Server) handleClassificationListByCodes(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Codes []string `json:"codes"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res proto.ClassificationListResult
+	s.call(w, r, proto.MethodClassificationListByCodes, proto.ClassificationListByCodesParams{Codes: body.Codes}, &res)
 }
 
 func (s *Server) handlePatentClassificationList(w http.ResponseWriter, r *http.Request) {

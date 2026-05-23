@@ -83,6 +83,14 @@ type JumpProvider interface {
 	JumpTo(line int)
 }
 
+// ClassificationFilterTarget is implemented by panes that can be filtered by
+// a set of classification codes. The classification overlay sends its marked
+// codes here on close so the underlying pane reloads with the corresponding
+// filter applied.
+type ClassificationFilterTarget interface {
+	ApplyClassificationFilter(codes []string) tea.Cmd
+}
+
 // Invocation carries a resolved command's repeat count and any typed arguments.
 type Invocation struct {
 	Repeat int

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"patentmine/internal/domain"
@@ -18,8 +19,8 @@ const patentUpsertSQL = `
 	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
 		grant_date, fetched_at, display_number,
-		first_claim, expiration_date, expiration_source, source_url, classifications)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		first_claim, expiration_date, expiration_source, source_url, classifications, classifications_text)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO UPDATE SET
 		country=excluded.country, serial=excluded.serial, kind=excluded.kind,
 		title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
@@ -29,7 +30,8 @@ const patentUpsertSQL = `
 		fetched_at=excluded.fetched_at, display_number=excluded.display_number,
 		first_claim=excluded.first_claim, expiration_date=excluded.expiration_date,
 		expiration_source=excluded.expiration_source, source_url=excluded.source_url,
-		classifications=excluded.classifications`
+		classifications=excluded.classifications,
+		classifications_text=excluded.classifications_text`
 
 // documentUpsertSQL inserts or updates one life-stage document.
 const documentUpsertSQL = `
@@ -61,8 +63,27 @@ func patentUpsertArgs(p domain.Patent) ([]any, error) {
 		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
 		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized(),
 		p.FirstClaim, encodeTime(p.ExpirationDate), p.ExpirationSource, p.SourceURL,
-		string(classifications),
+		string(classifications), classificationsText(p.Classifications),
 	}, nil
+}
+
+// classificationsText flattens classification codes into a tokenizable string
+// for FTS5. Slashes inside codes (e.g. "G06F16/00") are normalized to spaces
+// so the default unicode61 tokenizer indexes "G06F16" as a prefix-searchable
+// token. Returns "" when there are no codes.
+func classificationsText(codes []string) string {
+	if len(codes) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(codes))
+	for _, c := range codes {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		parts = append(parts, strings.ReplaceAll(c, "/", " "))
+	}
+	return strings.Join(parts, " ")
 }
 
 // SaveNode atomically writes one crawled patent: its record, documents,
@@ -84,6 +105,12 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 		if !p.FetchState.Valid() {
 			return fmt.Errorf("store/sqlite: invalid fetch state %q", p.FetchState)
 		}
+		// Read prior fetch_state before the upsert to detect a genuine stub→cached
+		// transition; re-saving an already-cached patent must not touch memberships.
+		var priorFetchState string
+		_ = tx.QueryRowContext(ctx,
+			`SELECT fetch_state FROM patent WHERE number = ?`, p.Number.Normalized()).Scan(&priorFetchState)
+
 		args, argErr := patentUpsertArgs(p)
 		if argErr != nil {
 			return argErr
@@ -91,9 +118,8 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 		if _, err := tx.ExecContext(ctx, patentUpsertSQL, args...); err != nil {
 			return fmt.Errorf("store/sqlite: save node patent %s: %w", p.Number, err)
 		}
-		// A fully fetched patent promotes any membership still in the default
-		// "stored" state to "cached" — the same rule SavePatent applies.
-		if p.FetchState == domain.FetchCached {
+		// Only promote stored memberships to cached on the genuine first fetch.
+		if p.FetchState == domain.FetchCached && domain.FetchState(priorFetchState) != domain.FetchCached {
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE membership SET state = ? WHERE patent_number = ? AND state = ?`,
 				string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateStored)); err != nil {
@@ -156,8 +182,8 @@ const patentInsertOrIgnoreSQL = `
 	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
 		grant_date, fetched_at, display_number,
-		first_claim, expiration_date, expiration_source, source_url, classifications)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		first_claim, expiration_date, expiration_source, source_url, classifications, classifications_text)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO NOTHING`
 
 // documentInsertOrIgnoreSQL inserts a document only when its number is new.

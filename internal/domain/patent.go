@@ -17,6 +17,14 @@ const (
 	SortByIDS            SortColumn = "ids"
 	SortByTags           SortColumn = "tags"
 	SortByClassification SortColumn = "classification"
+
+	// UI-only sort keys used by the per-patent classification overlay. They
+	// never travel over RPC — the overlay sorts its in-memory rows directly.
+	// The full word "Classification" is used to avoid collision with the CPC
+	// hierarchy field called "Class" inside the Classification struct.
+	SortByClassificationSystem      SortColumn = "classification.system"
+	SortByClassificationCode        SortColumn = "classification.code"
+	SortByClassificationDescription SortColumn = "classification.description"
 )
 
 // CrawlProfile defines which family-graph edges to follow during a crawl.

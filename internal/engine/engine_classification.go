@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"patentmine/internal/domain"
 )
@@ -26,6 +27,12 @@ func (e *Engine) ListClassificationDefinitions(ctx context.Context) ([]domain.Cl
 	return e.repo.ListClassificationDefinitions(ctx)
 }
 
+// ListClassificationDefinitionsByCodes returns cached classification definitions
+// for the given raw codes (codes are parsed and matched case-insensitively).
+func (e *Engine) ListClassificationDefinitionsByCodes(ctx context.Context, codes []string) ([]domain.Classification, error) {
+	return e.repo.ListClassificationDefinitionsByCodes(ctx, codes)
+}
+
 // DeleteClassificationDefinition removes a classification definition.
 func (e *Engine) DeleteClassificationDefinition(ctx context.Context, system, code string) error {
 	if err := e.repo.DeleteClassificationDefinition(ctx, system, code); err != nil {
@@ -35,33 +42,56 @@ func (e *Engine) DeleteClassificationDefinition(ctx context.Context, system, cod
 	return nil
 }
 
-// LookupClassification parses the code, checks if it is cached in the database, and if not
-// (and it's a CPC code), performs a dynamic web lookup against the CPC lookup function if configured.
+// ClassificationDescriptionUnavailable is the sentinel description persisted
+// after a successful EPO query that returned no record. It lets the cache
+// distinguish "tried, EPO has no entry" from "never tried" without a separate
+// schema column.
+const ClassificationDescriptionUnavailable = "(no description available)"
+
+// LookupClassification parses the code, checks the cache, and (for CPC codes
+// only) calls the EPO lookup when a description is not yet known. EPO misses
+// are recorded with the ClassificationDescriptionUnavailable sentinel so a
+// retry doesn't keep hammering EPO for codes it doesn't index. Non-CPC codes
+// (USPC and "Other") return parsed-only.
 func (e *Engine) LookupClassification(ctx context.Context, code string) (domain.Classification, error) {
 	parsed := domain.ParseClassification(code)
 	if parsed.System == "" {
 		return domain.Classification{}, fmt.Errorf("invalid classification code %q", code)
 	}
 
-	// 1. Check if already in cache with a description
+	// 1. Cache hit with any non-empty description (real text or sentinel) wins.
 	cached, err := e.repo.ClassificationDefinition(ctx, parsed.System, parsed.Code)
 	if err == nil && cached.Description != "" {
 		return cached, nil
 	}
 
-	// 2. If it is CPC and not cached or lacks description, perform a dynamic lookup if configured
-	if parsed.System == "CPC" && e.cpcLookup != nil {
-		desc, err := e.cpcLookup(ctx, parsed.Code)
-		if err == nil && desc != "" {
-			parsed.Description = desc
-			// Cache the definition in the database
-			_ = e.repo.SaveClassificationDefinition(ctx, parsed)
-			e.announceChange()
-			return parsed, nil
-		}
+	// 2. Only CPC codes are looked up on the web. "Other" and USPC return
+	//    parsed-only — the UI labels those distinctly.
+	if parsed.System != "CPC" || e.cpcLookup == nil {
+		return parsed, nil
 	}
 
-	// Fallback to returning the parsed classification code (possibly with empty description)
+	desc, lookupErr := e.cpcLookup(ctx, parsed.Code)
+	if lookupErr != nil {
+		// Network or remote error: leave the cache untouched so the next
+		// attempt can succeed.
+		e.log(ctx, slog.LevelWarn, "classification web lookup failed",
+			slog.String("code", parsed.Code), slog.String("system", parsed.System),
+			slog.String("error", lookupErr.Error()))
+		return parsed, nil
+	}
+	if desc != "" {
+		parsed.Description = desc
+	} else {
+		// Successful query, EPO returned nothing — persist the sentinel.
+		parsed.Description = ClassificationDescriptionUnavailable
+	}
+	if saveErr := e.repo.SaveClassificationDefinition(ctx, parsed); saveErr != nil {
+		e.log(ctx, slog.LevelWarn, "classification cache save failed",
+			slog.String("code", parsed.Code), slog.String("system", parsed.System),
+			slog.String("error", saveErr.Error()))
+	}
+	e.announceChange()
 	return parsed, nil
 }
 

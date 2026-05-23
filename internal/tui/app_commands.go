@@ -318,8 +318,8 @@ func (a *App) cmdTagTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
-// cmdClassTaxonomyList lists all cached patent classifications.
-func (a *App) cmdClassTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
+// cmdClassificationTaxonomyList lists all cached patent classifications.
+func (a *App) cmdClassificationTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
 	if a.client == nil {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
@@ -329,10 +329,31 @@ func (a *App) cmdClassTaxonomyList(inv invocation) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
-// cmdClassLookup looks up details for a classification code.
-func (a *App) cmdClassLookup(inv invocation) (tea.Model, tea.Cmd) {
+// cmdOpenPatentClassifications opens a per-patent classification overlay for
+// the focused selection. Shows cached descriptions; press L inside to bulk-fetch.
+func (a *App) cmdOpenPatentClassifications(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	o, cmd := overlay.NewPatentClassificationOverlay(a.client, a.theme, a.text, a.metrics, project, numbers[0])
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+// cmdClassificationLookup looks up details for a classification code.
+func (a *App) cmdClassificationLookup(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
-		return a.usageError(command.ClassLookup)
+		return a.usageError(command.ClassificationLookup)
 	}
 	code := strings.Join(inv.args, " ")
 	if a.client == nil {

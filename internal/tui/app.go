@@ -112,8 +112,9 @@ var appHandlers = map[command.ID]appHandler{
 	command.TagStrict:           (*App).cmdTagStrict,
 	command.UntagStrict:         (*App).cmdUntagStrict,
 	command.TagPatentList:       (*App).cmdTagPatentList,
-	command.ClassTaxonomyList:   (*App).cmdClassTaxonomyList,
-	command.ClassLookup:         (*App).cmdClassLookup,
+	command.ClassificationTaxonomyList: (*App).cmdClassificationTaxonomyList,
+	command.ClassificationLookup:       (*App).cmdClassificationLookup,
+	command.OpenPatentClassifications:  (*App).cmdOpenPatentClassifications,
 	command.PatentDelete:        (*App).cmdPatentDelete,
 	command.AIAnalyze:           (*App).cmdAIAnalyze,
 	command.SettingsAI:          (*App).cmdSettingsAI,
@@ -134,7 +135,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.TagTaxonomyDelete: true,
 	command.TagStrict:         true,
 	command.UntagStrict:       true,
-	command.ClassLookup:       true,
+	command.ClassificationLookup: true,
 	command.Filter:            true,
 	command.OpenBrowser:       true,
 }
@@ -424,6 +425,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o, cmd := overlay.NewTagPatentOverlay(a.client, a.theme, a.text, a.activeProject.ID, m.Patents)
 		a.overlays = append(a.overlays, o)
 		return a, cmd
+	case overlay.ApplyClassificationFilterMsg:
+		if target, ok := a.focusedPane().(pane.ClassificationFilterTarget); ok {
+			return a, target.ApplyClassificationFilter(m.Codes)
+		}
+		return a, nil
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		if m.Key == text.StatusCrawlStarted && len(m.Args) >= 2 {

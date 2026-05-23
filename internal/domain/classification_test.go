@@ -44,6 +44,54 @@ func TestParseClassification(t *testing.T) {
 			rawCode:  "",
 			expected: Classification{},
 		},
+		{
+			rawCode: "E04B1/6108",
+			expected: Classification{
+				System:    "CPC",
+				Code:      "E04B1/6108",
+				Section:   "E",
+				Class:     "04",
+				Subclass:  "B",
+				MainGroup: "1",
+				Subgroup:  "6108",
+			},
+		},
+		{
+			rawCode: "Y10T403/00",
+			expected: Classification{
+				System:    "CPC",
+				Code:      "Y10T403/00",
+				Section:   "Y",
+				Class:     "10",
+				Subclass:  "T",
+				MainGroup: "403",
+				Subgroup:  "00",
+			},
+		},
+		{
+			rawCode: "H04L",
+			expected: Classification{
+				System:   "CPC",
+				Code:     "H04L",
+				Section:  "H",
+				Class:    "04",
+				Subclass: "L",
+			},
+		},
+		{
+			rawCode: "STCB",
+			expected: Classification{
+				System: "Other",
+				Code:   "STCB",
+			},
+		},
+		{
+			rawCode: "STCF",
+			expected: Classification{
+				System: "Other",
+				Code:   "STCF",
+			},
+		},
 	}
 
 	for _, tc := range tests {

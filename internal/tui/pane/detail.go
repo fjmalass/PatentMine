@@ -353,10 +353,12 @@ func (d *Detail) body(w int) string {
 	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", expVal, false, 0)
 	d.field(&b, w, "Expiration", expVal)
 	
-	// Classifications
+	// Classifications: comma-joined codes wrapped across the value column.
+	// Cached descriptions live in the dedicated popup (K), so the detail field
+	// stays compact regardless of how many codes a record carries.
 	classVal := strings.Join(p.Classifications, ", ")
 	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", classVal, false, 0)
-	d.field(&b, w, "Classifications", classVal)
+	d.wrappedField(&b, w, "Classifications", classVal)
 
 	// Project-scoped fields. Review state and tags describe the patent within
 	// one project, so they appear only when the pane has an active project.
@@ -667,6 +669,50 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 	b.WriteString(d.theme.Row.Render(render.Truncate(value, max(w-labelW-1, 0))))
 	b.WriteByte('\n')
 	d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: start})
+}
+
+// wrappedField writes one "Label  value" entry, word-wrapping the value
+// across as many lines as needed and aligning continuation lines under the
+// value column. Used for fields whose contents (like a long classifications
+// list) would not fit on a single truncated row.
+func (d *Detail) wrappedField(b *strings.Builder, w int, label, value string) {
+	labelW := 14
+	displayLabel := label
+	if d.jumpActive {
+		labelW = 18
+		if key, ok := d.jumpKeys[label]; ok {
+			var style lipgloss.Style
+			if isLocalField(label) {
+				style = d.theme.JumpLocalLabel
+			} else {
+				style = d.theme.JumpGlobalLabel
+			}
+			displayLabel = fmt.Sprintf("%s %s", style.Render(fmt.Sprintf("[%s]", string(key))), label)
+		} else {
+			displayLabel = "    " + label
+		}
+	}
+	if strings.TrimSpace(value) == "" {
+		value = "—"
+	}
+	valueW := max(w-labelW-1, 0)
+	lines := wrapText(value, valueW)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	indent := strings.Repeat(" ", labelW+1)
+	for i, line := range lines {
+		start := strings.Count(b.String(), "\n")
+		if i == 0 {
+			b.WriteString(d.theme.Header.Render(render.Pad(displayLabel, labelW)))
+			b.WriteString(" ")
+		} else {
+			b.WriteString(indent)
+		}
+		b.WriteString(d.theme.Row.Render(line))
+		b.WriteByte('\n')
+		d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: start})
+	}
 }
 
 // section writes a heading followed by word-wrapped body text, so long fields

@@ -55,6 +55,7 @@ const (
 	MethodClassificationSave       Method = "classification.save"
 	MethodClassificationDelete     Method = "classification.delete"
 	MethodClassificationLookup     Method = "classification.lookup"
+	MethodClassificationListByCodes Method = "classification.list_by_codes"
 	MethodPatentClassificationList Method = "patent.classification.list"
 )
 
@@ -272,6 +273,13 @@ type ClassificationDeleteParams struct {
 // ClassificationLookupParams contains the CPC code to lookup.
 type ClassificationLookupParams struct {
 	Code string `json:"code"`
+}
+
+// ClassificationListByCodesParams selects cached classification definitions by
+// a set of raw codes. Codes are parsed to (system, code) and matched
+// case-insensitively against the cache.
+type ClassificationListByCodesParams struct {
+	Codes []string `json:"codes"`
 }
 
 // PatentClassificationListParams lists classifications for a patent.

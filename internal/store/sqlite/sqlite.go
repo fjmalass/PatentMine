@@ -102,6 +102,9 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err == nil && !hasClassifications {
 		_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent ADD COLUMN classifications TEXT NOT NULL DEFAULT '[]'")
 	}
+	if err := r.ensureClassificationsFTSColumn(ctx); err != nil {
+		return err
+	}
 	// Migrate existing database instances if they lack the classification_definition table.
 	hasClassDef, err := r.tableExists(ctx, "classification_definition")
 	if err == nil && !hasClassDef {
@@ -171,6 +174,89 @@ func (r *Repo) columnExists(ctx context.Context, table, column string) (bool, er
 		return false, err
 	}
 	return false, nil
+}
+
+// ensureClassificationsFTSColumn makes sure the patent table has a
+// classifications_text column and that patent_fts indexes it. SQLite cannot
+// add a column to an existing external-content FTS5 table in place, so we
+// drop the FTS table along with its triggers and recreate them with the
+// extra column. The patent rows are then backfilled and the FTS index is
+// rebuilt by syncFTS.
+func (r *Repo) ensureClassificationsFTSColumn(ctx context.Context) error {
+	hasCol, err := r.columnExists(ctx, "patent", "classifications_text")
+	if err != nil {
+		return fmt.Errorf("store/sqlite: detect classifications_text: %w", err)
+	}
+	if !hasCol {
+		if _, err := r.writer.ExecContext(ctx,
+			`ALTER TABLE patent ADD COLUMN classifications_text TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("store/sqlite: add classifications_text: %w", err)
+		}
+	}
+	// Backfill classifications_text from the JSON column. Idempotent — only
+	// rewrites rows that don't already match the derived value.
+	if _, err := r.writer.ExecContext(ctx, `
+		UPDATE patent
+		SET classifications_text = COALESCE((
+			SELECT GROUP_CONCAT(REPLACE(value, '/', ' '), ' ')
+			FROM json_each(patent.classifications)
+		), '')
+		WHERE classifications_text != COALESCE((
+			SELECT GROUP_CONCAT(REPLACE(value, '/', ' '), ' ')
+			FROM json_each(patent.classifications)
+		), '')`); err != nil {
+		return fmt.Errorf("store/sqlite: backfill classifications_text: %w", err)
+	}
+
+	// Is the FTS already indexing classifications_text?
+	var ftsCols string
+	if err := r.writer.QueryRowContext(ctx,
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name='patent_fts'`).Scan(&ftsCols); err != nil {
+		return fmt.Errorf("store/sqlite: inspect patent_fts: %w", err)
+	}
+	if !sqlContainsClassificationsText(ftsCols) {
+		// Drop the FTS table and its content-sync triggers, then recreate them
+		// with the additional column. The rebuild below repopulates content.
+		stmts := []string{
+			`DROP TRIGGER IF EXISTS patent_fts_insert`,
+			`DROP TRIGGER IF EXISTS patent_fts_delete`,
+			`DROP TRIGGER IF EXISTS patent_fts_update`,
+			`DROP TABLE IF EXISTS patent_fts`,
+			`CREATE VIRTUAL TABLE patent_fts USING fts5 (
+				title, abstract, classifications_text,
+				content='patent', content_rowid='rowid')`,
+			`CREATE TRIGGER patent_fts_insert AFTER INSERT ON patent BEGIN
+				INSERT INTO patent_fts (rowid, title, abstract, classifications_text)
+				VALUES (new.rowid, new.title, new.abstract, new.classifications_text);
+			END`,
+			`CREATE TRIGGER patent_fts_delete AFTER DELETE ON patent BEGIN
+				INSERT INTO patent_fts (patent_fts, rowid, title, abstract, classifications_text)
+				VALUES ('delete', old.rowid, old.title, old.abstract, old.classifications_text);
+			END`,
+			`CREATE TRIGGER patent_fts_update AFTER UPDATE ON patent BEGIN
+				INSERT INTO patent_fts (patent_fts, rowid, title, abstract, classifications_text)
+				VALUES ('delete', old.rowid, old.title, old.abstract, old.classifications_text);
+				INSERT INTO patent_fts (rowid, title, abstract, classifications_text)
+				VALUES (new.rowid, new.title, new.abstract, new.classifications_text);
+			END`,
+			`INSERT INTO patent_fts(patent_fts) VALUES('rebuild')`,
+		}
+		for _, s := range stmts {
+			if _, err := r.writer.ExecContext(ctx, s); err != nil {
+				return fmt.Errorf("store/sqlite: rebuild patent_fts with classifications_text: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func sqlContainsClassificationsText(sql string) bool {
+	for i := 0; i+len("classifications_text") <= len(sql); i++ {
+		if sql[i:i+len("classifications_text")] == "classifications_text" {
+			return true
+		}
+	}
+	return false
 }
 
 // syncFTS rebuilds the patent_fts full-text index from the patent table when

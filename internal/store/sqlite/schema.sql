@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS patent (
     expiration_date   TEXT NOT NULL DEFAULT '',
     expiration_source TEXT NOT NULL DEFAULT '',
     source_url        TEXT NOT NULL DEFAULT '',
-    classifications   TEXT NOT NULL DEFAULT '[]'
+    classifications   TEXT NOT NULL DEFAULT '[]',
+    classifications_text TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS relation (
@@ -101,6 +102,9 @@ CREATE INDEX IF NOT EXISTS idx_patent_tag_patent ON patent_tag (patent_number);
 -- It is an external-content table: the text lives in the patent table and the
 -- triggers below keep the index in step with every insert, update, and delete.
 -- Listing search uses it instead of a LIKE scan over title/abstract.
+-- NOTE: classifications_text is added by ensureClassificationsFTSColumn() in
+-- sqlite.go, which drops and recreates this table with the additional column
+-- so a denormalized classification-code stream is indexable for the find bar.
 CREATE VIRTUAL TABLE IF NOT EXISTS patent_fts USING fts5 (
     title,
     abstract,

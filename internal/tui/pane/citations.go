@@ -23,6 +23,13 @@ type citationsLoadedMsg struct {
 	err       error
 }
 
+// citationsClassDescsMsg delivers a batch of cached classification descriptions.
+type citationsClassDescsMsg struct {
+	requestID uint64
+	descs     map[string]string
+	err       error
+}
+
 // Citations lists one slice of a patent's family graph — the edges of a single
 // RelationKind (citations, cited-by, parents, or children) — so the same pane
 // type serves every family view.
@@ -58,6 +65,8 @@ type Citations struct {
 	focusedColIdx int
 	lastWidth     int
 	logger        *slog.Logger
+	classDescs    map[string]string
+	classDescsID  uint64
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -198,21 +207,44 @@ func (c *Citations) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	search, action := c.find.handleKey(msg)
 	switch action {
 	case "reload":
-		c.filter.Search = search
+		c.applyFindInput(search)
 		c.loading = true
 		c.page.Top()
 		return c, c.load(), true
 	case "confirm":
-		c.filter.Search = search
+		c.applyFindInput(search)
 		return c, nil, true
 	case "cancel":
-		c.filter.Search = search
+		c.applyFindInput(search)
 		c.loading = true
 		c.page.Top()
 		return c, c.load(), true
 	default:
 		return c, nil, true
 	}
+}
+
+// ApplyClassificationFilter implements ClassificationFilterTarget. It sets the
+// pane's classification filter to the given codes and reloads.
+func (c *Citations) ApplyClassificationFilter(codes []string) tea.Cmd {
+	c.filter.Classification = strings.Join(codes, " ")
+	c.filter.Search = ""
+	c.loading = true
+	c.page.Top()
+	return c.load()
+}
+
+// applyFindInput routes the find-bar input into filter fields. Input prefixed
+// with "class:" populates Classification (clearing Search); anything else
+// populates Search (clearing Classification).
+func (c *Citations) applyFindInput(input string) {
+	if cls, ok := parseClassFindInput(input); ok {
+		c.filter.Classification = cls
+		c.filter.Search = ""
+		return
+	}
+	c.filter.Search = input
+	c.filter.Classification = ""
 }
 
 // focusNext moves the visual focus to the next column.
@@ -411,8 +443,55 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.loading = true
 			return c, c.load()
 		}
+		return c, c.loadClassDescs()
+	case citationsClassDescsMsg:
+		if m.requestID == c.classDescsID && m.err == nil {
+			c.classDescs = m.descs
+		}
 	}
 	return c, nil
+}
+
+// loadClassDescs fetches cached classification descriptions for the codes
+// referenced by the currently visible rows.
+func (c *Citations) loadClassDescs() tea.Cmd {
+	if len(c.patents) == 0 {
+		c.classDescs = nil
+		return nil
+	}
+	seen := make(map[string]struct{})
+	codes := make([]string, 0, len(c.patents)*2)
+	for _, p := range c.patents {
+		for _, code := range p.Classifications {
+			if _, dup := seen[code]; dup {
+				continue
+			}
+			seen[code] = struct{}{}
+			codes = append(codes, code)
+		}
+	}
+	if len(codes) == 0 {
+		c.classDescs = nil
+		return nil
+	}
+	client := c.client
+	requestID := nextAsyncID()
+	c.classDescsID = requestID
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.ClassificationListResult
+		if err := client.Call(ctx, proto.MethodClassificationListByCodes, proto.ClassificationListByCodesParams{Codes: codes}, &res); err != nil {
+			return citationsClassDescsMsg{requestID: requestID, err: err}
+		}
+		descs := make(map[string]string, len(res.Classifications))
+		for _, cl := range res.Classifications {
+			if cl.Description != "" {
+				descs[strings.ToLower(cl.Code)] = cl.Description
+			}
+		}
+		return citationsClassDescsMsg{requestID: requestID, descs: descs}
+	}
 }
 
 func (c *Citations) toggleVisual() tea.Cmd {
@@ -512,7 +591,7 @@ func (c *Citations) View(w, h int) string {
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
 		isSelectedRow := absolute == c.page.Cursor()
-		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow)
+		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, c.classDescs)
 		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {

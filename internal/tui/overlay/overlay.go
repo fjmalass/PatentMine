@@ -94,6 +94,14 @@ type OpenPatentDetailMsg struct {
 	Number domain.PatentNumber
 }
 
+// ApplyClassificationFilterMsg asks the app to apply a classification code
+// filter to the pane behind the overlay. Codes are the marked-row set in the
+// overlay's current sort order; they are joined as a space-separated string
+// and routed through the pane's existing classification filter pipeline.
+type ApplyClassificationFilterMsg struct {
+	Codes []string
+}
+
 // OpenTagPatentOverlayMsg asks the app to open the patent tag manager.
 type OpenTagPatentOverlayMsg struct {
 	Patents []domain.PatentNumber
