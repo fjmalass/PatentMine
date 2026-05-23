@@ -288,6 +288,20 @@ func (g *FamilyGraph) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			g.loading = true
 			return g, g.load()
 		}
+	case ReviewStateChangedMsg:
+		if g.project != m.Project {
+			return g, nil
+		}
+		targets := make(map[domain.PatentNumber]struct{}, len(m.Patents))
+		for _, patent := range m.Patents {
+			targets[patent] = struct{}{}
+		}
+		for i := range g.nodes {
+			if _, ok := targets[g.nodes[i].Patent.Number]; !ok {
+				continue
+			}
+			g.nodes[i].Patent.ReviewState = m.State
+		}
 	}
 	return g, nil
 }

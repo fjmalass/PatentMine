@@ -497,6 +497,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, loading.Init()
 		}
 		return a, nil
+	case pane.ReviewStateChangedMsg:
+		if len(m.Patents) == 1 {
+			a.setStatus(text.StatusSetState, m.Patents[0].String(), string(m.State), string(m.Project))
+		} else {
+			a.setStatus(text.StatusSetState, fmt.Sprintf("%d patents", len(m.Patents)), string(m.State), string(m.Project))
+		}
+		return a, a.broadcast(m)
 	case pane.MultiCrawlStartedMsg:
 		isLookup := m.Depth == 0
 		verb := "Crawling"

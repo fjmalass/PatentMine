@@ -23,7 +23,7 @@ const crawlWorkers = 4
 // — most acutely a family crawl saving thousands of rows — collapses to roughly
 // one event per window, so every connected client reloads a handful of times
 // instead of thousands.
-const changeDebounce = 200 * time.Millisecond
+const changeDebounce = 100 * time.Millisecond
 
 // CrawlFactory builds the Job that crawls a patent family. It is injected so
 // the engine does not depend on the crawl package directly: a stub factory

@@ -278,6 +278,18 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			d.loading = true
 			return d, d.reload()
 		}
+	case ReviewStateChangedMsg:
+		if d.project != m.Project {
+			return d, nil
+		}
+		for _, patent := range m.Patents {
+			if patent != d.number {
+				continue
+			}
+			d.state = m.State
+			d.cachedLines = nil
+			break
+		}
 	}
 	return d, nil
 }

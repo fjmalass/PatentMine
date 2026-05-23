@@ -417,6 +417,20 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.clearVisual()
 			return c, tea.Batch(c.loadColumns(), c.load())
 		}
+	case ReviewStateChangedMsg:
+		if c.activeProject == nil || c.activeProject.ID != m.Project {
+			return c, nil
+		}
+		targets := make(map[domain.PatentNumber]struct{}, len(m.Patents))
+		for _, patent := range m.Patents {
+			targets[patent] = struct{}{}
+		}
+		for i := range c.patents {
+			if _, ok := targets[c.patents[i].Number]; !ok {
+				continue
+			}
+			c.patents[i].ReviewState = m.State
+		}
 	case patentTableColumnsLoadedMsg:
 		if m.requestID != c.columnsLoadID {
 			return c, nil

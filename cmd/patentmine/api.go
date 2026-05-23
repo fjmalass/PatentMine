@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,12 +18,29 @@ import (
 
 const (
 	envAPIAddr     = "PATENTMINE_API_ADDR"
-	defaultAPIAddr = "127.0.0.1:8080"
+	defaultAPIAddr = "127.0.0.1:18080"
 )
 
 // runAPI starts the web API. Like the TUI it is a thin client that forwards to
 // the daemon; it holds no database of its own.
-func runAPI(_ []string) int {
+func runAPI(args []string) int {
+	flags := flag.NewFlagSet("api", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	addrFlag := flags.String("addr", "", "HTTP listen address")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "usage: patentmine api [--addr host:port]")
+	}
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return 2
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -52,9 +70,12 @@ func runAPI(_ []string) int {
 		return fail(err)
 	}
 
-	addr := os.Getenv(envAPIAddr)
+	addr := *addrFlag
 	if addr == "" {
-		addr = defaultAPIAddr
+		addr = os.Getenv(envAPIAddr)
+		if addr == "" {
+			addr = defaultAPIAddr
+		}
 	}
 
 	fmt.Printf("patentmine api %s listening on http://%s\n", appversion.String(), addr)

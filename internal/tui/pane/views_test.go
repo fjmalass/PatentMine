@@ -79,6 +79,29 @@ func TestCitationsTitleReflectsKind(t *testing.T) {
 	}
 }
 
+func TestCitationsAppliesReviewStateChangeImmediately(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
+	c.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
+	patents := []domain.PatentRow{
+		{Number: domain.MustParsePatentNumber("US0000002B2"), Title: "Second"},
+		{Number: domain.MustParsePatentNumber("US0000003B2"), Title: "Third"},
+	}
+	updated, _ := c.Update(citationsLoadedMsg{patents: patents, total: 2})
+	c = updated.(*Citations)
+
+	updated, _ = c.Update(ReviewStateChangedMsg{
+		Project: "p-1",
+		Patents: []domain.PatentNumber{patents[0].Number},
+		State:   domain.ReviewStateUnderReview,
+	})
+	c = updated.(*Citations)
+
+	if got := c.patents[0].ReviewState; got != domain.ReviewStateUnderReview {
+		t.Fatalf("citations review state = %q, want %q", got, domain.ReviewStateUnderReview)
+	}
+}
+
 func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	root := domain.MustParsePatentNumber("US0000001B2")
 	parent := domain.MustParsePatentNumber("EP0000002A1")
@@ -187,6 +210,42 @@ func TestFamilyGraphViewUsesReviewStateForActiveProject(t *testing.T) {
 	out := g.View(120, 8)
 	if !strings.Contains(out, "🔍") {
 		t.Fatalf("family graph view should show project review state, got:\n%s", out)
+	}
+}
+
+func TestFamilyGraphAppliesReviewStateChangeImmediately(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
+	g.project = "p1"
+	g.nodes = []proto.FamilyGraphNode{{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root"}, Depth: 0}}
+	g.rebuildRows()
+
+	updated, _ := g.Update(ReviewStateChangedMsg{
+		Project: "p1",
+		Patents: []domain.PatentNumber{root},
+		State:   domain.ReviewStateUnderReview,
+	})
+	g = updated.(*FamilyGraph)
+
+	if got := g.nodes[0].Patent.ReviewState; got != domain.ReviewStateUnderReview {
+		t.Fatalf("family graph review state = %q, want %q", got, domain.ReviewStateUnderReview)
+	}
+}
+
+func TestDetailAppliesReviewStateChangeImmediately(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "p1", nil)
+	d.loading = false
+
+	updated, _ := d.Update(ReviewStateChangedMsg{
+		Project: "p1",
+		Patents: []domain.PatentNumber{num},
+		State:   domain.ReviewStateUnderReview,
+	})
+	d = updated.(*Detail)
+
+	if got := d.state; got != domain.ReviewStateUnderReview {
+		t.Fatalf("detail review state = %q, want %q", got, domain.ReviewStateUnderReview)
 	}
 }
 
@@ -468,4 +527,3 @@ func TestDetailJumpKeysDump(t *testing.T) {
 		t.Errorf("jump key for Children = %q, want 'C'", string(got))
 	}
 }
-

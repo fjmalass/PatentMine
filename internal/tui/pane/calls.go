@@ -177,10 +177,7 @@ func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, patents []d
 			proto.ReviewStateParams{Project: project, Patents: patents, State: string(state)}, &res); err != nil {
 			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
 		}
-		if len(patents) == 1 {
-			return StatusMsg{Key: text.StatusSetState, Args: []any{patents[0].String(), string(state), string(project)}}
-		}
-		return StatusMsg{Key: text.StatusSetState, Args: []any{fmt.Sprintf("%d patents", len(patents)), string(state), string(project)}}
+		return ReviewStateChangedMsg{Project: project, Patents: patents, State: state}
 	}
 }
 

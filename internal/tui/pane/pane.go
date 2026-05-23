@@ -121,6 +121,14 @@ type StatusMsg struct {
 	Error bool
 }
 
+// ReviewStateChangedMsg reports a committed review-state change so visible panes
+// can update immediately instead of waiting for the debounced db.changed event.
+type ReviewStateChangedMsg struct {
+	Project domain.ProjectID
+	Patents []domain.PatentNumber
+	State   domain.ReviewState
+}
+
 // MultiCrawlStartedMsg is emitted when multiple patents are selected and a
 // crawl or lookup is started for each of them. It carries all job IDs so the
 // app can show a single aggregate overlay instead of stacking one per job.

@@ -108,6 +108,22 @@ func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 	}
 }
 
+func TestCatalogAppliesReviewStateChangeImmediately(t *testing.T) {
+	c := loadedCatalog(t)
+	c.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
+
+	updated, _ := c.Update(ReviewStateChangedMsg{
+		Project: "p-1",
+		Patents: []domain.PatentNumber{c.patents[1].Number},
+		State:   domain.ReviewStateUnderReview,
+	})
+	c = updated.(*Catalog)
+
+	if got := c.patents[1].ReviewState; got != domain.ReviewStateUnderReview {
+		t.Fatalf("catalog review state = %q, want %q", got, domain.ReviewStateUnderReview)
+	}
+}
+
 func TestCatalogStatusLineShowsFilters(t *testing.T) {
 	c := loadedCatalog(t)
 	c.filter.Search = "widget"

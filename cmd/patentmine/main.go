@@ -15,7 +15,7 @@ usage:
   patentmine serve     start the engine daemon
   patentmine stop      stop the engine daemon
   patentmine tui       launch the terminal UI
-  patentmine api       start the web API server
+  patentmine api       start the web API server (use --addr host:port)
   patentmine paths     print resolved runtime paths
   patentmine version   print the build version
 `
