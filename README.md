@@ -455,7 +455,7 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 * `c` : Open the family citations graph panel.
 * `b` : Open the "cited by" family citations graph panel.
 * `p` : Toggle the Projects dashboard list.
-* `/` : Open the Find/Filter query prompt.
+* `/` : Open the Find/Filter query prompt. Plain input becomes `search:` text; `class:<pattern>` replaces the current classification terms.
 * `n` / `N` : Navigate forwards/backwards through Find/Filter pattern matches.
 * `ctrl+r` : Hard refresh the catalog database view.
 * `v` : Enter line-based visual selection mode.
@@ -492,6 +492,48 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 When in the TUI, pressing `:` opens the CLI command prompt palette where you can type commands directly to execute engine functions. The following tag taxonomy and assignment commands are fully supported:
 
 * `:metrics` : Open the daemon metrics overlay with `Timings`, `Counters`, and `Gauges` tabs.
+
+#### `:filter` expression syntax
+
+Patent list filters now use one boolean expression language rather than per-field subcommands. The only special non-expression command is:
+
+* `:filter clear` : Remove the active boolean filter expression.
+
+Supported operators:
+
+* `and`
+* `or`
+* `not`
+* parentheses: `(` `)`
+
+Operator precedence is `()` > `not` > `and` > `or`.
+
+Supported fields:
+
+* `tag:` : Project-scoped taxonomy tags. Requires an active project.
+* `state:` : Project-scoped review state (`stored`, `under_review`, `ignored`, `cached`, `deleted`). Requires an active project.
+* `class:` : Global patent classification filter.
+* `classification:` : Alias for `class:`.
+* `search:` : Global text search over patent number, title, and abstract.
+* `inventor:` : Global inventor filter.
+* `assignee:` : Global assignee filter.
+* `owner:` : Alias for `assignee:`.
+
+Examples:
+
+* `:filter tag:prior_art and not state:under_review`
+* `:filter (tag:prior_art or tag:blocker) and state:under_review`
+* `:filter class:S04*`
+* `:filter inventor:"Ada Lovelace" and assignee:Acme*`
+* `:filter search:"widget sensor" and not class:H01L*`
+
+Pattern rules:
+
+* `class:` supports literal values and `*` wildcard only, for example `class:S04*`.
+* Regular expressions are not supported for `class:`; inputs like `/.../`, `[]`, and `?` are rejected with a clear error.
+* `inventor:` and `assignee:` support exact values by default, and switch to wildcard matching when `*` appears in the value.
+* Values with spaces should be quoted, for example `inventor:"Ada Lovelace"` or `search:"widget sensor"`.
+* Bare values like `*Lovelace*` are not valid by themselves; keep the explicit field prefix such as `inventor:*Lovelace*`.
 
 * `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
 * `:tag.list` : List all tags currently registered in the active project's taxonomy.
