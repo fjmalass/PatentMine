@@ -110,6 +110,9 @@ func (a *App) cmdOpenCitedBy(invocation) (tea.Model, tea.Cmd) {
 func (a *App) cmdOpenParents(invocation) (tea.Model, tea.Cmd) {
 	return a.openCitations(domain.RelationParent)
 }
+func (a *App) cmdOpenChildren(invocation) (tea.Model, tea.Cmd) {
+	return a.openCitations(domain.RelationChild)
+}
 func (a *App) cmdOpenFamilyGraph(inv invocation) (tea.Model, tea.Cmd) {
 	depth := 0
 	args := inv.args
@@ -130,7 +133,12 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	// Only activate on Enter if the cursor is actually on the Inventors field
+	// 1. If cursor is on a relation count line, open the corresponding list pane
+	if kind, ok := detail.ResolveCursorRelation(); ok {
+		return a.openCitations(kind)
+	}
+
+	// 2. Only activate on Enter if the cursor is actually on the Inventors field
 	if !detail.IsCursorOnInventors() {
 		return a, nil
 	}

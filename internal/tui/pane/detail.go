@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
@@ -29,10 +30,12 @@ type detailLoadedMsg struct {
 	err        error
 }
 
-// detailRelationsMsg delivers the family-graph edge counts for the detail view.
-type detailRelationsMsg struct {
+// detailRelationCountMsg delivers a single relation kind's edge count.
+type detailRelationCountMsg struct {
 	requestID uint64
-	counts    map[domain.RelationKind]int
+	kind      domain.RelationKind
+	count     int
+	err       error
 }
 
 // detailRelationKinds are the edge kinds the detail view counts, in display order.
@@ -62,10 +65,13 @@ type Detail struct {
 	lineGroups   []detailLineGroup
 	page         render.Paginator
 	loading      bool
-	loadErr      string
-	loadID       uint64
-	jumpActive   bool
-	inventorLine int
+	loadErr        string
+	loadID         uint64
+	jumpActive     bool
+	inventorLine   int
+	cachedLines    []string
+	lastWidth      int
+	lastJumpActive bool
 }
 
 type detailLineGroup struct {
@@ -85,6 +91,9 @@ var detailAnchorLabels = []string{
 	"Tags",
 	"Notes",
 	"Citations",
+	"Cited by",
+	"Parents",
+	"Children",
 	"Documents",
 	"First claim",
 	"Abstract",
@@ -191,19 +200,19 @@ func (d *Detail) load() tea.Cmd {
 // loadRelations counts the patent's family-graph edges by kind.
 func (d *Detail) loadRelations() tea.Cmd {
 	client, number, requestID := d.client, d.number, d.loadID
-	return func() tea.Msg {
-		ctx, cancel := callContext()
-		defer cancel()
-		counts := make(map[domain.RelationKind]int, len(detailRelationKinds))
-		for _, kind := range detailRelationKinds {
+	var cmds []tea.Cmd
+	for _, kind := range detailRelationKinds {
+		k := kind
+		cmds = append(cmds, func() tea.Msg {
+			ctx, cancel := callContext()
+			defer cancel()
 			var res proto.RelationsResult
-			if err := client.Call(ctx, proto.MethodRelations,
-				proto.RelationsParams{Number: number, Kind: kind, Limit: 1}, &res); err == nil {
-				counts[kind] = res.Total
-			}
-		}
-		return detailRelationsMsg{requestID: requestID, counts: counts}
+			err := client.Call(ctx, proto.MethodRelations,
+				proto.RelationsParams{Number: number, Kind: k, Limit: 1}, &res)
+			return detailRelationCountMsg{requestID: requestID, kind: k, count: res.Total, err: err}
+		})
 	}
+	return tea.Batch(cmds...)
 }
 
 // Command implements Pane.
@@ -236,9 +245,11 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.idsEntry = m.idsEntry
 		d.patentNote = m.patentNote
 		d.page.Top()
-	case detailRelationsMsg:
-		if m.requestID == d.loadID {
-			d.relCounts = m.counts
+		d.cachedLines = nil
+	case detailRelationCountMsg:
+		if m.requestID == d.loadID && m.err == nil {
+			d.relCounts[m.kind] = m.count
+			d.cachedLines = nil
 		}
 	case ProjectChangedMsg:
 		// The pane's project scopes its review state and tags; a change means
@@ -270,7 +281,12 @@ func (d *Detail) View(w, h int) string {
 	case d.loadErr != "":
 		return d.theme.Error.Render("error: " + d.loadErr)
 	}
-	lines := strings.Split(d.body(w), "\n")
+	if d.cachedLines == nil || w != d.lastWidth || d.jumpActive != d.lastJumpActive {
+		d.cachedLines = strings.Split(d.body(w), "\n")
+		d.lastWidth = w
+		d.lastJumpActive = d.jumpActive
+	}
+	lines := d.cachedLines
 	d.page.SetTotal(len(lines))
 	d.page.SetPageSize(max(h, 1))
 	start, end := d.page.Window()
@@ -299,53 +315,84 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, "Shown as", numberToShow(p).String())
 	d.field(&b, w, "Record key", p.Number.String())
 	d.field(&b, w, "Title", p.Title)
-	d.addAnchor(&b, d.jumpKey("Assignee"), "Assignee", 0)
+	
+	// Assignee
+	d.addAnchor(&b, d.jumpKey("Assignee"), "Assignee", p.Assignee, false, 0)
 	d.field(&b, w, "Assignee", p.Assignee)
-	d.addAnchor(&b, d.jumpKey("Inventors"), "Inventors", 0)
-	d.inventorLine = strings.Count(b.String(), "\n")
+	
+	// Inventors
 	var names []string
 	for _, inv := range p.Inventors {
 		names = append(names, string(inv))
 	}
-	d.field(&b, w, "Inventors", strings.Join(names, ", "))
+	invsVal := strings.Join(names, ", ")
+	d.addAnchor(&b, d.jumpKey("Inventors"), "Inventors", invsVal, false, 0)
+	d.inventorLine = strings.Count(b.String(), "\n")
+	d.field(&b, w, "Inventors", invsVal)
+	
 	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
 	d.field(&b, w, "Fetch state", fetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
 	d.field(&b, w, "Source URL", p.SourceURL)
-	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", 0)
-	d.field(&b, w, "Expiration", expirationText(p))
-	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", 0)
-	d.field(&b, w, "Classifications", strings.Join(p.Classifications, ", "))
+	
+	// Expiration
+	expVal := expirationText(p)
+	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", expVal, false, 0)
+	d.field(&b, w, "Expiration", expVal)
+	
+	// Classifications
+	classVal := strings.Join(p.Classifications, ", ")
+	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", classVal, false, 0)
+	d.field(&b, w, "Classifications", classVal)
 
 	// Project-scoped fields. Review state and tags describe the patent within
 	// one project, so they appear only when the pane has an active project.
 	if d.project != "" {
 		b.WriteByte('\n')
-		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", 0)
+		revVal := reviewStateText(d.state)
+		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", revVal, true, 0)
 		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
-		d.addAnchor(&b, d.jumpKey("IDS"), "IDS", 0)
-		d.field(&b, w, "IDS", detailIDSText(d.idsEntry))
-		d.addAnchor(&b, d.jumpKey("Tags"), "Tags", 0)
-		d.field(&b, w, "Tags", tagsText(d.tags))
-		d.addAnchor(&b, d.jumpKey("Notes"), "Notes", 0)
+		
+		idsVal := detailIDSText(d.idsEntry)
+		d.addAnchor(&b, d.jumpKey("IDS"), "IDS", idsVal, true, 0)
+		d.field(&b, w, "IDS", idsVal)
+		
+		tagsVal := tagsText(d.tags)
+		d.addAnchor(&b, d.jumpKey("Tags"), "Tags", tagsVal, true, 0)
+		d.field(&b, w, "Tags", tagsVal)
+		
+		var notesVal string
 		if d.patentNote == nil || strings.TrimSpace(d.patentNote.Markdown) == "" {
-			d.field(&b, w, "Notes", "—")
+			notesVal = "—"
 		} else {
-			d.field(&b, w, "Notes", render.MarkdownHeadings(d.patentNote.Markdown))
+			notesVal = render.MarkdownHeadings(d.patentNote.Markdown)
 		}
+		d.addAnchor(&b, d.jumpKey("Notes"), "Notes", notesVal, true, 0)
+		d.field(&b, w, "Notes", notesVal)
 	}
 
 	// Family-graph edge counts. The dedicated panes (c/b) list the edges.
 	b.WriteByte('\n')
-	d.addAnchor(&b, d.jumpKey("Citations"), "Citations", 0)
-	d.field(&b, w, "Citations", fmt.Sprintf("%d", d.relCounts[domain.RelationCites]))
-	d.field(&b, w, "Cited by", fmt.Sprintf("%d", d.relCounts[domain.RelationCitedBy]))
-	d.field(&b, w, "Parents", fmt.Sprintf("%d", d.relCounts[domain.RelationParent]))
-	d.field(&b, w, "Children", fmt.Sprintf("%d", d.relCounts[domain.RelationChild]))
+	citeVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCites])
+	d.addAnchor(&b, d.jumpKey("Citations"), "Citations", citeVal, false, 0)
+	d.field(&b, w, "Citations", citeVal)
+	
+	citedByVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCitedBy])
+	d.addAnchor(&b, d.jumpKey("Cited by"), "Cited by", citedByVal, false, 0)
+	d.field(&b, w, "Cited by", citedByVal)
+	
+	parentsVal := fmt.Sprintf("%d", d.relCounts[domain.RelationParent])
+	d.addAnchor(&b, d.jumpKey("Parents"), "Parents", parentsVal, false, 0)
+	d.field(&b, w, "Parents", parentsVal)
+	
+	childVal := fmt.Sprintf("%d", d.relCounts[domain.RelationChild])
+	d.addAnchor(&b, d.jumpKey("Children"), "Children", childVal, false, 0)
+	d.field(&b, w, "Children", childVal)
 
 	// Every life-stage document — the application stays visible here even once
 	// the patent has published.
-	d.addAnchor(&b, d.jumpKey("Documents"), "Documents", 1)
+	docVal := fmt.Sprintf("%d documents", len(p.Documents))
+	d.addAnchor(&b, d.jumpKey("Documents"), "Documents", docVal, false, 1)
 	docStart := strings.Count(b.String(), "\n") + 1
 	b.WriteByte('\n')
 	displayDocs := "Documents"
@@ -370,7 +417,8 @@ func (d *Detail) body(w int) string {
 		d.lineGroups = append(d.lineGroups, detailLineGroup{start: docStart, end: docEnd})
 	}
 
-	d.addAnchor(&b, d.jumpKey("First claim"), "First claim", 1)
+	claimVal := render.Truncate(p.FirstClaim, 60)
+	d.addAnchor(&b, d.jumpKey("First claim"), "First claim", claimVal, false, 1)
 	d.section(&b, w, "First claim", p.FirstClaim)
 
 	// Full claims text action hint
@@ -384,7 +432,8 @@ func (d *Detail) body(w int) string {
 	}
 	b.WriteByte('\n')
 
-	d.addAnchor(&b, d.jumpKey("Abstract"), "Abstract", 1)
+	abstractVal := render.Truncate(p.Abstract, 60)
+	d.addAnchor(&b, d.jumpKey("Abstract"), "Abstract", abstractVal, false, 1)
 	d.section(&b, w, "Abstract", p.Abstract)
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -401,11 +450,13 @@ func (d *Detail) highlightGroup(cursor int) detailLineGroup {
 // addAnchor records a jump anchor for the next labelled line b will write.
 // lineDelta offsets the recorded line past a leading blank or heading: 0 for a
 // plain field, 1 for a section whose heading follows a spacer line.
-func (d *Detail) addAnchor(b *strings.Builder, key rune, label string, lineDelta int) {
+func (d *Detail) addAnchor(b *strings.Builder, key rune, label, value string, local bool, lineDelta int) {
 	d.anchors = append(d.anchors, render.JumpAnchor{
 		Key:   key,
 		Label: label,
 		Line:  strings.Count(b.String(), "\n") + lineDelta,
+		Value: value,
+		Local: local,
 	})
 }
 
@@ -492,40 +543,46 @@ func (d *Detail) computeJumpKeys(bound []rune) {
 	}
 	used := make(map[rune]bool, len(detailAnchorLabels))
 	d.jumpKeys = make(map[string]rune, len(detailAnchorLabels))
+
+	// Pass 1: Satisfy manual overrides first to reserve their keys
 	for _, label := range detailAnchorLabels {
-		key := d.assignKey(label, boundSet, used)
-		d.jumpKeys[label] = key
-		used[key] = true
+		if label == "Citations" || label == "Cited by" || label == "Parents" || label == "Children" {
+			key := d.assignKey(label, boundSet, used)
+			d.jumpKeys[label] = key
+			used[key] = true
+		}
+	}
+
+	// Pass 2: Dynamically assign keys to all other fields
+	for _, label := range detailAnchorLabels {
+		if label != "Citations" && label != "Cited by" && label != "Parents" && label != "Children" {
+			key := d.assignKey(label, boundSet, used)
+			d.jumpKeys[label] = key
+			used[key] = true
+		}
 	}
 }
 
 func (d *Detail) assignKey(label string, boundSet, used map[rune]bool) rune {
-	for _, r := range label {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			r = r - 'A' + 'a'
-			fallthrough
-		case r >= 'a' && r <= 'z':
-			if !boundSet[r] && !used[r] {
-				return r
-			}
-		case r >= '0' && r <= '9':
-			if !boundSet[r] && !used[r] {
-				return r
-			}
+	switch label {
+	case "Citations":
+		if !used['c'] {
+			return 'c'
+		}
+	case "Cited by":
+		if !used['b'] {
+			return 'b'
+		}
+	case "Parents":
+		if !used['p'] {
+			return 'p'
+		}
+	case "Children":
+		if !used['C'] {
+			return 'C'
 		}
 	}
-	for r := 'a'; r <= 'z'; r++ {
-		if !boundSet[r] && !used[r] {
-			return r
-		}
-	}
-	for r := '0'; r <= '9'; r++ {
-		if !used[r] {
-			return r
-		}
-	}
-	return '?'
+	return render.AssignKey(label, used, false)
 }
 
 // jumpKey returns the assigned jump key for a label, or 0 if unset.
@@ -550,11 +607,14 @@ func (d *Detail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		for _, a := range d.anchors {
 			if a.Key == r {
 				d.JumpTo(a.Line)
+				d.jumpActive = false // Automatically turn off jump mode upon a successful jump
 				return d, nil, true
 			}
 		}
 	}
-	return d, nil, false
+	// Any other key (including esc) exits jump mode and is safely consumed so it doesn't leak normal-mode commands
+	d.jumpActive = false
+	return d, nil, true
 }
 
 // numberToShow returns the record's display number, falling back to the
@@ -574,7 +634,14 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 	if d.jumpActive {
 		labelW = 18
 		if key, ok := d.jumpKeys[label]; ok {
-			displayLabel = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(key)), label)
+			var style lipgloss.Style
+			if isLocalField(label) {
+				style = d.theme.JumpLocalLabel
+			} else {
+				// Global field: use a visible accent style or JumpGlobalLabel
+				style = d.theme.JumpGlobalLabel
+			}
+			displayLabel = fmt.Sprintf("%s %s", style.Render(fmt.Sprintf("[%s]", string(key))), label)
 		} else {
 			displayLabel = "    " + label
 		}
@@ -597,7 +664,13 @@ func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 	displayHeading := heading
 	if d.jumpActive {
 		if key, ok := d.jumpKeys[heading]; ok {
-			displayHeading = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(key)), heading)
+			var style lipgloss.Style
+			if isLocalField(heading) {
+				style = d.theme.JumpLocalLabel
+			} else {
+				style = d.theme.JumpGlobalLabel
+			}
+			displayHeading = fmt.Sprintf("%s %s", style.Render(fmt.Sprintf("[%s]", string(key))), heading)
 		}
 	}
 	b.WriteString(d.theme.Header.Render(displayHeading))
@@ -614,6 +687,15 @@ func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 	}
 	end := strings.Count(b.String(), "\n") - 1
 	d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: end})
+}
+
+func isLocalField(label string) bool {
+	switch label {
+	case "Review state", "IDS", "Tags", "Notes":
+		return true
+	default:
+		return false
+	}
 }
 
 // wrapText greedily word-wraps s to lines no wider than width.
@@ -747,3 +829,24 @@ func detailDateTimeText(t time.Time) string {
 
 func (d *Detail) Patent() domain.Patent     { return d.patent }
 func (d *Detail) IsCursorOnInventors() bool { return d.page.Cursor() == d.inventorLine }
+
+// ResolveCursorRelation checks if the cursor is currently hovering over a relation count line
+// and returns the corresponding RelationKind if it is.
+func (d *Detail) ResolveCursorRelation() (domain.RelationKind, bool) {
+	cursor := d.page.Cursor()
+	for _, a := range d.anchors {
+		if a.Line == cursor {
+			switch a.Label {
+			case "Citations":
+				return domain.RelationCites, true
+			case "Cited by":
+				return domain.RelationCitedBy, true
+			case "Parents":
+				return domain.RelationParent, true
+			case "Children":
+				return domain.RelationChild, true
+			}
+		}
+	}
+	return "", false
+}

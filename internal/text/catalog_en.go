@@ -160,6 +160,7 @@ var cmdStrings = map[string][2]string{
 	"view.citations":             {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":              {"Open cited by", "Show patents that cite the selected patent."},
 	"view.parents":               {"Open parents", "Show parent patents of the selected patent."},
+	"view.children":              {"Open children", "Show child patents of the selected patent."},
 	"view.family":                {"Open family graph", "Show a bounded BFS parent/child family graph for the selected patent."},
 	"view.family-depth-more":     {"Increase family depth", "Increase the family graph BFS depth and reload the graph."},
 	"view.family-depth-less":     {"Decrease family depth", "Decrease the family graph BFS depth and reload the graph."},

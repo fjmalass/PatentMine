@@ -16,6 +16,10 @@ type JumpAnchor struct {
 	Label string
 	// Line is the 0-based body line the anchor scrolls to.
 	Line int
+	// Value is the current value of the field for display in the jump list.
+	Value string
+	// Local reports whether the field is project-scoped (local) rather than patent-scoped (global).
+	Local bool
 }
 
 // Paginator tracks a cursor over a list and the visible window around it. Every

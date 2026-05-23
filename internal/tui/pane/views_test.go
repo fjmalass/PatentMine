@@ -216,13 +216,13 @@ func TestDetailPaneJumpActive(t *testing.T) {
 	d.SetJumpActive(true)
 	outJump := d.body(80)
 
-	// Assignee: 'a' is bound, try second letter 's' -> free -> 's'
-	if !strings.Contains(outJump, "[s] Assignee") {
-		t.Errorf("expected assignee inline shortcut '[s] Assignee' when jump mode is active, got: %s", outJump)
+	// Assignee: 'a' is bound, but bypasses constraints to use the most intuitive key -> 'a'
+	if !strings.Contains(outJump, "[a] Assignee") {
+		t.Errorf("expected assignee inline shortcut '[a] Assignee' when jump mode is active, got: %s", outJump)
 	}
-	// Inventors: 'i' is bound, try second letter 'n' -> free -> 'n'
-	if !strings.Contains(outJump, "[n] Inventors") {
-		t.Errorf("expected inventors inline shortcut '[n] Inventors' when jump mode is active, got: %s", outJump)
+	// Inventors: 'i' is bound, but bypasses constraints to use the most intuitive key -> 'i'
+	if !strings.Contains(outJump, "[i] Inventors") {
+		t.Errorf("expected inventors inline shortcut '[i] Inventors' when jump mode is active, got: %s", outJump)
 	}
 	// Expiration: 'e' is free -> 'e'
 	if !strings.Contains(outJump, "[e] Expiration") {

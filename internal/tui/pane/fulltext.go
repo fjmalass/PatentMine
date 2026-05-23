@@ -526,6 +526,7 @@ func (f *FullText) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		for _, a := range f.anchors {
 			if a.Key == r {
 				f.JumpTo(a.Line)
+				f.jumpActive = false // Automatically turn off jump mode upon a successful jump
 				return f, nil, true
 			}
 		}
@@ -583,32 +584,7 @@ func (f *FullText) computeJumpKeys(bound []rune) {
 }
 
 func (f *FullText) assignKey(label string, boundSet, used map[rune]bool) rune {
-	for _, r := range label {
-		switch {
-		case r >= '0' && r <= '9':
-			if !boundSet[r] && !used[r] {
-				return r
-			}
-		case r >= 'A' && r <= 'Z':
-			r = r - 'A' + 'a'
-			fallthrough
-		case r >= 'a' && r <= 'z':
-			if !boundSet[r] && !used[r] {
-				return r
-			}
-		}
-	}
-	for r := '0'; r <= '9'; r++ {
-		if !boundSet[r] && !used[r] {
-			return r
-		}
-	}
-	for r := 'a'; r <= 'z'; r++ {
-		if !boundSet[r] && !used[r] {
-			return r
-		}
-	}
-	return 0
+	return render.AssignKey(label, used, true)
 }
 
 func (f *FullText) jumpKey(label string) rune {

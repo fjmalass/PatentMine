@@ -56,6 +56,12 @@ type Theme struct {
 	MarkedSelected     lipgloss.Style
 	FocusMarkedCell    lipgloss.Style
 	FocusMarkedSelectedCell lipgloss.Style
+
+	// Jump Overlay Styles
+	JumpGlobalLabel lipgloss.Style
+	JumpGlobalValue lipgloss.Style
+	JumpLocalLabel  lipgloss.Style
+	JumpLocalValue  lipgloss.Style
 }
 
 // NewTheme builds the default theme.
@@ -125,5 +131,11 @@ func NewTheme() Theme {
 		FocusMarkedSelectedCell: lipgloss.NewStyle().Bold(true).
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorMarkedFocusSelBg)),
+
+		// Jump Overlay Styles
+		JumpGlobalLabel: lipgloss.NewStyle().Foreground(lipgloss.Color(colorText)).Bold(true),
+		JumpGlobalValue: lipgloss.NewStyle().Foreground(lipgloss.Color(colorDim)),
+		JumpLocalLabel:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorWarn)).Bold(true),
+		JumpLocalValue:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorMarked)),
 	}
 }

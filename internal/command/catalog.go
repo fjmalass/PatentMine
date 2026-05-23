@@ -19,6 +19,7 @@ const (
 	OpenCitations       ID = "view.citations"
 	OpenCitedBy         ID = "view.cited-by"
 	OpenParents         ID = "view.parents"
+	OpenChildren        ID = "view.children"
 	OpenFamilyGraph     ID = "view.family"
 	OpenIDS             ID = "view.ids"
 	OpenProjects        ID = "view.projects"
@@ -149,6 +150,7 @@ func Default() (*Registry, error) {
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
 		Command{ID: OpenParents, Name: "open.parents", Aliases: []string{"parents"}, Usage: ":open.parents", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
+		Command{ID: OpenChildren, Name: "open.children", Aliases: []string{"children"}, Usage: ":open.children", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
 		Command{ID: OpenFamilyGraph, Name: "open.family", Aliases: []string{"family-tree", "tree"}, Usage: ":open.family [depth] [COUNTRY ...]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: FamilyDepthMore, Name: "family.depth.more", Aliases: []string{"family-depth-more"}, Usage: ":family.depth.more", Kind: KindView, Scopes: []Scope{ScopeFamily}},
 		Command{ID: FamilyDepthLess, Name: "family.depth.less", Aliases: []string{"family-depth-less"}, Usage: ":family.depth.less", Kind: KindView, Scopes: []Scope{ScopeFamily}},

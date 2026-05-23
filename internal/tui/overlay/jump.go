@@ -1,9 +1,11 @@
 package overlay
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/command"
 	"patentmine/internal/tui/render"
@@ -59,7 +61,23 @@ func (j *Jump) View(maxW, _ int) string {
 		render.Truncate("press a key to jump · any other key closes", maxW)))
 	b.WriteString("\n\n")
 	for _, a := range j.anchors {
-		line := "  " + j.theme.HelpKey.Render(string(a.Key)) + "  " + a.Label
+		keyStr := j.theme.HelpKey.Render(string(a.Key))
+		var labelStyle lipgloss.Style
+		var valueStyle lipgloss.Style
+		if a.Local {
+			labelStyle = j.theme.JumpLocalLabel
+			valueStyle = j.theme.JumpLocalValue
+		} else {
+			labelStyle = j.theme.JumpGlobalLabel
+			valueStyle = j.theme.JumpGlobalValue
+		}
+
+		displayVal := a.Value
+		if strings.TrimSpace(displayVal) == "" {
+			displayVal = "—"
+		}
+
+		line := fmt.Sprintf("  %s  %s: %s", keyStr, labelStyle.Render(a.Label), valueStyle.Render(displayVal))
 		b.WriteString(render.Truncate(line, maxW))
 		b.WriteByte('\n')
 	}
