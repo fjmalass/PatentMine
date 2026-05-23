@@ -26,6 +26,10 @@ type TableParams struct {
 	FocusActive   bool         // whether this table has active input focus
 	PrefixCursor  string       // custom active row prefix, e.g. "→ "
 	PrefixNormal  string       // custom normal row prefix, e.g. "  "
+	VisualMode    bool         // whether visual mode is active
+	IsRowSelected func(rowIdx int) bool // returns whether a row should be highlighted as selected/visual
+	IsRowMarked   func(rowIdx int) bool // returns whether a row is permanently marked (e.g. source item)
+	PrefixMarked  string                // custom normal row prefix for marked rows, e.g. "⚑ " (defaults to "⚑ " if empty)
 }
 
 // RenderTable draws a mathematically padded, truncated, and styled table.
@@ -59,11 +63,29 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 	b.WriteString("\n")
 
 	// 2. Render Rows
+	prefixMarked := params.PrefixMarked
+	if prefixMarked == "" {
+		prefixMarked = "⚑ "
+	}
+
 	for i := 0; i < params.RowCount; i++ {
 		isSelectedRow := i == params.Cursor && params.FocusActive
+		isVisualRow := params.IsRowSelected != nil && params.IsRowSelected(i)
+		isMarkedRow := params.IsRowMarked != nil && params.IsRowMarked(i)
+
 		rowStyle := params.Theme.Row
-		if isSelectedRow {
+		if isSelectedRow && isMarkedRow {
+			rowStyle = params.Theme.MarkedSelected
+		} else if isSelectedRow {
 			rowStyle = params.Theme.Selected
+		} else if isVisualRow {
+			rowStyle = params.Theme.Visual
+		} else if isMarkedRow {
+			if i%2 == 1 {
+				rowStyle = params.Theme.MarkedAlt
+			} else {
+				rowStyle = params.Theme.Marked
+			}
 		} else if i%2 == 1 {
 			rowStyle = params.Theme.RowAlt
 		}
@@ -77,14 +99,20 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 			style := rowStyle
 			isFocusedCol := params.FocusActive && params.FocusedColIdx >= 0 && colIdx == params.FocusedColIdx
 			if isFocusedCol {
-				style = focusedCellStyle(params.Theme, i, isSelectedRow)
+				style = focusedCellStyleExtended(params.Theme, i, isSelectedRow, isVisualRow, isMarkedRow)
 			}
 			rowParts = append(rowParts, style.Render(cell))
 		}
 
 		prefix := params.PrefixNormal
 		if isSelectedRow {
-			prefix = params.PrefixCursor
+			if isMarkedRow {
+				prefix = "→⚑"
+			} else {
+				prefix = params.PrefixCursor
+			}
+		} else if isMarkedRow {
+			prefix = prefixMarked
 		}
 		prefixStyled := rowStyle.Render(prefix)
 
@@ -96,10 +124,16 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 	return b.String()
 }
 
-// focusedCellStyle calculates cell styling on the focused column/row.
-func focusedCellStyle(theme Theme, absoluteIndex int, selected bool) lipgloss.Style {
-	if selected {
+// focusedCellStyleExtended calculates cell styling on the focused column/row, taking marked rows into account.
+func focusedCellStyleExtended(theme Theme, absoluteIndex int, cursorSelected, visualSelected, marked bool) lipgloss.Style {
+	if cursorSelected && marked {
+		return theme.FocusMarkedSelectedCell
+	}
+	if cursorSelected || visualSelected {
 		return theme.FocusSelected
+	}
+	if marked {
+		return theme.FocusMarkedCell
 	}
 	if absoluteIndex%2 != 0 {
 		return theme.FocusCellAlt

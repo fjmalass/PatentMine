@@ -403,5 +403,152 @@ func TestNewInventorStatsOverlayDirectFocus(t *testing.T) {
 	}
 }
 
+func TestInventorStatsOverlayVisualMode(t *testing.T) {
+	theme := render.NewTheme()
+	catalog := text.English()
+	patent := domain.Patent{
+		Number: domain.MustParsePatentNumber("US10000000B2"),
+	}
+
+	o := &InventorStatsOverlay{
+		theme:         theme,
+		catalog:       catalog,
+		patent:        patent,
+		project:       "proj-1",
+		stats: []domain.InventorStats{
+			{Inventor: "John Doe", Total: 12},
+		},
+		selected:      0,
+		loading:       false,
+		focus:         focusPatents,
+		patentsPage:   render.NewPaginator(5),
+		activeSort:    domain.SortByNumber,
+		sortAscending: true,
+		focusedColIdx: -1,
+		lastWidth:     120,
+	}
+
+	o.patents = []domain.PatentRow{
+		{Number: domain.MustParsePatentNumber("US1000000B1")},
+		{Number: domain.MustParsePatentNumber("US2000000B1")},
+		{Number: domain.MustParsePatentNumber("US3000000B1")},
+	}
+	o.patentsPage.SetTotal(3)
+
+	// Pressing 'v' should enter visual mode
+	_, _, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	if !handled || !o.patentsPage.VisualMode() {
+		t.Fatal("Expected key 'v' to enter visual mode")
+	}
+
+	// Verify visual range starts at 0 (current cursor)
+	start, _, active := o.patentsPage.VisualRange()
+	if !active || start != 0 {
+		t.Errorf("Expected visual range start to be 0, got %d (active=%t)", start, active)
+	}
+
+	// Move cursor down to index 1
+	o.patentsPage.MoveDown(1)
+
+	// Verify selections contains indices 0 and 1
+	selections := o.selections()
+	if len(selections) != 2 {
+		t.Fatalf("Expected 2 selected patents, got %d", len(selections))
+	}
+	if selections[0].String() != "US1000000B1" || selections[1].String() != "US2000000B1" {
+		t.Errorf("Unexpected selections: %v", selections)
+	}
+
+	// Pressing 'esc' should clear visual mode instead of closing overlay
+	_, cmd, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if !handled || o.patentsPage.VisualMode() {
+		t.Fatal("Expected Esc to clear visual mode")
+	}
+	if cmd != nil {
+		t.Error("Expected no command to be returned when clearing visual mode")
+	}
+
+	// Verify chord 'g v' restores the last visual selection
+	// Pressing 'g'
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	if !handled || !o.patentsPage.GPending() {
+		t.Fatal("Expected key 'g' to set gPending")
+	}
+
+	// Pressing 'v' to restore visual selection
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	if !handled || !o.patentsPage.VisualMode() {
+		t.Fatal("Expected key 'v' with gPending to restore visual mode")
+	}
+
+	// Check selections are restored (which was indices 0 and 1)
+	restoredSelections := o.selections()
+	if len(restoredSelections) != 2 {
+		t.Errorf("Expected restored selections to have 2 items, got %d", len(restoredSelections))
+	}
+}
+
+func TestInventorStatsOverlaySourcePatentHighlight(t *testing.T) {
+	theme := render.NewTheme()
+	catalog := text.English()
+	sourcePatentNo := domain.MustParsePatentNumber("US10000000B2")
+	patent := domain.Patent{
+		Number:        sourcePatentNo,
+		DisplayNumber: sourcePatentNo,
+		Inventors:     []domain.Inventor{"John Doe"},
+	}
+
+	o := &InventorStatsOverlay{
+		theme:         theme,
+		catalog:       catalog,
+		patent:        patent,
+		project:       "proj-1",
+		stats: []domain.InventorStats{
+			{Inventor: "John Doe", Total: 1},
+		},
+		selected:      0,
+		loading:       false,
+		focus:         focusPatents,
+		patentsPage:   render.NewPaginator(5),
+		activeSort:    domain.SortByNumber,
+		sortAscending: true,
+		focusedColIdx: -1,
+		lastWidth:     120,
+	}
+
+	// 1. Setup patents list where one patent matches the source patent
+	o.patents = []domain.PatentRow{
+		{
+			Number:        domain.MustParsePatentNumber("US8000000B1"),
+			DisplayNumber: domain.MustParsePatentNumber("US8000000B1"),
+			Title:         "Other Patent",
+		},
+		{
+			Number:        sourcePatentNo,
+			DisplayNumber: sourcePatentNo,
+			Title:         "Source Patent Highlighted",
+		},
+	}
+	o.patentsPage.SetTotal(2)
+
+	// Cursor is at index 0 initially. Row 1 is the marked source patent.
+	// Render view and check if the marked icon '⚑' is present in the rendered output.
+	viewStr := o.View(120, 20)
+	if !strings.Contains(viewStr, "⚑") {
+		t.Errorf("Expected marked icon '⚑' to be rendered on the source patent row")
+	}
+
+	// 2. Test sorting: when sorted, the row indices change, but the marker should still be correct.
+	// We reverse order or move cursor to index 1 (which is the source patent).
+	o.patentsPage.MoveDown(1) // Move cursor to the source patent (index 1)
+	
+	// Now the source patent row is selected. The prefix should change to cursor + marked: "→⚑"
+	viewStrCursor := o.View(120, 20)
+	if !strings.Contains(viewStrCursor, "→⚑") {
+		t.Errorf("Expected combined cursor + marked icon '→⚑' to be rendered when cursor is on the source patent row")
+	}
+}
+
+
 
 

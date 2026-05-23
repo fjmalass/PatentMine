@@ -3,6 +3,10 @@
 // holds application state — panes embed these values.
 package render
 
+import (
+	tea "github.com/charmbracelet/bubbletea"
+)
+
 // JumpAnchor is one labelled scroll target in a long pane: jump mode lists the
 // anchors, and selecting one scrolls the pane straight to that line.
 type JumpAnchor struct {
@@ -18,10 +22,16 @@ type JumpAnchor struct {
 // list pane embeds one instead of re-deriving scroll arithmetic, so paging
 // behaves identically across the catalog, citations, and project views.
 type Paginator struct {
-	total    int
-	pageSize int
-	cursor   int // absolute index into the list, 0-based
-	offset   int // absolute index of the first visible row
+	total             int
+	pageSize          int
+	cursor            int // absolute index into the list, 0-based
+	offset            int // absolute index of the first visible row
+	visualMode        bool
+	visualAnchor      int
+	savedVisualAnchor int
+	savedVisualCursor int
+	hasSavedVisual    bool
+	gPending          bool
 }
 
 // NewPaginator returns a Paginator with the given page size (clamped to >= 1).
@@ -127,4 +137,119 @@ func (p *Paginator) clamp() {
 	}
 	maxOffset := max(p.total-p.pageSize, 0)
 	p.offset = min(max(p.offset, 0), maxOffset)
+}
+
+// VisualMode returns whether visual mode is active.
+func (p Paginator) VisualMode() bool {
+	return p.visualMode
+}
+
+// ToggleVisual toggles visual mode.
+func (p *Paginator) ToggleVisual() {
+	if p.visualMode {
+		p.SaveVisual()
+		p.ClearVisual()
+	} else {
+		p.visualMode = true
+		p.visualAnchor = p.cursor
+	}
+}
+
+// ClearVisual exits visual mode.
+func (p *Paginator) ClearVisual() {
+	p.visualMode = false
+	p.visualAnchor = 0
+}
+
+// SaveVisual captures the current visual selection boundaries.
+func (p *Paginator) SaveVisual() {
+	p.savedVisualAnchor = p.visualAnchor
+	p.savedVisualCursor = p.cursor
+	p.hasSavedVisual = true
+}
+
+// ReselectLast re-enters visual mode restoring the last saved selection.
+// Returns true if a saved selection was successfully restored.
+func (p *Paginator) ReselectLast() bool {
+	if p.hasSavedVisual {
+		p.visualMode = true
+		p.visualAnchor = p.savedVisualAnchor
+		p.cursor = p.savedVisualCursor
+		p.clamp()
+		return true
+	}
+	return false
+}
+
+// IsRowSelected returns whether the absolute index is within the visual selection range.
+func (p Paginator) IsRowSelected(absIdx int) bool {
+	if !p.visualMode {
+		return false
+	}
+	lo := min(p.visualAnchor, p.cursor)
+	hi := max(p.visualAnchor, p.cursor)
+	return absIdx >= lo && absIdx <= hi
+}
+
+// VisualRange returns the start and end absolute indices (inclusive) of the visual selection.
+// Returns active=false if visual mode is not active.
+func (p Paginator) VisualRange() (start, end int, active bool) {
+	if !p.visualMode {
+		return 0, 0, false
+	}
+	return min(p.visualAnchor, p.cursor), max(p.visualAnchor, p.cursor), true
+}
+
+// HasSavedVisual returns whether there is a saved visual selection.
+func (p Paginator) HasSavedVisual() bool {
+	return p.hasSavedVisual
+}
+
+// SavedVisualAnchor returns the anchor index of the saved visual selection.
+func (p Paginator) SavedVisualAnchor() int {
+	return p.savedVisualAnchor
+}
+
+// SavedVisualCursor returns the cursor index of the saved visual selection.
+func (p Paginator) SavedVisualCursor() int {
+	return p.savedVisualCursor
+}
+
+// GPending returns whether a 'g' prefix key is pending.
+func (p Paginator) GPending() bool {
+	return p.gPending
+}
+
+// HandleKey handles standard visual mode keys on the paginator (v, g, gv, esc, q, Q).
+// It returns true if the key was consumed by the paginator.
+func (p *Paginator) HandleKey(msg tea.KeyMsg) bool {
+	keyStr := msg.String()
+
+	// If 'g' prefix is pending, handle 'v' to restore visual selection,
+	// or clear the pending state for any other key.
+	if p.gPending {
+		p.gPending = false
+		if keyStr == "v" {
+			p.ReselectLast()
+			return true
+		}
+	}
+
+	switch keyStr {
+	case "g":
+		p.gPending = true
+		return true
+
+	case "v":
+		p.ToggleVisual()
+		return true
+
+	case "esc", "q", "Q":
+		if p.visualMode {
+			p.SaveVisual()
+			p.ClearVisual()
+			return true
+		}
+	}
+	return false
 }

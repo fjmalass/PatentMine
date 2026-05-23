@@ -17,6 +17,14 @@ const (
 	colorError    = "203" // error text
 	colorOK       = "78"  // success text
 	colorText     = "252" // default foreground
+
+	// Marked states for source/flagged items
+	colorMarked         = "99"  // soft violet text color for marked row
+	colorMarkedBg       = "54"  // deep purple background for marked row
+	colorMarkedAltBg    = "53"  // slightly darker deep purple background for alternate marked row
+	colorMarkedSelBg    = "98"  // highlighted marked row background (hovered/cursor selected)
+	colorMarkedFocusBg  = "55"  // focus cell background on marked rows
+	colorMarkedFocusSelBg = "129" // focus cell background on marked row under cursor
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -41,6 +49,13 @@ type Theme struct {
 	MutedItalic lipgloss.Style
 	HelpKey     lipgloss.Style
 	Box         lipgloss.Style
+
+	// Marked states
+	Marked             lipgloss.Style
+	MarkedAlt          lipgloss.Style
+	MarkedSelected     lipgloss.Style
+	FocusMarkedCell    lipgloss.Style
+	FocusMarkedSelectedCell lipgloss.Style
 }
 
 // NewTheme builds the default theme.
@@ -93,5 +108,22 @@ func NewTheme() Theme {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(colorAccent)).
 			Padding(0, 1),
+
+		// Marked states
+		Marked: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorMarked)).
+			Background(lipgloss.Color(colorMarkedBg)),
+		MarkedAlt: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorMarked)).
+			Background(lipgloss.Color(colorMarkedAltBg)),
+		MarkedSelected: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorMarkedSelBg)).Bold(true),
+		FocusMarkedCell: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorMarkedFocusBg)),
+		FocusMarkedSelectedCell: lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorMarkedFocusSelBg)),
 	}
 }

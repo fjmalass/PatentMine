@@ -192,6 +192,13 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 	o.err = nil
 	o.patentsErr = nil
 
+	// Try paginator's visual key handling first
+	if o.focus == focusPatents {
+		if o.patentsPage.HandleKey(msg) {
+			return o, nil, true
+		}
+	}
+
 	switch msg.String() {
 	case "q", "Q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -342,20 +349,45 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			}
 			return o, nil, true
 		case "s":
-			cmd := pane.SetReviewStateCmd(o.client, o.project, []domain.PatentNumber{selectedPatent.Number}, domain.ReviewStateStored)
+			numbers := o.selections()
+			if len(numbers) == 0 {
+				numbers = []domain.PatentNumber{selectedPatent.Number}
+			}
+			cmd := pane.SetReviewStateCmd(o.client, o.project, numbers, domain.ReviewStateStored)
+			o.clearVisual()
 			return o, cmd, true
 		case "r":
-			cmd := pane.SetReviewStateCmd(o.client, o.project, []domain.PatentNumber{selectedPatent.Number}, domain.ReviewStateUnderReview)
+			numbers := o.selections()
+			if len(numbers) == 0 {
+				numbers = []domain.PatentNumber{selectedPatent.Number}
+			}
+			cmd := pane.SetReviewStateCmd(o.client, o.project, numbers, domain.ReviewStateUnderReview)
+			o.clearVisual()
 			return o, cmd, true
 		case "i":
-			cmd := pane.SetReviewStateCmd(o.client, o.project, []domain.PatentNumber{selectedPatent.Number}, domain.ReviewStateIgnored)
+			numbers := o.selections()
+			if len(numbers) == 0 {
+				numbers = []domain.PatentNumber{selectedPatent.Number}
+			}
+			cmd := pane.SetReviewStateCmd(o.client, o.project, numbers, domain.ReviewStateIgnored)
+			o.clearVisual()
 			return o, cmd, true
 		case "x":
-			cmd := pane.SetReviewStateCmd(o.client, o.project, []domain.PatentNumber{selectedPatent.Number}, domain.ReviewStateDeleted)
+			numbers := o.selections()
+			if len(numbers) == 0 {
+				numbers = []domain.PatentNumber{selectedPatent.Number}
+			}
+			cmd := pane.SetReviewStateCmd(o.client, o.project, numbers, domain.ReviewStateDeleted)
+			o.clearVisual()
 			return o, cmd, true
 		case "t":
+			numbers := o.selections()
+			if len(numbers) == 0 {
+				numbers = []domain.PatentNumber{selectedPatent.Number}
+			}
+			o.clearVisual()
 			return o, func() tea.Msg {
-				return OpenTagPatentOverlayMsg{Patents: []domain.PatentNumber{selectedPatent.Number}}
+				return OpenTagPatentOverlayMsg{Patents: numbers}
 			}, true
 		}
 	}
@@ -519,6 +551,17 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 			FocusActive:   o.focus == focusPatents,
 			PrefixCursor:  "→ ",
 			PrefixNormal:  "  ",
+			VisualMode:    o.patentsPage.VisualMode(),
+			IsRowSelected: func(rowIdx int) bool {
+				return o.patentsPage.IsRowSelected(startPat + rowIdx)
+			},
+			IsRowMarked: func(rowIdx int) bool {
+				absIdx := startPat + rowIdx
+				if absIdx < 0 || absIdx >= len(o.patents) {
+					return false
+				}
+				return o.patents[absIdx].Number == o.patent.Number
+			},
 		}
 
 		tableStr := render.RenderTable(params, targetW, func(rowIdx, colIdx int) string {
@@ -576,7 +619,11 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 		if o.patentsPage.Total() > 0 {
 			status = fmt.Sprintf("[%d/%d]", o.patentsPage.Cursor()+1, o.patentsPage.Total())
 		}
-		footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
+		if o.patentsPage.VisualMode() {
+			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
+		} else {
+			footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
+		}
 	}
 	b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 
@@ -696,4 +743,27 @@ func (o *InventorStatsOverlay) calcHeights(innerHeight int) (statsH, patentsH in
 	statsH = max(1, availH/3)
 	patentsH = max(1, availH-statsH)
 	return statsH, patentsH
+}
+
+func (o *InventorStatsOverlay) clearVisual() {
+	o.patentsPage.SaveVisual()
+	o.patentsPage.ClearVisual()
+}
+
+func (o *InventorStatsOverlay) selections() []domain.PatentNumber {
+	start, end, active := o.patentsPage.VisualRange()
+	if !active || len(o.patents) == 0 {
+		return nil
+	}
+	offset := o.patentsPage.Offset()
+	lo := max(start, offset)
+	hi := min(end, offset+len(o.patents)-1)
+	if lo > hi {
+		return nil
+	}
+	out := make([]domain.PatentNumber, 0, hi-lo+1)
+	for abs := lo; abs <= hi; abs++ {
+		out = append(out, o.patents[abs-offset].Number)
+	}
+	return out
 }
