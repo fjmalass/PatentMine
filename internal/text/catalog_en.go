@@ -216,7 +216,7 @@ var cmdStrings = map[string][2]string{
 	"project.create":             {"Create project", "Create a new project."},
 	"project.activate":           {"Use project", "Make the selected project the active project for patent actions."},
 	"project.clear-active":       {"Clear active project", "Clear the active project filter and target."},
-	"view.filter":                {"Filter", "Apply a boolean filter to the current list (e.g. :filter tag:prior_art and not state:under_review, :filter class:S04*)."},
+	"view.filter":                {"Filter", "Apply a boolean filter to the current list (e.g. :filter tag:prior_art and not state:under_review, :filter class:S04*, :filter inventor:\"Ada Lovelace\" and search:\"widget sensor\")."},
 	"find.open":                  {"Find", "Open the inline find bar; type to search, n/N to navigate, Enter to keep, Esc to cancel."},
 	"ids.edit-field":             {"Edit IDS field", "Edit the selected IDS field."},
 	"ids.toggle-full":            {"Toggle IDS full", "Toggle whether the full document is cited on the IDS."},

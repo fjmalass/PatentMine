@@ -2,6 +2,7 @@ package filterexpr
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"patentmine/internal/domain"
@@ -10,9 +11,11 @@ import (
 type Field string
 
 const (
-	FieldTag   Field = "tag"
-	FieldState Field = "state"
-	FieldClass Field = "class"
+	FieldTag      Field = "tag"
+	FieldState    Field = "state"
+	FieldClass    Field = "class"
+	FieldSearch   Field = "search"
+	FieldInventor Field = "inventor"
 )
 
 const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:stored"
@@ -24,9 +27,11 @@ type fieldSpec struct {
 }
 
 var fieldSpecs = []fieldSpec{
+	{name: FieldSearch, aliases: []string{"find"}, parse: parseSearchTerm},
 	{name: FieldTag, parse: parseTagTerm},
 	{name: FieldState, aliases: []string{"status", "review_state"}, parse: parseStateTerm},
 	{name: FieldClass, aliases: []string{"classification", "cpc", "ipc"}, parse: parseClassTerm},
+	{name: FieldInventor, aliases: []string{"inv"}, parse: parseInventorTerm},
 }
 
 var fieldByName = func() map[string]fieldSpec {
@@ -47,13 +52,19 @@ type OrExpr struct{ Left, Right Expr }
 type NotExpr struct{ Child Expr }
 
 type TermExpr struct {
-	Field Field
-	Value string
-	Class ClassificationPattern
-	State domain.ReviewState
+	Field    Field
+	Value    string
+	Class    ClassificationPattern
+	Inventor ValuePattern
+	State    domain.ReviewState
 }
 
 type ClassificationPattern struct {
+	Raw      string
+	Wildcard bool
+}
+
+type ValuePattern struct {
 	Raw      string
 	Wildcard bool
 }
@@ -169,9 +180,25 @@ func tokenize(input string) []token {
 			i++
 		default:
 			start := i
-			for i < len(input) && !isSpace(input[i]) && input[i] != '(' && input[i] != ')' {
-				i++
+			inQuote := false
+			for i < len(input) {
+				switch input[i] {
+				case '"':
+					inQuote = !inQuote
+					i++
+				case '(', ')':
+					if !inQuote {
+						goto tokenDone
+					}
+					i++
+				default:
+					if !inQuote && isSpace(input[i]) {
+						goto tokenDone
+					}
+					i++
+				}
 			}
+		tokenDone:
 			text := input[start:i]
 			switch strings.ToLower(text) {
 			case "and":
@@ -283,6 +310,13 @@ func parseTerm(raw string) (Expr, error) {
 	if value == "" {
 		return nil, fmt.Errorf("missing value after %q", fieldName+":")
 	}
+	if strings.HasPrefix(value, `"`) {
+		unquoted, err := strconv.Unquote(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid quoted value %q", value)
+		}
+		value = unquoted
+	}
 	spec, ok := fieldByName[strings.ToLower(fieldName)]
 	if !ok {
 		return nil, fmt.Errorf("unknown filter field %q", fieldName)
@@ -300,6 +334,14 @@ func parseTagTerm(value string) (TermExpr, error) {
 		return TermExpr{}, err
 	}
 	return TermExpr{Field: FieldTag, Value: value}, nil
+}
+
+func parseSearchTerm(value string) (TermExpr, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return TermExpr{}, fmt.Errorf("search filter requires a value")
+	}
+	return TermExpr{Field: FieldSearch, Value: value}, nil
 }
 
 func parseStateTerm(value string) (TermExpr, error) {
@@ -327,6 +369,14 @@ func parseClassTerm(value string) (TermExpr, error) {
 	return TermExpr{Field: FieldClass, Value: normalized, Class: ClassificationPattern{Raw: normalized, Wildcard: strings.Contains(normalized, "*")}}, nil
 }
 
+func parseInventorTerm(value string) (TermExpr, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return TermExpr{}, fmt.Errorf("inventor filter requires a value")
+	}
+	return TermExpr{Field: FieldInventor, Value: value, Inventor: ValuePattern{Raw: value, Wildcard: strings.Contains(value, "*")}}, nil
+}
+
 func unsupportedClassPatternError() error {
 	return fmt.Errorf("unsupported classification filter syntax: only literal values and '*' wildcard are supported right now (examples: class:S04, class:S04*)")
 }
@@ -340,10 +390,20 @@ func renderExpr(expr Expr, parentPrec int) string {
 	case NotExpr:
 		return renderWithParen(parentPrec, 3, "not "+renderExpr(e.Child, 3))
 	case TermExpr:
-		return string(e.Field) + ":" + e.Value
+		return string(e.Field) + ":" + renderValue(e.Value)
 	default:
 		return ""
 	}
+}
+
+func renderValue(value string) string {
+	if value == "" {
+		return value
+	}
+	if strings.ContainsAny(value, " \t\n\r()\"") {
+		return strconv.Quote(value)
+	}
+	return value
 }
 
 func renderWithParen(parentPrec, prec int, text string) string {

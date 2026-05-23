@@ -509,14 +509,25 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 			`WHERE t.project_id = ? AND pt.patent_number = p.number AND LOWER(t.name) = LOWER(?))`, []any{string(q.Project), term.Value}, nil
 	case filterexpr.FieldClass:
 		return `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE UPPER(json_each.value) LIKE ? ESCAPE '\')`, []any{classificationLikePattern(term.Class.Raw, term.Class.Wildcard)}, nil
+	case filterexpr.FieldSearch:
+		return `(p.number LIKE ? OR p.rowid IN (SELECT rowid FROM patent_fts WHERE patent_fts MATCH ?))`, []any{"%" + term.Value + "%", ftsQuery(term.Value)}, nil
+	case filterexpr.FieldInventor:
+		if term.Inventor.Wildcard {
+			return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\')`, []any{wildcardLikePattern(term.Inventor.Raw, false)}, nil
+		}
+		return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?)`, []any{term.Value}, nil
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
 	}
 }
 
 func classificationLikePattern(part string, wildcard bool) string {
+	return wildcardLikePattern(strings.ToUpper(part), wildcard)
+}
+
+func wildcardLikePattern(part string, wildcard bool) string {
 	var b strings.Builder
-	for _, r := range strings.ToUpper(part) {
+	for _, r := range part {
 		switch r {
 		case '*':
 			b.WriteByte('%')

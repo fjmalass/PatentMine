@@ -12,6 +12,26 @@ func TestParseCanonicalizesAliasesAndNot(t *testing.T) {
 	}
 }
 
+func TestParseSupportsQuotedSearchAndInventor(t *testing.T) {
+	expr, err := Parse(`search:"widget sensor" and inventor:"Ada Lovelace"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := CanonicalString(expr), `search:"widget sensor" and inventor:"Ada Lovelace"`; got != want {
+		t.Fatalf("CanonicalString = %q, want %q", got, want)
+	}
+}
+
+func TestParseSupportsInventorWildcard(t *testing.T) {
+	expr, err := Parse(`inventor:"Ada*" or inventor:*Lovelace*`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := CanonicalString(expr), `inventor:Ada* or inventor:*Lovelace*`; got != want {
+		t.Fatalf("CanonicalString = %q, want %q", got, want)
+	}
+}
+
 func TestParseRejectsLegacySyntax(t *testing.T) {
 	_, err := Parse("state stored")
 	if err == nil {

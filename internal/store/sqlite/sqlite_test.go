@@ -555,6 +555,30 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 		t.Fatalf("class wildcard rows = %v, want 2", rows)
 	}
 
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `search:"method for US0000001A1" and inventor:"Ada Lovelace"`})
+	if err != nil {
+		t.Fatalf("ListPatents search and inventor: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p1.Number {
+		t.Fatalf("search and inventor rows = %v, want only p1", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `inventor:*Lovelace*`})
+	if err != nil {
+		t.Fatalf("ListPatents inventor suffix wildcard: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("inventor suffix wildcard rows = %v, want 3", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `inventor:"Ada*"`})
+	if err != nil {
+		t.Fatalf("ListPatents inventor prefix wildcard: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("inventor prefix wildcard rows = %v, want 3", rows)
+	}
+
 	if _, err := repo.ListPatents(ctx, store.PatentQuery{Filter: "not state:under_review"}); err == nil {
 		t.Fatal("expected state filter without project to fail")
 	}
