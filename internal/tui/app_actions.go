@@ -232,7 +232,7 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 		a.setStatus(text.StatusActiveProject, project.Name)
 	}
 	if splash, ok := a.focusedPane().(interface{ IsSplash() bool }); ok && splash.IsSplash() && len(a.panes) == 1 {
-		var mounted pane.Pane = pane.NewCatalog(a.client, a.theme).WithLogger(a.log())
+		var mounted pane.Pane = pane.NewCatalog(a.client, a.theme).WithLogger(a.log()).WithMetrics(a.metrics)
 		mounted, cmds := a.preparePane(mounted)
 		a.panes[0] = mounted
 		if len(cmds) == 0 {

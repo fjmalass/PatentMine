@@ -1,13 +1,16 @@
 package pane
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
@@ -28,6 +31,23 @@ type catalogLoadedMsg struct {
 	total     int
 	patents   []domain.PatentRow
 	err       error
+}
+
+// familyHighlightLoadedMsg delivers the parent/child neighbours of the family
+// anchor patent. The pane drops the result when anchor no longer matches —
+// the user moved on or toggled highlighting off before the RPC came back.
+// Timing fields feed per-stage metrics so a slow lookup can be attributed
+// to the parents call, the children call, or the apply pass.
+type familyHighlightLoadedMsg struct {
+	requestID    uint64
+	anchor       domain.PatentNumber
+	parents      []domain.PatentNumber
+	children     []domain.PatentNumber
+	dispatchedAt time.Time     // when toggleFamilyHighlight returned
+	parentsRPC   time.Duration // time spent in the parents RelationsResult call
+	childrenRPC  time.Duration // time spent in the children RelationsResult call
+	rpcTotal     time.Duration // wall-clock of both calls together
+	err          error
 }
 
 // Catalog is the main patent list pane.
@@ -53,7 +73,10 @@ type Catalog struct {
 	savedVisual       []domain.PatentNumber
 	savedVisualAnchor int
 	savedVisualCursor int
-	gvHighlight       map[domain.PatentNumber]bool
+	highlights        HighlightSet
+	familyAnchor      domain.PatentNumber
+	familyLoadID      uint64
+	familyLoading     bool
 	activeSort    domain.SortColumn
 	sortAscending bool
 	filter        PatentFilter
@@ -61,6 +84,7 @@ type Catalog struct {
 	focusedColIdx  int
 	lastWidth      int
 	logger         *slog.Logger
+	metrics        *observability.Metrics
 	cachedCols     []tableCol
 	cachedColWidth int
 	cachedColProj  domain.ProjectID
@@ -70,6 +94,9 @@ type Catalog struct {
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
 func (c *Catalog) WithLogger(l *slog.Logger) *Catalog { c.logger = l; return c }
+
+// WithMetrics attaches the runtime metrics sink. Optional: nil is safe.
+func (c *Catalog) WithMetrics(m *observability.Metrics) *Catalog { c.metrics = m; return c }
 
 func (c *Catalog) log() *slog.Logger {
 	if c.logger != nil {
@@ -107,8 +134,12 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 				c.saveVisual()
 				c.clearVisual()
 			}
+			if c.highlights.HasFamily() {
+				c.clearFamilyHighlight()
+			}
 			return nil
 		},
+		command.HighlightFamily: func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
 		command.CrawlFamily:    func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
 		command.CrawlCitations: func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
 		command.CrawlCitedBy:   func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
@@ -316,7 +347,7 @@ func (c *Catalog) move(motion func()) tea.Cmd {
 	if pn, ok := c.Selection(); ok {
 		c.lastActive = pn
 	}
-	c.gvHighlight = nil
+	c.clearGotoVisualHighlight()
 	if c.page.Offset() != before {
 		c.loading = true
 		return c.load()
@@ -357,11 +388,11 @@ func (c *Catalog) reselectLast() tea.Cmd {
 		idx[p.Number] = c.loadedBase + i
 	}
 
-	highlights := make(map[domain.PatentNumber]bool, len(targets))
 	first := -1
 	last := -1
+	c.clearVisual()
 	for _, t := range targets {
-		highlights[t] = true
+		c.highlights.Set(t, HighlightGotoVisual)
 		if pos, ok := idx[t]; ok {
 			if first == -1 || pos < first {
 				first = pos
@@ -372,13 +403,12 @@ func (c *Catalog) reselectLast() tea.Cmd {
 		}
 	}
 	if first == -1 {
+		c.clearGotoVisualHighlight()
 		return status(text.StatusNoPatentSelected, false)
 	}
 
-	c.clearVisual()
 	c.visualMode = true
 	c.visualAnchor = first
-	c.gvHighlight = highlights
 	c.page.ScrollTo(last)
 	return nil
 }
@@ -440,6 +470,48 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if m.requestID == c.classDescsID && m.err == nil {
 			c.classDescs = m.descs
 		}
+	case familyHighlightLoadedMsg:
+		// Drop stale results: a different anchor or a newer request supersedes.
+		if m.requestID != c.familyLoadID || m.anchor != c.familyAnchor {
+			c.metrics.IncCounter("tui.highlight.family.stale", 1)
+			return c, nil
+		}
+		c.familyLoading = false
+		c.metrics.ObserveDuration("tui.highlight.family.fetch.parents", m.parentsRPC, m.err != nil)
+		c.metrics.ObserveDuration("tui.highlight.family.fetch.children", m.childrenRPC, m.err != nil)
+		c.metrics.ObserveDuration("tui.highlight.family.fetch", m.rpcTotal, m.err != nil)
+		if m.err != nil {
+			c.clearFamilyHighlight()
+			c.log().Error("tui.highlight.family.load",
+				slog.String("anchor", m.anchor.Normalized()),
+				slog.String("error", m.err.Error()))
+			c.metrics.IncCounter("tui.highlight.family.error", 1)
+			return c, status(text.StatusUsage, true, m.err.Error())
+		}
+		applyStart := time.Now()
+		for _, p := range m.parents {
+			c.highlights.Upgrade(p, HighlightFamilyParent)
+		}
+		for _, p := range m.children {
+			c.highlights.Upgrade(p, HighlightFamilyChild)
+		}
+		applyDuration := time.Since(applyStart)
+		totalDuration := time.Since(m.dispatchedAt)
+		c.metrics.ObserveDuration("tui.highlight.family.apply", applyDuration, false)
+		c.metrics.ObserveDuration("tui.highlight.family.total", totalDuration, false)
+		c.metrics.SetGauge("tui.highlight.family.last.parents", int64(len(m.parents)))
+		c.metrics.SetGauge("tui.highlight.family.last.children", int64(len(m.children)))
+		c.log().Info("tui.highlight.family.toggle",
+			slog.String("anchor", m.anchor.Normalized()),
+			slog.Int("parents", len(m.parents)),
+			slog.Int("children", len(m.children)),
+			slog.Duration("rpc_parents", m.parentsRPC),
+			slog.Duration("rpc_children", m.childrenRPC),
+			slog.Duration("rpc_total", m.rpcTotal),
+			slog.Duration("apply", applyDuration),
+			slog.Duration("total", totalDuration),
+			slog.String("action", "on"))
+		c.metrics.IncCounter("tui.highlight.family.on", 1)
 	}
 	return c, nil
 }
@@ -523,7 +595,92 @@ func (c *Catalog) selectAllVisual() tea.Cmd {
 func (c *Catalog) clearVisual() {
 	c.visualMode = false
 	c.visualAnchor = 0
-	c.gvHighlight = nil
+	c.clearGotoVisualHighlight()
+}
+
+// clearGotoVisualHighlight drops only the gv-restore overlay; the family
+// highlight (a different HighlightKind in the same set) is preserved so
+// toggling visual mode does not also clear the family hint.
+func (c *Catalog) clearGotoVisualHighlight() {
+	if c.highlights.Len() == 0 {
+		return
+	}
+	for _, p := range c.patents {
+		if c.highlights.Kind(p.Number) == HighlightGotoVisual {
+			c.highlights.Set(p.Number, HighlightNone)
+		}
+	}
+}
+
+// clearFamilyHighlight drops the family overlay and forgets the anchor.
+func (c *Catalog) clearFamilyHighlight() {
+	c.highlights.ClearFamily()
+	c.familyAnchor = domain.PatentNumber{}
+	c.familyLoading = false
+}
+
+// toggleFamilyHighlight is the H-key handler. If a highlight is already
+// active for the cursor's patent it is cleared; otherwise an async lookup
+// of the patent's family edges is dispatched. The result lands as
+// familyHighlightLoadedMsg.
+func (c *Catalog) toggleFamilyHighlight() tea.Cmd {
+	sel, ok := c.Selection()
+	if !ok {
+		return status(text.StatusNoPatentSelected, true)
+	}
+	if c.highlights.HasFamily() && c.familyAnchor == sel {
+		c.clearFamilyHighlight()
+		c.log().Info("tui.highlight.family.toggle",
+			slog.String("anchor", sel.Normalized()),
+			slog.String("action", "off"))
+		c.metrics.IncCounter("tui.highlight.family.off", 1)
+		return nil
+	}
+	c.clearFamilyHighlight()
+	c.familyAnchor = sel
+	c.familyLoading = true
+	client := c.client
+	requestID := nextAsyncID()
+	c.familyLoadID = requestID
+	dispatchedAt := time.Now()
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var parents proto.RelationsResult
+		var children proto.RelationsResult
+		startAll := time.Now()
+		tP := time.Now()
+		errP := client.Call(ctx, proto.MethodRelations,
+			proto.RelationsParams{Number: sel, Kind: domain.RelationParent}, &parents)
+		parentsRPC := time.Since(tP)
+		tC := time.Now()
+		errC := client.Call(ctx, proto.MethodRelations,
+			proto.RelationsParams{Number: sel, Kind: domain.RelationChild}, &children)
+		childrenRPC := time.Since(tC)
+		err := errP
+		if err == nil {
+			err = errC
+		}
+		ps := make([]domain.PatentNumber, 0, len(parents.Patents))
+		for _, p := range parents.Patents {
+			ps = append(ps, p.Number)
+		}
+		cs := make([]domain.PatentNumber, 0, len(children.Patents))
+		for _, p := range children.Patents {
+			cs = append(cs, p.Number)
+		}
+		return familyHighlightLoadedMsg{
+			requestID:    requestID,
+			anchor:       sel,
+			parents:      ps,
+			children:     cs,
+			dispatchedAt: dispatchedAt,
+			parentsRPC:   parentsRPC,
+			childrenRPC:  childrenRPC,
+			rpcTotal:     time.Since(startAll),
+			err:          err,
+		}
+	}
 }
 
 func (c *Catalog) inVisualRange(absolute int) bool {
@@ -587,29 +744,55 @@ func (c *Catalog) View(w, h int) string {
 	cols := c.currentCols()
 
 	var b strings.Builder
-	filterSummary := ""
+	segments := []string{}
 	if c.filter.IsActive() && !c.find.active {
-		filterSummary = "filters: " + strings.Join(c.filter.Labels(), " · ")
+		segments = append(segments, "filters: "+strings.Join(c.filter.Labels(), " · "))
 	}
+	if !c.familyAnchor.IsZero() {
+		g := c.theme.Glyphs
+		switch {
+		case c.familyLoading:
+			segments = append(segments, g.FamilyLoading+" fetching family of "+c.familyAnchor.Normalized())
+		default:
+			parents := c.highlights.CountKind(HighlightFamilyParent)
+			children := c.highlights.CountKind(HighlightFamilyChild)
+			segments = append(segments, fmt.Sprintf("%s %s: %d%s %d%s",
+				g.FamilyAnchor, c.familyAnchor.Normalized(),
+				parents, g.FamilyParent, children, g.FamilyChild))
+		}
+	}
+	filterSummary := strings.Join(segments, "  ")
 	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
 	b.WriteByte('\n')
+	// Only reserve a leading glyph column when at least one highlight is
+	// active; this keeps the default catalog layout (and its tests) byte-
+	// identical until the user toggles a highlight.
+	showGlyphCol := c.highlights.Len() > 0 || c.familyLoading
+	if showGlyphCol {
+		b.WriteString(c.theme.Header.Render("  "))
+	}
 	b.WriteString(renderTableHeader(c.theme, cols, c.activeSort, c.sortAscending, c.focusedColIdx))
 
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
 		isSelectedRow := absolute == c.page.Cursor()
 		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, c.classDescs)
+		if showGlyphCol {
+			line = c.highlights.Glyph(c.theme, p.Number) + " " + line
+		}
 		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {
-		case c.gvHighlight != nil && c.gvHighlight[p.Number]:
-			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
 		case c.visualMode && c.inVisualRange(absolute):
 			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
 		case isSelectedRow:
 			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
 		default:
-			b.WriteString(rowStyle(render.Pad(line, w)))
+			if style, ok := c.highlights.Style(c.theme, p.Number); ok {
+				b.WriteString(style.Render(render.Pad(line, w)))
+			} else {
+				b.WriteString(rowStyle(render.Pad(line, w)))
+			}
 		}
 	}
 	if c.find.active {

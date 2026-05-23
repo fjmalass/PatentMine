@@ -25,6 +25,23 @@ const (
 	colorMarkedSelBg    = "98"  // highlighted marked row background (hovered/cursor selected)
 	colorMarkedFocusBg  = "55"  // focus cell background on marked rows
 	colorMarkedFocusSelBg = "129" // focus cell background on marked row under cursor
+
+	// Family highlight backgrounds: tint the row when a "highlight family"
+	// toggle (H) marks it as a parent or child of the anchor patent.
+	colorFamilyParent = "94" // dark amber — ancestor / parent application
+	colorFamilyChild  = "25" // dark blue-cyan — descendant / child application
+	colorFamilyBoth   = "89" // deep magenta — both parent and child (cycle)
+)
+
+// Default glyphs. Hoisted here so call sites never embed icon characters
+// directly — swap the const, every status line and row marker follows.
+const (
+	glyphFamilyParent  = "↑"
+	glyphFamilyChild   = "↓"
+	glyphFamilyBoth    = "↕"
+	glyphFamilyNone    = " "
+	glyphFamilyLoading = "…"
+	glyphFamilyAnchor  = "•"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -57,11 +74,34 @@ type Theme struct {
 	FocusMarkedCell    lipgloss.Style
 	FocusMarkedSelectedCell lipgloss.Style
 
+	// Family highlight overlays: applied to catalog/relations rows when the
+	// user toggles "highlight family of anchor" with the H keybinding.
+	FamilyParent lipgloss.Style
+	FamilyChild  lipgloss.Style
+	FamilyBoth   lipgloss.Style
+
 	// Jump Overlay Styles
 	JumpGlobalLabel lipgloss.Style
 	JumpGlobalValue lipgloss.Style
 	JumpLocalLabel  lipgloss.Style
 	JumpLocalValue  lipgloss.Style
+
+	// Glyphs holds the single-character markers used across panes. They live
+	// on the theme so a build can override them (ASCII-only terminals, custom
+	// icon set) without grepping for runes in pane code.
+	Glyphs ThemeGlyphs
+}
+
+// ThemeGlyphs collects the icon strings used to mark rows and decorate status
+// lines. Strings (not runes) so a deployment can replace a single glyph with
+// a short label like "(P)" or "loading" without touching call sites.
+type ThemeGlyphs struct {
+	FamilyParent  string
+	FamilyChild   string
+	FamilyBoth    string
+	FamilyNone    string
+	FamilyLoading string
+	FamilyAnchor  string
 }
 
 // NewTheme builds the default theme.
@@ -132,10 +172,30 @@ func NewTheme() Theme {
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorMarkedFocusSelBg)),
 
+		// Family highlight overlays
+		FamilyParent: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFamilyParent)),
+		FamilyChild: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFamilyChild)),
+		FamilyBoth: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorFamilyBoth)).Bold(true),
+
 		// Jump Overlay Styles
 		JumpGlobalLabel: lipgloss.NewStyle().Foreground(lipgloss.Color(colorText)).Bold(true),
 		JumpGlobalValue: lipgloss.NewStyle().Foreground(lipgloss.Color(colorDim)),
 		JumpLocalLabel:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorWarn)).Bold(true),
 		JumpLocalValue:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorMarked)),
+
+		Glyphs: ThemeGlyphs{
+			FamilyParent:  glyphFamilyParent,
+			FamilyChild:   glyphFamilyChild,
+			FamilyBoth:    glyphFamilyBoth,
+			FamilyNone:    glyphFamilyNone,
+			FamilyLoading: glyphFamilyLoading,
+			FamilyAnchor:  glyphFamilyAnchor,
+		},
 	}
 }

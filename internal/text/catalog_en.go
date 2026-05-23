@@ -191,6 +191,7 @@ var cmdStrings = map[string][2]string{
 	"select.visual":              {"Visual select", "Toggle visual mode at the cursor to begin range selection."},
 	"select.clear":               {"Clear selection", "Exit visual mode and clear the selection range."},
 	"select.all":                 {"Select all", "Select every patent in the current list."},
+	"highlight.family":           {"Highlight family", "Toggle inline highlight of parent/child rows of the selected patent."},
 	"col.next":                   {"Next column", "Move the visual focus to the next column."},
 	"col.prev":                   {"Prev column", "Move the visual focus to the previous column."},
 	"col.sort-apply":             {"Apply sort", "Apply sorting to the currently focused column."},

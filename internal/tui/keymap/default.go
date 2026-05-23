@@ -122,6 +122,7 @@ func Default() *Keymaps {
 			"esc":    command.SelectClear,
 			"g a":    command.SelectAll,
 			"ctrl+a": command.SelectAll,
+			"H":      command.HighlightFamily,
 		})
 
 	detail := NewLayer("detail", false).

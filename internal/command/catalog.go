@@ -34,6 +34,7 @@ const (
 	SelectVisual        ID = "select.visual"
 	SelectClear         ID = "select.clear"
 	SelectAll           ID = "select.all"
+	HighlightFamily     ID = "highlight.family"
 	ColNext             ID = "col.next"
 	ColPrev             ID = "col.prev"
 	SortApply           ID = "col.sort-apply"
@@ -170,6 +171,7 @@ func Default() (*Registry, error) {
 		Command{ID: SelectVisual, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: SelectClear, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: SelectAll, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
+		Command{ID: HighlightFamily, Name: "highlight.family", Aliases: []string{"hl-family"}, Usage: ":highlight.family", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
