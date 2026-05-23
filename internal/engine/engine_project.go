@@ -248,15 +248,35 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 			return err
 		}
 
+		items := make([]domain.MutationItem, 0, len(changedRecords))
+		for idx, record := range changedRecords {
+			current := beforeMemberships[record]
+			after := current
+			after.ReviewState = target
+			items = append(items, domain.MutationItem{
+				Patent:  record,
+				Kind:    "membership.state",
+				Ordinal: idx + 1,
+				Before:  current,
+				After:   after,
+				Inverse: map[string]any{"state": current.ReviewState},
+			})
+		}
+		mutationGroupID := e.saveMutationGroup(ctx, project, "membership.set_state", changedRecords, map[string]any{"target_state": target}, items)
+
 		// Record activities
 		for _, record := range changedRecords {
 			e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
+			metadata := map[string]any{"requested_number": record.String()}
+			if mutationGroupID != "" {
+				metadata["mutation_group_id"] = mutationGroupID
+			}
 			rec := observability.Record{
 				Action:   "membership.set_state",
 				Entity:   "membership",
 				EntityID: string(project) + "/" + record.String(),
 				Status:   "committed",
-				Metadata: map[string]any{"requested_number": record.String()},
+				Metadata: metadata,
 			}
 			if current, ok := beforeMemberships[record]; ok {
 				after := current

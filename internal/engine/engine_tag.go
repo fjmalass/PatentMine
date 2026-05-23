@@ -155,16 +155,32 @@ func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, 
 		return err
 	}
 
+	items := make([]domain.MutationItem, 0, len(changedRecords))
+	for idx, record := range changedRecords {
+		items = append(items, domain.MutationItem{
+			Patent:  record,
+			Kind:    "tag.assign",
+			Ordinal: idx + 1,
+			After:   map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID, "assigned_at": assignedAt.UTC().Format(time.RFC3339)},
+			Inverse: map[string]any{"action": "remove_tag", "tag_name": matchedTag.Name},
+		})
+	}
+	mutationGroupID := e.saveMutationGroup(ctx, project, "patent.tag_assign", changedRecords, map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID}, items)
+
 	// Record activities for each changed record
 	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
+		metadata := map[string]any{"requested_number": record.String()}
+		if mutationGroupID != "" {
+			metadata["mutation_group_id"] = mutationGroupID
+		}
 		e.recordActivity(ctx, observability.Record{
 			Action:   "patent.tag_assign",
 			Entity:   "patent_tag",
 			EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
 			Status:   "committed",
 			After:    map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID, "assigned_at": assignedAt.UTC().Format(time.RFC3339)},
-			Metadata: map[string]any{"requested_number": record.String()},
+			Metadata: metadata,
 		})
 	}
 
@@ -246,15 +262,35 @@ func (e *Engine) UntagPatentStrict(ctx context.Context, project domain.ProjectID
 		return err
 	}
 
+	items := make([]domain.MutationItem, 0, len(changedRecords))
+	for idx, record := range changedRecords {
+		before := map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID}
+		if t, ok := beforeStates[record]; ok {
+			before["assigned_at"] = t.AssignedAt.UTC().Format(time.RFC3339)
+		}
+		items = append(items, domain.MutationItem{
+			Patent:  record,
+			Kind:    "tag.remove",
+			Ordinal: idx + 1,
+			Before:  before,
+			Inverse: map[string]any{"action": "add_tag", "tag_name": matchedTag.Name},
+		})
+	}
+	mutationGroupID := e.saveMutationGroup(ctx, project, "patent.tag_remove", changedRecords, map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID}, items)
+
 	// Record activities for each changed record
 	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
+		metadata := map[string]any{"requested_number": record.String()}
+		if mutationGroupID != "" {
+			metadata["mutation_group_id"] = mutationGroupID
+		}
 		rec := observability.Record{
 			Action:   "patent.tag_remove",
 			Entity:   "patent_tag",
 			EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
 			Status:   "committed",
-			Metadata: map[string]any{"requested_number": record.String()},
+			Metadata: metadata,
 		}
 		if t, ok := beforeStates[record]; ok {
 			rec.Before = map[string]any{

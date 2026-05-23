@@ -160,6 +160,8 @@ var cmdStrings = map[string][2]string{
 	"view.detail":                {"Open detail", "Open the selected patent's detail view."},
 	"view.ai-menu":               {"AI Curation Menu", "Open the AI curation and analysis popup menu."},
 	"view.settings-ai":           {"AI & Search Settings", "Open the AI engines and search crawls configuration settings."},
+	"view.assignees":             {"Open assignee stats", "Open the statistics popup for all assignees, preselecting the current patent's assignee when available."},
+	"view.classification-stats":  {"Open classification stats", "Open the statistics popup for all classifications, preselecting the current patent's codes when available."},
 	"view.inventors":             {"Open inventors stats", "Open the statistics popup for the patent's inventors when cursor is on the inventors line."},
 	"view.inventors.direct":      {"Open inventors stats direct", "Open the statistics popup for the patent's inventors directly."},
 	"view.browser":               {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},

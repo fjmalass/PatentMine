@@ -140,3 +140,27 @@ CREATE TABLE IF NOT EXISTS classification_definition (
     description TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (system, code)
 );
+
+CREATE TABLE IF NOT EXISTS mutation_group (
+    id                      TEXT PRIMARY KEY,
+    project_id              TEXT NOT NULL DEFAULT '',
+    action                  TEXT NOT NULL,
+    created_at              TEXT NOT NULL,
+    selection_snapshot_json TEXT NOT NULL DEFAULT '[]',
+    metadata_json           TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_mutation_group_project_created ON mutation_group (project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS mutation_item (
+    group_id      TEXT NOT NULL REFERENCES mutation_group (id) ON DELETE CASCADE,
+    ordinal       INTEGER NOT NULL,
+    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    kind          TEXT NOT NULL,
+    before_json   TEXT NOT NULL DEFAULT 'null',
+    after_json    TEXT NOT NULL DEFAULT 'null',
+    inverse_json  TEXT NOT NULL DEFAULT 'null',
+    PRIMARY KEY (group_id, ordinal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mutation_item_patent ON mutation_item (patent_number, group_id);

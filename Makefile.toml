@@ -10,6 +10,7 @@ default_to_workspace = false
 BINARY = "./cmd/patentmine"
 APP_NAME = "patentmine"
 BIN_DIR = "./bin"
+API_PID_NAME = "patentmine-api.pid"
 
 [tasks.build]
 description = "Compile all packages."
@@ -201,6 +202,141 @@ ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/interna
 go run -ldflags "$ldflags" ${BINARY} api
 '''
 
+[tasks.start-api]
+description = "Start the web API server in the background."
+dependencies = ["restart-daemon"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+home_dir="$(echo "$paths" | awk -F= '/^HOME=/{print $2}')"
+logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
+api_pid="$home_dir/${API_PID_NAME}"
+api_addr="${PATENTMINE_API_ADDR:-127.0.0.1:8080}"
+date_tag="$(date +%F)"
+stdout_log="$logs_dir/api-stdout-$date_tag.log"
+
+mkdir -p "$home_dir" "$logs_dir"
+if [ -f "$api_pid" ] && kill -0 "$(cat "$api_pid")" >/dev/null 2>&1; then
+  echo "patentmine API already running on http://$api_addr (pid $(cat "$api_pid"))"
+  exit 0
+fi
+rm -f "$api_pid"
+
+echo "starting patentmine API on http://$api_addr"
+PATENTMINE_API_ADDR="$api_addr" nohup go run -ldflags "$ldflags" ${BINARY} api >> "$stdout_log" 2>&1 &
+echo $! > "$api_pid"
+
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$api_addr/healthz" >/dev/null 2>&1; then
+    echo "patentmine API started ($api_addr)"
+    echo "pid file: $api_pid"
+    echo "stdout log: $stdout_log"
+    exit 0
+  fi
+  sleep 0.2
+done
+
+echo "patentmine API did not become healthy at http://$api_addr"
+echo "check stdout log: $stdout_log"
+exit 1
+'''
+
+[tasks.stop-api]
+description = "Stop the background web API server if it is running."
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+home_dir="$(echo "$paths" | awk -F= '/^HOME=/{print $2}')"
+api_pid="$home_dir/${API_PID_NAME}"
+
+if [ ! -f "$api_pid" ]; then
+  echo "patentmine API is not running"
+  exit 0
+fi
+pid="$(cat "$api_pid")"
+if kill -0 "$pid" >/dev/null 2>&1; then
+  kill "$pid" >/dev/null 2>&1 || true
+  for _ in $(seq 1 50); do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      rm -f "$api_pid"
+      echo "patentmine API stopped"
+      exit 0
+    fi
+    sleep 0.1
+  done
+  echo "patentmine API did not stop cleanly (pid $pid)"
+  exit 1
+fi
+rm -f "$api_pid"
+echo "patentmine API pid file was stale and has been removed"
+'''
+
+[tasks.restart-api]
+description = "Restart the background web API server."
+dependencies = ["stop-api", "start-api"]
+
+[tasks.run-tui-api]
+description = "Start daemon and web API in the background, then launch the TUI."
+dependencies = ["restart-daemon", "start-api"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+go run -ldflags "$ldflags" ${BINARY} tui
+'''
+
+[tasks.smoke-api]
+description = "Start the daemon, launch the web API on a test port, and verify core HTTP endpoints."
+dependencies = ["restart-daemon"]
+script = '''
+describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+commit="$(git rev-parse --short HEAD)"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+api_addr="${PATENTMINE_API_ADDR:-127.0.0.1:18080}"
+api_log="/tmp/patentmine-api-smoke.log"
+
+cleanup() {
+  if [ -n "$api_pid" ]; then
+    kill "$api_pid" >/dev/null 2>&1 || true
+    wait "$api_pid" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+echo "starting temporary API server on http://$api_addr"
+PATENTMINE_API_ADDR="$api_addr" go run -ldflags "$ldflags" ${BINARY} api > "$api_log" 2>&1 &
+api_pid=$!
+
+for _ in $(seq 1 50); do
+  if curl -fsS "http://$api_addr/healthz" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+
+echo "verifying /healthz"
+curl -fsS "http://$api_addr/healthz"
+echo
+echo "verifying /commands"
+curl -fsS "http://$api_addr/commands" >/dev/null
+echo "ok"
+echo "verifying /assignees/stats"
+curl -fsS "http://$api_addr/assignees/stats" >/dev/null
+echo "ok"
+echo "verifying /classifications/stats"
+curl -fsS "http://$api_addr/classifications/stats" >/dev/null
+echo "ok"
+echo "API smoke test passed"
+'''
+
 [tasks.migrate]
 description = "Apply database migrations (wired up in Phase 2)."
 script = '''
@@ -262,4 +398,3 @@ echo "Updating mistral LLM model..."
 ollama pull mistral
 echo "Update complete!"
 '''
-

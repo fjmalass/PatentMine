@@ -55,25 +55,27 @@ type Detail struct {
 	project  domain.ProjectID
 	handlers map[command.ID]cmdHandler
 
-	patent       domain.Patent
-	state        domain.ReviewState
-	tags         []domain.Tag
-	idsEntry     *domain.IDSEntry
-	patentNote   *domain.PatentNote
-	relCounts    map[domain.RelationKind]int
-	anchors      []render.JumpAnchor // jump targets, rebuilt on every body render
-	jumpKeys     map[string]rune     // label -> assigned jump key, stable for pane lifetime
-	lineGroups   []detailLineGroup
-	page         render.Paginator
-	loading      bool
-	loadErr        string
-	loadID         uint64
-	jumpActive     bool
-	inventorLine   int
-	cachedLines    []string
-	lastWidth      int
-	lastJumpActive bool
-	logger         *slog.Logger
+	patent             domain.Patent
+	state              domain.ReviewState
+	tags               []domain.Tag
+	idsEntry           *domain.IDSEntry
+	patentNote         *domain.PatentNote
+	relCounts          map[domain.RelationKind]int
+	anchors            []render.JumpAnchor // jump targets, rebuilt on every body render
+	jumpKeys           map[string]rune     // label -> assigned jump key, stable for pane lifetime
+	lineGroups         []detailLineGroup
+	page               render.Paginator
+	loading            bool
+	loadErr            string
+	loadID             uint64
+	jumpActive         bool
+	assigneeLine       int
+	classificationLine int
+	inventorLine       int
+	cachedLines        []string
+	lastWidth          int
+	lastJumpActive     bool
+	logger             *slog.Logger
 }
 
 type detailLineGroup struct {
@@ -328,11 +330,12 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, "Shown as", numberToShow(p).String())
 	d.field(&b, w, "Record key", p.Number.String())
 	d.field(&b, w, "Title", p.Title)
-	
+
 	// Assignee
 	d.addAnchor(&b, d.jumpKey("Assignee"), "Assignee", p.Assignee, false, 0)
+	d.assigneeLine = strings.Count(b.String(), "\n")
 	d.field(&b, w, "Assignee", p.Assignee)
-	
+
 	// Inventors
 	var names []string
 	for _, inv := range p.Inventors {
@@ -342,22 +345,23 @@ func (d *Detail) body(w int) string {
 	d.addAnchor(&b, d.jumpKey("Inventors"), "Inventors", invsVal, false, 0)
 	d.inventorLine = strings.Count(b.String(), "\n")
 	d.field(&b, w, "Inventors", invsVal)
-	
+
 	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
 	d.field(&b, w, "Fetch state", fetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
 	d.field(&b, w, "Source URL", p.SourceURL)
-	
+
 	// Expiration
 	expVal := expirationText(p)
 	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", expVal, false, 0)
 	d.field(&b, w, "Expiration", expVal)
-	
+
 	// Classifications: comma-joined codes wrapped across the value column.
 	// Cached descriptions live in the dedicated popup (K), so the detail field
 	// stays compact regardless of how many codes a record carries.
 	classVal := strings.Join(p.Classifications, ", ")
 	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", classVal, false, 0)
+	d.classificationLine = strings.Count(b.String(), "\n")
 	d.wrappedField(&b, w, "Classifications", classVal)
 
 	// Project-scoped fields. Review state and tags describe the patent within
@@ -367,15 +371,15 @@ func (d *Detail) body(w int) string {
 		revVal := reviewStateText(d.theme, d.state)
 		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", revVal, true, 0)
 		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
-		
+
 		idsVal := detailIDSText(d.idsEntry)
 		d.addAnchor(&b, d.jumpKey("IDS"), "IDS", idsVal, true, 0)
 		d.field(&b, w, "IDS", idsVal)
-		
+
 		tagsVal := tagsText(d.tags)
 		d.addAnchor(&b, d.jumpKey("Tags"), "Tags", tagsVal, true, 0)
 		d.field(&b, w, "Tags", tagsVal)
-		
+
 		var notesVal string
 		if d.patentNote == nil || strings.TrimSpace(d.patentNote.Markdown) == "" {
 			notesVal = "—"
@@ -391,15 +395,15 @@ func (d *Detail) body(w int) string {
 	citeVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCites])
 	d.addAnchor(&b, d.jumpKey("Citations"), "Citations", citeVal, false, 0)
 	d.field(&b, w, "Citations", citeVal)
-	
+
 	citedByVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCitedBy])
 	d.addAnchor(&b, d.jumpKey("Cited by"), "Cited by", citedByVal, false, 0)
 	d.field(&b, w, "Cited by", citedByVal)
-	
+
 	parentsVal := fmt.Sprintf("%d", d.relCounts[domain.RelationParent])
 	d.addAnchor(&b, d.jumpKey("Parents"), "Parents", parentsVal, false, 0)
 	d.field(&b, w, "Parents", parentsVal)
-	
+
 	childVal := fmt.Sprintf("%d", d.relCounts[domain.RelationChild])
 	d.addAnchor(&b, d.jumpKey("Children"), "Children", childVal, false, 0)
 	d.field(&b, w, "Children", childVal)
@@ -886,8 +890,10 @@ func detailDateTimeText(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-func (d *Detail) Patent() domain.Patent     { return d.patent }
-func (d *Detail) IsCursorOnInventors() bool { return d.page.Cursor() == d.inventorLine }
+func (d *Detail) Patent() domain.Patent           { return d.patent }
+func (d *Detail) IsCursorOnAssignee() bool        { return d.page.Cursor() == d.assigneeLine }
+func (d *Detail) IsCursorOnClassifications() bool { return d.page.Cursor() == d.classificationLine }
+func (d *Detail) IsCursorOnInventors() bool       { return d.page.Cursor() == d.inventorLine }
 
 // ResolveCursorRelation checks if the cursor is currently hovering over a relation count line
 // and returns the corresponding RelationKind if it is.

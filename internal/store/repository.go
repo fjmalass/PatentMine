@@ -34,8 +34,12 @@ type PatentQuery struct {
 	Search string
 	// Classification, when set, filters patents by prefix matching of their classifications.
 	Classification string
+	// ClassificationCode, when set, filters patents by exact classification code match.
+	ClassificationCode string
 	// Inventor, when set, filters patents by exact match of their inventors.
 	Inventor string
+	// Assignee, when set, filters patents by exact match of their assignee.
+	Assignee string
 	// Limit is the page size; values <= 0 fall back to DefaultPageSize.
 	Limit int
 	// Offset is the number of rows to skip.
@@ -90,6 +94,10 @@ type Repository interface {
 	CountPatents(ctx context.Context, q PatentQuery) (int, error)
 	// PatentInventorStats aggregates database statistics for a set of inventors within a project.
 	PatentInventorStats(ctx context.Context, project domain.ProjectID, inventors []domain.Inventor) ([]domain.InventorStats, error)
+	// PatentAssigneeStats aggregates database statistics for assignees within a project.
+	PatentAssigneeStats(ctx context.Context, project domain.ProjectID) ([]domain.AssigneeStats, error)
+	// PatentClassificationStats aggregates database statistics for classification codes within a project.
+	PatentClassificationStats(ctx context.Context, project domain.ProjectID) ([]domain.ClassificationStats, error)
 
 	// SaveDocument inserts or updates one life-stage document of a record.
 	SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error
@@ -172,6 +180,8 @@ type Repository interface {
 	ListClassificationDefinitionsByCodes(ctx context.Context, codes []string) ([]domain.Classification, error)
 	// DeleteClassificationDefinition removes a classification definition.
 	DeleteClassificationDefinition(ctx context.Context, system, code string) error
+	// SaveMutationGroup appends an auditable mutation journal entry.
+	SaveMutationGroup(ctx context.Context, group domain.MutationGroup, items []domain.MutationItem) error
 
 	// Close releases all database resources.
 	Close() error

@@ -1008,6 +1008,158 @@ func TestPatentInventorStats(t *testing.T) {
 	}
 }
 
+func TestPatentAssigneeStats(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "proj-1", Name: "Test Project", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	p1 := samplePatent("US11611785B2")
+	p1.Assignee = "Acme Corp"
+	p1.FetchState = domain.FetchStub
+	p2 := samplePatent("US11611786B2")
+	p2.Assignee = "Acme Corp"
+	p2.FetchState = domain.FetchStub
+	p3 := samplePatent("US11611787B2")
+	p3.Assignee = "Beta Labs"
+	p3.FetchState = domain.FetchStub
+	for _, p := range []domain.Patent{p1, p2, p3} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent(%s): %v", p.Number, err)
+		}
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p1.Number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("AddMembership p1: %v", err)
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p2.Number, ReviewState: domain.ReviewStateUnderReview, AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("AddMembership p2: %v", err)
+	}
+	tag, err := repo.CreateTag(ctx, project.ID, "seminal")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	if err := repo.TagPatents(ctx, tag.ID, []domain.PatentNumber{p1.Number}, time.Now().UTC()); err != nil {
+		t.Fatalf("TagPatents: %v", err)
+	}
+
+	stats, err := repo.PatentAssigneeStats(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("PatentAssigneeStats: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 assignee stats row in project scope, got %d", len(stats))
+	}
+	if stats[0].Assignee != "Acme Corp" || stats[0].Total != 2 {
+		t.Fatalf("top assignee = %+v, want Acme Corp with 2 patents", stats[0])
+	}
+	if stats[0].States["stored"] != 1 || stats[0].States["under_review"] != 1 {
+		t.Fatalf("Acme state counts = %v, want stored=1 under_review=1", stats[0].States)
+	}
+	if stats[0].Tags["seminal"] != 1 {
+		t.Fatalf("Acme tag counts = %v, want seminal=1", stats[0].Tags)
+	}
+}
+
+func TestSaveMutationGroup(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "proj-1", Name: "Test Project", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	patent := samplePatent("US11611785B2")
+	if err := repo.SavePatent(ctx, patent); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	err := repo.SaveMutationGroup(ctx, domain.MutationGroup{
+		ID:                "group-1",
+		Project:           project.ID,
+		Action:            "membership.set_state",
+		CreatedAt:         time.Now().UTC(),
+		SelectionSnapshot: []domain.PatentNumber{patent.Number},
+		Metadata:          map[string]any{"target_state": domain.ReviewStateUnderReview},
+	}, []domain.MutationItem{{Patent: patent.Number, Kind: "membership.state", Before: map[string]any{"state": domain.ReviewStateStored}, After: map[string]any{"state": domain.ReviewStateUnderReview}, Inverse: map[string]any{"state": domain.ReviewStateStored}}})
+	if err != nil {
+		t.Fatalf("SaveMutationGroup: %v", err)
+	}
+
+	var groups int
+	if err := repo.reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM mutation_group WHERE id = 'group-1'`).Scan(&groups); err != nil {
+		t.Fatalf("count mutation_group: %v", err)
+	}
+	if groups != 1 {
+		t.Fatalf("mutation_group rows = %d, want 1", groups)
+	}
+	var items int
+	if err := repo.reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM mutation_item WHERE group_id = 'group-1'`).Scan(&items); err != nil {
+		t.Fatalf("count mutation_item: %v", err)
+	}
+	if items != 1 {
+		t.Fatalf("mutation_item rows = %d, want 1", items)
+	}
+}
+
+func TestPatentClassificationStats(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "proj-1", Name: "Test Project", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p1 := samplePatent("US11611785B2")
+	p1.FetchState = domain.FetchStub
+	p1.Classifications = []string{"G06F17/30", "H04N21/4345"}
+	p2 := samplePatent("US11611786B2")
+	p2.FetchState = domain.FetchStub
+	p2.Classifications = []string{"G06F17/30"}
+	p3 := samplePatent("US11611787B2")
+	p3.FetchState = domain.FetchStub
+	p3.Classifications = []string{"A61B5/00"}
+	for _, p := range []domain.Patent{p1, p2, p3} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent(%s): %v", p.Number, err)
+		}
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p1.Number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("AddMembership p1: %v", err)
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p2.Number, ReviewState: domain.ReviewStateUnderReview, AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("AddMembership p2: %v", err)
+	}
+	tag, err := repo.CreateTag(ctx, project.ID, "seminal")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	if err := repo.TagPatents(ctx, tag.ID, []domain.PatentNumber{p1.Number}, time.Now().UTC()); err != nil {
+		t.Fatalf("TagPatents: %v", err)
+	}
+	if err := repo.SaveClassificationDefinition(ctx, domain.Classification{System: "CPC", Code: "G06F17/30", Description: "Information retrieval"}); err != nil {
+		t.Fatalf("SaveClassificationDefinition: %v", err)
+	}
+
+	stats, err := repo.PatentClassificationStats(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("PatentClassificationStats: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("expected 2 classification stats rows, got %d", len(stats))
+	}
+	if stats[0].Classification.Code != "G06F17/30" || stats[0].Total != 2 {
+		t.Fatalf("top classification = %+v, want G06F17/30 total=2", stats[0])
+	}
+	if stats[0].States["stored"] != 1 || stats[0].States["under_review"] != 1 {
+		t.Fatalf("classification state counts = %v, want stored=1 under_review=1", stats[0].States)
+	}
+	if stats[0].Tags["seminal"] != 1 {
+		t.Fatalf("classification tag counts = %v, want seminal=1", stats[0].Tags)
+	}
+	if stats[0].Classification.Description != "Information retrieval" {
+		t.Fatalf("classification description = %q, want cached description", stats[0].Classification.Description)
+	}
+}
+
 func TestDeletePatentsIsTransactional(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()

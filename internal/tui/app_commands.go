@@ -139,6 +139,32 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 		return a.openCitations(kind)
 	}
 
+	if detail.IsCursorOnAssignee() {
+		p := detail.Patent()
+		if num, ok := detail.Selection(); ok {
+			if p.Number.Serial == "" {
+				p.Number = num
+			}
+			if p.DisplayNumber.Serial == "" {
+				p.DisplayNumber = num
+			}
+		}
+		return a.openAssignees(p)
+	}
+
+	if detail.IsCursorOnClassifications() {
+		p := detail.Patent()
+		if num, ok := detail.Selection(); ok {
+			if p.Number.Serial == "" {
+				p.Number = num
+			}
+			if p.DisplayNumber.Serial == "" {
+				p.DisplayNumber = num
+			}
+		}
+		return a.openClassificationStats(p)
+	}
+
 	// 2. Only activate on Enter if the cursor is actually on the Inventors field
 	if !detail.IsCursorOnInventors() {
 		return a, nil
@@ -155,6 +181,40 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 	}
 
 	return a.openInventors(p, false)
+}
+
+func (a *App) cmdOpenAssignees(invocation) (tea.Model, tea.Cmd) {
+	detail, ok := a.focusedPane().(*pane.Detail)
+	if !ok {
+		return a, nil
+	}
+	p := detail.Patent()
+	if num, ok := detail.Selection(); ok {
+		if p.Number.Serial == "" {
+			p.Number = num
+		}
+		if p.DisplayNumber.Serial == "" {
+			p.DisplayNumber = num
+		}
+	}
+	return a.openAssignees(p)
+}
+
+func (a *App) cmdOpenClassificationStats(invocation) (tea.Model, tea.Cmd) {
+	detail, ok := a.focusedPane().(*pane.Detail)
+	if !ok {
+		return a, nil
+	}
+	p := detail.Patent()
+	if num, ok := detail.Selection(); ok {
+		if p.Number.Serial == "" {
+			p.Number = num
+		}
+		if p.DisplayNumber.Serial == "" {
+			p.DisplayNumber = num
+		}
+	}
+	return a.openClassificationStats(p)
 }
 
 func (a *App) cmdOpenInventorsDirect(invocation) (tea.Model, tea.Cmd) {
@@ -181,6 +241,26 @@ func (a *App) openInventors(p domain.Patent, focusPatents bool) (tea.Model, tea.
 		project = a.activeProject.ID
 	}
 	o, cmd := overlay.NewInventorStatsOverlay(a.client, a.theme, a.text, p, project, focusPatents)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+func (a *App) openAssignees(p domain.Patent) (tea.Model, tea.Cmd) {
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	o, cmd := overlay.NewAssigneeStatsOverlay(a.client, a.theme, a.text, p, project)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+func (a *App) openClassificationStats(p domain.Patent) (tea.Model, tea.Cmd) {
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	o, cmd := overlay.NewClassificationStatsOverlay(a.client, a.theme, a.text, p, project)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }

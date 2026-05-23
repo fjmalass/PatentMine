@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"patentmine/internal/api"
 	"patentmine/internal/command"
@@ -239,6 +240,82 @@ func TestAPIPatentListHonorsReviewStateAlias(t *testing.T) {
 	}
 	if len(res.Patents) != 1 || res.Patents[0].ReviewState != domain.ReviewStateUnderReview {
 		t.Fatalf("list result = %+v, want one under_review patent", res.Patents)
+	}
+}
+
+func TestAPIAssigneeStats(t *testing.T) {
+	env := testAPIEnv(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One"}
+	if err := env.repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p1 := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), Assignee: "Acme Corp", FetchState: domain.FetchCached}
+	p2 := domain.Patent{Number: domain.MustParsePatentNumber("US11611786B2"), Assignee: "Acme Corp", FetchState: domain.FetchCached}
+	for _, patent := range []domain.Patent{p1, p2} {
+		if err := env.repo.SavePatent(ctx, patent); err != nil {
+			t.Fatalf("SavePatent(%s): %v", patent.Number, err)
+		}
+	}
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		if err := env.repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+			t.Fatalf("AddMembership(%s): %v", number, err)
+		}
+	}
+	w := do(t, env.handler, http.MethodGet, "/assignees/stats?project=p1", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /assignees/stats = %d: %s", w.Code, w.Body.String())
+	}
+	var res proto.PatentAssigneeStatsResult
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode assignees: %v", err)
+	}
+	if len(res.Stats) != 1 || res.Stats[0].Assignee != "Acme Corp" || res.Stats[0].Total != 2 {
+		t.Fatalf("assignee stats = %+v, want Acme Corp total=2", res.Stats)
+	}
+}
+
+func TestAPIClassificationStatsAndExactList(t *testing.T) {
+	env := testAPIEnv(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One"}
+	if err := env.repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p1 := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), FetchState: domain.FetchStub, Classifications: []string{"G06F17/30", "A61B5/00"}}
+	p2 := domain.Patent{Number: domain.MustParsePatentNumber("US11611786B2"), FetchState: domain.FetchStub, Classifications: []string{"G06F17/30"}}
+	p3 := domain.Patent{Number: domain.MustParsePatentNumber("US11611787B2"), FetchState: domain.FetchStub, Classifications: []string{"H04N21/4345"}}
+	for _, patent := range []domain.Patent{p1, p2, p3} {
+		if err := env.repo.SavePatent(ctx, patent); err != nil {
+			t.Fatalf("SavePatent(%s): %v", patent.Number, err)
+		}
+	}
+	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
+		if err := env.repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+			t.Fatalf("AddMembership(%s): %v", number, err)
+		}
+	}
+	w := do(t, env.handler, http.MethodGet, "/classifications/stats?project=p1", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /classifications/stats = %d: %s", w.Code, w.Body.String())
+	}
+	var statsRes proto.PatentClassificationStatsResult
+	if err := json.Unmarshal(w.Body.Bytes(), &statsRes); err != nil {
+		t.Fatalf("decode classification stats: %v", err)
+	}
+	if len(statsRes.Stats) == 0 || statsRes.Stats[0].Classification.Code != "G06F17/30" || statsRes.Stats[0].Total != 2 {
+		t.Fatalf("classification stats = %+v, want G06F17/30 total=2", statsRes.Stats)
+	}
+	list := do(t, env.handler, http.MethodGet, "/patents?project=p1&classification_code=G06F17/30", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("GET /patents exact classification = %d: %s", list.Code, list.Body.String())
+	}
+	var listRes proto.PatentListResult
+	if err := json.Unmarshal(list.Body.Bytes(), &listRes); err != nil {
+		t.Fatalf("decode exact classification list: %v", err)
+	}
+	if len(listRes.Patents) != 2 {
+		t.Fatalf("exact classification list returned %d patents, want 2", len(listRes.Patents))
 	}
 }
 

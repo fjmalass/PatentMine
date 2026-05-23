@@ -19,6 +19,8 @@ type Method string
 const (
 	MethodPing                      Method = "ping"
 	MethodPatentGet                 Method = "patent.get"
+	MethodPatentAssigneeStats       Method = "patent.assignee_stats"
+	MethodPatentClassificationStats Method = "patent.classification_stats"
 	MethodPatentInventorStats       Method = "patent.inventor_stats"
 	MethodPatentList                Method = "patent.list"
 	MethodPatentTableColumns        Method = "patent.table_columns"
@@ -152,22 +154,44 @@ type PatentResult struct {
 
 // PatentListParams selects and paginates a patent listing.
 type PatentListParams struct {
-	Project        domain.ProjectID   `json:"project,omitempty"`
-	Filter         string             `json:"filter,omitempty"`
-	ReviewState    domain.ReviewState `json:"review_state,omitempty"`
-	Search         string             `json:"search,omitempty"`
-	Classification string             `json:"classification,omitempty"`
-	Inventor       string             `json:"inventor,omitempty"`
-	Limit          int                `json:"limit,omitempty"`
-	Offset         int                `json:"offset,omitempty"`
-	SortColumn     domain.SortColumn  `json:"sort_column,omitempty"`
-	SortAscending  bool               `json:"sort_ascending,omitempty"`
+	Project            domain.ProjectID   `json:"project,omitempty"`
+	Filter             string             `json:"filter,omitempty"`
+	ReviewState        domain.ReviewState `json:"review_state,omitempty"`
+	Search             string             `json:"search,omitempty"`
+	Classification     string             `json:"classification,omitempty"`
+	ClassificationCode string             `json:"classification_code,omitempty"`
+	Inventor           string             `json:"inventor,omitempty"`
+	Assignee           string             `json:"assignee,omitempty"`
+	Limit              int                `json:"limit,omitempty"`
+	Offset             int                `json:"offset,omitempty"`
+	SortColumn         domain.SortColumn  `json:"sort_column,omitempty"`
+	SortAscending      bool               `json:"sort_ascending,omitempty"`
 }
 
 // PatentListResult carries one page of patents plus the unpaged total.
 type PatentListResult struct {
 	Patents []domain.PatentRow `json:"patents"`
 	Total   int                `json:"total"`
+}
+
+// PatentAssigneeStatsParams selects assignee analytics within an optional project scope.
+type PatentAssigneeStatsParams struct {
+	Project domain.ProjectID `json:"project,omitempty"`
+}
+
+// PatentAssigneeStatsResult carries database statistics for assignees.
+type PatentAssigneeStatsResult struct {
+	Stats []domain.AssigneeStats `json:"stats"`
+}
+
+// PatentClassificationStatsParams selects classification analytics within an optional project scope.
+type PatentClassificationStatsParams struct {
+	Project domain.ProjectID `json:"project,omitempty"`
+}
+
+// PatentClassificationStatsResult carries database statistics for classifications.
+type PatentClassificationStatsResult struct {
+	Stats []domain.ClassificationStats `json:"stats"`
 }
 
 // PatentInventorStatsResult carries database statistics for multiple inventors.

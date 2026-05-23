@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -447,9 +448,19 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 		}
 	}
 
+	if q.ClassificationCode != "" {
+		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE json_each.value = ?)`)
+		args = append(args, q.ClassificationCode)
+	}
+
 	if q.Inventor != "" {
 		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?)`)
 		args = append(args, q.Inventor)
+	}
+
+	if q.Assignee != "" {
+		conds = append(conds, `p.assignee = ?`)
+		args = append(args, q.Assignee)
 	}
 
 	if expr != nil {
@@ -781,5 +792,141 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 		out[idx] = stats
 	}
 
+	return out, nil
+}
+
+// PatentAssigneeStats aggregates database statistics for all non-empty assignees within a project.
+func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID) (out []domain.AssigneeStats, err error) {
+	defer r.observeDuration("patent_assignee_stats", time.Now(), &err)
+	query := `SELECT p.assignee, p.number, COALESCE(m.state, ''), COALESCE(t.name, '')
+		FROM patent p
+		LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
+		LEFT JOIN patent_tag pt ON pt.patent_number = p.number
+		LEFT JOIN tag t ON t.id = pt.tag_id AND t.project_id = ?
+		WHERE TRIM(p.assignee) != ''`
+	args := []any{string(project), string(project)}
+	if project != "" {
+		query += ` AND EXISTS (SELECT 1 FROM membership sm WHERE sm.project_id = ? AND sm.patent_number = p.number)`
+		args = append(args, string(project))
+	}
+	query += ` ORDER BY p.assignee, p.number, t.name`
+	rows, err := r.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query assignee stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byAssignee := make(map[string]*domain.AssigneeStats)
+	seenPatents := make(map[string]map[string]bool)
+	for rows.Next() {
+		var assignee, number, state, tagName string
+		if err := rows.Scan(&assignee, &number, &state, &tagName); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan assignee stats row: %w", err)
+		}
+		stats := byAssignee[assignee]
+		if stats == nil {
+			stats = &domain.AssigneeStats{Assignee: assignee, States: make(map[string]int), Tags: make(map[string]int)}
+			byAssignee[assignee] = stats
+			seenPatents[assignee] = make(map[string]bool)
+		}
+		if !seenPatents[assignee][number] {
+			stats.Total++
+			seenPatents[assignee][number] = true
+			if state != "" {
+				if state != string(domain.ReviewStateStored) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateCached) {
+					state = "other"
+				}
+				stats.States[state]++
+			}
+		}
+		if tagName != "" {
+			stats.Tags[tagName]++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: assignee stats rows: %w", err)
+	}
+	for _, stats := range byAssignee {
+		out = append(out, *stats)
+	}
+	slices.SortFunc(out, func(a, b domain.AssigneeStats) int {
+		if a.Total != b.Total {
+			return b.Total - a.Total
+		}
+		return strings.Compare(a.Assignee, b.Assignee)
+	})
+	return out, nil
+}
+
+// PatentClassificationStats aggregates database statistics for all classification codes within a project.
+func (r *Repo) PatentClassificationStats(ctx context.Context, project domain.ProjectID) (out []domain.ClassificationStats, err error) {
+	defer r.observeDuration("patent_classification_stats", time.Now(), &err)
+	query := `SELECT json_each.value, p.number, COALESCE(m.state, ''), COALESCE(t.name, ''),
+		COALESCE(cd.system, ''), COALESCE(cd.description, '')
+		FROM patent p
+		JOIN json_each(p.classifications)
+		LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
+		LEFT JOIN patent_tag pt ON pt.patent_number = p.number
+		LEFT JOIN tag t ON t.id = pt.tag_id AND t.project_id = ?
+		LEFT JOIN classification_definition cd ON cd.code = json_each.value
+		WHERE TRIM(json_each.value) != ''`
+	args := []any{string(project), string(project)}
+	if project != "" {
+		query += ` AND EXISTS (SELECT 1 FROM membership sm WHERE sm.project_id = ? AND sm.patent_number = p.number)`
+		args = append(args, string(project))
+	}
+	query += ` ORDER BY json_each.value, p.number, t.name`
+	rows, err := r.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query classification stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byCode := make(map[string]*domain.ClassificationStats)
+	seenPatents := make(map[string]map[string]bool)
+	for rows.Next() {
+		var code, number, state, tagName, system, description string
+		if err := rows.Scan(&code, &number, &state, &tagName, &system, &description); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan classification stats row: %w", err)
+		}
+		stats := byCode[code]
+		if stats == nil {
+			parsed := domain.ParseClassification(code)
+			if system != "" {
+				parsed.System = system
+			}
+			if description != "" {
+				parsed.Description = description
+			}
+			stats = &domain.ClassificationStats{Classification: parsed, States: make(map[string]int), Tags: make(map[string]int)}
+			byCode[code] = stats
+			seenPatents[code] = make(map[string]bool)
+		}
+		if !seenPatents[code][number] {
+			stats.Total++
+			seenPatents[code][number] = true
+			if state != "" {
+				if state != string(domain.ReviewStateStored) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateCached) {
+					state = "other"
+				}
+				stats.States[state]++
+			}
+		}
+		if tagName != "" {
+			stats.Tags[tagName]++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: classification stats rows: %w", err)
+	}
+	for _, stats := range byCode {
+		out = append(out, *stats)
+	}
+	slices.SortFunc(out, func(a, b domain.ClassificationStats) int {
+		if a.Total != b.Total {
+			return b.Total - a.Total
+		}
+		return strings.Compare(a.Classification.Code, b.Classification.Code)
+	})
 	return out, nil
 }

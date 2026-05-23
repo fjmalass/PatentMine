@@ -187,6 +187,10 @@ func (c *Cache) UntagPatents(ctx context.Context, tagID int64, patents []domain.
 	return nil
 }
 
+func (c *Cache) SaveMutationGroup(ctx context.Context, group domain.MutationGroup, items []domain.MutationItem) error {
+	return c.Repository.SaveMutationGroup(ctx, group, items)
+}
+
 func (c *Cache) SaveDocument(ctx context.Context, recordNumber domain.PatentNumber, doc domain.Document) error {
 	if err := c.Repository.SaveDocument(ctx, recordNumber, doc); err != nil {
 		return err

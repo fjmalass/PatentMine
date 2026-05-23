@@ -29,6 +29,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /metricsz", s.handleMetrics)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
 	s.mux.HandleFunc("GET /patents", s.handlePatentList) // command.PatentList
+	s.mux.HandleFunc("GET /assignees", s.handleAssigneeStats)
+	s.mux.HandleFunc("GET /assignees/stats", s.handleAssigneeStats)
+	s.mux.HandleFunc("GET /classifications/stats", s.handleClassificationStats)
 	s.mux.HandleFunc("GET /patents/columns", s.handlePatentTableColumns)
 	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)           // command.PatentGet
 	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations) // command.PatentRelations
@@ -180,19 +183,31 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	sortAscending, _ := strconv.ParseBool(q.Get("sort_ascending"))
 	params := proto.PatentListParams{
-		Project:        domain.ProjectID(q.Get("project")),
-		Filter:         q.Get("filter"),
-		ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
-		Search:         q.Get("search"),
-		Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),
-		Inventor:       q.Get("inventor"),
-		Limit:          limit,
-		Offset:         offset,
-		SortColumn:     domain.SortColumn(q.Get("sort_column")),
-		SortAscending:  sortAscending,
+		Project:            domain.ProjectID(q.Get("project")),
+		Filter:             q.Get("filter"),
+		ReviewState:        domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
+		Search:             q.Get("search"),
+		Classification:     firstNonEmpty(q.Get("classification"), q.Get("class")),
+		ClassificationCode: q.Get("classification_code"),
+		Inventor:           q.Get("inventor"),
+		Assignee:           firstNonEmpty(q.Get("assignee"), q.Get("owner")),
+		Limit:              limit,
+		Offset:             offset,
+		SortColumn:         domain.SortColumn(q.Get("sort_column")),
+		SortAscending:      sortAscending,
 	}
 	var res proto.PatentListResult
 	s.call(w, r, proto.MethodPatentList, params, &res)
+}
+
+func (s *Server) handleAssigneeStats(w http.ResponseWriter, r *http.Request) {
+	var res proto.PatentAssigneeStatsResult
+	s.call(w, r, proto.MethodPatentAssigneeStats, proto.PatentAssigneeStatsParams{Project: domain.ProjectID(r.URL.Query().Get("project"))}, &res)
+}
+
+func (s *Server) handleClassificationStats(w http.ResponseWriter, r *http.Request) {
+	var res proto.PatentClassificationStatsResult
+	s.call(w, r, proto.MethodPatentClassificationStats, proto.PatentClassificationStatsParams{Project: domain.ProjectID(r.URL.Query().Get("project"))}, &res)
 }
 
 func (s *Server) handlePatentTableColumns(w http.ResponseWriter, r *http.Request) {

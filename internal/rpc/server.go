@@ -41,6 +41,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 	s.handlers = map[proto.Method]handlerFunc{
 		proto.MethodPing:                      s.ping,
 		proto.MethodPatentGet:                 s.patentGet,
+		proto.MethodPatentAssigneeStats:       s.patentAssigneeStats,
+		proto.MethodPatentClassificationStats: s.patentClassificationStats,
 		proto.MethodPatentInventorStats:       s.patentInventorStats,
 		proto.MethodPatentList:                s.patentList,
 		proto.MethodPatentTableColumns:        s.patentTableColumns,
@@ -313,6 +315,30 @@ func (s *Server) patentInventorStats(ctx context.Context, raw json.RawMessage) (
 	return proto.PatentInventorStatsResult{Stats: stats}, nil
 }
 
+func (s *Server) patentAssigneeStats(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentAssigneeStatsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	stats, err := s.engine.PatentAssigneeStats(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentAssigneeStatsResult{Stats: stats}, nil
+}
+
+func (s *Server) patentClassificationStats(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentClassificationStatsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	stats, err := s.engine.PatentClassificationStats(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentClassificationStatsResult{Stats: stats}, nil
+}
+
 func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.PatentListParams](raw)
 	if err != nil {
@@ -356,16 +382,18 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		}()
 	}
 	patents, total, err := s.engine.ListPatents(ctx, store.PatentQuery{
-		Project:        p.Project,
-		Filter:         p.Filter,
-		ReviewState:    p.ReviewState,
-		Search:         p.Search,
-		Classification: p.Classification,
-		Inventor:       p.Inventor,
-		Limit:          p.Limit,
-		Offset:         p.Offset,
-		SortColumn:     p.SortColumn,
-		SortAscending:  p.SortAscending,
+		Project:            p.Project,
+		Filter:             p.Filter,
+		ReviewState:        p.ReviewState,
+		Search:             p.Search,
+		Classification:     p.Classification,
+		ClassificationCode: p.ClassificationCode,
+		Inventor:           p.Inventor,
+		Assignee:           p.Assignee,
+		Limit:              p.Limit,
+		Offset:             p.Offset,
+		SortColumn:         p.SortColumn,
+		SortAscending:      p.SortAscending,
 	})
 	if err != nil {
 		return nil, err

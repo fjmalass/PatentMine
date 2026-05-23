@@ -32,6 +32,18 @@ func (e *Engine) PatentInventorStats(ctx context.Context, number domain.PatentNu
 	return e.repo.PatentInventorStats(ctx, project, p.Inventors)
 }
 
+// PatentAssigneeStats aggregates metrics for all assignees in the active dataset.
+func (e *Engine) PatentAssigneeStats(ctx context.Context, project domain.ProjectID) (stats []domain.AssigneeStats, err error) {
+	defer e.observeDuration("engine.patent_assignee_stats", time.Now(), &err)
+	return e.repo.PatentAssigneeStats(ctx, project)
+}
+
+// PatentClassificationStats aggregates metrics for all classification codes in the active dataset.
+func (e *Engine) PatentClassificationStats(ctx context.Context, project domain.ProjectID) (stats []domain.ClassificationStats, err error) {
+	defer e.observeDuration("engine.patent_classification_stats", time.Now(), &err)
+	return e.repo.PatentClassificationStats(ctx, project)
+}
+
 // recordNumber resolves any of a record's document numbers (application,
 // publication, grant) to the record's permanent number. An unknown number is
 // returned unchanged, so the caller's own lookup reports it as missing.
