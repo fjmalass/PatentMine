@@ -5,6 +5,26 @@ import (
 	"patentmine/internal/domain"
 )
 
+// PromptForAction returns the prompt text and display locator for a named
+// analysis action. Known actions: "novelty", "claims", "risk". An unknown or
+// empty action returns ("", "AI Analysis (<provider>)") — the caller supplies
+// a custom prompt in that case.
+func PromptForAction(actionType string, provider Provider) (prompt, locator string) {
+	locator = "AI Analysis (" + string(provider) + ")"
+	switch actionType {
+	case "novelty":
+		return "Summarize the core technical novelty of this patent and highlight key legal/technology design takeaways.",
+			"AI Novelty Summary"
+	case "claims":
+		return "Perform a detailed claims and technical breakdown. Explain the scope and boundaries of the independent claims.",
+			"AI Claims Breakdown"
+	case "risk":
+		return "Evaluate potential legal & risk factors. Identify prior art exposure, design-around vectors, or potential infringement vulnerabilities.",
+			"AI Legal & Risk takeaways"
+	}
+	return "", locator
+}
+
 // Provider represents a supported AI platform.
 type Provider string
 

@@ -2,6 +2,7 @@ package pane
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -72,6 +73,7 @@ type Detail struct {
 	cachedLines    []string
 	lastWidth      int
 	lastJumpActive bool
+	logger         *slog.Logger
 }
 
 type detailLineGroup struct {
@@ -97,6 +99,16 @@ var detailAnchorLabels = []string{
 	"Documents",
 	"First claim",
 	"Abstract",
+}
+
+// WithLogger attaches a logger so the pane can persist RPC errors.
+func (d *Detail) WithLogger(l *slog.Logger) *Detail { d.logger = l; return d }
+
+func (d *Detail) log() *slog.Logger {
+	if d.logger != nil {
+		return d.logger
+	}
+	return slog.Default()
 }
 
 // NewDetail builds a detail pane for one patent number. project, when set,
@@ -236,6 +248,7 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.loading = false
 		if m.err != nil {
 			d.loadErr = m.err.Error()
+			d.log().Error("patent detail load failed", slog.String("number", d.number.String()), slog.String("error", m.err.Error()))
 			return d, nil
 		}
 		d.loadErr = ""

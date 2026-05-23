@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"log/slog"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,8 +51,22 @@ type Catalog struct {
 	sortAscending bool
 	filter        PatentFilter
 	find          findBar
-	focusedColIdx int
-	lastWidth     int
+	focusedColIdx  int
+	lastWidth      int
+	logger         *slog.Logger
+	cachedCols     []tableCol
+	cachedColWidth int
+	cachedColProj  domain.ProjectID
+}
+
+// WithLogger attaches a logger so the pane can persist RPC errors.
+func (c *Catalog) WithLogger(l *slog.Logger) *Catalog { c.logger = l; return c }
+
+func (c *Catalog) log() *slog.Logger {
+	if c.logger != nil {
+		return c.logger
+	}
+	return slog.Default()
 }
 
 // NewCatalog builds an empty catalog pane bound to a daemon client.
@@ -233,11 +248,18 @@ func (c *Catalog) currentCols() []tableCol {
 	if c.activeProject != nil {
 		projectID = c.activeProject.ID
 	}
+	w := max(c.lastWidth, 80)
+	if c.cachedCols != nil && c.cachedColWidth == w && c.cachedColProj == projectID {
+		return c.cachedCols
+	}
 	schema := c.columns
 	if len(schema) == 0 || c.columnsProject != projectID {
 		schema = domain.PatentTableColumns(projectID)
 	}
-	return patentTableColumns(max(c.lastWidth, 80), schema)
+	c.cachedCols = patentTableColumns(w, schema)
+	c.cachedColWidth = w
+	c.cachedColProj = projectID
+	return c.cachedCols
 }
 
 // Command implements Pane.
@@ -370,6 +392,7 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if m.err == nil && len(m.columns) > 0 {
 			c.columns = m.columns
 			c.columnsProject = m.project
+			c.cachedCols = nil // schema changed; invalidate col cache
 			c.focusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.focusedColIdx)
 		}
 	case catalogLoadedMsg:
@@ -379,6 +402,7 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		c.loading = false
 		if m.err != nil {
 			c.loadErr = m.err.Error()
+			c.log().Error("patent list load failed", slog.String("error", m.err.Error()))
 			return c, nil
 		}
 		c.loadErr = ""

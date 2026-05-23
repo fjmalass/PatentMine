@@ -185,7 +185,7 @@ func (a *App) openInventors(p domain.Patent, focusPatents bool) (tea.Model, tea.
 }
 
 func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
-	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()))
+	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()).WithLogger(a.log()))
 }
 
 func (a *App) cmdCrawlDepthMax(inv invocation) (tea.Model, tea.Cmd) {

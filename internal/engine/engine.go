@@ -46,16 +46,17 @@ type Option func(*Engine)
 // Engine is the daemon core. Its methods are the single set of operations the
 // system supports; RPC handlers and embedded callers both go through them.
 type Engine struct {
-	repo          store.Repository
-	bus           *Bus
-	pool          *workerPool
-	crawl         CrawlFactory
-	fileImporter  FileImporter
-	cpcLookup     CPCLookup
-	logger        *slog.Logger
-	activities    *observability.Recorder
-	metrics       *observability.Metrics
-	crawlMaxDepth int
+	repo             store.Repository
+	bus              *Bus
+	pool             *workerPool
+	crawl            CrawlFactory
+	fileImporter     FileImporter
+	cpcLookup        CPCLookup
+	logger           *slog.Logger
+	activities       *observability.Recorder
+	metrics          *observability.Metrics
+	crawlMaxDepth    int
+	crawlWorkerCount int
 
 	// changeMu guards the EventDBChanged debounce state below.
 	changeMu      sync.Mutex
@@ -103,20 +104,31 @@ func WithCrawlMaxDepth(maxDepth int) Option {
 	}
 }
 
+// WithCrawlWorkers sets the number of concurrent crawl goroutines.
+// Values ≤ 0 are ignored; the default is crawlWorkers (4).
+func WithCrawlWorkers(n int) Option {
+	return func(e *Engine) {
+		if n > 0 {
+			e.crawlWorkerCount = n
+		}
+	}
+}
+
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx
 // stops all background work. crawl may be nil if no crawl will be started.
 func New(ctx context.Context, repo store.Repository, crawl CrawlFactory, opts ...Option) *Engine {
 	bus := NewBus()
 	eng := &Engine{
-		repo:   repo,
-		bus:    bus,
-		pool:   newWorkerPool(ctx, crawlWorkers, bus, nil),
-		crawl:  crawl,
-		logger: slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		repo:             repo,
+		bus:              bus,
+		crawl:            crawl,
+		logger:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		crawlWorkerCount: crawlWorkers,
 	}
 	for _, opt := range opts {
 		opt(eng)
 	}
+	eng.pool = newWorkerPool(ctx, eng.crawlWorkerCount, bus, nil)
 	eng.pool.metrics = eng.metrics
 	eng.bus.metrics = eng.metrics
 	return eng

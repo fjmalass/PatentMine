@@ -15,8 +15,26 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+var recordSeq atomic.Uint64
+
+// logLevel reads LOG_LEVEL from the environment and returns the matching slog
+// level. Unset or unrecognised values default to Info.
+func logLevel() slog.Level {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("LOG_LEVEL"))) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
 
 const dateLayout = "2006-01-02"
 
@@ -67,28 +85,26 @@ func (t TimingSummary) AvgNanos() int64 {
 // PrometheusText renders a snapshot as Prometheus exposition text.
 func PrometheusText(s Snapshot) string {
 	var b strings.Builder
-	writeGauge := func(name string, value int64) {
-		b.WriteString(name)
-		b.WriteByte(' ')
-		b.WriteString(fmt.Sprintf("%d\n", value))
+	writeMetric := func(typeName, name string, value int64) {
+		fmt.Fprintf(&b, "# TYPE %s %s\n%s %d\n", name, typeName, name, value)
 	}
 	names := sortedKeys(s.Timings)
 	for _, name := range names {
 		metric := s.Timings[name]
 		base := sanitizePromName(name)
-		writeGauge(base+"_count", metric.Count)
-		writeGauge(base+"_errors", metric.Errors)
-		writeGauge(base+"_total_nanos", metric.TotalNanos)
-		writeGauge(base+"_avg_nanos", metric.AvgNanos())
-		writeGauge(base+"_min_nanos", metric.MinNanos)
-		writeGauge(base+"_max_nanos", metric.MaxNanos)
-		writeGauge(base+"_last_nanos", metric.LastNanos)
+		writeMetric("counter", base+"_count", metric.Count)
+		writeMetric("counter", base+"_errors", metric.Errors)
+		writeMetric("counter", base+"_total_nanos", metric.TotalNanos)
+		writeMetric("gauge", base+"_avg_nanos", metric.AvgNanos())
+		writeMetric("gauge", base+"_min_nanos", metric.MinNanos)
+		writeMetric("gauge", base+"_max_nanos", metric.MaxNanos)
+		writeMetric("gauge", base+"_last_nanos", metric.LastNanos)
 	}
 	for _, name := range sortedKeys(s.Counters) {
-		writeGauge(sanitizePromName(name), s.Counters[name])
+		writeMetric("counter", sanitizePromName(name), s.Counters[name])
 	}
 	for _, name := range sortedKeys(s.Gauges) {
-		writeGauge(sanitizePromName(name), s.Gauges[name])
+		writeMetric("gauge", sanitizePromName(name), s.Gauges[name])
 	}
 	return b.String()
 }
@@ -128,12 +144,47 @@ type Recorder struct {
 	w         io.Writer
 }
 
+// logRetainDays is how many days of log/activity files to keep on startup.
+const logRetainDays = 14
+
+// pruneOldLogs deletes log-*.jsonl and activity-*.jsonl files in logsDir
+// whose date suffix is older than logRetainDays days.
+func pruneOldLogs(logsDir string, now time.Time) {
+	cutoff := now.In(time.Local).AddDate(0, 0, -logRetainDays)
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		var prefix string
+		switch {
+		case strings.HasPrefix(name, "log-") && strings.HasSuffix(name, ".jsonl"):
+			prefix = "log-"
+		case strings.HasPrefix(name, "activity-") && strings.HasSuffix(name, ".jsonl"):
+			prefix = "activity-"
+		default:
+			continue
+		}
+		dateStr := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".jsonl")
+		t, err := time.ParseInLocation(dateLayout, dateStr, time.Local)
+		if err != nil {
+			continue
+		}
+		if t.Before(cutoff) {
+			_ = os.Remove(filepath.Join(logsDir, name))
+		}
+	}
+}
+
 // Open creates dated log and activity files under logsDir.
 func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		return nil, fmt.Errorf("observability: create logs dir %q: %w", logsDir, err)
 	}
-	date := localDate(time.Now())
+	now := time.Now()
+	pruneOldLogs(logsDir, now)
+	date := localDate(now)
 	logFile, err := os.OpenFile(filepath.Join(logsDir, "log-"+date+".jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("observability: open log file: %w", err)
@@ -143,7 +194,7 @@ func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 		_ = logFile.Close()
 		return nil, fmt.Errorf("observability: open activity file: %w", err)
 	}
-	handler := slog.NewJSONHandler(logFile, nil)
+	handler := slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: logLevel()})
 	logger := slog.New(handler).With(
 		slog.String("service", "patentmine"),
 		slog.String("component", component),
@@ -197,7 +248,7 @@ func (r *Recorder) Record(ctx context.Context, rec Record) error {
 		rec.Component = r.component
 	}
 	if rec.ID == "" {
-		rec.ID = fmt.Sprintf("%s-%d", rec.Date, rec.Timestamp.UnixNano())
+		rec.ID = fmt.Sprintf("%s-%d-%d", rec.Date, rec.Timestamp.UnixNano(), recordSeq.Add(1))
 	}
 	if rec.TraceID == "" || rec.SpanID == "" {
 		traceID, spanID := TraceIDs(ctx)

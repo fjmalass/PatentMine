@@ -3,6 +3,7 @@ package pane
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -72,6 +73,17 @@ type FullText struct {
 	anchors     []render.JumpAnchor
 	jumpKeys    map[string]rune
 	keymapBound []rune // keys reserved by the keymap, kept off jump anchors
+	logger      *slog.Logger
+}
+
+// WithLogger attaches a logger so the pane can persist fetch errors.
+func (f *FullText) WithLogger(l *slog.Logger) *FullText { f.logger = l; return f }
+
+func (f *FullText) log() *slog.Logger {
+	if f.logger != nil {
+		return f.logger
+	}
+	return slog.Default()
 }
 
 // NewFullText builds a full-text viewer for one patent.
@@ -190,6 +202,7 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		f.loading = false
 		if m.Err != nil {
 			f.loadErr = m.Err.Error()
+			f.log().Error("full text load failed", slog.String("number", f.number.String()), slog.String("error", m.Err.Error()))
 			return f, nil
 		}
 		f.loadErr = ""

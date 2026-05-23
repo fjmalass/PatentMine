@@ -62,18 +62,27 @@ func (b *Bus) unsubscribe(id int) {
 
 // Publish delivers ev to every subscriber without blocking. When a subscriber
 // buffer is full its oldest event is discarded to make room.
+// The subscriber list is copied under the lock; sending happens lock-free so a
+// slow subscriber cannot stall the engine or other subscribers.
 func (b *Bus) Publish(ev proto.Event) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.closed {
+		b.mu.Unlock()
 		return
 	}
+	chans := make([]chan proto.Event, 0, len(b.subs))
 	for _, ch := range b.subs {
+		chans = append(chans, ch)
+	}
+	metrics := b.metrics
+	b.mu.Unlock()
+
+	for _, ch := range chans {
 		select {
 		case ch <- ev:
 		default:
-			if b.metrics != nil {
-				b.metrics.IncCounter("engine.bus.drop_total", 1)
+			if metrics != nil {
+				metrics.IncCounter("engine.bus.drop_total", 1)
 			}
 			select {
 			case <-ch:

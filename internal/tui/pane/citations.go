@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"log/slog"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,6 +57,17 @@ type Citations struct {
 	find          findBar
 	focusedColIdx int
 	lastWidth     int
+	logger        *slog.Logger
+}
+
+// WithLogger attaches a logger so the pane can persist RPC errors.
+func (c *Citations) WithLogger(l *slog.Logger) *Citations { c.logger = l; return c }
+
+func (c *Citations) log() *slog.Logger {
+	if c.logger != nil {
+		return c.logger
+	}
+	return slog.Default()
 }
 
 // NewCitations builds a family-edge pane for one patent and relation kind.
@@ -388,6 +400,7 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		c.loading = false
 		if m.err != nil {
 			c.loadErr = m.err.Error()
+			c.log().Error("relations load failed", slog.String("root", c.root.String()), slog.String("kind", string(c.kind)), slog.String("error", m.err.Error()))
 			return c, nil
 		}
 		c.loadErr = ""

@@ -96,7 +96,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	// This covers both brand-new stubs (created==true) and existing stubs that
 	// were previously discovered as citation edges.
 	if !exists && state == domain.ReviewStateStored && e.crawl != nil {
-		if jobID, fetchErr := e.StartFamilyCrawl(record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
+		if jobID, fetchErr := e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
 		} else {

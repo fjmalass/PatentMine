@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -38,6 +39,7 @@ type Config struct {
 	AIProvider   string // Chosen AI Provider ("gemini", "ollama")
 	OllamaModel  string // Local Ollama Model ("mistral", etc.)
 	OllamaHost   string // Local Ollama server host
+	CrawlWorkers int    // Concurrent crawl goroutines; 0 means use engine default.
 }
 
 // loadDotEnv searches for and loads environment variables from a .env file.
@@ -123,6 +125,8 @@ func Load() (Config, error) {
 		ollamaHost = "http://localhost:11434"
 	}
 
+	crawlWorkers, _ := strconv.Atoi(os.Getenv("PATENTMINE_CRAWL_WORKERS"))
+
 	return Config{
 		HomeDir:      Path(home),
 		DBPath:       Path(filepath.Join(home, dbFileName)),
@@ -134,5 +138,6 @@ func Load() (Config, error) {
 		AIProvider:   aiProvider,
 		OllamaModel:  ollamaModel,
 		OllamaHost:   ollamaHost,
+		CrawlWorkers: crawlWorkers,
 	}, nil
 }

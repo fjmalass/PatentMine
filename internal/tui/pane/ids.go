@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"log/slog"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,6 +56,17 @@ type IDSDetail struct {
 	loading bool
 	loadErr string
 	loadID  uint64
+	logger  *slog.Logger
+}
+
+// WithLogger attaches a logger so the pane can persist RPC errors.
+func (p *IDSDetail) WithLogger(l *slog.Logger) *IDSDetail { p.logger = l; return p }
+
+func (p *IDSDetail) log() *slog.Logger {
+	if p.logger != nil {
+		return p.logger
+	}
+	return slog.Default()
 }
 
 func NewIDSDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber, project domain.ProjectID) *IDSDetail {
@@ -145,6 +157,7 @@ func (p *IDSDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		p.loading = false
 		if m.err != nil {
 			p.loadErr = m.err.Error()
+			p.log().Error("IDS load failed", slog.String("number", p.number.String()), slog.String("error", m.err.Error()))
 			return p, nil
 		}
 		p.loadErr = ""

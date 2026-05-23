@@ -539,12 +539,12 @@ func (s *Server) patentTagList(ctx context.Context, raw json.RawMessage) (any, e
 	return proto.PatentTagListResult{Tags: tags}, nil
 }
 
-func (s *Server) crawlFamily(_ context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) crawlFamily(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.CrawlFamilyParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	id, err := s.engine.StartFamilyCrawl(p.Root, p.Depth, p.Profile, p.Force)
+	id, err := s.engine.StartFamilyCrawl(ctx, p.Root, p.Depth, p.Profile, p.Force)
 	if err != nil {
 		return nil, err
 	}
@@ -566,12 +566,12 @@ func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, erro
 	return proto.Empty{}, nil
 }
 
-func (s *Server) crawlCancel(_ context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) crawlCancel(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.CrawlCancelParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.CancelCrawl(engine.JobID(p.JobID)); err != nil {
+	if err := s.engine.CancelCrawl(ctx, engine.JobID(p.JobID)); err != nil {
 		return nil, err
 	}
 	return proto.Empty{}, nil

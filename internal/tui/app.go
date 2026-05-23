@@ -173,6 +173,8 @@ type App struct {
 	ollamaModel     string
 	aiTargetPatent  domain.Patent
 	usptoConfigured bool
+	geminiAnalyzer  ai.Analyzer
+	ollamaAnalyzer  ai.Analyzer
 }
 
 type Option func(*App)
@@ -191,7 +193,23 @@ func WithAIConfig(provider string, geminiKey string, ollamaHost string, ollamaMo
 		a.geminiAPIKey = geminiKey
 		a.ollamaHost = ollamaHost
 		a.ollamaModel = ollamaModel
+		a.geminiAnalyzer = ai.NewGeminiAnalyzer(geminiKey)
+		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(ollamaHost, ollamaModel)
 	}
+}
+
+// buildAnalyzer returns the cached analyzer for the active provider.
+func (a *App) buildAnalyzer() ai.Analyzer {
+	if a.aiProvider == ai.ProviderGemini {
+		if a.geminiAnalyzer == nil {
+			a.geminiAnalyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
+		}
+		return a.geminiAnalyzer
+	}
+	if a.ollamaAnalyzer == nil {
+		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
+	}
+	return a.ollamaAnalyzer
 }
 
 func WithUSPTOKey(key string) Option {
@@ -328,26 +346,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.aiTargetPatent = m.patent
-		var analyzer ai.Analyzer
-		if a.aiProvider == ai.ProviderGemini {
-			analyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
-		} else {
-			analyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
-		}
-		o := overlay.NewAIMenu(a.theme, m.patent, a.aiProvider, analyzer)
+		o := overlay.NewAIMenu(a.theme, m.patent, a.aiProvider, a.buildAnalyzer())
 		a.overlays = append(a.overlays, o)
 		return a, nil
 	case overlay.AISwitchProviderMsg:
 		a.aiProvider = ai.Provider(m.NewProvider)
 		if len(a.overlays) > 0 {
 			if menu, ok := a.overlays[len(a.overlays)-1].(*overlay.AIMenu); ok {
-				var analyzer ai.Analyzer
-				if a.aiProvider == ai.ProviderGemini {
-					analyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
-				} else {
-					analyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
-				}
-				a.overlays[len(a.overlays)-1] = overlay.NewAIMenu(a.theme, menu.Patent(), a.aiProvider, analyzer)
+				a.overlays[len(a.overlays)-1] = overlay.NewAIMenu(a.theme, menu.Patent(), a.aiProvider, a.buildAnalyzer())
 			} else if settings, ok := a.overlays[len(a.overlays)-1].(*overlay.SettingsOverlay); ok {
 				settings.SetActiveAI(a.aiProvider)
 			}
@@ -413,7 +419,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			project = a.activeProject.ID
 		}
 		bound := a.keymaps.BoundLetters(command.ScopeDetail)
-		return a.pushPane(pane.NewDetail(a.client, a.theme, m.Number, project, bound))
+		return a.pushPane(pane.NewDetail(a.client, a.theme, m.Number, project, bound).WithLogger(a.log()))
 	case overlay.OpenTagPatentOverlayMsg:
 		o, cmd := overlay.NewTagPatentOverlay(a.client, a.theme, a.text, a.activeProject.ID, m.Patents)
 		a.overlays = append(a.overlays, o)
@@ -647,38 +653,18 @@ type aiAnalysisResultMsg struct {
 }
 
 func (a *App) runAIAnalysis(patent domain.Patent, actionType, customPrompt string) tea.Cmd {
+	analyzer := a.buildAnalyzer()
+	prompt, locator := ai.PromptForAction(actionType, a.aiProvider)
+	if customPrompt != "" {
+		prompt = customPrompt
+		locator = "AI Custom: " + customPrompt
+		if len(customPrompt) > 20 {
+			locator = "AI Custom: " + customPrompt[:20] + "..."
+		}
+	}
 	return func() tea.Msg {
-		var analyzer ai.Analyzer
-		if a.aiProvider == ai.ProviderGemini {
-			analyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
-		} else {
-			analyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
-		}
-
-		prompt := customPrompt
-		locator := "AI Analysis (" + string(a.aiProvider) + ")"
-		if actionType != "" && prompt == "" {
-			switch actionType {
-			case "novelty":
-				prompt = "Summarize the core technical novelty of this patent and highlight key legal/technology design takeaways."
-				locator = "AI Novelty Summary"
-			case "claims":
-				prompt = "Perform a detailed claims and technical breakdown. Explain the scope and boundaries of the independent claims."
-				locator = "AI Claims Breakdown"
-			case "risk":
-				prompt = "Evaluate potential legal & risk factors. Identify prior art exposure, design-around vectors, or potential infringement vulnerabilities."
-				locator = "AI Legal & Risk takeaways"
-			}
-		} else if prompt != "" {
-			locator = "AI Custom: " + prompt
-			if len(prompt) > 20 {
-				locator = "AI Custom: " + prompt[:20] + "..."
-			}
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-
 		res, err := analyzer.AnalyzePatent(ctx, patent, prompt)
 		return aiAnalysisResultMsg{
 			number:  patent.Number,

@@ -192,7 +192,7 @@ func TestEngineCrawlEmitsProgressAndDone(t *testing.T) {
 	events, unsub := eng.Subscribe()
 	defer unsub()
 
-	jobID, err := eng.StartFamilyCrawl(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false)
+	jobID, err := eng.StartFamilyCrawl(context.Background(), domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false)
 	if err != nil {
 		t.Fatalf("StartFamilyCrawl: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
 
 func TestEngineCrawlWithoutFactoryFails(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
-	if _, err := eng.StartFamilyCrawl(domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false); err == nil {
+	if _, err := eng.StartFamilyCrawl(context.Background(), domain.MustParsePatentNumber("US11611785B2"), 1, domain.CrawlProfileAll, false); err == nil {
 		t.Fatal("StartFamilyCrawl without a factory should fail")
 	}
 }

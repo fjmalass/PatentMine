@@ -144,7 +144,7 @@ func (a *App) openDetail() (tea.Model, tea.Cmd) {
 		project = a.activeProject.ID
 	}
 	bound := a.keymaps.BoundLetters(command.ScopeDetail)
-	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound))
+	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
 }
 
 // openFullText pushes a full text viewer pane for the selected patent.
@@ -159,7 +159,7 @@ func (a *App) openFullText() (tea.Model, tea.Cmd) {
 		project = a.activeProject.ID
 	}
 	bound := a.keymaps.BoundLetters(command.ScopeFullText)
-	return a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound))
+	return a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log()))
 }
 
 func (a *App) openIDS() (tea.Model, tea.Cmd) {
@@ -172,7 +172,7 @@ func (a *App) openIDS() (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, a.activeProject.ID))
+	return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, a.activeProject.ID).WithLogger(a.log()))
 }
 
 // openCitations pushes a family-edge pane for the focused pane's selected
@@ -183,7 +183,7 @@ func (a *App) openCitations(kind domain.RelationKind) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind))
+	return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
 }
 
 func (a *App) openFamilyGraph(depth int, countries []string) (tea.Model, tea.Cmd) {
@@ -192,7 +192,7 @@ func (a *App) openFamilyGraph(depth int, countries []string) (tea.Model, tea.Cmd
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries))
+	return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()))
 }
 
 func (a *App) activateProject() (tea.Model, tea.Cmd) {
@@ -232,7 +232,7 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 		a.setStatus(text.StatusActiveProject, project.Name)
 	}
 	if splash, ok := a.focusedPane().(interface{ IsSplash() bool }); ok && splash.IsSplash() && len(a.panes) == 1 {
-		var mounted pane.Pane = pane.NewCatalog(a.client, a.theme)
+		var mounted pane.Pane = pane.NewCatalog(a.client, a.theme).WithLogger(a.log())
 		mounted, cmds := a.preparePane(mounted)
 		a.panes[0] = mounted
 		if len(cmds) == 0 {

@@ -2,6 +2,7 @@ package pane
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -69,6 +70,17 @@ type FamilyGraph struct {
 	truncated    bool
 	hidden       int
 	inconsistent int
+	logger       *slog.Logger
+}
+
+// WithLogger attaches a logger so the pane can persist RPC errors.
+func (g *FamilyGraph) WithLogger(l *slog.Logger) *FamilyGraph { g.logger = l; return g }
+
+func (g *FamilyGraph) log() *slog.Logger {
+	if g.logger != nil {
+		return g.logger
+	}
+	return slog.Default()
 }
 
 // NewFamilyGraph builds a bounded family graph pane for one patent.
@@ -252,6 +264,7 @@ func (g *FamilyGraph) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		g.loading = false
 		if m.err != nil {
 			g.loadErr = m.err.Error()
+			g.log().Error("family graph load failed", slog.String("root", g.root.String()), slog.String("error", m.err.Error()))
 			return g, nil
 		}
 		g.loadErr = ""

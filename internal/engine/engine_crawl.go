@@ -15,7 +15,7 @@ import (
 
 // StartFamilyCrawl enqueues a family-graph crawl and returns its job id. A
 // force crawl bypasses the local file cache and re-fetches from the web.
-func (e *Engine) StartFamilyCrawl(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
+func (e *Engine) StartFamilyCrawl(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
 	defer e.observeDuration("engine.start_family_crawl", time.Now(), &err)
 	if e.crawl == nil {
 		return "", errors.New("engine: no crawl factory configured")
@@ -25,11 +25,11 @@ func (e *Engine) StartFamilyCrawl(root domain.PatentNumber, depth int, profile d
 	}
 	id, err = e.pool.submit(e.crawl(root, depth, profile, force))
 	if err != nil {
-		e.log(context.Background(), slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("error", err.Error()))
+		e.log(ctx, slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("error", err.Error()))
 		return "", err
 	}
-	e.log(context.Background(), slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
-	e.recordActivity(context.Background(), observability.Record{
+	e.log(ctx, slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
+	e.recordActivity(ctx, observability.Record{
 		Action:   "crawl.start",
 		Entity:   "job",
 		EntityID: string(id),
@@ -124,13 +124,13 @@ func idsDocument(p domain.Patent) (domain.Document, bool) {
 }
 
 // CancelCrawl stops a running or queued crawl job.
-func (e *Engine) CancelCrawl(id JobID) (err error) {
+func (e *Engine) CancelCrawl(ctx context.Context, id JobID) (err error) {
 	defer e.observeDuration("engine.cancel_crawl", time.Now(), &err)
 	if !e.pool.cancel(id) {
 		return fmt.Errorf("engine: no such job %q", id)
 	}
-	e.log(context.Background(), slog.LevelInfo, "crawl cancelled", slog.String("job_id", string(id)))
-	e.recordActivity(context.Background(), observability.Record{
+	e.log(ctx, slog.LevelInfo, "crawl cancelled", slog.String("job_id", string(id)))
+	e.recordActivity(ctx, observability.Record{
 		Action:   "crawl.cancel",
 		Entity:   "job",
 		EntityID: string(id),

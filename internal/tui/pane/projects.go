@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"log/slog"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,6 +40,17 @@ type Projects struct {
 	loadID        uint64
 	activeAI      string
 	activeSearch  string
+	logger        *slog.Logger
+}
+
+// WithLogger attaches a logger so the pane can persist RPC errors.
+func (p *Projects) WithLogger(l *slog.Logger) *Projects { p.logger = l; return p }
+
+func (p *Projects) log() *slog.Logger {
+	if p.logger != nil {
+		return p.logger
+	}
+	return slog.Default()
 }
 
 // NewProjects builds an empty projects pane.
@@ -140,6 +152,7 @@ func (p *Projects) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		p.loading = false
 		if m.err != nil {
 			p.loadErr = m.err.Error()
+			p.log().Error("project list load failed", slog.String("error", m.err.Error()))
 			return p, nil
 		}
 		p.loadErr = ""
