@@ -3,8 +3,6 @@ package sqlite
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 )
 
 // migrateF folds the legacy project_ids table into membership (as inline ids_*
@@ -44,19 +42,7 @@ func (r *Repo) needsMigrationF(ctx context.Context) (bool, error) {
 // backupBeforeMigration writes a clean copy of the database to "<path>.bak".
 // An in-memory database (used by tests) has no on-disk path and is skipped.
 func (r *Repo) backupBeforeMigration(ctx context.Context) error {
-	if r.path == "" || r.path == ":memory:" {
-		return nil
-	}
-	backup := r.path + ".bak"
-	if err := os.Remove(backup); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	// VACUUM INTO takes an SQL string literal, not a bind parameter.
-	literal := "'" + strings.ReplaceAll(backup, "'", "''") + "'"
-	if _, err := r.writer.ExecContext(ctx, "VACUUM INTO "+literal); err != nil {
-		return err
-	}
-	return nil
+	return r.Backup(ctx, r.path+".bak")
 }
 
 // runMigrationF performs the table rebuild on a dedicated connection with

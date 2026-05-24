@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"patentmine/internal/config"
 	"patentmine/internal/crawl"
@@ -87,6 +88,26 @@ func runServe(_ []string) int {
 	}
 	fmt.Println("patentmine daemon stopped")
 	telemetry.Logger.InfoContext(ctx, "daemon stopped")
+
+	// Perform clean shutdown database backup using a fresh context with timeout
+	backupsDir := filepath.Join(string(cfg.HomeDir), "backups")
+	_ = os.MkdirAll(backupsDir, 0755)
+	shutdownBackupName := fmt.Sprintf("patentmine-shutdown-%s.db", time.Now().Format("20060102-150405"))
+	shutdownBackupPath := filepath.Join(backupsDir, shutdownBackupName)
+
+	backupCtx, backupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer backupCancel()
+
+	telemetry.Logger.InfoContext(backupCtx, "performing clean shutdown database backup", slog.String("path", shutdownBackupPath))
+	fmt.Printf("Performing clean shutdown database backup to %s...\n", shutdownBackupPath)
+	if err := repo.Backup(backupCtx, shutdownBackupPath); err != nil {
+		telemetry.Logger.WarnContext(backupCtx, "shutdown backup failed", slog.String("error", err.Error()))
+		fmt.Fprintf(os.Stderr, "warning: shutdown database backup failed: %v\n", err)
+	} else {
+		telemetry.Logger.InfoContext(backupCtx, "shutdown database backup created successfully", slog.String("path", shutdownBackupPath))
+		fmt.Printf("Shutdown database backup created successfully: %s\n", shutdownBackupPath)
+	}
+
 	return 0
 }
 

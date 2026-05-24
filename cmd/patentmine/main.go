@@ -17,6 +17,8 @@ usage:
   patentmine tui       launch the terminal UI
   patentmine api       start the web API server (use --addr host:port)
   patentmine paths     print resolved runtime paths
+  patentmine logs      manage log and activity files (list, archive, ship)
+  patentmine db        manage database tasks (backup, vacuum, status)
   patentmine version   print the build version
 `
 
@@ -42,6 +44,10 @@ func run(args []string) int {
 		return runAPI(args[1:])
 	case "paths":
 		return runPaths(args[1:])
+	case "logs":
+		return runLogs(args[1:])
+	case "db":
+		return runDB(args[1:])
 	case "version":
 		fmt.Println(appversion.String())
 		return 0
