@@ -61,6 +61,7 @@ type TermExpr struct {
 	Class    ClassificationPattern
 	Inventor ValuePattern
 	Assignee ValuePattern
+	Country  ValuePattern
 	State    domain.ReviewState
 }
 
@@ -390,12 +391,60 @@ func parseAssigneeTerm(value string) (TermExpr, error) {
 	return TermExpr{Field: FieldAssignee, Value: value, Assignee: ValuePattern{Raw: value, Wildcard: strings.Contains(value, "*")}}, nil
 }
 
+// countryAliases maps common names and codes to their ISO-3166 patent-office code (uppercase).
+var countryAliases = map[string]string{
+	"us": "US", "usa": "US", "united states": "US", "united_states": "US",
+	"ep": "EP", "epo": "EP", "europe": "EP", "european patent office": "EP",
+	"wo": "WO", "pct": "WO", "wipo": "WO", "world": "WO",
+	"cn": "CN", "china": "CN", "chinese": "CN",
+	"jp": "JP", "japan": "JP", "japanese": "JP",
+	"de": "DE", "germany": "DE", "german": "DE",
+	"gb": "GB", "uk": "GB", "united kingdom": "GB", "great britain": "GB",
+	"fr": "FR", "france": "FR", "french": "FR",
+	"kr": "KR", "korea": "KR", "south korea": "KR", "korean": "KR",
+	"ca": "CA", "canada": "CA", "canadian": "CA",
+	"au": "AU", "australia": "AU", "australian": "AU",
+	"in": "IN", "india": "IN", "indian": "IN",
+	"br": "BR", "brazil": "BR", "brazilian": "BR",
+	"ru": "RU", "russia": "RU", "russian": "RU",
+	"tw": "TW", "taiwan": "TW", "taiwanese": "TW",
+	"mx": "MX", "mexico": "MX", "mexican": "MX",
+	"es": "ES", "spain": "ES", "spanish": "ES",
+	"it": "IT", "italy": "IT", "italian": "IT",
+	"nl": "NL", "netherlands": "NL", "dutch": "NL",
+	"se": "SE", "sweden": "SE", "swedish": "SE",
+	"fi": "FI", "finland": "FI", "finnish": "FI",
+	"ch": "CH", "switzerland": "CH", "swiss": "CH",
+	"il": "IL", "israel": "IL", "israeli": "IL",
+	"sg": "SG", "singapore": "SG",
+	"hk": "HK", "hong kong": "HK",
+}
+
+func normalizeCountry(value string) (string, bool) {
+	if code, ok := countryAliases[strings.ToLower(value)]; ok {
+		return code, true
+	}
+	// Accept raw uppercase 2-letter codes not in the alias table.
+	upper := strings.ToUpper(value)
+	if len(upper) == 2 {
+		return upper, true
+	}
+	return "", false
+}
+
 func parseCountryTerm(value string) (TermExpr, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return TermExpr{}, fmt.Errorf("country filter requires a value")
 	}
-	return TermExpr{Field: FieldCountry, Value: value, Assignee: ValuePattern{Raw: value, Wildcard: strings.Contains(value, "*")}}, nil
+	if strings.Contains(value, "*") {
+		return TermExpr{Field: FieldCountry, Value: strings.ToUpper(value), Country: ValuePattern{Raw: strings.ToUpper(value), Wildcard: true}}, nil
+	}
+	code, ok := normalizeCountry(value)
+	if !ok {
+		return TermExpr{}, fmt.Errorf("unknown country %q: use an ISO code (e.g. US, EP, WO) or common name", value)
+	}
+	return TermExpr{Field: FieldCountry, Value: code, Country: ValuePattern{Raw: code, Wildcard: false}}, nil
 }
 
 func unsupportedClassPatternError() error {

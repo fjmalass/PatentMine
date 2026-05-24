@@ -524,6 +524,11 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 			return `p.assignee LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Assignee.Raw, false)}, nil
 		}
 		return `p.assignee = ?`, []any{term.Value}, nil
+	case filterexpr.FieldCountry:
+		if term.Country.Wildcard {
+			return `p.country LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Country.Raw, false)}, nil
+		}
+		return `p.country = ?`, []any{term.Value}, nil
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
 	}
