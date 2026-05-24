@@ -129,19 +129,26 @@ func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 	if pv, ok := p.(interface{ PatentNumber() domain.PatentNumber }); ok {
 		num := pv.PatentNumber()
 		a.recordHistory(num)
-		var project domain.ProjectID
-		if a.activeProject != nil {
-			project = a.activeProject.ID
+		if a.activity != nil {
+			var metadata map[string]any
+			if focus, ok := a.currentActivityFocus(); ok && focus.Entity == "patent" && focus.EntityID == num.String() {
+				metadata = cloneMetadata(focus.Metadata)
+			} else {
+				metadata = make(map[string]any)
+			}
+			metadata["scope"] = string(p.Scope())
+			if a.activeProject != nil {
+				metadata["project"] = string(a.activeProject.ID)
+				metadata["project_name"] = a.activeProject.Name
+			}
+			recCmd = a.recordActivity(observability.Record{
+				Action:   "ui.focus",
+				Entity:   "patent",
+				EntityID: num.String(),
+				Status:   "requested",
+				Metadata: metadata,
+			})
 		}
-		recCmd = a.recordActivity(observability.Record{
-			Action:   "ui.focus",
-			Entity:   "patent",
-			EntityID: num.String(),
-			Status:   "requested",
-			Metadata: map[string]any{
-				"project": project,
-			},
-		})
 	}
 	a.panes = append(a.panes, p)
 	if len(cmds) == 0 {

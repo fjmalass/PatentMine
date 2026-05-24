@@ -107,6 +107,7 @@ func Default() *Keymaps {
 		"ctrl+o":     command.HistoryBack,
 		"ctrl+left":  command.HistoryBack,
 		"ctrl+i":     command.HistoryForward,
+		"tab":        command.HistoryForward,
 		"ctrl+right": command.HistoryForward,
 		"H":          command.OpenHistory,
 		"A":          command.OpenActivity,

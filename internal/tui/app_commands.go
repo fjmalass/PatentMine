@@ -650,9 +650,23 @@ func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	var filtered []observability.Record
+	var lastKey string
 	for _, r := range records {
-		if r.Action == "filter.apply" || r.Action == "project.switch" || (r.Action == "ui.focus" && r.Entity == "patent") {
-			filtered = append(filtered, r)
+		key := r.Action + ":" + r.Entity + ":" + r.EntityID
+		if r.Action == "filter.apply" || r.Action == "project.switch" || r.Action == "membership.set_state" || r.Action == "patent.tag_assign" || r.Action == "patent.tag_remove" {
+			if key != lastKey {
+				filtered = append(filtered, r)
+				lastKey = key
+			}
+		} else if r.Action == "ui.focus" && r.Entity == "patent" {
+			// Only include actual detail/navigation page views (detail, citations, family, ids, fulltext),
+			// ignoring background catalog hover cursor dwell events (catalog).
+			if scope, ok := r.Metadata["scope"].(string); ok && (scope == "detail" || scope == "citations" || scope == "family" || scope == "ids" || scope == "fulltext") {
+				if key != lastKey {
+					filtered = append(filtered, r)
+					lastKey = key
+				}
+			}
 		}
 	}
 	if len(filtered) == 0 {
@@ -666,19 +680,60 @@ func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
 
 func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea.Model, tea.Cmd) {
 	switch rec.Action {
-	case "ui.focus":
-		// Immediate navigation to patent details (no confirmation overlay required)
+	case "ui.focus", "membership.set_state", "patent.tag_assign", "patent.tag_remove":
+		// Immediate navigation to patent details/views (no confirmation overlay required)
 		a.overlays = nil
 		if len(a.panes) > 1 {
 			a.panes = a.panes[:1]
 		}
-		if number, err := domain.ParsePatentNumber(rec.EntityID); err == nil {
+		var numStr string
+		if rec.Action == "ui.focus" {
+			numStr = rec.EntityID
+		} else if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
+			numStr = reqNum
+		} else {
+			// fallback: parse from entity ID (e.g. "p-123/US12345" or "p-123/US12345/tag")
+			parts := strings.Split(rec.EntityID, "/")
+			if len(parts) >= 2 {
+				numStr = parts[1]
+			}
+		}
+		if number, err := domain.ParsePatentNumber(numStr); err == nil {
 			var project domain.ProjectID
 			if a.activeProject != nil {
 				project = a.activeProject.ID
 			}
-			bound := a.keymaps.BoundLetters(command.ScopeDetail)
-			return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+			scope, _ := rec.Metadata["scope"].(string)
+			switch scope {
+			case "citations":
+				kind := domain.RelationCites
+				if kStr, ok := rec.Metadata["relation"].(string); ok {
+					kind = domain.RelationKind(kStr)
+				}
+				return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
+			case "family":
+				depth := 1
+				if dVal, ok := rec.Metadata["depth"].(float64); ok {
+					depth = int(dVal)
+				}
+				var countries []string
+				if cList, ok := rec.Metadata["countries"].([]any); ok {
+					for _, c := range cList {
+						if cStr, ok := c.(string); ok {
+							countries = append(countries, cStr)
+						}
+					}
+				}
+				return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()))
+			case "fulltext":
+				bound := a.keymaps.BoundLetters(command.ScopeFullText)
+				return a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+			case "ids":
+				return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log()))
+			default:
+				bound := a.keymaps.BoundLetters(command.ScopeDetail)
+				return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+			}
 		}
 		a.setErr(text.StatusHistoryPatentUnavailable, rec.EntityID)
 		return a, nil

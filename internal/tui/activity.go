@@ -110,6 +110,13 @@ func (a *App) recordActivity(rec observability.Record) tea.Cmd {
 	activity := a.activity
 	logger := a.log()
 	return func() tea.Msg {
+		if a.activeProject != nil {
+			if rec.Metadata == nil {
+				rec.Metadata = map[string]any{}
+			}
+			rec.Metadata["project"] = string(a.activeProject.ID)
+			rec.Metadata["project_name"] = a.activeProject.Name
+		}
 		if err := activity.Record(context.Background(), rec); err != nil {
 			logger.Warn("activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
 		}

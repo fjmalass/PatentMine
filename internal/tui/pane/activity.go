@@ -10,8 +10,12 @@ func patentRowActivity(scope, title string, row domain.PatentRow, project domain
 		"review_state":    row.ReviewState,
 		"tags":            row.Tags,
 		"classifications": row.Classifications,
-		"filter":          filter.Expression,
-		"search":          filter.Search,
+		"filter":           filter.Expression,
+		"search":           filter.Search,
+		"inventors_short":  formatInventorsShort(row.Inventors),
+	}
+	if !row.PublicationDate.IsZero() {
+		metadata["publication_date"] = row.PublicationDate.Format("2006-01-02")
 	}
 	if project != "" {
 		metadata["project"] = project

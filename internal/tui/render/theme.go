@@ -62,6 +62,19 @@ const (
 	glyphCitationNone     = " "
 	glyphCitationLoading  = "…"
 	glyphCitationAnchor   = "•"
+
+	glyphHistUnknown   = "❓"
+	glyphHistSearch    = "🔻"
+	glyphHistProject   = "📂"
+	glyphHistCitations = "🔗"
+	glyphHistFamily    = "🌳"
+	glyphHistFulltext  = "📄"
+	glyphHistIDS       = "📋"
+	glyphHistPatent    = "📌"
+	glyphHistState     = "✅"
+	glyphHistTagAdd    = "🏷️"
+	glyphHistTagRemove = "➖"
+	glyphHistColType   = "⚡️"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -150,6 +163,19 @@ type ThemeGlyphs struct {
 	StateUnderReview string
 	StateCached      string
 	StateStub        string
+
+	HistUnknown   string
+	HistSearch    string
+	HistProject   string
+	HistCitations string
+	HistFamily    string
+	HistFulltext  string
+	HistIDS       string
+	HistPatent    string
+	HistState     string
+	HistTagAdd    string
+	HistTagRemove string
+	HistColType   string
 }
 
 // NewTheme builds the default theme.
@@ -286,9 +312,22 @@ func NewTheme() Theme {
 			CitationAnchor:  glyphCitationAnchor,
 
 			StateStored:      "📥",
-			StateUnderReview: "🔍",
+			StateUnderReview: "🩺",
 			StateCached:      "⚡",
 			StateStub:        "🔗",
+
+			HistUnknown:   glyphHistUnknown,
+			HistSearch:    glyphHistSearch,
+			HistProject:   glyphHistProject,
+			HistCitations: glyphHistCitations,
+			HistFamily:    glyphHistFamily,
+			HistFulltext:  glyphHistFulltext,
+			HistIDS:       glyphHistIDS,
+			HistPatent:    glyphHistPatent,
+			HistState:     glyphHistState,
+			HistTagAdd:    glyphHistTagAdd,
+			HistTagRemove: glyphHistTagRemove,
+			HistColType:   glyphHistColType,
 		},
 	}
 }

@@ -329,6 +329,10 @@ func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
 		"tags":            d.tags,
 		"classifications": d.patent.Classifications,
 		"line":            d.page.Cursor(),
+		"inventors_short":  formatInventorsShort(d.patent.Inventors),
+	}
+	if !d.patent.PublicationDate.IsZero() {
+		metadata["publication_date"] = d.patent.PublicationDate.Format("2006-01-02")
 	}
 	if d.project != "" {
 		metadata["project"] = d.project

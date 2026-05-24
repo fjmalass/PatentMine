@@ -101,8 +101,10 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		}
 	}
 
-	// Header: aligned perfectly with the Row content columns
-	b.WriteString(h.theme.Dim.Render(render.Pad("  ⏱        📁         ⚡ Details", maxW)))
+	// Header: "  "<2> + "Time    "<8> + " "<1> + "Project     "<12> + " "<1> + icon<2> + " "<1> + "Details"
+	// Columns align exactly with row content below.
+	hdr := "  Time     Project      " + h.theme.Glyphs.HistColType + "  Details"
+	b.WriteString(h.theme.Dim.Render(render.Pad(hdr, maxW)))
 	b.WriteString("\n")
 
 	for idx := start; idx < end; idx++ {
@@ -116,6 +118,13 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 			style = h.theme.Selected
 		}
 
+		// For membership/tag actions the entity ID encodes "project/num[/tag]".
+		// Split once and reuse for both projName and numStr fallbacks.
+		entityParts := strings.Split(rec.EntityID, "/")
+		isMembershipOrTag := rec.Action == "membership.set_state" ||
+			rec.Action == "patent.tag_assign" ||
+			rec.Action == "patent.tag_remove"
+
 		// Project Name
 		projName := "-"
 		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
@@ -127,6 +136,8 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
 				projName = name
 			}
+		} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
+			projName = entityParts[0]
 		}
 		// Capped project name for alignment
 		if len(projName) > 12 {
@@ -134,7 +145,7 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		}
 
 		// Icon and Details
-		icon := "❓"
+		icon := h.theme.Glyphs.HistUnknown
 		details := ""
 
 		// Common fields for patent actions
@@ -143,11 +154,8 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 			numStr = reqNum
 		} else if dn, ok := rec.Metadata["display_number"].(string); ok && dn != "" {
 			numStr = dn
-		} else if rec.Action == "membership.set_state" || rec.Action == "patent.tag_assign" || rec.Action == "patent.tag_remove" {
-			parts := strings.Split(rec.EntityID, "/")
-			if len(parts) >= 2 {
-				numStr = parts[1]
-			}
+		} else if isMembershipOrTag && len(entityParts) >= 2 {
+			numStr = entityParts[1]
 		}
 
 		invs := "-"
@@ -163,12 +171,14 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 			title = t
 		}
 
+		pat := patentSummary(numStr, invs, pubDate, title)
+
 		switch rec.Action {
 		case "filter.apply":
-			icon = h.theme.SortActive.Render("SCH")
+			icon = h.theme.SortActive.Render(h.theme.Glyphs.HistSearch)
 			details = fmt.Sprintf("Search: %q", rec.EntityID)
 		case "project.switch":
-			icon = h.theme.SortActive.Render("PRJ")
+			icon = h.theme.SortActive.Render(h.theme.Glyphs.HistProject)
 			pName := rec.EntityID
 			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
 				pName = name
@@ -178,59 +188,59 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 			scope, _ := rec.Metadata["scope"].(string)
 			switch scope {
 			case "citations":
-				icon = h.theme.Warn.Render("CIT")
-				details = fmt.Sprintf("Citations: %s [%s] [%s] %s", numStr, invs, pubDate, title)
+				icon = h.theme.Warn.Render(h.theme.Glyphs.HistCitations)
+				details = "Citations: " + pat
 			case "family":
-				icon = h.theme.OK.Render("FAM")
-				details = fmt.Sprintf("Family Tree: %s [%s] [%s] %s", numStr, invs, pubDate, title)
+				icon = h.theme.OK.Render(h.theme.Glyphs.HistFamily)
+				details = "Family Tree: " + pat
 			case "fulltext":
-				icon = h.theme.SortActive.Render("TXT")
-				details = fmt.Sprintf("Full Text: %s [%s] [%s] %s", numStr, invs, pubDate, title)
+				icon = h.theme.SortActive.Render(h.theme.Glyphs.HistFulltext)
+				details = "Full Text: " + pat
 			case "ids":
-				icon = h.theme.Warn.Render("IDS")
-				details = fmt.Sprintf("IDS Entry: %s [%s] [%s] %s", numStr, invs, pubDate, title)
+				icon = h.theme.Warn.Render(h.theme.Glyphs.HistIDS)
+				details = "IDS Entry: " + pat
 			default:
-				icon = h.theme.OK.Render("PAT")
-				details = fmt.Sprintf("%s [%s] [%s] %s", numStr, invs, pubDate, title)
+				icon = h.theme.OK.Render(h.theme.Glyphs.HistPatent)
+				details = pat
 			}
 		case "membership.set_state":
-			icon = h.theme.Error.Render("STA")
-			state := "Stored"
+			icon = h.theme.OK.Render(h.theme.Glyphs.HistState)
+			rawState := ""
 			if afterMap, ok := rec.After.(map[string]any); ok {
 				if s, ok := afterMap["review_state"].(string); ok {
-					state = strings.Title(strings.ReplaceAll(s, "_", " "))
+					rawState = s
 				}
 			}
-			details = fmt.Sprintf("Set %s to %s", numStr, state)
+			stateIcon := h.theme.ReviewStateGlyph(rawState)
+			details = "State " + stateIcon + "  " + pat
 		case "patent.tag_assign":
-			icon = h.theme.Warn.Render("TAG")
+			icon = h.theme.Warn.Render(h.theme.Glyphs.HistTagAdd)
 			tagName := ""
-			parts := strings.Split(rec.EntityID, "/")
-			if len(parts) >= 3 {
-				tagName = parts[2]
+			if len(entityParts) >= 3 {
+				tagName = entityParts[2]
 			} else if afterMap, ok := rec.After.(map[string]any); ok {
 				if t, ok := afterMap["tag_name"].(string); ok {
 					tagName = t
 				}
 			}
-			details = fmt.Sprintf("Tagged %s with %q", numStr, tagName)
+			details = fmt.Sprintf("Tag %q: ", tagName) + pat
 		case "patent.tag_remove":
-			icon = h.theme.Warn.Render("TAG")
+			icon = h.theme.Warn.Render(h.theme.Glyphs.HistTagRemove)
 			tagName := ""
-			parts := strings.Split(rec.EntityID, "/")
-			if len(parts) >= 3 {
-				tagName = parts[2]
+			if len(entityParts) >= 3 {
+				tagName = entityParts[2]
 			} else if beforeMap, ok := rec.Before.(map[string]any); ok {
 				if t, ok := beforeMap["tag_name"].(string); ok {
 					tagName = t
 				}
 			}
-			details = fmt.Sprintf("Untagged %s (%q)", numStr, tagName)
+			details = fmt.Sprintf("Untag %q: ", tagName) + pat
 		}
 
 		// Row content: time, project, icon, details. Aligns perfectly with header labels.
+		// Icon is a 2-wide emoji; concatenate directly so terminal width is preserved.
 		timeStr := localClock(rec.Timestamp)
-		line := fmt.Sprintf("%s%s %-12s %s  %s", prefix, timeStr, projName, icon, details)
+		line := fmt.Sprintf("%s%s %-12s ", prefix, timeStr, projName) + icon + "  " + details
 		// Truncate to maxW to ensure it does not wrap around
 		truncated := render.Truncate(line, maxW)
 		b.WriteString(style.Render(render.Pad(truncated, maxW)))
@@ -240,4 +250,8 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	b.WriteString("\n")
 	b.WriteString(h.theme.Dim.Render(render.Pad("  [j/k] Move  [Enter] Replay/Confirm  [q/Esc] Close", maxW)))
 	return b.String()
+}
+
+func patentSummary(numStr, invs, pubDate, title string) string {
+	return fmt.Sprintf("%s [%s] [%s] %s", numStr, invs, pubDate, title)
 }
