@@ -75,7 +75,7 @@ const (
 	glyphHistFulltext  = "📄"
 	glyphHistIDS       = "📋"
 	glyphHistPatent    = "👁️"
-	glyphHistState     = "✅"
+	glyphHistState     = "⚙️"
 	glyphHistTagAdd    = "🏷️"
 	glyphHistTagRemove = "➖"
 	glyphHistColType   = "⚡️"
@@ -96,6 +96,7 @@ type Theme struct {
 	FocusSelected lipgloss.Style
 	Visual      lipgloss.Style
 	Dim         lipgloss.Style
+	Info        lipgloss.Style
 	Status      lipgloss.Style
 	Error       lipgloss.Style
 	OK          lipgloss.Style
@@ -220,6 +221,8 @@ func NewTheme() Theme {
 			Background(lipgloss.Color(colorVisual)),
 		Dim: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorDim)),
+		Info: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorAccent)),
 		Status: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorDim)),
 		Error: lipgloss.NewStyle().
@@ -328,7 +331,7 @@ func NewTheme() Theme {
 			CitationAnchor:  glyphCitationAnchor,
 
 			StateStored:      "📥",
-			StateUnderReview: "🩺",
+			StateUnderReview: "🔍",
 			StateCached:      "⚡\uFE0F",
 			StateStub:        "🔗",
 

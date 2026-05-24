@@ -214,6 +214,9 @@ var emojiPlaceholders = []struct {
 	{"➖", "\uE00C"},
 	{"📥", "\uE00D"},
 	{"🩺", "\uE00E"},
+	{"⚙️", "\uE00F"},
+	{"⚙", "\uE00F"},
+	{"🔍", "\uE010"},
 }
 
 // compositeOverlay draws the focused overlay centred over the dimmed screen.

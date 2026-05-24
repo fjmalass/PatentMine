@@ -16,17 +16,19 @@ type HistoryOverlay struct {
 	theme        render.Theme
 	records      []observability.Record
 	projectNames map[string]string
-	cursor       int // local selection cursor, 0 maps to the newest item
+	page         render.Paginator
 }
 
 // NewHistoryOverlay builds a HistoryOverlay.
 func NewHistoryOverlay(theme render.Theme, records []observability.Record, projectNames map[string]string) *HistoryOverlay {
-	return &HistoryOverlay{
+	h := &HistoryOverlay{
 		theme:        theme,
 		records:      records,
 		projectNames: projectNames,
-		cursor:       0,
+		page:         render.NewPaginator(1),
 	}
+	h.page.SetTotal(len(records))
+	return h
 }
 
 // Title implements Overlay.
@@ -45,23 +47,31 @@ func (h *HistoryOverlay) OverlaySize(termW, termH int) (int, int) {
 
 // HandleKey implements KeyHandler.
 func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	n := len(h.records)
-	if n == 0 {
+	if len(h.records) == 0 {
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
-
 	switch msg.String() {
 	case "j", "down":
-		h.cursor = min(h.cursor+1, n-1) // no wrap around (clamp at bottom)
+		h.page.MoveDown(1)
 		return h, nil, true
 	case "k", "up":
-		h.cursor = max(h.cursor-1, 0) // no wrap around (clamp at top)
+		h.page.MoveUp(1)
+		return h, nil, true
+	case "ctrl+d", "pgdown":
+		h.page.PageDown()
+		return h, nil, true
+	case "ctrl+u", "pgup":
+		h.page.PageUp()
+		return h, nil, true
+	case "g", "home":
+		h.page.Top()
+		return h, nil, true
+	case "G", "end":
+		h.page.Bottom()
 		return h, nil, true
 	case "enter":
-		rec := h.records[h.cursor]
-		return h, func() tea.Msg {
-			return HistoryReplayMsg{Record: rec}
-		}, true
+		rec := h.records[h.page.Cursor()]
+		return h, func() tea.Msg { return HistoryReplayMsg{Record: rec} }, true
 	case "q", "esc":
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
@@ -73,196 +83,187 @@ func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 
 // View implements Overlay.
 func (h *HistoryOverlay) View(maxW, maxH int) string {
-	// Account for Box horizontal Padding(0, 1) to prevent any Lipgloss word-wrapping
 	maxW = max(maxW-2, 10)
-
 	n := len(h.records)
 	if n == 0 {
 		return h.theme.Dim.Render("No history entries found.")
 	}
 
+	pageSize := max(maxH-3, 1)
+	h.page.SetTotal(n)
+	h.page.SetPageSize(pageSize)
+	start, end := h.page.Window()
+
+	// Columns: line number, time, project, action icon, details.
+	gutterW := max(render.GutterWidth(n)-1, 1)
+	const timeW = 8
+	const projW = 12
+	const iconW = 2
+	fixed := 2 + gutterW + timeW + projW + iconW + 4 // prefix + cols + 4 single-space gaps
+	detailsW := max(maxW-fixed, 10)
+
+	cols := []render.TableColumn{
+		{Key: "ln", Label: strings.Repeat(" ", gutterW), Width: gutterW},
+		{Key: "time", Label: "Time", Width: timeW},
+		{Key: "proj", Label: "Project", Width: projW},
+		{Key: "icon", Label: h.theme.Glyphs.HistColType, Width: iconW},
+		{Key: "details", Label: "Details", Width: detailsW},
+	}
+
+	params := render.TableParams{
+		Theme:        h.theme,
+		Columns:      cols,
+		RowCount:     end - start,
+		Cursor:       h.page.CursorInPage(),
+		FocusActive:  true,
+		PrefixCursor: "→ ",
+		PrefixNormal: "  ",
+	}
+
+	getCell := func(rowIdx, colIdx int) string {
+		absIdx := start + rowIdx
+		if absIdx < 0 || absIdx >= n {
+			return ""
+		}
+		rec := h.records[absIdx]
+		switch cols[colIdx].Key {
+		case "ln":
+			return fmt.Sprintf("%*d", gutterW, absIdx+1)
+		case "time":
+			return localClock(rec.Timestamp)
+		case "proj":
+			return historyProjectName(rec, h.projectNames)
+		case "icon":
+			icon, _ := historyIconAndDetails(h.theme, rec)
+			return icon
+		case "details":
+			_, details := historyIconAndDetails(h.theme, rec)
+			return details
+		}
+		return ""
+	}
+
 	var b strings.Builder
-	// Visible limit. Overlay height is boxHeight-chrome.
-	visibleLimit := maxH - 4
-	if visibleLimit < 2 {
-		visibleLimit = 2
-	}
-
-	start := 0
-	end := n
-	if n > visibleLimit {
-		half := visibleLimit / 2
-		start = h.cursor - half
-		if start < 0 {
-			start = 0
-		}
-		end = start + visibleLimit
-		if end > n {
-			end = n
-			start = end - visibleLimit
-		}
-	}
-
-	// Header: "  "<2> + "Time    "<8> + " "<1> + "Project     "<12> + " "<1> + icon<2> + " "<1> + "Details"
-	// Columns align exactly with row content below.
-	hdr := "  Time     Project      " + h.theme.Glyphs.HistColType + "  Details"
-	b.WriteString(h.theme.Dim.Render(render.Pad(hdr, maxW)))
+	b.WriteString(render.RenderTable(params, maxW, getCell))
 	b.WriteString("\n")
-	b.WriteString(h.theme.Dim.Render(strings.Repeat("─", maxW)))
-	b.WriteString("\n")
-
-	for idx := start; idx < end; idx++ {
-		rec := h.records[idx]
-
-		// Prefix
-		prefix := "  "
-		style := h.theme.Row
-		if idx == h.cursor {
-			prefix = "→ "
-			style = h.theme.Selected
-		}
-
-		// For membership/tag actions the entity ID encodes "project/num[/tag]".
-		// Split once and reuse for both projName and numStr fallbacks.
-		entityParts := strings.Split(rec.EntityID, "/")
-		isMembershipOrTag := rec.Action == "membership.set_state" ||
-			rec.Action == "patent.tag_assign" ||
-			rec.Action == "patent.tag_remove"
-
-		// Project Name
-		projName := "-"
-		var projID string
-		if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
-			projID = pid
-		} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
-			projID = entityParts[0]
-		} else if rec.Action == "project.switch" {
-			projID = rec.EntityID
-		}
-
-		if projID != "" {
-			if name, ok := h.projectNames[projID]; ok && name != "" {
-				projName = name
-			} else {
-				// Fallback to logged metadata if not in active projects cache
-				if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
-					projName = name
-				} else {
-					projName = projID
-				}
-			}
-		}
-		// Capped project name for alignment
-		if len(projName) > 12 {
-			projName = projName[:11] + "…"
-		}
-
-		// Icon and Details
-		icon := h.theme.Glyphs.HistUnknown
-		details := ""
-
-		// Common fields for patent actions
-		numStr := rec.EntityID
-		if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
-			numStr = reqNum
-		} else if dn, ok := rec.Metadata["display_number"].(string); ok && dn != "" {
-			numStr = dn
-		} else if isMembershipOrTag && len(entityParts) >= 2 {
-			numStr = entityParts[1]
-		}
-
-		invs := "-"
-		if is, ok := rec.Metadata["inventors_short"].(string); ok && is != "" {
-			invs = is
-		}
-		pubDate := "-"
-		if pd, ok := rec.Metadata["publication_date"].(string); ok && pd != "" {
-			pubDate = pd
-		}
-		title := ""
-		if t, ok := rec.Metadata["title"].(string); ok && t != "" {
-			title = t
-		}
-
-		pat := patentSummary(numStr, invs, pubDate, title)
-
-		switch rec.Action {
-		case "filter.apply":
-			icon = h.theme.SortActive.Render(h.theme.Glyphs.HistSearch)
-			details = fmt.Sprintf("Search: %q", rec.EntityID)
-		case "project.switch":
-			icon = h.theme.SortActive.Render(h.theme.Glyphs.HistProject)
-			pName := rec.EntityID
-			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
-				pName = name
-			}
-			details = fmt.Sprintf("Switch Project to %q", pName)
-		case "ui.focus":
-			scope, _ := rec.Metadata["scope"].(string)
-			switch scope {
-			case "citations":
-				icon = h.theme.Warn.Render(h.theme.Glyphs.HistCitations)
-				details = "Citations: " + pat
-			case "family":
-				icon = h.theme.OK.Render(h.theme.Glyphs.HistFamily)
-				details = "Family Tree: " + pat
-			case "fulltext":
-				icon = h.theme.SortActive.Render(h.theme.Glyphs.HistFulltext)
-				details = "Full Text: " + pat
-			case "ids":
-				icon = h.theme.Warn.Render(h.theme.Glyphs.HistIDS)
-				details = "IDS Entry: " + pat
-			default:
-				icon = h.theme.OK.Render(h.theme.Glyphs.HistPatent)
-				details = pat
-			}
-		case "membership.set_state":
-			icon = h.theme.OK.Render(h.theme.Glyphs.HistState)
-			rawState := ""
-			if afterMap, ok := rec.After.(map[string]any); ok {
-				if s, ok := afterMap["review_state"].(string); ok {
-					rawState = s
-				}
-			}
-			stateIcon := h.theme.ReviewStateGlyph(rawState)
-			details = "State " + stateIcon + "  " + pat
-		case "patent.tag_assign":
-			icon = h.theme.Warn.Render(h.theme.Glyphs.HistTagAdd)
-			tagName := ""
-			if len(entityParts) >= 3 {
-				tagName = entityParts[2]
-			} else if afterMap, ok := rec.After.(map[string]any); ok {
-				if t, ok := afterMap["tag_name"].(string); ok {
-					tagName = t
-				}
-			}
-			details = fmt.Sprintf("Tag %q: ", tagName) + pat
-		case "patent.tag_remove":
-			icon = h.theme.Warn.Render(h.theme.Glyphs.HistTagRemove)
-			tagName := ""
-			if len(entityParts) >= 3 {
-				tagName = entityParts[2]
-			} else if beforeMap, ok := rec.Before.(map[string]any); ok {
-				if t, ok := beforeMap["tag_name"].(string); ok {
-					tagName = t
-				}
-			}
-			details = fmt.Sprintf("Untag %q: ", tagName) + pat
-		}
-
-		// Row content: time, project, icon, details. Aligns perfectly with header labels.
-		// Icon is a 2-wide emoji; concatenate directly so terminal width is preserved.
-		timeStr := localClock(rec.Timestamp)
-		line := fmt.Sprintf("%s%s %-12s ", prefix, timeStr, projName) + icon + "  " + details
-		// Truncate to maxW to ensure it does not wrap around
-		truncated := render.Truncate(line, maxW)
-		b.WriteString(style.Render(render.Pad(truncated, maxW)))
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-	b.WriteString(h.theme.Dim.Render(render.Pad("  [j/k] Move  [Enter] Replay/Confirm  [q/Esc] Close", maxW)))
+	pagination := fmt.Sprintf("[%d/%d]", h.page.Cursor()+1, n)
+	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Replay  [q/Esc] Close", pagination)
+	b.WriteString(h.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
+}
+
+// historyProjectName resolves the project ID embedded in the record into a display name.
+func historyProjectName(rec observability.Record, projectNames map[string]string) string {
+	entityParts := strings.Split(rec.EntityID, "/")
+	isMembershipOrTag := rec.Action == "membership.set_state" ||
+		rec.Action == "patent.tag_assign" ||
+		rec.Action == "patent.tag_remove"
+
+	projID := ""
+	if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
+		projID = pid
+	} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
+		projID = entityParts[0]
+	} else if rec.Action == "project.switch" {
+		projID = rec.EntityID
+	}
+
+	if projID == "" {
+		return "-"
+	}
+	if name, ok := projectNames[projID]; ok && name != "" {
+		return name
+	}
+	if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+		return name
+	}
+	return projID
+}
+
+// historyIconAndDetails returns the action icon and details column text for a record.
+func historyIconAndDetails(theme render.Theme, rec observability.Record) (string, string) {
+	entityParts := strings.Split(rec.EntityID, "/")
+	isMembershipOrTag := rec.Action == "membership.set_state" ||
+		rec.Action == "patent.tag_assign" ||
+		rec.Action == "patent.tag_remove"
+
+	numStr := rec.EntityID
+	if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
+		numStr = reqNum
+	} else if dn, ok := rec.Metadata["display_number"].(string); ok && dn != "" {
+		numStr = dn
+	} else if isMembershipOrTag && len(entityParts) >= 2 {
+		numStr = entityParts[1]
+	}
+
+	invs := "-"
+	if is, ok := rec.Metadata["inventors_short"].(string); ok && is != "" {
+		invs = is
+	}
+	pubDate := "-"
+	if pd, ok := rec.Metadata["publication_date"].(string); ok && pd != "" {
+		pubDate = pd
+	}
+	title := ""
+	if t, ok := rec.Metadata["title"].(string); ok && t != "" {
+		title = t
+	}
+	pat := patentSummary(numStr, invs, pubDate, title)
+
+	switch rec.Action {
+	case "filter.apply":
+		return theme.Glyphs.HistSearch, fmt.Sprintf("Search: %q", rec.EntityID)
+	case "project.switch":
+		pName := rec.EntityID
+		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+			pName = name
+		}
+		return theme.Glyphs.HistProject, fmt.Sprintf("Switch Project to %q", pName)
+	case "ui.focus":
+		scope, _ := rec.Metadata["scope"].(string)
+		switch scope {
+		case "citations":
+			return theme.Glyphs.HistCitations, "Citations: " + pat
+		case "family":
+			return theme.Glyphs.HistFamily, "Family Tree: " + pat
+		case "fulltext":
+			return theme.Glyphs.HistFulltext, "Full Text: " + pat
+		case "ids":
+			return theme.Glyphs.HistIDS, "IDS Entry: " + pat
+		default:
+			return theme.Glyphs.HistPatent, pat
+		}
+	case "membership.set_state":
+		rawState := ""
+		if afterMap, ok := rec.After.(map[string]any); ok {
+			if s, ok := afterMap["review_state"].(string); ok {
+				rawState = s
+			}
+		}
+		stateIcon := theme.ReviewStateGlyph(rawState)
+		return theme.Glyphs.HistState, "State: " + stateIcon + "  " + pat
+	case "patent.tag_assign":
+		tagName := ""
+		if len(entityParts) >= 3 {
+			tagName = entityParts[2]
+		} else if afterMap, ok := rec.After.(map[string]any); ok {
+			if t, ok := afterMap["tag_name"].(string); ok {
+				tagName = t
+			}
+		}
+		return theme.Glyphs.HistTagAdd, fmt.Sprintf("Tag %q: ", tagName) + pat
+	case "patent.tag_remove":
+		tagName := ""
+		if len(entityParts) >= 3 {
+			tagName = entityParts[2]
+		} else if beforeMap, ok := rec.Before.(map[string]any); ok {
+			if t, ok := beforeMap["tag_name"].(string); ok {
+				tagName = t
+			}
+		}
+		return theme.Glyphs.HistTagRemove, fmt.Sprintf("Untag %q: ", tagName) + pat
+	}
+	return theme.Glyphs.HistUnknown, rec.EntityID
 }
 
 func patentSummary(numStr, invs, pubDate, title string) string {

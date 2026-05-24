@@ -203,7 +203,7 @@ func (c *Citations) applyFilter(inv Invocation) tea.Cmd {
 	c.page.Top()
 	return tea.Batch(
 		c.load(),
-		func() tea.Msg { return StatusMsg{Key: text.StatusFilter, Args: []any{msg}} },
+		func() tea.Msg { return StatusMsg{Key: text.StatusFilter, Args: []any{c.theme.Info.Render(msg)}} },
 	)
 }
 
@@ -669,6 +669,14 @@ func (c *Citations) View(w, h int) string {
 	case c.loadErr != "":
 		return c.theme.Error.Render("error: " + c.loadErr)
 	case c.page.Total() == 0:
+		if c.filter.IsActive() {
+			var b strings.Builder
+			filterHint := c.theme.Info.Render("filters: " + strings.Join(c.filter.Labels(), " · "))
+			b.WriteString(renderTableStatusLine(c.theme, w, 0, 0, filterHint))
+			b.WriteByte('\n')
+			b.WriteString(c.theme.Warn.Render("no results for " + strings.Join(c.filter.Labels(), " · ") + " — :filter clear to see all"))
+			return b.String()
+		}
 		return c.theme.Dim.Render("no " + relationLabel(c.kind) + " edges recorded")
 	}
 
@@ -686,7 +694,7 @@ func (c *Citations) View(w, h int) string {
 	var b strings.Builder
 	filterSummary := ""
 	if c.filter.IsActive() && !c.find.active {
-		filterSummary = "filters: " + strings.Join(c.filter.Labels(), " · ")
+		filterSummary = c.theme.Info.Render("filters: " + strings.Join(c.filter.Labels(), " · "))
 	}
 	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
 	b.WriteByte('\n')

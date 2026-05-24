@@ -90,7 +90,8 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 			rowStyle = params.Theme.RowAlt
 		}
 
-		var rowParts []string
+		gap := rowStyle.Render(" ")
+		var parts []string
 		for colIdx, col := range params.Columns {
 			val := getCellValue(i, colIdx)
 			cell := Pad(Truncate(val, col.Width), col.Width)
@@ -101,7 +102,10 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 			if isFocusedCol {
 				style = focusedCellStyleExtended(params.Theme, i, isSelectedRow, isVisualRow, isMarkedRow)
 			}
-			rowParts = append(rowParts, style.Render(cell))
+			if colIdx > 0 {
+				parts = append(parts, gap)
+			}
+			parts = append(parts, style.Render(cell))
 		}
 
 		prefix := params.PrefixNormal
@@ -116,7 +120,7 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 		}
 		prefixStyled := rowStyle.Render(prefix)
 
-		rowLine := prefixStyled + strings.Join(rowParts, " ")
+		rowLine := prefixStyled + strings.Join(parts, "")
 		b.WriteString(rowLine)
 		b.WriteString("\n")
 	}

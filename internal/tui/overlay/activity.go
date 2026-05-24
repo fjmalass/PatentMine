@@ -17,12 +17,14 @@ import (
 type Activity struct {
 	theme   render.Theme
 	records []observability.Record
-	cursor  int
+	page    render.Paginator
 }
 
 // NewActivity builds an activity journal overlay.
 func NewActivity(theme render.Theme, records []observability.Record) *Activity {
-	return &Activity{theme: theme, records: records}
+	a := &Activity{theme: theme, records: records, page: render.NewPaginator(1)}
+	a.page.SetTotal(len(records))
+	return a
 }
 
 // Title implements Overlay.
@@ -41,14 +43,26 @@ func (a *Activity) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "j", "down":
-		a.cursor = min(a.cursor+1, len(a.records)-1)
+		a.page.MoveDown(1)
 		return a, nil, true
 	case "k", "up":
-		a.cursor = max(a.cursor-1, 0)
+		a.page.MoveUp(1)
+		return a, nil, true
+	case "ctrl+d", "pgdown":
+		a.page.PageDown()
+		return a, nil, true
+	case "ctrl+u", "pgup":
+		a.page.PageUp()
+		return a, nil, true
+	case "g", "home":
+		a.page.Top()
+		return a, nil, true
+	case "G", "end":
+		a.page.Bottom()
 		return a, nil, true
 	case "enter":
-		rec := a.records[a.cursor]
-		if number, ok := activityPatent(a.records[a.cursor]); ok {
+		rec := a.records[a.page.Cursor()]
+		if number, ok := activityPatent(rec); ok {
 			return a, func() tea.Msg { return ReplayActivityMsg{Number: number, Record: rec} }, true
 		}
 		return a, nil, true
@@ -63,37 +77,72 @@ func (a *Activity) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 
 // View implements Overlay.
 func (a *Activity) View(maxW, maxH int) string {
-	if len(a.records) == 0 {
+	n := len(a.records)
+	if n == 0 {
 		return a.theme.Dim.Render("No activity records yet.")
 	}
-	visible := max(maxH-4, 1)
-	start := 0
-	if a.cursor >= visible {
-		start = a.cursor - visible + 1
+
+	pageSize := max(maxH-4, 1)
+	a.page.SetTotal(n)
+	a.page.SetPageSize(pageSize)
+	start, end := a.page.Window()
+
+	gutterW := max(render.GutterWidth(n)-1, 1)
+	const timeW = 8
+	const compW = 9
+	const actW = 22
+	fixed := 2 + gutterW + timeW + compW + actW + 4 // prefix + cols + 4 single-space gaps
+	entityW := max(maxW-fixed, 10)
+
+	cols := []render.TableColumn{
+		{Key: "ln", Label: strings.Repeat(" ", gutterW), Width: gutterW},
+		{Key: "time", Label: "Time", Width: timeW},
+		{Key: "component", Label: "Component", Width: compW},
+		{Key: "action", Label: "Action", Width: actW},
+		{Key: "entity", Label: "Entity", Width: entityW},
 	}
-	end := min(start+visible, len(a.records))
+
+	params := render.TableParams{
+		Theme:        a.theme,
+		Columns:      cols,
+		RowCount:     end - start,
+		Cursor:       a.page.CursorInPage(),
+		FocusActive:  true,
+		PrefixCursor: " >",
+		PrefixNormal: "  ",
+	}
+
+	getCell := func(rowIdx, colIdx int) string {
+		absIdx := start + rowIdx
+		if absIdx < 0 || absIdx >= n {
+			return ""
+		}
+		rec := a.records[absIdx]
+		switch cols[colIdx].Key {
+		case "ln":
+			return fmt.Sprintf("%*d", gutterW, absIdx+1)
+		case "time":
+			return localClock(rec.Timestamp)
+		case "component":
+			return rec.Component
+		case "action":
+			return rec.Action
+		case "entity":
+			return activityEntity(rec)
+		}
+		return ""
+	}
 
 	var b strings.Builder
-	b.WriteString(a.theme.Dim.Render(render.Pad("  Time     Component Action                 Entity", maxW)))
+	b.WriteString(render.RenderTable(params, maxW, getCell))
 	b.WriteByte('\n')
-	for i := start; i < end; i++ {
-		rec := a.records[i]
-		prefix := "  "
-		style := a.theme.Row
-		if i == a.cursor {
-			prefix = " >"
-			style = a.theme.Selected
-		}
-		line := fmt.Sprintf("%s %s %-9s %-22s %s", prefix, localClock(rec.Timestamp), rec.Component, rec.Action, activityEntity(rec))
-		b.WriteString(style.Render(render.Pad(line, maxW)))
-		b.WriteByte('\n')
-	}
-	b.WriteByte('\n')
-	selected := a.records[a.cursor]
+	selected := a.records[a.page.Cursor()]
 	detail := fmt.Sprintf("  %s %s", selected.Status, activitySummary(selected))
 	b.WriteString(a.theme.Dim.Render(render.Pad(detail, maxW)))
 	b.WriteByte('\n')
-	b.WriteString(a.theme.Dim.Render(render.Pad("  [j/k] Move  [Enter] Open patent  [q/Esc] Close", maxW)))
+	pagination := fmt.Sprintf("[%d/%d]", a.page.Cursor()+1, n)
+	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Open patent  [q/Esc] Close", pagination)
+	b.WriteString(a.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
 }
 
