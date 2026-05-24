@@ -102,7 +102,7 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	}
 
 	// Header: aligned perfectly with the Row content columns
-	b.WriteString(h.theme.Dim.Render(render.Pad("  Time       Project       Act Details", maxW)))
+	b.WriteString(h.theme.Dim.Render(render.Pad("  ⏱        📁         ⚡ Details", maxW)))
 	b.WriteString("\n")
 
 	for idx := start; idx < end; idx++ {
