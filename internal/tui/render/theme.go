@@ -70,7 +70,7 @@ const (
 	glyphHistFamily    = "🌳"
 	glyphHistFulltext  = "📄"
 	glyphHistIDS       = "📋"
-	glyphHistPatent    = "📌"
+	glyphHistPatent    = "👁️"
 	glyphHistState     = "✅"
 	glyphHistTagAdd    = "🏷️"
 	glyphHistTagRemove = "➖"
