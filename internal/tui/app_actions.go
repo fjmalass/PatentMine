@@ -407,7 +407,8 @@ func (a *App) executeTypedCommand(input string) (tea.Model, tea.Cmd) {
 	if len(args) > 0 && !typedAcceptsArgs[cmd.ID] {
 		return a.usageError(cmd.ID)
 	}
-	return a.invoke(cmd.ID, invocation{repeat: 1, args: args})
+	updated, run := a.invoke(cmd.ID, invocation{repeat: 1, args: args})
+	return updated, tea.Batch(run, a.recordTypedActivity(cmd.ID, args))
 }
 
 // handleEvent reflects a daemon event into the status line and refreshes data.

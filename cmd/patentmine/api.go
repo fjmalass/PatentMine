@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"patentmine/internal/api"
 	"patentmine/internal/command"
@@ -80,7 +81,7 @@ func runAPI(args []string) int {
 
 	fmt.Printf("patentmine api %s listening on http://%s\n", appversion.String(), addr)
 	telemetry.Logger.InfoContext(ctx, "api listening", slog.String("addr", addr))
-	if err := api.NewServer(client, registry).ListenAndServe(ctx, addr); err != nil {
+	if err := api.NewServer(client, registry, api.WithActivity(telemetry, time.Duration(cfg.ActivityMinMS)*time.Millisecond)).ListenAndServe(ctx, addr); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "api serve failed", slog.String("error", err.Error()))
 		return fail(err)
 	}

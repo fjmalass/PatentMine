@@ -129,6 +129,7 @@ const (
 	HistoryBack    ID = "history.back"
 	HistoryForward ID = "history.forward"
 	OpenHistory    ID = "view.history"
+	OpenActivity   ID = "view.activity"
 )
 
 // listScopes are the scopes that behave as scrollable lists.
@@ -177,6 +178,7 @@ func Default() (*Registry, error) {
 		Command{ID: HistoryBack, Name: "history.back", Aliases: []string{"back-history"}, Usage: ":history.back", Kind: KindView},
 		Command{ID: HistoryForward, Name: "history.forward", Aliases: []string{"forward-history"}, Usage: ":history.forward", Kind: KindView},
 		Command{ID: OpenHistory, Name: "open.history", Aliases: []string{"history", "visits"}, Usage: ":open.history", Kind: KindView},
+		Command{ID: OpenActivity, Name: "open.activity", Aliases: []string{"activity", "replay"}, Usage: ":open.activity", Kind: KindView},
 		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects, ScopeIDS}},
 		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects}},
 		Command{ID: OpenCommand, Kind: KindView},

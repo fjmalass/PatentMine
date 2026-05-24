@@ -133,6 +133,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.HistoryBack:                (*App).cmdHistoryBack,
 	command.HistoryForward:             (*App).cmdHistoryForward,
 	command.OpenHistory:                (*App).cmdOpenHistory,
+	command.OpenActivity:               (*App).cmdOpenActivity,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -182,7 +183,13 @@ type App struct {
 	openURL       func(string) error
 	notes         *notesAccumulator
 	logger        *slog.Logger
+	activity      *observability.Recorder
+	activityDir   string
+	activityMin   time.Duration
 	metrics       *observability.Metrics
+	focusKey      string
+	focusStarted  time.Time
+	focusRecorded bool
 
 	aiProvider      ai.Provider
 	geminiAPIKey    string
@@ -263,7 +270,19 @@ func WithTelemetry(rt *observability.Runtime) Option {
 			return
 		}
 		a.logger = rt.Logger
+		a.activity = rt.Activity
+		a.activityDir = rt.LogsDir
 		a.metrics = rt.Metrics
+	}
+}
+
+// WithActivityMinDuration sets the minimum focused/hover duration before the
+// TUI writes an activity record. Values <= 0 keep the default 100ms threshold.
+func WithActivityMinDuration(d time.Duration) Option {
+	return func(a *App) {
+		if d > 0 {
+			a.activityMin = d
+		}
 	}
 }
 
@@ -299,6 +318,7 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		daemonVersion: "connecting",
 		openURL:       openExternalURL,
 		notes:         newNotesAccumulator(),
+		activityMin:   100 * time.Millisecond,
 	}
 	app.status = catalog.T(text.StatusWelcome)
 	for _, opt := range opts {
@@ -399,7 +419,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.broadcastOverlays(m),
 		)
 	case tea.KeyMsg:
-		return a.handleKey(m)
+		updated, cmd := a.handleKey(m)
+		return updated, tea.Batch(cmd, a.observeFocus())
+	case focusDwellMsg:
+		return a, a.handleFocusDwell(m)
 	case overlay.ConfirmAcceptMsg:
 		a.popOverlay()
 		cmd := a.confirmCmd
@@ -459,6 +482,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.HistorySelectMsg:
 		a.popOverlay()
 		return a, a.checkPatentExists(m.Index, m.Number)
+	case overlay.ReplayActivityMsg:
+		a.popOverlay()
+		var project domain.ProjectID
+		if a.activeProject != nil {
+			project = a.activeProject.ID
+		}
+		bound := a.keymaps.BoundLetters(command.ScopeDetail)
+		updated, cmd := a.pushPane(pane.NewDetail(a.client, a.theme, m.Number, project, bound).WithLogger(a.log()))
+		return updated, tea.Batch(cmd, a.recordReplayHistory(m.Record))
 	case overlay.CloseOverlayMsg:
 		a.popOverlay()
 		return a, nil
@@ -590,7 +622,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	default:
 		// rpc results, spinner ticks and the like — let every pane/overlay consume what is theirs.
-		return a, tea.Batch(a.broadcast(msg), a.broadcastOverlays(msg))
+		return a, tea.Batch(a.broadcast(msg), a.broadcastOverlays(msg), a.observeFocus())
 	}
 }
 

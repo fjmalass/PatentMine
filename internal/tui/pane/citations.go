@@ -571,6 +571,18 @@ func (c *Citations) Selection() (domain.PatentNumber, bool) {
 	return c.patents[cur].Number, true
 }
 
+// ActivityFocus implements ActivityFocusProvider.
+func (c *Citations) ActivityFocus() (ActivityFocus, bool) {
+	cur := c.page.Cursor() - c.loadedBase
+	if cur < 0 || cur >= len(c.patents) {
+		return ActivityFocus{}, false
+	}
+	focus := patentRowActivity("citations", c.Title(), c.patents[cur], activeProjectID(c.activeProject), c.filter)
+	focus.Metadata["root"] = c.root.String()
+	focus.Metadata["relation"] = c.kind
+	return focus, true
+}
+
 // View implements Pane.
 func (c *Citations) View(w, h int) string {
 	c.lastWidth = w

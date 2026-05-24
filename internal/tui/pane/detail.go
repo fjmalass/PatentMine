@@ -299,6 +299,23 @@ func (d *Detail) Selection() (domain.PatentNumber, bool) {
 	return d.number, true
 }
 
+// ActivityFocus implements ActivityFocusProvider.
+func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
+	metadata := map[string]any{
+		"scope":           "detail",
+		"display_number":  numberToShow(d.patent).String(),
+		"title":           d.patent.Title,
+		"review_state":    d.state,
+		"tags":            d.tags,
+		"classifications": d.patent.Classifications,
+		"line":            d.page.Cursor(),
+	}
+	if d.project != "" {
+		metadata["project"] = d.project
+	}
+	return ActivityFocus{Entity: "patent", EntityID: d.number.String(), Label: d.Title(), Metadata: metadata}, true
+}
+
 // View implements Pane. Long records scroll: the body is built in full, then
 // windowed to the visible height by the paginator.
 func (d *Detail) View(w, h int) string {

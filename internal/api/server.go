@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"patentmine/internal/command"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 )
@@ -22,14 +24,35 @@ const apiCallTimeout = 20 * time.Second
 
 // Server is the HTTP front end. It forwards every request to the daemon.
 type Server struct {
-	client   *rpc.Client
-	registry *command.Registry
-	mux      *http.ServeMux
+	client              *rpc.Client
+	registry            *command.Registry
+	mux                 *http.ServeMux
+	activity            *observability.Recorder
+	activityLogsDir     string
+	activityMinDuration time.Duration
+}
+
+// Option customizes the HTTP frontend.
+type Option func(*Server)
+
+// WithActivity enables activity review endpoints and explicit browser/UI event recording.
+func WithActivity(rt *observability.Runtime, minDuration time.Duration) Option {
+	return func(s *Server) {
+		if rt == nil {
+			return
+		}
+		s.activity = rt.Activity
+		s.activityLogsDir = rt.LogsDir
+		s.activityMinDuration = minDuration
+	}
 }
 
 // NewServer builds the HTTP server and registers its routes.
-func NewServer(client *rpc.Client, registry *command.Registry) *Server {
-	s := &Server{client: client, registry: registry, mux: http.NewServeMux()}
+func NewServer(client *rpc.Client, registry *command.Registry, opts ...Option) *Server {
+	s := &Server{client: client, registry: registry, mux: http.NewServeMux(), activityMinDuration: 100 * time.Millisecond}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.routes()
 	return s
 }
@@ -94,4 +117,17 @@ func writeError(w http.ResponseWriter, err error) {
 // badRequest writes a 400 with a message.
 func badRequest(w http.ResponseWriter, msg string) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+}
+
+func parseActivityQuery(r *http.Request) observability.ActivityQuery {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	since, _ := time.Parse(time.RFC3339, q.Get("since"))
+	return observability.ActivityQuery{
+		Limit:     limit,
+		Component: q.Get("component"),
+		Action:    q.Get("action"),
+		Entity:    q.Get("entity"),
+		Since:     since,
+	}
 }

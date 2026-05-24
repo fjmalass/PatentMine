@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -55,6 +56,7 @@ func runTUI(_ []string) int {
 	app, err := tui.New(client, registry, keymap.Default(), text.English(),
 		tui.WithLastProject(lastProjectID),
 		tui.WithTelemetry(telemetry),
+		tui.WithActivityMinDuration(time.Duration(cfg.ActivityMinMS)*time.Millisecond),
 		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel),
 		tui.WithUSPTOKey(cfg.USPTOAPIKey),
 		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))

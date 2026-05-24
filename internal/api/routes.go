@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
@@ -27,6 +28,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /metrics", s.handleMetricsProm)
 	s.mux.HandleFunc("GET /metricsz", s.handleMetrics)
+	s.mux.HandleFunc("GET /activity", s.handleActivityList)
+	s.mux.HandleFunc("POST /activity", s.handleActivityRecord)
+	s.mux.HandleFunc("GET /activity/replay_history", s.handleReplayHistory)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
 	s.mux.HandleFunc("GET /patents", s.handlePatentList) // command.PatentList
 	s.mux.HandleFunc("GET /assignees", s.handleAssigneeStats)
@@ -60,6 +64,89 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /classifications/lookup", s.handleClassificationLookup)
 	s.mux.HandleFunc("POST /classifications/by_codes", s.handleClassificationListByCodes)
 	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/classifications", s.handlePatentClassificationList)
+}
+
+// handleActivityList returns replay/review activity records from the shared JSONL journal.
+func (s *Server) handleActivityList(w http.ResponseWriter, r *http.Request) {
+	if s.activityLogsDir == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "activity logging is not configured"})
+		return
+	}
+	records, err := observability.ReadActivityRecords(s.activityLogsDir, parseActivityQuery(r))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"records": records})
+}
+
+// handleActivityRecord lets an HTTP/browser UI submit a user activity event.
+// Events with duration_ms below the configured threshold are acknowledged but skipped.
+func (s *Server) handleActivityRecord(w http.ResponseWriter, r *http.Request) {
+	if s.activity == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "activity logging is not configured"})
+		return
+	}
+	var body struct {
+		Action     string         `json:"action"`
+		Entity     string         `json:"entity"`
+		EntityID   string         `json:"entity_id"`
+		Status     string         `json:"status"`
+		DurationMS int64          `json:"duration_ms"`
+		Before     any            `json:"before"`
+		After      any            `json:"after"`
+		Metadata   map[string]any `json:"metadata"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Action == "" || body.Entity == "" {
+		badRequest(w, "activity action and entity are required")
+		return
+	}
+	if body.DurationMS > 0 && time.Duration(body.DurationMS)*time.Millisecond < s.activityMinDuration {
+		writeJSON(w, http.StatusOK, map[string]any{"recorded": false, "skipped": true})
+		return
+	}
+	if body.Status == "" {
+		body.Status = "observed"
+	}
+	metadata := body.Metadata
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	if body.DurationMS > 0 {
+		metadata["duration_ms"] = body.DurationMS
+	}
+	rec := observability.Record{
+		Action:   body.Action,
+		Entity:   body.Entity,
+		EntityID: body.EntityID,
+		Status:   body.Status,
+		Before:   body.Before,
+		After:    body.After,
+		Metadata: metadata,
+	}
+	if err := s.activity.Record(r.Context(), rec); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"recorded": true})
+}
+
+// handleReplayHistory returns the capped log of activity rows opened from replay UI.
+func (s *Server) handleReplayHistory(w http.ResponseWriter, r *http.Request) {
+	if s.activityLogsDir == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "activity logging is not configured"})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	history, err := observability.ReadReplayHistory(s.activityLogsDir, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"history": history, "cap": 10000})
 }
 
 // handleCrawlConfig returns daemon-owned crawl defaults.
@@ -196,6 +283,15 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 		SortColumn:         domain.SortColumn(q.Get("sort_column")),
 		SortAscending:      sortAscending,
 	}
+	if s.activity != nil && (params.Filter != "" || params.ReviewState != "" || params.Search != "" || params.Classification != "" || params.ClassificationCode != "" || params.Inventor != "" || params.Assignee != "") {
+		_ = s.activity.Record(r.Context(), observability.Record{
+			Action:   "filter.apply",
+			Entity:   "filter",
+			EntityID: r.URL.RawQuery,
+			Status:   "requested",
+			Metadata: map[string]any{"source": "http", "path": r.URL.Path, "query": r.URL.RawQuery},
+		})
+	}
 	var res proto.PatentListResult
 	s.call(w, r, proto.MethodPatentList, params, &res)
 }
@@ -222,6 +318,22 @@ func (s *Server) handlePatentGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		badRequest(w, "invalid patent number: "+err.Error())
 		return
+	}
+	if s.activity != nil {
+		durationMS, _ := strconv.ParseInt(r.URL.Query().Get("duration_ms"), 10, 64)
+		if durationMS <= 0 || time.Duration(durationMS)*time.Millisecond >= s.activityMinDuration {
+			metadata := map[string]any{"source": "http", "path": r.URL.Path}
+			if durationMS > 0 {
+				metadata["duration_ms"] = durationMS
+			}
+			_ = s.activity.Record(r.Context(), observability.Record{
+				Action:   "ui.focus",
+				Entity:   "patent",
+				EntityID: number.String(),
+				Status:   "observed",
+				Metadata: metadata,
+			})
+		}
 	}
 	var res proto.PatentResult
 	s.call(w, r, proto.MethodPatentGet, proto.PatentGetParams{Number: number}, &res)

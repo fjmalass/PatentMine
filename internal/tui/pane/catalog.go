@@ -841,6 +841,15 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 	return c.patents[cur].Number, true
 }
 
+// ActivityFocus implements ActivityFocusProvider.
+func (c *Catalog) ActivityFocus() (ActivityFocus, bool) {
+	cur := c.page.Cursor() - c.loadedBase
+	if cur < 0 || cur >= len(c.patents) {
+		return ActivityFocus{}, false
+	}
+	return patentRowActivity("catalog", c.Title(), c.patents[cur], activeProjectID(c.activeProject), c.filter), true
+}
+
 // View implements Pane.
 func (c *Catalog) View(w, h int) string {
 	c.lastWidth = w

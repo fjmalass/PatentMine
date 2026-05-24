@@ -10,6 +10,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/overlay"
@@ -39,6 +40,20 @@ func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
+}
+
+func (a *App) cmdOpenActivity(invocation) (tea.Model, tea.Cmd) {
+	if a.activityDir == "" {
+		a.setErr(text.StatusUsage, "activity logging is not configured")
+		return a, nil
+	}
+	records, err := observability.ReadActivityRecords(a.activityDir, observability.ActivityQuery{Limit: 200})
+	if err != nil {
+		a.setErr(text.StatusUsage, err.Error())
+		return a, nil
+	}
+	a.overlays = append(a.overlays, overlay.NewActivity(a.theme, records))
+	return a, nil
 }
 
 func (a *App) cmdOpenPatentNote(inv invocation) (tea.Model, tea.Cmd) {

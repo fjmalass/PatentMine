@@ -29,17 +29,18 @@ func (p Path) String() string { return string(p) }
 
 // Config holds the resolved paths the process needs.
 type Config struct {
-	HomeDir      Path   // Base directory; created if absent.
-	DBPath       Path   // SQLite database file.
-	LogsDir      Path   // Runtime logs and activity directory.
-	PIDPath      Path   // Daemon pid file.
-	SocketPath   Path   // Unix domain socket for the daemon.
-	USPTOAPIKey  string // USPTO Open Data Portal API Key.
-	GeminiAPIKey string // Google Gemini Developer API Key.
-	AIProvider   string // Chosen AI Provider ("gemini", "ollama")
-	OllamaModel  string // Local Ollama Model ("mistral", etc.)
-	OllamaHost   string // Local Ollama server host
-	CrawlWorkers int    // Concurrent crawl goroutines; 0 means use engine default.
+	HomeDir       Path   // Base directory; created if absent.
+	DBPath        Path   // SQLite database file.
+	LogsDir       Path   // Runtime logs and activity directory.
+	PIDPath       Path   // Daemon pid file.
+	SocketPath    Path   // Unix domain socket for the daemon.
+	USPTOAPIKey   string // USPTO Open Data Portal API Key.
+	GeminiAPIKey  string // Google Gemini Developer API Key.
+	AIProvider    string // Chosen AI Provider ("gemini", "ollama")
+	OllamaModel   string // Local Ollama Model ("mistral", etc.)
+	OllamaHost    string // Local Ollama server host
+	CrawlWorkers  int    // Concurrent crawl goroutines; 0 means use engine default.
+	ActivityMinMS int    // Minimum UI look/hover duration to record.
 }
 
 // loadDotEnv searches for and loads environment variables from a .env file.
@@ -126,18 +127,23 @@ func Load() (Config, error) {
 	}
 
 	crawlWorkers, _ := strconv.Atoi(os.Getenv("PATENTMINE_CRAWL_WORKERS"))
+	activityMinMS, _ := strconv.Atoi(os.Getenv("PATENTMINE_ACTIVITY_MIN_MS"))
+	if activityMinMS <= 0 {
+		activityMinMS = 100
+	}
 
 	return Config{
-		HomeDir:      Path(home),
-		DBPath:       Path(filepath.Join(home, dbFileName)),
-		LogsDir:      Path(logsDir),
-		PIDPath:      Path(filepath.Join(home, pidFileName)),
-		SocketPath:   Path(filepath.Join(home, socketFileName)),
-		USPTOAPIKey:  usptoKey,
-		GeminiAPIKey: geminiKey,
-		AIProvider:   aiProvider,
-		OllamaModel:  ollamaModel,
-		OllamaHost:   ollamaHost,
-		CrawlWorkers: crawlWorkers,
+		HomeDir:       Path(home),
+		DBPath:        Path(filepath.Join(home, dbFileName)),
+		LogsDir:       Path(logsDir),
+		PIDPath:       Path(filepath.Join(home, pidFileName)),
+		SocketPath:    Path(filepath.Join(home, socketFileName)),
+		USPTOAPIKey:   usptoKey,
+		GeminiAPIKey:  geminiKey,
+		AIProvider:    aiProvider,
+		OllamaModel:   ollamaModel,
+		OllamaHost:    ollamaHost,
+		CrawlWorkers:  crawlWorkers,
+		ActivityMinMS: activityMinMS,
 	}, nil
 }

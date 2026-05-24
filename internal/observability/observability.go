@@ -51,6 +51,7 @@ type Runtime struct {
 	Activity *Recorder
 	Metrics  *Metrics
 	Version  string
+	LogsDir  string
 
 	logFile      *os.File
 	activityFile *os.File
@@ -206,6 +207,7 @@ func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 		Activity:     &Recorder{component: component, w: activityFile},
 		Metrics:      NewMetrics(),
 		Version:      buildVersion,
+		LogsDir:      logsDir,
 		logFile:      logFile,
 		activityFile: activityFile,
 	}, nil

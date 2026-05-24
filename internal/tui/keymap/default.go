@@ -95,20 +95,21 @@ func viewActions() map[string]command.ID {
 // Default returns the shipped keymap.
 func Default() *Keymaps {
 	base := NewLayer("global", false).BindAll(map[string]command.ID{
-		"ctrl+c": command.Quit,
-		"Q":      command.Quit,
-		"?":      command.Help,
-		"M":      command.OpenMetrics,
-		"h":      command.Back,
-		"left":   command.Back,
-		"esc":    command.Back,
-		":":      command.OpenCommand,
-		"ctrl+s": command.SettingsAI,
-		"ctrl+o": command.HistoryBack,
-		"ctrl+left": command.HistoryBack,
-		"ctrl+i": command.HistoryForward,
+		"ctrl+c":     command.Quit,
+		"Q":          command.Quit,
+		"?":          command.Help,
+		"M":          command.OpenMetrics,
+		"h":          command.Back,
+		"left":       command.Back,
+		"esc":        command.Back,
+		":":          command.OpenCommand,
+		"ctrl+s":     command.SettingsAI,
+		"ctrl+o":     command.HistoryBack,
+		"ctrl+left":  command.HistoryBack,
+		"ctrl+i":     command.HistoryForward,
 		"ctrl+right": command.HistoryForward,
-		"H":      command.OpenHistory,
+		"H":          command.OpenHistory,
+		"A":          command.OpenActivity,
 	})
 
 	catalog := NewLayer("catalog", false).

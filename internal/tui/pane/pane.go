@@ -59,6 +59,19 @@ type MultiSelector interface {
 	Selections() []domain.PatentNumber
 }
 
+// ActivityFocus is the replayable thing the user is currently looking at.
+type ActivityFocus struct {
+	Entity   string
+	EntityID string
+	Label    string
+	Metadata map[string]any
+}
+
+// ActivityFocusProvider exposes richer focus metadata than Selection.
+type ActivityFocusProvider interface {
+	ActivityFocus() (ActivityFocus, bool)
+}
+
 // VisualSelectionSaver is implemented by panes that support saving their
 // visual selection for gv restore. The App calls this when a visual selection
 // is consumed by an action (e.g. review state change).

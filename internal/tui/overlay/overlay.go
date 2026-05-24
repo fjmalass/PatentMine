@@ -10,6 +10,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 )
 
 // Overlay is one modal layer.
@@ -92,6 +93,13 @@ type CloseOverlayMsg struct{}
 // OpenPatentDetailMsg asks the app to open the detail view of a patent.
 type OpenPatentDetailMsg struct {
 	Number domain.PatentNumber
+}
+
+// ReplayActivityMsg asks the app to open a replayed activity target and record
+// that the activity was played from the replay UI.
+type ReplayActivityMsg struct {
+	Number domain.PatentNumber
+	Record observability.Record
 }
 
 // ApplyClassificationFilterMsg asks the app to apply a classification code

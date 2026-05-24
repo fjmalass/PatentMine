@@ -166,6 +166,7 @@ var cmdStrings = map[string][2]string{
 	"view.inventors.direct":      {"Open inventors stats direct", "Open the statistics popup for the patent's inventors directly."},
 	"view.browser":               {"Open browser", "Open the selected patent's page in the browser, or a typed patent number when given."},
 	"view.metrics":               {"Metrics", "Open the daemon metrics dashboard overlay."},
+	"view.activity":              {"Activity replay", "Open the activity journal for review and replay."},
 	"view.patent-note":           {"Open patent note", "Open the project-scoped markdown note editor for the selected patent."},
 	"view.citations":             {"Open citations", "Show patents the selected patent cites."},
 	"view.cited-by":              {"Open cited by", "Show patents that cite the selected patent."},
