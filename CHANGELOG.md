@@ -7,6 +7,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v0.4.0] — 2026
+
+### Added
+- IDS export: generate SB0008a/b/c/PC PDF forms populated with patent references
+- Patent notes: per-patent markdown notes with listing, full-text search, and bulk export
+- All Notes pane: global view of all notes across the project
+- `:fetch_state` and `:country` filter predicates
+- `Z` shortcut to open notes editor for selected patent
+- Consolidation of stats/inventor/assignee/history subtable rendering
+
+### Changed
+- FetchState/ReviewState model clarified with slug/cached/unknown/under_review/ignored/active/deleted states
+
+### Fixed
+- `ga` select-all now captures patents across all pages, not just the current page
+- Emoji glyph alignment in status line and history header
+
+---
+
 ## [v0.3.4] — 2025
 
 ### Added
