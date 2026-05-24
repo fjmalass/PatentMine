@@ -88,7 +88,10 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		Status:   "committed",
 		Before:   before,
 		After:    after,
-		Metadata: map[string]any{"requested_number": patent.String()},
+		Metadata: map[string]any{
+			"requested_number": patent.String(),
+			"project":          string(project),
+		},
 	})
 	e.announceChange()
 	// Any patent in "stored" state has no full record yet — kick a single-patent
@@ -267,7 +270,10 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		// Record activities
 		for _, record := range changedRecords {
 			e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
-			metadata := map[string]any{"requested_number": record.String()}
+			metadata := map[string]any{
+				"requested_number": record.String(),
+				"project":          string(project),
+			}
 			if mutationGroupID != "" {
 				metadata["mutation_group_id"] = mutationGroupID
 			}

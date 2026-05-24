@@ -569,7 +569,13 @@ func (a *App) navigateHistory(number domain.PatentNumber) (tea.Model, tea.Cmd) {
 		nextPane = pane.NewFamilyGraph(a.client, a.theme, number, p.Depth(), p.Countries()).WithLogger(a.log())
 	default:
 		bound := a.keymaps.BoundLetters(command.ScopeDetail)
-		return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+		nextPane = pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log())
+		nextPane, cmds := a.preparePane(nextPane)
+		if len(cmds) == 0 {
+			cmds = append(cmds, nextPane.Init())
+		}
+		a.panes = append(a.panes, nextPane)
+		return a, tea.Batch(cmds...)
 	}
 
 	a.panes[len(a.panes)-1] = nextPane

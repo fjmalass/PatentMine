@@ -170,7 +170,10 @@ func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, 
 	// Record activities for each changed record
 	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "patent tagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
-		metadata := map[string]any{"requested_number": record.String()}
+		metadata := map[string]any{
+			"requested_number": record.String(),
+			"project":          string(project),
+		}
 		if mutationGroupID != "" {
 			metadata["mutation_group_id"] = mutationGroupID
 		}
@@ -281,7 +284,10 @@ func (e *Engine) UntagPatentStrict(ctx context.Context, project domain.ProjectID
 	// Record activities for each changed record
 	for _, record := range changedRecords {
 		e.log(ctx, slog.LevelInfo, "patent untagged", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("tag", matchedTag.Name))
-		metadata := map[string]any{"requested_number": record.String()}
+		metadata := map[string]any{
+			"requested_number": record.String(),
+			"project":          string(project),
+		}
 		if mutationGroupID != "" {
 			metadata["mutation_group_id"] = mutationGroupID
 		}

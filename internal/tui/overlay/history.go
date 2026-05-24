@@ -13,17 +13,19 @@ import (
 
 // HistoryOverlay displays the persistent timeline of recent searches, project switches, and patent details views.
 type HistoryOverlay struct {
-	theme   render.Theme
-	records []observability.Record
-	cursor  int // local selection cursor, 0 maps to the newest item
+	theme        render.Theme
+	records      []observability.Record
+	projectNames map[string]string
+	cursor       int // local selection cursor, 0 maps to the newest item
 }
 
 // NewHistoryOverlay builds a HistoryOverlay.
-func NewHistoryOverlay(theme render.Theme, records []observability.Record) *HistoryOverlay {
+func NewHistoryOverlay(theme render.Theme, records []observability.Record, projectNames map[string]string) *HistoryOverlay {
 	return &HistoryOverlay{
-		theme:   theme,
-		records: records,
-		cursor:  0,
+		theme:        theme,
+		records:      records,
+		projectNames: projectNames,
+		cursor:       0,
 	}
 }
 
@@ -106,6 +108,8 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	hdr := "  Time     Project      " + h.theme.Glyphs.HistColType + "  Details"
 	b.WriteString(h.theme.Dim.Render(render.Pad(hdr, maxW)))
 	b.WriteString("\n")
+	b.WriteString(h.theme.Dim.Render(strings.Repeat("─", maxW)))
+	b.WriteString("\n")
 
 	for idx := start; idx < end; idx++ {
 		rec := h.records[idx]
@@ -127,17 +131,26 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 
 		// Project Name
 		projName := "-"
-		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
-			projName = name
-		} else if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
-			projName = pid
-		} else if rec.Action == "project.switch" {
-			projName = rec.EntityID
-			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
-				projName = name
-			}
+		var projID string
+		if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
+			projID = pid
 		} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
-			projName = entityParts[0]
+			projID = entityParts[0]
+		} else if rec.Action == "project.switch" {
+			projID = rec.EntityID
+		}
+
+		if projID != "" {
+			if name, ok := h.projectNames[projID]; ok && name != "" {
+				projName = name
+			} else {
+				// Fallback to logged metadata if not in active projects cache
+				if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+					projName = name
+				} else {
+					projName = projID
+				}
+			}
 		}
 		// Capped project name for alignment
 		if len(projName) > 12 {

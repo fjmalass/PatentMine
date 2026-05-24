@@ -673,7 +673,18 @@ func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusHistoryEmpty)
 		return a, nil
 	}
-	o := overlay.NewHistoryOverlay(a.theme, filtered)
+	projectNames := make(map[string]string)
+	if a.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		defer cancel()
+		var res proto.ProjectListResult
+		if err := a.client.Call(ctx, proto.MethodProjectList, nil, &res); err == nil {
+			for _, p := range res.Projects {
+				projectNames[string(p.ID)] = p.Name
+			}
+		}
+	}
+	o := overlay.NewHistoryOverlay(a.theme, filtered, projectNames)
 	a.overlays = append(a.overlays, o)
 	return a, nil
 }
@@ -699,18 +710,41 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 			}
 		}
 		if number, err := domain.ParsePatentNumber(numStr); err == nil {
+			entityParts := strings.Split(rec.EntityID, "/")
+			isMembershipOrTag := rec.Action == "membership.set_state" || rec.Action == "patent.tag_assign" || rec.Action == "patent.tag_remove"
+
 			var project domain.ProjectID
-			if a.activeProject != nil {
+			if pVal, ok := rec.Metadata["project"].(string); ok && pVal != "" {
+				project = domain.ProjectID(pVal)
+			} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
+				project = domain.ProjectID(entityParts[0])
+			} else if a.activeProject != nil {
 				project = a.activeProject.ID
 			}
+
+			var switchCmd tea.Cmd
+			if project != "" && (a.activeProject == nil || a.activeProject.ID != project) {
+				if proj, ok := a.resolveProjectArg(string(project)); ok {
+					a.activeProject = &proj
+					a.lastProjectID = proj.ID
+					if a.saveLastProject != nil {
+						_ = a.saveLastProject(proj.ID)
+					}
+					a.setStatus(text.StatusActiveProject, proj.Name)
+					switchCmd = a.broadcast(pane.ProjectChangedMsg{Project: &proj})
+				}
+			}
+
 			scope, _ := rec.Metadata["scope"].(string)
+			var replayModel tea.Model
+			var replayCmd tea.Cmd
 			switch scope {
 			case "citations":
 				kind := domain.RelationCites
 				if kStr, ok := rec.Metadata["relation"].(string); ok {
 					kind = domain.RelationKind(kStr)
 				}
-				return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
+				replayModel, replayCmd = a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
 			case "family":
 				depth := 1
 				if dVal, ok := rec.Metadata["depth"].(float64); ok {
@@ -724,16 +758,17 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 						}
 					}
 				}
-				return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()))
+				replayModel, replayCmd = a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()))
 			case "fulltext":
 				bound := a.keymaps.BoundLetters(command.ScopeFullText)
-				return a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+				replayModel, replayCmd = a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log()))
 			case "ids":
-				return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log()))
+				replayModel, replayCmd = a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log()))
 			default:
 				bound := a.keymaps.BoundLetters(command.ScopeDetail)
-				return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+				replayModel, replayCmd = a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
 			}
+			return replayModel, tea.Batch(switchCmd, replayCmd)
 		}
 		a.setErr(text.StatusHistoryPatentUnavailable, rec.EntityID)
 		return a, nil

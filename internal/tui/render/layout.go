@@ -19,8 +19,8 @@ func Composite(bg, fg string, x, y int) string {
 			continue
 		}
 		base := bgLines[row]
-		baseWidth := ansi.StringWidth(base)
-		fgWidth := ansi.StringWidth(fgLine)
+		baseWidth := StringWidth(base)
+		fgWidth := StringWidth(fgLine)
 
 		left := ansi.Cut(base, 0, x)
 		if pad := x - baseWidth; pad > 0 {

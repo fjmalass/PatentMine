@@ -208,7 +208,7 @@ func TestFamilyGraphViewUsesReviewStateForActiveProject(t *testing.T) {
 	}}
 	g.rebuildRows()
 	out := g.View(120, 8)
-	if !strings.Contains(out, "🔍") {
+	if !strings.Contains(out, "🩺") {
 		t.Fatalf("family graph view should show project review state, got:\n%s", out)
 	}
 }
