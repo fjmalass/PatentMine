@@ -69,9 +69,7 @@ type FullText struct {
 	visualAnchor int // line where visual mode started
 
 	// jump mode
-	jumpActive  bool
-	anchors     []render.JumpAnchor
-	jumpKeys    map[string]rune
+	jump        *JumpController
 	keymapBound []rune // keys reserved by the keymap, kept off jump anchors
 	logger      *slog.Logger
 }
@@ -96,11 +94,12 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 		page:        render.NewPaginator(10),
 		loading:     true,
 		keymapBound: boundLetters,
+		jump:        NewJumpController(),
 	}
 	f.computeJumpKeys(boundLetters)
 	f.handlers = map[command.ID]cmdHandler{
 		command.NavDown: func(inv Invocation) tea.Cmd {
-			if f.jumpActive && len(f.anchors) > 0 {
+			if f.jump.Active && len(f.jump.Anchors) > 0 {
 				f.page.ScrollTo(f.nextAnchorLine())
 			} else {
 				f.move(inv.Repeat, 1)
@@ -108,7 +107,7 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 			return nil
 		},
 		command.NavUp: func(inv Invocation) tea.Cmd {
-			if f.jumpActive && len(f.anchors) > 0 {
+			if f.jump.Active && len(f.jump.Anchors) > 0 {
 				f.page.ScrollTo(f.prevAnchorLine())
 			} else {
 				f.move(inv.Repeat, -1)
@@ -271,7 +270,7 @@ func (f *FullText) render(w int) {
 	}
 	f.bodyW = w
 	f.lines = f.lines[:0]
-	f.anchors = f.anchors[:0]
+	f.jump.ClearAnchors()
 
 	add := func(rendered, locator string) {
 		f.lines = append(f.lines, bodyLine{text: rendered, locator: locator})
@@ -345,11 +344,7 @@ func (f *FullText) render(w int) {
 func (f *FullText) addSectionHeader(add func(string, string), label, locator string) {
 	key := f.jumpKey(label)
 	if key != 0 {
-		f.anchors = append(f.anchors, render.JumpAnchor{
-			Key:   key,
-			Label: label,
-			Line:  len(f.lines),
-		})
+		f.jump.AddAnchor(label, "", len(f.lines), false, key)
 		add(f.theme.Warn.Render(fmt.Sprintf("[%s] %s", string(key), label)), locator)
 		return
 	}
@@ -522,53 +517,46 @@ func (f *FullText) noteOpen() tea.Cmd {
 
 // --- Jump mode support ---
 
-func (f *FullText) JumpAnchors() []render.JumpAnchor { return f.anchors }
+func (f *FullText) JumpAnchors() []render.JumpAnchor { return f.jump.JumpAnchors() }
 
 func (f *FullText) JumpTo(line int) { f.page.ScrollTo(line) }
 
-func (f *FullText) SetJumpActive(active bool) { f.jumpActive = active }
+func (f *FullText) SetJumpActive(active bool) { f.jump.SetJumpActive(active) }
 
-func (f *FullText) JumpActive() bool { return f.jumpActive }
+func (f *FullText) JumpActive() bool { return f.jump.JumpActive() }
 
 func (f *FullText) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
-	if !f.jumpActive {
+	if !f.jump.JumpActive() {
 		return f, nil, false
 	}
-	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		r := msg.Runes[0]
-		for _, a := range f.anchors {
-			if a.Key == r {
-				f.JumpTo(a.Line)
-				f.jumpActive = false // Automatically turn off jump mode upon a successful jump
-				return f, nil, true
-			}
-		}
-	}
-	return f, nil, false
+	consumed := f.jump.HandleKey(msg, f.JumpTo)
+	return f, nil, consumed
 }
 
 func (f *FullText) nextAnchorLine() int {
 	cur := f.page.Cursor()
-	for _, a := range f.anchors {
+	anchors := f.jump.JumpAnchors()
+	for _, a := range anchors {
 		if a.Line > cur {
 			return a.Line
 		}
 	}
-	if len(f.anchors) > 0 {
-		return f.anchors[0].Line
+	if len(anchors) > 0 {
+		return anchors[0].Line
 	}
 	return 0
 }
 
 func (f *FullText) prevAnchorLine() int {
 	cur := f.page.Cursor()
-	for i := len(f.anchors) - 1; i >= 0; i-- {
-		if f.anchors[i].Line < cur {
-			return f.anchors[i].Line
+	anchors := f.jump.JumpAnchors()
+	for i := len(anchors) - 1; i >= 0; i-- {
+		if anchors[i].Line < cur {
+			return anchors[i].Line
 		}
 	}
-	if len(f.anchors) > 0 {
-		return f.anchors[len(f.anchors)-1].Line
+	if len(anchors) > 0 {
+		return anchors[len(anchors)-1].Line
 	}
 	return 0
 }
@@ -576,12 +564,6 @@ func (f *FullText) prevAnchorLine() int {
 // computeJumpKeys assigns a stable single-key jump target to each claim and to
 // the disclosure section header, avoiding conflict with the bound keymap.
 func (f *FullText) computeJumpKeys(bound []rune) {
-	boundSet := make(map[rune]bool, len(bound))
-	for _, r := range bound {
-		boundSet[r] = true
-	}
-	used := make(map[rune]bool)
-	f.jumpKeys = make(map[string]rune)
 	labels := make([]string, 0, len(f.fullText.Claims)+1)
 	for _, c := range f.fullText.Claims {
 		labels = append(labels, fmt.Sprintf("Claim %d", c.Number))
@@ -589,25 +571,13 @@ func (f *FullText) computeJumpKeys(bound []rune) {
 	if len(f.fullText.Paragraphs) > 0 {
 		labels = append(labels, disclosureLocator)
 	}
-	for _, label := range labels {
-		key := f.assignKey(label, boundSet, used)
-		f.jumpKeys[label] = key
-		used[key] = true
-	}
-}
-
-func (f *FullText) assignKey(label string, boundSet, used map[rune]bool) rune {
-	return render.AssignKey(label, used, true)
+	f.jump.Compute(labels, bound, nil, true)
 }
 
 func (f *FullText) jumpKey(label string) rune {
-	if f.jumpKeys != nil {
-		if key, ok := f.jumpKeys[label]; ok {
-			return key
-		}
-	}
-	return 0
+	return f.jump.JumpKey(label)
 }
+
 
 // --- Helpers ---
 

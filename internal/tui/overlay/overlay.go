@@ -11,6 +11,9 @@ import (
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
+	"patentmine/internal/text"
+	"patentmine/internal/tui/keymap"
+	"patentmine/internal/tui/render"
 )
 
 // Overlay is one modal layer.
@@ -128,4 +131,24 @@ func PctSize(termW, termH, pctW, pctH, minW, minH int) (w, h int) {
 		h = min(h, termH-2)
 	}
 	return w, h
+}
+
+// OverlayHandlers returns the union of command IDs handled by active overlays,
+// decoupling the wiring validator from direct overlay instantiation.
+func OverlayHandlers(reg *command.Registry, keymaps *keymap.Keymaps, catalog *text.Catalog) []command.ID {
+	theme := render.NewTheme()
+	overlays := []Overlay{
+		NewHelp(reg, keymaps, theme, catalog),
+		NewPrompt(reg, keymaps, theme, catalog, command.ScopeCatalog, PromptPalette),
+		NewTextInput(theme, catalog, PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption),
+	}
+	var out []command.ID
+	for _, o := range overlays {
+		for _, id := range o.Handles() {
+			if !slices.Contains(out, id) {
+				out = append(out, id)
+			}
+		}
+	}
+	return out
 }

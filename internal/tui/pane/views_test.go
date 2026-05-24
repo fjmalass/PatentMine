@@ -520,10 +520,10 @@ func TestDetailJumpKeysDump(t *testing.T) {
 	num := domain.MustParsePatentNumber("US0000001B2")
 	d := NewDetail(nil, render.NewTheme(), num, "test-project", nil)
 	t.Log("JUMP KEYS:")
-	for label, key := range d.jumpKeys {
+	for label, key := range d.jump.JumpKeys {
 		t.Logf("  %s -> %q", label, string(key))
 	}
-	if got := d.jumpKeys["Children"]; got != 'C' {
+	if got := d.jump.JumpKeys["Children"]; got != 'C' {
 		t.Errorf("jump key for Children = %q, want 'C'", string(got))
 	}
 }

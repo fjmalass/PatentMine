@@ -6,12 +6,10 @@ import (
 	"slices"
 
 	"patentmine/internal/command"
-	"patentmine/internal/domain"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
-	"patentmine/internal/tui/render"
 )
 
 // validateWiring fails the boot when the keymap, command registry, handlers,
@@ -121,40 +119,12 @@ func typedCheckScope(c command.Command) []command.Scope {
 // paneHandlerSets builds a sample of every pane and records the command IDs it
 // services, keyed by the pane's context.
 func paneHandlerSets() map[command.Scope][]command.ID {
-	theme := render.NewTheme()
-	panes := []pane.Pane{
-		pane.NewCatalog(nil, theme),
-		pane.NewDetail(nil, theme, domain.PatentNumber{}, "", nil),
-		pane.NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
-		pane.NewFamilyGraph(nil, theme, domain.PatentNumber{}, 0, nil),
-		pane.NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
-		pane.NewProjects(nil, theme, "", ""),
-		pane.NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
-	}
-	out := make(map[command.Scope][]command.ID, len(panes))
-	for _, p := range panes {
-		out[p.Scope()] = p.Handles()
-	}
-	return out
+	return pane.PaneHandlers()
 }
 
 // overlayHandlerSet returns the union of command IDs serviced by any overlay.
 // KeyHandler overlays consume input before the keymap, so the overlay keymap
 // layer only governs passive overlays — a union is the right test here.
 func overlayHandlerSet(reg *command.Registry, keymaps *keymap.Keymaps, catalog *text.Catalog) []command.ID {
-	theme := render.NewTheme()
-	overlays := []overlay.Overlay{
-		overlay.NewHelp(reg, keymaps, theme, catalog),
-		overlay.NewPrompt(reg, keymaps, theme, catalog, command.ScopeCatalog, overlay.PromptPalette),
-		overlay.NewTextInput(theme, catalog, overlay.PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption),
-	}
-	var out []command.ID
-	for _, ov := range overlays {
-		for _, id := range ov.Handles() {
-			if !slices.Contains(out, id) {
-				out = append(out, id)
-			}
-		}
-	}
-	return out
+	return overlay.OverlayHandlers(reg, keymaps, catalog)
 }

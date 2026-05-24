@@ -195,3 +195,24 @@ type ServiceStatusChangedMsg struct {
 	ActiveAI     string
 	ActiveSearch string
 }
+
+// PaneHandlers returns a map of all handled command IDs per scope.
+// It is used by the TUI wiring validator to remain decoupled from individual
+// pane constructors.
+func PaneHandlers() map[command.Scope][]command.ID {
+	theme := render.NewTheme()
+	panes := []Pane{
+		NewCatalog(nil, theme),
+		NewDetail(nil, theme, domain.PatentNumber{}, "", nil),
+		NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
+		NewFamilyGraph(nil, theme, domain.PatentNumber{}, 0, nil),
+		NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
+		NewProjects(nil, theme, "", ""),
+		NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
+	}
+	out := make(map[command.Scope][]command.ID, len(panes))
+	for _, p := range panes {
+		out[p.Scope()] = p.Handles()
+	}
+	return out
+}

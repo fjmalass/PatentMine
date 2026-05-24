@@ -61,14 +61,12 @@ type Detail struct {
 	idsEntry           *domain.IDSEntry
 	patentNote         *domain.PatentNote
 	relCounts          map[domain.RelationKind]int
-	anchors            []render.JumpAnchor // jump targets, rebuilt on every body render
-	jumpKeys           map[string]rune     // label -> assigned jump key, stable for pane lifetime
+	jump               *JumpController
 	lineGroups         []detailLineGroup
 	page               render.Paginator
 	loading            bool
 	loadErr            string
 	loadID             uint64
-	jumpActive         bool
 	assigneeLine       int
 	classificationLine int
 	inventorLine       int
@@ -126,11 +124,33 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 		relCounts: map[domain.RelationKind]int{},
 		page:      render.NewPaginator(10),
 		loading:   true,
+		jump:      NewJumpController(),
 	}
-	d.computeJumpKeys(boundLetters)
+	override := func(label string, used map[rune]bool) rune {
+		switch label {
+		case "Citations":
+			if !used['c'] {
+				return 'c'
+			}
+		case "Cited by":
+			if !used['b'] {
+				return 'b'
+			}
+		case "Parents":
+			if !used['p'] {
+				return 'p'
+			}
+		case "Children":
+			if !used['C'] {
+				return 'C'
+			}
+		}
+		return 0
+	}
+	d.jump.Compute(detailAnchorLabels, boundLetters, override, false)
 	d.handlers = map[command.ID]cmdHandler{
 		command.NavDown: func(inv Invocation) tea.Cmd {
-			if d.jumpActive && len(d.anchors) > 0 {
+			if d.jump.Active && len(d.jump.Anchors) > 0 {
 				d.page.ScrollTo(d.nextAnchorLine())
 			} else {
 				for range inv.Repeat {
@@ -140,7 +160,7 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			return nil
 		},
 		command.NavUp: func(inv Invocation) tea.Cmd {
-			if d.jumpActive && len(d.anchors) > 0 {
+			if d.jump.Active && len(d.jump.Anchors) > 0 {
 				d.page.ScrollTo(d.prevAnchorLine())
 			} else {
 				for range inv.Repeat {
@@ -325,10 +345,10 @@ func (d *Detail) View(w, h int) string {
 	case d.loadErr != "":
 		return d.theme.Error.Render("error: " + d.loadErr)
 	}
-	if d.cachedLines == nil || w != d.lastWidth || d.jumpActive != d.lastJumpActive {
+	if d.cachedLines == nil || w != d.lastWidth || d.jump.Active != d.lastJumpActive {
 		d.cachedLines = strings.Split(d.body(w), "\n")
 		d.lastWidth = w
-		d.lastJumpActive = d.jumpActive
+		d.lastJumpActive = d.jump.Active
 	}
 	lines := d.cachedLines
 	d.page.SetTotal(len(lines))
@@ -353,7 +373,7 @@ func (d *Detail) View(w, h int) string {
 // scroll straight to it.
 func (d *Detail) body(w int) string {
 	p := d.patent
-	d.anchors = d.anchors[:0]
+	d.jump.ClearAnchors()
 	d.lineGroups = d.lineGroups[:0]
 	var b strings.Builder
 	d.field(&b, w, "Shown as", numberToShow(p).String())
@@ -444,7 +464,7 @@ func (d *Detail) body(w int) string {
 	docStart := strings.Count(b.String(), "\n") + 1
 	b.WriteByte('\n')
 	displayDocs := "Documents"
-	if d.jumpActive {
+	if d.jump.Active {
 		displayDocs = fmt.Sprintf("[%s] Documents", d.theme.Warn.Copy().Bold(true).Render(string(d.jumpKey("Documents"))))
 	}
 	b.WriteString(d.theme.Header.Render(displayDocs))
@@ -499,17 +519,11 @@ func (d *Detail) highlightGroup(cursor int) detailLineGroup {
 // lineDelta offsets the recorded line past a leading blank or heading: 0 for a
 // plain field, 1 for a section whose heading follows a spacer line.
 func (d *Detail) addAnchor(b *strings.Builder, key rune, label, value string, local bool, lineDelta int) {
-	d.anchors = append(d.anchors, render.JumpAnchor{
-		Key:   key,
-		Label: label,
-		Line:  strings.Count(b.String(), "\n") + lineDelta,
-		Value: value,
-		Local: local,
-	})
+	d.jump.AddAnchor(label, value, strings.Count(b.String(), "\n")+lineDelta, local, key)
 }
 
 // JumpAnchors implements pane.JumpProvider: the jump targets of the last render.
-func (d *Detail) JumpAnchors() []render.JumpAnchor { return d.anchors }
+func (d *Detail) JumpAnchors() []render.JumpAnchor { return d.jump.JumpAnchors() }
 
 // JumpTo implements pane.JumpProvider, scrolling the body so line leads the
 // visible window.
@@ -517,22 +531,23 @@ func (d *Detail) JumpTo(line int) { d.page.ScrollTo(line) }
 
 // SetJumpActive updates the jump mode state, triggering inline shortcut rendering.
 func (d *Detail) SetJumpActive(active bool) {
-	d.jumpActive = active
+	d.jump.SetJumpActive(active)
 }
 
 // JumpActive reports whether jump mode is active.
-func (d *Detail) JumpActive() bool { return d.jumpActive }
+func (d *Detail) JumpActive() bool { return d.jump.JumpActive() }
 
 // nextAnchorLine returns the line of the first anchor after the cursor, or the
 // first anchor when the cursor is at or past the last anchor.
 func (d *Detail) nextAnchorLine() int {
 	cursor := d.page.Cursor()
-	for _, a := range d.anchors {
+	anchors := d.jump.JumpAnchors()
+	for _, a := range anchors {
 		if a.Line > cursor {
 			return a.Line
 		}
 	}
-	return d.anchors[0].Line
+	return anchors[0].Line
 }
 
 func (d *Detail) nextGroupLine() int {
@@ -555,12 +570,13 @@ func (d *Detail) nextGroupLine() int {
 // last anchor when the cursor is at or before the first anchor.
 func (d *Detail) prevAnchorLine() int {
 	cursor := d.page.Cursor()
-	for i := len(d.anchors) - 1; i >= 0; i-- {
-		if d.anchors[i].Line < cursor {
-			return d.anchors[i].Line
+	anchors := d.jump.JumpAnchors()
+	for i := len(anchors) - 1; i >= 0; i-- {
+		if anchors[i].Line < cursor {
+			return anchors[i].Line
 		}
 	}
-	return d.anchors[len(d.anchors)-1].Line
+	return anchors[len(anchors)-1].Line
 }
 
 func (d *Detail) prevGroupLine() int {
@@ -580,89 +596,20 @@ func (d *Detail) prevGroupLine() int {
 	return d.lineGroups[0].start
 }
 
-// computeJumpKeys assigns a stable jump key to each anchor label, avoiding
-// conflicts with keys already bound in the base and detail keymap layers.
-// Each label's characters are tried in order (first letter, second, etc.);
-// if none are free, the first free letter in a-z is used, then 0-9.
-func (d *Detail) computeJumpKeys(bound []rune) {
-	boundSet := make(map[rune]bool, len(bound))
-	for _, r := range bound {
-		boundSet[r] = true
-	}
-	used := make(map[rune]bool, len(detailAnchorLabels))
-	d.jumpKeys = make(map[string]rune, len(detailAnchorLabels))
-
-	// Pass 1: Satisfy manual overrides first to reserve their keys
-	for _, label := range detailAnchorLabels {
-		if label == "Citations" || label == "Cited by" || label == "Parents" || label == "Children" {
-			key := d.assignKey(label, boundSet, used)
-			d.jumpKeys[label] = key
-			used[key] = true
-		}
-	}
-
-	// Pass 2: Dynamically assign keys to all other fields
-	for _, label := range detailAnchorLabels {
-		if label != "Citations" && label != "Cited by" && label != "Parents" && label != "Children" {
-			key := d.assignKey(label, boundSet, used)
-			d.jumpKeys[label] = key
-			used[key] = true
-		}
-	}
-}
-
-func (d *Detail) assignKey(label string, boundSet, used map[rune]bool) rune {
-	switch label {
-	case "Citations":
-		if !used['c'] {
-			return 'c'
-		}
-	case "Cited by":
-		if !used['b'] {
-			return 'b'
-		}
-	case "Parents":
-		if !used['p'] {
-			return 'p'
-		}
-	case "Children":
-		if !used['C'] {
-			return 'C'
-		}
-	}
-	return render.AssignKey(label, used, false)
-}
-
 // jumpKey returns the assigned jump key for a label, or 0 if unset.
 func (d *Detail) jumpKey(label string) rune {
-	if d.jumpKeys != nil {
-		if key, ok := d.jumpKeys[label]; ok {
-			return key
-		}
-	}
-	return 0
+	return d.jump.JumpKey(label)
 }
 
 // HandleKey implements pane.KeyHandler. When jump mode is active it intercepts
 // single-letter keys that match a jump anchor, scrolling to that section and
 // consuming the key so it never reaches the keymap.
 func (d *Detail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
-	if !d.jumpActive {
+	if !d.jump.JumpActive() {
 		return d, nil, false
 	}
-	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		r := msg.Runes[0]
-		for _, a := range d.anchors {
-			if a.Key == r {
-				d.JumpTo(a.Line)
-				d.jumpActive = false // Automatically turn off jump mode upon a successful jump
-				return d, nil, true
-			}
-		}
-	}
-	// Any other key (including esc) exits jump mode and is safely consumed so it doesn't leak normal-mode commands
-	d.jumpActive = false
-	return d, nil, true
+	consumed := d.jump.HandleKey(msg, d.JumpTo)
+	return d, nil, consumed
 }
 
 // numberToShow returns the record's display number, falling back to the
@@ -679,9 +626,9 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 	start := strings.Count(b.String(), "\n")
 	labelW := 14
 	displayLabel := label
-	if d.jumpActive {
+	if d.jump.Active {
 		labelW = 18
-		if key, ok := d.jumpKeys[label]; ok {
+		if key := d.jump.JumpKey(label); key != 0 {
 			var style lipgloss.Style
 			if isLocalField(label) {
 				style = d.theme.JumpLocalLabel
@@ -711,9 +658,9 @@ func (d *Detail) field(b *strings.Builder, w int, label, value string) {
 func (d *Detail) wrappedField(b *strings.Builder, w int, label, value string) {
 	labelW := 14
 	displayLabel := label
-	if d.jumpActive {
+	if d.jump.Active {
 		labelW = 18
-		if key, ok := d.jumpKeys[label]; ok {
+		if key := d.jump.JumpKey(label); key != 0 {
 			var style lipgloss.Style
 			if isLocalField(label) {
 				style = d.theme.JumpLocalLabel
@@ -754,8 +701,8 @@ func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 	start := strings.Count(b.String(), "\n") + 1
 	b.WriteByte('\n')
 	displayHeading := heading
-	if d.jumpActive {
-		if key, ok := d.jumpKeys[heading]; ok {
+	if d.jump.Active {
+		if key := d.jump.JumpKey(heading); key != 0 {
 			var style lipgloss.Style
 			if isLocalField(heading) {
 				style = d.theme.JumpLocalLabel
@@ -928,7 +875,7 @@ func (d *Detail) IsCursorOnInventors() bool       { return d.page.Cursor() == d.
 // and returns the corresponding RelationKind if it is.
 func (d *Detail) ResolveCursorRelation() (domain.RelationKind, bool) {
 	cursor := d.page.Cursor()
-	for _, a := range d.anchors {
+	for _, a := range d.jump.JumpAnchors() {
 		if a.Line == cursor {
 			switch a.Label {
 			case "Citations":

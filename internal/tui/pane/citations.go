@@ -3,6 +3,7 @@ package pane
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -67,6 +68,7 @@ type Citations struct {
 	logger            *slog.Logger
 	classDescs        map[string]string
 	classDescsID      uint64
+	searchSeq         uint64
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -208,7 +210,12 @@ func (c *Citations) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		c.applyFindInput(search)
 		c.loading = true
 		c.page.Top()
-		return c, c.load(), true
+		c.searchSeq++
+		seq := c.searchSeq
+		return c, func() tea.Msg {
+			time.Sleep(150 * time.Millisecond)
+			return findDebounceMsg{seq: seq, query: search}
+		}, true
 	case "confirm":
 		c.applyFindInput(search)
 		return c, nil, true
@@ -216,6 +223,7 @@ func (c *Citations) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		c.applyFindInput(search)
 		c.loading = true
 		c.page.Top()
+		c.searchSeq++ // invalidate any pending debounces
 		return c, c.load(), true
 	default:
 		return c, nil, true
@@ -396,6 +404,11 @@ func (c *Citations) reselectLast() tea.Cmd {
 // Update implements Pane.
 func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	switch m := msg.(type) {
+	case findDebounceMsg:
+		if m.seq == c.searchSeq {
+			return c, c.load()
+		}
+		return c, nil
 	case ResizeMsg:
 		pageSize := max(m.Height-headerRows, 1)
 		c.focusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.focusedColIdx)
