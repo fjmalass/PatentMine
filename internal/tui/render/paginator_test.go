@@ -1,6 +1,10 @@
 package render
 
-import "testing"
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func TestPaginatorMoveAndClamp(t *testing.T) {
 	p := NewPaginator(5)
@@ -103,6 +107,100 @@ func TestPaginatorEmptyList(t *testing.T) {
 	}
 	if start, end := p.Window(); start != 0 || end != 0 {
 		t.Fatalf("window = [%d,%d), want [0,0) on an empty list", start, end)
+	}
+}
+
+func TestPaginatorNavTopBottomWithRepeat(t *testing.T) {
+	p := NewPaginator(5)
+	p.SetTotal(100)
+
+	// Bare NavTop / NavBottom act like Top / Bottom.
+	p.NavBottom(1)
+	if p.Cursor() != 99 {
+		t.Fatalf("NavBottom(1) cursor = %d, want 99", p.Cursor())
+	}
+	p.NavTop(1)
+	if p.Cursor() != 0 {
+		t.Fatalf("NavTop(1) cursor = %d, want 0", p.Cursor())
+	}
+
+	// A repeat > 1 jumps to that 1-based line (vim `10G` / `10gg`).
+	p.NavBottom(10)
+	if p.Cursor() != 9 {
+		t.Fatalf("NavBottom(10) cursor = %d, want 9", p.Cursor())
+	}
+	p.NavTop(42)
+	if p.Cursor() != 41 {
+		t.Fatalf("NavTop(42) cursor = %d, want 41", p.Cursor())
+	}
+
+	// A repeat past the end clamps to the last row.
+	p.NavBottom(9999)
+	if p.Cursor() != 99 {
+		t.Fatalf("NavBottom(9999) cursor = %d, want 99", p.Cursor())
+	}
+}
+
+func TestPaginatorGotoLine(t *testing.T) {
+	p := NewPaginator(5)
+	p.SetTotal(20)
+
+	p.GotoLine(7)
+	if p.Cursor() != 6 {
+		t.Fatalf("GotoLine(7) cursor = %d, want 6", p.Cursor())
+	}
+	// Out-of-range high clamps to last.
+	p.GotoLine(500)
+	if p.Cursor() != 19 {
+		t.Fatalf("GotoLine(500) cursor = %d, want 19", p.Cursor())
+	}
+	// Zero / negative clamps to first.
+	p.GotoLine(0)
+	if p.Cursor() != 0 {
+		t.Fatalf("GotoLine(0) cursor = %d, want 0", p.Cursor())
+	}
+}
+
+func TestPaginatorHandleKeyVisualChords(t *testing.T) {
+	p := NewPaginator(5)
+	p.SetTotal(20)
+	p.GotoLine(7)
+
+	if !p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}) {
+		t.Fatal("expected g prefix to be consumed")
+	}
+	if !p.GPending() {
+		t.Fatal("expected g prefix to be pending")
+	}
+	if !p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}) {
+		t.Fatal("expected gg to be consumed")
+	}
+	if p.Cursor() != 0 {
+		t.Fatalf("gg cursor = %d, want 0", p.Cursor())
+	}
+
+	p.GotoLine(4)
+	if !p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}) {
+		t.Fatal("expected g prefix to be consumed")
+	}
+	if !p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}) {
+		t.Fatal("expected ga to be consumed")
+	}
+	start, end, active := p.VisualRange()
+	if !active || start != 0 || end != 19 {
+		t.Fatalf("ga visual range = (%d,%d,%t), want (0,19,true)", start, end, active)
+	}
+	if p.Cursor() != 19 {
+		t.Fatalf("ga cursor = %d, want 19", p.Cursor())
+	}
+
+	p.ClearVisual()
+	if !p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlA}) {
+		t.Fatal("expected ctrl+a to be consumed")
+	}
+	start, end, active = p.VisualRange()
+	if !active || start != 0 || end != 19 {
+		t.Fatalf("ctrl+a visual range = (%d,%d,%t), want (0,19,true)", start, end, active)
 	}
 }
 

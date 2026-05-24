@@ -15,9 +15,10 @@ import (
 
 // Activity shows the replay/review activity journal.
 type Activity struct {
-	theme   render.Theme
-	records []observability.Record
-	page    render.Paginator
+	theme    render.Theme
+	records  []observability.Record
+	page     render.Paginator
+	vimCount int
 }
 
 // NewActivity builds an activity journal overlay.
@@ -41,25 +42,12 @@ func (a *Activity) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if len(a.records) == 0 {
 		return a, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
-	switch msg.String() {
-	case "j", "down":
-		a.page.MoveDown(1)
+	if handleSubtableMotionKey(&a.page, msg, &a.vimCount) {
 		return a, nil, true
-	case "k", "up":
-		a.page.MoveUp(1)
-		return a, nil, true
-	case "ctrl+d", "pgdown":
-		a.page.PageDown()
-		return a, nil, true
-	case "ctrl+u", "pgup":
-		a.page.PageUp()
-		return a, nil, true
-	case "g", "home":
-		a.page.Top()
-		return a, nil, true
-	case "G", "end":
-		a.page.Bottom()
-		return a, nil, true
+	}
+
+	s := msg.String()
+	switch s {
 	case "enter":
 		rec := a.records[a.page.Cursor()]
 		if number, ok := activityPatent(rec); ok {
@@ -83,9 +71,6 @@ func (a *Activity) View(maxW, maxH int) string {
 	}
 
 	pageSize := max(maxH-4, 1)
-	a.page.SetTotal(n)
-	a.page.SetPageSize(pageSize)
-	start, end := a.page.Window()
 
 	gutterW := max(render.GutterWidth(n)-1, 1)
 	const timeW = 8
@@ -102,18 +87,7 @@ func (a *Activity) View(maxW, maxH int) string {
 		{Key: "entity", Label: "Entity", Width: entityW},
 	}
 
-	params := render.TableParams{
-		Theme:        a.theme,
-		Columns:      cols,
-		RowCount:     end - start,
-		Cursor:       a.page.CursorInPage(),
-		FocusActive:  true,
-		PrefixCursor: " >",
-		PrefixNormal: "  ",
-	}
-
-	getCell := func(rowIdx, colIdx int) string {
-		absIdx := start + rowIdx
+	getCell := func(absIdx, _ int, colIdx int) string {
 		if absIdx < 0 || absIdx >= n {
 			return ""
 		}
@@ -134,14 +108,22 @@ func (a *Activity) View(maxW, maxH int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(render.RenderTable(params, maxW, getCell))
+	b.WriteString(renderSubtable(subtableParams{
+		Theme:        a.theme,
+		Columns:      cols,
+		Page:         &a.page,
+		Total:        n,
+		PageSize:     pageSize,
+		FocusActive:  true,
+		PrefixCursor: " >",
+		PrefixNormal: "  ",
+	}, maxW, getCell))
 	b.WriteByte('\n')
 	selected := a.records[a.page.Cursor()]
 	detail := fmt.Sprintf("  %s %s", selected.Status, activitySummary(selected))
 	b.WriteString(a.theme.Dim.Render(render.Pad(detail, maxW)))
 	b.WriteByte('\n')
-	pagination := fmt.Sprintf("[%d/%d]", a.page.Cursor()+1, n)
-	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Open patent  [q/Esc] Close", pagination)
+	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Open patent  [q/Esc] Close", subtableStatus(a.page))
 	b.WriteString(a.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
 }

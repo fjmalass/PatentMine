@@ -171,8 +171,8 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 		},
 		command.NavPageDown: func(Invocation) tea.Cmd { d.page.ScrollTo(d.page.Cursor() + d.page.PageSize()); return nil },
 		command.NavPageUp:   func(Invocation) tea.Cmd { d.page.ScrollTo(d.page.Cursor() - d.page.PageSize()); return nil },
-		command.NavTop:      func(Invocation) tea.Cmd { d.page.Top(); return nil },
-		command.NavBottom:   func(Invocation) tea.Cmd { d.page.Bottom(); return nil },
+		command.NavTop:      func(inv Invocation) tea.Cmd { d.page.NavTop(inv.Repeat); return nil },
+		command.NavBottom:   func(inv Invocation) tea.Cmd { d.page.NavBottom(inv.Repeat); return nil },
 		command.Refresh:     func(Invocation) tea.Cmd { d.loading = true; return d.reload() },
 		command.CrawlFamily: func(Invocation) tea.Cmd {
 			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileFamily, false)

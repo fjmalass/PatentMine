@@ -108,6 +108,32 @@ func (p *Paginator) Bottom() {
 	p.clamp()
 }
 
+// GotoLine moves the cursor to the 1-based line n (clamped to the list).
+func (p *Paginator) GotoLine(n int) {
+	p.cursor = n - 1
+	p.clamp()
+}
+
+// NavTop implements vim `gg` / `Ngg`: bare goes to the first row, a count
+// jumps to that absolute 1-based line.
+func (p *Paginator) NavTop(repeat int) {
+	if repeat > 1 {
+		p.GotoLine(repeat)
+		return
+	}
+	p.Top()
+}
+
+// NavBottom implements vim `G` / `NG`: bare goes to the last row, a count
+// jumps to that absolute 1-based line.
+func (p *Paginator) NavBottom(repeat int) {
+	if repeat > 1 {
+		p.GotoLine(repeat)
+		return
+	}
+	p.Bottom()
+}
+
 // ScrollTo scrolls the window so index leads the visible rows, keeping the
 // cursor on index. The offset is clamped so the window never runs past the
 // list end — jump targets near the bottom still fill the page.
@@ -185,6 +211,19 @@ func (p *Paginator) ReselectLast() bool {
 	return false
 }
 
+// SelectAllVisual enters visual mode with the whole list selected.
+func (p *Paginator) SelectAllVisual() {
+	if p.total == 0 {
+		return
+	}
+	if p.visualMode {
+		p.SaveVisual()
+	}
+	p.visualMode = true
+	p.visualAnchor = 0
+	p.Bottom()
+}
+
 // IsRowSelected returns whether the absolute index is within the visual selection range.
 func (p Paginator) IsRowSelected(absIdx int) bool {
 	if !p.visualMode {
@@ -224,17 +263,24 @@ func (p Paginator) GPending() bool {
 	return p.gPending
 }
 
-// HandleKey handles standard visual mode keys on the paginator (v, g, gv, esc, q, Q).
+// HandleKey handles standard visual mode keys on the paginator (v, gg, gv, ga, esc, q, Q).
 // It returns true if the key was consumed by the paginator.
 func (p *Paginator) HandleKey(msg tea.KeyMsg) bool {
 	keyStr := msg.String()
 
-	// If 'g' prefix is pending, handle 'v' to restore visual selection,
+	// If 'g' prefix is pending, handle vim-style table chords,
 	// or clear the pending state for any other key.
 	if p.gPending {
 		p.gPending = false
-		if keyStr == "v" {
+		switch keyStr {
+		case "g":
+			p.Top()
+			return true
+		case "v":
 			p.ReselectLast()
+			return true
+		case "a":
+			p.SelectAllVisual()
 			return true
 		}
 	}
@@ -246,6 +292,10 @@ func (p *Paginator) HandleKey(msg tea.KeyMsg) bool {
 
 	case "v":
 		p.ToggleVisual()
+		return true
+
+	case "ctrl+a":
+		p.SelectAllVisual()
 		return true
 
 	case "esc", "q", "Q":

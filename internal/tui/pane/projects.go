@@ -68,8 +68,8 @@ func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch 
 		command.NavUp:       func(inv Invocation) tea.Cmd { p.page.MoveUp(inv.Repeat); return nil },
 		command.NavPageDown: func(Invocation) tea.Cmd { p.page.PageDown(); return nil },
 		command.NavPageUp:   func(Invocation) tea.Cmd { p.page.PageUp(); return nil },
-		command.NavTop:      func(Invocation) tea.Cmd { p.page.Top(); return nil },
-		command.NavBottom:   func(Invocation) tea.Cmd { p.page.Bottom(); return nil },
+		command.NavTop:      func(inv Invocation) tea.Cmd { p.page.NavTop(inv.Repeat); return nil },
+		command.NavBottom:   func(inv Invocation) tea.Cmd { p.page.NavBottom(inv.Repeat); return nil },
 		command.Refresh:     func(Invocation) tea.Cmd { p.loading = true; return p.load() },
 		command.ExportIDS:   func(Invocation) tea.Cmd { return p.exportCmd() },
 	}

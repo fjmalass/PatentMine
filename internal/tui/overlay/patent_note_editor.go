@@ -73,6 +73,7 @@ type PatentNoteEditor struct {
 	vimMode    bool      // ctrl+v toggles vim mode
 	vimInsert  bool      // true=insert, false=normal
 	vimPending rune      // non-zero when waiting for second key (g→gg, d→dd/d$/dw)
+	vimCount   int       // accumulated repeat count for the next motion (vim `10G`, `5j`)
 	undos      []vimUndo
 }
 
@@ -295,7 +296,14 @@ func (o *PatentNoteEditor) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 		o.pageVertical(patentNotePageRows / 2)
 		return o, nil, true
 	case tea.KeyRunes, tea.KeySpace:
-		switch msg.String() {
+		s := msg.String()
+		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' && (s != "0" || o.vimCount > 0) {
+			o.vimCount = o.vimCount*10 + int(s[0]-'0')
+			return o, nil, true
+		}
+		count := o.vimCount
+		o.vimCount = 0
+		switch s {
 		case "h":
 			o.moveLeft()
 		case "j":
@@ -343,6 +351,7 @@ func (o *PatentNoteEditor) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 			o.backspace()
 		case "d":
 			o.vimPending = 'd'
+			o.vimCount = count
 			return o, nil, true
 		case "D":
 			o.saveUndo()
@@ -351,24 +360,41 @@ func (o *PatentNoteEditor) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 			o.undo()
 		case "g":
 			o.vimPending = 'g'
+			o.vimCount = count
 			return o, nil, true
 		case "G":
-			o.line = len(o.lines()) - 1
-			o.column = min(o.column, len([]rune(o.lines()[o.line])))
+			o.gotoLine(count, len(o.lines())-1)
 		}
 		return o, nil, true
 	}
 	return o, nil, true
 }
 
+// gotoLine jumps to the 1-based line count, or fallback when count==0.
+// The cursor column is clamped to the target line's length.
+func (o *PatentNoteEditor) gotoLine(count, fallback int) {
+	lines := o.lines()
+	if len(lines) == 0 {
+		return
+	}
+	target := fallback
+	if count > 0 {
+		target = count - 1
+	}
+	o.line = min(max(target, 0), len(lines)-1)
+	o.column = min(o.column, len([]rune(lines[o.line])))
+}
+
 func (o *PatentNoteEditor) handleVimPending(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	switch o.vimPending {
+	pending := o.vimPending
+	o.vimPending = 0
+	count := o.vimCount
+	o.vimCount = 0
+	switch pending {
 	case 'g':
 		if msg.String() == "g" {
-			o.line = 0
-			o.column = 0
+			o.gotoLine(count, 0)
 		}
-		o.vimPending = 0
 		return o, nil, true
 	case 'd':
 		switch msg.String() {
@@ -385,10 +411,8 @@ func (o *PatentNoteEditor) handleVimPending(msg tea.KeyMsg) (Overlay, tea.Cmd, b
 			o.saveUndo()
 			o.deleteToEndOfFile()
 		}
-		o.vimPending = 0
 		return o, nil, true
 	}
-	o.vimPending = 0
 	return o, nil, true
 }
 

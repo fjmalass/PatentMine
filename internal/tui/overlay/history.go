@@ -17,6 +17,7 @@ type HistoryOverlay struct {
 	records      []observability.Record
 	projectNames map[string]string
 	page         render.Paginator
+	vimCount     int
 }
 
 // NewHistoryOverlay builds a HistoryOverlay.
@@ -50,32 +51,32 @@ func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if len(h.records) == 0 {
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
-	switch msg.String() {
-	case "j", "down":
-		h.page.MoveDown(1)
+	if h.page.HandleKey(msg) {
 		return h, nil, true
-	case "k", "up":
-		h.page.MoveUp(1)
+	}
+	if handleSubtableMotionKey(&h.page, msg, &h.vimCount) {
 		return h, nil, true
-	case "ctrl+d", "pgdown":
-		h.page.PageDown()
-		return h, nil, true
-	case "ctrl+u", "pgup":
-		h.page.PageUp()
-		return h, nil, true
-	case "g", "home":
-		h.page.Top()
-		return h, nil, true
-	case "G", "end":
-		h.page.Bottom()
-		return h, nil, true
+	}
+
+	s := msg.String()
+	switch s {
 	case "enter":
 		rec := h.records[h.page.Cursor()]
 		return h, func() tea.Msg { return HistoryReplayMsg{Record: rec} }, true
-	case "q", "esc":
+	case "q", "Q", "esc":
+		if h.page.VisualMode() {
+			h.page.SaveVisual()
+			h.page.ClearVisual()
+			return h, nil, true
+		}
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
 	if msg.Type == tea.KeyEscape {
+		if h.page.VisualMode() {
+			h.page.SaveVisual()
+			h.page.ClearVisual()
+			return h, nil, true
+		}
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
 	return h, nil, true
@@ -90,9 +91,6 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	}
 
 	pageSize := max(maxH-3, 1)
-	h.page.SetTotal(n)
-	h.page.SetPageSize(pageSize)
-	start, end := h.page.Window()
 
 	// Columns: line number, time, project, action icon, details.
 	gutterW := max(render.GutterWidth(n)-1, 1)
@@ -110,18 +108,7 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		{Key: "details", Label: "Details", Width: detailsW},
 	}
 
-	params := render.TableParams{
-		Theme:        h.theme,
-		Columns:      cols,
-		RowCount:     end - start,
-		Cursor:       h.page.CursorInPage(),
-		FocusActive:  true,
-		PrefixCursor: "→ ",
-		PrefixNormal: "  ",
-	}
-
-	getCell := func(rowIdx, colIdx int) string {
-		absIdx := start + rowIdx
+	getCell := func(absIdx, _ int, colIdx int) string {
 		if absIdx < 0 || absIdx >= n {
 			return ""
 		}
@@ -144,10 +131,22 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(render.RenderTable(params, maxW, getCell))
+	b.WriteString(renderSubtable(subtableParams{
+		Theme:        h.theme,
+		Columns:      cols,
+		Page:         &h.page,
+		Total:        n,
+		PageSize:     pageSize,
+		FocusActive:  true,
+		PrefixCursor: "→ ",
+		PrefixNormal: "  ",
+		VisualMode:   h.page.VisualMode(),
+		IsRowSelected: func(absIdx int) bool {
+			return h.page.IsRowSelected(absIdx)
+		},
+	}, maxW, getCell))
 	b.WriteString("\n")
-	pagination := fmt.Sprintf("[%d/%d]", h.page.Cursor()+1, n)
-	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Replay  [q/Esc] Close", pagination)
+	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [gg/G] Top/Bot  [v] Visual  [ga] All  [Enter] Replay  [q/Esc] Close", subtableStatus(h.page))
 	b.WriteString(h.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
 }

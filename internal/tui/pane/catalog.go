@@ -46,6 +46,17 @@ type catalogAllPagesLoadedMsg struct {
 	err       error
 }
 
+// anchorIndexLoadedMsg carries the absolute index of a target patent within
+// the current filtered list. Used to scroll back to the anchor row when the
+// user expands out of a collapsed relation view and the anchor is not on the
+// first page.
+type anchorIndexLoadedMsg struct {
+	requestID uint64
+	anchor    domain.PatentNumber
+	index     int
+	err       error
+}
+
 // HighlightState tracks the active relation highlighting.
 type HighlightState struct {
 	Group             HighlightGroup
@@ -98,6 +109,8 @@ type Catalog struct {
 	visualAnchor        int
 	allSelectedNumbers  []domain.PatentNumber
 	selectAllLoadID     uint64
+	pendingScrollAnchor domain.PatentNumber
+	findAnchorLoadID    uint64
 	lastActive          domain.PatentNumber
 	savedVisual         []domain.PatentNumber
 	savedVisualAnchor   int
@@ -152,8 +165,8 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.NavUp:        func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
 		command.NavPageDown:  func(Invocation) tea.Cmd { return c.move(c.page.PageDown) },
 		command.NavPageUp:    func(Invocation) tea.Cmd { return c.move(c.page.PageUp) },
-		command.NavTop:       func(Invocation) tea.Cmd { return c.move(c.page.Top) },
-		command.NavBottom:    func(Invocation) tea.Cmd { return c.move(c.page.Bottom) },
+		command.NavTop:       func(inv Invocation) tea.Cmd { return c.move(func() { c.page.NavTop(inv.Repeat) }) },
+		command.NavBottom:    func(inv Invocation) tea.Cmd { return c.move(func() { c.page.NavBottom(inv.Repeat) }) },
 		command.ReselectLast: func(Invocation) tea.Cmd { return c.reselectLast() },
 		command.Refresh:      func(Invocation) tea.Cmd { c.loading = true; c.clearVisual(); return c.load() },
 		command.SelectVisual: func(Invocation) tea.Cmd { return c.toggleVisual() },
@@ -527,6 +540,26 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.loading = true
 			return c, c.load()
 		}
+		if !c.pendingScrollAnchor.IsZero() {
+			anchor := c.pendingScrollAnchor
+			for i, p := range c.patents {
+				if p.Number == anchor {
+					c.pendingScrollAnchor = domain.PatentNumber{}
+					c.page.ScrollTo(m.offset + i)
+					c.log().Info("tui.relation_filter.scroll_to_anchor",
+						slog.String("anchor", anchor.Normalized()),
+						slog.Int("index", m.offset+i),
+						slog.String("source", "page"))
+					c.metrics.IncCounter("tui.relation_filter.expand_scroll.page", 1)
+					if c.page.Offset() != m.offset {
+						c.loading = true
+						return c, tea.Batch(c.load(), c.loadClassDescs())
+					}
+					return c, c.loadClassDescs()
+				}
+			}
+			return c, tea.Batch(c.findAnchorIndex(anchor, m.total), c.loadClassDescs())
+		}
 		return c, c.loadClassDescs()
 	case catalogAllPagesLoadedMsg:
 		if m.requestID != c.selectAllLoadID {
@@ -538,6 +571,30 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		c.allSelectedNumbers = m.numbers
 		return c, nil
+	case anchorIndexLoadedMsg:
+		if m.requestID != c.findAnchorLoadID {
+			return c, nil
+		}
+		c.pendingScrollAnchor = domain.PatentNumber{}
+		if m.err != nil {
+			c.log().Error("tui.relation_filter.anchor_index_load",
+				slog.String("anchor", m.anchor.Normalized()),
+				slog.String("error", m.err.Error()))
+			c.metrics.IncCounter("tui.relation_filter.expand_scroll.error", 1)
+			return c, nil
+		}
+		if m.index < 0 {
+			c.metrics.IncCounter("tui.relation_filter.expand_scroll.missing", 1)
+			return c, nil
+		}
+		c.page.ScrollTo(m.index)
+		c.log().Info("tui.relation_filter.scroll_to_anchor",
+			slog.String("anchor", m.anchor.Normalized()),
+			slog.Int("index", m.index),
+			slog.String("source", "lookup"))
+		c.metrics.IncCounter("tui.relation_filter.expand_scroll.lookup", 1)
+		c.loading = true
+		return c, c.load()
 	case catalogClassDescsMsg:
 		if m.requestID == c.classDescsID && m.err == nil {
 			c.classDescs = m.descs
@@ -753,6 +810,45 @@ func (c *Catalog) loadAllPages(total int) tea.Cmd {
 	}
 }
 
+// findAnchorIndex fetches the full filtered list to locate the absolute index
+// of anchor when it falls outside the currently loaded page.
+func (c *Catalog) findAnchorIndex(anchor domain.PatentNumber, total int) tea.Cmd {
+	requestID := nextAsyncID()
+	c.findAnchorLoadID = requestID
+	client := c.client
+	var project domain.ProjectID
+	if c.activeProject != nil {
+		project = c.activeProject.ID
+	}
+	filter := c.filter.Expression
+	search := c.filter.Search
+	sort := c.activeSort
+	asc := c.sortAscending
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentListResult
+		err := client.Call(ctx, proto.MethodPatentList,
+			proto.PatentListParams{
+				Project:       project,
+				Filter:        filter,
+				Search:        search,
+				Limit:         total,
+				Offset:        0,
+				SortColumn:    sort,
+				SortAscending: asc,
+			}, &res)
+		idx := -1
+		for i, p := range res.Patents {
+			if p.Number == anchor {
+				idx = i
+				break
+			}
+		}
+		return anchorIndexLoadedMsg{requestID: requestID, anchor: anchor, index: idx, err: err}
+	}
+}
+
 func (c *Catalog) clearVisual() {
 	c.visualMode = false
 	c.visualAnchor = 0
@@ -791,6 +887,8 @@ func (c *Catalog) toggleCitationsHighlight() tea.Cmd {
 }
 
 // setRelationFilter collapses or expands the view to highlighted relations.
+// When expanding (active=false), the cursor is steered back to the anchor row
+// after the load completes so the user lands on the patent they started from.
 func (c *Catalog) setRelationFilter(active bool) tea.Cmd {
 	if c.activeHighlight.Anchor.IsZero() {
 		return status(text.StatusUsage, true, "No relationship highlight active to filter")
@@ -800,6 +898,9 @@ func (c *Catalog) setRelationFilter(active bool) tea.Cmd {
 	}
 	c.activeHighlight.FilterToRelations = active
 	c.page.Top()
+	if !active {
+		c.pendingScrollAnchor = c.activeHighlight.Anchor
+	}
 	c.loading = true
 	return c.load()
 }

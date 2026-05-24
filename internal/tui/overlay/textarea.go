@@ -28,6 +28,7 @@ type TextArea struct {
 	vimMode    bool
 	vimInsert  bool
 	vimPending rune
+	vimCount   int
 	undos      []vimUndo
 }
 
@@ -181,7 +182,14 @@ func (t *TextArea) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		t.moveVertical(1)
 		return t, nil, true
 	case tea.KeyRunes, tea.KeySpace:
-		switch msg.String() {
+		s := msg.String()
+		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' && (s != "0" || t.vimCount > 0) {
+			t.vimCount = t.vimCount*10 + int(s[0]-'0')
+			return t, nil, true
+		}
+		count := t.vimCount
+		t.vimCount = 0
+		switch s {
 		case "h":
 			t.moveLeft()
 		case "l":
@@ -226,7 +234,10 @@ func (t *TextArea) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		case "$":
 			t.column = len([]rune(t.lines()[t.line]))
 		case "g", "d":
-			t.vimPending = []rune(msg.String())[0]
+			t.vimPending = []rune(s)[0]
+			t.vimCount = count // preserve count across the prefix
+		case "G":
+			t.gotoLine(count, len(t.lines())-1)
 		case "w":
 			t.moveWordForward()
 		case "b":
@@ -239,17 +250,33 @@ func (t *TextArea) handleVimKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	return t, nil, true
 }
 
+// gotoLine jumps to the 1-based line count, or fallback when count==0.
+// The cursor column is clamped to the target line's length.
+func (t *TextArea) gotoLine(count, fallback int) {
+	lines := t.lines()
+	if len(lines) == 0 {
+		return
+	}
+	target := fallback
+	if count > 0 {
+		target = count - 1
+	}
+	t.line = min(max(target, 0), len(lines)-1)
+	t.column = min(t.column, len([]rune(lines[t.line])))
+}
+
 func (t *TextArea) handleVimPending(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	pending := t.vimPending
 	t.vimPending = 0
+	count := t.vimCount
+	t.vimCount = 0
 	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 {
 		return t, nil, true
 	}
 	switch pending {
 	case 'g':
 		if msg.String() == "g" {
-			t.line = 0
-			t.column = min(t.column, len([]rune(t.lines()[t.line])))
+			t.gotoLine(count, 0)
 		}
 	case 'd':
 		t.saveUndo()

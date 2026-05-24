@@ -35,13 +35,14 @@ type AssigneeStatsOverlay struct {
 	loading  bool
 	err      error
 
-	focus          statsFocus
-	patents        []domain.PatentRow
-	patentsPage    render.Paginator
-	patentsLoading bool
-	patentsErr     error
-	loadSeq        uint64
-	loadID         uint64
+	focus           statsFocus
+	patents         []domain.PatentRow
+	patentsPage     render.Paginator
+	patentsVimCount int
+	patentsLoading  bool
+	patentsErr      error
+	loadSeq         uint64
+	loadID          uint64
 
 	activeSort    domain.SortColumn
 	sortAscending bool
@@ -247,6 +248,14 @@ func (o *AssigneeStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 		return o, nil, true
 	}
 
+	before := o.patentsPage.Offset()
+	if handleSubtableMotionKey(&o.patentsPage, msg, &o.patentsVimCount) {
+		if o.patentsPage.Offset() != before {
+			return o, o.reloadPatentsCmd(), true
+		}
+		return o, nil, true
+	}
+
 	if len(o.patents) == 0 {
 		return o, nil, true
 	}
@@ -259,46 +268,6 @@ func (o *AssigneeStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 	switch msg.String() {
 	case "l", "enter":
 		return o, func() tea.Msg { return OpenPatentDetailMsg{Number: selectedPatent.Number} }, true
-	case "j", "down":
-		before := o.patentsPage.Offset()
-		o.patentsPage.MoveDown(1)
-		if o.patentsPage.Offset() != before {
-			o.loadSeq++
-			o.loadID = o.loadSeq
-			o.patentsLoading = true
-			return o, o.loadPatentsCmd(o.stats[o.selected].Assignee, o.loadID), true
-		}
-		return o, nil, true
-	case "k", "up":
-		before := o.patentsPage.Offset()
-		o.patentsPage.MoveUp(1)
-		if o.patentsPage.Offset() != before {
-			o.loadSeq++
-			o.loadID = o.loadSeq
-			o.patentsLoading = true
-			return o, o.loadPatentsCmd(o.stats[o.selected].Assignee, o.loadID), true
-		}
-		return o, nil, true
-	case "ctrl+d":
-		before := o.patentsPage.Offset()
-		o.patentsPage.PageDown()
-		if o.patentsPage.Offset() != before {
-			o.loadSeq++
-			o.loadID = o.loadSeq
-			o.patentsLoading = true
-			return o, o.loadPatentsCmd(o.stats[o.selected].Assignee, o.loadID), true
-		}
-		return o, nil, true
-	case "ctrl+u":
-		before := o.patentsPage.Offset()
-		o.patentsPage.PageUp()
-		if o.patentsPage.Offset() != before {
-			o.loadSeq++
-			o.loadID = o.loadSeq
-			o.patentsLoading = true
-			return o, o.loadPatentsCmd(o.stats[o.selected].Assignee, o.loadID), true
-		}
-		return o, nil, true
 	case "s":
 		numbers := o.selections()
 		if len(numbers) == 0 {
@@ -461,12 +430,28 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	} else {
 		cols := o.currentCols()
-		startPat, endPat := o.patentsPage.Window()
-		params := render.TableParams{Theme: o.theme, Columns: cols, RowCount: endPat - startPat, Cursor: o.patentsPage.Cursor() - startPat, FocusedColIdx: o.focusedColIdx, ActiveSort: string(o.activeSort), SortAscending: o.sortAscending, FocusActive: o.focus == focusPatents, PrefixCursor: "→ ", PrefixNormal: "  ", VisualMode: o.patentsPage.VisualMode(), IsRowSelected: func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) }, IsRowMarked: func(rowIdx int) bool {
-			absIdx := startPat + rowIdx
-			return absIdx >= 0 && absIdx < len(o.patents) && o.patents[absIdx].Number == o.patent.Number
-		}}
-		tableStr := render.RenderTable(params, targetW, func(rowIdx, colIdx int) string {
+		offset := o.patentsPage.Offset()
+		tableStr := renderSubtable(subtableParams{
+			Theme:         o.theme,
+			Columns:       cols,
+			Page:          &o.patentsPage,
+			Total:         o.patentsPage.Total(),
+			PageSize:      patentsH,
+			FocusedColIdx: o.focusedColIdx,
+			ActiveSort:    string(o.activeSort),
+			SortAscending: o.sortAscending,
+			FocusActive:   o.focus == focusPatents,
+			PrefixCursor:  "→ ",
+			PrefixNormal:  "  ",
+			VisualMode:    o.patentsPage.VisualMode(),
+			IsRowSelected: func(absIdx int) bool {
+				return o.patentsPage.IsRowSelected(absIdx)
+			},
+			IsRowMarked: func(absIdx int) bool {
+				idx := absIdx - offset
+				return idx >= 0 && idx < len(o.patents) && o.patents[idx].Number == o.patent.Number
+			},
+		}, targetW, func(_ int, rowIdx, colIdx int) string {
 			if rowIdx < 0 || rowIdx >= len(o.patents) {
 				return ""
 			}
@@ -508,13 +493,10 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 		status := fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))
 		b.WriteString(o.theme.Dim.Render(render.Truncate(fmt.Sprintf("%s  [Tab/l/→/Enter] Focus Patents  [j/k/↑/↓] Select Assignee  [q/Q/Esc] Close", status), targetW)))
 	} else {
-		status := "[0/0]"
-		if o.patentsPage.Total() > 0 {
-			status = fmt.Sprintf("[%d/%d]", o.patentsPage.Cursor()+1, o.patentsPage.Total())
-		}
-		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Assignees  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
+		status := subtableStatus(o.patentsPage)
+		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Assignees  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
 		if o.patentsPage.VisualMode() {
-			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
+			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
 		}
 		b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 	}
@@ -531,6 +513,19 @@ func (o *AssigneeStatsOverlay) loadStatsCmd() tea.Cmd {
 		}
 		return loadedAssigneeStatsMsg{stats: res.Stats}
 	}
+}
+
+func (o *AssigneeStatsOverlay) reloadPatentsCmd() tea.Cmd {
+	o.loadSeq++
+	o.loadID = o.loadSeq
+	o.patentsLoading = true
+	o.patentsErr = nil
+
+	assignee := ""
+	if len(o.stats) > 0 && o.selected >= 0 && o.selected < len(o.stats) {
+		assignee = o.stats[o.selected].Assignee
+	}
+	return o.loadPatentsCmd(assignee, o.loadID)
 }
 
 func (o *AssigneeStatsOverlay) loadPatentsCmd(assignee string, requestID uint64) tea.Cmd {

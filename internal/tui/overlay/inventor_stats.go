@@ -45,46 +45,47 @@ const statsTableMargin = 2
 
 // InventorStatsOverlay presents interactive statistics for the patent's inventors.
 type InventorStatsOverlay struct {
-	client         *rpc.Client
-	theme          render.Theme
-	catalog        *text.Catalog
-	patent         domain.Patent
-	project        domain.ProjectID
-	stats          []domain.InventorStats
-	selected       int
-	loading        bool
-	err            error
+	client   *rpc.Client
+	theme    render.Theme
+	catalog  *text.Catalog
+	patent   domain.Patent
+	project  domain.ProjectID
+	stats    []domain.InventorStats
+	selected int
+	loading  bool
+	err      error
 
 	// Dual-pane focus, pagination, and state
-	focus          statsFocus
-	patents        []domain.PatentRow
-	patentsPage    render.Paginator
-	patentsLoading bool
-	patentsErr     error
-	loadSeq        uint64
-	loadID         uint64
+	focus           statsFocus
+	patents         []domain.PatentRow
+	patentsPage     render.Paginator
+	patentsVimCount int
+	patentsLoading  bool
+	patentsErr      error
+	loadSeq         uint64
+	loadID          uint64
 
 	// Sorting and column navigation
-	activeSort     domain.SortColumn
-	sortAscending  bool
-	focusedColIdx  int
-	lastWidth      int
+	activeSort    domain.SortColumn
+	sortAscending bool
+	focusedColIdx int
+	lastWidth     int
 }
 
 // NewInventorStatsOverlay initializes and triggers an async query for inventor stats.
 func NewInventorStatsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID, startFocusPatents bool) (*InventorStatsOverlay, tea.Cmd) {
 	o := &InventorStatsOverlay{
-		client:         client,
-		theme:          theme,
-		catalog:        catalog,
-		patent:         patent,
-		project:        project,
-		loading:        true,
-		patentsPage:    render.NewPaginator(5), // Initial visible size, dynamically updated on View / resize
-		activeSort:     domain.SortByNumber,
-		sortAscending:  true,
-		focusedColIdx:  -1,
-		lastWidth:      90,
+		client:        client,
+		theme:         theme,
+		catalog:       catalog,
+		patent:        patent,
+		project:       project,
+		loading:       true,
+		patentsPage:   render.NewPaginator(5), // Initial visible size, dynamically updated on View / resize
+		activeSort:    domain.SortByNumber,
+		sortAscending: true,
+		focusedColIdx: -1,
+		lastWidth:     90,
 	}
 	if startFocusPatents {
 		o.focus = focusPatents
@@ -276,6 +277,14 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			return o, nil, true
 		}
 
+		before := o.patentsPage.Offset()
+		if handleSubtableMotionKey(&o.patentsPage, msg, &o.patentsVimCount) {
+			if o.patentsPage.Offset() != before {
+				return o, o.reloadPatentsCmd(), true
+			}
+			return o, nil, true
+		}
+
 		// 2. Keys that DO require patents to be populated
 		if len(o.patents) == 0 {
 			return o, nil, true
@@ -292,62 +301,6 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			return o, func() tea.Msg {
 				return OpenPatentDetailMsg{Number: selectedPatent.Number}
 			}, true
-		case "j", "down":
-			before := o.patentsPage.Offset()
-			o.patentsPage.MoveDown(1)
-			if o.patentsPage.Offset() != before {
-				o.loadSeq++
-				o.loadID = o.loadSeq
-				o.patentsLoading = true
-				var inventor string
-				if len(o.stats) > 0 && o.selected >= 0 && o.selected < len(o.stats) {
-					inventor = o.stats[o.selected].Inventor
-				}
-				return o, o.loadPatentsCmd(inventor, o.loadID), true
-			}
-			return o, nil, true
-		case "k", "up":
-			before := o.patentsPage.Offset()
-			o.patentsPage.MoveUp(1)
-			if o.patentsPage.Offset() != before {
-				o.loadSeq++
-				o.loadID = o.loadSeq
-				o.patentsLoading = true
-				var inventor string
-				if len(o.stats) > 0 && o.selected >= 0 && o.selected < len(o.stats) {
-					inventor = o.stats[o.selected].Inventor
-				}
-				return o, o.loadPatentsCmd(inventor, o.loadID), true
-			}
-			return o, nil, true
-		case "ctrl+d":
-			before := o.patentsPage.Offset()
-			o.patentsPage.PageDown()
-			if o.patentsPage.Offset() != before {
-				o.loadSeq++
-				o.loadID = o.loadSeq
-				o.patentsLoading = true
-				var inventor string
-				if len(o.stats) > 0 && o.selected >= 0 && o.selected < len(o.stats) {
-					inventor = o.stats[o.selected].Inventor
-				}
-				return o, o.loadPatentsCmd(inventor, o.loadID), true
-			}
-			return o, nil, true
-		case "ctrl+u":
-			before := o.patentsPage.Offset()
-			o.patentsPage.PageUp()
-			if o.patentsPage.Offset() != before {
-				o.loadSeq++
-				o.loadID = o.loadSeq
-				o.patentsLoading = true
-				var inventor string
-				if len(o.stats) > 0 && o.selected >= 0 && o.selected < len(o.stats) {
-					inventor = o.stats[o.selected].Inventor
-				}
-				return o, o.loadPatentsCmd(inventor, o.loadID), true
-			}
-			return o, nil, true
 		case "s":
 			numbers := o.selections()
 			if len(numbers) == 0 {
@@ -538,13 +491,13 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	} else {
 		cols := o.currentCols()
-		startPat, endPat := o.patentsPage.Window()
-
-		params := render.TableParams{
+		offset := o.patentsPage.Offset()
+		tableStr := renderSubtable(subtableParams{
 			Theme:         o.theme,
 			Columns:       cols,
-			RowCount:      endPat - startPat,
-			Cursor:        o.patentsPage.Cursor() - startPat,
+			Page:          &o.patentsPage,
+			Total:         o.patentsPage.Total(),
+			PageSize:      patentsH,
 			FocusedColIdx: o.focusedColIdx,
 			ActiveSort:    string(o.activeSort),
 			SortAscending: o.sortAscending,
@@ -552,19 +505,17 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 			PrefixCursor:  "→ ",
 			PrefixNormal:  "  ",
 			VisualMode:    o.patentsPage.VisualMode(),
-			IsRowSelected: func(rowIdx int) bool {
-				return o.patentsPage.IsRowSelected(startPat + rowIdx)
+			IsRowSelected: func(absIdx int) bool {
+				return o.patentsPage.IsRowSelected(absIdx)
 			},
-			IsRowMarked: func(rowIdx int) bool {
-				absIdx := startPat + rowIdx
-				if absIdx < 0 || absIdx >= len(o.patents) {
+			IsRowMarked: func(absIdx int) bool {
+				idx := absIdx - offset
+				if idx < 0 || idx >= len(o.patents) {
 					return false
 				}
-				return o.patents[absIdx].Number == o.patent.Number
+				return o.patents[idx].Number == o.patent.Number
 			},
-		}
-
-		tableStr := render.RenderTable(params, targetW, func(rowIdx, colIdx int) string {
+		}, targetW, func(_ int, rowIdx, colIdx int) string {
 			if rowIdx < 0 || rowIdx >= len(o.patents) {
 				return ""
 			}
@@ -614,14 +565,11 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 		}
 		footnote = fmt.Sprintf("%s  [Tab/l/→/Enter] Focus Patents  [j/k/↑/↓] Select Inventor  [q/Q/Esc] Close", status)
 	} else {
-		status := "[0/0]"
-		if o.patentsPage.Total() > 0 {
-			status = fmt.Sprintf("[%d/%d]", o.patentsPage.Cursor()+1, o.patentsPage.Total())
-		}
+		status := subtableStatus(o.patentsPage)
 		if o.patentsPage.VisualMode() {
-			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
+			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
 		} else {
-			footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
+			footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
 		}
 	}
 	b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
@@ -644,6 +592,19 @@ func (o *InventorStatsOverlay) loadStatsCmd() tea.Cmd {
 		}
 		return loadedInventorStatsMsg{stats: res.Stats}
 	}
+}
+
+func (o *InventorStatsOverlay) reloadPatentsCmd() tea.Cmd {
+	o.loadSeq++
+	o.loadID = o.loadSeq
+	o.patentsLoading = true
+	o.patentsErr = nil
+
+	var inventor string
+	if len(o.stats) > 0 && o.selected >= 0 && o.selected < len(o.stats) {
+		inventor = o.stats[o.selected].Inventor
+	}
+	return o.loadPatentsCmd(inventor, o.loadID)
 }
 
 func (o *InventorStatsOverlay) loadPatentsCmd(inventor string, requestID uint64) tea.Cmd {
