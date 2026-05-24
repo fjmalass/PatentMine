@@ -58,6 +58,7 @@ type PatentNoteEditor struct {
 
 	patent       domain.Patent
 	note         *domain.PatentNote
+	openedAt     time.Time
 	value        string
 	line         int
 	column       int
@@ -75,7 +76,7 @@ type PatentNoteEditor struct {
 }
 
 func NewPatentNoteEditor(client *rpc.Client, theme render.Theme, project domain.ProjectID, number domain.PatentNumber) *PatentNoteEditor {
-	return &PatentNoteEditor{client: client, theme: theme, project: project, number: number, loading: true}
+	return &PatentNoteEditor{client: client, theme: theme, project: project, number: number, loading: true, openedAt: time.Now()}
 }
 
 func (o *PatentNoteEditor) Title() string { return "Patent Notes · " + o.number.String() }
@@ -410,7 +411,7 @@ func (o *PatentNoteEditor) View(maxW, maxH int) string {
 	var b strings.Builder
 	b.WriteString(o.theme.Header.Render(render.Truncate(o.number.String()+" · "+o.patent.Title, maxW)))
 	b.WriteString("\n")
-	b.WriteString(o.theme.Dim.Render(render.Truncate(o.metaLine(), maxW)))
+	b.WriteString(o.theme.Dim.Render(render.Truncate(o.infoLine(), maxW)))
 	b.WriteString("\n")
 	if o.msg != "" {
 		b.WriteString(o.theme.OK.Render(render.Truncate(o.msg, maxW)))
@@ -478,8 +479,7 @@ func (o *PatentNoteEditor) saveCmd() tea.Cmd {
 		return nil
 	}
 	if o.note == nil {
-		now := time.Now().Format(patentNoteTimeBracket)
-		markdown = now + " " + markdown
+		markdown = o.openedAt.Format(patentNoteTimeBracket) + " " + markdown
 	}
 	note := domain.PatentNote{Project: o.project, Patent: o.number, Markdown: markdown}
 	if o.note != nil {
@@ -514,7 +514,7 @@ func (o *PatentNoteEditor) lines() []string {
 	return lines
 }
 
-func (o *PatentNoteEditor) metaLine() string {
+func (o *PatentNoteEditor) infoLine() string {
 	parts := []string{"project " + string(o.project)}
 	if o.note != nil {
 		if !o.note.AddedAt.IsZero() {
@@ -523,6 +523,8 @@ func (o *PatentNoteEditor) metaLine() string {
 		if !o.note.UpdatedAt.IsZero() {
 			parts = append(parts, "updated "+o.note.UpdatedAt.Format(patentNoteTimeLayout))
 		}
+	} else {
+		parts = append(parts, "new note · "+o.openedAt.Format(patentNoteTimeLayout))
 	}
 	if o.dirty {
 		parts = append(parts, "modified")

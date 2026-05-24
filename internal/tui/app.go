@@ -134,6 +134,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.HistoryForward:             (*App).cmdHistoryForward,
 	command.OpenHistory:                (*App).cmdOpenHistory,
 	command.OpenActivity:               (*App).cmdOpenActivity,
+	command.OpenAllNotes:               (*App).cmdOpenAllNotes,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every

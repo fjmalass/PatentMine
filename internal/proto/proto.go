@@ -45,6 +45,7 @@ const (
 	MethodPatentNoteGet             Method = "patent.note.get"
 	MethodPatentNoteSave            Method = "patent.note.save"
 	MethodPatentNoteDelete          Method = "patent.note.delete"
+	MethodPatentNoteList            Method = "patent.note.list"
 	MethodMetricsGet                Method = "metrics.get"
 	MethodTagCreate                 Method = "tag.create"
 	MethodTagList                   Method = "tag.list"
@@ -444,6 +445,25 @@ type PatentNoteSaveParams struct {
 // PatentNoteResult carries one project-scoped patent note.
 type PatentNoteResult struct {
 	Note domain.PatentNote `json:"note"`
+}
+
+// NoteSortBy names how a patent note listing is ordered.
+type NoteSortBy string
+
+const (
+	NoteSortByDate   NoteSortBy = "date"
+	NoteSortByPatent NoteSortBy = "patent"
+)
+
+// PatentNoteListParams filters and sorts a patent note listing.
+type PatentNoteListParams struct {
+	Project domain.ProjectID `json:"project"`
+	SortBy  NoteSortBy       `json:"sort_by"`
+}
+
+// PatentNoteListResult carries every note for a project.
+type PatentNoteListResult struct {
+	Notes []domain.PatentNote `json:"notes"`
 }
 
 // MetricsResult carries the daemon's current in-memory timing/counter snapshot.

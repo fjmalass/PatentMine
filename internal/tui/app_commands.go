@@ -808,3 +808,7 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 	return a, nil
 }
 
+func (a *App) cmdOpenAllNotes(invocation) (tea.Model, tea.Cmd) {
+	return a.pushPane(pane.NewAllNotes(a.client, a.theme, a.activeProject))
+}
+

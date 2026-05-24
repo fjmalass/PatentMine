@@ -132,10 +132,15 @@ const (
 	HistoryForward ID = "history.forward"
 	OpenHistory    ID = "view.history"
 	OpenActivity   ID = "view.activity"
+
+	// All-notes pane.
+	OpenAllNotes    ID = "view.all-notes"
+	NotesSortToggle ID = "notes.sort-toggle"
+	NotesExportMD   ID = "notes.export-md"
 )
 
 // listScopes are the scopes that behave as scrollable lists.
-var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText}
+var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText, ScopeNotes}
 
 // patentScopes are the scopes where a patent is selected and can be acted on.
 var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}
@@ -181,6 +186,9 @@ func Default() (*Registry, error) {
 		Command{ID: HistoryForward, Name: "history.forward", Aliases: []string{"forward-history"}, Usage: ":history.forward", Kind: KindView},
 		Command{ID: OpenHistory, Name: "open.history", Aliases: []string{"history", "visits"}, Usage: ":open.history", Kind: KindView},
 		Command{ID: OpenActivity, Name: "open.activity", Aliases: []string{"activity", "replay"}, Usage: ":open.activity", Kind: KindView},
+		Command{ID: OpenAllNotes, Name: "open.notes", Aliases: []string{"all-notes"}, Usage: ":open.notes", Kind: KindView},
+		Command{ID: NotesSortToggle, Kind: KindView, Scopes: []Scope{ScopeNotes}},
+		Command{ID: NotesExportMD, Name: "notes.export", Aliases: []string{"export-notes"}, Usage: ":notes.export", Kind: KindView, Scopes: []Scope{ScopeNotes}},
 		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects, ScopeIDS}},
 		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects}},
 		Command{ID: OpenCommand, Kind: KindView},

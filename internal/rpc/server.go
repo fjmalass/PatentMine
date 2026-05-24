@@ -67,6 +67,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodPatentNoteGet:             s.patentNoteGet,
 		proto.MethodPatentNoteSave:            s.patentNoteSave,
 		proto.MethodPatentNoteDelete:          s.patentNoteDelete,
+		proto.MethodPatentNoteList:            s.patentNoteList,
 		proto.MethodMetricsGet:                s.metricsGet,
 		proto.MethodTagCreate:                 s.tagCreate,
 		proto.MethodTagList:                   s.tagList,
@@ -762,6 +763,19 @@ func (s *Server) patentNoteDelete(ctx context.Context, raw json.RawMessage) (any
 		return nil, err
 	}
 	return proto.Empty{}, nil
+}
+
+func (s *Server) patentNoteList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentNoteListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	sortByDate := p.SortBy != proto.NoteSortByPatent
+	notes, err := s.engine.ListPatentNotes(ctx, p.Project, sortByDate)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentNoteListResult{Notes: notes}, nil
 }
 
 func (s *Server) metricsGet(context.Context, json.RawMessage) (any, error) {

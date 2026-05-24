@@ -111,6 +111,7 @@ func Default() *Keymaps {
 		"ctrl+right": command.HistoryForward,
 		"H":          command.OpenHistory,
 		"A":          command.OpenActivity,
+		"Z":          command.OpenAllNotes,
 	})
 
 	catalog := NewLayer("catalog", false).
@@ -214,6 +215,18 @@ func Default() *Keymaps {
 			"ctrl+r": command.Refresh,
 		})
 
+	notes := NewLayer("notes", false).
+		BindAll(listMotions()).
+		BindAll(map[string]command.ID{
+			"s":      command.NotesSortToggle,
+			"e":      command.NotesExportMD,
+			"enter":  command.OpenPatentNote,
+			"N":      command.OpenPatentNote,
+			"h":      command.Back,
+			"left":   command.Back,
+			"ctrl+r": command.Refresh,
+		})
+
 	// The overlay layer is composed directly on top of the global base while an
 	// overlay is focused — the App leaves the pane layer out entirely, so the
 	// pane's bindings are inactive while only the global ones remain.
@@ -253,6 +266,7 @@ func Default() *Keymaps {
 			command.ScopeIDS:       ids,
 			command.ScopeProjects:  projects,
 			command.ScopeFullText:  fullText,
+			command.ScopeNotes:     notes,
 			command.ScopeOverlay:   overlay,
 		},
 	}

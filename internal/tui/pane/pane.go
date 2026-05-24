@@ -209,6 +209,7 @@ func PaneHandlers() map[command.Scope][]command.ID {
 		NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		NewProjects(nil, theme, "", ""),
 		NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
+		NewAllNotes(nil, theme, nil),
 	}
 	out := make(map[command.Scope][]command.ID, len(panes))
 	for _, p := range panes {

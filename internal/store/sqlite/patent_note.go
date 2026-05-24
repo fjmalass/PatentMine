@@ -56,6 +56,33 @@ func scanPatentNote(s rowScanner) (domain.PatentNote, error) {
 	return note, nil
 }
 
+// ListPatentNotes returns all notes for a project. When sortByDate is true the
+// results are ordered by updated_at DESC; otherwise by patent_number ASC.
+func (r *Repo) ListPatentNotes(ctx context.Context, project domain.ProjectID, sortByDate bool) (notes []domain.PatentNote, err error) {
+	defer r.observeDuration("list_patent_notes", time.Now(), &err)
+	orderClause := "ORDER BY patent_number ASC"
+	if sortByDate {
+		orderClause = "ORDER BY updated_at DESC"
+	}
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT project_id, patent_number, markdown, added_at, updated_at
+		 FROM project_patent_note
+		 WHERE project_id = ? `+orderClause,
+		string(project))
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list patent notes %s: %w", project, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		note, err := scanPatentNote(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan patent note: %w", err)
+		}
+		notes = append(notes, note)
+	}
+	return notes, rows.Err()
+}
+
 // SavePatentNote inserts or updates one project-scoped patent note.
 func (r *Repo) SavePatentNote(ctx context.Context, note domain.PatentNote) (saved domain.PatentNote, err error) {
 	defer r.observeDuration("save_patent_note", time.Now(), &err)

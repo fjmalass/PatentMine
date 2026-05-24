@@ -43,6 +43,10 @@ const (
 	StatusClipboardFailed         Key = "status.clipboard_failed"
 	StatusExportFailed            Key = "status.export_failed"
 	StatusExportDone              Key = "status.export_done"
+	StatusNotesExportDone         Key = "status.notes_export_done"
+	StatusNotesExportFailed       Key = "status.notes_export_failed"
+	StatusNotesLoadFailed         Key = "status.notes_load_failed"
+	StatusNotesSorted             Key = "status.notes_sorted"
 	StatusProjectCreateFailed     Key = "status.project_create_failed"
 	StatusProjectCreated          Key = "status.project_created"
 	StatusProjectNameEmpty        Key = "status.project_name_empty"
@@ -246,6 +250,9 @@ var cmdStrings = map[string][2]string{
 	"history.back":           {"History back", "Go back to the previously viewed patent details."},
 	"history.forward":        {"History forward", "Go forward in the history of viewed patent details."},
 	"view.history":           {"History", "Open the interactive history popup overlay."},
+	"view.all-notes":         {"All notes", "Open the all-notes pane listing every project note with sort and export."},
+	"notes.sort-toggle":      {"Sort notes", "Toggle note list sort between date (most recent) and patent number."},
+	"notes.export-md":        {"Export notes", "Export all project notes to a Markdown file in your home directory."},
 }
 
 // englishNamed is the English text for every named key.
@@ -282,6 +289,10 @@ var englishNamed = map[Key]string{
 	StatusSetState:                "set %s to %s review state in %s",
 	StatusExportFailed:            "IDS export failed: %s",
 	StatusExportDone:              "IDS for %q: %d disclosed reference(s)",
+	StatusNotesExportDone:         "exported %d note(s) to %s",
+	StatusNotesExportFailed:       "notes export failed: %s",
+	StatusNotesLoadFailed:         "load notes failed: %s",
+	StatusNotesSorted:             "sorted by %s",
 	StatusProjectCreateFailed:     "create project failed: %s",
 	StatusProjectCreated:          "created project %s",
 	StatusProjectNameEmpty:        "project name cannot be empty",

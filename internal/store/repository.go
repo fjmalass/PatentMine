@@ -167,6 +167,8 @@ type Repository interface {
 
 	// PatentNote returns one project-scoped patent note.
 	PatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.PatentNote, error)
+	// ListPatentNotes returns all project-scoped notes sorted by date (updated_at DESC) or patent number.
+	ListPatentNotes(ctx context.Context, project domain.ProjectID, sortByDate bool) ([]domain.PatentNote, error)
 	// SavePatentNote inserts or updates one project-scoped patent note.
 	SavePatentNote(ctx context.Context, note domain.PatentNote) (domain.PatentNote, error)
 	// DeletePatentNote removes one project-scoped patent note.

@@ -48,6 +48,15 @@ func (e *Engine) SavePatentNote(ctx context.Context, note domain.PatentNote) (sa
 	return saved, nil
 }
 
+// ListPatentNotes returns all notes for a project, sorted by date or patent number.
+func (e *Engine) ListPatentNotes(ctx context.Context, project domain.ProjectID, sortByDate bool) (notes []domain.PatentNote, err error) {
+	defer e.observeDuration("engine.list_patent_notes", time.Now(), &err)
+	if project == "" {
+		return nil, nil
+	}
+	return e.repo.ListPatentNotes(ctx, project, sortByDate)
+}
+
 // DeletePatentNote removes one project-scoped patent note.
 func (e *Engine) DeletePatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
 	defer e.observeDuration("engine.delete_patent_note", time.Now(), &err)
