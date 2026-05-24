@@ -67,6 +67,7 @@ type PatentNoteEditor struct {
 	loadErr      string
 	msg          string
 	dirty        bool
+	modifiedAt   time.Time
 	confirmClear bool
 
 	vimMode    bool      // ctrl+v toggles vim mode
@@ -514,6 +515,13 @@ func (o *PatentNoteEditor) lines() []string {
 	return lines
 }
 
+func (o *PatentNoteEditor) markDirty() {
+	if !o.dirty {
+		o.modifiedAt = time.Now()
+	}
+	o.markDirty()
+}
+
 func (o *PatentNoteEditor) infoLine() string {
 	parts := []string{"project " + string(o.project)}
 	if o.note != nil {
@@ -527,7 +535,7 @@ func (o *PatentNoteEditor) infoLine() string {
 		parts = append(parts, "new note · "+o.openedAt.Format(patentNoteTimeLayout))
 	}
 	if o.dirty {
-		parts = append(parts, "modified")
+		parts = append(parts, "modified "+o.modifiedAt.Format(patentNoteTimeLayout))
 	}
 	return strings.Join(parts, "  ·  ")
 }
@@ -650,7 +658,7 @@ func (o *PatentNoteEditor) insertText(s string) {
 		lines[o.line] = string(runes[:col]) + s + string(runes[col:])
 		o.value = strings.Join(lines, "\n")
 		o.column += len([]rune(s))
-		o.dirty = true
+		o.markDirty()
 		return
 	}
 	inserted := make([]string, 0, len(parts))
@@ -663,7 +671,7 @@ func (o *PatentNoteEditor) insertText(s string) {
 	o.value = strings.Join(lines, "\n")
 	o.line += len(inserted) - 1
 	o.column = len([]rune(parts[len(parts)-1]))
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) backspace() {
@@ -677,7 +685,7 @@ func (o *PatentNoteEditor) backspace() {
 		lines[o.line] = string(append(runes[:col-1], runes[col:]...))
 		o.column--
 		o.value = strings.Join(lines, "\n")
-		o.dirty = true
+		o.markDirty()
 		return
 	}
 	prev := []rune(lines[o.line-1])
@@ -686,7 +694,7 @@ func (o *PatentNoteEditor) backspace() {
 	o.line--
 	o.column = len(prev)
 	o.value = strings.Join(lines, "\n")
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) deleteForward() {
@@ -696,7 +704,7 @@ func (o *PatentNoteEditor) deleteForward() {
 	if col < len(runes) {
 		lines[o.line] = string(append(runes[:col], runes[col+1:]...))
 		o.value = strings.Join(lines, "\n")
-		o.dirty = true
+		o.markDirty()
 		return
 	}
 	if o.line+1 >= len(lines) {
@@ -705,7 +713,7 @@ func (o *PatentNoteEditor) deleteForward() {
 	lines[o.line] += lines[o.line+1]
 	lines = append(lines[:o.line+1], lines[o.line+2:]...)
 	o.value = strings.Join(lines, "\n")
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) moveLeft() {
@@ -762,7 +770,7 @@ func (o *PatentNoteEditor) undo() {
 	o.value = e.value
 	o.line = e.line
 	o.column = e.column
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) moveWordForward() {
@@ -842,7 +850,7 @@ func (o *PatentNoteEditor) deleteCurrentLine() {
 		o.value = ""
 		o.line = 0
 		o.column = 0
-		o.dirty = true
+		o.markDirty()
 		return
 	}
 	lines = append(lines[:o.line], lines[o.line+1:]...)
@@ -851,7 +859,7 @@ func (o *PatentNoteEditor) deleteCurrentLine() {
 	}
 	o.column = 0
 	o.value = strings.Join(lines, "\n")
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) deleteToEndOfLine() {
@@ -860,7 +868,7 @@ func (o *PatentNoteEditor) deleteToEndOfLine() {
 	col := min(o.column, len(runes))
 	lines[o.line] = string(runes[:col])
 	o.value = strings.Join(lines, "\n")
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) deleteWordForward() {
@@ -880,7 +888,7 @@ func (o *PatentNoteEditor) deleteWordForward() {
 	}
 	lines[o.line] = string(runes[:col]) + string(runes[end:])
 	o.value = strings.Join(lines, "\n")
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) deleteToEndOfFile() {
@@ -889,7 +897,7 @@ func (o *PatentNoteEditor) deleteToEndOfFile() {
 	col := min(o.column, len(runes))
 	lines[o.line] = string(runes[:col])
 	o.value = strings.Join(lines[:o.line+1], "\n")
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) openLineAbove() {
@@ -897,7 +905,7 @@ func (o *PatentNoteEditor) openLineAbove() {
 	lines = append(lines[:o.line], append([]string{""}, lines[o.line:]...)...)
 	o.value = strings.Join(lines, "\n")
 	o.column = 0
-	o.dirty = true
+	o.markDirty()
 }
 
 func (o *PatentNoteEditor) openLineBelow() {
@@ -906,7 +914,7 @@ func (o *PatentNoteEditor) openLineBelow() {
 	o.value = strings.Join(lines, "\n")
 	o.line++
 	o.column = 0
-	o.dirty = true
+	o.markDirty()
 }
 
 func isWordChar(r rune) bool {

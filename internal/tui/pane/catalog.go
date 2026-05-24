@@ -38,6 +38,14 @@ type catalogLoadedMsg struct {
 	err       error
 }
 
+// catalogAllPagesLoadedMsg carries the full list of patent numbers fetched by
+// select-all so Selections() can span all pages, not just the loaded window.
+type catalogAllPagesLoadedMsg struct {
+	requestID uint64
+	numbers   []domain.PatentNumber
+	err       error
+}
+
 // HighlightState tracks the active relation highlighting.
 type HighlightState struct {
 	Group             HighlightGroup
@@ -86,12 +94,14 @@ type Catalog struct {
 	loadErr           string
 	loadID            uint64
 	columnsLoadID     uint64
-	visualMode        bool
-	visualAnchor      int
-	lastActive        domain.PatentNumber
-	savedVisual       []domain.PatentNumber
-	savedVisualAnchor int
-	savedVisualCursor int
+	visualMode          bool
+	visualAnchor        int
+	allSelectedNumbers  []domain.PatentNumber
+	selectAllLoadID     uint64
+	lastActive          domain.PatentNumber
+	savedVisual         []domain.PatentNumber
+	savedVisualAnchor   int
+	savedVisualCursor   int
 	highlights        HighlightSet
 	activeHighlight   HighlightState
 	relationCache     map[domain.PatentNumber]relationCacheEntry
@@ -518,6 +528,16 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			return c, c.load()
 		}
 		return c, c.loadClassDescs()
+	case catalogAllPagesLoadedMsg:
+		if m.requestID != c.selectAllLoadID {
+			return c, nil
+		}
+		if m.err != nil {
+			c.loadErr = m.err.Error()
+			return c, nil
+		}
+		c.allSelectedNumbers = m.numbers
+		return c, nil
 	case catalogClassDescsMsg:
 		if m.requestID == c.classDescsID && m.err == nil {
 			c.classDescs = m.descs
@@ -681,7 +701,8 @@ func (c *Catalog) toggleVisual() tea.Cmd {
 }
 
 func (c *Catalog) selectAllVisual() tea.Cmd {
-	if c.page.Total() == 0 {
+	total := c.page.Total()
+	if total == 0 {
 		return nil
 	}
 	if c.visualMode {
@@ -689,12 +710,53 @@ func (c *Catalog) selectAllVisual() tea.Cmd {
 	}
 	c.visualMode = true
 	c.visualAnchor = 0
-	return c.move(c.page.Bottom)
+	c.page.Bottom()
+	return c.loadAllPages(total)
+}
+
+func (c *Catalog) loadAllPages(total int) tea.Cmd {
+	requestID := nextAsyncID()
+	c.selectAllLoadID = requestID
+	client := c.client
+	var project domain.ProjectID
+	if c.activeProject != nil {
+		project = c.activeProject.ID
+	}
+	var numbers []domain.PatentNumber
+	if c.activeHighlight.FilterToRelations && !c.activeHighlight.Anchor.IsZero() {
+		numbers = c.highlights.RelationNumbers()
+	}
+	filter := c.filter.Expression
+	search := c.filter.Search
+	sort := c.activeSort
+	asc := c.sortAscending
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentListResult
+		err := client.Call(ctx, proto.MethodPatentList,
+			proto.PatentListParams{
+				Numbers:       numbers,
+				Project:       project,
+				Filter:        filter,
+				Search:        search,
+				Limit:         total,
+				Offset:        0,
+				SortColumn:    sort,
+				SortAscending: asc,
+			}, &res)
+		nums := make([]domain.PatentNumber, len(res.Patents))
+		for i, p := range res.Patents {
+			nums[i] = p.Number
+		}
+		return catalogAllPagesLoadedMsg{requestID: requestID, numbers: nums, err: err}
+	}
 }
 
 func (c *Catalog) clearVisual() {
 	c.visualMode = false
 	c.visualAnchor = 0
+	c.allSelectedNumbers = nil
 	c.clearGotoVisualHighlight()
 }
 
@@ -876,7 +938,13 @@ func (c *Catalog) inVisualRange(absolute int) bool {
 
 // Selections implements MultiSelector.
 func (c *Catalog) Selections() []domain.PatentNumber {
-	if !c.visualMode || len(c.patents) == 0 {
+	if !c.visualMode {
+		return nil
+	}
+	if len(c.allSelectedNumbers) > 0 {
+		return c.allSelectedNumbers
+	}
+	if len(c.patents) == 0 {
 		return nil
 	}
 	lo := min(c.visualAnchor, c.page.Cursor())
