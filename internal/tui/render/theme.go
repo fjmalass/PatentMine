@@ -78,7 +78,7 @@ const (
 	glyphHistState     = "⚙️"
 	glyphHistTagAdd    = "🏷️"
 	glyphHistTagRemove = "➖"
-	glyphHistColType   = "A"
+	glyphHistColType   = "🔄"
 
 	glyphReviewStateUnknown     = "?"
 	glyphReviewStateUnderReview = "🔍"

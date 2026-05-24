@@ -37,6 +37,10 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 	var b strings.Builder
 
 	// 1. Render Table Header
+	baseHeaderStyle := params.Theme.Header.Underline(true)
+	prefixStyled := baseHeaderStyle.Render(params.PrefixNormal)
+	currentW := StringWidth(params.PrefixNormal)
+
 	var hdrParts []string
 	for i, col := range params.Columns {
 		label := col.Label
@@ -49,16 +53,27 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 			}
 		}
 
-		style := params.Theme.Header.Underline(true)
+		style := baseHeaderStyle
 		switch {
 		case params.FocusActive && params.FocusedColIdx >= 0 && i == params.FocusedColIdx:
 			style = params.Theme.FocusHeader.Underline(true)
 		case isSorted:
 			style = params.Theme.SortActive.Underline(true)
 		}
-		hdrParts = append(hdrParts, style.Render(Pad(Truncate(label, col.Width), col.Width)))
+
+		cell := Pad(Truncate(label, col.Width), col.Width)
+		hdrParts = append(hdrParts, style.Render(cell))
+		currentW += col.Width
+		if i < len(params.Columns)-1 {
+			hdrParts = append(hdrParts, baseHeaderStyle.Render(" "))
+			currentW += 1
+		}
 	}
-	headerLine := params.PrefixNormal + strings.Join(hdrParts, " ")
+	var trailingSpaces string
+	if currentW < maxW {
+		trailingSpaces = baseHeaderStyle.Render(strings.Repeat(" ", maxW-currentW))
+	}
+	headerLine := prefixStyled + strings.Join(hdrParts, "") + trailingSpaces
 	b.WriteString(Truncate(headerLine, maxW))
 	b.WriteString("\n")
 

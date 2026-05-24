@@ -105,7 +105,7 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		{Key: "time", Label: "Time", Width: timeW},
 		{Key: "proj", Label: "Project", Width: projW},
 		{Key: "icon", Label: h.theme.Glyphs.HistColType, Width: iconW},
-		{Key: "details", Label: "Details", Width: detailsW},
+		{Key: "details", Label: " Details", Width: detailsW},
 	}
 
 	getCell := func(absIdx, _ int, colIdx int) string {
@@ -125,7 +125,7 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 			return icon
 		case "details":
 			_, details := historyIconAndDetails(h.theme, rec)
-			return details
+			return " " + details
 		}
 		return ""
 	}

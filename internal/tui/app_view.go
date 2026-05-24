@@ -192,35 +192,6 @@ type DynamicSize interface {
 	OverlaySize(termW, termH int) (w, h int)
 }
 
-var emojiPlaceholders = []struct {
-	Emoji       string
-	Placeholder string
-}{
-	// History icons (with variation selectors)
-	{"👁️", "\uE001"},
-	{"🏷️", "\uE002"},
-	{"⚡️", "\uE003"},
-	// History icons (plain)
-	{"👁", "\uE001"},
-	{"🏷", "\uE002"},
-	{"⚡", "\uE003"},
-	// Other emojis (measured as 1-cell)
-	{"❓", "\uE004"},
-	{"🔻", "\uE005"},
-	{"📂", "\uE006"},
-	{"🔗", "\uE007"},
-	{"🌳", "\uE008"},
-	{"📄", "\uE009"},
-	{"📋", "\uE00A"},
-	{"✅", "\uE00B"},
-	{"➖", "\uE00C"},
-	{"📥", "\uE00D"},
-	{"🩺", "\uE00E"},
-	{"⚙️", "\uE00F"},
-	{"⚙", "\uE00F"},
-	{"🔍", "\uE010"},
-}
-
 // compositeOverlay draws the focused overlay centred over the dimmed screen.
 func (a *App) compositeOverlay(screen string) string {
 	boxWidth := min(a.width-overlayMargin, overlayMaxWidth)
@@ -236,17 +207,13 @@ func (a *App) compositeOverlay(screen string) string {
 	content := a.theme.Title.Render(ov.Title()) + "\n\n" +
 		ov.View(innerWidth, boxHeight-overlayChrome)
 
-	// Replace emojis with 2-cell private-use placeholders so Lipgloss/ansi measures width perfectly
-	for _, mapping := range emojiPlaceholders {
-		content = strings.ReplaceAll(content, mapping.Emoji, mapping.Placeholder)
+	contentLines := strings.Split(content, "\n")
+	for i, line := range contentLines {
+		contentLines[i] = render.Pad(line, innerWidth)
 	}
+	content = strings.Join(contentLines, "\n")
 
 	box := a.theme.Box.Width(innerWidth).Height(boxHeight - 2).Render(content)
-
-	// Restore original emojis with full variability
-	for _, mapping := range emojiPlaceholders {
-		box = strings.ReplaceAll(box, mapping.Placeholder, mapping.Emoji)
-	}
 
 	dimmed := render.Dim(screen)
 	x, y := render.CenterOffset(a.width, a.height, lipgloss.Width(box), lipgloss.Height(box))
