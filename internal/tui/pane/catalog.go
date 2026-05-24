@@ -967,7 +967,20 @@ func (c *Catalog) View(w, h int) string {
 			}
 		}
 		if c.activeHighlight.FilterToRelations {
-			segments = append(segments, c.theme.Warn.Render("collapsed"))
+			var collapsedLabel string
+			switch c.activeHighlight.Group {
+			case HighlightGroupFamily:
+				parents := c.highlights.CountKind(HighlightFamilyParent)
+				children := c.highlights.CountKind(HighlightFamilyChild)
+				collapsedLabel = fmt.Sprintf("collapsed %d%s parents · %d%s children", parents, g.FamilyParent, children, g.FamilyChild)
+			case HighlightGroupCitations:
+				cites := c.highlights.CountKind(HighlightCitationCites)
+				citedby := c.highlights.CountKind(HighlightCitationCitedBy)
+				collapsedLabel = fmt.Sprintf("collapsed %d%s cites · %d%s cited by", cites, g.CitationCites, citedby, g.CitationCitedBy)
+			default:
+				collapsedLabel = "collapsed"
+			}
+			segments = append(segments, c.theme.Warn.Render(collapsedLabel))
 		}
 	}
 	filterSummary := strings.Join(segments, "  ")
