@@ -216,3 +216,9 @@ func PaneHandlers() map[command.Scope][]command.ID {
 	}
 	return out
 }
+
+// SearchAppliedMsg reports that a search query has been confirmed and applied by a pane.
+type SearchAppliedMsg struct {
+	Query string
+}
+

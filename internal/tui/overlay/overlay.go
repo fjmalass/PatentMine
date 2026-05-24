@@ -105,6 +105,16 @@ type ReplayActivityMsg struct {
 	Record observability.Record
 }
 
+// HistoryReplayMsg asks the app to replay a timeline action (view patent, search, or project switch).
+type HistoryReplayMsg struct {
+	Record observability.Record
+}
+
+// ConfirmHistoryReplayMsg tells the app that the user has confirmed a history action replay.
+type ConfirmHistoryReplayMsg struct {
+	Record observability.Record
+}
+
 // ApplyClassificationFilterMsg asks the app to apply a classification code
 // filter to the pane behind the overlay. Codes are the marked-row set in the
 // overlay's current sort order; they are joined as a space-separated string

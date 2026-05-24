@@ -9,6 +9,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/overlay"
@@ -124,12 +125,30 @@ func (a *App) preparePane(p pane.Pane) (pane.Pane, []tea.Cmd) {
 // pushPane adds a pane to the stack and returns its init command.
 func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 	p, cmds := a.preparePane(p)
+	var recCmd tea.Cmd
 	if pv, ok := p.(interface{ PatentNumber() domain.PatentNumber }); ok {
-		a.recordHistory(pv.PatentNumber())
+		num := pv.PatentNumber()
+		a.recordHistory(num)
+		var project domain.ProjectID
+		if a.activeProject != nil {
+			project = a.activeProject.ID
+		}
+		recCmd = a.recordActivity(observability.Record{
+			Action:   "ui.focus",
+			Entity:   "patent",
+			EntityID: num.String(),
+			Status:   "requested",
+			Metadata: map[string]any{
+				"project": project,
+			},
+		})
 	}
 	a.panes = append(a.panes, p)
 	if len(cmds) == 0 {
 		cmds = append(cmds, p.Init())
+	}
+	if recCmd != nil {
+		cmds = append(cmds, recCmd)
 	}
 	return a, tea.Batch(cmds...)
 }
@@ -246,7 +265,20 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 	if len(a.panes) > 1 {
 		a.panes = a.panes[:len(a.panes)-1]
 	}
-	return a, a.broadcast(pane.ProjectChangedMsg{Project: &project})
+
+	var recCmd tea.Cmd
+	if a.activity != nil {
+		recCmd = a.recordActivity(observability.Record{
+			Action:   "project.switch",
+			Entity:   "project",
+			EntityID: string(project.ID),
+			Status:   "observed",
+			Metadata: map[string]any{
+				"project_name": project.Name,
+			},
+		})
+	}
+	return a, tea.Batch(a.broadcast(pane.ProjectChangedMsg{Project: &project}), recCmd)
 }
 
 func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {

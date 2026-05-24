@@ -7,49 +7,30 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
-	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/tui/render"
 )
 
-// HistorySelectMsg signals that a patent has been selected from the history list.
-type HistorySelectMsg struct {
-	Index  int
-	Number domain.PatentNumber
-}
-
-// HistoryOverlay displays the list of recently visited patents and lets the user choose one.
+// HistoryOverlay displays the persistent timeline of recent searches, project switches, and patent details views.
 type HistoryOverlay struct {
-	theme         render.Theme
-	history       []domain.PatentNumber
-	historyCursor int
-	cursor        int // local selection cursor, 0 maps to the newest item in history
+	theme   render.Theme
+	records []observability.Record
+	cursor  int // local selection cursor, 0 maps to the newest item
 }
 
 // NewHistoryOverlay builds a HistoryOverlay.
-func NewHistoryOverlay(theme render.Theme, history []domain.PatentNumber, historyCursor int) *HistoryOverlay {
-	// Initialize local cursor so that it highlights the currently active historical patent
-	localCursor := 0
-	if len(history) > 0 {
-		localCursor = len(history) - 1 - historyCursor
-		if localCursor < 0 {
-			localCursor = 0
-		}
-		if localCursor >= len(history) {
-			localCursor = len(history) - 1
-		}
-	}
+func NewHistoryOverlay(theme render.Theme, records []observability.Record) *HistoryOverlay {
 	return &HistoryOverlay{
-		theme:         theme,
-		history:       history,
-		historyCursor: historyCursor,
-		cursor:        localCursor,
+		theme:   theme,
+		records: records,
+		cursor:  0,
 	}
 }
 
 // Title implements Overlay.
-func (h *HistoryOverlay) Title() string { return "Patent History" }
+func (h *HistoryOverlay) Title() string { return "Activity History" }
 
-// Command implements Overlay: HistoryOverlay handles key navigation directly.
+// Command implements Overlay.
 func (h *HistoryOverlay) Command(command.ID, int) (Overlay, tea.Cmd) { return h, nil }
 
 // Handles implements Overlay.
@@ -57,7 +38,7 @@ func (h *HistoryOverlay) Handles() []command.ID { return nil }
 
 // HandleKey implements KeyHandler.
 func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	n := len(h.history)
+	n := len(h.records)
 	if n == 0 {
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
@@ -76,10 +57,9 @@ func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		}
 		return h, nil, true
 	case "enter":
-		targetIndex := n - 1 - h.cursor
-		targetNumber := h.history[targetIndex]
+		rec := h.records[h.cursor]
 		return h, func() tea.Msg {
-			return HistorySelectMsg{Index: targetIndex, Number: targetNumber}
+			return HistoryReplayMsg{Record: rec}
 		}, true
 	case "q", "esc":
 		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -92,22 +72,20 @@ func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 
 // View implements Overlay.
 func (h *HistoryOverlay) View(maxW, maxH int) string {
-	n := len(h.history)
+	n := len(h.records)
 	if n == 0 {
-		return h.theme.Dim.Render("No history entries.")
+		return h.theme.Dim.Render("No history entries found.")
 	}
 
 	var b strings.Builder
-	// We want to fit within the maxH budget. Overlay height is boxHeight-chrome.
-	// We list items in newest-first order.
-	start := 0
-	end := n
-	visibleLimit := maxH - 2 // leave room for headers/footers or instructions
+	// Visible limit. Overlay height is boxHeight-chrome.
+	visibleLimit := maxH - 4
 	if visibleLimit < 2 {
 		visibleLimit = 2
 	}
 
-	// Sliding window for long history lists
+	start := 0
+	end := n
 	if n > visibleLimit {
 		half := visibleLimit / 2
 		start = h.cursor - half
@@ -121,32 +99,65 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		}
 	}
 
-	b.WriteString(h.theme.Dim.Render(render.Pad("  Recent Visited Patents", maxW)))
+	// Header
+	b.WriteString(h.theme.Dim.Render(render.Pad("  Time     Project       Act  Details", maxW)))
 	b.WriteString("\n")
 
 	for idx := start; idx < end; idx++ {
-		// history index is n - 1 - idx
-		histIdx := n - 1 - idx
-		number := h.history[histIdx]
+		rec := h.records[idx]
 
+		// Prefix
 		prefix := "  "
 		style := h.theme.Row
 		if idx == h.cursor {
 			prefix = " >"
-			style = h.theme.Title // bold/active style
+			style = h.theme.Selected
 		}
 
-		activeMarker := "  "
-		if histIdx == h.historyCursor {
-			activeMarker = " •" // active historical item
+		// Project ID
+		projID := "-"
+		if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
+			projID = pid
+		} else if rec.Action == "project.switch" {
+			projID = rec.EntityID
+		}
+		// Capped project ID for alignment
+		if len(projID) > 12 {
+			projID = projID[:11] + "…"
 		}
 
-		line := fmt.Sprintf("%s%s %s", prefix, activeMarker, number.String())
+		// Icon and Details
+		icon := "❓"
+		details := ""
+
+		switch rec.Action {
+		case "filter.apply":
+			icon = "🔍"
+			details = fmt.Sprintf("Search: %q", rec.EntityID)
+		case "project.switch":
+			icon = "📁"
+			projName := rec.EntityID
+			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+				projName = name
+			}
+			details = fmt.Sprintf("Switch Project to %q", projName)
+		case "ui.focus":
+			icon = "📄"
+			title := ""
+			if t, ok := rec.Metadata["title"].(string); ok && t != "" {
+				title = " - " + t
+			}
+			details = fmt.Sprintf("Viewed Patent %s%s", rec.EntityID, title)
+		}
+
+		// Row content: time, project, icon, details
+		timeStr := localClock(rec.Timestamp)
+		line := fmt.Sprintf("%s %s %-12s %s  %s", prefix, timeStr, projID, icon, details)
 		b.WriteString(style.Render(render.Pad(line, maxW)))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(h.theme.Dim.Render(render.Pad("  [j/k] Move  [Enter] Select  [q/Esc] Close", maxW)))
+	b.WriteString(h.theme.Dim.Render(render.Pad("  [j/k] Move  [Enter] Replay/Confirm  [q/Esc] Close", maxW)))
 	return b.String()
 }

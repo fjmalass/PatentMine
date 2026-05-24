@@ -261,7 +261,7 @@ func (c *Catalog) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		}, true
 	case "confirm":
 		c.applyFindInput(search)
-		return c, nil, true
+		return c, func() tea.Msg { return SearchAppliedMsg{Query: search} }, true
 	case "cancel":
 		c.applyFindInput(search)
 		c.loading = true

@@ -7,12 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/ai"
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/store/sqlite"
@@ -503,6 +506,29 @@ func TestAppNavigationHistory(t *testing.T) {
 		t.Fatalf("expected history to truncate on new record after back")
 	}
 
+	// Configure telemetry for persistent history overlay reading
+	tmpDir := t.TempDir()
+	rt, err := observability.Open(tmpDir, "test-app", "1.0")
+	if err != nil {
+		t.Fatalf("observability.Open: %v", err)
+	}
+	app.logger = rt.Logger
+	app.activity = rt.Activity
+	app.activityDir = rt.LogsDir
+	app.metrics = rt.Metrics
+
+	// Manually record a persistent activity search log entry synchronously
+	err = rt.Activity.Record(context.Background(), observability.Record{
+		Action:    "filter.apply",
+		Entity:    "filter",
+		EntityID:  "cpc:G06F",
+		Status:    "requested",
+		Timestamp: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed to record activity search: %v", err)
+	}
+
 	// Press Shift+H to open history overlay
 	app.Update(runeKey('H'))
 	if len(app.overlays) != 1 {
@@ -512,8 +538,8 @@ func TestAppNavigationHistory(t *testing.T) {
 	if !ok {
 		t.Fatalf("focused overlay should be HistoryOverlay")
 	}
-	if o.Title() != "Patent History" {
-		t.Errorf("expected title 'Patent History', got %q", o.Title())
+	if o.Title() != "Activity History" {
+		t.Errorf("expected title 'Activity History', got %q", o.Title())
 	}
 
 	// Test pressing Esc to close overlay

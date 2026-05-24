@@ -443,6 +443,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleTextSubmit(m)
 	case pane.EditIDSFieldMsg:
 		return a.openIDSEditInput(m.Field)
+	case pane.SearchAppliedMsg:
+		var projectID domain.ProjectID
+		if a.activeProject != nil {
+			projectID = a.activeProject.ID
+		}
+		return a, a.recordActivity(observability.Record{
+			Action:   "filter.apply",
+			Entity:   "filter",
+			EntityID: m.Query,
+			Status:   "requested",
+			Metadata: map[string]any{
+				"search":  m.Query,
+				"project": projectID,
+			},
+		})
 	case overlay.JumpSelectMsg:
 		a.popOverlay()
 		if provider, ok := a.focusedPane().(pane.JumpProvider); ok {
@@ -479,9 +494,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.historyCursor = m.targetIndex
 		return a.navigateHistory(m.number)
-	case overlay.HistorySelectMsg:
+	case overlay.HistoryReplayMsg:
 		a.popOverlay()
-		return a, a.checkPatentExists(m.Index, m.Number)
+		return a.handleHistoryReplay(m.Record, false)
+	case overlay.ConfirmHistoryReplayMsg:
+		return a.handleHistoryReplay(m.Record, true)
 	case overlay.ReplayActivityMsg:
 		a.popOverlay()
 		var project domain.ProjectID

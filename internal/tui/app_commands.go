@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -639,11 +640,81 @@ func (a *App) cmdHistoryForward(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
-	if len(a.history) == 0 {
+	if a.activityDir == "" {
+		a.setErr(text.StatusUsage, "activity logging is not configured")
+		return a, nil
+	}
+	records, err := observability.ReadActivityRecords(a.activityDir, observability.ActivityQuery{Limit: 500})
+	if err != nil {
+		a.setErr(text.StatusUsage, err.Error())
+		return a, nil
+	}
+	var filtered []observability.Record
+	for _, r := range records {
+		if r.Action == "filter.apply" || r.Action == "project.switch" || (r.Action == "ui.focus" && r.Entity == "patent") {
+			filtered = append(filtered, r)
+		}
+	}
+	if len(filtered) == 0 {
 		a.setErr(text.StatusHistoryEmpty)
 		return a, nil
 	}
-	o := overlay.NewHistoryOverlay(a.theme, a.history, a.historyCursor)
+	o := overlay.NewHistoryOverlay(a.theme, filtered)
 	a.overlays = append(a.overlays, o)
 	return a, nil
 }
+
+func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea.Model, tea.Cmd) {
+	switch rec.Action {
+	case "ui.focus":
+		// Immediate navigation to patent details (no confirmation overlay required)
+		a.overlays = nil
+		if len(a.panes) > 1 {
+			a.panes = a.panes[:1]
+		}
+		if number, err := domain.ParsePatentNumber(rec.EntityID); err == nil {
+			var project domain.ProjectID
+			if a.activeProject != nil {
+				project = a.activeProject.ID
+			}
+			bound := a.keymaps.BoundLetters(command.ScopeDetail)
+			return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+		}
+		a.setErr(text.StatusHistoryPatentUnavailable, rec.EntityID)
+		return a, nil
+
+	case "filter.apply":
+		if !confirmed {
+			a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
+			prompt := fmt.Sprintf("Apply filter '%s'?", rec.EntityID)
+			o := overlay.NewConfirm(a.theme, prompt)
+			a.overlays = append(a.overlays, o)
+			return a, nil
+		}
+		a.overlays = nil
+		if len(a.panes) > 1 {
+			a.panes = a.panes[:1]
+		}
+		return a.executeTypedCommand("filter " + rec.EntityID)
+
+	case "project.switch":
+		if !confirmed {
+			a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
+			projectName := rec.EntityID
+			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+				projectName = name
+			}
+			prompt := fmt.Sprintf("Switch to project '%s'?", projectName)
+			o := overlay.NewConfirm(a.theme, prompt)
+			a.overlays = append(a.overlays, o)
+			return a, nil
+		}
+		a.overlays = nil
+		if len(a.panes) > 1 {
+			a.panes = a.panes[:1]
+		}
+		return a.activateProjectByArg(rec.EntityID)
+	}
+	return a, nil
+}
+

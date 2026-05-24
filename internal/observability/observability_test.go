@@ -73,3 +73,38 @@ func TestPrometheusTextRendersDerivedMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestReadActivityRecordsHandlesCorruptedLines(t *testing.T) {
+	logsDir := t.TempDir()
+	date := time.Now().In(time.Local).Format(dateLayout)
+	activityPath := filepath.Join(logsDir, "activity-"+date+".jsonl")
+
+	// Write a mix of valid, blank, and corrupted (half-written) JSON entries
+	lines := []string{
+		`{"id":"1","timestamp":"2026-05-23T20:00:00Z","action":"filter.apply","entity":"filter","entity_id":"cpc:G06F","status":"requested"}`,
+		``, // empty line
+		`{"id":"2","timestamp":"2026-05-23T20:01:00Z","action":"project.switch"`, // Corrupted (unexpected end of JSON input)
+		`{"id":"3","timestamp":"2026-05-23T20:02:00Z","action":"ui.focus","entity":"patent","entity_id":"US10000000B2","status":"observed"}`,
+	}
+	body := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(activityPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Read the records
+	records, err := ReadActivityRecords(logsDir, ActivityQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadActivityRecords failed: %v", err)
+	}
+
+	// It should skip the empty and corrupted lines, returning only the 2 valid records
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d: %+v", len(records), records)
+	}
+
+	// Order is newest-first (descending timestamp/log lines order)
+	if records[0].ID != "3" || records[1].ID != "1" {
+		t.Errorf("unexpected record order or content: %+v", records)
+	}
+}
+

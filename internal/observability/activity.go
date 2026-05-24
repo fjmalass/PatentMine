@@ -95,7 +95,8 @@ func readActivityFile(path string) ([]Record, error) {
 		}
 		var rec Record
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
-			return nil, fmt.Errorf("observability: decode activity %s: %w", path, err)
+			// Gracefully skip corrupted or incomplete JSON lines (e.g., from abrupt process termination)
+			continue
 		}
 		out = append(out, rec)
 	}
@@ -165,7 +166,8 @@ func ReadReplayHistory(logsDir string, limit int) ([]ReplayHistoryEntry, error) 
 	for i := len(lines) - 1; i >= 0 && len(out) < limit; i-- {
 		var entry ReplayHistoryEntry
 		if err := json.Unmarshal([]byte(lines[i]), &entry); err != nil {
-			return nil, fmt.Errorf("observability: decode replay history: %w", err)
+			// Gracefully skip corrupted replay history entries
+			continue
 		}
 		out = append(out, entry)
 	}
