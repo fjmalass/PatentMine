@@ -114,7 +114,7 @@ var migrationFStatements = []string{
 	`INSERT INTO membership_new (project_id, patent_number, state, added_at,
 		ids_kind_code, ids_country_code, ids_in_full, ids_relevant_passages,
 		ids_notes, ids_status, ids_added_at)
-	 SELECT pid.project_id, pid.patent_number, 'stored', pid.added_at,
+	 SELECT pid.project_id, pid.patent_number, 'unknown', pid.added_at,
 		pid.kind_code, pid.country_code, pid.in_full, pid.relevant_passages,
 		pid.notes, pid.status, pid.added_at
 	 FROM project_ids pid

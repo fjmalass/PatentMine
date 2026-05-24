@@ -107,7 +107,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.AddToProject:               (*App).cmdAddToProject,
 	command.Import:                     (*App).cmdImport,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
-	command.MarkStored:                 (*App).cmdMarkStored,
+	command.MarkActive:                 (*App).cmdMarkActive,
 	command.MarkUnderReview:            (*App).cmdMarkUnderReview,
 	command.MarkIgnored:                (*App).cmdMarkIgnored,
 	command.MarkDeleted:                (*App).cmdMarkDeleted,

@@ -18,6 +18,7 @@ func (a *App) View() string {
 		return "starting…"
 	}
 	focused := a.focusedPane()
+	viewWidth := safeViewWidth(a.width)
 	header := a.headerBlock(focused)
 	headerLines := 0
 	if header != "" {
@@ -25,13 +26,13 @@ func (a *App) View() string {
 	}
 	bodyHeight := max(a.height-headerLines-statusRows, 1)
 
-	body := fitBody(focused.View(a.width, bodyHeight), bodyHeight)
+	body := fitBody(focused.View(viewWidth, bodyHeight), bodyHeight, viewWidth)
 
 	statusStyle := a.theme.Status
 	if a.statusErr {
 		statusStyle = a.theme.Error
 	}
-	status := statusStyle.Render(render.Pad(" "+a.statusText(), a.width))
+	status := statusStyle.Render(render.Pad(" "+a.statusText(), viewWidth))
 
 	screen := body + "\n" + status
 	if header != "" {
@@ -40,20 +41,21 @@ func (a *App) View() string {
 	if len(a.overlays) > 0 {
 		screen = a.compositeOverlay(screen)
 	}
-	return screen
+	return clearLineEnds(screen)
 }
 
 func (a *App) headerBlock(focused pane.Pane) string {
 	if splash, ok := focused.(interface{ IsSplash() bool }); ok && splash.IsSplash() {
 		return ""
 	}
-	line1 := a.renderScreenHeader(focused)
-	line2 := a.theme.Dim.Render(render.Pad(" "+a.helperLine(focused.Scope()), a.width))
-	line3 := a.theme.Header.Render(strings.Repeat("─", a.width))
+	viewWidth := safeViewWidth(a.width)
+	line1 := a.renderScreenHeader(focused, viewWidth)
+	line2 := a.theme.Dim.Render(render.Pad(" "+a.helperLine(focused.Scope()), viewWidth))
+	line3 := a.theme.Header.Render(strings.Repeat("─", viewWidth))
 	return line1 + "\n" + line2 + "\n" + line3
 }
 
-func (a *App) renderScreenHeader(focused pane.Pane) string {
+func (a *App) renderScreenHeader(focused pane.Pane, width int) string {
 	var b strings.Builder
 	b.WriteString(a.theme.Title.Render("PatentMine"))
 	if a.activeProject != nil {
@@ -64,7 +66,7 @@ func (a *App) renderScreenHeader(focused pane.Pane) string {
 	b.WriteString(" ")
 	b.WriteString(a.theme.Header.Render("· "))
 	b.WriteString(a.theme.Row.Bold(true).Render(focused.Title()))
-	return render.Pad(" "+b.String(), a.width)
+	return render.Pad(" "+b.String(), width)
 }
 
 func (a *App) helperLine(scope command.Scope) string {
@@ -251,12 +253,27 @@ func (a *App) compositeOverlay(screen string) string {
 	return render.Composite(dimmed, box, x, y)
 }
 
+func safeViewWidth(width int) int {
+	return max(width-1, 1)
+}
+
+func clearLineEnds(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = line + "\x1b[K"
+	}
+	return strings.Join(lines, "\n")
+}
+
 // fitBody pads or trims rendered pane output to exactly height lines so the
 // status line always sits on the bottom row.
-func fitBody(body string, height int) string {
+func fitBody(body string, height, width int) string {
 	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		lines[i] = render.Pad(render.Truncate(line, width), width)
+	}
 	for len(lines) < height {
-		lines = append(lines, "")
+		lines = append(lines, strings.Repeat(" ", width))
 	}
 	return strings.Join(lines[:height], "\n")
 }

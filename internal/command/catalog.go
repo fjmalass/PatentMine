@@ -66,7 +66,7 @@ const (
 
 	// Patent review-state changes. All four map to one proto method; the
 	// target state is the difference the dispatcher supplies.
-	MarkStored      ID = "patent.mark-stored"
+	MarkActive      ID = "patent.mark-active"
 	MarkUnderReview ID = "patent.mark-under-review"
 	MarkIgnored     ID = "patent.mark-ignored"
 	MarkDeleted     ID = "patent.mark-deleted"
@@ -227,7 +227,7 @@ func Default() (*Registry, error) {
 		Command{ID: ExportIDS, Kind: KindEngine, Method: proto.MethodIDSExport, Scopes: []Scope{ScopeProjects}},
 
 		// --- patent review state (engine) ---
-		Command{ID: MarkStored, Name: "review_state.stored", Aliases: []string{"stored"}, Usage: ":review_state.stored", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
+		Command{ID: MarkActive, Name: "review_state.active", Aliases: []string{"active"}, Usage: ":review_state.active", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
 		Command{ID: MarkUnderReview, Name: "review_state.under_review", Aliases: []string{"under-review"}, Usage: ":review_state.under_review", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
 		Command{ID: MarkIgnored, Name: "review_state.ignored", Aliases: []string{"ignored"}, Usage: ":review_state.ignored", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},
 		Command{ID: MarkDeleted, Name: "review_state.deleted", Aliases: []string{"deleted"}, Usage: ":review_state.deleted", Kind: KindEngine, Method: proto.MethodReviewState, Scopes: patentScopes},

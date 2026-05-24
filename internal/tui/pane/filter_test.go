@@ -42,7 +42,7 @@ func TestPatentFilterParseClearAliases(t *testing.T) {
 
 func TestPatentFilterRejectsLegacySyntax(t *testing.T) {
 	f := PatentFilter{}
-	_, err := f.parse([]string{"state", "stored"}, true)
+	_, err := f.parse([]string{"state", "active"}, true)
 	if err == nil {
 		t.Fatal("expected error for legacy syntax")
 	}

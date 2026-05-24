@@ -43,7 +43,7 @@ func TestParseSupportsAssigneeWildcard(t *testing.T) {
 }
 
 func TestParseRejectsLegacySyntax(t *testing.T) {
-	_, err := Parse("state stored")
+	_, err := Parse("state active")
 	if err == nil {
 		t.Fatal("expected error")
 	}

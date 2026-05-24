@@ -146,36 +146,74 @@ func TestEngineImportFileWithoutImporterFails(t *testing.T) {
 }
 
 func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
-	eng, _ := newTestEngine(t, nil)
 	ctx := context.Background()
 
-	patent := domain.Patent{
-		Number:     domain.MustParsePatentNumber("US11611785B2"),
-		FetchState: domain.FetchCached,
-	}
-	if err := eng.SavePatent(ctx, patent); err != nil {
-		t.Fatalf("SavePatent: %v", err)
-	}
-	project, err := eng.CreateProject(ctx, "P")
-	if err != nil {
-		t.Fatalf("CreateProject: %v", err)
-	}
-	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
-		t.Fatalf("AddToProject: %v", err)
-	}
+	t.Run("stub patent transition rules", func(t *testing.T) {
+		eng, _ := newTestEngine(t, nil)
+		patent := domain.Patent{
+			Number:     domain.MustParsePatentNumber("US11611785B2"),
+			FetchState: domain.FetchStub,
+		}
+		if err := eng.SavePatent(ctx, patent); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+		project, err := eng.CreateProject(ctx, "P1")
+		if err != nil {
+			t.Fatalf("CreateProject: %v", err)
+		}
+		if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+			t.Fatalf("AddToProject: %v", err)
+		}
 
-	// stored -> deleted is allowed.
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateDeleted); err != nil {
-		t.Fatalf("stored->deleted: %v", err)
-	}
-	// deleted -> ignored is rejected by the domain transition rules.
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateIgnored); err == nil {
-		t.Fatal("deleted->ignored should be rejected")
-	}
-	// deleted -> stored (undelete) is allowed.
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateStored); err != nil {
-		t.Fatalf("deleted->stored: %v", err)
-	}
+		// Transition to active should be rejected for a stub patent.
+		if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateActive); err == nil {
+			t.Fatal("stub patent -> active should be rejected")
+		}
+
+		// Transition to deleted should be rejected for a stub patent.
+		if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateDeleted); err == nil {
+			t.Fatal("stub patent -> deleted should be rejected")
+		}
+	})
+
+	t.Run("cached patent transition rules", func(t *testing.T) {
+		eng, repo := newTestEngine(t, nil)
+		patent := domain.Patent{
+			Number:     domain.MustParsePatentNumber("US11611785B2"),
+			FetchState: domain.FetchCached,
+		}
+		if err := eng.SavePatent(ctx, patent); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+		if err := repo.SaveDocument(ctx, patent.Number, domain.Document{
+			Number: patent.Number,
+			Stage:  domain.GuessStage(patent.Number),
+		}); err != nil {
+			t.Fatalf("SaveDocument: %v", err)
+		}
+		project, err := eng.CreateProject(ctx, "P2")
+		if err != nil {
+			t.Fatalf("CreateProject: %v", err)
+		}
+		if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+			t.Fatalf("AddToProject: %v", err)
+		}
+
+		// cached patent -> deleted is allowed.
+		if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateDeleted); err != nil {
+			t.Fatalf("cached patent -> deleted: %v", err)
+		}
+
+		// cached patent deleted -> ignored is allowed (transitions to/from any review state).
+		if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateIgnored); err != nil {
+			t.Fatalf("cached patent deleted -> ignored: %v", err)
+		}
+
+		// cached patent ignored -> active is allowed.
+		if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateActive); err != nil {
+			t.Fatalf("cached patent ignored -> active: %v", err)
+		}
+	})
 }
 
 func TestEngineCrawlEmitsProgressAndDone(t *testing.T) {
@@ -225,12 +263,7 @@ func TestEngineCrawlEmitsProgressAndDone(t *testing.T) {
 }
 
 func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
-	factory := func(_ domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) Job {
-		return JobFunc(func(_ context.Context, _ JobID, _ func(proto.Event)) error {
-			return errors.New("not found")
-		})
-	}
-	eng, repo := newTestEngine(t, factory)
+	eng, _ := newTestEngine(t, nil)
 	ctx := context.Background()
 
 	project, err := eng.CreateProject(ctx, "P")
@@ -238,31 +271,8 @@ func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	patent := domain.MustParsePatentNumber("US9999999B2")
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateUnderReview); err != nil {
-		t.Fatalf("SetReviewState: %v", err)
-	}
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		membership, err := repo.Membership(ctx, project.ID, patent)
-		if err == nil {
-			if membership.ReviewState != domain.ReviewStateUnderReview {
-				t.Fatalf("Membership state = %q, want under_review", membership.ReviewState)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("Membership disappeared after auto-fetch failure: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	stored, err := repo.Patent(ctx, patent)
-	if err != nil {
-		t.Fatalf("Patent after failed auto-fetch: %v", err)
-	}
-	if stored.FetchState != domain.FetchStub {
-		t.Fatalf("Patent fetch state = %q, want stub", stored.FetchState)
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateUnderReview); err == nil {
+		t.Fatal("expected SetReviewState to fail for a stub patent")
 	}
 }
 
@@ -478,8 +488,8 @@ func TestEngineReviewStateOf(t *testing.T) {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	state, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number)
-	if err != nil || !ok || state != domain.ReviewStateStored {
-		t.Fatalf("ReviewStateOf = (%q, %v, %v), want (stored, true, nil)", state, ok, err)
+	if err != nil || !ok || state != domain.ReviewStateUnknown {
+		t.Fatalf("ReviewStateOf = (%q, %v, %v), want (stub, true, nil)", state, ok, err)
 	}
 	// With no project named the call is a quiet no-op.
 	if _, ok, err := eng.ReviewStateOf(ctx, "", patent.Number); err != nil || ok {
@@ -504,6 +514,12 @@ func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
 	patent := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), FetchState: domain.FetchCached}
 	if err := eng.SavePatent(ctx, patent); err != nil {
 		t.Fatalf("SavePatent: %v", err)
+	}
+	if err := repo.SaveDocument(ctx, patent.Number, domain.Document{
+		Number: patent.Number,
+		Stage:  domain.GuessStage(patent.Number),
+	}); err != nil {
+		t.Fatalf("SaveDocument: %v", err)
 	}
 	project, err := eng.CreateProject(ctx, "P")
 	if err != nil {
@@ -869,7 +885,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 }
 
 func TestEngineBatchOperations(t *testing.T) {
-	eng, _ := newTestEngine(t, nil)
+	eng, repo := newTestEngine(t, nil)
 	ctx := context.Background()
 
 	p1 := domain.Patent{Number: domain.MustParsePatentNumber("US11611785B2"), FetchState: domain.FetchCached}
@@ -879,6 +895,12 @@ func TestEngineBatchOperations(t *testing.T) {
 	for _, p := range []domain.Patent{p1, p2, p3} {
 		if err := eng.SavePatent(ctx, p); err != nil {
 			t.Fatalf("SavePatent: %v", err)
+		}
+		if err := repo.SaveDocument(ctx, p.Number, domain.Document{
+			Number: p.Number,
+			Stage:  domain.GuessStage(p.Number),
+		}); err != nil {
+			t.Fatalf("SaveDocument: %v", err)
 		}
 	}
 
@@ -904,16 +926,16 @@ func TestEngineBatchOperations(t *testing.T) {
 		}
 	}
 
-	// Transition p1 to Deleted (allowed from UnderReview).
+	// Transition p1 to Deleted (allowed).
 	err = eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateDeleted)
 	if err != nil {
 		t.Fatalf("failed to transition to Deleted: %v", err)
 	}
 
-	// Verify invalid transition rules: transition from Deleted to Ignored is forbidden.
+	// Transition from Deleted to Ignored is allowed under the new transition rules.
 	err = eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{p1.Number}, domain.ReviewStateIgnored)
-	if err == nil {
-		t.Fatal("expected error when attempting forbidden review state transition Ignored from Deleted")
+	if err != nil {
+		t.Fatalf("failed to transition from Deleted to Ignored: %v", err)
 	}
 
 	// 2. Test TagPatent.
@@ -1181,8 +1203,20 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 }
 
 func TestEngineSetReviewStateSingleBroadcast(t *testing.T) {
-	eng, _ := newTestEngine(t, nil)
+	eng, repo := newTestEngine(t, nil)
 	ctx := context.Background()
+
+	patent := domain.MustParsePatentNumber("US8888888B2")
+	p := domain.Patent{Number: patent, FetchState: domain.FetchCached}
+	if err := eng.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	if err := repo.SaveDocument(ctx, patent, domain.Document{
+		Number: patent,
+		Stage:  domain.GuessStage(patent),
+	}); err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
 
 	project, err := eng.CreateProject(ctx, "SingleBroadcastProj")
 	if err != nil {
@@ -1191,8 +1225,6 @@ func TestEngineSetReviewStateSingleBroadcast(t *testing.T) {
 
 	events, unsub := eng.Subscribe()
 	defer unsub()
-
-	patent := domain.MustParsePatentNumber("US8888888B2")
 
 	// SetReviewState on a patent that is not a member yet.
 	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateUnderReview); err != nil {
@@ -1219,4 +1251,3 @@ loop:
 		t.Errorf("expected exactly 1 change event, got %d", changeEventsCount)
 	}
 }
-

@@ -3,31 +3,53 @@ package domain
 import "testing"
 
 func TestReviewStateTransitions(t *testing.T) {
-	cases := []struct {
-		from ReviewState
-		to   ReviewState
-		want bool
-	}{
-		{ReviewStateStored, ReviewStateUnderReview, true},
-		{ReviewStateStored, ReviewStateIgnored, true},
-		{ReviewStateStored, ReviewStateDeleted, true},
-		{ReviewStateStored, ReviewStateStored, true}, // no-op allowed
-		{ReviewStateUnderReview, ReviewStateStored, true},
-		{ReviewStateIgnored, ReviewStateStored, true},
-		{ReviewStateDeleted, ReviewStateStored, true}, // undelete
-		{ReviewStateDeleted, ReviewStateIgnored, false},
-		{ReviewStateDeleted, ReviewStateUnderReview, false},
-	}
-	for _, c := range cases {
-		if got := c.from.CanTransitionTo(c.to); got != c.want {
-			t.Errorf("%s -> %s: got %v, want %v", c.from, c.to, got, c.want)
+	t.Run("cached patent allows transition to/from any valid review state", func(t *testing.T) {
+		cases := []struct {
+			from ReviewState
+			to   ReviewState
+			want bool
+		}{
+			{ReviewStateUnknown, ReviewStateUnderReview, true},
+			{ReviewStateUnderReview, ReviewStateActive, true},
+			{ReviewStateActive, ReviewStateIgnored, true},
+			{ReviewStateActive, ReviewStateActive, true}, // no-op allowed
+			{ReviewStateDeleted, ReviewStateActive, true}, // undelete
+			{ReviewStateDeleted, ReviewStateIgnored, true},
+			{ReviewStateDeleted, ReviewStateUnderReview, true},
+			{ReviewStateDeleted, ReviewStateUnknown, true},
+			{ReviewStateNone, ReviewStateActive, false}, // invalid from
+			{ReviewStateActive, ReviewStateNone, false}, // invalid to
 		}
-	}
+		for _, c := range cases {
+			if got := c.from.CanTransitionTo(c.to, FetchCached); got != c.want {
+				t.Errorf("%s -> %s (cached): got %v, want %v", c.from, c.to, got, c.want)
+			}
+		}
+	})
+
+	t.Run("stub patent only allows unknown review state", func(t *testing.T) {
+		cases := []struct {
+			from ReviewState
+			to   ReviewState
+			want bool
+		}{
+			{ReviewStateUnknown, ReviewStateUnknown, true}, // no-op
+			{ReviewStateUnknown, ReviewStateUnderReview, false},
+			{ReviewStateUnknown, ReviewStateActive, false},
+			{ReviewStateUnknown, ReviewStateIgnored, false},
+			{ReviewStateUnknown, ReviewStateDeleted, false},
+		}
+		for _, c := range cases {
+			if got := c.from.CanTransitionTo(c.to, FetchStub); got != c.want {
+				t.Errorf("%s -> %s (stub): got %v, want %v", c.from, c.to, got, c.want)
+			}
+		}
+	})
 }
 
 func TestParseReviewState(t *testing.T) {
-	if _, err := ParseReviewState("stored"); err != nil {
-		t.Errorf("ParseReviewState(stored) error: %v", err)
+	if _, err := ParseReviewState("active"); err != nil {
+		t.Errorf("ParseReviewState(active) error: %v", err)
 	}
 	if _, err := ParseReviewState("bogus"); err == nil {
 		t.Error("ParseReviewState(bogus) expected error")

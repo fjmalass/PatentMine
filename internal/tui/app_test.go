@@ -23,6 +23,7 @@ import (
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
+	"patentmine/internal/tui/render"
 )
 
 const (
@@ -157,6 +158,26 @@ func TestStatusTextIncludesTUIAndDaemonVersions(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("status text %q missing %q", text, want)
 		}
+	}
+}
+
+func TestFitBodyPadsEveryLineToSafeWidth(t *testing.T) {
+	out := fitBody("short\nthis line is much too long", 4, 10)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("fitBody lines = %d, want 4", len(lines))
+	}
+	for i, line := range lines {
+		if got := render.StringWidth(line); got != 10 {
+			t.Fatalf("line %d width = %d, want 10: %q", i, got, line)
+		}
+	}
+}
+
+func TestClearLineEndsAppendsTerminalClear(t *testing.T) {
+	out := clearLineEnds("a\nb")
+	if out != "a\x1b[K\nb\x1b[K" {
+		t.Fatalf("clearLineEnds = %q", out)
 	}
 }
 

@@ -118,7 +118,7 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.jumpToFirstNode()
 
 	out := g.View(120, 12)
-	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "🔗  Child", "y: copy Mermaid"} {
+	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "🦴  Child", "y: copy Mermaid"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("family graph view missing %q\n%s", want, out)
 		}
@@ -467,12 +467,12 @@ func TestPatentTableColumnsResponsive(t *testing.T) {
 		width       int
 		wantColumns []string
 	}{
-		{150, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "TAGS", "IDS", "FETCH"}},
-		{135, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "IDS", "FETCH"}},
-		{120, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "TAGS", "IDS", "FETCH"}},
-		{85, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "FETCH"}},
-		{70, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "FETCH"}},
-		{50, []string{"#", "NUMBER", "TITLE", "FETCH"}},
+		{150, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "TAGS", "IDS", "FETCH STATE"}},
+		{135, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "IDS", "FETCH STATE"}},
+		{120, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "TAGS", "IDS", "FETCH STATE"}},
+		{85, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "FETCH STATE"}},
+		{70, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "FETCH STATE"}},
+		{50, []string{"#", "NUMBER", "TITLE", "FETCH STATE"}},
 	}
 
 	for _, tt := range tests {
@@ -502,6 +502,126 @@ func TestMoveSortableColumnSkipsUnsortableVisibleColumns(t *testing.T) {
 	}
 	if got := moveSortableColumn(cols, 8, -1); got != 5 {
 		t.Fatalf("moveSortableColumn prev from FETCH = %d, want 5 for EXPIRES", got)
+	}
+}
+
+func TestWrapTextSplitsLongTokens(t *testing.T) {
+	lines := wrapText("alpha supercalifragilisticexpialidocious omega", 8)
+	if len(lines) == 0 {
+		t.Fatal("wrapText returned no lines")
+	}
+	for i, line := range lines {
+		if got := render.StringWidth(line); got > 8 {
+			t.Fatalf("line %d width = %d, want <= 8: %q", i, got, line)
+		}
+	}
+}
+
+func TestDetailViewDoesNotEmitOverwideWrappedLines(t *testing.T) {
+	const width = 36
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	d.patent = domain.Patent{
+		Number:          num,
+		Title:           "Long token repaint regression",
+		Assignee:        "Acme",
+		Classifications: []string{"A01B123456789012345678901234567890"},
+		FirstClaim:      "A method comprising supercalifragilisticexpialidociouswithoutbreaks and output.",
+		Abstract:        "Abstract contains pneumonoultramicroscopicsilicovolcanoconiosiswithoutbreaks.",
+	}
+
+	out := d.View(width, 20)
+	for i, line := range strings.Split(out, "\n") {
+		if got := render.StringWidth(line); got >= width {
+			t.Fatalf("detail line %d width = %d, want < %d: %q", i, got, width, line)
+		}
+	}
+}
+
+func TestDetailSelectedFetchStateDoesNotPadEmojiRow(t *testing.T) {
+	const width = 36
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	d.patent = domain.Patent{Number: num, Title: "Fetch state", FetchState: domain.FetchCached}
+
+	d.View(width, 8)
+	d.JumpTo(6)
+	out := d.View(width, 8)
+	if strings.Contains(out, "⚡") {
+		t.Fatalf("detail fetch state should render stable text, got:\n%s", out)
+	}
+	for i, line := range strings.Split(out, "\n") {
+		if got := render.StringWidth(line); got >= width {
+			t.Fatalf("selected detail line %d width = %d, want < %d: %q", i, got, width, line)
+		}
+	}
+}
+
+func TestDetailNavigationWithinViewportDoesNotForceTargetToTop(t *testing.T) {
+	const width = 80
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	d.patent = domain.Patent{Number: num, Title: "Fetch state", FetchState: domain.FetchCached}
+
+	d.View(width, 8)
+	d.JumpTo(5) // Country at top, Fetch state still visible below it.
+	if got := d.page.Offset(); got != 5 {
+		t.Fatalf("offset before nav = %d, want 5", got)
+	}
+	d.Command(command.NavDown, Invocation{Repeat: 1})
+	if got := d.page.Cursor(); got != 6 {
+		t.Fatalf("cursor after nav = %d, want Fetch state line 6", got)
+	}
+	if got := d.page.Offset(); got != 5 {
+		t.Fatalf("offset after visible-row nav = %d, want unchanged 5", got)
+	}
+}
+
+func TestDetailClassificationsAreSummarized(t *testing.T) {
+	classifications := make([]string, 0, detailClassificationLimit+3)
+	for i := 0; i < detailClassificationLimit+3; i++ {
+		classifications = append(classifications, "H04N"+formatViewIndex(i))
+	}
+
+	got := detailClassificationsText(classifications)
+	if !strings.Contains(got, "(+3 more; press K)") {
+		t.Fatalf("classification summary missing overflow hint: %q", got)
+	}
+	if strings.Contains(got, "H04N"+formatViewIndex(detailClassificationLimit)) {
+		t.Fatalf("classification summary should not include entries past limit: %q", got)
+	}
+}
+
+func TestDetailNavigationSkipsWrappedFieldContinuations(t *testing.T) {
+	const width = 36
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "", nil)
+	d.loading = false
+	for i := 0; i < detailClassificationLimit; i++ {
+		d.patent.Classifications = append(d.patent.Classifications, "A01B "+formatViewIndex(i)+"/00")
+	}
+	d.patent.Number = num
+	d.patent.Title = "Classification navigation"
+
+	d.View(width, 8)
+	classification := d.highlightGroup(d.classificationLine)
+	if classification.end <= classification.start {
+		t.Fatalf("classification group should span wrapped lines, got %+v", classification)
+	}
+
+	d.JumpTo(d.classificationLine)
+	d.Command(command.NavDown, Invocation{Repeat: 1})
+	if got := d.page.Cursor(); got <= classification.end {
+		t.Fatalf("NavDown from classification landed inside wrapped group at %d, group %+v", got, classification)
+	}
+
+	d.JumpTo(d.classificationLine + 1)
+	d.Command(command.NavUp, Invocation{Repeat: 1})
+	if got := d.page.Cursor(); got != d.classificationLine {
+		t.Fatalf("NavUp from classification continuation = %d, want label line %d", got, d.classificationLine)
 	}
 }
 

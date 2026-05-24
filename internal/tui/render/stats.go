@@ -9,9 +9,10 @@ import (
 // FormatEntityStats formats aggregated counts for any database entity (inventor, tag, assignee)
 // in a fixed-width ASCII layout so long rows do not spill outside popup borders.
 func FormatEntityStats(total int, states map[string]int, tags map[string]int) string {
-	stored := states["stored"]
+	unknown := states["unknown"]
 	underReview := states["under_review"]
-	cached := states["cached"]
+	active := states["active"]
+	ignored := states["ignored"]
 	other := states["other"]
 
 	var tagParts []string
@@ -35,6 +36,6 @@ func FormatEntityStats(total int, states map[string]int, tags map[string]int) st
 	totalLabel := fmt.Sprintf("[%4d]", total)
 	paddedTotal := Pad(totalLabel, 8)
 
-	return fmt.Sprintf("%s state: [%d] stored, [%d] review, [%d] cached, [%d] other, tags: %s",
-		paddedTotal, stored, underReview, cached, other, tagsStr)
+	return fmt.Sprintf("%s state: [%d] unknown, [%d] review, [%d] active, [%d] ignored, [%d] other, tags: %s",
+		paddedTotal, unknown, underReview, active, ignored, other, tagsStr)
 }

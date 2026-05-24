@@ -62,7 +62,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "⚡\uFE0F", "🔗"} {
+	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "🗃️", "🦴"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
 		}

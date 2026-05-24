@@ -183,12 +183,10 @@ func renderTableHeader(theme render.Theme, cols []tableCol, activeSortKey domain
 // code's description.
 func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
 	if col.cellType == domain.CellTypeState {
-		raw := tableStateText(row, projectID)
-		resolved := theme.ReviewStateGlyph(raw)
-		if resolved == raw {
-			resolved = theme.FetchStateGlyph(raw)
+		if projectID != "" {
+			return theme.ReviewStateGlyph(string(row.ReviewState))
 		}
-		return resolved
+		return theme.FetchStateGlyph(string(row.FetchState))
 	}
 
 	switch col.key {

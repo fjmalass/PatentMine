@@ -21,16 +21,16 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 	}
 
 	o := &InventorStatsOverlay{
-		theme:         theme,
-		catalog:       catalog,
-		patent:        patent,
-		project:       "proj-1",
+		theme:   theme,
+		catalog: catalog,
+		patent:  patent,
+		project: "proj-1",
 		stats: []domain.InventorStats{
 			{
 				Inventor: "John Doe",
 				Total:    12,
 				States: map[string]int{
-					"stored":       5,
+					"unknown":      5,
 					"under_review": 3,
 					"other":        4,
 				},
@@ -43,8 +43,8 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 				Inventor: "Jane Smith",
 				Total:    8,
 				States: map[string]int{
-					"stored": 2,
-					"other":  6,
+					"unknown": 2,
+					"other":   6,
 				},
 				Tags: nil,
 			},
@@ -155,7 +155,7 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 			Number:        domain.MustParsePatentNumber("US8000000B1"),
 			DisplayNumber: domain.MustParsePatentNumber("US8000000B1"),
 			Title:         "Awesome Method",
-			ReviewState:   domain.ReviewStateStored,
+			ReviewState:   domain.ReviewStateUnknown,
 			FetchState:    domain.FetchCached,
 		},
 		{
@@ -237,7 +237,7 @@ func TestRaceConditionMitigation(t *testing.T) {
 		patents: []domain.PatentRow{
 			{
 				Number:      domain.MustParsePatentNumber("US8000000B1"),
-				ReviewState: domain.ReviewStateStored,
+				ReviewState: domain.ReviewStateUnknown,
 				FetchState:  domain.FetchCached,
 			},
 		},
@@ -254,7 +254,7 @@ func TestRaceConditionMitigation(t *testing.T) {
 		patents: []domain.PatentRow{
 			{
 				Number:      domain.MustParsePatentNumber("US9000000B1"),
-				ReviewState: domain.ReviewStateStored,
+				ReviewState: domain.ReviewStateUnknown,
 				FetchState:  domain.FetchCached,
 			},
 		},
@@ -291,7 +291,7 @@ func TestAdaptiveColumnHidingAndClamping(t *testing.T) {
 	// "Tags" at idx 4 is now hidden, the new columns set has length 5.
 	// Clamping should adjust focusedColIdx to the nearest sortable column.
 	o.Update(tea.WindowSizeMsg{Width: 76, Height: 40})
-	
+
 	cols = o.currentCols()
 	if len(cols) != 5 {
 		t.Errorf("Expected 5 columns at inner width 70 (terminal width 76), got %d", len(cols))
@@ -309,10 +309,10 @@ func TestInventorStatsOverlayPaging(t *testing.T) {
 	}
 
 	o := &InventorStatsOverlay{
-		theme:         theme,
-		catalog:       catalog,
-		patent:        patent,
-		project:       "proj-1",
+		theme:   theme,
+		catalog: catalog,
+		patent:  patent,
+		project: "proj-1",
 		stats: []domain.InventorStats{
 			{Inventor: "John Doe", Total: 12},
 		},
@@ -342,13 +342,13 @@ func TestInventorStatsOverlayPaging(t *testing.T) {
 		{
 			Number:      domain.MustParsePatentNumber("US6000000B1"),
 			Title:       "Patent Page 2 Item 1",
-			ReviewState: domain.ReviewStateStored,
+			ReviewState: domain.ReviewStateUnknown,
 			FetchState:  domain.FetchCached,
 		},
 		{
 			Number:      domain.MustParsePatentNumber("US7000000B1"),
 			Title:       "Patent Page 2 Item 2",
-			ReviewState: domain.ReviewStateStored,
+			ReviewState: domain.ReviewStateUnknown,
 			FetchState:  domain.FetchCached,
 		},
 	}
@@ -411,10 +411,10 @@ func TestInventorStatsOverlayVisualMode(t *testing.T) {
 	}
 
 	o := &InventorStatsOverlay{
-		theme:         theme,
-		catalog:       catalog,
-		patent:        patent,
-		project:       "proj-1",
+		theme:   theme,
+		catalog: catalog,
+		patent:  patent,
+		project: "proj-1",
 		stats: []domain.InventorStats{
 			{Inventor: "John Doe", Total: 12},
 		},
@@ -499,10 +499,10 @@ func TestInventorStatsOverlaySourcePatentHighlight(t *testing.T) {
 	}
 
 	o := &InventorStatsOverlay{
-		theme:         theme,
-		catalog:       catalog,
-		patent:        patent,
-		project:       "proj-1",
+		theme:   theme,
+		catalog: catalog,
+		patent:  patent,
+		project: "proj-1",
 		stats: []domain.InventorStats{
 			{Inventor: "John Doe", Total: 1},
 		},
@@ -541,14 +541,10 @@ func TestInventorStatsOverlaySourcePatentHighlight(t *testing.T) {
 	// 2. Test sorting: when sorted, the row indices change, but the marker should still be correct.
 	// We reverse order or move cursor to index 1 (which is the source patent).
 	o.patentsPage.MoveDown(1) // Move cursor to the source patent (index 1)
-	
+
 	// Now the source patent row is selected. The prefix should change to cursor + marked: "→⚑"
 	viewStrCursor := o.View(120, 20)
 	if !strings.Contains(viewStrCursor, "→⚑") {
 		t.Errorf("Expected combined cursor + marked icon '→⚑' to be rendered when cursor is on the source patent row")
 	}
 }
-
-
-
-

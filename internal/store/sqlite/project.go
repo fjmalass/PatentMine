@@ -94,21 +94,11 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err erro
 	if !m.ReviewState.Valid() {
 		return fmt.Errorf("store/sqlite: invalid review state %q", m.ReviewState)
 	}
-	state := m.ReviewState
-	// When adding a patent that is already fully fetched, it starts as cached
-	// rather than stored.
-	var fetchState string
-	err = r.reader.QueryRowContext(ctx,
-		`SELECT fetch_state FROM patent WHERE number = ?`, m.Patent.Normalized()).Scan(&fetchState)
-	if err == nil && domain.FetchState(fetchState) == domain.FetchCached && state == domain.ReviewStateStored {
-		state = domain.ReviewStateCached
-	}
-
 	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO membership (project_id, patent_number, state, added_at)
 		 VALUES (?,?,?,?)
 		 ON CONFLICT(project_id, patent_number) DO NOTHING`,
-		string(m.Project), m.Patent.Normalized(), string(state), encodeTime(m.AddedAt))
+		string(m.Project), m.Patent.Normalized(), string(m.ReviewState), encodeTime(m.AddedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: add membership: %w", err)
 	}

@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"slices"
 )
 
 // FetchState records how complete a stored patent record is. It is independent
@@ -10,6 +9,8 @@ import (
 type FetchState string
 
 const (
+	// FetchUnknown is the fallback/error fetch state.
+	FetchUnknown FetchState = "unknown"
 	// FetchStub means only a reference exists (e.g. discovered as a citation)
 	// without the full patent body having been fetched.
 	FetchStub FetchState = "stub"
@@ -31,7 +32,7 @@ func (s FetchState) Valid() bool {
 func ParseFetchState(s string) (FetchState, error) {
 	fs := FetchState(s)
 	if !fs.Valid() {
-		return "", fmt.Errorf("domain: unknown fetch state %q", s)
+		return FetchUnknown, fmt.Errorf("domain: unknown fetch state %q", s)
 	}
 	return fs, nil
 }
@@ -45,19 +46,18 @@ const (
 	// current project. Never stored in the database — appears only as a derived
 	// value when a LEFT JOIN produces no matching membership row, and as the
 	// zero value of PatentFilter.ReviewState when no state filter is active.
-	// Contrast with ReviewStateStored: that state means a membership row EXISTS
-	// but the patent has not yet been fetched.
+	// Contrast with ReviewStateUnknown: that state means a membership row EXISTS
+	// but the project workflow has not been classified yet.
 	ReviewStateNone ReviewState = ""
-	// ReviewStateStored is the default state of a patent added to a project.
-	// The patent is tracked (stub exists) but its full record has not yet been
-	// fetched from the web. Triggers auto-fetch on add.
-	ReviewStateStored ReviewState = "stored"
+	// ReviewStateUnknown is the default state of a patent added to a project
+	// before it has been classified by review workflow.
+	ReviewStateUnknown ReviewState = "unknown"
 	// ReviewStateUnderReview marks a patent awaiting human review.
 	ReviewStateUnderReview ReviewState = "under_review"
+	// ReviewStateActive marks a reviewed patent that remains active in a project.
+	ReviewStateActive ReviewState = "active"
 	// ReviewStateIgnored marks a patent the user has set aside.
 	ReviewStateIgnored ReviewState = "ignored"
-	// ReviewStateCached marks a patent whose record is cached.
-	ReviewStateCached ReviewState = "cached"
 	// ReviewStateDeleted is a soft delete: the row stays for history and undo.
 	ReviewStateDeleted ReviewState = "deleted"
 )
@@ -65,7 +65,7 @@ const (
 // Valid reports whether the ReviewState is a known value.
 func (s ReviewState) Valid() bool {
 	switch s {
-	case ReviewStateStored, ReviewStateUnderReview, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted:
+	case ReviewStateUnknown, ReviewStateUnderReview, ReviewStateActive, ReviewStateIgnored, ReviewStateDeleted:
 		return true
 	default:
 		return false
@@ -85,22 +85,19 @@ func ParseReviewState(s string) (ReviewState, error) {
 	return ms, nil
 }
 
-// reviewStateTransitions is the single source of truth for which review
-// state changes are allowed. Keeping it as data (not scattered if-statements)
-// means a new state or rule is one edit here.
-var reviewStateTransitions = map[ReviewState][]ReviewState{
-	ReviewStateStored:        {ReviewStateUnderReview, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted},
-	ReviewStateUnderReview: {ReviewStateStored, ReviewStateIgnored, ReviewStateCached, ReviewStateDeleted},
-	ReviewStateIgnored:     {ReviewStateStored, ReviewStateUnderReview, ReviewStateCached, ReviewStateDeleted},
-	ReviewStateCached:      {ReviewStateStored, ReviewStateUnderReview, ReviewStateIgnored, ReviewStateDeleted},
-	ReviewStateDeleted:     {ReviewStateStored},
-}
-
-// CanTransitionTo reports whether moving from s to target is allowed. A no-op
-// transition (s == target) is always allowed.
-func (s ReviewState) CanTransitionTo(target ReviewState) bool {
+// CanTransitionTo reports whether moving from s to target is allowed under the given fetch state.
+// A no-op transition (s == target) is always allowed.
+func (s ReviewState) CanTransitionTo(target ReviewState, fetch FetchState) bool {
 	if s == target {
 		return s.Valid()
 	}
-	return slices.Contains(reviewStateTransitions[s], target)
+	if !s.Valid() || !target.Valid() {
+		return false
+	}
+	if fetch == FetchStub {
+		// If fetch state is stub, only unknown reviewState is possible.
+		return target == ReviewStateUnknown
+	}
+	// Otherwise, we can transition to/from any valid ReviewState.
+	return true
 }

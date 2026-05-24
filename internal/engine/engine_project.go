@@ -47,7 +47,7 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 	return p, nil
 }
 
-// AddToProject adds a patent to a project in the default Stored state. The
+// AddToProject adds a patent to a project in the default Unknown state. The
 // patent may be given by any of its document numbers; it is resolved to the
 // record before the membership is created. A patent that has never been
 // fetched is recorded as a stub first, so it can be tracked in a project
@@ -61,13 +61,9 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		return false, err
 	}
 	before, exists := e.existingMembership(ctx, project, record)
-	state := domain.ReviewStateStored
+	state := domain.ReviewStateUnknown
 	if exists {
 		state = before.ReviewState
-	} else if !created {
-		if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
-			state = domain.ReviewStateCached
-		}
 	}
 	after := domain.Membership{
 		Project:     project,
@@ -94,11 +90,17 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		},
 	})
 	e.announceChange()
-	// Any patent in "stored" state has no full record yet — kick a single-patent
+	// Any unknown project membership for a stub patent kicks a single-patent
 	// fetch so bibliographic data fills in shortly after the patent is added.
 	// This covers both brand-new stubs (created==true) and existing stubs that
 	// were previously discovered as citation edges.
-	if !exists && state == domain.ReviewStateStored && e.crawl != nil {
+	needsFetch := created
+	if !created {
+		if p, err := e.repo.Patent(ctx, record); err == nil {
+			needsFetch = p.FetchState == domain.FetchStub
+		}
+	}
+	if !exists && state == domain.ReviewStateUnknown && needsFetch && e.crawl != nil {
 		if jobID, fetchErr := e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
@@ -129,7 +131,7 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 		}
 		ctx := context.Background()
 		membership, err := e.repo.Membership(ctx, project, record)
-		if err == nil && membership.ReviewState != domain.ReviewStateStored {
+		if err == nil && membership.ReviewState != domain.ReviewStateUnknown {
 			return
 		}
 		if stubCreated {
@@ -174,13 +176,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 	for _, record := range records {
 		current, err := e.repo.Membership(ctx, project, record)
 		if errors.Is(err, store.ErrNotFound) {
-			initialState := domain.ReviewStateStored
-			created := createdMap[record]
-			if !created {
-				if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
-					initialState = domain.ReviewStateCached
-				}
-			}
+			initialState := domain.ReviewStateUnknown
 
 			m := domain.Membership{
 				Project:     project,
@@ -221,7 +217,11 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 			return err
 		}
 
-		if !current.ReviewState.CanTransitionTo(target) {
+		p, err := e.repo.Patent(ctx, record)
+		if err != nil {
+			return err
+		}
+		if !current.ReviewState.CanTransitionTo(target, p.FetchState) {
 			return fmt.Errorf("engine: cannot move membership from %q to %q", current.ReviewState, target)
 		}
 		beforeMemberships[record] = current
@@ -295,18 +295,17 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		e.incCounter("engine.review_state.changed_total", int64(len(changedRecords)))
 	}
 
-	// Start family crawls for newly added stub memberships that start as "stored".
+	// Start family crawls for newly added unknown memberships backed by stubs.
 	if e.crawl != nil {
 		for _, record := range addedRecords {
-			initialState := domain.ReviewStateStored
 			created := createdMap[record]
+			needsFetch := created
 			if !created {
-				if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
-					initialState = domain.ReviewStateCached
+				if p, err := e.repo.Patent(ctx, record); err == nil {
+					needsFetch = p.FetchState == domain.FetchStub
 				}
 			}
-
-			if initialState == domain.ReviewStateStored {
+			if needsFetch {
 				if jobID, fetchErr := e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false); fetchErr != nil {
 					e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 						slog.String("record", record.String()), slog.String("error", fetchErr.Error()))

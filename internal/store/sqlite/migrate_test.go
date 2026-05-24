@@ -54,7 +54,7 @@ func writeLegacyDB(t *testing.T, path string) {
 			fetch_state,source,application_date,publication_date,grant_date,fetched_at)
 			VALUES ('US0000002B2','US','0000002','B2','T2','A','Acme','[]','cached','file','','','','')`,
 		// A member with a curated IDS entry.
-		`INSERT INTO membership VALUES ('p-1','US0000001B2','cached','2026-02-01T00:00:00Z')`,
+		`INSERT INTO membership VALUES ('p-1','US0000001B2','unknown','2026-02-01T00:00:00Z')`,
 		`INSERT INTO project_ids (project_id,patent_number,notes,status,added_at)
 			VALUES ('p-1','US0000001B2','keep this','submitted','2026-03-01T00:00:00Z')`,
 		// An IDS entry whose patent was never made a project member.
@@ -104,13 +104,13 @@ func TestMigrateFFoldsProjectIDsAndBacksUp(t *testing.T) {
 		t.Fatalf("migrated IDS entry = %+v, want notes 'keep this' / submitted", entry)
 	}
 
-	// The membership state must be preserved.
+	// Legacy cached review state is folded back to unknown; fetch_state carries cache status.
 	m, err := repo.Membership(ctx, "p-1", domain.MustParsePatentNumber("US0000001B2"))
 	if err != nil {
 		t.Fatalf("Membership after migration: %v", err)
 	}
-	if m.ReviewState != domain.ReviewStateCached {
-		t.Fatalf("membership state = %q, want cached", m.ReviewState)
+	if m.ReviewState != domain.ReviewStateUnknown {
+		t.Fatalf("membership state = %q, want unknown", m.ReviewState)
 	}
 
 	// The orphan IDS entry must have a synthesized membership.

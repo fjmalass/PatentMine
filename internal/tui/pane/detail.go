@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
@@ -18,6 +19,8 @@ import (
 
 // detailDateLayout formats dates in the detail view.
 const detailDateLayout = "2006-01-02"
+
+const detailClassificationLimit = 24
 
 // detailLoadedMsg delivers a finished patent.get result. state and tags are
 // project-scoped and empty when the detail pane has no project.
@@ -154,7 +157,7 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 				d.page.ScrollTo(d.nextAnchorLine())
 			} else {
 				for range inv.Repeat {
-					d.page.ScrollTo(d.nextGroupLine())
+					d.gotoGroupLine(d.nextGroupLine())
 				}
 			}
 			return nil
@@ -164,7 +167,7 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 				d.page.ScrollTo(d.prevAnchorLine())
 			} else {
 				for range inv.Repeat {
-					d.page.ScrollTo(d.prevGroupLine())
+					d.gotoGroupLine(d.prevGroupLine())
 				}
 			}
 			return nil
@@ -329,7 +332,7 @@ func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
 		"tags":            d.tags,
 		"classifications": d.patent.Classifications,
 		"line":            d.page.Cursor(),
-		"inventors_short":  formatInventorsShort(d.patent.Inventors),
+		"inventors_short": formatInventorsShort(d.patent.Inventors),
 	}
 	if !d.patent.PublicationDate.IsZero() {
 		metadata["publication_date"] = d.patent.PublicationDate.Format("2006-01-02")
@@ -349,9 +352,12 @@ func (d *Detail) View(w, h int) string {
 	case d.loadErr != "":
 		return d.theme.Error.Render("error: " + d.loadErr)
 	}
-	if d.cachedLines == nil || w != d.lastWidth || d.jump.Active != d.lastJumpActive {
-		d.cachedLines = strings.Split(d.body(w), "\n")
-		d.lastWidth = w
+	// Leave one column unused. Exact-width ANSI-styled rows can leave some
+	// terminals in wrap-pending state, causing stale rows to look duplicated.
+	renderW := max(w-1, 1)
+	if d.cachedLines == nil || renderW != d.lastWidth || d.jump.Active != d.lastJumpActive {
+		d.cachedLines = strings.Split(d.body(renderW), "\n")
+		d.lastWidth = renderW
 		d.lastJumpActive = d.jump.Active
 	}
 	lines := d.cachedLines
@@ -363,8 +369,9 @@ func (d *Detail) View(w, h int) string {
 	out := make([]string, 0, end-start)
 	for i, line := range lines[start:end] {
 		lineIndex := start + i
+		line = render.Truncate(line, renderW)
 		if lineIndex == cursor || (highlight.start >= 0 && lineIndex >= highlight.start && lineIndex <= highlight.end) {
-			out = append(out, d.theme.Selected.Render(render.Pad(line, w)))
+			out = append(out, d.theme.Selected.Render(render.Pad(line, renderW)))
 		} else {
 			out = append(out, line)
 		}
@@ -400,7 +407,7 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, "Inventors", invsVal)
 
 	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
-	d.field(&b, w, "Fetch state", fetchStateText(d.theme, p.FetchState))
+	d.field(&b, w, "Fetch state", detailFetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, "Source", string(p.Source))
 	d.field(&b, w, "Source URL", p.SourceURL)
 
@@ -412,7 +419,7 @@ func (d *Detail) body(w int) string {
 	// Classifications: comma-joined codes wrapped across the value column.
 	// Cached descriptions live in the dedicated popup (K), so the detail field
 	// stays compact regardless of how many codes a record carries.
-	classVal := strings.Join(p.Classifications, ", ")
+	classVal := detailClassificationsText(p.Classifications)
 	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", classVal, false, 0)
 	d.classificationLine = strings.Count(b.String(), "\n")
 	d.wrappedField(&b, w, "Classifications", classVal)
@@ -421,9 +428,9 @@ func (d *Detail) body(w int) string {
 	// one project, so they appear only when the pane has an active project.
 	if d.project != "" {
 		b.WriteByte('\n')
-		revVal := reviewStateText(d.theme, d.state)
+		revVal := detailReviewStateText(d.state)
 		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", revVal, true, 0)
-		d.field(&b, w, "Review state", styledReviewStateText(d.theme, d.state))
+		d.field(&b, w, "Review state", detailStyledReviewStateText(d.theme, d.state))
 
 		idsVal := detailIDSText(d.idsEntry)
 		d.addAnchor(&b, d.jumpKey("IDS"), "IDS", idsVal, true, 0)
@@ -591,13 +598,17 @@ func (d *Detail) prevGroupLine() int {
 			return group.start
 		}
 		if cursor > group.start && cursor <= group.end {
-			continue
+			return group.start
 		}
 	}
 	if len(d.lineGroups) == 0 {
 		return cursor - 1
 	}
 	return d.lineGroups[0].start
+}
+
+func (d *Detail) gotoGroupLine(line int) {
+	d.page.GotoLine(line + 1)
 }
 
 // jumpKey returns the assigned jump key for a label, or 0 if unset.
@@ -685,8 +696,8 @@ func (d *Detail) wrappedField(b *strings.Builder, w int, label, value string) {
 		lines = []string{""}
 	}
 	indent := strings.Repeat(" ", labelW+1)
+	start := strings.Count(b.String(), "\n")
 	for i, line := range lines {
-		start := strings.Count(b.String(), "\n")
 		if i == 0 {
 			b.WriteString(d.theme.Header.Render(render.Pad(displayLabel, labelW)))
 			b.WriteString(" ")
@@ -695,8 +706,8 @@ func (d *Detail) wrappedField(b *strings.Builder, w int, label, value string) {
 		}
 		b.WriteString(d.theme.Row.Render(line))
 		b.WriteByte('\n')
-		d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: start})
 	}
+	d.lineGroups = append(d.lineGroups, detailLineGroup{start: start, end: strings.Count(b.String(), "\n") - 1})
 }
 
 // section writes a heading followed by word-wrapped body text, so long fields
@@ -741,31 +752,84 @@ func isLocalField(label string) bool {
 	}
 }
 
-// wrapText greedily word-wraps s to lines no wider than width.
+// wrapText greedily word-wraps s to lines no wider than width, hard-splitting
+// single tokens that would otherwise force the terminal to wrap physical rows.
 func wrapText(s string, width int) []string {
+	if width <= 0 {
+		return nil
+	}
 	var lines []string
 	var line strings.Builder
+	flush := func() {
+		if line.Len() == 0 {
+			return
+		}
+		lines = append(lines, line.String())
+		line.Reset()
+	}
 	for _, word := range strings.Fields(s) {
+		for render.StringWidth(word) > width {
+			flush()
+			lines = append(lines, ansi.Cut(word, 0, width))
+			word = ansi.Cut(word, width, render.StringWidth(word))
+		}
+		if word == "" {
+			continue
+		}
 		switch {
 		case line.Len() == 0:
 			line.WriteString(word)
-		case line.Len()+1+len(word) <= width:
+		case render.StringWidth(line.String())+1+render.StringWidth(word) <= width:
 			line.WriteByte(' ')
 			line.WriteString(word)
 		default:
-			lines = append(lines, line.String())
-			line.Reset()
+			flush()
 			line.WriteString(word)
 		}
 	}
-	if line.Len() > 0 {
-		lines = append(lines, line.String())
-	}
+	flush()
 	return lines
 }
 
 // reviewStateText renders a patent's review state within the pane's project,
 // or a note when the patent is not a member of that project.
+func detailReviewStateText(state domain.ReviewState) string {
+	if state == "" {
+		return "not in project"
+	}
+	return string(state)
+}
+
+func detailStyledReviewStateText(theme render.Theme, state domain.ReviewState) string {
+	text := detailReviewStateText(state)
+	switch state {
+	case domain.ReviewStateUnknown:
+		return theme.Dim.Render(text)
+	case domain.ReviewStateUnderReview:
+		return theme.Warn.Render(text)
+	case domain.ReviewStateActive:
+		return theme.OK.Render(text)
+	case domain.ReviewStateIgnored:
+		return theme.Dim.Render(text)
+	case domain.ReviewStateDeleted:
+		return theme.Error.Render(text)
+	default:
+		return text
+	}
+}
+
+func detailFetchStateText(theme render.Theme, state domain.FetchState) string {
+	text := string(state)
+	switch state {
+	case domain.FetchCached:
+		return theme.Dim.Render(text)
+	case domain.FetchStub:
+		return theme.MutedItalic.Render(text)
+	default:
+		return text
+	}
+}
+
 func reviewStateText(theme render.Theme, state domain.ReviewState) string {
 	if state == "" {
 		return "not in project"
@@ -776,9 +840,13 @@ func reviewStateText(theme render.Theme, state domain.ReviewState) string {
 func styledReviewStateText(theme render.Theme, state domain.ReviewState) string {
 	text := reviewStateText(theme, state)
 	switch state {
+	case domain.ReviewStateUnknown:
+		return theme.Dim.Render(text)
 	case domain.ReviewStateUnderReview:
 		return theme.Warn.Render(text)
-	case domain.ReviewStateCached:
+	case domain.ReviewStateActive:
+		return theme.OK.Render(text)
+	case domain.ReviewStateIgnored:
 		return theme.Dim.Render(text)
 	case domain.ReviewStateDeleted:
 		return theme.Error.Render(text)
@@ -810,6 +878,14 @@ func tagsText(tags []domain.Tag) string {
 		names[i] = t.Name
 	}
 	return strings.Join(names, ", ")
+}
+
+func detailClassificationsText(classifications []string) string {
+	if len(classifications) <= detailClassificationLimit {
+		return strings.Join(classifications, ", ")
+	}
+	shown := strings.Join(classifications[:detailClassificationLimit], ", ")
+	return fmt.Sprintf("%s (+%d more; press K)", shown, len(classifications)-detailClassificationLimit)
 }
 
 func detailIDSText(entry *domain.IDSEntry) string {

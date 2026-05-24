@@ -107,7 +107,7 @@ func TestMergeRecords(t *testing.T) {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	if err := repo.AddMembership(ctx, domain.Membership{
-		Project: project.ID, Patent: absorb, ReviewState: domain.ReviewStateStored,
+		Project: project.ID, Patent: absorb, ReviewState: domain.ReviewStateUnknown,
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
 	}

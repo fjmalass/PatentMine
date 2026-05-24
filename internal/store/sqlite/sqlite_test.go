@@ -245,7 +245,7 @@ func TestProjectAndMembership(t *testing.T) {
 	if err := repo.AddMembership(ctx, domain.Membership{
 		Project:     project.ID,
 		Patent:      patent.Number,
-		ReviewState: domain.ReviewStateStored,
+		ReviewState: domain.ReviewStateUnknown,
 		AddedAt:     time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
@@ -508,9 +508,9 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 		}
 	}
 	for patent, state := range map[domain.PatentNumber]domain.ReviewState{
-		p1.Number: domain.ReviewStateStored,
+		p1.Number: domain.ReviewStateUnknown,
 		p2.Number: domain.ReviewStateUnderReview,
-		p3.Number: domain.ReviewStateStored,
+		p3.Number: domain.ReviewStateUnknown,
 	} {
 		if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: patent, ReviewState: state, AddedAt: time.Now().UTC()}); err != nil {
 			t.Fatalf("AddMembership(%s): %v", patent, err)
@@ -612,7 +612,7 @@ func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 	if err := repo.SavePatent(ctx, patent); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
-	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: patent.Number, ReviewState: domain.ReviewStateCached, AddedAt: time.Now().UTC()}); err != nil {
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: patent.Number, ReviewState: domain.ReviewStateUnknown, AddedAt: time.Now().UTC()}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
 	}
 
@@ -781,7 +781,7 @@ func seedTagSortFixture(t testing.TB, repo *Repo, ctx context.Context, count int
 		if err := repo.SavePatent(ctx, p); err != nil {
 			t.Fatalf("SavePatent(%s): %v", p.Number, err)
 		}
-		if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p.Number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+		if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p.Number, ReviewState: domain.ReviewStateUnknown, AddedAt: time.Now().UTC()}); err != nil {
 			t.Fatalf("AddMembership(%s): %v", p.Number, err)
 		}
 		tagID := alpha.ID
@@ -826,7 +826,7 @@ func TestBatchOperationsStore(t *testing.T) {
 		if err := repo.AddMembership(ctx, domain.Membership{
 			Project:     project.ID,
 			Patent:      p.Number,
-			ReviewState: domain.ReviewStateStored,
+			ReviewState: domain.ReviewStateUnknown,
 			AddedAt:     time.Now().UTC(),
 		}); err != nil {
 			t.Fatalf("AddMembership: %v", err)
@@ -849,13 +849,13 @@ func TestBatchOperationsStore(t *testing.T) {
 			t.Fatalf("expected state %s, got %s", domain.ReviewStateUnderReview, m.ReviewState)
 		}
 	}
-	// p3 state should remain Cached.
+	// p3 state should remain Unknown.
 	m3, err := repo.Membership(ctx, project.ID, p3.Number)
 	if err != nil {
 		t.Fatalf("Membership: %v", err)
 	}
-	if m3.ReviewState != domain.ReviewStateCached {
-		t.Fatalf("expected state %s, got %s", domain.ReviewStateCached, m3.ReviewState)
+	if m3.ReviewState != domain.ReviewStateUnknown {
+		t.Fatalf("expected state %s, got %s", domain.ReviewStateUnknown, m3.ReviewState)
 	}
 
 	// 3. Verify SetReviewStates transactional safety (rollback).
@@ -943,7 +943,7 @@ func TestPatentInventorStats(t *testing.T) {
 	if err := repo.AddMembership(ctx, domain.Membership{
 		Project:     project.ID,
 		Patent:      p1.Number,
-		ReviewState: domain.ReviewStateStored,
+		ReviewState: domain.ReviewStateUnknown,
 		AddedAt:     time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("AddMembership p1: %v", err)
@@ -977,7 +977,7 @@ func TestPatentInventorStats(t *testing.T) {
 		t.Fatalf("expected 2 inventor stats, got %d", len(stats))
 	}
 
-	// Ada Lovelace should have: Total: 2, States: stored=1, under_review=1, Tags: seminal=1
+	// Ada Lovelace should have: Total: 2, States: unknown=1, under_review=1, Tags: seminal=1
 	ada := stats[0]
 	if ada.Inventor != "Ada Lovelace" {
 		t.Errorf("expected Ada Lovelace, got %s", ada.Inventor)
@@ -985,14 +985,14 @@ func TestPatentInventorStats(t *testing.T) {
 	if ada.Total != 2 {
 		t.Errorf("Ada Lovelace expected 2 total patents, got %d", ada.Total)
 	}
-	if ada.States["stored"] != 1 || ada.States["under_review"] != 1 {
-		t.Errorf("Ada Lovelace expected stored=1, under_review=1 review states, got: %v", ada.States)
+	if ada.States["unknown"] != 1 || ada.States["under_review"] != 1 {
+		t.Errorf("Ada Lovelace expected unknown=1, under_review=1 review states, got: %v", ada.States)
 	}
 	if ada.Tags["seminal"] != 1 {
 		t.Errorf("Ada Lovelace expected tag seminal=1, got: %v", ada.Tags)
 	}
 
-	// Alan Turing should have: Total: 1, States: stored=1, Tags: seminal=1
+	// Alan Turing should have: Total: 1, States: unknown=1, Tags: seminal=1
 	alan := stats[1]
 	if alan.Inventor != "Alan Turing" {
 		t.Errorf("expected Alan Turing, got %s", alan.Inventor)
@@ -1000,8 +1000,8 @@ func TestPatentInventorStats(t *testing.T) {
 	if alan.Total != 1 {
 		t.Errorf("Alan Turing expected 1 total patent, got %d", alan.Total)
 	}
-	if alan.States["stored"] != 1 {
-		t.Errorf("Alan Turing expected stored=1, got: %v", alan.States)
+	if alan.States["unknown"] != 1 {
+		t.Errorf("Alan Turing expected unknown=1, got: %v", alan.States)
 	}
 	if alan.Tags["seminal"] != 1 {
 		t.Errorf("Alan Turing expected tag seminal=1, got: %v", alan.Tags)
@@ -1030,7 +1030,7 @@ func TestPatentAssigneeStats(t *testing.T) {
 			t.Fatalf("SavePatent(%s): %v", p.Number, err)
 		}
 	}
-	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p1.Number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p1.Number, ReviewState: domain.ReviewStateUnknown, AddedAt: time.Now().UTC()}); err != nil {
 		t.Fatalf("AddMembership p1: %v", err)
 	}
 	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p2.Number, ReviewState: domain.ReviewStateUnderReview, AddedAt: time.Now().UTC()}); err != nil {
@@ -1054,8 +1054,8 @@ func TestPatentAssigneeStats(t *testing.T) {
 	if stats[0].Assignee != "Acme Corp" || stats[0].Total != 2 {
 		t.Fatalf("top assignee = %+v, want Acme Corp with 2 patents", stats[0])
 	}
-	if stats[0].States["stored"] != 1 || stats[0].States["under_review"] != 1 {
-		t.Fatalf("Acme state counts = %v, want stored=1 under_review=1", stats[0].States)
+	if stats[0].States["unknown"] != 1 || stats[0].States["under_review"] != 1 {
+		t.Fatalf("Acme state counts = %v, want unknown=1 under_review=1", stats[0].States)
 	}
 	if stats[0].Tags["seminal"] != 1 {
 		t.Fatalf("Acme tag counts = %v, want seminal=1", stats[0].Tags)
@@ -1080,7 +1080,7 @@ func TestSaveMutationGroup(t *testing.T) {
 		CreatedAt:         time.Now().UTC(),
 		SelectionSnapshot: []domain.PatentNumber{patent.Number},
 		Metadata:          map[string]any{"target_state": domain.ReviewStateUnderReview},
-	}, []domain.MutationItem{{Patent: patent.Number, Kind: "membership.state", Before: map[string]any{"state": domain.ReviewStateStored}, After: map[string]any{"state": domain.ReviewStateUnderReview}, Inverse: map[string]any{"state": domain.ReviewStateStored}}})
+	}, []domain.MutationItem{{Patent: patent.Number, Kind: "membership.state", Before: map[string]any{"state": domain.ReviewStateUnknown}, After: map[string]any{"state": domain.ReviewStateUnderReview}, Inverse: map[string]any{"state": domain.ReviewStateUnknown}}})
 	if err != nil {
 		t.Fatalf("SaveMutationGroup: %v", err)
 	}
@@ -1122,7 +1122,7 @@ func TestPatentClassificationStats(t *testing.T) {
 			t.Fatalf("SavePatent(%s): %v", p.Number, err)
 		}
 	}
-	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p1.Number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p1.Number, ReviewState: domain.ReviewStateUnknown, AddedAt: time.Now().UTC()}); err != nil {
 		t.Fatalf("AddMembership p1: %v", err)
 	}
 	if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: p2.Number, ReviewState: domain.ReviewStateUnderReview, AddedAt: time.Now().UTC()}); err != nil {
@@ -1149,8 +1149,8 @@ func TestPatentClassificationStats(t *testing.T) {
 	if stats[0].Classification.Code != "G06F17/30" || stats[0].Total != 2 {
 		t.Fatalf("top classification = %+v, want G06F17/30 total=2", stats[0])
 	}
-	if stats[0].States["stored"] != 1 || stats[0].States["under_review"] != 1 {
-		t.Fatalf("classification state counts = %v, want stored=1 under_review=1", stats[0].States)
+	if stats[0].States["unknown"] != 1 || stats[0].States["under_review"] != 1 {
+		t.Fatalf("classification state counts = %v, want unknown=1 under_review=1", stats[0].States)
 	}
 	if stats[0].Tags["seminal"] != 1 {
 		t.Fatalf("classification tag counts = %v, want seminal=1", stats[0].Tags)

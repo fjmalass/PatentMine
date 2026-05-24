@@ -62,26 +62,9 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	if err != nil {
 		return err
 	}
-	// Read prior fetch_state before the upsert so we can detect a genuine
-	// stub→cached transition (as opposed to re-saving an already-cached patent).
-	var priorFetchState string
-	_ = r.reader.QueryRowContext(ctx,
-		`SELECT fetch_state FROM patent WHERE number = ?`, p.Number.Normalized()).Scan(&priorFetchState)
-
 	_, err = r.writer.ExecContext(ctx, patentUpsertSQL, args...)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
-	}
-	// Only promote stored memberships to cached on a genuine first fetch
-	// (stub→cached). Re-saving an already-cached patent must not touch
-	// memberships that the user explicitly placed in stored, under_review, etc.
-	if p.FetchState == domain.FetchCached && domain.FetchState(priorFetchState) != domain.FetchCached {
-		_, err = r.writer.ExecContext(ctx,
-			`UPDATE membership SET state = ? WHERE patent_number = ? AND state = ?`,
-			string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateStored))
-		if err != nil {
-			return fmt.Errorf("store/sqlite: update membership state on fetch: %w", err)
-		}
 	}
 	return nil
 }
@@ -782,7 +765,7 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 					stats.Total++
 					seen[number] = true
 
-					if state != string(domain.ReviewStateStored) && state != string(domain.ReviewStateUnderReview) {
+					if state != string(domain.ReviewStateUnknown) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateActive) && state != string(domain.ReviewStateIgnored) {
 						state = "other"
 					}
 					stats.States[state]++
@@ -842,7 +825,7 @@ func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID
 			stats.Total++
 			seenPatents[assignee][number] = true
 			if state != "" {
-				if state != string(domain.ReviewStateStored) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateCached) {
+				if state != string(domain.ReviewStateUnknown) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateActive) && state != string(domain.ReviewStateIgnored) {
 					state = "other"
 				}
 				stats.States[state]++
@@ -915,7 +898,7 @@ func (r *Repo) PatentClassificationStats(ctx context.Context, project domain.Pro
 			stats.Total++
 			seenPatents[code][number] = true
 			if state != "" {
-				if state != string(domain.ReviewStateStored) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateCached) {
+				if state != string(domain.ReviewStateUnknown) && state != string(domain.ReviewStateUnderReview) && state != string(domain.ReviewStateActive) && state != string(domain.ReviewStateIgnored) {
 					state = "other"
 				}
 				stats.States[state]++

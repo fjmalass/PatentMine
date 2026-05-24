@@ -306,7 +306,7 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			if len(numbers) == 0 {
 				numbers = []domain.PatentNumber{selectedPatent.Number}
 			}
-			cmd := pane.SetReviewStateCmd(o.client, o.project, numbers, domain.ReviewStateStored)
+			cmd := pane.SetReviewStateCmd(o.client, o.project, numbers, domain.ReviewStateActive)
 			o.clearVisual()
 			return o, cmd, true
 		case "r":
@@ -544,7 +544,7 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 				}
 				return "-"
 			case "state":
-				if o.project != "" && p.ReviewState.Valid() {
+				if o.project != "" {
 					return o.theme.ReviewStateGlyph(string(p.ReviewState))
 				}
 				return o.theme.FetchStateGlyph(string(p.FetchState))

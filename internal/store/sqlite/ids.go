@@ -95,7 +95,7 @@ func (r *Repo) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (saved d
 			ids_status=excluded.ids_status,
 			ids_added_at=excluded.ids_added_at`,
 		string(entry.Project), entry.Patent.Normalized(),
-		string(domain.ReviewStateStored), encodeTime(time.Now().UTC()),
+		string(domain.ReviewStateUnknown), encodeTime(time.Now().UTC()),
 		entry.KindCode, entry.CountryCode, boolToInt(entry.InFull),
 		entry.RelevantPassages, entry.Notes, string(entry.Status), encodeTime(addedAt))
 	if err != nil {

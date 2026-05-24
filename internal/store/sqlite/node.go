@@ -105,26 +105,12 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 		if !p.FetchState.Valid() {
 			return fmt.Errorf("store/sqlite: invalid fetch state %q", p.FetchState)
 		}
-		// Read prior fetch_state before the upsert to detect a genuine stub→cached
-		// transition; re-saving an already-cached patent must not touch memberships.
-		var priorFetchState string
-		_ = tx.QueryRowContext(ctx,
-			`SELECT fetch_state FROM patent WHERE number = ?`, p.Number.Normalized()).Scan(&priorFetchState)
-
 		args, argErr := patentUpsertArgs(p)
 		if argErr != nil {
 			return argErr
 		}
 		if _, err := tx.ExecContext(ctx, patentUpsertSQL, args...); err != nil {
 			return fmt.Errorf("store/sqlite: save node patent %s: %w", p.Number, err)
-		}
-		// Only promote stored memberships to cached on the genuine first fetch.
-		if p.FetchState == domain.FetchCached && domain.FetchState(priorFetchState) != domain.FetchCached {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE membership SET state = ? WHERE patent_number = ? AND state = ?`,
-				string(domain.ReviewStateCached), p.Number.Normalized(), string(domain.ReviewStateStored)); err != nil {
-				return fmt.Errorf("store/sqlite: save node membership state: %w", err)
-			}
 		}
 		for _, doc := range batch.Documents {
 			if err := execDocumentUpsert(ctx, tx, p.Number, doc); err != nil {

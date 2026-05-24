@@ -36,10 +36,10 @@ var commandPolicies = map[command.ID]CommandPolicy{
 			return fmt.Sprintf("Delete %d patents? This cannot be undone.", len(ns)), true
 		},
 	},
-	command.MarkStored: {
+	command.MarkActive: {
 		Confirm: func(ns []domain.PatentNumber) (string, bool) {
 			if len(ns) >= 2 {
-				return fmt.Sprintf("Mark %d patents as stored?", len(ns)), true
+				return fmt.Sprintf("Mark %d patents as active?", len(ns)), true
 			}
 			return "", false
 		},

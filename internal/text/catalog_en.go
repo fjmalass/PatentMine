@@ -197,7 +197,7 @@ var cmdStrings = map[string][2]string{
 	"patent.family_graph":        {"Patent family graph", "Load a bounded parent/child family DAG around one patent."},
 	"project.list":               {"List projects", "List all projects."},
 	"ids.export":                 {"Export IDS", "Build the Information Disclosure Statement for the selected project."},
-	"patent.mark-stored":         {"Mark stored", "Set the selected patent to the stored review state."},
+	"patent.mark-active":         {"Mark active", "Set the selected patent to the active review state."},
 	"patent.mark-under-review":   {"Mark under review", "Set the selected patent to under review."},
 	"patent.mark-ignored":        {"Mark ignored", "Set the selected patent to ignored."},
 	"patent.mark-deleted":        {"Mark deleted", "Soft-delete the selected patent from the project."},

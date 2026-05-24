@@ -39,7 +39,7 @@ type PatentTableColumn struct {
 // PatentTableColumns returns the authoritative patent table column list for the
 // given project context.
 func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
-	stateLabel := "FETCH"
+	stateLabel := "FETCH STATE"
 	idsSortable := false
 	tagsSortable := false
 	if projectID != "" {

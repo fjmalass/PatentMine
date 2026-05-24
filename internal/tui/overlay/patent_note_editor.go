@@ -70,10 +70,10 @@ type PatentNoteEditor struct {
 	modifiedAt   time.Time
 	confirmClear bool
 
-	vimMode    bool      // ctrl+v toggles vim mode
-	vimInsert  bool      // true=insert, false=normal
-	vimPending rune      // non-zero when waiting for second key (g→gg, d→dd/d$/dw)
-	vimCount   int       // accumulated repeat count for the next motion (vim `10G`, `5j`)
+	vimMode    bool // ctrl+] toggles vim mode
+	vimInsert  bool // true=insert, false=normal
+	vimPending rune // non-zero when waiting for second key (g→gg, d→dd/d$/dw)
+	vimCount   int  // accumulated repeat count for the next motion (vim `10G`, `5j`)
 	undos      []vimUndo
 }
 
@@ -543,7 +543,7 @@ func (o *PatentNoteEditor) markDirty() {
 	if !o.dirty {
 		o.modifiedAt = time.Now()
 	}
-	o.markDirty()
+	o.dirty = true
 }
 
 func (o *PatentNoteEditor) infoLine() string {
@@ -569,7 +569,6 @@ func (o *PatentNoteEditor) renderCursorLine(line string) string {
 	col := min(o.column, len(runes))
 	return string(runes[:col]) + o.theme.Title.Render("█") + string(runes[col:])
 }
-
 
 func (o *PatentNoteEditor) keepCursorVisible(maxW, bodyRows int) {
 	if o.line < o.offset {

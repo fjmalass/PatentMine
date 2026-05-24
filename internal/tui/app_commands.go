@@ -310,8 +310,8 @@ func (a *App) cmdProjectClear(invocation) (tea.Model, tea.Cmd) {
 	return a, a.broadcast(pane.ProjectChangedMsg{})
 }
 
-func (a *App) cmdMarkStored(invocation) (tea.Model, tea.Cmd) {
-	return a.runReviewState(command.MarkStored, domain.ReviewStateStored)
+func (a *App) cmdMarkActive(invocation) (tea.Model, tea.Cmd) {
+	return a.runReviewState(command.MarkActive, domain.ReviewStateActive)
 }
 func (a *App) cmdMarkUnderReview(invocation) (tea.Model, tea.Cmd) {
 	return a.runReviewState(command.MarkUnderReview, domain.ReviewStateUnderReview)
@@ -811,4 +811,3 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 func (a *App) cmdOpenAllNotes(invocation) (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewAllNotes(a.client, a.theme, a.activeProject))
 }
-

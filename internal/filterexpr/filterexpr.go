@@ -19,7 +19,7 @@ const (
 	FieldAssignee Field = "assignee"
 )
 
-const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:stored"
+const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:active"
 
 type fieldSpec struct {
 	name    Field

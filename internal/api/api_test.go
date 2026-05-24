@@ -222,7 +222,7 @@ func TestAPIPatentListHonorsReviewStateAlias(t *testing.T) {
 	if err := env.repo.AddMembership(ctx, domain.Membership{
 		Project:     project.ID,
 		Patent:      patent.Number,
-		ReviewState: domain.ReviewStateStored,
+		ReviewState: domain.ReviewStateUnknown,
 	}); err != nil {
 		t.Fatalf("AddMembership: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestAPIAssigneeStats(t *testing.T) {
 		}
 	}
 	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
-		if err := env.repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+		if err := env.repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: number, ReviewState: domain.ReviewStateUnknown, AddedAt: time.Now().UTC()}); err != nil {
 			t.Fatalf("AddMembership(%s): %v", number, err)
 		}
 	}
@@ -291,7 +291,7 @@ func TestAPIClassificationStatsAndExactList(t *testing.T) {
 		}
 	}
 	for _, number := range []domain.PatentNumber{p1.Number, p2.Number} {
-		if err := env.repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: number, ReviewState: domain.ReviewStateStored, AddedAt: time.Now().UTC()}); err != nil {
+		if err := env.repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: number, ReviewState: domain.ReviewStateUnknown, AddedAt: time.Now().UTC()}); err != nil {
 			t.Fatalf("AddMembership(%s): %v", number, err)
 		}
 	}

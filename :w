@@ -81,14 +81,21 @@ const (
 	glyphHistColType   = "A"
 
 	glyphReviewStateUnknown     = "?"
-	glyphReviewStateUnderReview = "🔍"
-	glyphReviewStateActive      = "✅"
-	glyphReviewStateIgnored     = "☐"
-	glyphReviewStateDeleted     = "❌"
+	glyphReviewStateUnderReview = "R"
+	glyphReviewStateActive      = "A"
+	glyphReviewStateIgnored     = "I"
+	glyphReviewStateDeleted     = "D"
 
 	glyphFetchStateUnknown = "?"
-	glyphFetchStateCached  = "🗃️"
-	glyphFetchStateStub    = "🦴"
+	glyphFetchStateCached  = "C"
+	glyphFetchStateStub    = "S"
+
+	// glyphReviewStateUnderReview ="🔍,"
+	// glyphReviewStateActive =     "✅,
+	// glyphReviewStateIgnored =    "☐"
+	// glyphReviewStateCached =     "🗃️",
+	// glyphReviewStateDeleted =    "❌",
+	// glyphReviewStateStub =       "🦴",
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -396,9 +403,7 @@ func (t Theme) FetchStateGlyph(state string) string {
 		return t.Glyphs.FetchStateCached
 	case "stub":
 		return t.Glyphs.FetchStateStub
-	case "unknown":
-		return t.Glyphs.FetchStateUnknown
 	default:
-		return t.Glyphs.FetchStateUnknown
+		return t.Glyphs.FetchStateCached
 	}
 }

@@ -38,6 +38,12 @@ func TestEngineWritesSemanticActivityRecords(t *testing.T) {
 	if err := eng.SavePatent(context.Background(), patent); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
+	if err := repo.SaveDocument(context.Background(), patent.Number, domain.Document{
+		Number: patent.Number,
+		Stage:  domain.GuessStage(patent.Number),
+	}); err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
 	project, err := eng.CreateProject(context.Background(), "P")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
