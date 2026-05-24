@@ -154,9 +154,10 @@ type PatentResult struct {
 
 // PatentListParams selects and paginates a patent listing.
 type PatentListParams struct {
-	Project            domain.ProjectID   `json:"project,omitempty"`
-	Filter             string             `json:"filter,omitempty"`
-	ReviewState        domain.ReviewState `json:"review_state,omitempty"`
+	Numbers            []domain.PatentNumber `json:"numbers,omitempty"`
+	Project            domain.ProjectID      `json:"project,omitempty"`
+	Filter             string                `json:"filter,omitempty"`
+	ReviewState        domain.ReviewState    `json:"review_state,omitempty"`
 	Search             string             `json:"search,omitempty"`
 	Classification     string             `json:"classification,omitempty"`
 	ClassificationCode string             `json:"classification_code,omitempty"`

@@ -40,10 +40,11 @@ type catalogLoadedMsg struct {
 
 // HighlightState tracks the active relation highlighting.
 type HighlightState struct {
-	Group   HighlightGroup
-	Anchor  domain.PatentNumber
-	LoadID  uint64
-	Loading bool
+	Group             HighlightGroup
+	Anchor            domain.PatentNumber
+	LoadID            uint64
+	Loading           bool
+	FilterToRelations bool
 }
 
 // relationHighlightLoadedMsg delivers the neighbours of the anchor patent for
@@ -159,6 +160,8 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		},
 		command.HighlightFamily:    func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
 		command.HighlightCitations: func(Invocation) tea.Cmd { return c.toggleCitationsHighlight() },
+		command.RelationFilterCollapse: func(Invocation) tea.Cmd { return c.setRelationFilter(true) },
+		command.RelationFilterExpand:   func(Invocation) tea.Cmd { return c.setRelationFilter(false) },
 		command.CrawlFamily:        func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
 		command.CrawlCitations:     func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
 		command.CrawlCitedBy:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
@@ -207,8 +210,13 @@ func (c *Catalog) load() tea.Cmd {
 		if c.activeProject != nil {
 			project = c.activeProject.ID
 		}
+		var numbers []domain.PatentNumber
+		if c.activeHighlight.FilterToRelations && !c.activeHighlight.Anchor.IsZero() {
+			numbers = c.highlights.RelationNumbers()
+		}
 		err := client.Call(ctx, proto.MethodPatentList,
 			proto.PatentListParams{
+				Numbers:       numbers,
 				Project:       project,
 				Filter:        c.filter.Expression,
 				Search:        c.filter.Search,
@@ -575,6 +583,11 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		for _, p := range m.reverse {
 			c.highlights.Upgrade(p, rKind)
 		}
+		if m.group == HighlightGroupFamily {
+			c.highlights.Upgrade(m.anchor, HighlightFamilyAnchor)
+		} else {
+			c.highlights.Upgrade(m.anchor, HighlightCitationAnchor)
+		}
 		applyDuration := time.Since(applyStart)
 		totalDuration := time.Since(m.dispatchedAt)
 		c.metrics.ObserveDuration(fmt.Sprintf("tui.highlight.%s.apply", m.group.Key()), applyDuration, false)
@@ -593,6 +606,11 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			slog.Duration("total", totalDuration),
 			slog.String("action", "on"))
 		c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.on", m.group.Key()), 1)
+		if c.activeHighlight.FilterToRelations {
+			c.page.Top()
+			c.loading = true
+			return c, c.load()
+		}
 	}
 	return c, nil
 }
@@ -710,6 +728,20 @@ func (c *Catalog) toggleCitationsHighlight() tea.Cmd {
 	return c.toggleHighlight(HighlightGroupCitations, domain.RelationCites, domain.RelationCitedBy)
 }
 
+// setRelationFilter collapses or expands the view to highlighted relations.
+func (c *Catalog) setRelationFilter(active bool) tea.Cmd {
+	if c.activeHighlight.Anchor.IsZero() {
+		return status(text.StatusUsage, true, "No relationship highlight active to filter")
+	}
+	if c.activeHighlight.FilterToRelations == active {
+		return nil
+	}
+	c.activeHighlight.FilterToRelations = active
+	c.page.Top()
+	c.loading = true
+	return c.load()
+}
+
 // toggleHighlight is the generic key handler for relation highlights.
 func (c *Catalog) toggleHighlight(group HighlightGroup, forwardKind, reverseKind domain.RelationKind) tea.Cmd {
 	sel, ok := c.Selection()
@@ -719,12 +751,18 @@ func (c *Catalog) toggleHighlight(group HighlightGroup, forwardKind, reverseKind
 
 	// Toggle OFF if already active for this anchor
 	if c.activeHighlight.Group == group && c.activeHighlight.Anchor == sel {
+		wasFiltered := c.activeHighlight.FilterToRelations
 		c.clearRelationHighlight()
 		c.log().Info("tui.highlight.toggle",
 			slog.String("group", group.String()),
 			slog.String("anchor", sel.Normalized()),
 			slog.String("action", "off"))
 		c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.off", group.Key()), 1)
+		if wasFiltered {
+			c.page.Top()
+			c.loading = true
+			return c.load()
+		}
 		return nil
 	}
 
@@ -758,6 +796,11 @@ func (c *Catalog) toggleHighlight(group HighlightGroup, forwardKind, reverseKind
 			}
 			for _, p := range cached.reverse {
 				c.highlights.Upgrade(p, rKind)
+			}
+			if group == HighlightGroupFamily {
+				c.highlights.Upgrade(sel, HighlightFamilyAnchor)
+			} else {
+				c.highlights.Upgrade(sel, HighlightCitationAnchor)
 			}
 			c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.cache_hit", group.Key()), 1)
 			c.metrics.IncCounter(fmt.Sprintf("tui.highlight.%s.on", group.Key()), 1)
@@ -923,6 +966,9 @@ func (c *Catalog) View(w, h int) string {
 					cites, g.CitationCites, citedby, g.CitationCitedBy))
 			}
 		}
+		if c.activeHighlight.FilterToRelations {
+			segments = append(segments, c.theme.Warn.Render("collapsed"))
+		}
 	}
 	filterSummary := strings.Join(segments, "  ")
 	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
@@ -950,7 +996,11 @@ func (c *Catalog) View(w, h int) string {
 		case c.visualMode && c.inVisualRange(absolute):
 			b.WriteString(c.theme.Visual.Render(render.Pad(line, w)))
 		case isSelectedRow:
-			b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
+			if style, ok := c.highlights.Style(c.theme, p.Number); ok && highlightKind.IsRelation() {
+				b.WriteString(style.Copy().Bold(true).Underline(true).Render(render.Pad(line, w)))
+			} else {
+				b.WriteString(c.theme.Selected.Render(render.Pad(line, w)))
+			}
 		default:
 			if style, ok := c.highlights.Style(c.theme, p.Number); ok {
 				b.WriteString(style.Render(render.Pad(line, w)))

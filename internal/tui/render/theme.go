@@ -30,20 +30,24 @@ const (
 	// when relationship highlighting is toggled (g h or g c).
 
 	// Family
-	colorFamilyParent      = "180" // dusty terracotta
-	colorFamilyChild       = "109" // frosted teal
-	colorFamilyBoth        = "138" // vintage rose
-	colorFamilyParentFocus = "137" // terracotta focus
-	colorFamilyChildFocus  = "72"  // teal focus
-	colorFamilyBothFocus   = "95"  // rose focus
+	colorFamilyParent      = "95"  // deep terracotta/rose-brown
+	colorFamilyChild       = "23"  // deep forest teal
+	colorFamilyBoth        = "96"  // deep plum/vintage rose
+	colorFamilyParentFocus = "131" // terracotta focus
+	colorFamilyChildFocus  = "30"  // teal focus
+	colorFamilyBothFocus   = "138" // rose focus
 
 	// Citations
-	colorCitationCites       = "110" // glacier slate blue
-	colorCitationCitedBy     = "142" // muted olive gold
-	colorCitationBoth        = "143" // dusty khaki
-	colorCitationCitesFocus  = "146" // slate blue focus
-	colorCitationCitedByFocus = "101" // olive gold focus
+	colorCitationCites       = "24"  // deep slate blue
+	colorCitationCitedBy     = "58"  // deep olive gold
+	colorCitationBoth        = "101" // deep khaki
+	colorCitationCitesFocus  = "60"  // slate blue focus
+	colorCitationCitedByFocus = "100" // olive gold focus
 	colorCitationBothFocus   = "107" // khaki focus
+
+	// Unified relation anchor
+	colorRelationAnchor      = "61" // deep lavender/indigo
+	colorRelationAnchorFocus = "97" // lavender focus
 )
 
 // Default glyphs. Hoisted here so call sites never embed icon characters
@@ -128,6 +132,10 @@ type Theme struct {
 	FocusCitationCites    lipgloss.Style
 	FocusCitationCitedBy  lipgloss.Style
 	FocusCitationBoth     lipgloss.Style
+
+	// Unified relation anchor styles
+	RelationAnchor      lipgloss.Style
+	FocusRelationAnchor lipgloss.Style
 
 	// Jump Overlay Styles
 	JumpGlobalLabel lipgloss.Style
@@ -290,6 +298,14 @@ func NewTheme() Theme {
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorCitationBothFocus)).Bold(true),
 
+		// Unified relation anchor styles
+		RelationAnchor: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorRelationAnchor)).Bold(true),
+		FocusRelationAnchor: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorText)).
+			Background(lipgloss.Color(colorRelationAnchorFocus)).Bold(true),
+
 		// Jump Overlay Styles
 		JumpGlobalLabel: lipgloss.NewStyle().Foreground(lipgloss.Color(colorText)).Bold(true),
 		JumpGlobalValue: lipgloss.NewStyle().Foreground(lipgloss.Color(colorDim)),
@@ -313,7 +329,7 @@ func NewTheme() Theme {
 
 			StateStored:      "📥",
 			StateUnderReview: "🩺",
-			StateCached:      "⚡",
+			StateCached:      "⚡\uFE0F",
 			StateStub:        "🔗",
 
 			HistUnknown:   glyphHistUnknown,

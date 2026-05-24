@@ -47,6 +47,8 @@ const (
 	HighlightFamilyChild
 	// HighlightFamilyBoth: the row is both parent and child (cycle).
 	HighlightFamilyBoth
+	// HighlightFamilyAnchor: the row is the family anchor patent itself.
+	HighlightFamilyAnchor
 
 	// HighlightCitationCites: the row is cited by the anchor (anchor cites it).
 	HighlightCitationCites
@@ -54,6 +56,8 @@ const (
 	HighlightCitationCitedBy
 	// HighlightCitationBoth: bidirectional citation cycle.
 	HighlightCitationBoth
+	// HighlightCitationAnchor: the row is the citation anchor patent itself.
+	HighlightCitationAnchor
 
 	// HighlightGotoVisual: the row was part of the last saved visual selection.
 	HighlightGotoVisual
@@ -62,9 +66,9 @@ const (
 // Group returns the HighlightGroup this kind belongs to.
 func (k HighlightKind) Group() HighlightGroup {
 	switch k {
-	case HighlightFamilyParent, HighlightFamilyChild, HighlightFamilyBoth:
+	case HighlightFamilyParent, HighlightFamilyChild, HighlightFamilyBoth, HighlightFamilyAnchor:
 		return HighlightGroupFamily
-	case HighlightCitationCites, HighlightCitationCitedBy, HighlightCitationBoth:
+	case HighlightCitationCites, HighlightCitationCitedBy, HighlightCitationBoth, HighlightCitationAnchor:
 		return HighlightGroupCitations
 	default:
 		return HighlightGroupNone
@@ -171,6 +175,20 @@ func (h *HighlightSet) ClearRelation() {
 	}
 }
 
+// RelationNumbers returns all patent numbers currently carrying a relationship highlight kind.
+func (h *HighlightSet) RelationNumbers() []domain.PatentNumber {
+	if h == nil {
+		return nil
+	}
+	var out []domain.PatentNumber
+	for n, k := range h.byNumber {
+		if k.IsRelation() {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // HasRelation reports whether any relationship-kind entry is present.
 func (h *HighlightSet) HasRelation() bool {
 	if h == nil {
@@ -195,6 +213,8 @@ func (h *HighlightSet) Style(theme render.Theme, n domain.PatentNumber) (lipglos
 		return theme.FamilyChild, true
 	case HighlightFamilyBoth:
 		return theme.FamilyBoth, true
+	case HighlightFamilyAnchor, HighlightCitationAnchor:
+		return theme.RelationAnchor, true
 	case HighlightCitationCites:
 		return theme.CitationCites, true
 	case HighlightCitationCitedBy:
@@ -219,12 +239,16 @@ func (h *HighlightSet) Glyph(theme render.Theme, n domain.PatentNumber) string {
 		return theme.Glyphs.FamilyChild
 	case HighlightFamilyBoth:
 		return theme.Glyphs.FamilyBoth
+	case HighlightFamilyAnchor:
+		return theme.Glyphs.FamilyAnchor
 	case HighlightCitationCites:
 		return theme.Glyphs.CitationCites
 	case HighlightCitationCitedBy:
 		return theme.Glyphs.CitationCitedBy
 	case HighlightCitationBoth:
 		return theme.Glyphs.CitationBoth
+	case HighlightCitationAnchor:
+		return theme.Glyphs.CitationAnchor
 	}
 	return theme.Glyphs.FamilyNone
 }

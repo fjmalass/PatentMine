@@ -382,6 +382,7 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		}()
 	}
 	patents, total, err := s.engine.ListPatents(ctx, store.PatentQuery{
+		Numbers:            p.Numbers,
 		Project:            p.Project,
 		Filter:             p.Filter,
 		ReviewState:        p.ReviewState,

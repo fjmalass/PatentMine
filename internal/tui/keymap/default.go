@@ -132,6 +132,11 @@ func Default() *Keymaps {
 			"ctrl+a": command.SelectAll,
 			"g h":    command.HighlightFamily,
 			"g c":    command.HighlightCitations,
+			"g r":    command.HighlightCitations,
+			"z c":    command.RelationFilterCollapse,
+			"[":      command.RelationFilterCollapse,
+			"z o":    command.RelationFilterExpand,
+			"]":      command.RelationFilterExpand,
 		})
 
 	detail := NewLayer("detail", false).

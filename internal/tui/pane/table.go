@@ -270,6 +270,8 @@ func focusedCellStyleWithHighlight(theme render.Theme, absoluteIndex int, select
 		return theme.FocusFamilyChild
 	case HighlightFamilyBoth:
 		return theme.FocusFamilyBoth
+	case HighlightFamilyAnchor, HighlightCitationAnchor:
+		return theme.FocusRelationAnchor
 	case HighlightCitationCites:
 		return theme.FocusCitationCites
 	case HighlightCitationCitedBy:

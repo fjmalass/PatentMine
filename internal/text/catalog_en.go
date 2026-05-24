@@ -203,6 +203,8 @@ var cmdStrings = map[string][2]string{
 	"select.all":                 {"Select all", "Select every patent in the current list."},
 	"highlight.family":           {"Highlight family", "Toggle inline highlight of parent/child rows of the selected patent."},
 	"highlight.citations":        {"Highlight citations", "Toggle inline highlight of citations and cited-by rows of the selected patent."},
+	"relation_filter.collapse":   {"Collapse relations", "Collapse catalog view to show only highlighted relation rows."},
+	"relation_filter.expand":     {"Expand relations", "Expand catalog view to show all patents."},
 	"col.next":                   {"Next column", "Move the visual focus to the next column."},
 	"col.prev":                   {"Prev column", "Move the visual focus to the previous column."},
 	"col.sort-apply":             {"Apply sort", "Apply sorting to the currently focused column."},

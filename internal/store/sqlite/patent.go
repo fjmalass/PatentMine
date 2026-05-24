@@ -422,6 +422,15 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 		}
 	}
 
+	if len(q.Numbers) > 0 {
+		placeholders := make([]string, len(q.Numbers))
+		for i, n := range q.Numbers {
+			placeholders[i] = "?"
+			args = append(args, n.Normalized())
+		}
+		conds = append(conds, fmt.Sprintf("p.number IN (%s)", strings.Join(placeholders, ",")))
+	}
+
 	if !q.Relation.IsZero() && q.RelationKind != "" {
 		// A relation from A to B of kind K can be stored as (from=A, to=B, kind=K)
 		// OR (from=B, to=A, kind=K.Inverse()). To find all patents related to N

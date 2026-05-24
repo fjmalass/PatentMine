@@ -38,6 +38,8 @@ const (
 	SelectAll               ID = "select.all"
 	HighlightFamily         ID = "highlight.family"
 	HighlightCitations      ID = "highlight.citations"
+	RelationFilterCollapse  ID = "relation_filter.collapse"
+	RelationFilterExpand    ID = "relation_filter.expand"
 	ColNext                 ID = "col.next"
 	ColPrev                 ID = "col.prev"
 	SortApply               ID = "col.sort-apply"
@@ -188,6 +190,8 @@ func Default() (*Registry, error) {
 		Command{ID: SelectAll, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: HighlightFamily, Name: "highlight.family", Aliases: []string{"hl-family"}, Usage: ":highlight.family", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: HighlightCitations, Name: "highlight.citations", Aliases: []string{"hl-citations", "hl-references"}, Usage: ":highlight.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
+		Command{ID: RelationFilterCollapse, Name: "relation_filter.collapse", Aliases: []string{"collapse", "fold"}, Usage: ":relation_filter.collapse", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
+		Command{ID: RelationFilterExpand, Name: "relation_filter.expand", Aliases: []string{"expand", "unfold"}, Usage: ":relation_filter.expand", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},

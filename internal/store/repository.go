@@ -20,6 +20,8 @@ const DefaultPageSize = 100
 // PatentQuery selects and paginates a patent listing. Pagination is applied in
 // the database (LIMIT/OFFSET) so a client never loads the whole table.
 type PatentQuery struct {
+	// Numbers, when set, restricts results to only these specific patent numbers.
+	Numbers []domain.PatentNumber
 	// Project, when set, restricts results to that project's members.
 	Project domain.ProjectID
 	// Filter is the boolean patent filter expression used by the TUI command path.

@@ -62,7 +62,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "⚡", "🔗"} {
+	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "⚡\uFE0F", "🔗"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
 		}
@@ -179,6 +179,9 @@ func TestCatalogRelationHighlightsAndCache(t *testing.T) {
 	if c.activeHighlight.Loading {
 		t.Fatalf("expected activeHighlight loading to be false")
 	}
+	if c.highlights.Kind(anchor) != HighlightFamilyAnchor {
+		t.Fatalf("expected anchor %s to be HighlightFamilyAnchor, got %v", anchor, c.highlights.Kind(anchor))
+	}
 	if c.highlights.Kind(domain.MustParsePatentNumber("US16000002")) != HighlightFamilyParent {
 		t.Fatalf("expected US16000002 to be HighlightFamilyParent, got %v", c.highlights.Kind(domain.MustParsePatentNumber("US16000002")))
 	}
@@ -198,5 +201,51 @@ func TestCatalogRelationHighlightsAndCache(t *testing.T) {
 	}
 	if c.highlights.Len() != 0 {
 		t.Fatalf("expected previous family highlights cleared on toggle citation")
+	}
+}
+
+func TestCatalogRelationFilterCollapsesList(t *testing.T) {
+	c := loadedCatalog(t)
+
+	// Toggling filter when no highlight is active should return status/error.
+	_, cmd := c.Command(command.RelationFilterCollapse, Invocation{})
+	if cmd == nil {
+		t.Fatalf("expected collapse relation filter command to return tea.Cmd when not active")
+	}
+
+	// Make a family relation highlight active.
+	anchor := domain.MustParsePatentNumber("US16000001")
+	c.activeHighlight = HighlightState{
+		Group:   HighlightGroupFamily,
+		Anchor:  anchor,
+		Loading: false,
+	}
+	c.highlights.Upgrade(domain.MustParsePatentNumber("US16000002"), HighlightFamilyParent)
+	c.highlights.Upgrade(domain.MustParsePatentNumber("US16000003"), HighlightFamilyChild)
+	c.highlights.Upgrade(anchor, HighlightFamilyAnchor)
+
+	// RelationNumbers helper should return the 3 patent numbers.
+	relNums := c.highlights.RelationNumbers()
+	if len(relNums) != 3 {
+		t.Fatalf("expected 3 relation numbers, got %d", len(relNums))
+	}
+
+	// Pressing [ or z c collapses
+	c.Command(command.RelationFilterCollapse, Invocation{})
+	if !c.activeHighlight.FilterToRelations {
+		t.Fatalf("expected FilterToRelations to be true after collapse")
+	}
+
+	// Pressing ] or z o expands
+	c.Command(command.RelationFilterExpand, Invocation{})
+	if c.activeHighlight.FilterToRelations {
+		t.Fatalf("expected FilterToRelations to be false after expand")
+	}
+
+	// Collapse again to check clean toggle-off of highlight
+	c.Command(command.RelationFilterCollapse, Invocation{})
+	c.Command(command.HighlightFamily, Invocation{})
+	if c.activeHighlight.FilterToRelations {
+		t.Fatalf("expected FilterToRelations to be cleared when highlight is toggled off")
 	}
 }
