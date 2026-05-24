@@ -11,13 +11,14 @@ import (
 type Field string
 
 const (
-	FieldTag      Field = "tag"
-	FieldState    Field = "state"
-	FieldClass    Field = "class"
-	FieldSearch   Field = "search"
-	FieldInventor Field = "inventor"
-	FieldAssignee Field = "assignee"
-	FieldCountry  Field = "country"
+	FieldTag        Field = "tag"
+	FieldState      Field = "state"
+	FieldFetchState Field = "fetch_state"
+	FieldClass      Field = "class"
+	FieldSearch     Field = "search"
+	FieldInventor   Field = "inventor"
+	FieldAssignee   Field = "assignee"
+	FieldCountry    Field = "country"
 )
 
 const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:active"
@@ -32,6 +33,7 @@ var fieldSpecs = []fieldSpec{
 	{name: FieldSearch, aliases: []string{"find"}, parse: parseSearchTerm},
 	{name: FieldTag, parse: parseTagTerm},
 	{name: FieldState, aliases: []string{"status", "review_state"}, parse: parseStateTerm},
+	{name: FieldFetchState, aliases: []string{"fetch", "fetched"}, parse: parseFetchStateTerm},
 	{name: FieldClass, aliases: []string{"classification", "cpc", "ipc"}, parse: parseClassTerm},
 	{name: FieldInventor, aliases: []string{"inv"}, parse: parseInventorTerm},
 	{name: FieldAssignee, aliases: []string{"owner"}, parse: parseAssigneeTerm},
@@ -56,13 +58,14 @@ type OrExpr struct{ Left, Right Expr }
 type NotExpr struct{ Child Expr }
 
 type TermExpr struct {
-	Field    Field
-	Value    string
-	Class    ClassificationPattern
-	Inventor ValuePattern
-	Assignee ValuePattern
-	Country  ValuePattern
-	State    domain.ReviewState
+	Field      Field
+	Value      string
+	Class      ClassificationPattern
+	Inventor   ValuePattern
+	Assignee   ValuePattern
+	Country    ValuePattern
+	State      domain.ReviewState
+	FetchState domain.FetchState
 }
 
 type ClassificationPattern struct {
@@ -359,6 +362,27 @@ func parseStateTerm(value string) (TermExpr, error) {
 		return TermExpr{}, fmt.Errorf("state filter requires a non-empty review state")
 	}
 	return TermExpr{Field: FieldState, Value: string(state), State: state}, nil
+}
+
+// fetchStateAliases maps human-friendly terms to their canonical FetchState value.
+var fetchStateAliases = map[string]domain.FetchState{
+	"stub":     domain.FetchStub,
+	"cached":   domain.FetchCached,
+	"full":     domain.FetchCached,
+	"complete": domain.FetchCached,
+	"fetched":  domain.FetchCached,
+}
+
+func parseFetchStateTerm(value string) (TermExpr, error) {
+	key := strings.ToLower(strings.TrimSpace(value))
+	if key == "" {
+		return TermExpr{}, fmt.Errorf("fetch_state filter requires a value")
+	}
+	fs, ok := fetchStateAliases[key]
+	if !ok {
+		return TermExpr{}, fmt.Errorf("unknown fetch state %q: use stub, cached (or full/complete/fetched)", value)
+	}
+	return TermExpr{Field: FieldFetchState, Value: string(fs), FetchState: fs}, nil
 }
 
 func parseClassTerm(value string) (TermExpr, error) {
