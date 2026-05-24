@@ -125,6 +125,17 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err := r.syncFTS(ctx); err != nil {
 		return err
 	}
+	// Migrate existing project tables to add IDS metadata columns when missing.
+	for _, col := range []string{
+		"application_number", "filing_date", "first_named_inventor",
+		"art_unit", "examiner_name", "attorney_docket_number",
+	} {
+		has, err := r.columnExists(ctx, "project", col)
+		if err == nil && !has {
+			_, _ = r.writer.ExecContext(ctx,
+				`ALTER TABLE project ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`)
+		}
+	}
 	hasPatentNotes, err := r.tableExists(ctx, "project_patent_note")
 	if err == nil && !hasPatentNotes {
 		_, _ = r.writer.ExecContext(ctx, `

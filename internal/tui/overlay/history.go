@@ -232,6 +232,14 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		default:
 			return theme.Glyphs.HistPatent, pat
 		}
+	case "notes.export":
+		projectName := rec.EntityID
+		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+			projectName = name
+		}
+		count, _ := rec.Metadata["count"].(float64)
+		path, _ := rec.Metadata["path"].(string)
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Export notes %q: %d note(s) → %s", projectName, int(count), path)
 	case "membership.set_state":
 		rawState := ""
 		if afterMap, ok := rec.After.(map[string]any); ok {

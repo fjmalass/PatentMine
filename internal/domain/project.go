@@ -12,6 +12,14 @@ type Project struct {
 	ID        ProjectID `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	// Patent-office metadata used when rendering an IDS PDF (PTO/SB/08a etc.).
+	// Empty until the user supplies it from the project metadata overlay.
+	ApplicationNumber    string    `json:"application_number,omitempty"`
+	FilingDate           time.Time `json:"filing_date"`
+	FirstNamedInventor   string    `json:"first_named_inventor,omitempty"`
+	ArtUnit              string    `json:"art_unit,omitempty"`
+	ExaminerName         string    `json:"examiner_name,omitempty"`
+	AttorneyDocketNumber string    `json:"attorney_docket_number,omitempty"`
 }
 
 // Membership links one patent to one project and carries its workflow state.

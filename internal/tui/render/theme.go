@@ -73,8 +73,9 @@ const (
 	glyphHistCitations = "🔗"
 	glyphHistFamily    = "🌳"
 	glyphHistFulltext  = "📄"
-	glyphHistIDS       = "📋"
-	glyphHistPatent    = "👁️"
+	glyphHistIDS         = "📋"
+	glyphHistNotesExport = "📝"
+	glyphHistPatent      = "👁️"
 	glyphHistState     = "⚙️"
 	glyphHistTagAdd    = "🏷️"
 	glyphHistTagRemove = "➖"
@@ -194,8 +195,9 @@ type ThemeGlyphs struct {
 	HistCitations string
 	HistFamily    string
 	HistFulltext  string
-	HistIDS       string
-	HistPatent    string
+	HistIDS          string
+	HistNotesExport  string
+	HistPatent       string
 	HistState     string
 	HistTagAdd    string
 	HistTagRemove string
@@ -361,8 +363,9 @@ func NewTheme() Theme {
 			HistCitations: glyphHistCitations,
 			HistFamily:    glyphHistFamily,
 			HistFulltext:  glyphHistFulltext,
-			HistIDS:       glyphHistIDS,
-			HistPatent:    glyphHistPatent,
+			HistIDS:          glyphHistIDS,
+			HistNotesExport:  glyphHistNotesExport,
+			HistPatent:       glyphHistPatent,
 			HistState:     glyphHistState,
 			HistTagAdd:    glyphHistTagAdd,
 			HistTagRemove: glyphHistTagRemove,

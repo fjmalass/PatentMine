@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"patentmine/internal/domain"
@@ -33,6 +36,7 @@ type Server struct {
 	engine          *engine.Engine
 	handlers        map[proto.Method]handlerFunc
 	usptoConfigured bool
+	clientMetrics   sync.Map // component string → proto.MetricsSnapshot
 }
 
 // NewServer wires the dispatch table for an engine.
@@ -68,7 +72,9 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodPatentNoteSave:            s.patentNoteSave,
 		proto.MethodPatentNoteDelete:          s.patentNoteDelete,
 		proto.MethodPatentNoteList:            s.patentNoteList,
+		proto.MethodPatentNoteExport:          s.patentNoteExport,
 		proto.MethodMetricsGet:                s.metricsGet,
+		proto.MethodMetricsPush:               s.metricsPush,
 		proto.MethodTagCreate:                 s.tagCreate,
 		proto.MethodTagList:                   s.tagList,
 		proto.MethodTagDelete:                 s.tagDelete,
@@ -778,8 +784,140 @@ func (s *Server) patentNoteList(ctx context.Context, raw json.RawMessage) (any, 
 	return proto.PatentNoteListResult{Notes: notes}, nil
 }
 
+func (s *Server) patentNoteExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentNoteExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	t0 := time.Now()
+	sortByDate := p.SortBy != proto.NoteSortByPatent
+	notes, err := s.engine.ListPatentNotes(ctx, p.Project, sortByDate)
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+
+	md := buildNotesMarkdown(notes, string(p.Project), sortByDate)
+	bytes := len(md)
+
+	if p.OutputPath != "" {
+		if err := os.WriteFile(p.OutputPath, []byte(md), 0o644); err != nil {
+			return nil, fmt.Errorf("write export file: %w", err)
+		}
+		s.engineLogger().Info("notes exported",
+			slog.Int("count", len(notes)),
+			slog.Int("bytes", bytes),
+			slog.String("path", p.OutputPath),
+			slog.Int64("duration_ms", time.Since(t0).Milliseconds()))
+		return proto.PatentNoteExportResult{Path: p.OutputPath, Count: len(notes), Bytes: bytes}, nil
+	}
+	s.engineLogger().Info("notes export rendered",
+		slog.Int("count", len(notes)),
+		slog.Int("bytes", bytes),
+		slog.Int64("duration_ms", time.Since(t0).Milliseconds()))
+	return proto.PatentNoteExportResult{Count: len(notes), Bytes: bytes, Content: md}, nil
+}
+
+// buildNotesMarkdown generates the markdown document for a set of patent notes.
+func buildNotesMarkdown(notes []domain.PatentNote, projectName string, sortByDate bool) string {
+	var b strings.Builder
+	b.WriteString("# PatentMine Notes")
+	if projectName != "" {
+		b.WriteString(" — " + projectName)
+	}
+	b.WriteString("\n\n")
+	sortLabel := "date (most recent first)"
+	if !sortByDate {
+		sortLabel = "patent number"
+	}
+	fmt.Fprintf(&b, "Exported: %s  ·  Sorted by: %s\n\n",
+		time.Now().Format("2006-01-02 15:04:05"), sortLabel)
+	b.WriteString(strings.Repeat("─", 72) + "\n\n")
+	for _, note := range notes {
+		fmt.Fprintf(&b, "## %s\n\n_Updated: %s_\n\n",
+			note.Patent.String(), note.UpdatedAt.Format("2006-01-02 15:04:05"))
+		b.WriteString(note.Markdown)
+		b.WriteString("\n\n" + strings.Repeat("─", 72) + "\n\n")
+	}
+	return b.String()
+}
+
+// engineLogger returns the engine's logger if available, or the default.
+func (s *Server) engineLogger() *slog.Logger {
+	if l := s.engine.Logger(); l != nil {
+		return l
+	}
+	return slog.Default()
+}
+
 func (s *Server) metricsGet(context.Context, json.RawMessage) (any, error) {
-	return proto.MetricsResult{Metrics: s.engine.MetricsSnapshot()}, nil
+	merged := s.engine.MetricsSnapshot()
+	s.clientMetrics.Range(func(_, v any) bool {
+		snap, ok := v.(proto.MetricsSnapshot)
+		if !ok {
+			return true
+		}
+		for k, tm := range snap.Timings {
+			if existing, found := merged.Timings[k]; found {
+				merged.Timings[k] = mergeTimingMetric(existing, tm)
+			} else {
+				merged.Timings[k] = tm
+			}
+		}
+		for k, v := range snap.Counters {
+			merged.Counters[k] += v
+		}
+		for k, v := range snap.Gauges {
+			merged.Gauges[k] += v
+		}
+		return true
+	})
+	return proto.MetricsResult{Metrics: merged}, nil
+}
+
+func (s *Server) metricsPush(_ context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MetricsPushParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	key := p.Component
+	if key == "" {
+		key = "client"
+	}
+	s.clientMetrics.Store(key, p.Snapshot)
+	return proto.Empty{}, nil
+}
+
+// mergeTimingMetric combines two timing summaries for the same key.
+func mergeTimingMetric(a, b proto.TimingMetric) proto.TimingMetric {
+	count := a.Count + b.Count
+	totalNanos := a.TotalNanos + b.TotalNanos
+	errors := a.Errors + b.Errors
+	minNanos := a.MinNanos
+	if b.MinNanos < minNanos {
+		minNanos = b.MinNanos
+	}
+	maxNanos := a.MaxNanos
+	if b.MaxNanos > maxNanos {
+		maxNanos = b.MaxNanos
+	}
+	lastNanos := b.LastNanos
+	var avgNanos int64
+	if count > 0 {
+		avgNanos = totalNanos / count
+	}
+	return proto.TimingMetric{
+		Count:      count,
+		Errors:     errors,
+		TotalNanos: totalNanos,
+		AvgNanos:   avgNanos,
+		AvgMillis:  avgNanos / int64(time.Millisecond),
+		MinNanos:   minNanos,
+		MinMillis:  minNanos / int64(time.Millisecond),
+		MaxNanos:   maxNanos,
+		MaxMillis:  maxNanos / int64(time.Millisecond),
+		LastNanos:  lastNanos,
+		LastMillis: lastNanos / int64(time.Millisecond),
+	}
 }
 
 func (s *Server) classificationGet(ctx context.Context, raw json.RawMessage) (any, error) {

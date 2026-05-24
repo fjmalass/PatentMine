@@ -39,8 +39,10 @@ type Config struct {
 	AIProvider    string // Chosen AI Provider ("gemini", "ollama")
 	OllamaModel   string // Local Ollama Model ("mistral", etc.)
 	OllamaHost    string // Local Ollama server host
-	CrawlWorkers  int    // Concurrent crawl goroutines; 0 means use engine default.
-	ActivityMinMS int    // Minimum UI look/hover duration to record.
+	CrawlWorkers   int    // Concurrent crawl goroutines; 0 means use engine default.
+	ActivityMinMS  int    // Minimum UI look/hover duration to record.
+	NotesExportDir string // Directory for exported notes .md files; empty means user home dir.
+	IDSExportDir   string // Directory for exported IDS PDF bundles; empty means $HomeDir/exports.
 }
 
 // loadDotEnv searches for and loads environment variables from a .env file.
@@ -132,18 +134,26 @@ func Load() (Config, error) {
 		activityMinMS = 100
 	}
 
+	notesExportDir := os.Getenv("PATENTMINE_NOTES_EXPORT_DIR")
+	idsExportDir := os.Getenv("PATENTMINE_IDS_EXPORT_DIR")
+	if idsExportDir == "" {
+		idsExportDir = filepath.Join(home, "exports")
+	}
+
 	return Config{
-		HomeDir:       Path(home),
-		DBPath:        Path(filepath.Join(home, dbFileName)),
-		LogsDir:       Path(logsDir),
-		PIDPath:       Path(filepath.Join(home, pidFileName)),
-		SocketPath:    Path(filepath.Join(home, socketFileName)),
-		USPTOAPIKey:   usptoKey,
-		GeminiAPIKey:  geminiKey,
-		AIProvider:    aiProvider,
-		OllamaModel:   ollamaModel,
-		OllamaHost:    ollamaHost,
-		CrawlWorkers:  crawlWorkers,
-		ActivityMinMS: activityMinMS,
+		HomeDir:        Path(home),
+		DBPath:         Path(filepath.Join(home, dbFileName)),
+		LogsDir:        Path(logsDir),
+		PIDPath:        Path(filepath.Join(home, pidFileName)),
+		SocketPath:     Path(filepath.Join(home, socketFileName)),
+		USPTOAPIKey:    usptoKey,
+		GeminiAPIKey:   geminiKey,
+		AIProvider:     aiProvider,
+		OllamaModel:    ollamaModel,
+		OllamaHost:     ollamaHost,
+		CrawlWorkers:   crawlWorkers,
+		ActivityMinMS:  activityMinMS,
+		NotesExportDir: notesExportDir,
+		IDSExportDir:   idsExportDir,
 	}, nil
 }

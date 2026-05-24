@@ -35,7 +35,13 @@ CREATE INDEX IF NOT EXISTS idx_relation_to   ON relation (to_number, kind);
 CREATE TABLE IF NOT EXISTS project (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    application_number     TEXT NOT NULL DEFAULT '',
+    filing_date            TEXT NOT NULL DEFAULT '',
+    first_named_inventor   TEXT NOT NULL DEFAULT '',
+    art_unit               TEXT NOT NULL DEFAULT '',
+    examiner_name          TEXT NOT NULL DEFAULT '',
+    attorney_docket_number TEXT NOT NULL DEFAULT ''
 );
 
 -- membership links a patent to a project. It also carries that pair's curated

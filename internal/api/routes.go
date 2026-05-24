@@ -39,6 +39,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)
+	s.mux.HandleFunc("GET /projects/{id}/notes/export", s.handleNotesExport)
 	s.mux.HandleFunc("GET /crawl/config", s.handleCrawlConfig)
 	s.mux.HandleFunc("POST /crawl", s.handleCrawl)
 

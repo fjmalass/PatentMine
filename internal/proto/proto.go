@@ -46,7 +46,9 @@ const (
 	MethodPatentNoteSave            Method = "patent.note.save"
 	MethodPatentNoteDelete          Method = "patent.note.delete"
 	MethodPatentNoteList            Method = "patent.note.list"
+	MethodPatentNoteExport          Method = "patent.note.export"
 	MethodMetricsGet                Method = "metrics.get"
+	MethodMetricsPush               Method = "metrics.push"
 	MethodTagCreate                 Method = "tag.create"
 	MethodTagList                   Method = "tag.list"
 	MethodTagDelete                 Method = "tag.delete"
@@ -466,9 +468,32 @@ type PatentNoteListResult struct {
 	Notes []domain.PatentNote `json:"notes"`
 }
 
+// PatentNoteExportParams requests a markdown export of all notes for a project.
+// When OutputPath is set the server writes the file and returns metadata.
+// When OutputPath is empty the server returns the markdown in Content.
+type PatentNoteExportParams struct {
+	Project    domain.ProjectID `json:"project"`
+	SortBy     NoteSortBy       `json:"sort_by"`
+	OutputPath string           `json:"output_path,omitempty"`
+}
+
+// PatentNoteExportResult is returned by a successful export.
+type PatentNoteExportResult struct {
+	Path    string `json:"path"`    // absolute path written; empty when Content is set
+	Count   int    `json:"count"`   // number of notes exported
+	Bytes   int    `json:"bytes"`   // size of generated markdown in bytes
+	Content string `json:"content"` // markdown body; populated only when OutputPath was empty
+}
+
 // MetricsResult carries the daemon's current in-memory timing/counter snapshot.
 type MetricsResult struct {
 	Metrics MetricsSnapshot `json:"metrics"`
+}
+
+// MetricsPushParams carries a client-side metrics snapshot for the daemon to merge.
+type MetricsPushParams struct {
+	Component string          `json:"component"`
+	Snapshot  MetricsSnapshot `json:"snapshot"`
 }
 
 // MetricsSnapshot is a transport-safe view of the daemon's metrics.

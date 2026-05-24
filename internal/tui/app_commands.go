@@ -38,7 +38,7 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
-	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text)
+	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text, a.metrics)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }
@@ -809,5 +809,7 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 }
 
 func (a *App) cmdOpenAllNotes(invocation) (tea.Model, tea.Cmd) {
-	return a.pushPane(pane.NewAllNotes(a.client, a.theme, a.activeProject))
+	return a.pushPane(pane.NewAllNotes(a.client, a.theme, a.activeProject).
+		WithExportDir(a.notesExportDir).
+		WithMetrics(a.metrics))
 }

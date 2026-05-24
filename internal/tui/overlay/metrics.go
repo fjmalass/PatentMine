@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
@@ -49,10 +50,10 @@ type metricsLoadedMsg struct {
 type metricsRefreshTickMsg struct{}
 
 type MetricsOverlay struct {
-	client *rpc.Client
-	theme  render.Theme
-
-	catalog *text.Catalog
+	client       *rpc.Client
+	theme        render.Theme
+	catalog      *text.Catalog
+	localMetrics *observability.Metrics
 
 	tab       metricsTab
 	selected  [metricsTabCount]int
@@ -84,13 +85,16 @@ type metricsRenderLine struct {
 	row      bool
 }
 
-// NewMetricsOverlay opens a daemon-backed metrics dashboard overlay.
-func NewMetricsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog) (*MetricsOverlay, tea.Cmd) {
+// NewMetricsOverlay opens a metrics dashboard overlay. localMetrics is the
+// TUI process's own metrics sink; it is pushed to the daemon before each
+// fetch so the overlay shows combined engine + TUI metrics.
+func NewMetricsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, localMetrics *observability.Metrics) (*MetricsOverlay, tea.Cmd) {
 	o := &MetricsOverlay{
-		client:  client,
-		theme:   theme,
-		catalog: catalog,
-		tab:     metricsTabTimings,
+		client:       client,
+		theme:        theme,
+		catalog:      catalog,
+		tab:          metricsTabTimings,
+		localMetrics: localMetrics,
 	}
 	o.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(repeat int) tea.Cmd { o.moveSelection(max(repeat, 1)); return nil },
@@ -246,12 +250,48 @@ func (o *MetricsOverlay) refreshNow() tea.Cmd {
 	o.requestID++
 	requestID := o.requestID
 	client := o.client
+	var localSnap *proto.MetricsSnapshot
+	if o.localMetrics != nil {
+		s := snapshotToProto(o.localMetrics.Snapshot())
+		localSnap = &s
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), metricsFetchTimeout)
 		defer cancel()
+		if localSnap != nil {
+			_ = client.Call(ctx, proto.MethodMetricsPush,
+				proto.MetricsPushParams{Component: "tui", Snapshot: *localSnap}, &proto.Empty{})
+		}
 		var res proto.MetricsResult
 		err := client.Call(ctx, proto.MethodMetricsGet, nil, &res)
 		return metricsLoadedMsg{requestID: requestID, snapshot: res.Metrics, err: err}
+	}
+}
+
+// snapshotToProto converts an observability.Snapshot to the proto wire type.
+func snapshotToProto(snap observability.Snapshot) proto.MetricsSnapshot {
+	timings := make(map[string]proto.TimingMetric, len(snap.Timings))
+	for k, v := range snap.Timings {
+		avgNanos := v.AvgNanos()
+		timings[k] = proto.TimingMetric{
+			Count:      v.Count,
+			Errors:     v.Errors,
+			TotalNanos: v.TotalNanos,
+			AvgNanos:   avgNanos,
+			AvgMillis:  avgNanos / int64(time.Millisecond),
+			MinNanos:   v.MinNanos,
+			MinMillis:  v.MinNanos / int64(time.Millisecond),
+			MaxNanos:   v.MaxNanos,
+			MaxMillis:  v.MaxNanos / int64(time.Millisecond),
+			LastNanos:  v.LastNanos,
+			LastMillis: v.LastNanos / int64(time.Millisecond),
+		}
+	}
+	return proto.MetricsSnapshot{
+		Timestamp: snap.Timestamp,
+		Timings:   timings,
+		Counters:  snap.Counters,
+		Gauges:    snap.Gauges,
 	}
 }
 

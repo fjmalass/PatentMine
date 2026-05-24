@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,7 +21,20 @@ import (
 
 // runTUI launches the terminal client. It is a thin frontend: it connects to
 // the daemon and renders, holding no database or business logic of its own.
-func runTUI(_ []string) int {
+func runTUI(args []string) int {
+	flags := flag.NewFlagSet("tui", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	notesExportDir := flags.String("notes-export-dir", "", "directory for exported notes .md files (overrides PATENTMINE_NOTES_EXPORT_DIR)")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "usage: patentmine tui [--notes-export-dir path]")
+	}
+	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fail(err)
@@ -53,12 +67,18 @@ func runTUI(_ []string) int {
 		telemetry.Logger.Error("load last project failed", slog.String("error", err.Error()))
 	}
 
+	exportDir := cfg.NotesExportDir
+	if *notesExportDir != "" {
+		exportDir = *notesExportDir
+	}
+
 	app, err := tui.New(client, registry, keymap.Default(), text.English(),
 		tui.WithLastProject(lastProjectID),
 		tui.WithTelemetry(telemetry),
 		tui.WithActivityMinDuration(time.Duration(cfg.ActivityMinMS)*time.Millisecond),
 		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel),
 		tui.WithUSPTOKey(cfg.USPTOAPIKey),
+		tui.WithNotesExportDir(exportDir),
 		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))
 	if err != nil {
 		telemetry.Logger.Error("build tui failed", slog.String("error", err.Error()))

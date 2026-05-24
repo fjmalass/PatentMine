@@ -11,6 +11,10 @@ import (
 	"patentmine/internal/store"
 )
 
+const projectColumns = `id, name, created_at,
+	application_number, filing_date, first_named_inventor,
+	art_unit, examiner_name, attorney_docket_number`
+
 // SaveProject inserts or updates a project by its id.
 func (r *Repo) SaveProject(ctx context.Context, p domain.Project) (err error) {
 	defer r.observeDuration("save_project", time.Now(), &err)
@@ -18,9 +22,22 @@ func (r *Repo) SaveProject(ctx context.Context, p domain.Project) (err error) {
 		return errors.New("store/sqlite: cannot save project with empty id")
 	}
 	_, err = r.writer.ExecContext(ctx,
-		`INSERT INTO project (id, name, created_at) VALUES (?,?,?)
-		 ON CONFLICT(id) DO UPDATE SET name=excluded.name, created_at=excluded.created_at`,
-		string(p.ID), p.Name, encodeTime(p.CreatedAt))
+		`INSERT INTO project (id, name, created_at,
+			application_number, filing_date, first_named_inventor,
+			art_unit, examiner_name, attorney_docket_number)
+		 VALUES (?,?,?,?,?,?,?,?,?)
+		 ON CONFLICT(id) DO UPDATE SET
+			name=excluded.name,
+			created_at=excluded.created_at,
+			application_number=excluded.application_number,
+			filing_date=excluded.filing_date,
+			first_named_inventor=excluded.first_named_inventor,
+			art_unit=excluded.art_unit,
+			examiner_name=excluded.examiner_name,
+			attorney_docket_number=excluded.attorney_docket_number`,
+		string(p.ID), p.Name, encodeTime(p.CreatedAt),
+		p.ApplicationNumber, encodeTime(p.FilingDate), p.FirstNamedInventor,
+		p.ArtUnit, p.ExaminerName, p.AttorneyDocketNumber)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save project %s: %w", p.ID, err)
 	}
@@ -31,7 +48,7 @@ func (r *Repo) SaveProject(ctx context.Context, p domain.Project) (err error) {
 func (r *Repo) Project(ctx context.Context, id domain.ProjectID) (project domain.Project, err error) {
 	defer r.observeDuration("project", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
-		`SELECT id, name, created_at FROM project WHERE id = ?`, string(id))
+		`SELECT `+projectColumns+` FROM project WHERE id = ?`, string(id))
 	p, err := scanProject(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Project{}, store.ErrNotFound
@@ -46,7 +63,7 @@ func (r *Repo) Project(ctx context.Context, id domain.ProjectID) (project domain
 func (r *Repo) ListProjects(ctx context.Context) (out []domain.Project, err error) {
 	defer r.observeDuration("list_projects", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT id, name, created_at FROM project ORDER BY name`)
+		`SELECT `+projectColumns+` FROM project ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list projects: %w", err)
 	}
@@ -68,11 +85,14 @@ func (r *Repo) ListProjects(ctx context.Context) (out []domain.Project, err erro
 
 func scanProject(s rowScanner) (domain.Project, error) {
 	var (
-		p         domain.Project
-		id        string
-		createdAt string
+		p          domain.Project
+		id         string
+		createdAt  string
+		filingDate string
 	)
-	if err := s.Scan(&id, &p.Name, &createdAt); err != nil {
+	if err := s.Scan(&id, &p.Name, &createdAt,
+		&p.ApplicationNumber, &filingDate, &p.FirstNamedInventor,
+		&p.ArtUnit, &p.ExaminerName, &p.AttorneyDocketNumber); err != nil {
 		return domain.Project{}, err
 	}
 	p.ID = domain.ProjectID(id)
@@ -81,6 +101,13 @@ func scanProject(s rowScanner) (domain.Project, error) {
 		return domain.Project{}, err
 	}
 	p.CreatedAt = t
+	if filingDate != "" {
+		f, err := decodeTime(filingDate)
+		if err != nil {
+			return domain.Project{}, err
+		}
+		p.FilingDate = f
+	}
 	return p, nil
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
@@ -21,9 +22,18 @@ import (
 
 // allNotesLoadedMsg delivers a finished patent.note.list result.
 type allNotesLoadedMsg struct {
-	requestID uint64
-	notes     []domain.PatentNote
-	err       error
+	requestID    uint64
+	notes        []domain.PatentNote
+	err          error
+	loadDuration time.Duration
+}
+
+// ExportNotesPreparedMsg asks the app to show the export confirm overlay. The
+// WriteCmd performs the actual file write when the user confirms.
+type ExportNotesPreparedMsg struct {
+	Path          string
+	ExistingFiles []string
+	WriteCmd      tea.Cmd
 }
 
 // AllNotes lists every patent note for the active project, with sort and
@@ -34,13 +44,15 @@ type AllNotes struct {
 	activeProject *domain.Project
 	handlers      map[command.ID]cmdHandler
 
-	notes     []domain.PatentNote
-	page      render.Paginator
+	notes      []domain.PatentNote
+	page       render.Paginator
 	sortByDate bool
-	loading   bool
-	loadErr   string
-	loadID    uint64
-	logger    *slog.Logger
+	loading    bool
+	loadErr    string
+	loadID     uint64
+	logger     *slog.Logger
+	metrics    *observability.Metrics
+	exportDir  string // directory for exported .md files; empty = user home dir
 }
 
 func (a *AllNotes) log() *slog.Logger {
@@ -75,6 +87,13 @@ func NewAllNotes(client *rpc.Client, theme render.Theme, project *domain.Project
 	return a
 }
 
+// WithExportDir sets the directory for exported .md files. Empty falls back to
+// the user's home directory.
+func (a *AllNotes) WithExportDir(dir string) *AllNotes { a.exportDir = dir; return a }
+
+// WithMetrics attaches the metrics sink.
+func (a *AllNotes) WithMetrics(m *observability.Metrics) *AllNotes { a.metrics = m; return a }
+
 func (a *AllNotes) Scope() command.Scope { return command.ScopeNotes }
 
 func (a *AllNotes) Title() string {
@@ -104,9 +123,10 @@ func (a *AllNotes) load() tea.Cmd {
 			sortBy = proto.NoteSortByPatent
 		}
 		var res proto.PatentNoteListResult
+		t0 := time.Now()
 		err := client.Call(ctx, proto.MethodPatentNoteList,
 			proto.PatentNoteListParams{Project: project, SortBy: sortBy}, &res)
-		return allNotesLoadedMsg{requestID: requestID, notes: res.Notes, err: err}
+		return allNotesLoadedMsg{requestID: requestID, notes: res.Notes, err: err, loadDuration: time.Since(t0)}
 	}
 }
 
@@ -137,46 +157,69 @@ func (a *AllNotes) exportMD() tea.Cmd {
 	if len(a.notes) == 0 {
 		return status(text.StatusNotesExportFailed, true, "no notes to export")
 	}
-	notes := a.notes
 	sortByDate := a.sortByDate
+	exportDir := a.exportDir
+	client := a.client
+	var projectID domain.ProjectID
 	var projectName string
 	if a.activeProject != nil {
+		projectID = a.activeProject.ID
 		projectName = a.activeProject.Name
 	}
 	return func() tea.Msg {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "."
+		dir := exportDir
+		if dir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				home = "."
+			}
+			dir = home
 		}
 		dateStr := time.Now().Format("2006-01-02")
 		safeName := strings.NewReplacer(" ", "-", "/", "-", "\\", "-").Replace(projectName)
 		filename := fmt.Sprintf("patentmine-notes-%s-%s.md", safeName, dateStr)
-		path := filepath.Join(home, filename)
-
-		var b strings.Builder
-		b.WriteString("# PatentMine Notes")
-		if projectName != "" {
-			b.WriteString(" — " + projectName)
-		}
-		b.WriteString("\n\n")
-		sortLabel := "date (most recent first)"
+		path := filepath.Join(dir, filename)
+		existing := scanExistingExports(dir)
+		sortBy := proto.NoteSortByDate
 		if !sortByDate {
-			sortLabel = "patent number"
+			sortBy = proto.NoteSortByPatent
 		}
-		b.WriteString(fmt.Sprintf("Exported: %s  ·  Sorted by: %s\n\n", time.Now().Format("2006-01-02 15:04:05"), sortLabel))
-		b.WriteString(strings.Repeat("─", 72) + "\n\n")
+		writeCmd := buildExportRPCCmd(client, projectID, sortBy, path)
+		return ExportNotesPreparedMsg{Path: path, ExistingFiles: existing, WriteCmd: writeCmd}
+	}
+}
 
-		for _, note := range notes {
-			b.WriteString("## " + note.Patent.String() + "\n\n")
-			b.WriteString(fmt.Sprintf("_Updated: %s_\n\n", note.UpdatedAt.Format("2006-01-02 15:04:05")))
-			b.WriteString(note.Markdown)
-			b.WriteString("\n\n" + strings.Repeat("─", 72) + "\n\n")
+// scanExistingExports returns all patentmine-notes-*.md filenames in dir.
+func scanExistingExports(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
 		}
+		name := e.Name()
+		if strings.HasPrefix(name, "patentmine-notes-") && strings.HasSuffix(name, ".md") {
+			out = append(out, name)
+		}
+	}
+	return out
+}
 
-		if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+// buildExportRPCCmd returns the tea.Cmd that delegates export to the daemon.
+func buildExportRPCCmd(client *rpc.Client, project domain.ProjectID, sortBy proto.NoteSortBy, path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentNoteExportResult
+		err := client.Call(ctx, proto.MethodPatentNoteExport,
+			proto.PatentNoteExportParams{Project: project, SortBy: sortBy, OutputPath: path}, &res)
+		if err != nil {
 			return StatusMsg{Key: text.StatusNotesExportFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusNotesExportDone, Args: []any{len(notes), path}}
+		return StatusMsg{Key: text.StatusNotesExportDone, Args: []any{res.Count, res.Path}}
 	}
 }
 
@@ -201,12 +244,19 @@ func (a *AllNotes) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		a.loading = false
 		if m.err != nil {
 			a.loadErr = m.err.Error()
-			a.log().Error("all notes load failed", slog.String("error", m.err.Error()))
+			a.metrics.IncCounter("tui.all_notes.load.error", 1)
+			a.log().Error("all notes load failed",
+				slog.String("error", m.err.Error()),
+				slog.Int64("duration_ms", m.loadDuration.Milliseconds()))
 			return a, nil
 		}
 		a.loadErr = ""
 		a.notes = m.notes
 		a.page.SetTotal(len(a.notes))
+		a.metrics.ObserveDuration("tui.all_notes.load", m.loadDuration, false)
+		a.log().Info("all notes loaded",
+			slog.Int("count", len(m.notes)),
+			slog.Int64("duration_ms", m.loadDuration.Milliseconds()))
 		return a, nil
 	case ProjectChangedMsg:
 		a.activeProject = cloneProject(m.Project)

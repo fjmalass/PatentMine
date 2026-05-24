@@ -200,6 +200,8 @@ type App struct {
 	usptoConfigured bool
 	geminiAnalyzer  ai.Analyzer
 	ollamaAnalyzer  ai.Analyzer
+
+	notesExportDir string
 }
 
 type Option func(*App)
@@ -285,6 +287,12 @@ func WithActivityMinDuration(d time.Duration) Option {
 			a.activityMin = d
 		}
 	}
+}
+
+// WithNotesExportDir sets the directory for exported notes .md files.
+// Empty string falls back to the user's home directory.
+func WithNotesExportDir(dir string) Option {
+	return func(a *App) { a.notesExportDir = dir }
 }
 
 // log returns the App's structured logger, or the process default when no
@@ -529,8 +537,44 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, target.ApplyClassificationFilter(m.Codes)
 		}
 		return a, nil
+	case pane.ExportNotesPreparedMsg:
+		a.confirmCmd = m.WriteCmd
+		a.overlays = append(a.overlays, overlay.NewExportNotesConfirm(a.theme, m.Path, m.ExistingFiles))
+		a.metrics.IncCounter("tui.notes.export.initiated", 1)
+		a.log().Info("notes export initiated",
+			slog.String("path", m.Path),
+			slog.Int("existing_files", len(m.ExistingFiles)))
+		return a, nil
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
+		if m.Key == text.StatusNotesExportDone {
+			count, _ := m.Args[0].(int)
+			path, _ := m.Args[1].(string)
+			a.metrics.IncCounter("tui.notes.export.ok", 1)
+			a.log().Info("notes exported", slog.Int("count", count), slog.String("path", path))
+			var projectID domain.ProjectID
+			var projectName string
+			if a.activeProject != nil {
+				projectID = a.activeProject.ID
+				projectName = a.activeProject.Name
+			}
+			return a, a.recordActivity(observability.Record{
+				Action:   "notes.export",
+				Entity:   "project",
+				EntityID: string(projectID),
+				Status:   "done",
+				Metadata: map[string]any{
+					"count":        count,
+					"path":         path,
+					"project_name": projectName,
+				},
+			})
+		} else if m.Key == text.StatusNotesExportFailed {
+			a.metrics.IncCounter("tui.notes.export.error", 1)
+			if len(m.Args) > 0 {
+				a.log().Error("notes export failed", slog.String("error", fmt.Sprint(m.Args[0])))
+			}
+		}
 		if m.Key == text.StatusCrawlStarted && len(m.Args) >= 2 {
 			jobID, _ := m.Args[1].(string)
 			isLookup := len(m.Args) >= 3
