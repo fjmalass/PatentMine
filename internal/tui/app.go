@@ -14,7 +14,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -58,10 +61,25 @@ type eventsClosedMsg struct{}
 
 // pingLoadedMsg carries the daemon's reported build version.
 type pingLoadedMsg struct {
-	version         string
-	usptoConfigured bool
-	err             error
+	version          string
+	usptoConfigured  bool
+	backupConfigured bool
+	err              error
 }
+
+type serviceConnectionLoadedMsg struct {
+	uspto  serviceConnectionState
+	backup serviceConnectionState
+}
+
+type serviceConnectionState string
+
+const (
+	serviceNoKey     serviceConnectionState = "no key"
+	serviceChecking  serviceConnectionState = "checking"
+	serviceFailed    serviceConnectionState = "failed"
+	serviceConnected serviceConnectionState = "connected"
+)
 
 type historyCheckResultMsg struct {
 	targetIndex int
@@ -196,14 +214,20 @@ type App struct {
 	focusStarted  time.Time
 	focusRecorded bool
 
-	aiProvider      ai.Provider
-	geminiAPIKey    string
-	ollamaHost      string
-	ollamaModel     string
-	aiTargetPatent  domain.Patent
-	usptoConfigured bool
-	geminiAnalyzer  ai.Analyzer
-	ollamaAnalyzer  ai.Analyzer
+	aiProvider       ai.Provider
+	geminiAPIKey     string
+	ollamaHost       string
+	ollamaModel      string
+	aiTargetPatent   domain.Patent
+	usptoAPIKey      string
+	usptoConfigured  bool
+	usptoConnection  serviceConnectionState
+	backupConfigured bool
+	backupConnection serviceConnectionState
+	backupBucket     string
+	backupRemote     string
+	geminiAnalyzer   ai.Analyzer
+	ollamaAnalyzer   ai.Analyzer
 
 	notesExportDir string
 }
@@ -245,8 +269,25 @@ func (a *App) buildAnalyzer() ai.Analyzer {
 
 func WithUSPTOKey(key string) Option {
 	return func(a *App) {
+		a.usptoAPIKey = key
 		if key != "" {
 			a.usptoConfigured = true
+			a.usptoConnection = serviceChecking
+		} else {
+			a.usptoConnection = serviceNoKey
+		}
+	}
+}
+
+func WithBackupConfig(configured bool, remote, bucket string) Option {
+	return func(a *App) {
+		a.backupConfigured = configured
+		a.backupRemote = strings.TrimSpace(remote)
+		a.backupBucket = strings.TrimSpace(bucket)
+		if configured {
+			a.backupConnection = serviceChecking
+		} else {
+			a.backupConnection = serviceNoKey
 		}
 	}
 }
@@ -263,10 +304,26 @@ func (a *App) activeAIString() string {
 }
 
 func (a *App) activeSearchString() string {
-	if a.usptoConfigured {
-		return "Search: Google, USPTO"
+	return "USPTO: " + serviceConnectionLabel(a.usptoConnection)
+}
+
+func (a *App) activeBackupString() string {
+	return "Backup: " + serviceConnectionLabel(a.backupConnection)
+}
+
+func serviceConnectionLabel(state serviceConnectionState) string {
+	switch state {
+	case serviceConnected:
+		return "🟢 connected"
+	case serviceFailed:
+		return "🟡 failed"
+	case serviceChecking:
+		return "🟡 checking"
+	case serviceNoKey:
+		return "🔴 no key"
+	default:
+		return "🔴 no key"
 	}
-	return "Search: Google"
 }
 
 // WithTelemetry attaches the process observability runtime so the App can log
@@ -338,7 +395,7 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		opt(app)
 	}
 	app.panes = []pane.Pane{pane.NewSplash(client, theme, app.lastProjectID,
-		app.splashFooterHint(), app.splashEmptyHint(), app.activeAIString(), app.activeSearchString())}
+		app.splashFooterHint(), app.splashEmptyHint(), app.activeAIString(), app.activeSearchString(), app.activeBackupString())}
 	return app, nil
 }
 
@@ -347,10 +404,12 @@ func (a *App) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		a.panes[0].Init(),
 		a.fetchPing(),
+		a.checkServiceConnections(),
 		func() tea.Msg {
 			return pane.ServiceStatusChangedMsg{
 				ActiveAI:     a.activeAIString(),
 				ActiveSearch: a.activeSearchString(),
+				ActiveBackup: a.activeBackupString(),
 			}
 		},
 	}
@@ -358,6 +417,60 @@ func (a *App) Init() tea.Cmd {
 		cmds = append(cmds, a.listen())
 	}
 	return tea.Batch(cmds...)
+}
+
+func (a *App) checkServiceConnections() tea.Cmd {
+	usptoKey := a.usptoAPIKey
+	backupConfigured := a.backupConfigured
+	backupRemote := a.backupRemote
+	backupBucket := a.backupBucket
+	return func() tea.Msg {
+		return serviceConnectionLoadedMsg{
+			uspto:  checkUSPTOConnection(usptoKey),
+			backup: checkBackupConnection(backupConfigured, backupRemote, backupBucket),
+		}
+	}
+}
+
+func checkUSPTOConnection(key string) serviceConnectionState {
+	if strings.TrimSpace(key) == "" {
+		return serviceNoKey
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	const url = "https://api.uspto.gov/api/v1/patent/applications/search?q=patentNumberText:11611785"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return serviceFailed
+	}
+	req.Header.Set("x-api-key", key)
+	req.Header.Set("Accept", "application/json")
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return serviceFailed
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return serviceConnected
+	}
+	return serviceFailed
+}
+
+func checkBackupConnection(configured bool, remote, bucket string) serviceConnectionState {
+	if !configured || strings.TrimSpace(bucket) == "" {
+		return serviceNoKey
+	}
+	if strings.TrimSpace(remote) == "" {
+		remote = "b2"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "rclone", "lsd", remote+":"+bucket)
+	if err := cmd.Run(); err != nil {
+		return serviceFailed
+	}
+	return serviceConnected
 }
 
 // listen waits for one daemon event and delivers it as a message.
@@ -383,7 +496,7 @@ func (a *App) fetchPing() tea.Cmd {
 		defer cancel()
 		var res proto.PingResult
 		err := client.Call(ctx, proto.MethodPing, nil, &res)
-		return pingLoadedMsg{version: res.Version, usptoConfigured: res.USPTOConfigured, err: err}
+		return pingLoadedMsg{version: res.Version, usptoConfigured: res.USPTOConfigured, backupConfigured: res.BackupConfigured, err: err}
 	}
 }
 
@@ -416,6 +529,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.broadcast(pane.ServiceStatusChangedMsg{
 			ActiveAI:     a.activeAIString(),
 			ActiveSearch: a.activeSearchString(),
+			ActiveBackup: a.activeBackupString(),
 		})
 	case overlay.AIAnalyzeTriggerMsg:
 		a.popOverlay()
@@ -727,9 +841,29 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.daemonVersion = m.version
 		a.usptoConfigured = m.usptoConfigured
+		a.backupConfigured = m.backupConfigured
+		if !m.usptoConfigured {
+			a.usptoConnection = serviceNoKey
+		} else if a.usptoConnection == "" || a.usptoConnection == serviceNoKey {
+			a.usptoConnection = serviceChecking
+		}
+		if !m.backupConfigured {
+			a.backupConnection = serviceNoKey
+		} else if a.backupConnection == "" || a.backupConnection == serviceNoKey {
+			a.backupConnection = serviceChecking
+		}
 		return a, a.broadcast(pane.ServiceStatusChangedMsg{
 			ActiveAI:     a.activeAIString(),
 			ActiveSearch: a.activeSearchString(),
+			ActiveBackup: a.activeBackupString(),
+		})
+	case serviceConnectionLoadedMsg:
+		a.usptoConnection = m.uspto
+		a.backupConnection = m.backup
+		return a, a.broadcast(pane.ServiceStatusChangedMsg{
+			ActiveAI:     a.activeAIString(),
+			ActiveSearch: a.activeSearchString(),
+			ActiveBackup: a.activeBackupString(),
 		})
 	case pane.FullTextLoadedMsg:
 		failed := m.Err != nil

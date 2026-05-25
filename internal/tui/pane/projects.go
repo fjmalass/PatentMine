@@ -40,6 +40,7 @@ type Projects struct {
 	loadID        uint64
 	activeAI      string
 	activeSearch  string
+	activeBackup  string
 	logger        *slog.Logger
 }
 
@@ -54,7 +55,7 @@ func (p *Projects) log() *slog.Logger {
 }
 
 // NewProjects builds an empty projects pane.
-func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch string) *Projects {
+func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch, activeBackup string) *Projects {
 	p := &Projects{
 		client:       client,
 		theme:        theme,
@@ -62,6 +63,7 @@ func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch 
 		loading:      true,
 		activeAI:     activeAI,
 		activeSearch: activeSearch,
+		activeBackup: activeBackup,
 	}
 	p.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(inv Invocation) tea.Cmd { p.page.MoveDown(inv.Repeat); return nil },
@@ -77,8 +79,8 @@ func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch 
 }
 
 // NewSplash builds the startup project-selection screen.
-func NewSplash(client *rpc.Client, theme render.Theme, lastProjectID domain.ProjectID, splashFooter, emptyHint string, activeAI, activeSearch string) *Projects {
-	p := NewProjects(client, theme, activeAI, activeSearch)
+func NewSplash(client *rpc.Client, theme render.Theme, lastProjectID domain.ProjectID, splashFooter, emptyHint string, activeAI, activeSearch, activeBackup string) *Projects {
+	p := NewProjects(client, theme, activeAI, activeSearch, activeBackup)
 	p.splash = true
 	p.lastProjectID = lastProjectID
 	p.splashFooter = splashFooter
@@ -175,6 +177,7 @@ func (p *Projects) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	if m, ok := msg.(ServiceStatusChangedMsg); ok {
 		p.activeAI = m.ActiveAI
 		p.activeSearch = m.ActiveSearch
+		p.activeBackup = m.ActiveBackup
 	}
 	return p, nil
 }
@@ -227,11 +230,11 @@ func (p *Projects) View(w, h int) string {
 	if p.splash {
 		b.WriteString(p.splashHeader(w))
 		b.WriteString("\n\n")
-		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeSearch))
+		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeSearch, p.activeBackup))
 		b.WriteByte('\n')
 		b.WriteString(p.theme.Header.Render(splashProjectRow("#", " ", "NAME", "ID", "UPDATED", "HINT", w)))
 	} else {
-		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeSearch))
+		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeSearch, p.activeBackup))
 		b.WriteByte('\n')
 		b.WriteString(p.theme.Header.Render(projectRow("#", p.activeLabel(), "NAME", p.createdLabel(), w)))
 	}

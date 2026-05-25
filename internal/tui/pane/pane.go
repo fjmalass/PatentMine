@@ -221,6 +221,7 @@ func status(key text.Key, isErr bool, args ...any) tea.Cmd {
 type ServiceStatusChangedMsg struct {
 	ActiveAI     string
 	ActiveSearch string
+	ActiveBackup string
 }
 
 // PaneHandlers returns a map of all handled command IDs per scope.
@@ -234,7 +235,7 @@ func PaneHandlers() map[command.Scope][]command.ID {
 		NewCitations(nil, theme, domain.PatentNumber{}, domain.RelationCites),
 		NewFamilyGraph(nil, theme, domain.PatentNumber{}, 0, nil),
 		NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
-		NewProjects(nil, theme, "", ""),
+		NewProjects(nil, theme, "", "", ""),
 		NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
 		NewAllNotes(nil, theme, nil),
 	}

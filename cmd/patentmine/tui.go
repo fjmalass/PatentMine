@@ -78,6 +78,7 @@ func runTUI(args []string) int {
 		tui.WithActivityMinDuration(time.Duration(cfg.ActivityMinMS)*time.Millisecond),
 		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel),
 		tui.WithUSPTOKey(cfg.USPTOAPIKey),
+		tui.WithBackupConfig(cfg.BackupConfigured(), cfg.BackupRcloneRemote, cfg.BackupBucket),
 		tui.WithNotesExportDir(exportDir),
 		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))
 	if err != nil {

@@ -300,14 +300,27 @@ func renderTableStatusLine(theme render.Theme, w, current, total int, extras ...
 	if total > 0 {
 		status = "[" + strconv.Itoa(max(current, 0)+1) + "/" + strconv.Itoa(total) + "]"
 	}
-	parts := []string{status}
+	parts := []string{theme.Dim.Render(status)}
 	for _, extra := range extras {
 		extra = strings.TrimSpace(extra)
 		if extra != "" {
-			parts = append(parts, extra)
+			parts = append(parts, renderStatusExtra(theme, extra))
 		}
 	}
-	return theme.Dim.Render(render.Pad(" "+strings.Join(parts, "  "), w))
+	return render.Pad(" "+strings.Join(parts, "  "), w)
+}
+
+func renderStatusExtra(theme render.Theme, extra string) string {
+	switch {
+	case strings.Contains(extra, "🟢"):
+		return theme.OK.Render(extra)
+	case strings.Contains(extra, "🟡"):
+		return theme.Warn.Render(extra)
+	case strings.Contains(extra, "🔴"):
+		return theme.Error.Render(extra)
+	default:
+		return theme.Dim.Render(extra)
+	}
 }
 
 func moveSortableColumn(cols []tableCol, current, step int) int {

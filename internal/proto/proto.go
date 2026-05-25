@@ -132,9 +132,10 @@ type Event struct {
 
 // PingResult confirms the daemon is alive.
 type PingResult struct {
-	Pong            bool   `json:"pong"`
-	Version         string `json:"version"`
-	USPTOConfigured bool   `json:"uspto_configured"`
+	Pong             bool   `json:"pong"`
+	Version          string `json:"version"`
+	USPTOConfigured  bool   `json:"uspto_configured"`
+	BackupConfigured bool   `json:"backup_configured"`
 }
 
 // PatentDeleteParams identifies the patent to permanently remove.
@@ -494,10 +495,10 @@ type IDSEntryResult struct {
 // IDSEntryBulkSetStatusParams applies a single IDSEntryStatus to every patent
 // in Patents under Project. Missing entries are created with InFull=DefaultInFull.
 type IDSEntryBulkSetStatusParams struct {
-	Project       domain.ProjectID       `json:"project"`
-	Patents       []domain.PatentNumber  `json:"patents"`
-	Status        domain.IDSEntryStatus  `json:"status"`
-	DefaultInFull bool                   `json:"default_in_full"`
+	Project       domain.ProjectID      `json:"project"`
+	Patents       []domain.PatentNumber `json:"patents"`
+	Status        domain.IDSEntryStatus `json:"status"`
+	DefaultInFull bool                  `json:"default_in_full"`
 }
 
 // IDSEntriesResult carries every curated IDS entry touched by a bulk write.

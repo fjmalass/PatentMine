@@ -13,32 +13,31 @@ BIN_DIR = "./bin"
 API_PID_NAME = "patentmine-api.pid"
 API_ADDR = "127.0.0.1:18080"
 PATENTMINE_IDS_EXPORT_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/exports"
+PM_VERSION_SCRIPT = '''
+PM_DESCRIBE="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
+PM_COMMIT="$(git rev-parse --short HEAD)"
+PM_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+PM_LDFLAGS="-X patentmine/internal/version.Describe=$PM_DESCRIBE -X patentmine/internal/version.Commit=$PM_COMMIT -X patentmine/internal/version.Branch=$PM_BRANCH"
+PM_VERSION="$PM_DESCRIBE branch=$PM_BRANCH commit=$PM_COMMIT"
+'''
 
 [tasks.build]
 description = "Compile all packages."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-version="$describe branch=$branch commit=$commit"
-echo "building patentmine $version"
-go build -ldflags "$ldflags" ./...
-echo "built patentmine $version"
+eval "$PM_VERSION_SCRIPT"
+echo "building patentmine $PM_VERSION"
+go build -ldflags "$PM_LDFLAGS" ./...
+echo "built patentmine $PM_VERSION"
 '''
 
 [tasks.build-binary]
 description = "Build the patentmine CLI binary into ./bin."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-version="$describe branch=$branch commit=$commit"
+eval "$PM_VERSION_SCRIPT"
 mkdir -p "${BIN_DIR}"
-echo "building patentmine binary $version"
-go build -ldflags "$ldflags" -o "${BIN_DIR}/${APP_NAME}" ${BINARY}
-echo "built ${BIN_DIR}/${APP_NAME} ($version)"
+echo "building patentmine binary $PM_VERSION"
+go build -ldflags "$PM_LDFLAGS" -o "${BIN_DIR}/${APP_NAME}" ${BINARY}
+echo "built ${BIN_DIR}/${APP_NAME} ($PM_VERSION)"
 '''
 
 [tasks.fmt]
@@ -72,45 +71,70 @@ description = "Run all unit tests."
 command = "go"
 args = ["test", "./..."]
 
+[tasks.check]
+description = "Check configured external service connectivity."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check
+'''
+
+[tasks.check-uspto]
+description = "Check USPTO API key and connectivity."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check uspto
+'''
+
+[tasks.check-b2]
+description = "Check Backblaze B2 access through rclone."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check b2
+'''
+
+[tasks.check-b2-api]
+description = "Check Backblaze B2 native API key and bucket access."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check b2-api
+'''
+
+[tasks.check-rclone-b2]
+description = "Check Backblaze B2 access through rclone only."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check rclone-b2
+'''
+
 [tasks.run-daemon]
 description = "Start the engine daemon in the foreground."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} serve
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} serve
 '''
 
 [tasks.stop-daemon]
 description = "Stop the engine daemon if it is running."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} stop
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} stop
 '''
 
 [tasks.start-daemon]
 description = "Start the engine daemon in the background."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-version="$describe branch=$branch commit=$commit"
-paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+eval "$PM_VERSION_SCRIPT"
+paths="$(go run -ldflags "$PM_LDFLAGS" ${BINARY} paths)"
 socket="$(echo "$paths" | awk -F= '/^SOCKET=/{print $2}')"
 logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
 date_tag="$(date +%F)"
 stdout_log="$logs_dir/daemon-stdout-$date_tag.log"
-echo "starting patentmine daemon $version"
-nohup go run -ldflags "$ldflags" ${BINARY} serve >> "$stdout_log" 2>&1 &
+echo "starting patentmine daemon $PM_VERSION"
+nohup go run -ldflags "$PM_LDFLAGS" ${BINARY} serve >> "$stdout_log" 2>&1 &
 for _ in $(seq 1 50); do
   if [ -S "$socket" ]; then
     echo "patentmine daemon started ($socket)"
-    echo "version: $version"
+    echo "version: $PM_VERSION"
     echo "stdout log: $stdout_log"
     echo "structured log: $logs_dir/log-$date_tag.jsonl"
     echo "activity log: $logs_dir/activity-$date_tag.jsonl"
@@ -127,20 +151,15 @@ exit 1
 description = "Restart the engine daemon in the background."
 dependencies = ["stop-daemon", "start-daemon"]
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-echo "restarted patentmine daemon $describe branch=$branch commit=$commit"
+eval "$PM_VERSION_SCRIPT"
+echo "restarted patentmine daemon $PM_VERSION"
 '''
 
 [tasks.clean-logs]
 description = "Remove dated logs and runtime socket/pid files from the configured app home."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+eval "$PM_VERSION_SCRIPT"
+paths="$(go run -ldflags "$PM_LDFLAGS" ${BINARY} paths)"
 logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
 socket="$(echo "$paths" | awk -F= '/^SOCKET=/{print $2}')"
 pid="$(echo "$paths" | awk -F= '/^PID=/{print $2}')"
@@ -163,85 +182,61 @@ dependencies = ["stop-daemon", "clean-logs"]
 [tasks.backup-db]
 description = "Create a timestamped backup copy of the configured database using native hot backups."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} db backup
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} db backup
 '''
 
 [tasks.vacuum-db]
 description = "Compact the active SQLite database to reclaim free space."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} db vacuum
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} db vacuum
 '''
 
 [tasks.status-db]
 description = "Check SQLite database file size, integrity, and row counts."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} db status
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} db status
 '''
 
 [tasks.list-logs]
 description = "List all existing log and activity files."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} logs list
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} logs list
 '''
 
 [tasks.archive-logs]
 description = "Compress older log files into a backup archive."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} logs archive
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} logs archive
 '''
 
 [tasks.run-tui]
 description = "Restart the daemon, then launch the terminal UI."
 dependencies = ["restart-daemon"]
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} tui
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} tui
 '''
 
 [tasks.run-api]
 description = "Restart the daemon, then start the web API server."
 dependencies = ["stop-api", "restart-daemon"]
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+eval "$PM_VERSION_SCRIPT"
 api_addr="${PATENTMINE_API_ADDR:-${API_ADDR}}"
-go run -ldflags "$ldflags" ${BINARY} api --addr "$api_addr"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} api --addr "$api_addr"
 '''
 
 [tasks.start-api]
 description = "Start the web API server in the background."
 dependencies = ["stop-api", "restart-daemon"]
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+eval "$PM_VERSION_SCRIPT"
+paths="$(go run -ldflags "$PM_LDFLAGS" ${BINARY} paths)"
 home_dir="$(echo "$paths" | awk -F= '/^HOME=/{print $2}')"
 logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
 api_pid="$home_dir/${API_PID_NAME}"
@@ -280,7 +275,7 @@ if [ -n "$live_pid" ]; then
 fi
 
 echo "starting patentmine API on http://$api_addr"
-nohup go run -ldflags "$ldflags" ${BINARY} api --addr "$api_addr" >> "$stdout_log" 2>&1 &
+nohup go run -ldflags "$PM_LDFLAGS" ${BINARY} api --addr "$api_addr" >> "$stdout_log" 2>&1 &
 echo $! > "$api_pid"
 
 for _ in $(seq 1 50); do
@@ -306,11 +301,8 @@ exit 1
 [tasks.stop-api]
 description = "Stop the background web API server if it is running."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-paths="$(go run -ldflags "$ldflags" ${BINARY} paths)"
+eval "$PM_VERSION_SCRIPT"
+paths="$(go run -ldflags "$PM_LDFLAGS" ${BINARY} paths)"
 home_dir="$(echo "$paths" | awk -F= '/^HOME=/{print $2}')"
 api_pid="$home_dir/${API_PID_NAME}"
 api_addr="${PATENTMINE_API_ADDR:-${API_ADDR}}"
@@ -389,21 +381,15 @@ dependencies = ["start-api"]
 description = "Start daemon and web API in the background, then launch the TUI."
 dependencies = ["start-api"]
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} tui
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} tui
 '''
 
 [tasks.smoke-api]
 description = "Start the daemon, launch the web API on a test port, and verify core HTTP endpoints."
 dependencies = ["restart-daemon"]
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
+eval "$PM_VERSION_SCRIPT"
 api_addr="${PATENTMINE_API_ADDR:-${API_ADDR}}"
 api_log="/tmp/patentmine-api-smoke.log"
 
@@ -416,7 +402,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "starting temporary API server on http://$api_addr"
-go run -ldflags "$ldflags" ${BINARY} api --addr "$api_addr" > "$api_log" 2>&1 &
+go run -ldflags "$PM_LDFLAGS" ${BINARY} api --addr "$api_addr" > "$api_log" 2>&1 &
 api_pid=$!
 
 for _ in $(seq 1 50); do
@@ -444,11 +430,8 @@ echo "API smoke test passed"
 [tasks.migrate]
 description = "Apply database migrations (wired up in Phase 2)."
 script = '''
-describe="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
-commit="$(git rev-parse --short HEAD)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-ldflags="-X patentmine/internal/version.Describe=$describe -X patentmine/internal/version.Commit=$commit -X patentmine/internal/version.Branch=$branch"
-go run -ldflags "$ldflags" ${BINARY} migrate
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} migrate
 '''
 
 [tasks.ci]

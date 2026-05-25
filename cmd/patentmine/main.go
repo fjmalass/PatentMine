@@ -19,6 +19,7 @@ usage:
   patentmine paths     print resolved runtime paths
   patentmine logs      manage log and activity files (list, archive, ship)
   patentmine db        manage database tasks (backup, vacuum, status)
+  patentmine check     check configured external service connectivity
   patentmine version   print the build version
 `
 
@@ -48,6 +49,8 @@ func run(args []string) int {
 		return runLogs(args[1:])
 	case "db":
 		return runDB(args[1:])
+	case "check":
+		return runCheck(args[1:])
 	case "version":
 		fmt.Println(appversion.String())
 		return 0

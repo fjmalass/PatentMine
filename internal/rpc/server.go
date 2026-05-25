@@ -34,11 +34,12 @@ type handlerFunc func(ctx context.Context, params json.RawMessage) (any, error)
 // Server dispatches proto requests to engine operations and forwards engine
 // events to every connected client.
 type Server struct {
-	engine          *engine.Engine
-	handlers        map[proto.Method]handlerFunc
-	usptoConfigured bool
-	activityLogsDir string
-	clientMetrics   sync.Map // component string → proto.MetricsSnapshot
+	engine           *engine.Engine
+	handlers         map[proto.Method]handlerFunc
+	usptoConfigured  bool
+	backupConfigured bool
+	activityLogsDir  string
+	clientMetrics    sync.Map // component string → proto.MetricsSnapshot
 }
 
 // Option customizes server behavior outside the engine dispatch table.
@@ -48,6 +49,12 @@ type Option func(*Server)
 // activity feeds from the same log directory where daemon mutations are written.
 func WithActivityLogsDir(dir string) Option {
 	return func(s *Server) { s.activityLogsDir = dir }
+}
+
+// WithBackupConfigured reports backup configuration to thin clients and API
+// health checks. It intentionally means configured, not live-verified.
+func WithBackupConfigured(configured bool) Option {
+	return func(s *Server) { s.backupConfigured = configured }
 }
 
 // NewServer wires the dispatch table for an engine.
@@ -288,7 +295,12 @@ func decodeParams[T any](raw json.RawMessage) (T, error) {
 // --- handlers ---
 
 func (s *Server) ping(context.Context, json.RawMessage) (any, error) {
-	return proto.PingResult{Pong: true, Version: appversion.String(), USPTOConfigured: s.usptoConfigured}, nil
+	return proto.PingResult{
+		Pong:             true,
+		Version:          appversion.String(),
+		USPTOConfigured:  s.usptoConfigured,
+		BackupConfigured: s.backupConfigured,
+	}, nil
 }
 
 func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error) {

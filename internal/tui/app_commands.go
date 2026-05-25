@@ -309,7 +309,7 @@ func (a *App) openClassificationStats(p domain.Patent) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdOpenProjects(invocation) (tea.Model, tea.Cmd) {
-	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString()).WithLogger(a.log()))
+	return a.pushPane(pane.NewProjects(a.client, a.theme, a.activeAIString(), a.activeSearchString(), a.activeBackupString()).WithLogger(a.log()))
 }
 
 func (a *App) cmdCrawlDepthMax(inv invocation) (tea.Model, tea.Cmd) {
