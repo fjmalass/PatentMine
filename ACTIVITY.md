@@ -83,6 +83,30 @@ export PATENTMINE_LOG_MAX_SIZE_BYTES=52428800 # Capped at 50MB
 
 On daemon startup or TUI launch, a background worker scans `$PATENTMINE_HOME/logs/`, prunes any log files whose date suffix is older than `LogRetainDays`, and performs a sorting pass to keep total log storage strictly below `LogMaxSizeBytes` by removing the oldest logs first.
 
+### Pruning Telemetry & Metrics
+When log/activity pruning occurs, detailed statistics are written as a structured JSONL log entry under the `observability` component and recorded to the in-memory Metrics registry (which is viewable in the TUI's dashboard overlay via `'M'` or the `/metrics` API endpoints).
+
+#### 1. Structured Log Entry
+The completed pruning pass is logged with the message `completed log and activity pruning` and includes the following fields:
+- `initial_file_count`: Total count of matching log/activity files before pruning.
+- `initial_size_bytes`: Combined size in bytes of matching files before pruning.
+- `deleted_file_count`: Total number of log/activity files pruned during this pass.
+- `deleted_size_bytes`: Combined bytes reclaimed/deleted during this pass.
+- `final_file_count`: Final remaining count of log/activity files.
+- `final_size_bytes`: Final remaining size in bytes.
+- `retain_days`: Active time-based pruning retention threshold.
+- `max_size_bytes`: Active size-based pruning retention threshold.
+- `duration`: Execution duration of the pruning pass.
+
+#### 2. Prometheus Metrics
+The following metrics are exposed in the registry:
+- `observability.pruning.total` (counter): Number of times log pruning has run.
+- `observability.pruning.deleted_files_total` (counter): Cumulative count of files deleted by pruning.
+- `observability.pruning.deleted_bytes_total` (counter): Cumulative size in bytes deleted by pruning.
+- `observability.pruning.final_files` (gauge): The count of files remaining after the latest pruning pass.
+- `observability.pruning.final_size_bytes` (gauge): The total size in bytes of remaining files.
+- `observability.pruning.duration` (timing/duration): Latency distribution of the pruning pass.
+
 ---
 
 ## 5. Architectural Retention Tiers for Long-Term Auditing

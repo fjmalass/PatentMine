@@ -151,23 +151,34 @@ var (
 )
 
 type logFileInfo struct {
-	path string
-	size int64
-	t    time.Time
+	path       string
+	size       int64
+	t          time.Time
+	isToday    bool
+	timePruned bool
 }
 
 // pruneOldLogs deletes log-*.jsonl and activity-*.jsonl files in logsDir
 // whose date suffix is older than LogRetainDays days, or if the total
 // directory size of all logs exceeds LogMaxSizeBytes, deleting the oldest first.
-func pruneOldLogs(logsDir string, now time.Time) {
+// It reports initial and final sizes and file counts, writing detailed telemetry
+// to the logger and recording metrics.
+func pruneOldLogs(logsDir string, now time.Time, logger *slog.Logger, metrics *Metrics) {
+	start := time.Now()
 	entries, err := os.ReadDir(logsDir)
 	if err != nil {
+		if logger != nil {
+			logger.Error("pruning failed to read logs directory", slog.String("dir", logsDir), slog.String("error", err.Error()))
+		}
 		return
 	}
 
+	todayStr := localDate(now)
 	cutoff := now.In(time.Local).AddDate(0, 0, -LogRetainDays)
-	var logFiles []logFileInfo
-	var totalSize int64
+
+	var allFiles []logFileInfo
+	var initialFileCount int64
+	var initialSizeBytes int64
 
 	for _, e := range entries {
 		name := e.Name()
@@ -180,45 +191,115 @@ func pruneOldLogs(logsDir string, now time.Time) {
 		default:
 			continue
 		}
+
 		dateStr := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".jsonl")
 		t, err := time.ParseInLocation(dateLayout, dateStr, time.Local)
 		if err != nil {
 			continue
 		}
 
-		fullPath := filepath.Join(logsDir, name)
-		if t.Before(cutoff) {
-			_ = os.Remove(fullPath)
+		info, err := e.Info()
+		if err != nil {
 			continue
 		}
 
-		// Keep track of remaining files for size pruning
-		info, err := e.Info()
-		if err == nil {
-			size := info.Size()
-			logFiles = append(logFiles, logFileInfo{
-				path: fullPath,
-				size: size,
-				t:    t,
-			})
-			totalSize += size
+		size := info.Size()
+		initialFileCount++
+		initialSizeBytes += size
+
+		isToday := (dateStr == todayStr)
+		timePruned := !isToday && t.Before(cutoff)
+
+		allFiles = append(allFiles, logFileInfo{
+			path:       filepath.Join(logsDir, name),
+			size:       size,
+			t:          t,
+			isToday:    isToday,
+			timePruned: timePruned,
+		})
+	}
+
+	var deletedFileCount int64
+	var deletedSizeBytes int64
+	var surviving []logFileInfo
+
+	// 1. Time-based pruning
+	for _, lf := range allFiles {
+		if lf.timePruned {
+			if err := os.Remove(lf.path); err == nil {
+				deletedFileCount++
+				deletedSizeBytes += lf.size
+			} else {
+				// Deletion failed, so it survives
+				surviving = append(surviving, lf)
+				if logger != nil {
+					logger.Warn("failed to delete time-pruned log file", slog.String("path", lf.path), slog.String("error", err.Error()))
+				}
+			}
+		} else {
+			surviving = append(surviving, lf)
 		}
 	}
 
-	// Size-based pruning: delete oldest files first if total size exceeds limit
-	if totalSize > LogMaxSizeBytes {
-		sort.Slice(logFiles, func(i, j int) bool {
-			return logFiles[i].t.Before(logFiles[j].t)
+	// 2. Size-based pruning (adaptive)
+	var currentTotalSize int64
+	for _, lf := range surviving {
+		currentTotalSize += lf.size
+	}
+
+	if currentTotalSize > LogMaxSizeBytes {
+		// Sort by date ascending (oldest first)
+		sort.Slice(surviving, func(i, j int) bool {
+			return surviving[i].t.Before(surviving[j].t)
 		})
 
-		for _, lf := range logFiles {
-			if totalSize <= LogMaxSizeBytes {
+		for _, lf := range surviving {
+			if currentTotalSize <= LogMaxSizeBytes {
 				break
 			}
+			// Never prune today's active files
+			if lf.isToday {
+				continue
+			}
 			if err := os.Remove(lf.path); err == nil {
-				totalSize -= lf.size
+				deletedFileCount++
+				deletedSizeBytes += lf.size
+				currentTotalSize -= lf.size
+			} else {
+				if logger != nil {
+					logger.Warn("failed to delete size-pruned log file", slog.String("path", lf.path), slog.String("error", err.Error()))
+				}
 			}
 		}
+	}
+
+	finalFileCount := initialFileCount - deletedFileCount
+	finalSizeBytes := initialSizeBytes - deletedSizeBytes
+	duration := time.Since(start)
+
+	// Logging completed stats
+	if logger != nil {
+		logger.Info("completed log and activity pruning",
+			slog.Int64("initial_file_count", initialFileCount),
+			slog.Int64("initial_size_bytes", initialSizeBytes),
+			slog.Int64("deleted_file_count", deletedFileCount),
+			slog.Int64("deleted_size_bytes", deletedSizeBytes),
+			slog.Int64("final_file_count", finalFileCount),
+			slog.Int64("final_size_bytes", finalSizeBytes),
+			slog.Int("retain_days", LogRetainDays),
+			slog.Int64("max_size_bytes", LogMaxSizeBytes),
+			slog.Duration("duration", duration),
+		)
+	}
+
+	// Telemetry/Metrics
+	if metrics != nil {
+		metrics.IncCounter("observability.pruning.total", 1)
+		metrics.IncCounter("observability.pruning.deleted_files_total", deletedFileCount)
+		metrics.IncCounter("observability.pruning.deleted_bytes_total", deletedSizeBytes)
+		metrics.SetGauge("observability.pruning.final_files", finalFileCount)
+		metrics.SetGauge("observability.pruning.final_size_bytes", finalSizeBytes)
+		metrics.ObserveDuration("observability.pruning.duration", duration, false)
 	}
 }
 
@@ -228,7 +309,6 @@ func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 		return nil, fmt.Errorf("observability: create logs dir %q: %w", logsDir, err)
 	}
 	now := time.Now()
-	pruneOldLogs(logsDir, now)
 	date := localDate(now)
 	logFile, err := os.OpenFile(filepath.Join(logsDir, "log-"+date+".jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -246,10 +326,15 @@ func Open(logsDir, component, buildVersion string) (*Runtime, error) {
 		slog.String("date", date),
 		slog.String("version", buildVersion),
 	)
+	metrics := NewMetrics()
+
+	// Prune old logs now that the logger and metrics registry are ready.
+	pruneOldLogs(logsDir, now, logger, metrics)
+
 	return &Runtime{
 		Logger:       logger,
 		Activity:     &Recorder{component: component, w: activityFile},
-		Metrics:      NewMetrics(),
+		Metrics:      metrics,
 		Version:      buildVersion,
 		LogsDir:      logsDir,
 		logFile:      logFile,

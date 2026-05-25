@@ -141,8 +141,22 @@ func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
 		}
 	}
 
+	metrics := NewMetrics()
+
 	// Trigger pruning
-	pruneOldLogs(logsDir, now)
+	pruneOldLogs(logsDir, now, nil, metrics)
+
+	// Verify metrics for the first run (should delete dates[0], leaving 3 surviving files)
+	snap := metrics.Snapshot()
+	if snap.Counters["observability.pruning.total"] != 1 {
+		t.Errorf("expected run counter to be 1, got %d", snap.Counters["observability.pruning.total"])
+	}
+	if snap.Counters["observability.pruning.deleted_files_total"] != 1 {
+		t.Errorf("expected deleted files count to be 1, got %d", snap.Counters["observability.pruning.deleted_files_total"])
+	}
+	if snap.Gauges["observability.pruning.final_files"] != 3 {
+		t.Errorf("expected final files gauge to be 3, got %d", snap.Gauges["observability.pruning.final_files"])
+	}
 
 	// Older than 3 days (dates[0]) should be deleted because of time-based pruning.
 	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[0]+".jsonl")); !os.IsNotExist(err) {
@@ -165,10 +179,23 @@ func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
 		}
 	}
 
-	// Trigger pruning again
-	pruneOldLogs(logsDir, now)
+	metrics2 := NewMetrics()
 
-	// Since LogMaxSizeBytes = 50, and each file is 41 bytes, only 1 file can survive.
+	// Trigger pruning again
+	pruneOldLogs(logsDir, now, nil, metrics2)
+
+	// Verify metrics for the second run (should delete 2 files due to size limit)
+	snap2 := metrics2.Snapshot()
+	if snap2.Counters["observability.pruning.total"] != 1 {
+		t.Errorf("expected second run counter to be 1, got %d", snap2.Counters["observability.pruning.total"])
+	}
+	if snap2.Counters["observability.pruning.deleted_files_total"] != 2 {
+		t.Errorf("expected second run deleted files to be 2, got %d", snap2.Counters["observability.pruning.deleted_files_total"])
+	}
+	if snap2.Gauges["observability.pruning.final_files"] != 1 {
+		t.Errorf("expected second run final files to be 1, got %d", snap2.Gauges["observability.pruning.final_files"])
+	}
+
 	// The newest file (today) should survive, others should be pruned.
 	todayPath := filepath.Join(logsDir, "activity-"+dates[3]+".jsonl")
 	if _, err := os.Stat(todayPath); err != nil {

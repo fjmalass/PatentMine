@@ -1231,3 +1231,31 @@ func TestDeletePatentsIsTransactional(t *testing.T) {
 		}
 	}
 }
+
+func TestBackupTelemetry(t *testing.T) {
+	metrics := observability.NewMetrics()
+	tempDB := filepath.Join(t.TempDir(), "source.db")
+	repo, err := OpenWithMetrics(context.Background(), tempDB, metrics)
+	if err != nil {
+		t.Fatalf("OpenWithMetrics: %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	ctx := context.Background()
+	dest := filepath.Join(t.TempDir(), "backup.db")
+
+	if err := repo.Backup(ctx, dest); err != nil {
+		t.Fatalf("Backup failed: %v", err)
+	}
+
+	snap := metrics.Snapshot()
+	if snap.Counters["store.sqlite.backup.total"] != 1 {
+		t.Fatalf("backup.total = %d, want 1", snap.Counters["store.sqlite.backup.total"])
+	}
+	if snap.Timings["store.sqlite.backup.duration"].Count != 1 {
+		t.Fatalf("backup.duration Timing count = %d, want 1", snap.Timings["store.sqlite.backup.duration"].Count)
+	}
+	if size := snap.Gauges["store.sqlite.backup.size_bytes"]; size <= 0 {
+		t.Fatalf("backup.size_bytes gauge = %d, want > 0", size)
+	}
+}
