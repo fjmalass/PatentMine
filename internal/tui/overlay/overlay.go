@@ -93,6 +93,16 @@ type TextSubmitMsg struct {
 // CloseOverlayMsg asks the app to close the focused overlay.
 type CloseOverlayMsg struct{}
 
+// IDSHeaderSubmitMsg carries the values entered in the IDS-header overlay.
+// The App persists them via MethodProjectUpdate.
+type IDSHeaderSubmitMsg struct {
+	Project domain.Project
+}
+
+// IDSExportPDFRequestMsg asks the app to render the IDS PDF bundle for the
+// currently active project after the export confirm overlay was accepted.
+type IDSExportPDFRequestMsg struct{}
+
 // OpenPatentDetailMsg asks the app to open the detail view of a patent.
 type OpenPatentDetailMsg struct {
 	Number domain.PatentNumber

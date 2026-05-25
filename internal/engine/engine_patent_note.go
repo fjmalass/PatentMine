@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/store"
 )
 
@@ -40,11 +41,26 @@ func (e *Engine) SavePatentNote(ctx context.Context, note domain.PatentNote) (sa
 		return domain.PatentNote{}, err
 	}
 	note.Patent = record
+
+	var before *domain.PatentNote
+	if prev, perr := e.repo.PatentNote(ctx, note.Project, record); perr == nil {
+		cp := prev
+		before = &cp
+	}
+
 	saved, err = e.repo.SavePatentNote(ctx, note)
 	if err != nil {
 		return domain.PatentNote{}, err
 	}
 	e.announceChange()
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionNotesSave,
+		Entity:   "patent_note",
+		EntityID: string(saved.Project) + "/" + saved.Patent.String(),
+		Status:   "committed",
+		Before:   before,
+		After:    saved,
+	})
 	return saved, nil
 }
 
@@ -64,9 +80,23 @@ func (e *Engine) DeletePatentNote(ctx context.Context, project domain.ProjectID,
 	if err != nil {
 		return err
 	}
+
+	var before *domain.PatentNote
+	if prev, perr := e.repo.PatentNote(ctx, project, record); perr == nil {
+		cp := prev
+		before = &cp
+	}
+
 	if err := e.repo.DeletePatentNote(ctx, project, record); err != nil {
 		return err
 	}
 	e.announceChange()
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionNotesDelete,
+		Entity:   "patent_note",
+		EntityID: string(project) + "/" + record.String(),
+		Status:   "committed",
+		Before:   before,
+	})
 	return nil
 }

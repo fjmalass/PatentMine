@@ -15,6 +15,7 @@ import (
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/store/sqlite"
@@ -122,6 +123,59 @@ func TestAPIMetricsPrometheus(t *testing.T) {
 	}
 	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/plain") {
 		t.Fatalf("GET /metrics content-type = %q, want text/plain", got)
+	}
+}
+
+func TestAPIActivityRawAndHistory(t *testing.T) {
+	logsDir := filepath.Join(t.TempDir(), "logs")
+	rt, err := observability.Open(logsDir, "api-test", "test-version")
+	if err != nil {
+		t.Fatalf("observability.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	for _, record := range []observability.Record{
+		{Action: observability.ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Metadata: map[string]any{"scope": "detail"}},
+		{Action: observability.ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Metadata: map[string]any{"scope": "detail"}},
+		{Action: observability.ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Metadata: map[string]any{"prior_status": "ignored", "status": "pending"}},
+	} {
+		if err := rt.Activity.Record(context.Background(), record); err != nil {
+			t.Fatalf("Record: %v", err)
+		}
+	}
+
+	registry, err := command.Default()
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	h := api.NewServer(nil, registry, api.WithActivity(rt, 100*time.Millisecond)).Handler()
+
+	raw := do(t, h, http.MethodGet, "/activity/raw?limit=3", "")
+	if raw.Code != http.StatusOK {
+		t.Fatalf("GET /activity/raw = %d: %s", raw.Code, raw.Body.String())
+	}
+	var rawBody struct {
+		Records  []observability.Record `json:"records"`
+		Limit    int                    `json:"limit"`
+		Returned int                    `json:"returned"`
+	}
+	if err := json.Unmarshal(raw.Body.Bytes(), &rawBody); err != nil {
+		t.Fatalf("decode raw: %v", err)
+	}
+	if rawBody.Limit != 3 || rawBody.Returned != 3 || len(rawBody.Records) != 3 {
+		t.Fatalf("raw response = %+v", rawBody)
+	}
+
+	history := do(t, h, http.MethodGet, "/history?raw_limit=3", "")
+	if history.Code != http.StatusOK {
+		t.Fatalf("GET /history = %d: %s", history.Code, history.Body.String())
+	}
+	var feed observability.HistoryFeed
+	if err := json.Unmarshal(history.Body.Bytes(), &feed); err != nil {
+		t.Fatalf("decode history: %v", err)
+	}
+	if feed.RawLimit != 3 || feed.RawScanned != 3 || feed.Returned != 2 || feed.Suppressed != 1 {
+		t.Fatalf("history feed = %+v", feed)
 	}
 }
 

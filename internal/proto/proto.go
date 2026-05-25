@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 )
 
 // Version is the JSON-RPC protocol version string.
@@ -39,6 +40,9 @@ const (
 	MethodRelations                 Method = "patent.relations"
 	MethodFamilyGraph               Method = "patent.family_graph"
 	MethodIDSExport                 Method = "ids.export"
+	MethodIDSPDFExport              Method = "ids.export.pdf"
+	MethodIDSPDFPreview             Method = "ids.export.pdf.preview"
+	MethodProjectUpdate             Method = "project.update"
 	MethodIDSEntryGet               Method = "ids.entry.get"
 	MethodIDSEntrySave              Method = "ids.entry.save"
 	MethodIDSEntryDelete            Method = "ids.entry.delete"
@@ -49,6 +53,8 @@ const (
 	MethodPatentNoteExport          Method = "patent.note.export"
 	MethodMetricsGet                Method = "metrics.get"
 	MethodMetricsPush               Method = "metrics.push"
+	MethodActivityRaw               Method = "activity.raw"
+	MethodHistoryFeed               Method = "history.feed"
 	MethodTagCreate                 Method = "tag.create"
 	MethodTagList                   Method = "tag.list"
 	MethodTagDelete                 Method = "tag.delete"
@@ -161,15 +167,16 @@ type PatentListParams struct {
 	Project            domain.ProjectID      `json:"project,omitempty"`
 	Filter             string                `json:"filter,omitempty"`
 	ReviewState        domain.ReviewState    `json:"review_state,omitempty"`
-	Search             string             `json:"search,omitempty"`
-	Classification     string             `json:"classification,omitempty"`
-	ClassificationCode string             `json:"classification_code,omitempty"`
-	Inventor           string             `json:"inventor,omitempty"`
-	Assignee           string             `json:"assignee,omitempty"`
-	Limit              int                `json:"limit,omitempty"`
-	Offset             int                `json:"offset,omitempty"`
-	SortColumn         domain.SortColumn  `json:"sort_column,omitempty"`
-	SortAscending      bool               `json:"sort_ascending,omitempty"`
+	IDSStatus          string                `json:"ids_status,omitempty"`
+	Search             string                `json:"search,omitempty"`
+	Classification     string                `json:"classification,omitempty"`
+	ClassificationCode string                `json:"classification_code,omitempty"`
+	Inventor           string                `json:"inventor,omitempty"`
+	Assignee           string                `json:"assignee,omitempty"`
+	Limit              int                   `json:"limit,omitempty"`
+	Offset             int                   `json:"offset,omitempty"`
+	SortColumn         domain.SortColumn     `json:"sort_column,omitempty"`
+	SortAscending      bool                  `json:"sort_ascending,omitempty"`
 }
 
 // PatentListResult carries one page of patents plus the unpaged total.
@@ -234,6 +241,11 @@ type ReviewStateParams struct {
 	Project domain.ProjectID      `json:"project"`
 	Patents []domain.PatentNumber `json:"patents"`
 	State   string                `json:"state"`
+}
+
+// ReviewStateResult reports the canonical patent records whose state changed.
+type ReviewStateResult struct {
+	Patents []domain.PatentNumber `json:"patents"`
 }
 
 // TagParams names a tag to assign to, or remove from, one or more patents within a
@@ -354,6 +366,7 @@ type RelationsParams struct {
 	Project        domain.ProjectID    `json:"project,omitempty"`
 	Filter         string              `json:"filter,omitempty"`
 	ReviewState    domain.ReviewState  `json:"review_state,omitempty"`
+	IDSStatus      string              `json:"ids_status,omitempty"`
 	Search         string              `json:"search,omitempty"`
 	Classification string              `json:"classification,omitempty"`
 	Inventor       string              `json:"inventor,omitempty"`
@@ -415,6 +428,46 @@ type IDSExportParams struct {
 // IDSResult carries a generated Information Disclosure Statement.
 type IDSResult struct {
 	IDS domain.IDS `json:"ids"`
+}
+
+// IDSPDFExportParams selects the project to render an IDS PDF bundle for.
+type IDSPDFExportParams struct {
+	Project         domain.ProjectID `json:"project"`
+	CumulativeCount int              `json:"cumulative_count,omitempty"`
+	FeeAmount       string           `json:"fee_amount,omitempty"`
+	DepositAccount  string           `json:"deposit_account,omitempty"`
+	SignerName      string           `json:"signer_name,omitempty"`
+	SignerSignature string           `json:"signer_signature,omitempty"`
+	SignerRegNumber string           `json:"signer_reg_number,omitempty"`
+}
+
+// IDSPDFExportResult reports where the generated bundle was written.
+type IDSPDFExportResult struct {
+	Dir       string   `json:"dir"`
+	Files     []string `json:"files"`
+	FeeTier   int      `json:"fee_tier"`
+	PageCount int      `json:"page_count"`
+}
+
+// ProjectUpdateParams updates a project's mutable fields (name + IDS header
+// fields, inventor list, examiner history).
+type ProjectUpdateParams struct {
+	Project domain.Project `json:"project"`
+}
+
+// IDSPDFPreviewResult is the dry-run summary of an IDS export. It tells the
+// caller where files would land, how many sheets the renderer would emit, the
+// fee tier, any IDS header fields the project is still missing, and which
+// previous exports already exist on disk for the same project.
+type IDSPDFPreviewResult struct {
+	BaseDir         string   `json:"base_dir"`
+	USCount         int      `json:"us_count"`
+	ForeignCount    int      `json:"foreign_count"`
+	Sheets          int      `json:"sheets"`
+	FeeTier         int      `json:"fee_tier"`
+	CumulativeCount int      `json:"cumulative_count"`
+	ExistingDirs    []string `json:"existing_dirs,omitempty"`
+	MissingFields   []string `json:"missing_fields,omitempty"`
 }
 
 // IDSEntryParams identifies one project/patent IDS entry.
@@ -494,6 +547,29 @@ type MetricsResult struct {
 type MetricsPushParams struct {
 	Component string          `json:"component"`
 	Snapshot  MetricsSnapshot `json:"snapshot"`
+}
+
+// ActivityRawParams selects raw activity records from the daemon journal.
+type ActivityRawParams struct {
+	Limit     int       `json:"limit,omitempty"`
+	Component string    `json:"component,omitempty"`
+	Action    string    `json:"action,omitempty"`
+	Entity    string    `json:"entity,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
+}
+
+// ActivityRawResult carries raw activity records and accounting.
+type ActivityRawResult struct {
+	Records  []observability.Record `json:"records"`
+	Limit    int                    `json:"limit"`
+	Returned int                    `json:"returned"`
+}
+
+// HistoryFeedParams selects the raw activity window to group into history.
+type HistoryFeedParams struct {
+	RawLimit  int       `json:"raw_limit,omitempty"`
+	Component string    `json:"component,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
 }
 
 // MetricsSnapshot is a transport-safe view of the daemon's metrics.

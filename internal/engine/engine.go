@@ -57,6 +57,7 @@ type Engine struct {
 	metrics          *observability.Metrics
 	crawlMaxDepth    int
 	crawlWorkerCount int
+	idsExportDir     string
 
 	// changeMu guards the EventDBChanged debounce state below.
 	changeMu      sync.Mutex
@@ -112,6 +113,12 @@ func WithCrawlWorkers(n int) Option {
 			e.crawlWorkerCount = n
 		}
 	}
+}
+
+// WithIDSExportDir sets the base directory the IDS PDF exporter writes into.
+// Empty leaves it unset; ExportIDSPDF will then return an error when called.
+func WithIDSExportDir(dir string) Option {
+	return func(e *Engine) { e.idsExportDir = dir }
 }
 
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx

@@ -249,6 +249,53 @@ func TestDetailAppliesReviewStateChangeImmediately(t *testing.T) {
 	}
 }
 
+func TestDetailAppliesIDSEntryChangeImmediately(t *testing.T) {
+	num := domain.MustParsePatentNumber("US0000001B2")
+	d := NewDetail(nil, render.NewTheme(), num, "p1", nil)
+	d.loading = false
+	d.patent = domain.Patent{Number: num, Title: "Test Patent Title"}
+	if out := d.View(80, 20); !strings.Contains(out, "⭕ none") {
+		t.Fatalf("detail view should start without IDS entry, got:\n%s", out)
+	}
+	if d.cachedLines == nil {
+		t.Fatalf("detail view should populate cached lines")
+	}
+	entry := &domain.IDSEntry{
+		Project: "p1",
+		Patent:  num,
+		Status:  domain.IDSEntrySubmitted,
+		InFull:  true,
+	}
+
+	updated, _ := d.Update(IDSEntryChangedMsg{
+		Project: "p1",
+		Patent:  num,
+		Entry:   entry,
+	})
+	d = updated.(*Detail)
+
+	if got := d.idsEntry; got != entry {
+		t.Fatalf("detail IDS entry = %+v, want %+v", got, entry)
+	}
+	if d.cachedLines != nil {
+		t.Fatalf("detail cached lines should be invalidated after IDS entry change")
+	}
+	out := d.View(80, 20)
+	if !strings.Contains(out, "📨 submitted | full") {
+		t.Fatalf("detail view should include updated IDS entry, got:\n%s", out)
+	}
+
+	updated, _ = d.Update(IDSEntryChangedMsg{
+		Project: "p1",
+		Patent:  domain.MustParsePatentNumber("US0000002B2"),
+		Entry:   nil,
+	})
+	d = updated.(*Detail)
+	if got := d.idsEntry; got != entry {
+		t.Fatalf("detail IDS entry changed for another patent: %+v", got)
+	}
+}
+
 func TestDetailPaneJumpActive(t *testing.T) {
 	num := domain.MustParsePatentNumber("US0000001B2")
 	// Bound letters simulate keymap conflicts a, i, c, b — the algorithm

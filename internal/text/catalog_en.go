@@ -36,6 +36,8 @@ const (
 	StatusAddedNoCrawl            Key = "status.added_no_ingest"
 	StatusSetStateFailed          Key = "status.set_state_failed"
 	StatusSetState                Key = "status.set_state"
+	StatusIDSUpdateFailed         Key = "status.ids_update_failed"
+	StatusIDSCycled               Key = "status.ids_cycled"
 	StatusNotesAdded              Key = "status.notes_added"
 	StatusNotesFlushed            Key = "status.notes_flushed"
 	StatusNotesSavedToPatentNote  Key = "status.notes_saved_to_patent_note"
@@ -105,6 +107,13 @@ const (
 	HintSelect          Key = "hint.select"
 	HintClearActive     Key = "hint.clear_active"
 	HintExportIDS       Key = "hint.export_ids"
+	HintExportIDSPDF    Key = "hint.export_ids_pdf"
+	HintIDSHeader       Key = "hint.ids_header"
+	HintNotes           Key = "hint.notes"
+	HintExportNotes     Key = "hint.export_notes"
+	HintCopy            Key = "hint.copy"
+	HintNoteAdd         Key = "hint.note_add"
+	HintNoteOpen        Key = "hint.note_open"
 	HintCrawl           Key = "hint.ingest"
 	HintLookup          Key = "hint.fetch"
 	HintClassifications Key = "hint.classifications"
@@ -253,6 +262,8 @@ var cmdStrings = map[string][2]string{
 	"view.all-notes":         {"All notes", "Open the all-notes pane listing every project note with sort and export."},
 	"notes.sort-toggle":      {"Sort notes", "Toggle note list sort between date (most recent) and patent number."},
 	"notes.export-md":        {"Export notes", "Export all project notes to a Markdown file in your home directory."},
+	"project.ids-header":     {"Edit IDS header", "Edit the IDS header fields for the active project: application number, filing date, inventor, art unit, examiner, attorney docket number."},
+	"ids.export-pdf":         {"Export IDS PDF", "Render the active project's IDS to PDF (PTO/SB/08a + PTO/SB/08c) in the configured exports directory."},
 }
 
 // englishNamed is the English text for every named key.
@@ -287,6 +298,8 @@ var englishNamed = map[Key]string{
 	StatusAddedNoCrawl:            "added %s — press L to lookup",
 	StatusSetStateFailed:          "set state failed: %s",
 	StatusSetState:                "set %s to %s review state in %s",
+	StatusIDSUpdateFailed:         "IDS update failed: %s",
+	StatusIDSCycled:               "cycled IDS status for %d patent(s)",
 	StatusExportFailed:            "IDS export failed: %s",
 	StatusExportDone:              "IDS for %q: %d disclosed reference(s)",
 	StatusNotesExportDone:         "exported %d note(s) to %s",
@@ -352,6 +365,13 @@ var englishNamed = map[Key]string{
 	HintSelect:          "select",
 	HintClearActive:     "clear active",
 	HintExportIDS:       "export IDS",
+	HintExportIDSPDF:    "export IDS PDF",
+	HintIDSHeader:       "IDS header",
+	HintNotes:           "all notes",
+	HintExportNotes:     "export notes",
+	HintCopy:            "copy",
+	HintNoteAdd:         "add to notes",
+	HintNoteOpen:        "open notes",
 	HintFullText:        "full text",
 	HintCrawl:           "crawl family",
 	HintLookup:          "lookup patent",

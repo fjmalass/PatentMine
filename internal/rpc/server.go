@@ -16,6 +16,7 @@ import (
 
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
 	appversion "patentmine/internal/version"
@@ -36,12 +37,25 @@ type Server struct {
 	engine          *engine.Engine
 	handlers        map[proto.Method]handlerFunc
 	usptoConfigured bool
+	activityLogsDir string
 	clientMetrics   sync.Map // component string → proto.MetricsSnapshot
 }
 
+// Option customizes server behavior outside the engine dispatch table.
+type Option func(*Server)
+
+// WithActivityLogsDir lets RPC clients read the daemon's raw and grouped
+// activity feeds from the same log directory where daemon mutations are written.
+func WithActivityLogsDir(dir string) Option {
+	return func(s *Server) { s.activityLogsDir = dir }
+}
+
 // NewServer wires the dispatch table for an engine.
-func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
+func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server {
 	s := &Server{engine: eng, usptoConfigured: usptoConfigured}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.handlers = map[proto.Method]handlerFunc{
 		proto.MethodPing:                      s.ping,
 		proto.MethodPatentGet:                 s.patentGet,
@@ -65,6 +79,9 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodRelations:                 s.relations,
 		proto.MethodFamilyGraph:               s.familyGraph,
 		proto.MethodIDSExport:                 s.idsExport,
+		proto.MethodIDSPDFExport:              s.idsPDFExport,
+		proto.MethodIDSPDFPreview:             s.idsPDFPreview,
+		proto.MethodProjectUpdate:             s.projectUpdate,
 		proto.MethodIDSEntryGet:               s.idsEntryGet,
 		proto.MethodIDSEntrySave:              s.idsEntrySave,
 		proto.MethodIDSEntryDelete:            s.idsEntryDelete,
@@ -75,6 +92,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodPatentNoteExport:          s.patentNoteExport,
 		proto.MethodMetricsGet:                s.metricsGet,
 		proto.MethodMetricsPush:               s.metricsPush,
+		proto.MethodActivityRaw:               s.activityRaw,
+		proto.MethodHistoryFeed:               s.historyFeed,
 		proto.MethodTagCreate:                 s.tagCreate,
 		proto.MethodTagList:                   s.tagList,
 		proto.MethodTagDelete:                 s.tagDelete,
@@ -393,6 +412,7 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		Project:            p.Project,
 		Filter:             p.Filter,
 		ReviewState:        p.ReviewState,
+		IDSStatus:          p.IDSStatus,
 		Search:             p.Search,
 		Classification:     p.Classification,
 		ClassificationCode: p.ClassificationCode,
@@ -483,7 +503,15 @@ func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, err
 	if err := s.engine.SetReviewState(ctx, p.Project, p.Patents, state); err != nil {
 		return nil, err
 	}
-	return proto.Empty{}, nil
+	records := make([]domain.PatentNumber, 0, len(p.Patents))
+	for _, patent := range p.Patents {
+		record, err := s.engine.Patent(ctx, patent)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record.Number)
+	}
+	return proto.ReviewStateResult{Patents: records}, nil
 }
 
 func (s *Server) tagPatent(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -660,6 +688,7 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		Project:        p.Project,
 		Filter:         p.Filter,
 		ReviewState:    p.ReviewState,
+		IDSStatus:      p.IDSStatus,
 		Search:         p.Search,
 		Classification: p.Classification,
 		Inventor:       p.Inventor,
@@ -693,6 +722,65 @@ func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.IDSResult{IDS: ids}, nil
+}
+
+func (s *Server) idsPDFExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSPDFExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.engine.ExportIDSPDF(ctx, p.Project, engine.IDSPDFOptions{
+		CumulativeCount: p.CumulativeCount,
+		FeeAmount:       p.FeeAmount,
+		DepositAccount:  p.DepositAccount,
+		SignerName:      p.SignerName,
+		SignerSignature: p.SignerSignature,
+		SignerRegNumber: p.SignerRegNumber,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSPDFExportResult{
+		Dir:       res.Dir,
+		Files:     res.Files,
+		FeeTier:   res.FeeTier,
+		PageCount: res.PageCount,
+	}, nil
+}
+
+func (s *Server) projectUpdate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProjectUpdateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	saved, err := s.engine.UpdateProject(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ProjectResult{Project: saved}, nil
+}
+
+func (s *Server) idsPDFPreview(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSPDFExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	prev, err := s.engine.PreviewIDSPDF(ctx, p.Project, engine.IDSPDFOptions{
+		CumulativeCount: p.CumulativeCount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSPDFPreviewResult{
+		BaseDir:         prev.BaseDir,
+		USCount:         prev.USCount,
+		ForeignCount:    prev.ForeignCount,
+		Sheets:          prev.Sheets,
+		FeeTier:         prev.FeeTier,
+		CumulativeCount: prev.CumulativeCount,
+		ExistingDirs:    prev.ExistingDirs,
+		MissingFields:   prev.MissingFields,
+	}, nil
 }
 
 func (s *Server) idsEntryGet(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -885,6 +973,46 @@ func (s *Server) metricsPush(_ context.Context, raw json.RawMessage) (any, error
 	}
 	s.clientMetrics.Store(key, p.Snapshot)
 	return proto.Empty{}, nil
+}
+
+func (s *Server) activityRaw(_ context.Context, raw json.RawMessage) (any, error) {
+	if s.activityLogsDir == "" {
+		return nil, errors.New("rpc: activity logging is not configured")
+	}
+	p, err := decodeParams[proto.ActivityRawParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	limit := p.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	records, err := observability.ReadActivityRecords(s.activityLogsDir, observability.ActivityQuery{
+		Limit:     limit,
+		Component: p.Component,
+		Action:    p.Action,
+		Entity:    p.Entity,
+		Since:     p.Since,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.ActivityRawResult{Records: records, Limit: limit, Returned: len(records)}, nil
+}
+
+func (s *Server) historyFeed(_ context.Context, raw json.RawMessage) (any, error) {
+	if s.activityLogsDir == "" {
+		return nil, errors.New("rpc: activity logging is not configured")
+	}
+	p, err := decodeParams[proto.HistoryFeedParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return observability.ReadHistoryFeed(s.activityLogsDir, observability.HistoryQuery{
+		RawLimit:  p.RawLimit,
+		Component: p.Component,
+		Since:     p.Since,
+	})
 }
 
 // mergeTimingMetric combines two timing summaries for the same key.

@@ -2,7 +2,6 @@ package ids
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,25 +25,12 @@ type Input struct {
 	GeneratedAt      time.Time
 }
 
-// Result describes the files written and the input recorded for amendment.
+// Result describes the files written for one IDS rendering.
 type Result struct {
 	Dir       string   `json:"dir"`
 	Files     []string `json:"files"`
-	Manifest  string   `json:"manifest"`
 	FeeTier   int      `json:"fee_tier"`
 	PageCount int      `json:"page_count"`
-}
-
-// Manifest is the JSON record persisted alongside the PDFs so a future
-// amendment run can show the prior filing's inputs.
-type Manifest struct {
-	Project         domain.Project `json:"project"`
-	GeneratedAt     time.Time      `json:"generated_at"`
-	Entries         []Entry        `json:"entries"`
-	CumulativeCount int            `json:"cumulative_count"`
-	FeeTier         int            `json:"fee_tier"`
-	Sheets          int            `json:"sheets"`
-	Files           []string       `json:"files"`
 }
 
 // Export renders the IDS bundle for the given input into a fresh timestamped
@@ -114,33 +100,13 @@ func Export(ctx context.Context, in Input, baseDir string, obs *observability.Ru
 	}
 	files = append(files, "08c.pdf")
 
-	manifest := Manifest{
-		Project:         in.Project,
-		GeneratedAt:     in.GeneratedAt,
-		Entries:         in.Entries,
-		CumulativeCount: in.CumulativeCount,
-		FeeTier:         feeTier,
-		Sheets:          totalSheets,
-		Files:           files,
-	}
-	manifestPath := filepath.Join(dir, "manifest.json")
-	mb, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		failed = true
-		return Result{}, fmt.Errorf("ids: marshal manifest: %w", err)
-	}
-	if err := os.WriteFile(manifestPath, mb, 0o644); err != nil {
-		failed = true
-		return Result{}, fmt.Errorf("ids: write manifest: %w", err)
-	}
-
 	if obs != nil {
 		if obs.Metrics != nil {
 			obs.Metrics.IncCounter("ids.export.pages", int64(totalSheets+1))
 		}
 		if obs.Activity != nil {
 			_ = obs.Activity.Record(ctx, observability.Record{
-				Action:   "ids.export.pdf",
+				Action:   observability.ActionIDSExportPDF,
 				Entity:   "project",
 				EntityID: string(in.Project.ID),
 				Status:   "ok",
@@ -157,7 +123,6 @@ func Export(ctx context.Context, in Input, baseDir string, obs *observability.Ru
 	return Result{
 		Dir:       dir,
 		Files:     files,
-		Manifest:  manifestPath,
 		FeeTier:   feeTier,
 		PageCount: totalSheets + 1,
 	}, nil
@@ -167,9 +132,9 @@ func buildSB08APage(project domain.Project, sheet Sheet, sheetNum, total int) fo
 	var page formPage
 	page.addText(sb08aHeaderFields.AppNumber, project.ApplicationNumber)
 	page.addText(sb08aHeaderFields.FilingDate, formatDate(project.FilingDate))
-	page.addText(sb08aHeaderFields.Inventor, project.FirstNamedInventor)
+	page.addText(sb08aHeaderFields.Inventor, project.FirstInventor())
 	page.addText(sb08aHeaderFields.ArtUnit, project.ArtUnit)
-	page.addText(sb08aHeaderFields.Examiner, project.ExaminerName)
+	page.addText(sb08aHeaderFields.Examiner, project.LatestExaminer())
 	page.addText(sb08aHeaderFields.DocketNumber, project.AttorneyDocketNumber)
 	page.addText(sb08aHeaderFields.SheetN, fmt.Sprintf("%d", sheetNum))
 	page.addText(sb08aHeaderFields.SheetOf, fmt.Sprintf("%d", total))
@@ -200,11 +165,11 @@ func buildSB08APage(project domain.Project, sheet Sheet, sheetNum, total int) fo
 func buildSB08CPage(in Input, tier int) formPage {
 	var page formPage
 	page.addText(sb08cAppNumber, in.Project.ApplicationNumber)
-	page.addText(sb08cInventor, in.Project.FirstNamedInventor)
+	page.addText(sb08cInventor, in.Project.FirstInventor())
 	page.addText(sb08cArtUnit, in.Project.ArtUnit)
 	page.addText(sb08cFilingDate, formatDate(in.Project.FilingDate))
 	page.addText(sb08cDocket, in.Project.AttorneyDocketNumber)
-	page.addText(sb08cExaminer, in.Project.ExaminerName)
+	page.addText(sb08cExaminer, in.Project.LatestExaminer())
 	switch tier {
 	case 0:
 		page.addBox(sb08cBoxNoFee, true)

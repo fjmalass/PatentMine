@@ -43,6 +43,8 @@ type Config struct {
 	ActivityMinMS  int    // Minimum UI look/hover duration to record.
 	NotesExportDir string // Directory for exported notes .md files; empty means user home dir.
 	IDSExportDir   string // Directory for exported IDS PDF bundles; empty means $HomeDir/exports.
+	LogRetainDays  int    // Number of days of log/activity files to keep.
+	LogMaxSizeBytes int64  // Maximum size limit for the logs directory in bytes.
 }
 
 // loadDotEnv searches for and loads environment variables from a .env file.
@@ -140,6 +142,22 @@ func Load() (Config, error) {
 		idsExportDir = filepath.Join(home, "exports")
 	}
 
+	logRetainDays, _ := strconv.Atoi(os.Getenv("PATENTMINE_LOG_RETAIN_DAYS"))
+	if logRetainDays <= 0 {
+		logRetainDays = 14
+	}
+
+	logMaxSizeBytesStr := os.Getenv("PATENTMINE_LOG_MAX_SIZE_BYTES")
+	var logMaxSizeBytes int64
+	if logMaxSizeBytesStr != "" {
+		if val, err := strconv.ParseInt(logMaxSizeBytesStr, 10, 64); err == nil && val > 0 {
+			logMaxSizeBytes = val
+		}
+	}
+	if logMaxSizeBytes <= 0 {
+		logMaxSizeBytes = 100 * 1024 * 1024 // Default: 100MB
+	}
+
 	return Config{
 		HomeDir:        Path(home),
 		DBPath:         Path(filepath.Join(home, dbFileName)),
@@ -155,5 +173,7 @@ func Load() (Config, error) {
 		ActivityMinMS:  activityMinMS,
 		NotesExportDir: notesExportDir,
 		IDSExportDir:   idsExportDir,
+		LogRetainDays:  logRetainDays,
+		LogMaxSizeBytes: logMaxSizeBytes,
 	}, nil
 }

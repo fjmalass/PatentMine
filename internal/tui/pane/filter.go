@@ -92,5 +92,5 @@ func isPatentFilterClearToken(s string) bool {
 }
 
 func patentFilterUsage() string {
-	return strings.Join([]string{patentFilterClearName, "tag:prior_art and not state:under_review", "(tag:prior_art or tag:blocker) and state:under_review", "class:S04*"}, " | ")
+	return strings.Join([]string{patentFilterClearName, "tag:prior_art and not state:under_review", "ids_status:pending", "(tag:prior_art or tag:blocker) and state:under_review", "class:S04*"}, " | ")
 }

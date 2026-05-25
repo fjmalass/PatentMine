@@ -112,7 +112,7 @@ func (e *Engine) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	}
 	e.log(ctx, slog.LevelInfo, "patent saved", slog.String("number", p.Number.String()))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "patent.save",
+		Action:   observability.ActionPatentSave,
 		Entity:   "patent",
 		EntityID: p.Number.String(),
 		Status:   "committed",
@@ -191,7 +191,7 @@ func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumbe
 			metadata["batch_id"] = batchID
 		}
 		e.recordActivity(ctx, observability.Record{
-			Action:   "patent.delete",
+			Action:   observability.ActionPatentDelete,
 			Entity:   "patent",
 			EntityID: record.String(),
 			Status:   "committed",
@@ -269,7 +269,7 @@ func (e *Engine) RestorePatent(ctx context.Context, snapshot PatentSnapshot, sof
 	e.log(ctx, slog.LevelInfo, "patent restored", slog.String("number", snapshot.Patent.Number.String()), slog.Bool("soft", soft))
 
 	e.recordActivity(ctx, observability.Record{
-		Action:   "patent.restore",
+		Action:   observability.ActionPatentRestore,
 		Entity:   "patent",
 		EntityID: snapshot.Patent.Number.String(),
 		Status:   "committed",

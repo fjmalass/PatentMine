@@ -142,6 +142,33 @@ type ReviewStateChangedMsg struct {
 	State   domain.ReviewState
 }
 
+// IDSEntrySavedMsg reports a successful save of an IDS entry from the daemon.
+type IDSEntrySavedMsg struct {
+	Project domain.ProjectID
+	Entry   domain.IDSEntry
+	Err     error
+}
+
+// IDSEntryDeletedMsg reports a successful deletion of an IDS entry from the daemon.
+type IDSEntryDeletedMsg struct {
+	Project domain.ProjectID
+	Patent  domain.PatentNumber
+	Err     error
+}
+
+// IDSEntryChangedMsg reports a committed change to a patent's curated IDS entry.
+type IDSEntryChangedMsg struct {
+	Project domain.ProjectID
+	Patent  domain.PatentNumber
+	Entry   *domain.IDSEntry // nil if the entry was deleted
+}
+
+// IDSEntriesChangedMsg reports a committed batch IDS status update.
+type IDSEntriesChangedMsg struct {
+	Entries []domain.IDSEntry
+	Err     error
+}
+
 // MultiCrawlStartedMsg is emitted when multiple patents are selected and a
 // crawl or lookup is started for each of them. It carries all job IDs so the
 // app can show a single aggregate overlay instead of stacking one per job.
@@ -222,4 +249,3 @@ func PaneHandlers() map[command.Scope][]command.ID {
 type SearchAppliedMsg struct {
 	Query string
 }
-

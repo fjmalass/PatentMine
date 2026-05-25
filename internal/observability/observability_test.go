@@ -108,3 +108,106 @@ func TestReadActivityRecordsHandlesCorruptedLines(t *testing.T) {
 	}
 }
 
+func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
+	logsDir := t.TempDir()
+	
+	// Set LogRetainDays package variable dynamically
+	originalDays := LogRetainDays
+	originalSize := LogMaxSizeBytes
+	t.Cleanup(func() {
+		LogRetainDays = originalDays
+		LogMaxSizeBytes = originalSize
+	})
+	
+	LogRetainDays = 3
+	LogMaxSizeBytes = 200 // Very small limit so it triggers size pruning
+
+	now := time.Now()
+	
+	// Create some mock activity files
+	dates := []string{
+		now.AddDate(0, 0, -5).Format(dateLayout), // older than 3 days cutoff
+		now.AddDate(0, 0, -2).Format(dateLayout), // within 3 days
+		now.AddDate(0, 0, -1).Format(dateLayout), // within 3 days
+		now.Format(dateLayout),                  // today
+	}
+
+	payload := "some dummy content that exceeds size limit\n" // ~40 bytes
+	
+	for _, d := range dates {
+		path := filepath.Join(logsDir, "activity-"+d+".jsonl")
+		if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", d, err)
+		}
+	}
+
+	metrics := NewMetrics()
+
+	// Trigger pruning
+	pruneOldLogs(logsDir, now, nil, metrics)
+
+	// Verify metrics for the first run (should delete dates[0], leaving 3 surviving files)
+	snap := metrics.Snapshot()
+	if snap.Counters["observability.pruning.total"] != 1 {
+		t.Errorf("expected run counter to be 1, got %d", snap.Counters["observability.pruning.total"])
+	}
+	if snap.Counters["observability.pruning.deleted_files_total"] != 1 {
+		t.Errorf("expected deleted files count to be 1, got %d", snap.Counters["observability.pruning.deleted_files_total"])
+	}
+	if snap.Gauges["observability.pruning.final_files"] != 3 {
+		t.Errorf("expected final files gauge to be 3, got %d", snap.Gauges["observability.pruning.final_files"])
+	}
+
+	// Older than 3 days (dates[0]) should be deleted because of time-based pruning.
+	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[0]+".jsonl")); !os.IsNotExist(err) {
+		t.Errorf("expected oldest time-pruned file to be deleted, stat error: %v", err)
+	}
+
+	// But dates[1], dates[2], dates[3] are each ~40 bytes. Total is ~120 bytes.
+	// Since LogMaxSizeBytes is 200, they fit.
+	// Let's now reduce LogMaxSizeBytes to 50 bytes.
+	// Now only one file can be kept! Since dates[3] is the newest, it should survive, and the older ones should be pruned oldest-first.
+	LogMaxSizeBytes = 50
+	
+	// Write more files to trigger size pruning
+	for _, d := range dates[1:] {
+		path := filepath.Join(logsDir, "activity-"+d+".jsonl")
+		// Write large payloads
+		largePayload := strings.Repeat("A", 40) + "\n" // 41 bytes
+		if err := os.WriteFile(path, []byte(largePayload), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", d, err)
+		}
+	}
+
+	metrics2 := NewMetrics()
+
+	// Trigger pruning again
+	pruneOldLogs(logsDir, now, nil, metrics2)
+
+	// Verify metrics for the second run (should delete 2 files due to size limit)
+	snap2 := metrics2.Snapshot()
+	if snap2.Counters["observability.pruning.total"] != 1 {
+		t.Errorf("expected second run counter to be 1, got %d", snap2.Counters["observability.pruning.total"])
+	}
+	if snap2.Counters["observability.pruning.deleted_files_total"] != 2 {
+		t.Errorf("expected second run deleted files to be 2, got %d", snap2.Counters["observability.pruning.deleted_files_total"])
+	}
+	if snap2.Gauges["observability.pruning.final_files"] != 1 {
+		t.Errorf("expected second run final files to be 1, got %d", snap2.Gauges["observability.pruning.final_files"])
+	}
+
+	// The newest file (today) should survive, others should be pruned.
+	todayPath := filepath.Join(logsDir, "activity-"+dates[3]+".jsonl")
+	if _, err := os.Stat(todayPath); err != nil {
+		t.Errorf("expected newest file to survive, error: %v", err)
+	}
+
+	// Older files like dates[1] and dates[2] should be pruned oldest-first to stay under 50 bytes.
+	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[1]+".jsonl")); !os.IsNotExist(err) {
+		t.Errorf("expected dates[1] to be size-pruned")
+	}
+	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[2]+".jsonl")); !os.IsNotExist(err) {
+		t.Errorf("expected dates[2] to be size-pruned")
+	}
+}
+

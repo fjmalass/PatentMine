@@ -307,6 +307,13 @@ func (o *AssigneeStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 		}
 		o.clearVisual()
 		return o, func() tea.Msg { return OpenTagPatentOverlayMsg{Patents: numbers} }, true
+	case "I":
+		numbers := o.selections()
+		if len(numbers) == 0 {
+			numbers = []domain.PatentNumber{selectedPatent.Number}
+		}
+		o.clearVisual()
+		return o, pane.CycleIDSEntryStatusesCmd(o.client, o.project, numbers), true
 	}
 
 	return o, nil, true
@@ -494,9 +501,9 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString(o.theme.Dim.Render(render.Truncate(fmt.Sprintf("%s  [Tab/l/→/Enter] Focus Patents  [j/k/↑/↓] Select Assignee  [q/Q/Esc] Close", status), targetW)))
 	} else {
 		status := subtableStatus(o.patentsPage)
-		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Assignees  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
+		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Assignees  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close", status)
 		if o.patentsPage.VisualMode() {
-			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
+			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [I] IDS  [v/q/Q/Esc] Clear", status)
 		}
 		b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 	}

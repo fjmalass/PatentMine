@@ -82,7 +82,7 @@ func runServe(_ []string) int {
 
 	fmt.Printf("patentmine daemon %s listening on %s\n", appversion.String(), cfg.SocketPath)
 	telemetry.Logger.InfoContext(ctx, "daemon listening", slog.String("socket_path", string(cfg.SocketPath)))
-	if err := rpc.NewServer(eng, cfg.USPTOAPIKey != "").Serve(ctx, ln); err != nil {
+	if err := rpc.NewServer(eng, cfg.USPTOAPIKey != "", rpc.WithActivityLogsDir(string(cfg.LogsDir))).Serve(ctx, ln); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "rpc server stopped with error", slog.String("error", err.Error()))
 		return fail(err)
 	}
@@ -132,7 +132,8 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithCPCLookup(crawl.LookupCPCDescription),
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),
-		engine.WithMetrics(telemetry.Metrics)), nil
+		engine.WithMetrics(telemetry.Metrics),
+		engine.WithIDSExportDir(cfg.IDSExportDir)), nil
 }
 
 // fail prints err and returns the failure exit code.

@@ -38,11 +38,30 @@ CREATE TABLE IF NOT EXISTS project (
     created_at TEXT NOT NULL,
     application_number     TEXT NOT NULL DEFAULT '',
     filing_date            TEXT NOT NULL DEFAULT '',
-    first_named_inventor   TEXT NOT NULL DEFAULT '',
     art_unit               TEXT NOT NULL DEFAULT '',
-    examiner_name          TEXT NOT NULL DEFAULT '',
     attorney_docket_number TEXT NOT NULL DEFAULT ''
 );
+
+-- project_inventor holds the ordered inventor list for a project. The first
+-- inventor (ordering = 0) is the "First Named Inventor" on the IDS header.
+CREATE TABLE IF NOT EXISTS project_inventor (
+    project_id TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    ordering   INTEGER NOT NULL,
+    name       TEXT NOT NULL,
+    PRIMARY KEY (project_id, ordering)
+);
+
+-- project_examiner stores every examiner ever recorded for a project, with
+-- the timestamp the assignment was observed. The latest entry by recorded_at
+-- is the current examiner; older entries are kept for audit.
+CREATE TABLE IF NOT EXISTS project_examiner (
+    project_id  TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, recorded_at, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_examiner_latest ON project_examiner (project_id, recorded_at DESC);
 
 -- membership links a patent to a project. It also carries that pair's curated
 -- IDS data inline (the ids_* columns): an IDS entry exists for the membership
@@ -53,12 +72,12 @@ CREATE TABLE IF NOT EXISTS membership (
     state                 TEXT NOT NULL,
     added_at              TEXT NOT NULL,
     ids_kind_code         TEXT NOT NULL DEFAULT '',
-    ids_country_code      TEXT NOT NULL DEFAULT '',
     ids_in_full           INTEGER NOT NULL DEFAULT 0,
     ids_relevant_passages TEXT NOT NULL DEFAULT '',
     ids_notes             TEXT NOT NULL DEFAULT '',
     ids_status            TEXT NOT NULL DEFAULT '',
     ids_added_at          TEXT NOT NULL DEFAULT '',
+    ids_submitted_at      TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (project_id, patent_number)
 );
 

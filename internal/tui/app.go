@@ -104,6 +104,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.ProjectActivate:            (*App).cmdProjectActivate,
 	command.ProjectClearActive:         (*App).cmdProjectClear,
 	command.ProjectCreate:              (*App).cmdProjectCreate,
+	command.ProjectIDSHeader:           (*App).cmdEditIDSHeader,
+	command.IDSExportPDF:               (*App).cmdIDSExportPDF,
 	command.AddToProject:               (*App).cmdAddToProject,
 	command.Import:                     (*App).cmdImport,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
@@ -124,6 +126,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.ClassificationLookup:       (*App).cmdClassificationLookup,
 	command.OpenPatentClassifications:  (*App).cmdOpenPatentClassifications,
 	command.PatentDelete:               (*App).cmdPatentDelete,
+	command.IDSCycleStatus:             (*App).cmdIDSCycleStatus,
 	command.AIAnalyze:                  (*App).cmdAIAnalyze,
 	command.SettingsAI:                 (*App).cmdSettingsAI,
 	command.OpenAssignees:              (*App).cmdOpenAssignees,
@@ -386,6 +389,11 @@ func (a *App) fetchPing() tea.Cmd {
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case idsHeaderSavedMsg:
+		saved := m.project
+		a.activeProject = &saved
+		a.setStatus(text.StatusUsage, "IDS header saved")
+		return a, nil
 	case aiPatentLoadedMsg:
 		if m.err != nil {
 			a.setErr(text.StatusAIAnalysisFailed, m.err.Error())
@@ -450,6 +458,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
 		return a.handleTextSubmit(m)
+	case overlay.IDSHeaderSubmitMsg:
+		a.popOverlay()
+		return a.handleIDSHeaderSubmit(m.Project)
+	case idsExportPreviewedMsg:
+		return a.handleIDSExportPreviewed(m)
+	case overlay.IDSExportSubmitMsg:
+		a.popOverlay()
+		return a.handleIDSExportSubmit(m)
 	case pane.EditIDSFieldMsg:
 		return a.openIDSEditInput(m.Field)
 	case pane.SearchAppliedMsg:
@@ -458,7 +474,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			projectID = a.activeProject.ID
 		}
 		return a, a.recordActivity(observability.Record{
-			Action:   "filter.apply",
+			Action:   observability.ActionFilterApply,
 			Entity:   "filter",
 			EntityID: m.Query,
 			Status:   "requested",
@@ -559,7 +575,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				projectName = a.activeProject.Name
 			}
 			return a, a.recordActivity(observability.Record{
-				Action:   "notes.export",
+				Action:   observability.ActionNotesExport,
 				Entity:   "project",
 				EntityID: string(projectID),
 				Status:   "done",
@@ -598,6 +614,65 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setStatus(text.StatusSetState, fmt.Sprintf("%d patents", len(m.Patents)), string(m.State), string(m.Project))
 		}
 		return a, a.broadcast(m)
+	case pane.IDSEntrySavedMsg:
+		if m.Err != nil {
+			a.setErr(text.StatusExportFailed, m.Err.Error())
+			return a, nil
+		}
+		a.setStatus(text.StatusFilter, "IDS updated")
+		a.log().Info("tui.ids_entry.broadcast.save",
+			slog.String("project_id", string(m.Project)),
+			slog.String("patent", m.Entry.Patent.String()),
+			slog.String("status", string(m.Entry.Status)))
+		
+		entryCopy := m.Entry
+		return a, a.broadcast(pane.IDSEntryChangedMsg{
+			Project: m.Project,
+			Patent:  m.Entry.Patent,
+			Entry:   &entryCopy,
+		})
+	case pane.IDSEntryDeletedMsg:
+		if m.Err != nil {
+			a.setErr(text.StatusExportFailed, m.Err.Error())
+			return a, nil
+		}
+		a.setStatus(text.StatusFilter, "IDS entry removed")
+		a.log().Info("tui.ids_entry.broadcast.delete",
+			slog.String("project_id", string(m.Project)),
+			slog.String("patent", m.Patent.String()))
+		return a, a.broadcast(pane.IDSEntryChangedMsg{
+			Project: m.Project,
+			Patent:  m.Patent,
+			Entry:   nil,
+		})
+	case pane.IDSEntryChangedMsg:
+		var statusStr string
+		if m.Entry != nil {
+			statusStr = string(m.Entry.Status)
+		} else {
+			statusStr = "deleted"
+		}
+		a.log().Info("tui.ids_entry.broadcast",
+			slog.String("project_id", string(m.Project)),
+			slog.String("patent", m.Patent.String()),
+			slog.String("status", statusStr))
+		return a, a.broadcast(m)
+	case pane.IDSEntriesChangedMsg:
+		var cmds []tea.Cmd
+		for _, entry := range m.Entries {
+			entry := entry
+			cmds = append(cmds, a.broadcast(pane.IDSEntryChangedMsg{
+				Project: entry.Project,
+				Patent:  entry.Patent,
+				Entry:   &entry,
+			}))
+		}
+		if m.Err != nil {
+			a.setErr(text.StatusIDSUpdateFailed, m.Err.Error())
+		} else {
+			a.setStatus(text.StatusIDSCycled, len(m.Entries))
+		}
+		return a, tea.Batch(cmds...)
 	case pane.MultiCrawlStartedMsg:
 		isLookup := m.Depth == 0
 		verb := "Crawling"

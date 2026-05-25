@@ -45,7 +45,7 @@ func (e *Engine) CreateTaxonomyTag(ctx context.Context, project domain.ProjectID
 	}
 	e.log(ctx, slog.LevelInfo, "taxonomy tag created", slog.String("project_id", string(project)), slog.String("tag", name))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "tag.create",
+		Action:   observability.ActionTagCreate,
 		Entity:   "tag",
 		EntityID: string(project) + "/" + name,
 		Status:   "committed",
@@ -80,7 +80,7 @@ func (e *Engine) DeleteTaxonomyTag(ctx context.Context, project domain.ProjectID
 	}
 	e.log(ctx, slog.LevelInfo, "taxonomy tag deleted", slog.String("project_id", string(project)), slog.String("tag", targetTag.Name))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "tag.delete",
+		Action:   observability.ActionTagDelete,
 		Entity:   "tag",
 		EntityID: string(project) + "/" + targetTag.Name,
 		Status:   "committed",
@@ -178,7 +178,7 @@ func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, 
 			metadata["mutation_group_id"] = mutationGroupID
 		}
 		e.recordActivity(ctx, observability.Record{
-			Action:   "patent.tag_assign",
+			Action:   observability.ActionPatentTagAssign,
 			Entity:   "patent_tag",
 			EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
 			Status:   "committed",
@@ -292,7 +292,7 @@ func (e *Engine) UntagPatentStrict(ctx context.Context, project domain.ProjectID
 			metadata["mutation_group_id"] = mutationGroupID
 		}
 		rec := observability.Record{
-			Action:   "patent.tag_remove",
+			Action:   observability.ActionPatentTagRemove,
 			Entity:   "patent_tag",
 			EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
 			Status:   "committed",

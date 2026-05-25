@@ -12,8 +12,8 @@ import (
 )
 
 // idsSelectColumns is the membership column list an IDS entry is read from.
-const idsSelectColumns = `ids_kind_code, ids_country_code, ids_in_full,
-	ids_relevant_passages, ids_notes, ids_status, ids_added_at`
+const idsSelectColumns = `ids_kind_code, ids_in_full,
+	ids_relevant_passages, ids_notes, ids_status, ids_added_at, ids_submitted_at`
 
 // IDSEntry returns one curated IDS entry for a project/patent pair. Curated IDS
 // data lives inline on the membership row; a membership whose ids_status is
@@ -39,12 +39,13 @@ func (r *Repo) IDSEntry(ctx context.Context, project domain.ProjectID, patent do
 func scanIDSEntry(s rowScanner, project domain.ProjectID, patent domain.PatentNumber) (domain.IDSEntry, bool, error) {
 	entry := domain.IDSEntry{Project: project, Patent: patent}
 	var (
-		status  string
-		addedAt string
-		inFull  int
+		status      string
+		addedAt     string
+		submittedAt string
+		inFull      int
 	)
-	if err := s.Scan(&entry.ID, &entry.KindCode, &entry.CountryCode, &inFull,
-		&entry.RelevantPassages, &entry.Notes, &status, &addedAt); err != nil {
+	if err := s.Scan(&entry.ID, &entry.KindCode, &inFull,
+		&entry.RelevantPassages, &entry.Notes, &status, &addedAt, &submittedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.IDSEntry{}, false, nil
 		}
@@ -60,6 +61,13 @@ func scanIDSEntry(s rowScanner, project domain.ProjectID, patent domain.PatentNu
 		return domain.IDSEntry{}, false, fmt.Errorf("store/sqlite: decode ids entry time: %w", err)
 	}
 	entry.AddedAt = when
+	if submittedAt != "" {
+		t, err := decodeTime(submittedAt)
+		if err != nil {
+			return domain.IDSEntry{}, false, fmt.Errorf("store/sqlite: decode ids submitted_at: %w", err)
+		}
+		entry.SubmittedAt = t
+	}
 	return entry, true, nil
 }
 
@@ -81,23 +89,31 @@ func (r *Repo) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (saved d
 	if addedAt.IsZero() {
 		addedAt = time.Now().UTC()
 	}
+	submittedAt := entry.SubmittedAt
+	if entry.Status == domain.IDSEntrySubmitted && submittedAt.IsZero() {
+		submittedAt = time.Now().UTC()
+	}
+	if entry.Status != domain.IDSEntrySubmitted && entry.Status != domain.IDSEntryAccepted {
+		submittedAt = time.Time{}
+	}
 	_, err = r.writer.ExecContext(ctx, `
 		INSERT INTO membership (project_id, patent_number, state, added_at,
-			ids_kind_code, ids_country_code, ids_in_full, ids_relevant_passages,
-			ids_notes, ids_status, ids_added_at)
+			ids_kind_code, ids_in_full, ids_relevant_passages,
+			ids_notes, ids_status, ids_added_at, ids_submitted_at)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(project_id, patent_number) DO UPDATE SET
 			ids_kind_code=excluded.ids_kind_code,
-			ids_country_code=excluded.ids_country_code,
 			ids_in_full=excluded.ids_in_full,
 			ids_relevant_passages=excluded.ids_relevant_passages,
 			ids_notes=excluded.ids_notes,
 			ids_status=excluded.ids_status,
-			ids_added_at=excluded.ids_added_at`,
+			ids_added_at=excluded.ids_added_at,
+			ids_submitted_at=excluded.ids_submitted_at`,
 		string(entry.Project), entry.Patent.Normalized(),
 		string(domain.ReviewStateUnknown), encodeTime(time.Now().UTC()),
-		entry.KindCode, entry.CountryCode, boolToInt(entry.InFull),
-		entry.RelevantPassages, entry.Notes, string(entry.Status), encodeTime(addedAt))
+		entry.KindCode, boolToInt(entry.InFull),
+		entry.RelevantPassages, entry.Notes, string(entry.Status),
+		encodeTime(addedAt), encodeTime(submittedAt))
 	if err != nil {
 		return domain.IDSEntry{}, fmt.Errorf("store/sqlite: save ids entry %s/%s: %w", entry.Project, entry.Patent, err)
 	}
@@ -114,8 +130,9 @@ func (r *Repo) DeleteIDSEntry(ctx context.Context, project domain.ProjectID, pat
 	defer r.observeDuration("delete_ids_entry", time.Now(), &err)
 	_, err = r.writer.ExecContext(ctx, `
 		UPDATE membership SET
-			ids_kind_code='', ids_country_code='', ids_in_full=0,
-			ids_relevant_passages='', ids_notes='', ids_status='', ids_added_at=''
+			ids_kind_code='', ids_in_full=0,
+			ids_relevant_passages='', ids_notes='', ids_status='',
+			ids_added_at='', ids_submitted_at=''
 		WHERE project_id = ? AND patent_number = ?`,
 		string(project), patent.Normalized())
 	if err != nil {
@@ -138,14 +155,15 @@ func (r *Repo) ListIDSEntries(ctx context.Context, project domain.ProjectID) (en
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var (
-			entry   domain.IDSEntry
-			patent  string
-			status  string
-			addedAt string
-			inFull  int
+			entry       domain.IDSEntry
+			patent      string
+			status      string
+			addedAt     string
+			submittedAt string
+			inFull      int
 		)
-		if err := rows.Scan(&entry.ID, &patent, &entry.KindCode, &entry.CountryCode, &inFull,
-			&entry.RelevantPassages, &entry.Notes, &status, &addedAt); err != nil {
+		if err := rows.Scan(&entry.ID, &patent, &entry.KindCode, &inFull,
+			&entry.RelevantPassages, &entry.Notes, &status, &addedAt, &submittedAt); err != nil {
 			return nil, fmt.Errorf("store/sqlite: scan ids entry: %w", err)
 		}
 		entry.Project = project
@@ -158,6 +176,12 @@ func (r *Repo) ListIDSEntries(ctx context.Context, project domain.ProjectID) (en
 		entry.AddedAt, err = decodeTime(addedAt)
 		if err != nil {
 			return nil, fmt.Errorf("store/sqlite: decode ids entry time: %w", err)
+		}
+		if submittedAt != "" {
+			entry.SubmittedAt, err = decodeTime(submittedAt)
+			if err != nil {
+				return nil, fmt.Errorf("store/sqlite: decode ids submitted_at: %w", err)
+			}
 		}
 		entries = append(entries, entry)
 	}

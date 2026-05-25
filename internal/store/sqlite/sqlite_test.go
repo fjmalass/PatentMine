@@ -530,6 +530,12 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 	if err := repo.TagPatents(ctx, blocker.ID, []domain.PatentNumber{p1.Number}, time.Now().UTC()); err != nil {
 		t.Fatalf("TagPatents blocker: %v", err)
 	}
+	if _, err := repo.SaveIDSEntry(ctx, domain.IDSEntry{Project: project.ID, Patent: p1.Number, Status: domain.IDSEntryPending}); err != nil {
+		t.Fatalf("SaveIDSEntry p1: %v", err)
+	}
+	if _, err := repo.SaveIDSEntry(ctx, domain.IDSEntry{Project: project.ID, Patent: p2.Number, Status: domain.IDSEntryIgnored}); err != nil {
+		t.Fatalf("SaveIDSEntry p2: %v", err)
+	}
 
 	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "tag:prior_art and tag:blocker"})
 	if err != nil {
@@ -545,6 +551,30 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].Number != p1.Number {
 		t.Fatalf("boolean filter rows = %v, want only p1", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "ids_status:pending"})
+	if err != nil {
+		t.Fatalf("ListPatents ids_status pending: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p1.Number {
+		t.Fatalf("ids_status pending rows = %v, want only p1", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "ids_status:none"})
+	if err != nil {
+		t.Fatalf("ListPatents ids_status none: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p3.Number {
+		t.Fatalf("ids_status none rows = %v, want only p3", rows)
+	}
+
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, IDSStatus: "ignored"})
+	if err != nil {
+		t.Fatalf("ListPatents IDSStatus ignored: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p2.Number {
+		t.Fatalf("IDSStatus ignored rows = %v, want only p2", rows)
 	}
 
 	rows, err = repo.ListPatents(ctx, store.PatentQuery{Filter: "class:S04*"})
@@ -598,6 +628,9 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 	if _, err := repo.ListPatents(ctx, store.PatentQuery{Filter: "not state:under_review"}); err == nil {
 		t.Fatal("expected state filter without project to fail")
 	}
+	if _, err := repo.ListPatents(ctx, store.PatentQuery{Filter: "ids_status:pending"}); err == nil {
+		t.Fatal("expected ids_status filter without project to fail")
+	}
 }
 
 func TestIDSEntryStoreAndPatentListing(t *testing.T) {
@@ -620,10 +653,10 @@ func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 		Project:          project.ID,
 		Patent:           patent.Number,
 		KindCode:         "B2",
-		CountryCode:      "US",
 		RelevantPassages: "col. 1",
 		Notes:            "primary reference",
 		Status:           domain.IDSEntrySubmitted,
+		SubmittedAt:      time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatalf("SaveIDSEntry: %v", err)
@@ -636,8 +669,11 @@ func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IDSEntry: %v", err)
 	}
-	if got.Status != domain.IDSEntrySubmitted || got.CountryCode != "US" {
-		t.Fatalf("IDSEntry = %+v, want submitted US entry", got)
+	if got.Status != domain.IDSEntrySubmitted || got.KindCode != "B2" {
+		t.Fatalf("IDSEntry = %+v, want submitted B2 entry", got)
+	}
+	if got.SubmittedAt.IsZero() {
+		t.Fatalf("IDSEntry.SubmittedAt = zero, want stamped on submit")
 	}
 
 	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID})
@@ -1193,5 +1229,33 @@ func TestDeletePatentsIsTransactional(t *testing.T) {
 		if !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("Patent %s after delete error = %v, want store.ErrNotFound", number, err)
 		}
+	}
+}
+
+func TestBackupTelemetry(t *testing.T) {
+	metrics := observability.NewMetrics()
+	tempDB := filepath.Join(t.TempDir(), "source.db")
+	repo, err := OpenWithMetrics(context.Background(), tempDB, metrics)
+	if err != nil {
+		t.Fatalf("OpenWithMetrics: %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	ctx := context.Background()
+	dest := filepath.Join(t.TempDir(), "backup.db")
+
+	if err := repo.Backup(ctx, dest); err != nil {
+		t.Fatalf("Backup failed: %v", err)
+	}
+
+	snap := metrics.Snapshot()
+	if snap.Counters["store.sqlite.backup.total"] != 1 {
+		t.Fatalf("backup.total = %d, want 1", snap.Counters["store.sqlite.backup.total"])
+	}
+	if snap.Timings["store.sqlite.backup.duration"].Count != 1 {
+		t.Fatalf("backup.duration Timing count = %d, want 1", snap.Timings["store.sqlite.backup.duration"].Count)
+	}
+	if size := snap.Gauges["store.sqlite.backup.size_bytes"]; size <= 0 {
+		t.Fatalf("backup.size_bytes gauge = %d, want > 0", size)
 	}
 }

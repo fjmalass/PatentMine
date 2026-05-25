@@ -60,4 +60,12 @@ var commandPolicies = map[command.ID]CommandPolicy{
 			return "", false
 		},
 	},
+	command.IDSCycleStatus: {
+		Confirm: func(ns []domain.PatentNumber) (string, bool) {
+			if len(ns) >= 2 {
+				return fmt.Sprintf("Cycle IDS status for %d patents?", len(ns)), true
+			}
+			return "", false
+		},
+	},
 }

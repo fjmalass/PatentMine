@@ -57,12 +57,13 @@ const (
 	IDSEntryPending   IDSEntryStatus = "pending"
 	IDSEntrySubmitted IDSEntryStatus = "submitted"
 	IDSEntryAccepted  IDSEntryStatus = "accepted"
+	IDSEntryIgnored   IDSEntryStatus = "ignored"
 )
 
 // Valid reports whether the IDSEntryStatus is a known value.
 func (s IDSEntryStatus) Valid() bool {
 	switch s {
-	case IDSEntryPending, IDSEntrySubmitted, IDSEntryAccepted:
+	case IDSEntryPending, IDSEntrySubmitted, IDSEntryAccepted, IDSEntryIgnored:
 		return true
 	default:
 		return false
@@ -77,24 +78,28 @@ func (s IDSEntryStatus) Next() IDSEntryStatus {
 	case IDSEntrySubmitted:
 		return IDSEntryAccepted
 	case IDSEntryAccepted:
+		return IDSEntryIgnored
+	case IDSEntryIgnored:
 		return IDSEntryPending
 	default:
 		return IDSEntryPending
 	}
 }
 
-// IDSEntry is one curated prior-art reference for a project/patent pair.
+// IDSEntry is one curated prior-art reference for a project/patent pair. The
+// patent's country is read from Patent.Country; only the kind code is curated
+// here because the patent record may omit it.
 type IDSEntry struct {
 	ID               int64          `json:"id"`
 	Project          ProjectID      `json:"project"`
 	Patent           PatentNumber   `json:"patent"`
 	KindCode         string         `json:"kind_code,omitempty"`
-	CountryCode      string         `json:"country_code,omitempty"`
 	InFull           bool           `json:"in_full,omitempty"`
 	RelevantPassages string         `json:"relevant_passages,omitempty"`
 	Notes            string         `json:"notes,omitempty"`
 	Status           IDSEntryStatus `json:"status,omitempty"`
 	AddedAt          time.Time      `json:"added_at"`
+	SubmittedAt      time.Time      `json:"submitted_at,omitempty"`
 }
 
 // SummaryText returns a compact, stable IDS summary for tables and detail lines.

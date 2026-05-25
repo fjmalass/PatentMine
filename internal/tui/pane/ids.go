@@ -3,6 +3,7 @@ package pane
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -17,12 +18,13 @@ import (
 type idsField string
 
 const (
-	idsFieldStatus   idsField = "status"
-	idsFieldKind     idsField = "kind"
-	idsFieldCountry  idsField = "country"
-	idsFieldInFull   idsField = "in_full"
-	idsFieldPassages idsField = "passages"
-	idsFieldNotes    idsField = "notes"
+	idsFieldStatus    idsField = "status"
+	idsFieldKind      idsField = "kind"
+	idsFieldInFull    idsField = "in_full"
+	idsFieldAdded     idsField = "added_at"
+	idsFieldSubmitted idsField = "submitted_at"
+	idsFieldPassages  idsField = "passages"
+	idsFieldNotes     idsField = "notes"
 )
 
 type idsLoadedMsg struct {
@@ -31,13 +33,6 @@ type idsLoadedMsg struct {
 	entry     *domain.IDSEntry
 	err       error
 }
-
-type idsSavedMsg struct {
-	entry domain.IDSEntry
-	err   error
-}
-
-type idsDeletedMsg struct{ err error }
 
 // EditIDSFieldMsg asks the app to open a text input for the selected IDS field.
 type EditIDSFieldMsg struct{ Field string }
@@ -118,12 +113,14 @@ func (p *IDSDetail) CurrentTextValue(field string) string {
 	switch idsField(field) {
 	case idsFieldKind:
 		return p.entry.KindCode
-	case idsFieldCountry:
-		return p.entry.CountryCode
 	case idsFieldPassages:
 		return p.entry.RelevantPassages
 	case idsFieldNotes:
 		return p.entry.Notes
+	case idsFieldAdded:
+		return formatDateInput(p.entry.AddedAt)
+	case idsFieldSubmitted:
+		return formatDateInput(p.entry.SubmittedAt)
 	default:
 		return ""
 	}
@@ -168,18 +165,15 @@ func (p *IDSDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			p.entry = domain.IDSEntry{Project: p.project, Patent: m.patent.Number, Status: domain.IDSEntryPending}
 		}
 		p.page.Top()
-	case idsSavedMsg:
-		if m.err != nil {
-			return p, status(text.StatusExportFailed, true, m.err.Error())
+	case IDSEntryChangedMsg:
+		if p.project == m.Project && p.patent.Number == m.Patent {
+			if m.Entry != nil {
+				p.entry = *m.Entry
+			} else {
+				p.entry = domain.IDSEntry{Project: p.project, Patent: p.patent.Number, Status: domain.IDSEntryPending}
+			}
+			p.loading = false
 		}
-		p.entry = m.entry
-		return p, status(text.StatusFilter, false, "IDS updated")
-	case idsDeletedMsg:
-		if m.err != nil {
-			return p, status(text.StatusExportFailed, true, m.err.Error())
-		}
-		p.entry = domain.IDSEntry{Project: p.project, Patent: p.patent.Number, Status: domain.IDSEntryPending}
-		return p, status(text.StatusFilter, false, "IDS entry removed")
 	case ProjectChangedMsg:
 		var project domain.ProjectID
 		if m.Project != nil {
@@ -214,10 +208,12 @@ func (p *IDSDetail) body(w int) string {
 	fields := [][2]string{
 		{"Patent", numberToShow(p.patent).String()},
 		{"Title", p.patent.Title},
-		{"Status", string(p.entry.Status)},
+		{"Country", orDash(p.patent.Number.Country)},
+		{"Status", idsStatusDisplayText(p.theme, p.entry.Status)},
 		{"Kind code", orDash(p.entry.KindCode)},
-		{"Country code", orDash(p.entry.CountryCode)},
-		{"In full", yesNo(p.entry.InFull)},
+		{"In full", p.checkbox(p.entry.InFull)},
+		{"Added", formatDate(p.entry.AddedAt)},
+		{"Submitted", formatDate(p.entry.SubmittedAt)},
 		{"Relevant passages", orDash(p.entry.RelevantPassages)},
 		{"Notes", orDash(p.entry.Notes)},
 	}
@@ -239,7 +235,7 @@ func (p *IDSDetail) body(w int) string {
 func (p *IDSDetail) editFieldCmd() tea.Cmd {
 	field := p.currentField()
 	switch field {
-	case idsFieldKind, idsFieldCountry, idsFieldPassages, idsFieldNotes:
+	case idsFieldKind, idsFieldPassages, idsFieldNotes, idsFieldAdded, idsFieldSubmitted:
 		return func() tea.Msg { return EditIDSFieldMsg{Field: string(field)} }
 	default:
 		return nil
@@ -262,20 +258,21 @@ func (p *IDSDetail) deleteCmd() tea.Cmd {
 		var res proto.Empty
 		err := client.Call(ctx, proto.MethodIDSEntryDelete,
 			proto.IDSEntryParams{Project: project, Patent: patent}, &res)
-		return idsDeletedMsg{err: err}
+		return IDSEntryDeletedMsg{Project: project, Patent: patent, Err: err}
 	}
 }
 
 func (p *IDSDetail) saveCmd() tea.Cmd {
 	entry := p.entry
 	client := p.client
+	project := p.project
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.IDSEntryResult
 		err := client.Call(ctx, proto.MethodIDSEntrySave,
 			proto.IDSEntrySaveParams{Entry: entry}, &res)
-		return idsSavedMsg{entry: res.Entry, err: err}
+		return IDSEntrySavedMsg{Project: project, Entry: res.Entry, Err: err}
 	}
 }
 
@@ -283,8 +280,6 @@ func (p *IDSDetail) ApplyTextValue(field, value string) tea.Cmd {
 	switch idsField(field) {
 	case idsFieldKind:
 		p.entry.KindCode = strings.TrimSpace(value)
-	case idsFieldCountry:
-		p.entry.CountryCode = strings.ToUpper(strings.TrimSpace(value))
 	case idsFieldPassages:
 		p.entry.RelevantPassages = strings.TrimSpace(value)
 		if p.entry.RelevantPassages != "" {
@@ -292,6 +287,18 @@ func (p *IDSDetail) ApplyTextValue(field, value string) tea.Cmd {
 		}
 	case idsFieldNotes:
 		p.entry.Notes = strings.TrimSpace(value)
+	case idsFieldAdded:
+		t, err := parseDateInput(value)
+		if err != nil {
+			return status(text.StatusExportFailed, true, "added date: "+err.Error())
+		}
+		p.entry.AddedAt = t
+	case idsFieldSubmitted:
+		t, err := parseDateInput(value)
+		if err != nil {
+			return status(text.StatusExportFailed, true, "submitted date: "+err.Error())
+		}
+		p.entry.SubmittedAt = t
 	default:
 		return nil
 	}
@@ -299,12 +306,46 @@ func (p *IDSDetail) ApplyTextValue(field, value string) tea.Cmd {
 }
 
 func (p *IDSDetail) currentField() idsField {
-	fields := []idsField{idsFieldStatus, idsFieldKind, idsFieldCountry, idsFieldInFull, idsFieldPassages, idsFieldNotes}
-	idx := max(p.page.Cursor()-2, 0)
-	if idx >= len(fields) {
-		idx = len(fields) - 1
+	// Cursor index → field map. Read-only rows (Patent/Title/Country) map to
+	// the empty field so edit/toggle commands are no-ops there.
+	fields := []idsField{
+		"", "", "",
+		idsFieldStatus, idsFieldKind, idsFieldInFull,
+		idsFieldAdded, idsFieldSubmitted,
+		idsFieldPassages, idsFieldNotes,
+	}
+	idx := p.page.Cursor()
+	if idx < 0 || idx >= len(fields) {
+		return ""
 	}
 	return fields[idx]
+}
+
+// parseDateInput accepts YYYY-MM-DD; empty returns zero time. Anything else
+// errors so the user sees feedback in the status line.
+func parseDateInput(raw string) (time.Time, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse("2006-01-02", v)
+}
+
+// formatDateInput renders a time as YYYY-MM-DD for the edit overlay; empty for
+// the zero value so the input opens blank rather than showing "0001-01-01".
+func formatDateInput(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02")
+}
+
+// formatDate renders a date as YYYY-MM-DD or "-" when zero.
+func formatDate(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("2006-01-02")
 }
 
 func orDash(s string) string {
@@ -314,11 +355,14 @@ func orDash(s string) string {
 	return s
 }
 
-func yesNo(v bool) string {
+// checkbox renders the in-full flag as a green checked box when true, an empty
+// box when false. Glyphs live on the theme so a terminal-specific build can
+// override them without touching pane code.
+func (p *IDSDetail) checkbox(v bool) string {
 	if v {
-		return "yes"
+		return p.theme.OK.Render(p.theme.Glyphs.CheckboxChecked)
 	}
-	return "no"
+	return p.theme.Glyphs.CheckboxUnchecked
 }
 
 func (p *IDSDetail) PatentNumber() domain.PatentNumber { return p.number }

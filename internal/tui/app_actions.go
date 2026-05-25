@@ -142,7 +142,7 @@ func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 				metadata["project_name"] = a.activeProject.Name
 			}
 			recCmd = a.recordActivity(observability.Record{
-				Action:   "ui.focus",
+				Action:   observability.ActionUIFocus,
 				Entity:   "patent",
 				EntityID: num.String(),
 				Status:   "requested",
@@ -276,7 +276,7 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 	var recCmd tea.Cmd
 	if a.activity != nil {
 		recCmd = a.recordActivity(observability.Record{
-			Action:   "project.switch",
+			Action:   observability.ActionProjectSwitch,
 			Entity:   "project",
 			EntityID: string(project.ID),
 			Status:   "observed",

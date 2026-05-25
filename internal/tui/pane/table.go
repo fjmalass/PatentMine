@@ -211,7 +211,7 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 	case domain.PatentColumnTags:
 		return formatTags(row.Tags)
 	case domain.PatentColumnIDS:
-		return formatIDSSummary(row.IDSEntry)
+		return formatIDSSummary(theme, row.IDSEntry)
 	default:
 		return ""
 	}
@@ -395,11 +395,23 @@ func formatTags(tags []string) string {
 	return strings.Join(tags, " ")
 }
 
-func formatIDSSummary(entry *domain.IDSEntry) string {
+func formatIDSSummary(theme render.Theme, entry *domain.IDSEntry) string {
 	if entry == nil {
-		return "-"
+		return theme.IDSEntryStatusGlyph("none")
 	}
-	return entry.SummaryText()
+	return theme.IDSEntryStatusGlyph(string(normalizedIDSEntryStatus(entry.Status)))
+}
+
+func idsStatusDisplayText(theme render.Theme, status domain.IDSEntryStatus) string {
+	status = normalizedIDSEntryStatus(status)
+	return theme.IDSEntryStatusGlyph(string(status)) + " " + string(status)
+}
+
+func normalizedIDSEntryStatus(status domain.IDSEntryStatus) domain.IDSEntryStatus {
+	if !status.Valid() {
+		return domain.IDSEntryPending
+	}
+	return status
 }
 
 // formatClassificationsShort formats a patent's classification list for

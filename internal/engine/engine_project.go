@@ -37,7 +37,7 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 	}
 	e.log(ctx, slog.LevelInfo, "project created", slog.String("project_id", string(p.ID)), slog.String("name", p.Name))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "project.create",
+		Action:   observability.ActionProjectCreate,
 		Entity:   "project",
 		EntityID: string(p.ID),
 		Status:   "committed",
@@ -78,7 +78,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	}
 	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "membership.add",
+		Action:   observability.ActionMembershipAdd,
 		Entity:   "membership",
 		EntityID: string(project) + "/" + record.String(),
 		Status:   "committed",
@@ -198,7 +198,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				slog.String("requested", record.String()))
 
 			e.recordActivity(ctx, observability.Record{
-				Action:   "membership.add",
+				Action:   observability.ActionMembershipAdd,
 				Entity:   "membership",
 				EntityID: string(project) + "/" + record.String(),
 				Status:   "committed",
@@ -270,26 +270,27 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		// Record activities
 		for _, record := range changedRecords {
 			e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
+			current := beforeMemberships[record]
 			metadata := map[string]any{
 				"requested_number": record.String(),
 				"project":          string(project),
+				"prior_state":      string(current.ReviewState),
+				"state":            string(target),
 			}
 			if mutationGroupID != "" {
 				metadata["mutation_group_id"] = mutationGroupID
 			}
 			rec := observability.Record{
-				Action:   "membership.set_state",
+				Action:   observability.ActionMembershipSetState,
 				Entity:   "membership",
 				EntityID: string(project) + "/" + record.String(),
 				Status:   "committed",
 				Metadata: metadata,
 			}
-			if current, ok := beforeMemberships[record]; ok {
-				after := current
-				after.ReviewState = target
-				rec.Before = current
-				rec.After = after
-			}
+			after := current
+			after.ReviewState = target
+			rec.Before = current
+			rec.After = after
 			e.recordActivity(ctx, rec)
 		}
 		e.incCounter("engine.review_state.changed_total", int64(len(changedRecords)))
