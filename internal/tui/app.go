@@ -14,9 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os/exec"
 	"slices"
 	"strings"
@@ -26,6 +24,7 @@ import (
 
 	"patentmine/internal/ai"
 	"patentmine/internal/command"
+	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/keys"
 	"patentmine/internal/observability"
@@ -420,41 +419,35 @@ func (a *App) Init() tea.Cmd {
 }
 
 func (a *App) checkServiceConnections() tea.Cmd {
-	usptoKey := a.usptoAPIKey
+	apiKey := a.usptoAPIKey
 	backupConfigured := a.backupConfigured
 	backupRemote := a.backupRemote
 	backupBucket := a.backupBucket
 	return func() tea.Msg {
+		key := strings.TrimSpace(apiKey)
+		var uspto serviceConnectionState
+		if key == "" {
+			uspto = serviceNoKey
+		} else {
+			resolved, err := config.ResolveAPIKey(key)
+			if err != nil {
+				uspto = serviceFailed
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+				defer cancel()
+				result := config.CheckUSPTOConnection(ctx, resolved)
+				if result.Connected {
+					uspto = serviceConnected
+				} else {
+					uspto = serviceFailed
+				}
+			}
+		}
 		return serviceConnectionLoadedMsg{
-			uspto:  checkUSPTOConnection(usptoKey),
+			uspto:  uspto,
 			backup: checkBackupConnection(backupConfigured, backupRemote, backupBucket),
 		}
 	}
-}
-
-func checkUSPTOConnection(key string) serviceConnectionState {
-	if strings.TrimSpace(key) == "" {
-		return serviceNoKey
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	const url = "https://api.uspto.gov/api/v1/patent/applications/search?q=patentNumberText:11611785"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return serviceFailed
-	}
-	req.Header.Set("x-api-key", key)
-	req.Header.Set("Accept", "application/json")
-	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
-	if err != nil {
-		return serviceFailed
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return serviceConnected
-	}
-	return serviceFailed
 }
 
 func checkBackupConnection(configured bool, remote, bucket string) serviceConnectionState {

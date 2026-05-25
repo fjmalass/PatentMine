@@ -18,10 +18,13 @@ import (
 )
 
 const checkUsage = `usage:
-  patentmine check          check all external service connectivity
-  patentmine check uspto    check USPTO ODP API key and connectivity
-  patentmine check b2       check Backblaze B2 access through rclone
-  patentmine check b2-api   check Backblaze B2 native API key and bucket access
+  patentmine check        check all external service connectivity
+  patentmine check uspto  check USPTO ODP API key and connectivity
+  patentmine check b2     check Backblaze B2 access through rclone
+  patentmine check b2-api check Backblaze B2 native API key and bucket access
+
+flags:
+  -v, --verbose  show the equivalent curl command for each check
 `
 
 type checkState string
@@ -41,6 +44,8 @@ type checkResult struct {
 func runCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	verbose := fs.Bool("v", false, "show equivalent curl command")
+	fs.BoolVar(verbose, "verbose", false, "show equivalent curl command")
 	fs.Usage = func() { fmt.Fprint(fs.Output(), checkUsage) }
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -69,15 +74,15 @@ func runCheck(args []string) int {
 	var results []checkResult
 	switch target {
 	case "all":
-		results = append(results, checkUSPTO(ctx, cfg), checkRcloneB2(ctx, cfg))
+		results = append(results, checkUSPTO(ctx, cfg, *verbose), checkRcloneB2(ctx, cfg, *verbose))
 	case "uspto":
-		results = append(results, checkUSPTO(ctx, cfg))
+		results = append(results, checkUSPTO(ctx, cfg, *verbose))
 	case "b2", "backblaze":
-		results = append(results, checkRcloneB2(ctx, cfg))
+		results = append(results, checkRcloneB2(ctx, cfg, *verbose))
 	case "b2-api", "backblaze-api":
-		results = append(results, checkB2(ctx, cfg))
+		results = append(results, checkB2(ctx, cfg, *verbose))
 	case "rclone-b2", "rclone":
-		results = append(results, checkRcloneB2(ctx, cfg))
+		results = append(results, checkRcloneB2(ctx, cfg, *verbose))
 	case "help", "-h", "--help":
 		fmt.Print(checkUsage)
 		return 0
@@ -130,30 +135,31 @@ func checksHealthy(results []checkResult) bool {
 	return true
 }
 
-func checkUSPTO(ctx context.Context, cfg config.Config) checkResult {
+func checkUSPTO(ctx context.Context, cfg config.Config, verbose bool) checkResult {
 	if strings.TrimSpace(cfg.USPTOAPIKey) == "" {
 		return checkResult{Name: "USPTO", State: checkRed, Message: "missing PATENTMINE_USPTO_API_KEY or USPTO_API_KEY"}
 	}
 
-	const url = "https://api.uspto.gov/api/v1/patent/applications/search?q=patentNumberText:11611785"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	apiKey, err := config.ResolveAPIKey(cfg.USPTOAPIKey)
 	if err != nil {
-		return checkResult{Name: "USPTO", State: checkYellow, Message: err.Error()}
+		return checkResult{Name: "USPTO", State: checkRed, Message: err.Error()}
 	}
-	req.Header.Set("x-api-key", cfg.USPTOAPIKey)
-	req.Header.Set("Accept", "application/json")
 
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-	if err != nil {
-		return checkResult{Name: "USPTO", State: checkYellow, Message: "key loaded, connection failed: " + err.Error()}
+	if verbose {
+		displayKey := apiKey
+		if len(displayKey) > 8 {
+			displayKey = displayKey[:4] + "..." + displayKey[len(displayKey)-4:]
+		}
+		url := fmt.Sprintf("https://api.uspto.gov/api/v1/patent/applications/search?patentApplicationNumber=%s", "16123456")
+		fmt.Fprintf(os.Stderr, "[verbose] curl -L -X GET -H 'x-api-key: %s' -H 'Accept: application/json' '%s'\n", displayKey, url)
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return checkResult{Name: "USPTO", State: checkGreen, Message: "key loaded and API reachable"}
+	result := config.CheckUSPTOConnection(ctx, apiKey)
+
+	if result.Connected {
+		return checkResult{Name: "USPTO", State: checkGreen, Message: result.Message}
 	}
-	return checkResult{Name: "USPTO", State: checkYellow, Message: fmt.Sprintf("key loaded, API returned HTTP %d", resp.StatusCode)}
+	return checkResult{Name: "USPTO", State: checkYellow, Message: result.Message}
 }
 
 type b2AuthorizeResponse struct {
@@ -168,7 +174,7 @@ type b2ListBucketsResponse struct {
 	} `json:"buckets"`
 }
 
-func checkB2(ctx context.Context, cfg config.Config) checkResult {
+func checkB2(ctx context.Context, cfg config.Config, verbose bool) checkResult {
 	missing := missingB2Config(cfg)
 	if len(missing) > 0 {
 		return checkResult{Name: "B2", State: checkRed, Message: "missing " + strings.Join(missing, ", ")}
@@ -192,7 +198,7 @@ func checkB2(ctx context.Context, cfg config.Config) checkResult {
 	return checkResult{Name: "B2", State: checkGreen, Message: "key loaded, authorized, and bucket reachable: " + cfg.BackupBucket}
 }
 
-func checkRcloneB2(ctx context.Context, cfg config.Config) checkResult {
+func checkRcloneB2(ctx context.Context, cfg config.Config, verbose bool) checkResult {
 	if strings.TrimSpace(cfg.BackupBucket) == "" {
 		return checkResult{Name: "Rclone B2", State: checkRed, Message: "missing PATENTMINE_BACKUP_BUCKET"}
 	}
