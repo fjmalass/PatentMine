@@ -241,6 +241,10 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		count, _ := rec.Metadata["count"].(float64)
 		path, _ := rec.Metadata["path"].(string)
 		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Export notes %q: %d note(s) → %s", projectName, int(count), path)
+	case observability.ActionNotesSave:
+		return theme.Glyphs.HistNotesExport, "Save Note: " + pat
+	case observability.ActionNotesDelete:
+		return theme.Glyphs.HistNotesExport, "Delete Note: " + pat
 	case observability.ActionMembershipSetState:
 		rawState := ""
 		if s, ok := rec.Metadata["state"].(string); ok {

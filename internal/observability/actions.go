@@ -28,6 +28,8 @@ const (
 	ActionFilterApply        = "filter.apply"
 	ActionUIFocus            = "ui.focus"
 	ActionNotesExport        = "notes.export"
+	ActionNotesSave          = "notes.save"
+	ActionNotesDelete        = "notes.delete"
 	ActionIDSEntrySave       = "ids.entry.save"
 	ActionIDSEntryDelete     = "ids.entry.delete"
 	ActionIDSExportPDF       = "ids.export.pdf"
@@ -54,6 +56,8 @@ var AllActions = []string{
 	ActionFilterApply,
 	ActionUIFocus,
 	ActionNotesExport,
+	ActionNotesSave,
+	ActionNotesDelete,
 	ActionIDSEntrySave,
 	ActionIDSEntryDelete,
 	ActionIDSExportPDF,

@@ -1251,3 +1251,155 @@ loop:
 		t.Errorf("expected exactly 1 change event, got %d", changeEventsCount)
 	}
 }
+
+func TestPatentNoteActivityLogging(t *testing.T) {
+	ctx := context.Background()
+	logsDir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	repo, err := sqlite.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer repo.Close()
+
+	runtime, err := observability.Open(logsDir, "test-engine", "1.0.0")
+	if err != nil {
+		t.Fatalf("observability.Open: %v", err)
+	}
+	defer runtime.Close()
+
+	eng := New(ctx, repo, nil, WithActivityRecorder(runtime.Activity))
+
+	project, err := eng.CreateProject(ctx, "Test Note Activity Proj")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	patentNum, err := domain.ParsePatentNumber("US10000000B2")
+	if err != nil {
+		t.Fatalf("ParsePatentNumber: %v", err)
+	}
+	// Insert patent to satisfy foreign key constraints
+	p := domain.Patent{
+		Number:     patentNum,
+		FetchState: domain.FetchCached,
+	}
+	if err := eng.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	// 1. Save note (no prior note, should have Before == nil)
+	note := domain.PatentNote{
+		Project:   project.ID,
+		Patent:    patentNum,
+		Markdown:  "Hello notes!",
+		AddedAt:   time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	_, err = eng.SavePatentNote(ctx, note)
+	if err != nil {
+		t.Fatalf("SavePatentNote: %v", err)
+	}
+
+	// 2. Save note again (with prior note)
+	note.Markdown = "Hello notes updated!"
+	_, err = eng.SavePatentNote(ctx, note)
+	if err != nil {
+		t.Fatalf("SavePatentNote 2: %v", err)
+	}
+
+	// 3. Delete note
+	if err := eng.DeletePatentNote(ctx, project.ID, patentNum); err != nil {
+		t.Fatalf("DeletePatentNote: %v", err)
+	}
+
+	// Close runtime to flush activity logs
+	if err := runtime.Close(); err != nil {
+		t.Fatalf("Close runtime: %v", err)
+	}
+
+	// Read activity log files
+	files, err := os.ReadDir(logsDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	var activityPath string
+	for _, f := range files {
+		if filepath.HasPrefix(f.Name(), "activity-") {
+			activityPath = filepath.Join(logsDir, f.Name())
+			break
+		}
+	}
+	if activityPath == "" {
+		t.Fatal("No activity log file found")
+	}
+
+	content, err := os.ReadFile(activityPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	type rawRecord struct {
+		Action   string             `json:"action"`
+		EntityID string             `json:"entity_id"`
+		Before   *domain.PatentNote `json:"before"`
+		After    *domain.PatentNote `json:"after"`
+	}
+
+	var notesRecords []rawRecord
+	for _, line := range bytes.Split(content, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var rec rawRecord
+		if err := json.Unmarshal(line, &rec); err != nil {
+			continue
+		}
+		if rec.Action == observability.ActionNotesSave || rec.Action == observability.ActionNotesDelete {
+			notesRecords = append(notesRecords, rec)
+		}
+	}
+
+	// We expect exactly 3 note-related records:
+	// - 1st notes.save: Before == nil, After == "Hello notes!"
+	// - 2nd notes.save: Before == "Hello notes!", After == "Hello notes updated!"
+	// - 3rd notes.delete: Before == "Hello notes updated!", After == nil
+	if len(notesRecords) != 3 {
+		t.Fatalf("Expected exactly 3 note activity records, got %d", len(notesRecords))
+	}
+
+	// Verification of 1st save
+	if notesRecords[0].Action != observability.ActionNotesSave {
+		t.Errorf("1st rec action = %s, want notes.save", notesRecords[0].Action)
+	}
+	if notesRecords[0].Before != nil {
+		t.Errorf("1st rec Before = %v, want nil", notesRecords[0].Before)
+	}
+	if notesRecords[0].After == nil || notesRecords[0].After.Markdown != "Hello notes!" {
+		t.Errorf("1st rec After markdown = %v, want 'Hello notes!'", notesRecords[0].After)
+	}
+
+	// Verification of 2nd save
+	if notesRecords[1].Action != observability.ActionNotesSave {
+		t.Errorf("2nd rec action = %s, want notes.save", notesRecords[1].Action)
+	}
+	if notesRecords[1].Before == nil || notesRecords[1].Before.Markdown != "Hello notes!" {
+		t.Errorf("2nd rec Before markdown = %v, want 'Hello notes!'", notesRecords[1].Before)
+	}
+	if notesRecords[1].After == nil || notesRecords[1].After.Markdown != "Hello notes updated!" {
+		t.Errorf("2nd rec After markdown = %v, want 'Hello notes updated!'", notesRecords[1].After)
+	}
+
+	// Verification of delete
+	if notesRecords[2].Action != observability.ActionNotesDelete {
+		t.Errorf("3rd rec action = %s, want notes.delete", notesRecords[2].Action)
+	}
+	if notesRecords[2].Before == nil || notesRecords[2].Before.Markdown != "Hello notes updated!" {
+		t.Errorf("3rd rec Before markdown = %v, want 'Hello notes updated!'", notesRecords[2].Before)
+	}
+	if notesRecords[2].After != nil {
+		t.Errorf("3rd rec After = %v, want nil", notesRecords[2].After)
+	}
+}
+

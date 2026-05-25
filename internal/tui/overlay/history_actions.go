@@ -42,7 +42,9 @@ func IsProjectPatentAction(action string) bool {
 		observability.ActionPatentTagAssign,
 		observability.ActionPatentTagRemove,
 		observability.ActionIDSEntrySave,
-		observability.ActionIDSEntryDelete:
+		observability.ActionIDSEntryDelete,
+		observability.ActionNotesSave,
+		observability.ActionNotesDelete:
 		return true
 	}
 	return false
