@@ -12,6 +12,7 @@ APP_NAME = "patentmine"
 BIN_DIR = "./bin"
 API_PID_NAME = "patentmine-api.pid"
 API_ADDR = "127.0.0.1:18080"
+PATENTMINE_IDS_EXPORT_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/exports"
 
 [tasks.build]
 description = "Compile all packages."
