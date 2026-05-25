@@ -7,6 +7,34 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v0.4.2] — 2026
+
+### Added
+- `check` command: connectivity tests for USPTO API, Backblaze B2 (native API and rclone)
+- `.env` configuration file with file-based secret indirection (`file:path` syntax)
+- Makefile tasks: `check`, `check-uspto`, `check-b2`, `check-b2-api`, `check-rclone-b2`
+
+### Changed
+- Makefile.toml: DRY version/linker-flag computation with reusable `PM_VERSION_SCRIPT`
+- Config resolution supports file-based (`file:`) key references for secrets
+- `outputs/` and `exports/` directories added to `.gitignore`
+- `PATENTMINE_IDS_EXPORT_DIR` configurable in Makefile.toml
+
+### Fixed
+- RPC server `cmd/kill` handler now correctly targets the running server
+
+---
+
+## [v0.4.1] — 2026
+
+### Added
+- IDS export: configurable `PATENTMINE_IDS_EXPORT_DIR` in Makefile.toml (defaults to `./exports`)
+
+### Changed
+- Refined version string injection and update/activity logging
+
+---
+
 ## [v0.4.0] — 2026
 
 ### Added
