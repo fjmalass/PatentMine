@@ -201,7 +201,7 @@ func (a *App) openIDS() (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, a.activeProject.ID).WithLogger(a.log()))
+	return a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, a.activeProject.ID).WithLogger(a.log()).WithMetrics(a.metrics))
 }
 
 // openCitations pushes a family-edge pane for the focused pane's selected
@@ -562,7 +562,7 @@ func (a *App) navigateHistory(number domain.PatentNumber) (tea.Model, tea.Cmd) {
 		bound := a.keymaps.BoundLetters(command.ScopeFullText)
 		nextPane = pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log())
 	case *pane.IDSDetail:
-		nextPane = pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log())
+		nextPane = pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log()).WithMetrics(a.metrics)
 	case *pane.Citations:
 		nextPane = pane.NewCitations(a.client, a.theme, number, p.Kind()).WithLogger(a.log())
 	case *pane.FamilyGraph:

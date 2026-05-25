@@ -6,16 +6,17 @@ package observability
 // discoverable from one place.
 //
 // Adding a new action:
-//   1. Add the constant here and append it to AllActions.
-//   2. Classify it in internal/tui/overlay/history_actions.go (render in the
-//      overlay, or explicitly hide). TestEveryActionClassifiedByHistory fails
-//      until that is done.
+//  1. Add the constant here and append it to AllActions.
+//  2. Classify it in internal/tui/overlay/history_actions.go (render in the
+//     overlay, or explicitly hide). TestEveryActionClassifiedByHistory fails
+//     until that is done.
 const (
 	ActionCrawlStart         = "crawl.start"
 	ActionCrawlCancel        = "crawl.cancel"
 	ActionImportFile         = "import.file"
 	ActionPatentSave         = "patent.save"
 	ActionPatentDelete       = "patent.delete"
+	ActionPatentSoftDelete   = "patent.soft_delete"
 	ActionPatentRestore      = "patent.restore"
 	ActionProjectCreate      = "project.create"
 	ActionProjectSwitch      = "project.switch"
@@ -26,13 +27,18 @@ const (
 	ActionPatentTagAssign    = "patent.tag_assign"
 	ActionPatentTagRemove    = "patent.tag_remove"
 	ActionFilterApply        = "filter.apply"
+	ActionTableFilterApply   = "table_filter.apply"
+	ActionTableViewSelect    = "table_view.select"
+	ActionTableViewSave      = "table_view.save"
+	ActionTableViewDelete    = "table_view.delete"
 	ActionUIFocus            = "ui.focus"
 	ActionNotesExport        = "notes.export"
 	ActionNotesSave          = "notes.save"
 	ActionNotesDelete        = "notes.delete"
-	ActionIDSEntrySave       = "ids.entry.save"
-	ActionIDSEntryDelete     = "ids.entry.delete"
-	ActionIDSExportPDF       = "ids.export.pdf"
+	ActionIDSEntrySave           = "ids.entry.save"
+	ActionIDSEntryDelete         = "ids.entry.delete"
+	ActionIDSEntryBulkSetStatus  = "ids.entry.bulk_set_status"
+	ActionIDSExportPDF           = "ids.export.pdf"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -44,6 +50,7 @@ var AllActions = []string{
 	ActionImportFile,
 	ActionPatentSave,
 	ActionPatentDelete,
+	ActionPatentSoftDelete,
 	ActionPatentRestore,
 	ActionProjectCreate,
 	ActionProjectSwitch,
@@ -54,11 +61,16 @@ var AllActions = []string{
 	ActionPatentTagAssign,
 	ActionPatentTagRemove,
 	ActionFilterApply,
+	ActionTableFilterApply,
+	ActionTableViewSelect,
+	ActionTableViewSave,
+	ActionTableViewDelete,
 	ActionUIFocus,
 	ActionNotesExport,
 	ActionNotesSave,
 	ActionNotesDelete,
 	ActionIDSEntrySave,
 	ActionIDSEntryDelete,
+	ActionIDSEntryBulkSetStatus,
 	ActionIDSExportPDF,
 }

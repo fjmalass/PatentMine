@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -522,6 +523,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.HistoryReplayMsg:
 		a.popOverlay()
 		return a.handleHistoryReplay(m.Record, false)
+	case overlay.HistoryFilterAppliedMsg:
+		if a.activity == nil {
+			return a, nil
+		}
+		query := strings.TrimSpace(m.Query)
+		metadata := observability.TableFilter{
+			Source:      "tui.history_overlay",
+			TableType:   string(domain.TableIDSActivityHistory),
+			Search:      query,
+			SearchTerms: len(strings.Fields(query)),
+		}.Metadata()
+		metadata["sort_ascending"] = m.SortAscending
+		metadata["result_count"] = m.ResultCount
+		metadata["total_count"] = m.TotalCount
+		return a, a.recordActivity(observability.Record{
+			Action:   observability.ActionTableFilterApply,
+			Entity:   "table_filter",
+			EntityID: string(domain.TableIDSActivityHistory),
+			Status:   "requested",
+			Metadata: metadata,
+		})
 	case overlay.ConfirmHistoryReplayMsg:
 		return a.handleHistoryReplay(m.Record, true)
 	case overlay.ReplayActivityMsg:
@@ -624,7 +646,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("project_id", string(m.Project)),
 			slog.String("patent", m.Entry.Patent.String()),
 			slog.String("status", string(m.Entry.Status)))
-		
+
 		entryCopy := m.Entry
 		return a, a.broadcast(pane.IDSEntryChangedMsg{
 			Project: m.Project,
@@ -657,22 +679,37 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("patent", m.Patent.String()),
 			slog.String("status", statusStr))
 		return a, a.broadcast(m)
+	case overlay.IDSSetStatusMsg:
+		a.popOverlay()
+		if a.activeProject == nil {
+			a.setErr(text.StatusNoActiveProject)
+			return a, nil
+		}
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, nil
+		}
+		a.metrics.IncCounter("tui.ids_entry.bulk_set_status.requested", 1)
+		a.log().Info("tui.ids_entry.bulk_set_status.requested",
+			slog.String("project_id", string(a.activeProject.ID)),
+			slog.String("status", string(m.Status)),
+			slog.Int("patents", len(m.Patents)))
+		return a, pane.BulkSetIDSStatusCmd(a.client, a.activeProject.ID, m.Patents, m.Status)
 	case pane.IDSEntriesChangedMsg:
-		var cmds []tea.Cmd
-		for _, entry := range m.Entries {
-			entry := entry
-			cmds = append(cmds, a.broadcast(pane.IDSEntryChangedMsg{
-				Project: entry.Project,
-				Patent:  entry.Patent,
-				Entry:   &entry,
-			}))
-		}
 		if m.Err != nil {
+			a.metrics.IncCounter("tui.ids_entry.bulk_set_status.error", 1)
 			a.setErr(text.StatusIDSUpdateFailed, m.Err.Error())
-		} else {
-			a.setStatus(text.StatusIDSCycled, len(m.Entries))
+			a.log().Error("tui.ids_entry.bulk_set_status.failed",
+				slog.Int("entries", len(m.Entries)),
+				slog.String("error", m.Err.Error()))
+			return a, nil
 		}
-		return a, tea.Batch(cmds...)
+		a.metrics.IncCounter("tui.ids_entry.bulk_set_status.ok", 1)
+		a.metrics.IncCounter("tui.ids_entry.bulk_set_status.entries", int64(len(m.Entries)))
+		a.setStatus(text.StatusIDSCycled, len(m.Entries))
+		a.log().Info("tui.ids_entry.bulk_set_status.applied",
+			slog.Int("entries", len(m.Entries)))
+		return a, a.broadcast(m)
 	case pane.MultiCrawlStartedMsg:
 		isLookup := m.Depth == 0
 		verb := "Crawling"

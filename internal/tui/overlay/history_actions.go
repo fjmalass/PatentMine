@@ -54,7 +54,7 @@ func IsProjectPatentAction(action string) bool {
 // to fall back to the record's metadata["scope"] (used by ui.focus).
 func ReplayScope(action string) string {
 	switch action {
-	case observability.ActionIDSEntrySave, observability.ActionIDSEntryDelete:
+	case observability.ActionIDSEntrySave, observability.ActionIDSEntryDelete, observability.ActionIDSEntryBulkSetStatus:
 		return "ids"
 	}
 	return ""

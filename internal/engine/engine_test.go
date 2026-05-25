@@ -333,6 +333,56 @@ func TestEngineExportIDSUsesOnlyCuratedEntries(t *testing.T) {
 	}
 }
 
+func TestEngineBulkSetIDSStatusReturnsAllEntriesAndAnnouncesOnce(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "Filing")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	numbers := []domain.PatentNumber{
+		domain.MustParsePatentNumber("US0000001B2"),
+		domain.MustParsePatentNumber("US0000002B2"),
+	}
+	for _, n := range numbers {
+		if err := repo.SavePatent(ctx, domain.Patent{Number: n, DisplayNumber: n, Title: n.String(), FetchState: domain.FetchCached}); err != nil {
+			t.Fatalf("SavePatent %s: %v", n, err)
+		}
+	}
+	// Let setup writes leave the debounce window so this test observes only the bulk operation.
+	time.Sleep(2 * changeDebounce)
+	events, unsubscribe := eng.Subscribe()
+	defer unsubscribe()
+
+	entries, err := eng.BulkSetIDSStatus(ctx, project.ID, numbers, domain.IDSEntryAccepted, true)
+	if err != nil {
+		t.Fatalf("BulkSetIDSStatus: %v", err)
+	}
+	if len(entries) != len(numbers) {
+		t.Fatalf("BulkSetIDSStatus returned %d entries, want %d", len(entries), len(numbers))
+	}
+	for i, entry := range entries {
+		if entry.Patent != numbers[i] || entry.Status != domain.IDSEntryAccepted {
+			t.Fatalf("entry %d = %+v, want patent %s accepted", i, entry, numbers[i])
+		}
+	}
+
+	select {
+	case ev := <-events:
+		if ev.Method != proto.EventDBChanged {
+			t.Fatalf("event type = %s, want %s", ev.Method, proto.EventDBChanged)
+		}
+	case <-time.After(changeDebounce):
+		t.Fatal("bulk IDS status did not announce a database change")
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("bulk IDS status announced more than once; extra event: %+v", ev)
+	case <-time.After(2 * changeDebounce):
+	}
+}
+
 func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	eng, repo := newTestEngine(t, nil)
 	ctx := context.Background()
@@ -733,15 +783,22 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 		t.Fatalf("Expected 2 relations, got %d", len(storedRels))
 	}
 
-	// 6. Delete P1
+	// 6. Soft-delete P1. P3 still cites P1, so P1 survives as a FetchStub
+	// with its inbound edge intact; documents and the outbound P1->P2 edge
+	// are dropped.
 	if err := eng.DeletePatent(ctx, p1); err != nil {
 		t.Fatalf("DeletePatent: %v", err)
 	}
 
-	// Verify completely deleted
-	_, err = eng.Patent(ctx, p1)
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("Expected store.ErrNotFound, got %v", err)
+	stubAfterDelete, err := eng.Patent(ctx, p1)
+	if err != nil {
+		t.Fatalf("Patent after soft delete: %v", err)
+	}
+	if stubAfterDelete.FetchState != domain.FetchStub {
+		t.Fatalf("FetchState after soft delete = %s, want %s", stubAfterDelete.FetchState, domain.FetchStub)
+	}
+	if stubAfterDelete.Title != "" || stubAfterDelete.Abstract != "" {
+		t.Fatalf("Bib fields not cleared: title=%q abstract=%q", stubAfterDelete.Title, stubAfterDelete.Abstract)
 	}
 	delDocs, err := repo.Documents(ctx, p1)
 	if err != nil {
@@ -754,8 +811,11 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repo.AllRelations: %v", err)
 	}
-	if len(delRels) != 0 {
-		t.Fatalf("Expected relations to be deleted, got %d", len(delRels))
+	if len(delRels) != 1 {
+		t.Fatalf("Expected 1 surviving inbound relation, got %d", len(delRels))
+	}
+	if delRels[0].From != p3 || delRels[0].To != p1 {
+		t.Fatalf("Surviving relation = %v->%v, want %v->%v", delRels[0].From, delRels[0].To, p3, p1)
 	}
 
 	// 7. Flush activity records and find the delete event
@@ -798,7 +858,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 		var temp struct {
 			Action string `json:"action"`
 		}
-		if err := json.Unmarshal(line, &temp); err == nil && temp.Action == "patent.delete" {
+		if err := json.Unmarshal(line, &temp); err == nil && temp.Action == observability.ActionPatentSoftDelete {
 			if err := json.Unmarshal(line, &deleteRecord); err != nil {
 				t.Fatalf("Unmarshal delete action: %v", err)
 			}
@@ -808,7 +868,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 	}
 
 	if !found {
-		t.Fatal("Could not find patent.delete in activity journal")
+		t.Fatalf("Could not find %s in activity journal", observability.ActionPatentSoftDelete)
 	}
 
 	snapshot := deleteRecord.Before
@@ -1158,7 +1218,7 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 			continue
 		}
 		var rec deleteRecord
-		if err := json.Unmarshal(line, &rec); err != nil || rec.Action != "patent.delete" {
+		if err := json.Unmarshal(line, &rec); err != nil || rec.Action != observability.ActionPatentSoftDelete {
 			continue
 		}
 		records[rec.EntityID] = rec
@@ -1402,4 +1462,3 @@ func TestPatentNoteActivityLogging(t *testing.T) {
 		t.Errorf("3rd rec After = %v, want nil", notesRecords[2].After)
 	}
 }
-

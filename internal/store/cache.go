@@ -147,6 +147,22 @@ func (c *Cache) DeletePatents(ctx context.Context, patents []domain.PatentNumber
 	return nil
 }
 
+func (c *Cache) SoftDeletePatent(ctx context.Context, n domain.PatentNumber) error {
+	if err := c.Repository.SoftDeletePatent(ctx, n); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) error {
+	if err := c.Repository.SoftDeletePatents(ctx, patents); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 func (c *Cache) SaveNode(ctx context.Context, batch NodeBatch) error {
 	if err := c.Repository.SaveNode(ctx, batch); err != nil {
 		return err
@@ -209,6 +225,23 @@ func (c *Cache) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumb
 
 func (c *Cache) AddMembership(ctx context.Context, m domain.Membership) error {
 	if err := c.Repository.AddMembership(ctx, m); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	saved, err := c.Repository.SaveIDSEntry(ctx, entry)
+	if err != nil {
+		return domain.IDSEntry{}, err
+	}
+	c.flush()
+	return saved, nil
+}
+
+func (c *Cache) DeleteIDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error {
+	if err := c.Repository.DeleteIDSEntry(ctx, project, patent); err != nil {
 		return err
 	}
 	c.flush()

@@ -91,6 +91,7 @@ func IsHistoryFeedAction(action string) bool {
 		ActionPatentTagRemove,
 		ActionIDSEntrySave,
 		ActionIDSEntryDelete,
+		ActionIDSEntryBulkSetStatus,
 		ActionUIFocus,
 		ActionNotesExport,
 		ActionNotesSave,
@@ -118,6 +119,7 @@ func historyFeedPreservesEveryRecord(rec Record) bool {
 		ActionPatentTagRemove,
 		ActionIDSEntrySave,
 		ActionIDSEntryDelete,
+		ActionIDSEntryBulkSetStatus,
 		ActionNotesExport,
 		ActionNotesSave,
 		ActionNotesDelete:

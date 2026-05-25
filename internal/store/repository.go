@@ -90,6 +90,16 @@ type Repository interface {
 	// DeletePatents permanently removes multiple patents and all their associated
 	// documents, relations, and memberships in one transaction.
 	DeletePatents(ctx context.Context, patents []domain.PatentNumber) error
+	// SoftDeletePatent demotes a patent to FetchStub: documents, memberships,
+	// project notes, tag assignments, and outbound family-graph edges are
+	// removed; inbound edges from other patents are kept so the family-graph
+	// topology survives. When no inbound edge remains, the patent row is
+	// hard-purged to avoid an orphan stub.
+	SoftDeletePatent(ctx context.Context, n domain.PatentNumber) error
+	// SoftDeletePatents is the batch variant of SoftDeletePatent. Orphan-stub
+	// purging is computed after every patent in the batch has been demoted,
+	// so mutually-referencing pairs deleted together are both purged.
+	SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) error
 	// Patent returns one patent, or ErrNotFound.
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
 	// ListPatents returns one page of lightweight listing rows matching q.
@@ -188,6 +198,15 @@ type Repository interface {
 	DeleteClassificationDefinition(ctx context.Context, system, code string) error
 	// SaveMutationGroup appends an auditable mutation journal entry.
 	SaveMutationGroup(ctx context.Context, group domain.MutationGroup, items []domain.MutationItem) error
+
+	// SaveTableView inserts or updates one named saved table view.
+	SaveTableView(ctx context.Context, view domain.SavedTableView) (domain.SavedTableView, error)
+	// TableView returns one saved table view owned by owner, or ErrNotFound.
+	TableView(ctx context.Context, owner, id string) (domain.SavedTableView, error)
+	// ListTableViews returns saved table views for an owner and optional table type.
+	ListTableViews(ctx context.Context, owner string, tableType domain.TableType) ([]domain.SavedTableView, error)
+	// DeleteTableView removes one saved table view owned by owner.
+	DeleteTableView(ctx context.Context, owner, id string) error
 
 	// Close releases all database resources.
 	Close() error

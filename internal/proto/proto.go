@@ -46,6 +46,7 @@ const (
 	MethodIDSEntryGet               Method = "ids.entry.get"
 	MethodIDSEntrySave              Method = "ids.entry.save"
 	MethodIDSEntryDelete            Method = "ids.entry.delete"
+	MethodIDSEntryBulkSetStatus     Method = "ids.entry.bulk_set_status"
 	MethodPatentNoteGet             Method = "patent.note.get"
 	MethodPatentNoteSave            Method = "patent.note.save"
 	MethodPatentNoteDelete          Method = "patent.note.delete"
@@ -68,6 +69,10 @@ const (
 	MethodClassificationLookup      Method = "classification.lookup"
 	MethodClassificationListByCodes Method = "classification.list_by_codes"
 	MethodPatentClassificationList  Method = "patent.classification.list"
+	MethodTableViewList             Method = "table_view.list"
+	MethodTableViewGet              Method = "table_view.get"
+	MethodTableViewSave             Method = "table_view.save"
+	MethodTableViewDelete           Method = "table_view.delete"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -486,6 +491,20 @@ type IDSEntryResult struct {
 	Entry domain.IDSEntry `json:"entry"`
 }
 
+// IDSEntryBulkSetStatusParams applies a single IDSEntryStatus to every patent
+// in Patents under Project. Missing entries are created with InFull=DefaultInFull.
+type IDSEntryBulkSetStatusParams struct {
+	Project       domain.ProjectID       `json:"project"`
+	Patents       []domain.PatentNumber  `json:"patents"`
+	Status        domain.IDSEntryStatus  `json:"status"`
+	DefaultInFull bool                   `json:"default_in_full"`
+}
+
+// IDSEntriesResult carries every curated IDS entry touched by a bulk write.
+type IDSEntriesResult struct {
+	Entries []domain.IDSEntry `json:"entries"`
+}
+
 // PatentNoteParams identifies one project-scoped patent note.
 type PatentNoteParams struct {
 	Project domain.ProjectID    `json:"project"`
@@ -570,6 +589,33 @@ type HistoryFeedParams struct {
 	RawLimit  int       `json:"raw_limit,omitempty"`
 	Component string    `json:"component,omitempty"`
 	Since     time.Time `json:"since,omitempty"`
+}
+
+// TableViewListParams selects saved views for an owner and optional table type.
+type TableViewListParams struct {
+	Owner     string           `json:"owner,omitempty"`
+	TableType domain.TableType `json:"table_type,omitempty"`
+}
+
+// TableViewGetParams identifies one saved table view.
+type TableViewGetParams struct {
+	Owner string `json:"owner,omitempty"`
+	ID    string `json:"id"`
+}
+
+// TableViewSaveParams carries a saved table view to insert or update.
+type TableViewSaveParams struct {
+	View domain.SavedTableView `json:"view"`
+}
+
+// TableViewResult carries one saved table view.
+type TableViewResult struct {
+	View domain.SavedTableView `json:"view"`
+}
+
+// TableViewListResult carries saved table views.
+type TableViewListResult struct {
+	Views []domain.SavedTableView `json:"views"`
 }
 
 // MetricsSnapshot is a transport-safe view of the daemon's metrics.

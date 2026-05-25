@@ -435,6 +435,7 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 * `ctrl+u` / `pgup` : Page selection up.
 * `g g` : Jump straight to the top of the list.
 * `G` : Jump straight to the bottom of the list.
+* `H` : Open the Activity History overlay. Inside history, use `/` for free-form filtering, `.` to toggle newest/oldest sorting, and `c` to clear the history filter/sort.
 
 #### C. Common Patent Workflow Actions
 *(Available in Catalog, Detail, and Citations views when a patent is selected)*
@@ -535,6 +536,38 @@ Pattern rules:
 * `inventor:` and `assignee:` support exact values by default, and switch to wildcard matching when `*` appears in the value.
 * Values with spaces should be quoted, for example `inventor:"Ada Lovelace"` or `search:"widget sensor"`.
 * Bare values like `*Lovelace*` are not valid by themselves; keep the explicit field prefix such as `inventor:*Lovelace*`.
+
+#### Saved table views
+
+PatentMine stores reusable table state as generic saved table views. A view is keyed by `owner` and `table_type`, so the same persistence path can support IDS activity history, patent lists, citation tables, and inventor-stat tables. Until authenticated users exist, empty owners default to `local`.
+
+Saved view JSON can include free-form search text, structured filters, sort order, and column preferences:
+
+```json
+{
+  "search": "office action",
+  "filters": {
+    "status": ["failed", "needs_attention"]
+  },
+  "sort": [
+    { "field": "activityDate", "direction": "desc" }
+  ],
+  "columns": {
+    "visible": ["activityDate", "activityType", "user", "status"]
+  }
+}
+```
+
+HTTP endpoints:
+
+* `GET /table_views?table_type=ids_activity_history` : List saved views for the owner/table.
+* `GET /table_views/{id}` : Fetch one saved view.
+* `POST /table_views` : Create or update a saved view.
+* `DELETE /table_views/{id}` : Delete a saved view.
+
+Supported `table_type` values are `ids_activity_history`, `patents`, `citations`, and `inventor_stats`. See [`FILTER_VIEW.md`](./FILTER_VIEW.md) for the design notes, tradeoffs, and storage model.
+
+Filter/search/sort usage is recorded through metrics and activity telemetry so common fields, sort columns, saved-view selections, and view complexity can be reviewed later.
 
 * `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
 * `:tag.list` : List all tags currently registered in the active project's taxonomy.

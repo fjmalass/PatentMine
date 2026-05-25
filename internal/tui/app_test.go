@@ -313,6 +313,58 @@ func (p *patentProbePane) Selection() (domain.PatentNumber, bool) {
 }
 func (p *patentProbePane) Selections() []domain.PatentNumber { return p.selections }
 
+type visualSavingPatentProbe struct {
+	*patentProbePane
+	saves int
+}
+
+func (p *visualSavingPatentProbe) SaveVisualSelection() {
+	p.saves++
+	p.selections = nil
+}
+
+func TestOpenIDSPickerPreservesVisualSelectionForRepeatedApply(t *testing.T) {
+	app := newTestApp(t)
+	app.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
+	numbers := []domain.PatentNumber{
+		domain.MustParsePatentNumber("US11611785B2"),
+		domain.MustParsePatentNumber("US11700000B2"),
+	}
+	probe := &visualSavingPatentProbe{patentProbePane: &patentProbePane{selection: numbers[0], selections: numbers}}
+	app.panes = []pane.Pane{probe}
+
+	updated, cmd := app.cmdOpenIDS(invocation{})
+	app = updated.(*App)
+	if cmd != nil {
+		t.Fatal("opening IDS status picker should not return a command")
+	}
+	if probe.saves != 0 {
+		t.Fatalf("opening IDS status picker saved/cleared visual selection %d times", probe.saves)
+	}
+	if len(app.overlays) != 1 {
+		t.Fatalf("overlays = %d, want IDS status picker", len(app.overlays))
+	}
+	if _, ok := app.overlays[0].(*overlay.IDSStatusPicker); !ok {
+		t.Fatalf("overlay = %T, want IDSStatusPicker", app.overlays[0])
+	}
+
+	app.overlays = nil
+	updated, cmd = app.cmdOpenIDS(invocation{})
+	app = updated.(*App)
+	if cmd != nil {
+		t.Fatal("reopening IDS status picker should not return a command")
+	}
+	if probe.saves != 0 {
+		t.Fatalf("reopening IDS status picker saved/cleared visual selection %d times", probe.saves)
+	}
+	if len(app.panes) != 1 {
+		t.Fatalf("second IDS open pushed a detail pane; panes = %d", len(app.panes))
+	}
+	if len(app.overlays) != 1 {
+		t.Fatalf("second IDS open overlays = %d, want IDS status picker", len(app.overlays))
+	}
+}
+
 func TestAppRefreshesAllPanesOnDBChange(t *testing.T) {
 	app := newTestApp(t)
 	first := &refreshProbePane{}
@@ -752,18 +804,26 @@ type idsChangedProbePane struct {
 	ScopeVal    command.Scope
 	TitleVal    string
 	receivedMsg tea.Msg
+	bulkMsg     tea.Msg
 }
 
-func (p *idsChangedProbePane) Scope() command.Scope                { return p.ScopeVal }
-func (p *idsChangedProbePane) Title() string                       { return p.TitleVal }
-func (p *idsChangedProbePane) Init() tea.Cmd                       { return nil }
-func (p *idsChangedProbePane) View(int, int) string                { return "" }
-func (p *idsChangedProbePane) Selection() (domain.PatentNumber, bool) { return domain.PatentNumber{}, false }
-func (p *idsChangedProbePane) Handles() []command.ID               { return nil }
-func (p *idsChangedProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) { return p, nil }
+func (p *idsChangedProbePane) Scope() command.Scope { return p.ScopeVal }
+func (p *idsChangedProbePane) Title() string        { return p.TitleVal }
+func (p *idsChangedProbePane) Init() tea.Cmd        { return nil }
+func (p *idsChangedProbePane) View(int, int) string { return "" }
+func (p *idsChangedProbePane) Selection() (domain.PatentNumber, bool) {
+	return domain.PatentNumber{}, false
+}
+func (p *idsChangedProbePane) Handles() []command.ID { return nil }
+func (p *idsChangedProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) {
+	return p, nil
+}
 func (p *idsChangedProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
-	if _, ok := msg.(pane.IDSEntryChangedMsg); ok {
+	switch msg.(type) {
+	case pane.IDSEntryChangedMsg:
 		p.receivedMsg = msg
+	case pane.IDSEntriesChangedMsg:
+		p.bulkMsg = msg
 	}
 	return p, nil
 }
@@ -805,5 +865,43 @@ func TestAppRoutesCurationEvents(t *testing.T) {
 	}
 	if changedMsg.Project != "p-1" || changedMsg.Patent != num || changedMsg.Entry.Status != domain.IDSEntrySubmitted {
 		t.Fatalf("unexpected change msg contents: %+v", changedMsg)
+	}
+}
+
+func TestAppRoutesBulkIDSEntriesAsSingleBatchUpdate(t *testing.T) {
+	app := &App{
+		text:    text.English(),
+		metrics: observability.NewMetrics(),
+	}
+	app.theme = render.NewTheme()
+
+	catalog := &idsChangedProbePane{
+		ScopeVal: command.ScopeCatalog,
+		TitleVal: "Catalog",
+	}
+	app.panes = []pane.Pane{catalog}
+
+	num := domain.MustParsePatentNumber("US0000001B2")
+	num2 := domain.MustParsePatentNumber("US0000002B2")
+	updatedModel, _ := app.Update(pane.IDSEntriesChangedMsg{Entries: []domain.IDSEntry{{
+		Project: "p-1",
+		Patent:  num,
+		Status:  domain.IDSEntryAccepted,
+	}, {
+		Project: "p-1",
+		Patent:  num2,
+		Status:  domain.IDSEntryIgnored,
+	}}})
+	app = updatedModel.(*App)
+
+	bulkMsg, ok := catalog.bulkMsg.(pane.IDSEntriesChangedMsg)
+	if !ok {
+		t.Fatalf("expected bulk IDS change broadcast, got %T", catalog.bulkMsg)
+	}
+	if len(bulkMsg.Entries) != 2 || bulkMsg.Entries[0].Patent != num || bulkMsg.Entries[1].Patent != num2 {
+		t.Fatalf("unexpected bulk change msg contents: %+v", bulkMsg)
+	}
+	if catalog.receivedMsg != nil {
+		t.Fatalf("bulk IDS update should not emit per-patent messages, got %T", catalog.receivedMsg)
 	}
 }

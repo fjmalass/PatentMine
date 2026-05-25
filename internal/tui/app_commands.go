@@ -153,7 +153,23 @@ func (a *App) cmdOpenFamilyGraph(inv invocation) (tea.Model, tea.Cmd) {
 	return a.openFamilyGraph(depth, args)
 }
 
-func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) { return a.openIDS() }
+func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	switch len(numbers) {
+	case 0:
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	case 1:
+		return a.openIDS()
+	default:
+		a.overlays = append(a.overlays, overlay.NewIDSStatusPicker(a.theme, numbers))
+		return a, nil
+	}
+}
 
 func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 	detail, ok := a.focusedPane().(*pane.Detail)

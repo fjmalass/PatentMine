@@ -52,32 +52,32 @@ type Citations struct {
 	columns        []domain.PatentTableColumn
 	columnsProject domain.ProjectID
 
-	patents           []domain.PatentRow
-	page              render.Paginator
-	loadedBase        int
-	loading           bool
-	loadErr           string
-	loadID            uint64
-	columnsLoadID     uint64
-	visualMode          bool
-	visualAnchor        int
-	allSelectedNumbers  []domain.PatentNumber
-	selectAllLoadID     uint64
-	lastActive          domain.PatentNumber
-	savedVisual         []domain.PatentNumber
-	savedVisualAnchor   int
-	savedVisualCursor   int
-	gvHighlight       map[domain.PatentNumber]bool
-	activeSort        domain.SortColumn
-	sortAscending     bool
-	filter            PatentFilter
-	find              findBar
-	focusedColIdx     int
-	lastWidth         int
-	logger            *slog.Logger
-	classDescs        map[string]string
-	classDescsID      uint64
-	searchSeq         uint64
+	patents            []domain.PatentRow
+	page               render.Paginator
+	loadedBase         int
+	loading            bool
+	loadErr            string
+	loadID             uint64
+	columnsLoadID      uint64
+	visualMode         bool
+	visualAnchor       int
+	allSelectedNumbers []domain.PatentNumber
+	selectAllLoadID    uint64
+	lastActive         domain.PatentNumber
+	savedVisual        []domain.PatentNumber
+	savedVisualAnchor  int
+	savedVisualCursor  int
+	gvHighlight        map[domain.PatentNumber]bool
+	activeSort         domain.SortColumn
+	sortAscending      bool
+	filter             PatentFilter
+	find               findBar
+	focusedColIdx      int
+	lastWidth          int
+	logger             *slog.Logger
+	classDescs         map[string]string
+	classDescsID       uint64
+	searchSeq          uint64
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -452,6 +452,31 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 				continue
 			}
 			c.patents[i].ReviewState = m.State
+		}
+	case IDSEntryChangedMsg:
+		if c.activeProject == nil || c.activeProject.ID != m.Project {
+			return c, nil
+		}
+		updated := false
+		for i := range c.patents {
+			if patentRowMatchesNumber(c.patents[i], m.Patent) {
+				c.patents[i].IDSEntry = m.Entry
+				updated = true
+				break
+			}
+		}
+		if !updated && len(c.patents) > 0 {
+			c.loading = true
+			return c, c.load()
+		}
+	case IDSEntriesChangedMsg:
+		if c.activeProject == nil {
+			return c, nil
+		}
+		applied, relevant := applyIDSEntriesToPatentRows(c.patents, c.activeProject.ID, m.Entries)
+		if relevant > applied && len(c.patents) > 0 {
+			c.loading = true
+			return c, c.load()
 		}
 	case patentTableColumnsLoadedMsg:
 		if m.requestID != c.columnsLoadID {

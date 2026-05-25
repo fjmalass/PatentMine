@@ -130,20 +130,32 @@ type PatentSnapshot struct {
 	Relations []domain.Relation `json:"relations"`
 }
 
-// DeletePatent permanently removes a patent and all associated data.
+// DeletePatent soft-deletes a patent: documents, memberships, notes, tags,
+// and outbound family-graph edges are removed; the row is demoted to
+// FetchStub so inbound edges from other patents still resolve. When no
+// inbound edge remains, the row is hard-purged inside the same transaction.
+// The full pre-delete state is captured as a PatentSnapshot in the activity
+// log so RestorePatent can replay it.
 func (e *Engine) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
 	return e.DeletePatents(ctx, []domain.PatentNumber{n})
 }
 
-// DeletePatents permanently removes multiple patents and all associated data.
+// DeletePatents is the batch variant of DeletePatent. Inbound-edge accounting
+// is computed across the whole batch so a cycle of mutually-referencing
+// patents deleted together is fully purged rather than leaving orphan stubs.
 func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumber) (err error) {
-	defer e.observeDuration("engine.delete_patent", time.Now(), &err)
+	defer e.observeDuration("engine.soft_delete_patent", time.Now(), &err)
 	records := uniquePatentNumbers(patents)
 	if len(records) == 0 {
 		return nil
 	}
 
 	snapshots := make([]PatentSnapshot, 0, len(records))
+	inboundCounts := make([]int, 0, len(records))
+	targetSet := make(map[string]struct{}, len(records))
+	for _, patent := range records {
+		targetSet[patent.Normalized()] = struct{}{}
+	}
 	for _, patent := range records {
 		record, resolveErr := e.recordNumber(ctx, patent)
 		if resolveErr != nil {
@@ -163,18 +175,31 @@ func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumbe
 			return relErr
 		}
 
+		inbound := 0
+		recordKey := record.Normalized()
+		for _, rel := range relations {
+			if rel.To.Normalized() != recordKey {
+				continue
+			}
+			if _, inBatch := targetSet[rel.From.Normalized()]; inBatch {
+				continue
+			}
+			inbound++
+		}
+
 		records[len(snapshots)] = record
 		snapshots = append(snapshots, PatentSnapshot{Patent: storedPatent, Relations: relations})
+		inboundCounts = append(inboundCounts, inbound)
 	}
 
 	if len(records) == 1 {
-		if err := e.repo.DeletePatent(ctx, records[0]); err != nil {
-			e.log(ctx, slog.LevelError, "delete patent failed", slog.String("number", records[0].String()), slog.String("error", err.Error()))
+		if err := e.repo.SoftDeletePatent(ctx, records[0]); err != nil {
+			e.log(ctx, slog.LevelError, "soft delete patent failed", slog.String("number", records[0].String()), slog.String("error", err.Error()))
 			return err
 		}
 	} else {
-		if err := e.repo.DeletePatents(ctx, records); err != nil {
-			e.log(ctx, slog.LevelError, "delete patents batch failed", slog.Int("count", len(records)), slog.String("error", err.Error()))
+		if err := e.repo.SoftDeletePatents(ctx, records); err != nil {
+			e.log(ctx, slog.LevelError, "soft delete patents batch failed", slog.Int("count", len(records)), slog.String("error", err.Error()))
 			return err
 		}
 	}
@@ -185,13 +210,23 @@ func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumbe
 		batchID = strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	}
 	for i, record := range records {
-		e.log(ctx, slog.LevelInfo, "patent deleted", slog.String("number", record.String()))
-		metadata := map[string]any{"batch_size": batchSize}
+		demoted := inboundCounts[i] > 0
+		e.log(ctx, slog.LevelInfo, "patent soft-deleted",
+			slog.String("number", record.String()),
+			slog.Int("inbound_count", inboundCounts[i]),
+			slog.Bool("demoted_to_stub", demoted),
+		)
+		metadata := map[string]any{
+			"batch_size":      batchSize,
+			"mode":            "soft",
+			"demoted_to_stub": demoted,
+			"inbound_count":   inboundCounts[i],
+		}
 		if batchID != "" {
 			metadata["batch_id"] = batchID
 		}
 		e.recordActivity(ctx, observability.Record{
-			Action:   observability.ActionPatentDelete,
+			Action:   observability.ActionPatentSoftDelete,
 			Entity:   "patent",
 			EntityID: record.String(),
 			Status:   "committed",

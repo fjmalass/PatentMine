@@ -528,6 +528,22 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.loading = true
 			return c, c.load()
 		}
+	case IDSEntriesChangedMsg:
+		if c.activeProject == nil {
+			return c, nil
+		}
+		applied, relevant := applyIDSEntriesToPatentRows(c.patents, c.activeProject.ID, m.Entries)
+		c.log().Info("tui.catalog.ids_entries_applied",
+			slog.Int("entries", len(m.Entries)),
+			slog.Int("matched_rows", applied),
+			slog.String("project_id", string(c.activeProject.ID)))
+		if c.metrics != nil {
+			c.metrics.IncCounter("tui.catalog.ids_entries_applied", int64(applied))
+		}
+		if relevant > applied && len(c.patents) > 0 {
+			c.loading = true
+			return c, c.load()
+		}
 	case patentTableColumnsLoadedMsg:
 		if m.requestID != c.columnsLoadID {
 			return c, nil
@@ -1088,7 +1104,30 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 }
 
 func patentRowMatchesNumber(row domain.PatentRow, number domain.PatentNumber) bool {
-	return row.Number == number || (!row.DisplayNumber.IsZero() && row.DisplayNumber == number)
+	return patentNumberMatches(row.Number, row.DisplayNumber, number)
+}
+
+func patentNumberMatches(record, display, number domain.PatentNumber) bool {
+	return record == number || (!display.IsZero() && display == number)
+}
+
+func applyIDSEntriesToPatentRows(rows []domain.PatentRow, project domain.ProjectID, entries []domain.IDSEntry) (applied int, relevant int) {
+	for i := range entries {
+		entry := entries[i]
+		if entry.Project != project {
+			continue
+		}
+		relevant++
+		for j := range rows {
+			if patentRowMatchesNumber(rows[j], entry.Patent) {
+				copied := entry
+				rows[j].IDSEntry = &copied
+				applied++
+				break
+			}
+		}
+	}
+	return applied, relevant
 }
 
 // ActivityFocus implements ActivityFocusProvider.

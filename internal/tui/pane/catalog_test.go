@@ -343,3 +343,37 @@ func TestCatalogHandlesIDSEntryChangedMsg(t *testing.T) {
 	}
 }
 
+func TestCatalogHandlesIDSEntriesChangedMsgBulk(t *testing.T) {
+	c := loadedCatalog(t)
+	project := &domain.Project{ID: "p-1", Name: "Case A"}
+	c.activeProject = project
+
+	if len(c.patents) < 2 {
+		t.Fatalf("test fixture needs at least 2 patents, got %d", len(c.patents))
+	}
+
+	entries := []domain.IDSEntry{
+		{Project: project.ID, Patent: c.patents[0].Number, Status: domain.IDSEntryAccepted, InFull: true},
+		{Project: project.ID, Patent: c.patents[1].Number, Status: domain.IDSEntryIgnored, InFull: true},
+	}
+	updated, cmd := c.Update(IDSEntriesChangedMsg{Entries: entries})
+	c = updated.(*Catalog)
+	if cmd != nil {
+		t.Fatal("visible bulk IDS updates should apply in Update without forcing a reload")
+	}
+
+	if c.patents[0].IDSEntry == nil || c.patents[0].IDSEntry.Status != domain.IDSEntryAccepted {
+		t.Fatalf("row 0 IDS not applied: %+v", c.patents[0].IDSEntry)
+	}
+	if c.patents[1].IDSEntry == nil || c.patents[1].IDSEntry.Status != domain.IDSEntryIgnored {
+		t.Fatalf("row 1 IDS not applied: %+v", c.patents[1].IDSEntry)
+	}
+
+	out := c.View(testPaneWidth, testPaneHeight)
+	if !strings.Contains(out, "✅") {
+		t.Fatalf("expected accepted glyph in view:\n%s", out)
+	}
+	if !strings.Contains(out, "👻") {
+		t.Fatalf("expected ignored glyph in view:\n%s", out)
+	}
+}

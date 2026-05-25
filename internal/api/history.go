@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 )
 
@@ -15,6 +16,7 @@ func (s *Server) handleHistoryList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Now()
+	s.observeTableQuery(r, tableQueryTelemetryFromURL(domain.TableIDSActivityHistory, r.URL.Query()))
 	feed, err := observability.ReadHistoryFeed(s.activityLogsDir, parseHistoryQuery(r))
 	s.observeHistoryQuery(start, feed, err)
 	if err != nil {

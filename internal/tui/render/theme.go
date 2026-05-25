@@ -84,7 +84,7 @@ const (
 	glyphReviewStateUnknown     = "?"
 	glyphReviewStateUnderReview = "🔍"
 	glyphReviewStateActive      = "✅"
-	glyphReviewStateIgnored     = "☐"
+	glyphReviewStateIgnored     = "⬜"
 	glyphReviewStateDeleted     = "❌"
 
 	glyphIDSEntryNone      = "⭕"
@@ -100,6 +100,9 @@ const (
 
 	glyphCheckboxChecked   = "✅"
 	glyphCheckboxUnchecked = "☐"
+
+	glyphIDSInFullFull    = "🔋"
+	glyphIDSInFullPartial = "🪫"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -208,6 +211,9 @@ type ThemeGlyphs struct {
 
 	CheckboxChecked   string
 	CheckboxUnchecked string
+
+	IDSInFullFull    string
+	IDSInFullPartial string
 
 	HistUnknown     string
 	HistSearch      string
@@ -386,6 +392,9 @@ func NewTheme() Theme {
 
 			CheckboxChecked:   glyphCheckboxChecked,
 			CheckboxUnchecked: glyphCheckboxUnchecked,
+
+			IDSInFullFull:    glyphIDSInFullFull,
+			IDSInFullPartial: glyphIDSInFullPartial,
 
 			HistUnknown:     glyphHistUnknown,
 			HistSearch:      glyphHistSearch,

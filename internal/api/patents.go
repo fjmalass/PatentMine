@@ -39,15 +39,7 @@ func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
 		SortColumn:     domain.SortColumn(q.Get("sort_column")),
 		SortAscending:  sortAscending,
 	}
-	if s.activity != nil && (params.Filter != "" || params.ReviewState != "" || params.IDSStatus != "" || params.Search != "" || params.Classification != "") {
-		_ = s.activity.Record(r.Context(), observability.Record{
-			Action:   observability.ActionFilterApply,
-			Entity:   "filter",
-			EntityID: r.URL.RawQuery,
-			Status:   "requested",
-			Metadata: map[string]any{"source": "http", "path": r.URL.Path, "query": r.URL.RawQuery, "ids_status": params.IDSStatus},
-		})
-	}
+	s.observeTableQuery(r, tableQueryTelemetryFromURL(domain.TableCitations, q))
 	var res proto.RelationsResult
 	s.call(w, r, proto.MethodRelations, params, &res)
 }
@@ -93,15 +85,7 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 		SortColumn:         domain.SortColumn(q.Get("sort_column")),
 		SortAscending:      sortAscending,
 	}
-	if s.activity != nil && (params.Filter != "" || params.ReviewState != "" || params.IDSStatus != "" || params.Search != "" || params.Classification != "" || params.ClassificationCode != "" || params.Inventor != "" || params.Assignee != "") {
-		_ = s.activity.Record(r.Context(), observability.Record{
-			Action:   observability.ActionFilterApply,
-			Entity:   "filter",
-			EntityID: r.URL.RawQuery,
-			Status:   "requested",
-			Metadata: map[string]any{"source": "http", "path": r.URL.Path, "query": r.URL.RawQuery, "ids_status": params.IDSStatus},
-		})
-	}
+	s.observeTableQuery(r, tableQueryTelemetryFromURL(domain.TablePatents, q))
 	var res proto.PatentListResult
 	s.call(w, r, proto.MethodPatentList, params, &res)
 }

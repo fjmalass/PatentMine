@@ -86,6 +86,106 @@ func (r *Repo) DeletePatent(ctx context.Context, n domain.PatentNumber) (err err
 	return nil
 }
 
+// patentDemoteSQL clears the bibliographic columns of a patent row and sets
+// fetch_state to "stub". Identity columns (country/serial/kind/display_number)
+// are preserved so the row remains a valid stub referenced by surviving edges.
+const patentDemoteSQL = `UPDATE patent SET
+	title='', abstract='', assignee='', inventors='[]',
+	fetch_state=?, source='',
+	application_date=?, publication_date=?, grant_date=?, fetched_at=?,
+	first_claim='', expiration_date='', expiration_source='', source_url='',
+	classifications='[]', classifications_text=''
+WHERE number = ?`
+
+// SoftDeletePatent demotes a patent to FetchStub, dropping its documents,
+// memberships, notes, tags, and outbound relations. Inbound relations from
+// other patents survive so the family-graph topology stays intact. When no
+// inbound relation remains, the row is hard-purged to avoid orphan stubs.
+func (r *Repo) SoftDeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
+	defer r.observeDuration("soft_delete_patent", time.Now(), &err)
+	return r.softDeletePatents(ctx, []domain.PatentNumber{n})
+}
+
+// SoftDeletePatents is the batch variant of SoftDeletePatent. All demotions
+// commit together; orphan-stub purging runs after every demote so a cycle of
+// mutually-referencing patents deleted in one batch is fully purged.
+func (r *Repo) SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) (err error) {
+	defer r.observeDuration("soft_delete_patents", time.Now(), &err)
+	return r.softDeletePatents(ctx, patents)
+}
+
+func (r *Repo) softDeletePatents(ctx context.Context, patents []domain.PatentNumber) error {
+	if len(patents) == 0 {
+		return nil
+	}
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: soft delete patents tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	zero := encodeTime(time.Time{})
+	for _, p := range patents {
+		key := p.Normalized()
+		var exists int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM patent WHERE number = ?`, key).Scan(&exists); err != nil {
+			return fmt.Errorf("store/sqlite: soft delete check %s: %w", p, err)
+		}
+		if exists == 0 {
+			return store.ErrNotFound
+		}
+		for _, q := range []string{
+			`DELETE FROM document WHERE record_number = ?`,
+			`DELETE FROM membership WHERE patent_number = ?`,
+			`DELETE FROM patent_tag WHERE patent_number = ?`,
+			`DELETE FROM project_patent_note WHERE patent_number = ?`,
+			`DELETE FROM relation WHERE from_number = ?`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, key); err != nil {
+				return fmt.Errorf("store/sqlite: soft delete dependents %s: %w", p, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, patentDemoteSQL,
+			string(domain.FetchStub), zero, zero, zero, zero, key,
+		); err != nil {
+			return fmt.Errorf("store/sqlite: soft delete demote %s: %w", p, err)
+		}
+	}
+
+	orphanPurged := int64(0)
+	for _, p := range patents {
+		key := p.Normalized()
+		var inbound int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM relation WHERE to_number = ?`, key).Scan(&inbound); err != nil {
+			return fmt.Errorf("store/sqlite: soft delete orphan check %s: %w", p, err)
+		}
+		if inbound > 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM patent WHERE number = ?`, key); err != nil {
+			return fmt.Errorf("store/sqlite: soft delete orphan purge %s: %w", p, err)
+		}
+		orphanPurged++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: soft delete commit: %w", err)
+	}
+	committed = true
+	if orphanPurged > 0 && r.metrics != nil {
+		r.metrics.IncCounter("store.sqlite.soft_delete.orphan_purge_total", orphanPurged)
+		r.metrics.IncCounter("store.sqlite.soft_delete.demote_total", int64(len(patents))-orphanPurged)
+	} else if r.metrics != nil {
+		r.metrics.IncCounter("store.sqlite.soft_delete.demote_total", int64(len(patents)))
+	}
+	return nil
+}
+
 // DeletePatents permanently removes multiple patents and all their associated
 // documents, relations, and memberships in a single transaction.
 func (r *Repo) DeletePatents(ctx context.Context, patents []domain.PatentNumber) (err error) {
