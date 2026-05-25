@@ -260,7 +260,7 @@ func (o *MetricsOverlay) refreshNow() tea.Cmd {
 		defer cancel()
 		if localSnap != nil {
 			_ = client.Call(ctx, proto.MethodMetricsPush,
-				proto.MetricsPushParams{Component: "tui", Snapshot: *localSnap}, &proto.Empty{})
+				proto.MetricsPushParams{Component: string(observability.MetricNamespaceTUI), Snapshot: *localSnap}, &proto.Empty{})
 		}
 		var res proto.MetricsResult
 		err := client.Call(ctx, proto.MethodMetricsGet, nil, &res)
@@ -448,7 +448,12 @@ func metricSections(groups map[string][]metricsRow) []metricsSection {
 }
 
 func metricsGroupOrder() []string {
-	return []string{"rpc", "engine", "store", "crawl", "tui", "other"}
+	namespaces := observability.MetricNamespaceOrder()
+	out := make([]string, len(namespaces))
+	for i, namespace := range namespaces {
+		out[i] = string(namespace)
+	}
+	return out
 }
 
 func metricsGroup(name string) string {
@@ -457,7 +462,7 @@ func metricsGroup(name string) string {
 			return group
 		}
 	}
-	return "other"
+	return string(observability.MetricNamespaceOther)
 }
 
 func metricTags(name string) []string {

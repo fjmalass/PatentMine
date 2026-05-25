@@ -38,6 +38,33 @@ func logLevel() slog.Level {
 
 const dateLayout = "2006-01-02"
 
+// MetricNamespace is the first segment of a metric name. Producers and UI
+// renderers share these names so dashboards do not carry their own taxonomy.
+type MetricNamespace string
+
+const (
+	MetricNamespaceRPC     MetricNamespace = "rpc"
+	MetricNamespaceEngine  MetricNamespace = "engine"
+	MetricNamespaceStore   MetricNamespace = "store"
+	MetricNamespaceCrawl   MetricNamespace = "crawl"
+	MetricNamespaceService MetricNamespace = "service"
+	MetricNamespaceTUI     MetricNamespace = "tui"
+	MetricNamespaceOther   MetricNamespace = "other"
+)
+
+// MetricNamespaceOrder returns the display order for known metric namespaces.
+func MetricNamespaceOrder() []MetricNamespace {
+	return []MetricNamespace{
+		MetricNamespaceRPC,
+		MetricNamespaceEngine,
+		MetricNamespaceStore,
+		MetricNamespaceCrawl,
+		MetricNamespaceService,
+		MetricNamespaceTUI,
+		MetricNamespaceOther,
+	}
+}
+
 type ctxKey string
 
 const (
@@ -146,7 +173,7 @@ type Recorder struct {
 }
 
 var (
-	LogRetainDays   = 14
+	LogRetainDays         = 14
 	LogMaxSizeBytes int64 = 100 * 1024 * 1024 // Default: 100MB
 )
 

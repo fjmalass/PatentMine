@@ -11,6 +11,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -67,17 +68,42 @@ type pingLoadedMsg struct {
 }
 
 type serviceConnectionLoadedMsg struct {
-	uspto  serviceConnectionState
-	backup serviceConnectionState
+	uspto      serviceConnectionState
+	backup     serviceConnectionState
+	usptoInfo  serviceCheckInfo
+	backupInfo serviceCheckInfo
+}
+
+type serviceCheckInfo struct {
+	Duration      time.Duration
+	StatusCode    int
+	RequestBytes  int64
+	ResponseBytes int64
+	Message       string
+	Err           string
 }
 
 type serviceConnectionState string
+
+type serviceTelemetryStatus int64
 
 const (
 	serviceNoKey     serviceConnectionState = "no key"
 	serviceChecking  serviceConnectionState = "checking"
 	serviceFailed    serviceConnectionState = "failed"
 	serviceConnected serviceConnectionState = "connected"
+
+	serviceTelemetryNoKey     serviceTelemetryStatus = 0
+	serviceTelemetryConnected serviceTelemetryStatus = 1
+	serviceTelemetryChecking  serviceTelemetryStatus = 2
+	serviceTelemetryFailed    serviceTelemetryStatus = -1
+)
+
+const (
+	commandMetricGroup           = "command"
+	commandMetricRunCount        = "run_count"
+	commandMetricNotHandledCount = "not_handled_count"
+	commandMetricHandlingTime    = "handling_time"
 )
 
 type historyCheckResultMsg struct {
@@ -92,6 +118,7 @@ type historyCheckResultMsg struct {
 type invocation struct {
 	repeat int
 	args   []string
+	source string
 }
 
 // appHandler services one command at the App level. appHandlers is the single
@@ -303,25 +330,25 @@ func (a *App) activeAIString() string {
 }
 
 func (a *App) activeSearchString() string {
-	return "USPTO: " + serviceConnectionLabel(a.usptoConnection)
+	return "USPTO: " + a.serviceConnectionLabel(a.usptoConnection)
 }
 
 func (a *App) activeBackupString() string {
-	return "Backup: " + serviceConnectionLabel(a.backupConnection)
+	return "Backup: " + a.serviceConnectionLabel(a.backupConnection)
 }
 
-func serviceConnectionLabel(state serviceConnectionState) string {
+func (a *App) serviceConnectionLabel(state serviceConnectionState) string {
 	switch state {
 	case serviceConnected:
-		return "🟢 connected"
+		return a.theme.Glyphs.ServiceConnected + " connected"
 	case serviceFailed:
-		return "🟡 failed"
+		return a.theme.Glyphs.ServiceFailed + " failed"
 	case serviceChecking:
-		return "🟡 checking"
+		return a.theme.Glyphs.ServiceChecking + " checking"
 	case serviceNoKey:
-		return "🔴 no key"
+		return a.theme.Glyphs.ServiceNoKey + " no key"
 	default:
-		return "🔴 no key"
+		return a.theme.Glyphs.ServiceNoKey + " no key"
 	}
 }
 
@@ -426,44 +453,142 @@ func (a *App) checkServiceConnections() tea.Cmd {
 	return func() tea.Msg {
 		key := strings.TrimSpace(apiKey)
 		var uspto serviceConnectionState
+		var usptoInfo serviceCheckInfo
 		if key == "" {
 			uspto = serviceNoKey
+			a.observeServiceCheck("uspto", uspto, usptoInfo)
 		} else {
 			resolved, err := config.ResolveAPIKey(key)
 			if err != nil {
 				uspto = serviceFailed
+				usptoInfo = serviceCheckInfo{Err: err.Error()}
+				a.observeServiceCheck("uspto", uspto, usptoInfo)
 			} else {
 				ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 				defer cancel()
+				start := time.Now()
 				result := config.CheckUSPTOConnection(ctx, resolved)
+				usptoInfo = serviceCheckInfo{
+					Duration:      time.Since(start),
+					StatusCode:    result.StatusCode,
+					RequestBytes:  result.RequestBytes,
+					ResponseBytes: result.ResponseBytes,
+					Message:       result.Message,
+				}
 				if result.Connected {
 					uspto = serviceConnected
 				} else {
 					uspto = serviceFailed
 				}
+				a.observeServiceCheck("uspto", uspto, usptoInfo)
 			}
 		}
+		backup, backupInfo := checkBackupConnection(backupConfigured, backupRemote, backupBucket)
+		a.observeServiceCheck("backup", backup, backupInfo)
 		return serviceConnectionLoadedMsg{
-			uspto:  uspto,
-			backup: checkBackupConnection(backupConfigured, backupRemote, backupBucket),
+			uspto:      uspto,
+			backup:     backup,
+			usptoInfo:  usptoInfo,
+			backupInfo: backupInfo,
 		}
 	}
 }
 
-func checkBackupConnection(configured bool, remote, bucket string) serviceConnectionState {
+func (a *App) observeServiceCheck(service string, state serviceConnectionState, info serviceCheckInfo) {
+	status := serviceStatusValue(state)
+	if a.metrics != nil {
+		prefix := string(observability.MetricNamespaceService) + "." + service + "."
+		a.metrics.SetGauge(prefix+"status", int64(status))
+		if info.StatusCode > 0 {
+			a.metrics.SetGauge(prefix+"last_status_code", int64(info.StatusCode))
+		}
+		if info.RequestBytes > 0 {
+			a.metrics.IncCounter(prefix+"sent_bytes_total", info.RequestBytes)
+		}
+		if info.ResponseBytes > 0 {
+			a.metrics.IncCounter(prefix+"received_bytes_total", info.ResponseBytes)
+		}
+		if info.Duration > 0 {
+			a.metrics.ObserveDuration(prefix+"connection_check", info.Duration, state != serviceConnected)
+		}
+	}
+
+	attrs := []slog.Attr{
+		slog.String("service", service),
+		slog.String("status", string(state)),
+		slog.Int64("status_value", int64(status)),
+	}
+	if info.Duration > 0 {
+		attrs = append(attrs, slog.Int64("duration_ms", info.Duration.Milliseconds()))
+	}
+	if info.StatusCode > 0 {
+		attrs = append(attrs, slog.Int("status_code", info.StatusCode))
+	}
+	if info.RequestBytes > 0 {
+		attrs = append(attrs, slog.Int64("sent_bytes", info.RequestBytes))
+	}
+	if info.ResponseBytes > 0 {
+		attrs = append(attrs, slog.Int64("received_bytes", info.ResponseBytes))
+	}
+	if info.Message != "" {
+		attrs = append(attrs, slog.String("message", info.Message))
+	}
+	if info.Err != "" {
+		attrs = append(attrs, slog.String("error", info.Err))
+		a.log().Warn("service connection check failed", attrsToAny(attrs)...)
+		return
+	}
+	a.log().Info("service connection checked", attrsToAny(attrs)...)
+}
+
+func serviceStatusValue(state serviceConnectionState) serviceTelemetryStatus {
+	switch state {
+	case serviceConnected:
+		return serviceTelemetryConnected
+	case serviceChecking:
+		return serviceTelemetryChecking
+	case serviceFailed:
+		return serviceTelemetryFailed
+	default:
+		return serviceTelemetryNoKey
+	}
+}
+
+func attrsToAny(attrs []slog.Attr) []any {
+	out := make([]any, len(attrs))
+	for i, attr := range attrs {
+		out[i] = attr
+	}
+	return out
+}
+
+func checkBackupConnection(configured bool, remote, bucket string) (serviceConnectionState, serviceCheckInfo) {
 	if !configured || strings.TrimSpace(bucket) == "" {
-		return serviceNoKey
+		return serviceNoKey, serviceCheckInfo{}
 	}
 	if strings.TrimSpace(remote) == "" {
-		remote = "b2"
+		remote = config.DefaultBackupRcloneRemote
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "rclone", "lsd", remote+":"+bucket)
+	start := time.Now()
+	cmd := exec.CommandContext(ctx, config.RcloneExecutable, config.RcloneListDirCommand, remote+":"+bucket)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return serviceFailed
+		return serviceFailed, serviceCheckInfo{
+			Duration:      time.Since(start),
+			RequestBytes:  int64(len(remote) + len(bucket)),
+			ResponseBytes: int64(stdout.Len() + stderr.Len()),
+			Err:           err.Error(),
+		}
 	}
-	return serviceConnected
+	return serviceConnected, serviceCheckInfo{
+		Duration:      time.Since(start),
+		RequestBytes:  int64(len(remote) + len(bucket)),
+		ResponseBytes: int64(stdout.Len() + stderr.Len()),
+	}
 }
 
 // listen waits for one daemon event and delivers it as a message.
@@ -986,7 +1111,7 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return a, nil // unbound sequence
 	}
-	return a.invoke(id, invocation{repeat: chord.Repeat()})
+	return a.invoke(id, invocation{repeat: chord.Repeat(), source: "key"})
 }
 
 // keyStack composes the active keymap. With an overlay open the pane layer is
@@ -1010,25 +1135,71 @@ func (a *App) keyStack() *keymap.Stack {
 // pane — but only when that overlay or pane lists the command in Handles, so a
 // command can never be silently dropped.
 func (a *App) invoke(id command.ID, inv invocation) (tea.Model, tea.Cmd) {
+	start := time.Now()
 	if handler, ok := appHandlers[id]; ok {
-		return handler(a, inv)
+		model, cmd := handler(a, inv)
+		a.observeCommand(id, inv, "app", true, time.Since(start))
+		return model, cmd
 	}
 	if len(a.overlays) > 0 {
 		ov := a.focusedOverlay()
 		if !slices.Contains(ov.Handles(), id) {
+			a.observeCommand(id, inv, "overlay", false, time.Since(start))
 			return a.unhandled(id)
 		}
 		updated, cmd := ov.Command(id, inv.repeat)
 		a.overlays[len(a.overlays)-1] = updated
+		a.observeCommand(id, inv, "overlay", true, time.Since(start))
 		return a, cmd
 	}
 	p := a.focusedPane()
 	if !slices.Contains(p.Handles(), id) {
+		a.observeCommand(id, inv, "pane", false, time.Since(start))
 		return a.unhandled(id)
 	}
 	updated, cmd := p.Command(id, pane.Invocation{Repeat: inv.repeat, Args: inv.args})
 	a.panes[len(a.panes)-1] = updated
+	a.observeCommand(id, inv, "pane", true, time.Since(start))
 	return a, cmd
+}
+
+func (a *App) observeCommand(id command.ID, inv invocation, target string, handled bool, d time.Duration) {
+	source := inv.source
+	if source == "" {
+		source = "unknown"
+	}
+	if a.metrics != nil {
+		name := commandMetricName(string(id))
+		a.metrics.IncCounter(commandMetricName(commandMetricRunCount), 1)
+		a.metrics.IncCounter(name+"."+commandMetricRunCount, 1)
+		a.metrics.ObserveDuration(name+"."+commandMetricHandlingTime, d, !handled)
+		if !handled {
+			a.metrics.IncCounter(commandMetricName(commandMetricNotHandledCount), 1)
+		}
+	}
+	attrs := []any{
+		slog.String("command_id", string(id)),
+		slog.String("source", source),
+		slog.String("target", target),
+		slog.Int("repeat", inv.repeat),
+		slog.Int("args", len(inv.args)),
+		slog.Int64("duration_ms", d.Milliseconds()),
+	}
+	if !handled {
+		a.log().Warn("tui command unhandled", attrs...)
+		return
+	}
+	a.log().Info("tui command dispatched", attrs...)
+}
+
+func commandMetricName(parts ...string) string {
+	name := string(observability.MetricNamespaceTUI) + "." + commandMetricGroup
+	for _, part := range parts {
+		if part != "" {
+			name += "." + part
+		}
+	}
+	return name
 }
 
 // unhandled reports a command that reached invoke with no handler. validateWiring

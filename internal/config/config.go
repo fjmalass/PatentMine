@@ -12,6 +12,14 @@ import (
 const (
 	// EnvHome overrides the home directory; useful for tests and isolation.
 	EnvHome = "PATENTMINE_HOME"
+	// BackupProviderB2 is the Backblaze B2 provider identifier used in config.
+	BackupProviderB2 = "b2"
+	// DefaultBackupRcloneRemote is the remote name used when none is configured.
+	DefaultBackupRcloneRemote = BackupProviderB2
+	// RcloneExecutable is the command used for rclone-backed backup checks.
+	RcloneExecutable = "rclone"
+	// RcloneListDirCommand lists remote directories during connectivity checks.
+	RcloneListDirCommand = "lsd"
 
 	dbFileName     = "patentmine.db"
 	logsDirName    = "logs"
@@ -265,7 +273,7 @@ func Load() (Config, error) {
 	}
 	backupRcloneRemote := os.Getenv("PATENTMINE_BACKUP_RCLONE_REMOTE")
 	if backupRcloneRemote == "" {
-		backupRcloneRemote = "b2"
+		backupRcloneRemote = DefaultBackupRcloneRemote
 	}
 
 	logRetainDays, _ := strconv.Atoi(os.Getenv("PATENTMINE_LOG_RETAIN_DAYS"))

@@ -12,17 +12,20 @@ import (
 )
 
 const (
-	usptoCheckURL    = "https://api.uspto.gov/api/v1/patent/applications/search?patentApplicationNumber=%s"
-	usptoAppNumber   = "16123456"
+	usptoCheckURL     = "https://api.uspto.gov/api/v1/patent/applications/search?patentApplicationNumber=%s"
+	usptoAppNumber    = "16123456"
 	usptoCheckTimeout = 10 * time.Second
 )
 
 // USPTOConnectionResult holds the result of a USPTO API connectivity check.
 type USPTOConnectionResult struct {
-	Connected bool
-	Remaining string
-	Limit     string
-	Message   string
+	Connected     bool
+	Remaining     string
+	Limit         string
+	Message       string
+	StatusCode    int
+	RequestBytes  int64
+	ResponseBytes int64
 }
 
 // ResolveAPIKey resolves a raw API key string. If the key starts with "file:",
@@ -56,17 +59,25 @@ func CheckUSPTOConnection(ctx context.Context, key string) USPTOConnectionResult
 	}
 	req.Header.Set("x-api-key", key)
 	req.Header.Set("Accept", "application/json")
+	requestBytes := int64(len(req.Method) + len(req.URL.String()))
+	for name, values := range req.Header {
+		requestBytes += int64(len(name))
+		for _, value := range values {
+			requestBytes += int64(len(value))
+		}
+	}
 
 	client := &http.Client{Timeout: usptoCheckTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return USPTOConnectionResult{
-			Connected: false,
-			Message:   fmt.Sprintf("connection failed: %s", err.Error()),
+			Connected:    false,
+			Message:      fmt.Sprintf("connection failed: %s", err.Error()),
+			RequestBytes: requestBytes,
 		}
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	responseBytes, _ := io.Copy(io.Discard, resp.Body)
 
 	remaining := resp.Header.Get("X-RateLimit-Remaining")
 	limit := resp.Header.Get("X-RateLimit-Limit")
@@ -77,9 +88,16 @@ func CheckUSPTOConnection(ctx context.Context, key string) USPTOConnectionResult
 	}
 
 	return USPTOConnectionResult{
-		Connected: resp.StatusCode >= 200 && resp.StatusCode < 300,
-		Remaining: remaining,
-		Limit:     limit,
-		Message:   msg,
+		Connected:     isHTTPSuccessStatus(resp.StatusCode),
+		Remaining:     remaining,
+		Limit:         limit,
+		Message:       msg,
+		StatusCode:    resp.StatusCode,
+		RequestBytes:  requestBytes,
+		ResponseBytes: responseBytes,
 	}
+}
+
+func isHTTPSuccessStatus(statusCode int) bool {
+	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }

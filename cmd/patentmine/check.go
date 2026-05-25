@@ -179,8 +179,8 @@ func checkB2(ctx context.Context, cfg config.Config, verbose bool) checkResult {
 	if len(missing) > 0 {
 		return checkResult{Name: "B2", State: checkRed, Message: "missing " + strings.Join(missing, ", ")}
 	}
-	if cfg.BackupProvider != "" && !strings.EqualFold(cfg.BackupProvider, "b2") {
-		return checkResult{Name: "B2", State: checkYellow, Message: "backup provider is " + cfg.BackupProvider + ", not b2"}
+	if cfg.BackupProvider != "" && !strings.EqualFold(cfg.BackupProvider, config.BackupProviderB2) {
+		return checkResult{Name: "B2", State: checkYellow, Message: "backup provider is " + cfg.BackupProvider + ", not " + config.BackupProviderB2}
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
@@ -202,13 +202,13 @@ func checkRcloneB2(ctx context.Context, cfg config.Config, verbose bool) checkRe
 	if strings.TrimSpace(cfg.BackupBucket) == "" {
 		return checkResult{Name: "Rclone B2", State: checkRed, Message: "missing PATENTMINE_BACKUP_BUCKET"}
 	}
-	if _, err := exec.LookPath("rclone"); err != nil {
+	if _, err := exec.LookPath(config.RcloneExecutable); err != nil {
 		return checkResult{Name: "Rclone B2", State: checkYellow, Message: "rclone is not installed or not on PATH"}
 	}
 
 	remote := strings.TrimSpace(cfg.BackupRcloneRemote)
 	if remote == "" {
-		remote = "b2"
+		remote = config.DefaultBackupRcloneRemote
 	}
 	target := remote + ":" + cfg.BackupBucket
 	out, err := runRcloneList(ctx, target, os.Environ())
@@ -239,7 +239,7 @@ func checkRcloneB2(ctx context.Context, cfg config.Config, verbose bool) checkRe
 }
 
 func runRcloneList(ctx context.Context, target string, env []string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "rclone", "lsd", target)
+	cmd := exec.CommandContext(ctx, config.RcloneExecutable, config.RcloneListDirCommand, target)
 	cmd.Env = env
 	return cmd.CombinedOutput()
 }
@@ -250,7 +250,7 @@ func rcloneB2Env(base []string, remote string, cfg config.Config) []string {
 	}
 	name := rcloneConfigEnvName(remote)
 	return append(base,
-		"RCLONE_CONFIG_"+name+"_TYPE=b2",
+		"RCLONE_CONFIG_"+name+"_TYPE="+config.BackupProviderB2,
 		"RCLONE_CONFIG_"+name+"_ACCOUNT="+cfg.BackupB2KeyID,
 		"RCLONE_CONFIG_"+name+"_KEY="+cfg.BackupB2Secret,
 	)

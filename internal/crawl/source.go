@@ -54,12 +54,22 @@ func NewRegistry(sources ...Source) *Registry {
 // WithMetrics attaches a phase-1 in-process metrics recorder.
 func (r *Registry) WithMetrics(metrics *observability.Metrics) *Registry {
 	r.metrics = metrics
+	for _, source := range r.sources {
+		if setter, ok := source.(interface{ WithMetrics(*observability.Metrics) }); ok {
+			setter.WithMetrics(metrics)
+		}
+	}
 	return r
 }
 
 // WithLogger attaches a logger for slow fetch warnings.
 func (r *Registry) WithLogger(logger *slog.Logger) *Registry {
 	r.logger = logger
+	for _, source := range r.sources {
+		if setter, ok := source.(interface{ WithLogger(*slog.Logger) }); ok {
+			setter.WithLogger(logger)
+		}
+	}
 	return r
 }
 

@@ -103,6 +103,11 @@ const (
 
 	glyphIDSInFullFull    = "🔋"
 	glyphIDSInFullPartial = "🪫"
+
+	glyphServiceConnected = "🟢"
+	glyphServiceFailed    = "🟡"
+	glyphServiceChecking  = "🟡"
+	glyphServiceNoKey     = "🔴"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -214,6 +219,11 @@ type ThemeGlyphs struct {
 
 	IDSInFullFull    string
 	IDSInFullPartial string
+
+	ServiceConnected string
+	ServiceFailed    string
+	ServiceChecking  string
+	ServiceNoKey     string
 
 	HistUnknown     string
 	HistSearch      string
@@ -395,6 +405,11 @@ func NewTheme() Theme {
 
 			IDSInFullFull:    glyphIDSInFullFull,
 			IDSInFullPartial: glyphIDSInFullPartial,
+
+			ServiceConnected: glyphServiceConnected,
+			ServiceFailed:    glyphServiceFailed,
+			ServiceChecking:  glyphServiceChecking,
+			ServiceNoKey:     glyphServiceNoKey,
 
 			HistUnknown:     glyphHistUnknown,
 			HistSearch:      glyphHistSearch,

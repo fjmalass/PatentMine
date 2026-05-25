@@ -446,7 +446,7 @@ func (a *App) executeTypedCommand(input string) (tea.Model, tea.Cmd) {
 	if len(args) > 0 && !typedAcceptsArgs[cmd.ID] {
 		return a.usageError(cmd.ID)
 	}
-	updated, run := a.invoke(cmd.ID, invocation{repeat: 1, args: args})
+	updated, run := a.invoke(cmd.ID, invocation{repeat: 1, args: args, source: "typed"})
 	return updated, tea.Batch(run, a.recordTypedActivity(cmd.ID, args))
 }
 
