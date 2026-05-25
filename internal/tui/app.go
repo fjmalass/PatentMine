@@ -614,6 +614,37 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setStatus(text.StatusSetState, fmt.Sprintf("%d patents", len(m.Patents)), string(m.State), string(m.Project))
 		}
 		return a, a.broadcast(m)
+	case pane.IDSEntrySavedMsg:
+		if m.Err != nil {
+			a.setErr(text.StatusExportFailed, m.Err.Error())
+			return a, nil
+		}
+		a.setStatus(text.StatusFilter, "IDS updated")
+		a.log().Info("tui.ids_entry.broadcast.save",
+			slog.String("project_id", string(m.Project)),
+			slog.String("patent", m.Entry.Patent.String()),
+			slog.String("status", string(m.Entry.Status)))
+		
+		entryCopy := m.Entry
+		return a, a.broadcast(pane.IDSEntryChangedMsg{
+			Project: m.Project,
+			Patent:  m.Entry.Patent,
+			Entry:   &entryCopy,
+		})
+	case pane.IDSEntryDeletedMsg:
+		if m.Err != nil {
+			a.setErr(text.StatusExportFailed, m.Err.Error())
+			return a, nil
+		}
+		a.setStatus(text.StatusFilter, "IDS entry removed")
+		a.log().Info("tui.ids_entry.broadcast.delete",
+			slog.String("project_id", string(m.Project)),
+			slog.String("patent", m.Patent.String()))
+		return a, a.broadcast(pane.IDSEntryChangedMsg{
+			Project: m.Project,
+			Patent:  m.Patent,
+			Entry:   nil,
+		})
 	case pane.IDSEntryChangedMsg:
 		var statusStr string
 		if m.Entry != nil {

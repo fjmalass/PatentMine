@@ -41,3 +41,35 @@ func TestReadHistoryFeedPreservesMutationsAndCollapsesFocus(t *testing.T) {
 		t.Fatalf("Suppressed = %d, want 2", feed.Suppressed)
 	}
 }
+
+func TestReadHistoryFeedIncludesIDSSaveRecord(t *testing.T) {
+	logsDir := filepath.Join(t.TempDir(), "logs")
+	rt, err := Open(logsDir, "daemon", "test-version")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	rec := Record{
+		ID:       "2026-05-25-1779702888891050258-10",
+		Action:   ActionIDSEntrySave,
+		Entity:   "ids_entry",
+		EntityID: "p-1779646755967531735/US20080011946A1",
+		Status:   "committed",
+		Metadata: map[string]any{"prior_status": "ignored", "status": "pending"},
+	}
+	if err := rt.Activity.Record(context.Background(), rec); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+
+	feed, err := ReadHistoryFeed(logsDir, HistoryQuery{RawLimit: 10})
+	if err != nil {
+		t.Fatalf("ReadHistoryFeed: %v", err)
+	}
+	if feed.Returned != 1 || len(feed.Records) != 1 {
+		t.Fatalf("history feed returned %d records (%d slice), want 1", feed.Returned, len(feed.Records))
+	}
+	if feed.Records[0].Action != ActionIDSEntrySave || feed.Records[0].EntityID != rec.EntityID {
+		t.Fatalf("history feed record = %+v, want IDS save", feed.Records[0])
+	}
+}

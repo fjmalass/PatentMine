@@ -34,13 +34,6 @@ type idsLoadedMsg struct {
 	err       error
 }
 
-type idsSavedMsg struct {
-	entry domain.IDSEntry
-	err   error
-}
-
-type idsDeletedMsg struct{ err error }
-
 // EditIDSFieldMsg asks the app to open a text input for the selected IDS field.
 type EditIDSFieldMsg struct{ Field string }
 
@@ -172,37 +165,15 @@ func (p *IDSDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			p.entry = domain.IDSEntry{Project: p.project, Patent: m.patent.Number, Status: domain.IDSEntryPending}
 		}
 		p.page.Top()
-	case idsSavedMsg:
-		if m.err != nil {
-			return p, status(text.StatusExportFailed, true, m.err.Error())
+	case IDSEntryChangedMsg:
+		if p.project == m.Project && p.patent.Number == m.Patent {
+			if m.Entry != nil {
+				p.entry = *m.Entry
+			} else {
+				p.entry = domain.IDSEntry{Project: p.project, Patent: p.patent.Number, Status: domain.IDSEntryPending}
+			}
+			p.loading = false
 		}
-		p.entry = m.entry
-		entry := m.entry
-		return p, tea.Batch(
-			status(text.StatusFilter, false, "IDS updated"),
-			func() tea.Msg {
-				return IDSEntryChangedMsg{
-					Project: entry.Project,
-					Patent:  entry.Patent,
-					Entry:   &entry,
-				}
-			},
-		)
-	case idsDeletedMsg:
-		if m.err != nil {
-			return p, status(text.StatusExportFailed, true, m.err.Error())
-		}
-		p.entry = domain.IDSEntry{Project: p.project, Patent: p.patent.Number, Status: domain.IDSEntryPending}
-		return p, tea.Batch(
-			status(text.StatusFilter, false, "IDS entry removed"),
-			func() tea.Msg {
-				return IDSEntryChangedMsg{
-					Project: p.project,
-					Patent:  p.patent.Number,
-					Entry:   nil,
-				}
-			},
-		)
 	case ProjectChangedMsg:
 		var project domain.ProjectID
 		if m.Project != nil {
@@ -287,20 +258,21 @@ func (p *IDSDetail) deleteCmd() tea.Cmd {
 		var res proto.Empty
 		err := client.Call(ctx, proto.MethodIDSEntryDelete,
 			proto.IDSEntryParams{Project: project, Patent: patent}, &res)
-		return idsDeletedMsg{err: err}
+		return IDSEntryDeletedMsg{Project: project, Patent: patent, Err: err}
 	}
 }
 
 func (p *IDSDetail) saveCmd() tea.Cmd {
 	entry := p.entry
 	client := p.client
+	project := p.project
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.IDSEntryResult
 		err := client.Call(ctx, proto.MethodIDSEntrySave,
 			proto.IDSEntrySaveParams{Entry: entry}, &res)
-		return idsSavedMsg{entry: res.Entry, err: err}
+		return IDSEntrySavedMsg{Project: project, Entry: res.Entry, Err: err}
 	}
 }
 

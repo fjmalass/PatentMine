@@ -142,6 +142,20 @@ type ReviewStateChangedMsg struct {
 	State   domain.ReviewState
 }
 
+// IDSEntrySavedMsg reports a successful save of an IDS entry from the daemon.
+type IDSEntrySavedMsg struct {
+	Project domain.ProjectID
+	Entry   domain.IDSEntry
+	Err     error
+}
+
+// IDSEntryDeletedMsg reports a successful deletion of an IDS entry from the daemon.
+type IDSEntryDeletedMsg struct {
+	Project domain.ProjectID
+	Patent  domain.PatentNumber
+	Err     error
+}
+
 // IDSEntryChangedMsg reports a committed change to a patent's curated IDS entry.
 type IDSEntryChangedMsg struct {
 	Project domain.ProjectID

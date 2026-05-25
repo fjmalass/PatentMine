@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 )
 
 // Version is the JSON-RPC protocol version string.
@@ -52,6 +53,8 @@ const (
 	MethodPatentNoteExport          Method = "patent.note.export"
 	MethodMetricsGet                Method = "metrics.get"
 	MethodMetricsPush               Method = "metrics.push"
+	MethodActivityRaw               Method = "activity.raw"
+	MethodHistoryFeed               Method = "history.feed"
 	MethodTagCreate                 Method = "tag.create"
 	MethodTagList                   Method = "tag.list"
 	MethodTagDelete                 Method = "tag.delete"
@@ -544,6 +547,29 @@ type MetricsResult struct {
 type MetricsPushParams struct {
 	Component string          `json:"component"`
 	Snapshot  MetricsSnapshot `json:"snapshot"`
+}
+
+// ActivityRawParams selects raw activity records from the daemon journal.
+type ActivityRawParams struct {
+	Limit     int       `json:"limit,omitempty"`
+	Component string    `json:"component,omitempty"`
+	Action    string    `json:"action,omitempty"`
+	Entity    string    `json:"entity,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
+}
+
+// ActivityRawResult carries raw activity records and accounting.
+type ActivityRawResult struct {
+	Records  []observability.Record `json:"records"`
+	Limit    int                    `json:"limit"`
+	Returned int                    `json:"returned"`
+}
+
+// HistoryFeedParams selects the raw activity window to group into history.
+type HistoryFeedParams struct {
+	RawLimit  int       `json:"raw_limit,omitempty"`
+	Component string    `json:"component,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
 }
 
 // MetricsSnapshot is a transport-safe view of the daemon's metrics.

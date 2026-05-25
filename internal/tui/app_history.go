@@ -45,11 +45,7 @@ func (a *App) cmdHistoryForward(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
-	if a.activityDir == "" {
-		a.setErr(text.StatusUsage, "activity logging is not configured")
-		return a, nil
-	}
-	feed, err := observability.ReadHistoryFeed(a.activityDir, observability.HistoryQuery{RawLimit: historyRawLimit})
+	feed, err := a.loadHistoryFeed()
 	if err != nil {
 		a.setErr(text.StatusUsage, err.Error())
 		return a, nil
@@ -60,6 +56,22 @@ func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
 	}
 	a.overlays = append(a.overlays, overlay.NewHistoryOverlay(a.theme, feed.Records, a.historyProjectNames()))
 	return a, nil
+}
+
+func (a *App) loadHistoryFeed() (observability.HistoryFeed, error) {
+	if a.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		defer cancel()
+		var feed observability.HistoryFeed
+		err := a.client.Call(ctx, proto.MethodHistoryFeed, proto.HistoryFeedParams{RawLimit: historyRawLimit}, &feed)
+		if err == nil {
+			return feed, nil
+		}
+	}
+	if a.activityDir == "" {
+		return observability.HistoryFeed{}, fmt.Errorf("activity logging is not configured")
+	}
+	return observability.ReadHistoryFeed(a.activityDir, observability.HistoryQuery{RawLimit: historyRawLimit})
 }
 
 func (a *App) historyProjectNames() map[string]string {

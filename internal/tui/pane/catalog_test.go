@@ -306,3 +306,40 @@ func TestCatalogRelationFilterCollapsesList(t *testing.T) {
 		t.Fatalf("expected FilterToRelations to be cleared when highlight is toggled off")
 	}
 }
+
+func TestCatalogHandlesIDSEntryChangedMsg(t *testing.T) {
+	c := loadedCatalog(t)
+	project := &domain.Project{ID: "p-1", Name: "Case A"}
+	c.activeProject = project
+
+	// Verify initial IDS state displays the 'none' glyph (⭕)
+	outInit := c.View(testPaneWidth, testPaneHeight)
+	if !strings.Contains(outInit, "⭕") {
+		t.Fatalf("expected initial catalog view to display 'none' glyph (⭕):\n%s", outInit)
+	}
+
+	// Emit IDSEntryChangedMsg
+	entry := &domain.IDSEntry{
+		Project: project.ID,
+		Patent:  c.patents[0].Number,
+		Status:  domain.IDSEntrySubmitted,
+	}
+	updated, _ := c.Update(IDSEntryChangedMsg{
+		Project: project.ID,
+		Patent:  c.patents[0].Number,
+		Entry:   entry,
+	})
+	c = updated.(*Catalog)
+
+	// Verify updated IDS state
+	if c.patents[0].IDSEntry == nil || c.patents[0].IDSEntry.Status != domain.IDSEntrySubmitted {
+		t.Fatalf("expected IDSEntry status to be submitted, got %v", c.patents[0].IDSEntry)
+	}
+
+	// Verify that View renders the new status glyph (📨)
+	outUpdated := c.View(testPaneWidth, testPaneHeight)
+	if !strings.Contains(outUpdated, "📨") {
+		t.Fatalf("catalog view did not render updated IDS status glyph '📨':\n%s", outUpdated)
+	}
+}
+

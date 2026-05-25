@@ -1,6 +1,7 @@
 package overlay
 
 import (
+	"strings"
 	"testing"
 
 	"patentmine/internal/observability"
@@ -28,5 +29,18 @@ func TestHistoryFilterActionDetails(t *testing.T) {
 	})
 	if details != `Search: "needle"` {
 		t.Fatalf("search details = %q", details)
+	}
+}
+
+func TestHistoryIDSSaveDetailsShowStatusTransition(t *testing.T) {
+	_, details := historyIconAndDetails(render.NewTheme(), observability.Record{
+		Action:   observability.ActionIDSEntrySave,
+		Entity:   "ids_entry",
+		EntityID: "p-1779646755967531735/US20080011946A1",
+		Status:   "committed",
+		Metadata: map[string]any{"prior_status": "ignored", "status": "pending"},
+	})
+	if !strings.Contains(details, "IDS ignored") || !strings.Contains(details, "pending") || !strings.Contains(details, "US20080011946A1") {
+		t.Fatalf("IDS details = %q", details)
 	}
 }

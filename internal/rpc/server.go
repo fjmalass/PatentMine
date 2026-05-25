@@ -16,6 +16,7 @@ import (
 
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
 	appversion "patentmine/internal/version"
@@ -36,12 +37,25 @@ type Server struct {
 	engine          *engine.Engine
 	handlers        map[proto.Method]handlerFunc
 	usptoConfigured bool
+	activityLogsDir string
 	clientMetrics   sync.Map // component string → proto.MetricsSnapshot
 }
 
+// Option customizes server behavior outside the engine dispatch table.
+type Option func(*Server)
+
+// WithActivityLogsDir lets RPC clients read the daemon's raw and grouped
+// activity feeds from the same log directory where daemon mutations are written.
+func WithActivityLogsDir(dir string) Option {
+	return func(s *Server) { s.activityLogsDir = dir }
+}
+
 // NewServer wires the dispatch table for an engine.
-func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
+func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server {
 	s := &Server{engine: eng, usptoConfigured: usptoConfigured}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.handlers = map[proto.Method]handlerFunc{
 		proto.MethodPing:                      s.ping,
 		proto.MethodPatentGet:                 s.patentGet,
@@ -78,6 +92,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodPatentNoteExport:          s.patentNoteExport,
 		proto.MethodMetricsGet:                s.metricsGet,
 		proto.MethodMetricsPush:               s.metricsPush,
+		proto.MethodActivityRaw:               s.activityRaw,
+		proto.MethodHistoryFeed:               s.historyFeed,
 		proto.MethodTagCreate:                 s.tagCreate,
 		proto.MethodTagList:                   s.tagList,
 		proto.MethodTagDelete:                 s.tagDelete,
@@ -957,6 +973,46 @@ func (s *Server) metricsPush(_ context.Context, raw json.RawMessage) (any, error
 	}
 	s.clientMetrics.Store(key, p.Snapshot)
 	return proto.Empty{}, nil
+}
+
+func (s *Server) activityRaw(_ context.Context, raw json.RawMessage) (any, error) {
+	if s.activityLogsDir == "" {
+		return nil, errors.New("rpc: activity logging is not configured")
+	}
+	p, err := decodeParams[proto.ActivityRawParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	limit := p.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	records, err := observability.ReadActivityRecords(s.activityLogsDir, observability.ActivityQuery{
+		Limit:     limit,
+		Component: p.Component,
+		Action:    p.Action,
+		Entity:    p.Entity,
+		Since:     p.Since,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.ActivityRawResult{Records: records, Limit: limit, Returned: len(records)}, nil
+}
+
+func (s *Server) historyFeed(_ context.Context, raw json.RawMessage) (any, error) {
+	if s.activityLogsDir == "" {
+		return nil, errors.New("rpc: activity logging is not configured")
+	}
+	p, err := decodeParams[proto.HistoryFeedParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return observability.ReadHistoryFeed(s.activityLogsDir, observability.HistoryQuery{
+		RawLimit:  p.RawLimit,
+		Component: p.Component,
+		Since:     p.Since,
+	})
 }
 
 // mergeTimingMetric combines two timing summaries for the same key.

@@ -747,3 +747,63 @@ func runConfirmedIDSCycle(t *testing.T, app *App) *App {
 	}
 	return app
 }
+
+type idsChangedProbePane struct {
+	ScopeVal    command.Scope
+	TitleVal    string
+	receivedMsg tea.Msg
+}
+
+func (p *idsChangedProbePane) Scope() command.Scope                { return p.ScopeVal }
+func (p *idsChangedProbePane) Title() string                       { return p.TitleVal }
+func (p *idsChangedProbePane) Init() tea.Cmd                       { return nil }
+func (p *idsChangedProbePane) View(int, int) string                { return "" }
+func (p *idsChangedProbePane) Selection() (domain.PatentNumber, bool) { return domain.PatentNumber{}, false }
+func (p *idsChangedProbePane) Handles() []command.ID               { return nil }
+func (p *idsChangedProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) { return p, nil }
+func (p *idsChangedProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
+	if _, ok := msg.(pane.IDSEntryChangedMsg); ok {
+		p.receivedMsg = msg
+	}
+	return p, nil
+}
+
+func TestAppRoutesCurationEvents(t *testing.T) {
+	app := &App{
+		text: text.English(),
+	}
+	app.theme = render.NewTheme()
+
+	// Create mock catalog pane that records received messages
+	catalog := &idsChangedProbePane{
+		ScopeVal: command.ScopeCatalog,
+		TitleVal: "Catalog",
+	}
+	app.panes = []pane.Pane{catalog}
+
+	// Feed IDSEntrySavedMsg to app.Update
+	num := domain.MustParsePatentNumber("US0000001B2")
+	savedMsg := pane.IDSEntrySavedMsg{
+		Project: "p-1",
+		Entry: domain.IDSEntry{
+			Project: "p-1",
+			Patent:  num,
+			Status:  domain.IDSEntrySubmitted,
+		},
+	}
+
+	updatedModel, _ := app.Update(savedMsg)
+	app = updatedModel.(*App)
+
+	// Verify that the catalog pane received IDSEntryChangedMsg
+	if catalog.receivedMsg == nil {
+		t.Fatal("expected catalog pane to receive a broadcasted message")
+	}
+	changedMsg, ok := catalog.receivedMsg.(pane.IDSEntryChangedMsg)
+	if !ok {
+		t.Fatalf("expected catalog to receive IDSEntryChangedMsg, got: %T", catalog.receivedMsg)
+	}
+	if changedMsg.Project != "p-1" || changedMsg.Patent != num || changedMsg.Entry.Status != domain.IDSEntrySubmitted {
+		t.Fatalf("unexpected change msg contents: %+v", changedMsg)
+	}
+}

@@ -43,14 +43,26 @@ func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdOpenActivity(invocation) (tea.Model, tea.Cmd) {
-	if a.activityDir == "" {
+	var records []observability.Record
+	if a.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		defer cancel()
+		var res proto.ActivityRawResult
+		if err := a.client.Call(ctx, proto.MethodActivityRaw, proto.ActivityRawParams{Limit: 200}, &res); err == nil {
+			records = res.Records
+		}
+	}
+	if len(records) == 0 && a.activityDir == "" {
 		a.setErr(text.StatusUsage, "activity logging is not configured")
 		return a, nil
 	}
-	records, err := observability.ReadActivityRecords(a.activityDir, observability.ActivityQuery{Limit: 200})
-	if err != nil {
-		a.setErr(text.StatusUsage, err.Error())
-		return a, nil
+	if len(records) == 0 {
+		var err error
+		records, err = observability.ReadActivityRecords(a.activityDir, observability.ActivityQuery{Limit: 200})
+		if err != nil {
+			a.setErr(text.StatusUsage, err.Error())
+			return a, nil
+		}
 	}
 	a.overlays = append(a.overlays, overlay.NewActivity(a.theme, records))
 	return a, nil
