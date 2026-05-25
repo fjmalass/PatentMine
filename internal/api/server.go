@@ -29,6 +29,7 @@ type Server struct {
 	mux                 *http.ServeMux
 	activity            *observability.Recorder
 	activityLogsDir     string
+	activityMetrics     *observability.Metrics
 	activityMinDuration time.Duration
 }
 
@@ -43,6 +44,7 @@ func WithActivity(rt *observability.Runtime, minDuration time.Duration) Option {
 		}
 		s.activity = rt.Activity
 		s.activityLogsDir = rt.LogsDir
+		s.activityMetrics = rt.Metrics
 		s.activityMinDuration = minDuration
 	}
 }
@@ -128,6 +130,17 @@ func parseActivityQuery(r *http.Request) observability.ActivityQuery {
 		Component: q.Get("component"),
 		Action:    q.Get("action"),
 		Entity:    q.Get("entity"),
+		Since:     since,
+	}
+}
+
+func parseHistoryQuery(r *http.Request) observability.HistoryQuery {
+	q := r.URL.Query()
+	rawLimit, _ := strconv.Atoi(firstNonEmpty(q.Get("raw_limit"), q.Get("limit")))
+	since, _ := time.Parse(time.RFC3339, q.Get("since"))
+	return observability.HistoryQuery{
+		RawLimit:  rawLimit,
+		Component: q.Get("component"),
 		Since:     since,
 	}
 }

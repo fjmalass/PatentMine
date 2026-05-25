@@ -36,6 +36,8 @@ const (
 	StatusAddedNoCrawl            Key = "status.added_no_ingest"
 	StatusSetStateFailed          Key = "status.set_state_failed"
 	StatusSetState                Key = "status.set_state"
+	StatusIDSUpdateFailed         Key = "status.ids_update_failed"
+	StatusIDSCycled               Key = "status.ids_cycled"
 	StatusNotesAdded              Key = "status.notes_added"
 	StatusNotesFlushed            Key = "status.notes_flushed"
 	StatusNotesSavedToPatentNote  Key = "status.notes_saved_to_patent_note"
@@ -296,6 +298,8 @@ var englishNamed = map[Key]string{
 	StatusAddedNoCrawl:            "added %s — press L to lookup",
 	StatusSetStateFailed:          "set state failed: %s",
 	StatusSetState:                "set %s to %s review state in %s",
+	StatusIDSUpdateFailed:         "IDS update failed: %s",
+	StatusIDSCycled:               "cycled IDS status for %d patent(s)",
 	StatusExportFailed:            "IDS export failed: %s",
 	StatusExportDone:              "IDS for %q: %d disclosed reference(s)",
 	StatusNotesExportDone:         "exported %d note(s) to %s",

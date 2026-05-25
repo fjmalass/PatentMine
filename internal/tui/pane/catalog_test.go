@@ -160,6 +160,27 @@ func TestCatalogAppliesIDSEntryChangeImmediately(t *testing.T) {
 	}
 }
 
+func TestCatalogAppliesIDSEntryChangeByDisplayNumber(t *testing.T) {
+	c := loadedCatalog(t)
+	c.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
+	display := domain.MustParsePatentNumber("US20080011946A1")
+	c.patents[1].DisplayNumber = display
+	entry := &domain.IDSEntry{
+		Project: "p-1",
+		Patent:  display,
+		Status:  domain.IDSEntryPending,
+	}
+
+	updated, cmd := c.Update(IDSEntryChangedMsg{Project: "p-1", Patent: display, Entry: entry})
+	if cmd != nil {
+		t.Fatal("display-number IDS update should not need a reload")
+	}
+	c = updated.(*Catalog)
+	if got := c.patents[1].IDSEntry; got != entry {
+		t.Fatalf("catalog IDS entry = %+v, want %+v", got, entry)
+	}
+}
+
 func TestCatalogStatusLineShowsFilters(t *testing.T) {
 	c := loadedCatalog(t)
 	c.filter.Search = "widget"

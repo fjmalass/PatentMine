@@ -572,3 +572,178 @@ func TestAppNavigationHistory(t *testing.T) {
 		t.Fatalf("expected overlays to be closed, got %d", len(app.overlays))
 	}
 }
+
+func TestHistoryFeedGroupKeyKeepsIDSStatusTransitions(t *testing.T) {
+	base := observability.Record{
+		Action:   observability.ActionIDSEntrySave,
+		Entity:   "ids_entry",
+		EntityID: "project/US11611785B2",
+		Status:   "committed",
+	}
+	first := base
+	first.ID = "activity-1"
+	first.Metadata = map[string]any{"prior_status": "pending", "status": "submitted"}
+	second := base
+	second.ID = "activity-2"
+	second.Metadata = map[string]any{"prior_status": "submitted", "status": "accepted"}
+
+	if observability.HistoryFeedGroupKey(first) == observability.HistoryFeedGroupKey(second) {
+		t.Fatal("IDS status transitions should not collapse to the same history key")
+	}
+}
+
+func TestHistoryFeedGroupKeyKeepsDistinctIDSSaveRecords(t *testing.T) {
+	base := observability.Record{
+		Action:   observability.ActionIDSEntrySave,
+		Entity:   "ids_entry",
+		EntityID: "project/US11611785B2",
+		Status:   "committed",
+		Metadata: map[string]any{"prior_status": "ignored", "status": "pending"},
+	}
+	first := base
+	first.ID = "activity-1"
+	second := base
+	second.ID = "activity-2"
+
+	if observability.HistoryFeedGroupKey(first) == observability.HistoryFeedGroupKey(second) {
+		t.Fatal("distinct IDS save records should not collapse to the same history key")
+	}
+}
+
+func TestHistoryFeedGroupKeyKeepsReviewStateTransitions(t *testing.T) {
+	base := observability.Record{
+		Action:   observability.ActionMembershipSetState,
+		Entity:   "membership",
+		EntityID: "project/US11611785B2",
+		Status:   "committed",
+	}
+	first := base
+	first.ID = "activity-1"
+	first.Metadata = map[string]any{"prior_state": "under_review", "state": "active"}
+	second := base
+	second.ID = "activity-2"
+	second.Metadata = map[string]any{"prior_state": "active", "state": "ignored"}
+
+	if observability.HistoryFeedGroupKey(first) == observability.HistoryFeedGroupKey(second) {
+		t.Fatal("review state transitions should not collapse to the same history key")
+	}
+}
+
+func TestHistoryFeedGroupKeyCollapsesRepeatedFocusRecords(t *testing.T) {
+	base := observability.Record{
+		Action:   observability.ActionUIFocus,
+		Entity:   "patent",
+		EntityID: "US11611785B2",
+		Status:   "observed",
+	}
+	first := base
+	first.ID = "activity-1"
+	second := base
+	second.ID = "activity-2"
+
+	if observability.HistoryFeedGroupKey(first) != observability.HistoryFeedGroupKey(second) {
+		t.Fatal("repeated focus records should collapse to the same history key")
+	}
+}
+
+func TestIDSCycleStatusCyclesSelectedPatents(t *testing.T) {
+	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "ids-cycle.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	eng := engine.New(ctx, repo, nil)
+	t.Cleanup(func() {
+		cancel()
+		eng.Close()
+		_ = repo.Close()
+	})
+
+	numbers := []domain.PatentNumber{
+		domain.MustParsePatentNumber("US11611785B2"),
+		domain.MustParsePatentNumber("US11700000B2"),
+	}
+	for _, number := range numbers {
+		if err := eng.SavePatent(context.Background(), domain.Patent{Number: number, FetchState: domain.FetchCached}); err != nil {
+			t.Fatalf("SavePatent: %v", err)
+		}
+	}
+	project, err := eng.CreateProject(context.Background(), "Case A")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	for _, number := range numbers {
+		if _, err := eng.AddToProject(context.Background(), project.ID, number); err != nil {
+			t.Fatalf("AddToProject: %v", err)
+		}
+	}
+
+	socket := filepath.Join(t.TempDir(), "ids-cycle.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = rpc.NewServer(eng, false).Serve(ctx, ln) }()
+	client, err := rpc.Dial(socket)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	app, err := New(client, reg, keymap.Default(), text.English())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	app.activeProject = &project
+	app.panes = []pane.Pane{&patentProbePane{selections: numbers}}
+
+	app = runConfirmedIDSCycle(t, app)
+	for _, number := range numbers {
+		entry, err := repo.IDSEntry(context.Background(), project.ID, number)
+		if err != nil {
+			t.Fatalf("IDSEntry: %v", err)
+		}
+		if entry.Status != domain.IDSEntrySubmitted {
+			t.Fatalf("first cycle status = %q, want %q", entry.Status, domain.IDSEntrySubmitted)
+		}
+	}
+
+	app = runConfirmedIDSCycle(t, app)
+	for _, number := range numbers {
+		entry, err := repo.IDSEntry(context.Background(), project.ID, number)
+		if err != nil {
+			t.Fatalf("IDSEntry: %v", err)
+		}
+		if entry.Status != domain.IDSEntryAccepted {
+			t.Fatalf("second cycle status = %q, want %q", entry.Status, domain.IDSEntryAccepted)
+		}
+	}
+}
+
+func runConfirmedIDSCycle(t *testing.T, app *App) *App {
+	t.Helper()
+	updated, cmd := app.invoke(command.IDSCycleStatus, invocation{repeat: 1})
+	app = updated.(*App)
+	if cmd != nil {
+		t.Fatal("multi-patent IDS cycle should require confirmation before returning a command")
+	}
+	if app.confirmCmd == nil {
+		t.Fatal("expected IDS cycle confirmation command")
+	}
+	updated, cmd = app.Update(overlay.ConfirmAcceptMsg{})
+	app = updated.(*App)
+	if cmd == nil {
+		t.Fatal("confirming IDS cycle should return a command")
+	}
+	msg := cmd()
+	updated, cmd = app.Update(msg)
+	app = updated.(*App)
+	if cmd != nil {
+		cmd()
+	}
+	return app
+}

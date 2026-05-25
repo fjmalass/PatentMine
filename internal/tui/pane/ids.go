@@ -177,13 +177,14 @@ func (p *IDSDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			return p, status(text.StatusExportFailed, true, m.err.Error())
 		}
 		p.entry = m.entry
+		entry := m.entry
 		return p, tea.Batch(
 			status(text.StatusFilter, false, "IDS updated"),
 			func() tea.Msg {
 				return IDSEntryChangedMsg{
-					Project: p.project,
-					Patent:  p.entry.Patent,
-					Entry:   &p.entry,
+					Project: entry.Project,
+					Patent:  entry.Patent,
+					Entry:   &entry,
 				}
 			},
 		)

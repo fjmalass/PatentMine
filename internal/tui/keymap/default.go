@@ -61,16 +61,17 @@ func listMotions() map[string]command.ID {
 // patentActions are the bindings shared by scopes where a patent is selected.
 func patentActions() map[string]command.ID {
 	return map[string]command.ID{
-		"s": command.MarkActive,
-		"r": command.MarkUnderReview,
-		"i": command.MarkIgnored,
-		"x": command.MarkDeleted,
-		"t": command.TagPatentManage,
-		"D": command.PatentDelete,
-		"a": command.AddToProject,
-		"f": command.CrawlFamily,
-		"L": command.LookupPatent,
-		"K": command.OpenPatentClassifications,
+		"s":   command.MarkActive,
+		"r":   command.MarkUnderReview,
+		"i":   command.MarkIgnored,
+		"x":   command.MarkDeleted,
+		"t":   command.TagPatentManage,
+		"D":   command.PatentDelete,
+		"a":   command.AddToProject,
+		"f":   command.CrawlFamily,
+		"g i": command.IDSCycleStatus,
+		"L":   command.LookupPatent,
+		"K":   command.OpenPatentClassifications,
 	}
 }
 

@@ -98,13 +98,13 @@ type Catalog struct {
 	columns        []domain.PatentTableColumn
 	columnsProject domain.ProjectID
 
-	patents           []domain.PatentRow
-	page              render.Paginator
-	loadedBase        int
-	loading           bool
-	loadErr           string
-	loadID            uint64
-	columnsLoadID     uint64
+	patents             []domain.PatentRow
+	page                render.Paginator
+	loadedBase          int
+	loading             bool
+	loadErr             string
+	loadID              uint64
+	columnsLoadID       uint64
 	visualMode          bool
 	visualAnchor        int
 	allSelectedNumbers  []domain.PatentNumber
@@ -115,23 +115,23 @@ type Catalog struct {
 	savedVisual         []domain.PatentNumber
 	savedVisualAnchor   int
 	savedVisualCursor   int
-	highlights        HighlightSet
-	activeHighlight   HighlightState
-	relationCache     map[domain.PatentNumber]relationCacheEntry
-	activeSort        domain.SortColumn
-	sortAscending     bool
-	filter            PatentFilter
-	find              findBar
-	focusedColIdx     int
-	lastWidth         int
-	logger            *slog.Logger
-	metrics           *observability.Metrics
-	cachedCols        []tableCol
-	cachedColWidth    int
-	cachedColProj     domain.ProjectID
-	classDescs        map[string]string
-	classDescsID      uint64
-	searchSeq         uint64
+	highlights          HighlightSet
+	activeHighlight     HighlightState
+	relationCache       map[domain.PatentNumber]relationCacheEntry
+	activeSort          domain.SortColumn
+	sortAscending       bool
+	filter              PatentFilter
+	find                findBar
+	focusedColIdx       int
+	lastWidth           int
+	logger              *slog.Logger
+	metrics             *observability.Metrics
+	cachedCols          []tableCol
+	cachedColWidth      int
+	cachedColProj       domain.ProjectID
+	classDescs          map[string]string
+	classDescsID        uint64
+	searchSeq           uint64
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -181,20 +181,20 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 			}
 			return nil
 		},
-		command.HighlightFamily:    func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
-		command.HighlightCitations: func(Invocation) tea.Cmd { return c.toggleCitationsHighlight() },
+		command.HighlightFamily:        func(Invocation) tea.Cmd { return c.toggleFamilyHighlight() },
+		command.HighlightCitations:     func(Invocation) tea.Cmd { return c.toggleCitationsHighlight() },
 		command.RelationFilterCollapse: func(Invocation) tea.Cmd { return c.setRelationFilter(true) },
 		command.RelationFilterExpand:   func(Invocation) tea.Cmd { return c.setRelationFilter(false) },
-		command.CrawlFamily:        func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
-		command.CrawlCitations:     func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
-		command.CrawlCitedBy:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
-		command.CrawlAll:           func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
-		command.LookupPatent:       func(Invocation) tea.Cmd { return c.crawlSelected("") },
-		command.ColNext:            func(Invocation) tea.Cmd { return c.focusNext() },
-		command.ColPrev:            func(Invocation) tea.Cmd { return c.focusPrev() },
-		command.SortApply:          func(Invocation) tea.Cmd { return c.applySort() },
-		command.Filter:             c.applyFilter,
-		command.FindOpen:           func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
+		command.CrawlFamily:            func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileFamily) },
+		command.CrawlCitations:         func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
+		command.CrawlCitedBy:           func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
+		command.CrawlAll:               func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
+		command.LookupPatent:           func(Invocation) tea.Cmd { return c.crawlSelected("") },
+		command.ColNext:                func(Invocation) tea.Cmd { return c.focusNext() },
+		command.ColPrev:                func(Invocation) tea.Cmd { return c.focusPrev() },
+		command.SortApply:              func(Invocation) tea.Cmd { return c.applySort() },
+		command.Filter:                 c.applyFilter,
+		command.FindOpen:               func(Invocation) tea.Cmd { c.find.open(c.filter.Search); return nil },
 	}
 	return c
 }
@@ -516,11 +516,17 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if c.activeProject == nil || c.activeProject.ID != m.Project {
 			return c, nil
 		}
+		updated := false
 		for i := range c.patents {
-			if c.patents[i].Number == m.Patent {
+			if patentRowMatchesNumber(c.patents[i], m.Patent) {
 				c.patents[i].IDSEntry = m.Entry
+				updated = true
 				break
 			}
+		}
+		if !updated && len(c.patents) > 0 {
+			c.loading = true
+			return c, c.load()
 		}
 	case patentTableColumnsLoadedMsg:
 		if m.requestID != c.columnsLoadID {
@@ -1079,6 +1085,10 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 		return domain.PatentNumber{}, false
 	}
 	return c.patents[cur].Number, true
+}
+
+func patentRowMatchesNumber(row domain.PatentRow, number domain.PatentNumber) bool {
+	return row.Number == number || (!row.DisplayNumber.IsZero() && row.DisplayNumber == number)
 }
 
 // ActivityFocus implements ActivityFocusProvider.

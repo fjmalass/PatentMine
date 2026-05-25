@@ -329,6 +329,13 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 		}
 		o.clearVisual()
 		return o, func() tea.Msg { return OpenTagPatentOverlayMsg{Patents: numbers} }, true
+	case "I":
+		numbers := o.selections()
+		if len(numbers) == 0 {
+			numbers = []domain.PatentNumber{selectedPatent.Number}
+		}
+		o.clearVisual()
+		return o, pane.CycleIDSEntryStatusesCmd(o.client, o.project, numbers), true
 	}
 	return o, nil, true
 }
@@ -471,9 +478,9 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		if o.patentsPage.Total() > 0 {
 			status = fmt.Sprintf("[%d/%d]", o.patentsPage.Cursor()+1, o.patentsPage.Total())
 		}
-		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Classifications  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [q/Q/Esc] Close", status)
+		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Classifications  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close", status)
 		if o.patentsPage.VisualMode() {
-			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [s/r/i/x] Review  [t] Tag  [v/q/Q/Esc] Clear", status)
+			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [s/r/i/x] Review  [t] Tag  [I] IDS  [v/q/Q/Esc] Clear", status)
 		}
 		b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 	}

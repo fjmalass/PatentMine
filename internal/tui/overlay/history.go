@@ -243,7 +243,9 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Export notes %q: %d note(s) → %s", projectName, int(count), path)
 	case observability.ActionMembershipSetState:
 		rawState := ""
-		if afterMap, ok := rec.After.(map[string]any); ok {
+		if s, ok := rec.Metadata["state"].(string); ok {
+			rawState = s
+		} else if afterMap, ok := rec.After.(map[string]any); ok {
 			if s, ok := afterMap["review_state"].(string); ok {
 				rawState = s
 			}

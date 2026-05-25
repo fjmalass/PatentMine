@@ -145,7 +145,7 @@ func activityEntity(rec observability.Record) string {
 func activitySummary(rec observability.Record) string {
 	parts := []string{activityEntity(rec)}
 	if rec.Metadata != nil {
-		for _, key := range []string{"title", "filter", "review_state", "duration_ms"} {
+		for _, key := range []string{"title", "filter", "review_state", "prior_state", "state", "prior_status", "status", "duration_ms"} {
 			if v, ok := rec.Metadata[key]; ok && fmt.Sprint(v) != "" {
 				parts = append(parts, fmt.Sprintf("%s=%v", key, v))
 			}

@@ -487,7 +487,15 @@ func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, err
 	if err := s.engine.SetReviewState(ctx, p.Project, p.Patents, state); err != nil {
 		return nil, err
 	}
-	return proto.Empty{}, nil
+	records := make([]domain.PatentNumber, 0, len(p.Patents))
+	for _, patent := range p.Patents {
+		record, err := s.engine.Patent(ctx, patent)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record.Number)
+	}
+	return proto.ReviewStateResult{Patents: records}, nil
 }
 
 func (s *Server) tagPatent(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -126,6 +126,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.ClassificationLookup:       (*App).cmdClassificationLookup,
 	command.OpenPatentClassifications:  (*App).cmdOpenPatentClassifications,
 	command.PatentDelete:               (*App).cmdPatentDelete,
+	command.IDSCycleStatus:             (*App).cmdIDSCycleStatus,
 	command.AIAnalyze:                  (*App).cmdAIAnalyze,
 	command.SettingsAI:                 (*App).cmdSettingsAI,
 	command.OpenAssignees:              (*App).cmdOpenAssignees,
@@ -625,6 +626,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("patent", m.Patent.String()),
 			slog.String("status", statusStr))
 		return a, a.broadcast(m)
+	case pane.IDSEntriesChangedMsg:
+		var cmds []tea.Cmd
+		for _, entry := range m.Entries {
+			entry := entry
+			cmds = append(cmds, a.broadcast(pane.IDSEntryChangedMsg{
+				Project: entry.Project,
+				Patent:  entry.Patent,
+				Entry:   &entry,
+			}))
+		}
+		if m.Err != nil {
+			a.setErr(text.StatusIDSUpdateFailed, m.Err.Error())
+		} else {
+			a.setStatus(text.StatusIDSCycled, len(m.Entries))
+		}
+		return a, tea.Batch(cmds...)
 	case pane.MultiCrawlStartedMsg:
 		isLookup := m.Depth == 0
 		verb := "Crawling"

@@ -270,9 +270,12 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		// Record activities
 		for _, record := range changedRecords {
 			e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
+			current := beforeMemberships[record]
 			metadata := map[string]any{
 				"requested_number": record.String(),
 				"project":          string(project),
+				"prior_state":      string(current.ReviewState),
+				"state":            string(target),
 			}
 			if mutationGroupID != "" {
 				metadata["mutation_group_id"] = mutationGroupID
@@ -284,12 +287,10 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				Status:   "committed",
 				Metadata: metadata,
 			}
-			if current, ok := beforeMemberships[record]; ok {
-				after := current
-				after.ReviewState = target
-				rec.Before = current
-				rec.After = after
-			}
+			after := current
+			after.ReviewState = target
+			rec.Before = current
+			rec.After = after
 			e.recordActivity(ctx, rec)
 		}
 		e.incCounter("engine.review_state.changed_total", int64(len(changedRecords)))

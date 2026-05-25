@@ -10,16 +10,24 @@ import (
 
 // handleActivityList returns replay/review activity records from the shared JSONL journal.
 func (s *Server) handleActivityList(w http.ResponseWriter, r *http.Request) {
+	s.handleActivityRaw(w, r)
+}
+
+// handleActivityRaw returns raw activity records from the shared JSONL journal.
+func (s *Server) handleActivityRaw(w http.ResponseWriter, r *http.Request) {
 	if s.activityLogsDir == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "activity logging is not configured"})
 		return
 	}
-	records, err := observability.ReadActivityRecords(s.activityLogsDir, parseActivityQuery(r))
+	start := time.Now()
+	query := parseActivityQuery(r)
+	records, err := observability.ReadActivityRecords(s.activityLogsDir, query)
+	s.observeRawActivityQuery(start, len(records), err)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"records": records})
+	writeJSON(w, http.StatusOK, map[string]any{"records": records, "limit": effectiveActivityLimit(query.Limit), "returned": len(records)})
 }
 
 // handleActivityRecord lets an HTTP/browser UI submit a user activity event.
@@ -89,4 +97,23 @@ func (s *Server) handleReplayHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"history": history, "cap": 10000})
+}
+
+func effectiveActivityLimit(limit int) int {
+	if limit <= 0 {
+		return 100
+	}
+	return limit
+}
+
+func (s *Server) observeRawActivityQuery(start time.Time, returned int, err error) {
+	if s.activityMetrics == nil {
+		return
+	}
+	s.activityMetrics.ObserveDuration("api.activity.raw.query", time.Since(start), err != nil)
+	s.activityMetrics.IncCounter("api.activity.raw.query_total", 1)
+	s.activityMetrics.IncCounter("api.activity.raw.records_returned_total", int64(returned))
+	if err != nil {
+		s.activityMetrics.IncCounter("api.activity.raw.query_error_total", 1)
+	}
 }

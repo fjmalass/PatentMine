@@ -522,6 +522,8 @@ func (o *TagPatentOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.String() {
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	case "I":
+		return o, pane.CycleIDSEntryStatusesCmd(o.client, o.project, o.patents), true
 	case "N":
 		if len(o.patents) != 1 {
 			return o, func() tea.Msg {
@@ -704,7 +706,7 @@ func (o *TagPatentOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n\n")
 		b.WriteString(o.theme.Dim.Render("[Enter] Save  [Esc] Cancel"))
 	} else {
-		b.WriteString(o.theme.Dim.Render("[j/k/↑/↓] Scroll  [Space] Toggle  [a/n] Add Tag  [N] Note  [Enter] Apply  [q/Esc] Cancel"))
+		b.WriteString(o.theme.Dim.Render("[j/k/↑/↓] Scroll  [Space] Toggle  [a/n] Add Tag  [I] IDS  [N] Note  [Enter] Apply  [q/Esc] Cancel"))
 	}
 
 	return b.String()

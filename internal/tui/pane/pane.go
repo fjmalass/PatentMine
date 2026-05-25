@@ -149,6 +149,11 @@ type IDSEntryChangedMsg struct {
 	Entry   *domain.IDSEntry // nil if the entry was deleted
 }
 
+// IDSEntriesChangedMsg reports a committed batch IDS status update.
+type IDSEntriesChangedMsg struct {
+	Entries []domain.IDSEntry
+	Err     error
+}
 
 // MultiCrawlStartedMsg is emitted when multiple patents are selected and a
 // crawl or lookup is started for each of them. It carries all job IDs so the
@@ -230,4 +235,3 @@ func PaneHandlers() map[command.Scope][]command.ID {
 type SearchAppliedMsg struct {
 	Query string
 }
-

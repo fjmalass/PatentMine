@@ -240,6 +240,11 @@ type ReviewStateParams struct {
 	State   string                `json:"state"`
 }
 
+// ReviewStateResult reports the canonical patent records whose state changed.
+type ReviewStateResult struct {
+	Patents []domain.PatentNumber `json:"patents"`
+}
+
 // TagParams names a tag to assign to, or remove from, one or more patents within a
 // project. On assign an unknown name creates the tag.
 type TagParams struct {

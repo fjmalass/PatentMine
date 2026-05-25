@@ -213,7 +213,7 @@ func Default() (*Registry, error) {
 		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
 		Command{ID: IDSEditField, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Scope{ScopeIDS}},
-		Command{ID: IDSCycleStatus, Kind: KindView, Scopes: []Scope{ScopeIDS}},
+		Command{ID: IDSCycleStatus, Name: "ids.cycle-status", Aliases: []string{"ids.cycle", "cycle-ids"}, Usage: ":ids.cycle-status", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeIDS}},
 		Command{ID: IDSDelete, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 
 		// --- application-wide (view) ---

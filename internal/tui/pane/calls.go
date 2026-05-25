@@ -172,12 +172,57 @@ func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, patents []d
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		var res proto.Empty
+		var res proto.ReviewStateResult
 		if err := client.Call(ctx, proto.MethodReviewState,
 			proto.ReviewStateParams{Project: project, Patents: patents, State: string(state)}, &res); err != nil {
 			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
 		}
+		if len(res.Patents) > 0 {
+			patents = res.Patents
+		}
 		return ReviewStateChangedMsg{Project: project, Patents: patents, State: state}
+	}
+}
+
+// CycleIDSEntryStatusesCmd advances each selected patent's IDS status in the
+// active project. Missing entries follow IDSDetail's behavior: they start from
+// pending, so the first cycle saves submitted.
+func CycleIDSEntryStatusesCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		saved := make([]domain.IDSEntry, 0, len(patents))
+		for _, patent := range patents {
+			ctx, cancel := callContext()
+			var existing proto.PatentResult
+			err := client.Call(ctx, proto.MethodPatentGet,
+				proto.PatentGetParams{Number: patent, Project: project}, &existing)
+			cancel()
+			if err != nil {
+				return IDSEntriesChangedMsg{Entries: saved, Err: err}
+			}
+
+			entry := domain.IDSEntry{Project: project, Patent: existing.Patent.Number, Status: domain.IDSEntryPending}
+			if entry.Patent.IsZero() {
+				entry.Patent = patent
+			}
+			if existing.IDSEntry != nil {
+				entry = *existing.IDSEntry
+				if !entry.Status.Valid() {
+					entry.Status = domain.IDSEntryPending
+				}
+			}
+			entry.Status = entry.Status.Next()
+
+			ctx, cancel = callContext()
+			var result proto.IDSEntryResult
+			err = client.Call(ctx, proto.MethodIDSEntrySave,
+				proto.IDSEntrySaveParams{Entry: entry}, &result)
+			cancel()
+			if err != nil {
+				return IDSEntriesChangedMsg{Entries: saved, Err: err}
+			}
+			saved = append(saved, result.Entry)
+		}
+		return IDSEntriesChangedMsg{Entries: saved}
 	}
 }
 

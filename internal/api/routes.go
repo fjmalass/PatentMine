@@ -23,7 +23,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /metrics", s.handleMetricsProm)
 	s.mux.HandleFunc("GET /metricsz", s.handleMetrics)
 	s.mux.HandleFunc("GET /activity", s.handleActivityList)
+	s.mux.HandleFunc("GET /activity/raw", s.handleActivityRaw)
 	s.mux.HandleFunc("POST /activity", s.handleActivityRecord)
+	s.mux.HandleFunc("GET /history", s.handleHistoryList)
 	s.mux.HandleFunc("GET /activity/replay_history", s.handleReplayHistory)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
 	s.mux.HandleFunc("GET /patents", s.handlePatentList)
@@ -82,5 +84,4 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	return true
 }
-
 

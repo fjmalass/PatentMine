@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -323,6 +322,18 @@ func (a *App) cmdMarkDeleted(invocation) (tea.Model, tea.Cmd) {
 	return a.runReviewState(command.MarkDeleted, domain.ReviewStateDeleted)
 }
 
+func (a *App) cmdIDSCycleStatus(inv invocation) (tea.Model, tea.Cmd) {
+	if len(a.overlays) == 0 && a.focusedPane().Scope() == command.ScopeIDS {
+		p := a.focusedPane()
+		updated, cmd := p.Command(command.IDSCycleStatus, pane.Invocation{Repeat: inv.repeat, Args: inv.args})
+		a.panes[len(a.panes)-1] = updated
+		return a, cmd
+	}
+	return a.runBulkAction(command.IDSCycleStatus, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
+		return pane.CycleIDSEntryStatusesCmd(a.client, project, patents)
+	})
+}
+
 func (a *App) cmdProjectActivate(inv invocation) (tea.Model, tea.Cmd) {
 	switch len(inv.args) {
 	case 0:
@@ -608,212 +619,6 @@ func (a *App) cmdAIAnalyze(invocation) (tea.Model, tea.Cmd) {
 func (a *App) cmdSettingsAI(invocation) (tea.Model, tea.Cmd) {
 	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.usptoConfigured)
 	a.overlays = append(a.overlays, o)
-	return a, nil
-}
-
-func (a *App) cmdHistoryBack(invocation) (tea.Model, tea.Cmd) {
-	if len(a.history) == 0 {
-		a.setErr(text.StatusHistoryEmpty)
-		return a, nil
-	}
-	targetIndex := a.historyCursor - 1
-	if targetIndex < 0 {
-		a.setErr(text.StatusHistoryAtEnd)
-		return a, nil
-	}
-	targetNumber := a.history[targetIndex]
-	return a, a.checkPatentExists(targetIndex, targetNumber)
-}
-
-func (a *App) cmdHistoryForward(invocation) (tea.Model, tea.Cmd) {
-	if len(a.history) == 0 {
-		a.setErr(text.StatusHistoryEmpty)
-		return a, nil
-	}
-	targetIndex := a.historyCursor + 1
-	if targetIndex >= len(a.history) {
-		a.setErr(text.StatusHistoryAtEnd)
-		return a, nil
-	}
-	targetNumber := a.history[targetIndex]
-	return a, a.checkPatentExists(targetIndex, targetNumber)
-}
-
-func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
-	if a.activityDir == "" {
-		a.setErr(text.StatusUsage, "activity logging is not configured")
-		return a, nil
-	}
-	records, err := observability.ReadActivityRecords(a.activityDir, observability.ActivityQuery{Limit: 500})
-	if err != nil {
-		a.setErr(text.StatusUsage, err.Error())
-		return a, nil
-	}
-	var filtered []observability.Record
-	var lastKey string
-	for _, r := range records {
-		key := r.Action + ":" + r.Entity + ":" + r.EntityID
-		// ui.focus is listed by classifier but further filtered by scope so
-		// background catalog hover dwell events stay out.
-		if r.Action == observability.ActionUIFocus && r.Entity == "patent" {
-			if scope, ok := r.Metadata["scope"].(string); ok && (scope == "detail" || scope == "citations" || scope == "family" || scope == "ids" || scope == "fulltext") {
-				if key != lastKey {
-					filtered = append(filtered, r)
-					lastKey = key
-				}
-			}
-			continue
-		}
-		if !overlay.IsListedAction(r.Action) {
-			continue
-		}
-		if key != lastKey {
-			filtered = append(filtered, r)
-			lastKey = key
-		}
-	}
-	if len(filtered) == 0 {
-		a.setErr(text.StatusHistoryEmpty)
-		return a, nil
-	}
-	projectNames := make(map[string]string)
-	if a.client != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
-		defer cancel()
-		var res proto.ProjectListResult
-		if err := a.client.Call(ctx, proto.MethodProjectList, nil, &res); err == nil {
-			for _, p := range res.Projects {
-				projectNames[string(p.ID)] = p.Name
-			}
-		}
-	}
-	o := overlay.NewHistoryOverlay(a.theme, filtered, projectNames)
-	a.overlays = append(a.overlays, o)
-	return a, nil
-}
-
-func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea.Model, tea.Cmd) {
-	switch rec.Action {
-	case observability.ActionUIFocus,
-		observability.ActionMembershipSetState,
-		observability.ActionPatentTagAssign, observability.ActionPatentTagRemove,
-		observability.ActionIDSEntrySave, observability.ActionIDSEntryDelete:
-		// Immediate navigation to patent details/views (no confirmation overlay required)
-		a.overlays = nil
-		if len(a.panes) > 1 {
-			a.panes = a.panes[:1]
-		}
-		var numStr string
-		if rec.Action == observability.ActionUIFocus {
-			numStr = rec.EntityID
-		} else if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
-			numStr = reqNum
-		} else {
-			// fallback: parse from entity ID (e.g. "p-123/US12345" or "p-123/US12345/tag")
-			parts := strings.Split(rec.EntityID, "/")
-			if len(parts) >= 2 {
-				numStr = parts[1]
-			}
-		}
-		if number, err := domain.ParsePatentNumber(numStr); err == nil {
-			entityParts := strings.Split(rec.EntityID, "/")
-			isProjectPatentRec := overlay.IsProjectPatentAction(rec.Action)
-
-			var project domain.ProjectID
-			if pVal, ok := rec.Metadata["project"].(string); ok && pVal != "" {
-				project = domain.ProjectID(pVal)
-			} else if isProjectPatentRec && len(entityParts) >= 1 && entityParts[0] != "" {
-				project = domain.ProjectID(entityParts[0])
-			} else if a.activeProject != nil {
-				project = a.activeProject.ID
-			}
-
-			var switchCmd tea.Cmd
-			if project != "" && (a.activeProject == nil || a.activeProject.ID != project) {
-				if proj, ok := a.resolveProjectArg(string(project)); ok {
-					a.activeProject = &proj
-					a.lastProjectID = proj.ID
-					if a.saveLastProject != nil {
-						_ = a.saveLastProject(proj.ID)
-					}
-					a.setStatus(text.StatusActiveProject, proj.Name)
-					switchCmd = a.broadcast(pane.ProjectChangedMsg{Project: &proj})
-				}
-			}
-
-			scope, _ := rec.Metadata["scope"].(string)
-			if s := overlay.ReplayScope(rec.Action); s != "" {
-				scope = s
-			}
-			var replayModel tea.Model
-			var replayCmd tea.Cmd
-			switch scope {
-			case "citations":
-				kind := domain.RelationCites
-				if kStr, ok := rec.Metadata["relation"].(string); ok {
-					kind = domain.RelationKind(kStr)
-				}
-				replayModel, replayCmd = a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
-			case "family":
-				depth := 1
-				if dVal, ok := rec.Metadata["depth"].(float64); ok {
-					depth = int(dVal)
-				}
-				var countries []string
-				if cList, ok := rec.Metadata["countries"].([]any); ok {
-					for _, c := range cList {
-						if cStr, ok := c.(string); ok {
-							countries = append(countries, cStr)
-						}
-					}
-				}
-				replayModel, replayCmd = a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()))
-			case "fulltext":
-				bound := a.keymaps.BoundLetters(command.ScopeFullText)
-				replayModel, replayCmd = a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log()))
-			case "ids":
-				replayModel, replayCmd = a.pushPane(pane.NewIDSDetail(a.client, a.theme, number, project).WithLogger(a.log()))
-			default:
-				bound := a.keymaps.BoundLetters(command.ScopeDetail)
-				replayModel, replayCmd = a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
-			}
-			return replayModel, tea.Batch(switchCmd, replayCmd)
-		}
-		a.setErr(text.StatusHistoryPatentUnavailable, rec.EntityID)
-		return a, nil
-
-	case observability.ActionFilterApply:
-		if !confirmed {
-			a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
-			prompt := fmt.Sprintf("Apply filter '%s'?", rec.EntityID)
-			o := overlay.NewConfirm(a.theme, prompt)
-			a.overlays = append(a.overlays, o)
-			return a, nil
-		}
-		a.overlays = nil
-		if len(a.panes) > 1 {
-			a.panes = a.panes[:1]
-		}
-		return a.executeTypedCommand("filter " + rec.EntityID)
-
-	case observability.ActionProjectSwitch:
-		if !confirmed {
-			a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
-			projectName := rec.EntityID
-			if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
-				projectName = name
-			}
-			prompt := fmt.Sprintf("Switch to project '%s'?", projectName)
-			o := overlay.NewConfirm(a.theme, prompt)
-			a.overlays = append(a.overlays, o)
-			return a, nil
-		}
-		a.overlays = nil
-		if len(a.panes) > 1 {
-			a.panes = a.panes[:1]
-		}
-		return a.activateProjectByArg(rec.EntityID)
-	}
 	return a, nil
 }
 

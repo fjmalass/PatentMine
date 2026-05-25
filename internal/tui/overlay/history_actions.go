@@ -6,6 +6,7 @@ import "patentmine/internal/observability"
 //   - InHistory: the record appears in the overlay list.
 //   - Hidden: emitted by the engine but intentionally not shown (background
 //     events, low-signal noise).
+//
 // Every value in observability.AllActions must fall into one of those buckets;
 // TestEveryActionClassifiedByHistory enforces the rule.
 type HistoryClassification int
@@ -19,29 +20,8 @@ const (
 
 // classifyAction returns how the overlay should treat the given action.
 func classifyAction(action string) HistoryClassification {
-	switch action {
-	case observability.ActionFilterApply,
-		observability.ActionProjectSwitch,
-		observability.ActionMembershipSetState,
-		observability.ActionPatentTagAssign,
-		observability.ActionPatentTagRemove,
-		observability.ActionIDSEntrySave,
-		observability.ActionIDSEntryDelete,
-		observability.ActionUIFocus, // filtered by scope in cmdOpenHistory
-		observability.ActionNotesExport:
+	if observability.IsHistoryFeedAction(action) {
 		return HistoryListed
-	case observability.ActionCrawlStart,
-		observability.ActionCrawlCancel,
-		observability.ActionImportFile,
-		observability.ActionPatentSave,
-		observability.ActionPatentDelete,
-		observability.ActionPatentRestore,
-		observability.ActionProjectCreate,
-		observability.ActionMembershipAdd,
-		observability.ActionTagCreate,
-		observability.ActionTagDelete,
-		observability.ActionIDSExportPDF:
-		return HistoryHidden
 	}
 	return HistoryHidden
 }
