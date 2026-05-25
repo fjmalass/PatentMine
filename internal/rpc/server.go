@@ -65,6 +65,9 @@ func NewServer(eng *engine.Engine, usptoConfigured bool) *Server {
 		proto.MethodRelations:                 s.relations,
 		proto.MethodFamilyGraph:               s.familyGraph,
 		proto.MethodIDSExport:                 s.idsExport,
+		proto.MethodIDSPDFExport:              s.idsPDFExport,
+		proto.MethodIDSPDFPreview:             s.idsPDFPreview,
+		proto.MethodProjectUpdate:             s.projectUpdate,
 		proto.MethodIDSEntryGet:               s.idsEntryGet,
 		proto.MethodIDSEntrySave:              s.idsEntrySave,
 		proto.MethodIDSEntryDelete:            s.idsEntryDelete,
@@ -393,6 +396,7 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		Project:            p.Project,
 		Filter:             p.Filter,
 		ReviewState:        p.ReviewState,
+		IDSStatus:          p.IDSStatus,
 		Search:             p.Search,
 		Classification:     p.Classification,
 		ClassificationCode: p.ClassificationCode,
@@ -660,6 +664,7 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		Project:        p.Project,
 		Filter:         p.Filter,
 		ReviewState:    p.ReviewState,
+		IDSStatus:      p.IDSStatus,
 		Search:         p.Search,
 		Classification: p.Classification,
 		Inventor:       p.Inventor,
@@ -693,6 +698,65 @@ func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error
 		return nil, err
 	}
 	return proto.IDSResult{IDS: ids}, nil
+}
+
+func (s *Server) idsPDFExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSPDFExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.engine.ExportIDSPDF(ctx, p.Project, engine.IDSPDFOptions{
+		CumulativeCount: p.CumulativeCount,
+		FeeAmount:       p.FeeAmount,
+		DepositAccount:  p.DepositAccount,
+		SignerName:      p.SignerName,
+		SignerSignature: p.SignerSignature,
+		SignerRegNumber: p.SignerRegNumber,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSPDFExportResult{
+		Dir:       res.Dir,
+		Files:     res.Files,
+		FeeTier:   res.FeeTier,
+		PageCount: res.PageCount,
+	}, nil
+}
+
+func (s *Server) projectUpdate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProjectUpdateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	saved, err := s.engine.UpdateProject(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ProjectResult{Project: saved}, nil
+}
+
+func (s *Server) idsPDFPreview(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSPDFExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	prev, err := s.engine.PreviewIDSPDF(ctx, p.Project, engine.IDSPDFOptions{
+		CumulativeCount: p.CumulativeCount,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSPDFPreviewResult{
+		BaseDir:         prev.BaseDir,
+		USCount:         prev.USCount,
+		ForeignCount:    prev.ForeignCount,
+		Sheets:          prev.Sheets,
+		FeeTier:         prev.FeeTier,
+		CumulativeCount: prev.CumulativeCount,
+		ExistingDirs:    prev.ExistingDirs,
+		MissingFields:   prev.MissingFields,
+	}, nil
 }
 
 func (s *Server) idsEntryGet(ctx context.Context, raw json.RawMessage) (any, error) {

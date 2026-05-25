@@ -13,6 +13,7 @@ type Field string
 const (
 	FieldTag        Field = "tag"
 	FieldState      Field = "state"
+	FieldIDSStatus  Field = "ids_status"
 	FieldFetchState Field = "fetch_state"
 	FieldClass      Field = "class"
 	FieldSearch     Field = "search"
@@ -33,6 +34,7 @@ var fieldSpecs = []fieldSpec{
 	{name: FieldSearch, aliases: []string{"find"}, parse: parseSearchTerm},
 	{name: FieldTag, parse: parseTagTerm},
 	{name: FieldState, aliases: []string{"status", "review_state"}, parse: parseStateTerm},
+	{name: FieldIDSStatus, aliases: []string{"ids"}, parse: parseIDSStatusTerm},
 	{name: FieldFetchState, aliases: []string{"fetch", "fetched"}, parse: parseFetchStateTerm},
 	{name: FieldClass, aliases: []string{"classification", "cpc", "ipc"}, parse: parseClassTerm},
 	{name: FieldInventor, aliases: []string{"inv"}, parse: parseInventorTerm},
@@ -65,6 +67,7 @@ type TermExpr struct {
 	Assignee   ValuePattern
 	Country    ValuePattern
 	State      domain.ReviewState
+	IDSStatus  string
 	FetchState domain.FetchState
 }
 
@@ -126,6 +129,9 @@ func ValidateProjectScope(expr Expr, projectActive bool) error {
 	}
 	if UsesField(expr, FieldTag) {
 		return fmt.Errorf("tag filters require an active project")
+	}
+	if UsesField(expr, FieldIDSStatus) {
+		return fmt.Errorf("ids_status filters require an active project")
 	}
 	return nil
 }
@@ -362,6 +368,32 @@ func parseStateTerm(value string) (TermExpr, error) {
 		return TermExpr{}, fmt.Errorf("state filter requires a non-empty review state")
 	}
 	return TermExpr{Field: FieldState, Value: string(state), State: state}, nil
+}
+
+func ParseIDSEntryStatus(value string) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(value))
+	switch key {
+	case "none", "not_on_ids", "missing":
+		return "none", nil
+	case string(domain.IDSEntryPending), "":
+		return string(domain.IDSEntryPending), nil
+	case string(domain.IDSEntrySubmitted):
+		return string(domain.IDSEntrySubmitted), nil
+	case string(domain.IDSEntryAccepted):
+		return string(domain.IDSEntryAccepted), nil
+	case string(domain.IDSEntryIgnored):
+		return string(domain.IDSEntryIgnored), nil
+	default:
+		return "", fmt.Errorf("unknown IDS status %q: use none, pending, submitted, accepted, or ignored", value)
+	}
+}
+
+func parseIDSStatusTerm(value string) (TermExpr, error) {
+	status, err := ParseIDSEntryStatus(value)
+	if err != nil {
+		return TermExpr{}, err
+	}
+	return TermExpr{Field: FieldIDSStatus, Value: status, IDSStatus: status}, nil
 }
 
 // fetchStateAliases maps human-friendly terms to their canonical FetchState value.

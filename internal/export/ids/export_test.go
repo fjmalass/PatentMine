@@ -2,7 +2,6 @@ package ids
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,9 +84,12 @@ func TestExport_EndToEnd(t *testing.T) {
 			Name:                 "Test",
 			ApplicationNumber:    "16/123,456",
 			FilingDate:           time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-			FirstNamedInventor:   "Doe, Jane",
+			Inventors:            []string{"Doe, Jane", "Roe, Richard"},
 			ArtUnit:              "2628",
-			ExaminerName:         "Smith, J.",
+			Examiners: []domain.ProjectExaminer{
+				{Name: "Smith, J.", RecordedAt: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)},
+				{Name: "Lee, K.", RecordedAt: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)},
+			},
 			AttorneyDocketNumber: "ACME-001",
 		},
 		Entries: []Entry{
@@ -122,20 +124,13 @@ func TestExport_EndToEnd(t *testing.T) {
 
 	mustContain(t, exported["08a.pdf"], `"name": "text3"`, `"value": "16/123,456"`)
 	mustContain(t, exported["08a.pdf"], `"name": "text5"`, `"value": "Doe, Jane"`)
+	mustContain(t, exported["08a.pdf"], `"name": "text7"`, `"value": "Lee, K."`)
 	mustContain(t, exported["08a.pdf"], `"name": "text10"`, `"value": "11611785-B2"`)
 	mustContain(t, exported["08a.pdf"], `"name": "text105"`, `"value": "EP-1234567-A1"`)
 	mustContain(t, exported["08c.pdf"], `"name": "Check Box1"`, `"value": true`)
 
-	manifestBytes, err := os.ReadFile(res.Manifest)
-	if err != nil {
-		t.Fatalf("read manifest: %v", err)
-	}
-	var m Manifest
-	if err := json.Unmarshal(manifestBytes, &m); err != nil {
-		t.Fatalf("unmarshal manifest: %v", err)
-	}
-	if m.FeeTier != 0 || m.Sheets != 1 || len(m.Entries) != 2 {
-		t.Fatalf("manifest = %+v", m)
+	if res.FeeTier != 0 || res.PageCount != 2 {
+		t.Fatalf("Result = %+v", res)
 	}
 }
 

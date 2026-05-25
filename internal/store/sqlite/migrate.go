@@ -89,34 +89,38 @@ var migrationFStatements = []string{
 		state                 TEXT NOT NULL,
 		added_at              TEXT NOT NULL,
 		ids_kind_code         TEXT NOT NULL DEFAULT '',
-		ids_country_code      TEXT NOT NULL DEFAULT '',
 		ids_in_full           INTEGER NOT NULL DEFAULT 0,
 		ids_relevant_passages TEXT NOT NULL DEFAULT '',
 		ids_notes             TEXT NOT NULL DEFAULT '',
 		ids_status            TEXT NOT NULL DEFAULT '',
 		ids_added_at          TEXT NOT NULL DEFAULT '',
+		ids_submitted_at      TEXT NOT NULL DEFAULT '',
 		PRIMARY KEY (project_id, patent_number)
 	)`,
 	// Every existing membership, decorated with its curated IDS data when one
-	// exists in project_ids.
+	// exists in project_ids. ids_submitted_at is backfilled to added_at when
+	// the legacy entry was already submitted, so we keep a plausible timestamp.
 	`INSERT INTO membership_new (project_id, patent_number, state, added_at,
-		ids_kind_code, ids_country_code, ids_in_full, ids_relevant_passages,
-		ids_notes, ids_status, ids_added_at)
+		ids_kind_code, ids_in_full, ids_relevant_passages,
+		ids_notes, ids_status, ids_added_at, ids_submitted_at)
 	 SELECT m.project_id, m.patent_number, m.state, m.added_at,
-		COALESCE(pid.kind_code, ''), COALESCE(pid.country_code, ''),
+		COALESCE(pid.kind_code, ''),
 		COALESCE(pid.in_full, 0), COALESCE(pid.relevant_passages, ''),
-		COALESCE(pid.notes, ''), COALESCE(pid.status, ''), COALESCE(pid.added_at, '')
+		COALESCE(pid.notes, ''), COALESCE(pid.status, ''), COALESCE(pid.added_at, ''),
+		CASE WHEN COALESCE(pid.status, '') = 'submitted'
+		     THEN COALESCE(pid.added_at, '') ELSE '' END
 	 FROM membership m
 	 LEFT JOIN project_ids pid
 		ON pid.project_id = m.project_id AND pid.patent_number = m.patent_number`,
 	// IDS entries whose patent was never a project member: synthesize a
 	// membership row for them so no curated data is lost.
 	`INSERT INTO membership_new (project_id, patent_number, state, added_at,
-		ids_kind_code, ids_country_code, ids_in_full, ids_relevant_passages,
-		ids_notes, ids_status, ids_added_at)
+		ids_kind_code, ids_in_full, ids_relevant_passages,
+		ids_notes, ids_status, ids_added_at, ids_submitted_at)
 	 SELECT pid.project_id, pid.patent_number, 'unknown', pid.added_at,
-		pid.kind_code, pid.country_code, pid.in_full, pid.relevant_passages,
-		pid.notes, pid.status, pid.added_at
+		pid.kind_code, pid.in_full, pid.relevant_passages,
+		pid.notes, pid.status, pid.added_at,
+		CASE WHEN pid.status = 'submitted' THEN pid.added_at ELSE '' END
 	 FROM project_ids pid
 	 WHERE NOT EXISTS (
 		SELECT 1 FROM membership m

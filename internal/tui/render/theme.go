@@ -67,19 +67,19 @@ const (
 	glyphCitationLoading = "…"
 	glyphCitationAnchor  = "•"
 
-	glyphHistUnknown   = "❓"
-	glyphHistSearch    = "🔻"
-	glyphHistProject   = "📂"
-	glyphHistCitations = "🔗"
-	glyphHistFamily    = "🌳"
-	glyphHistFulltext  = "📄"
+	glyphHistUnknown     = "❓"
+	glyphHistSearch      = "🔻"
+	glyphHistProject     = "📂"
+	glyphHistCitations   = "🔗"
+	glyphHistFamily      = "🌳"
+	glyphHistFulltext    = "📄"
 	glyphHistIDS         = "📋"
 	glyphHistNotesExport = "📝"
 	glyphHistPatent      = "👁️"
-	glyphHistState     = "⚙️"
-	glyphHistTagAdd    = "🏷️"
-	glyphHistTagRemove = "➖"
-	glyphHistColType   = "🔄"
+	glyphHistState       = "⚙️"
+	glyphHistTagAdd      = "🏷️"
+	glyphHistTagRemove   = "➖"
+	glyphHistColType     = "🔄"
 
 	glyphReviewStateUnknown     = "?"
 	glyphReviewStateUnderReview = "🔍"
@@ -87,9 +87,19 @@ const (
 	glyphReviewStateIgnored     = "☐"
 	glyphReviewStateDeleted     = "❌"
 
+	glyphIDSEntryNone      = "⭕"
+	glyphIDSEntryPending   = "⏳"
+	glyphIDSEntrySubmitted = "📨"
+	glyphIDSEntryAccepted  = "✅"
+	glyphIDSEntryIgnored   = "👻"
+	glyphIDSEntryUnknown   = "?"
+
 	glyphFetchStateUnknown = "?"
 	glyphFetchStateCached  = "🗃️"
 	glyphFetchStateStub    = "🦴"
+
+	glyphCheckboxChecked   = "✅"
+	glyphCheckboxUnchecked = "☐"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -185,23 +195,33 @@ type ThemeGlyphs struct {
 	ReviewStateIgnored     string
 	ReviewStateDeleted     string
 
+	IDSEntryNone      string
+	IDSEntryPending   string
+	IDSEntrySubmitted string
+	IDSEntryAccepted  string
+	IDSEntryIgnored   string
+	IDSEntryUnknown   string
+
 	FetchStateUnknown string
 	FetchStateCached  string
 	FetchStateStub    string
 
-	HistUnknown   string
-	HistSearch    string
-	HistProject   string
-	HistCitations string
-	HistFamily    string
-	HistFulltext  string
-	HistIDS          string
-	HistNotesExport  string
-	HistPatent       string
-	HistState     string
-	HistTagAdd    string
-	HistTagRemove string
-	HistColType   string
+	CheckboxChecked   string
+	CheckboxUnchecked string
+
+	HistUnknown     string
+	HistSearch      string
+	HistProject     string
+	HistCitations   string
+	HistFamily      string
+	HistFulltext    string
+	HistIDS         string
+	HistNotesExport string
+	HistPatent      string
+	HistState       string
+	HistTagAdd      string
+	HistTagRemove   string
+	HistColType     string
 }
 
 // NewTheme builds the default theme.
@@ -353,23 +373,33 @@ func NewTheme() Theme {
 			ReviewStateIgnored:     glyphReviewStateIgnored,
 			ReviewStateDeleted:     glyphReviewStateDeleted,
 
+			IDSEntryNone:      glyphIDSEntryNone,
+			IDSEntryPending:   glyphIDSEntryPending,
+			IDSEntrySubmitted: glyphIDSEntrySubmitted,
+			IDSEntryAccepted:  glyphIDSEntryAccepted,
+			IDSEntryIgnored:   glyphIDSEntryIgnored,
+			IDSEntryUnknown:   glyphIDSEntryUnknown,
+
 			FetchStateUnknown: glyphFetchStateUnknown,
 			FetchStateCached:  glyphFetchStateCached,
 			FetchStateStub:    glyphFetchStateStub,
 
-			HistUnknown:   glyphHistUnknown,
-			HistSearch:    glyphHistSearch,
-			HistProject:   glyphHistProject,
-			HistCitations: glyphHistCitations,
-			HistFamily:    glyphHistFamily,
-			HistFulltext:  glyphHistFulltext,
-			HistIDS:          glyphHistIDS,
-			HistNotesExport:  glyphHistNotesExport,
-			HistPatent:       glyphHistPatent,
-			HistState:     glyphHistState,
-			HistTagAdd:    glyphHistTagAdd,
-			HistTagRemove: glyphHistTagRemove,
-			HistColType:   glyphHistColType,
+			CheckboxChecked:   glyphCheckboxChecked,
+			CheckboxUnchecked: glyphCheckboxUnchecked,
+
+			HistUnknown:     glyphHistUnknown,
+			HistSearch:      glyphHistSearch,
+			HistProject:     glyphHistProject,
+			HistCitations:   glyphHistCitations,
+			HistFamily:      glyphHistFamily,
+			HistFulltext:    glyphHistFulltext,
+			HistIDS:         glyphHistIDS,
+			HistNotesExport: glyphHistNotesExport,
+			HistPatent:      glyphHistPatent,
+			HistState:       glyphHistState,
+			HistTagAdd:      glyphHistTagAdd,
+			HistTagRemove:   glyphHistTagRemove,
+			HistColType:     glyphHistColType,
 		},
 	}
 }
@@ -389,6 +419,24 @@ func (t Theme) ReviewStateGlyph(state string) string {
 		return t.Glyphs.ReviewStateDeleted
 	default:
 		return t.Glyphs.ReviewStateUnknown
+	}
+}
+
+// IDSEntryStatusGlyph returns the glyph corresponding to a curated IDS entry status.
+func (t Theme) IDSEntryStatusGlyph(status string) string {
+	switch status {
+	case "none":
+		return t.Glyphs.IDSEntryNone
+	case "pending", "":
+		return t.Glyphs.IDSEntryPending
+	case "submitted":
+		return t.Glyphs.IDSEntrySubmitted
+	case "accepted":
+		return t.Glyphs.IDSEntryAccepted
+	case "ignored":
+		return t.Glyphs.IDSEntryIgnored
+	default:
+		return t.Glyphs.IDSEntryUnknown
 	}
 }
 

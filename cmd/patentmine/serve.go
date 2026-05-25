@@ -132,7 +132,8 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithCPCLookup(crawl.LookupCPCDescription),
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),
-		engine.WithMetrics(telemetry.Metrics)), nil
+		engine.WithMetrics(telemetry.Metrics),
+		engine.WithIDSExportDir(cfg.IDSExportDir)), nil
 }
 
 // fail prints err and returns the failure exit code.

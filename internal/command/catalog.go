@@ -107,6 +107,8 @@ const (
 	ProjectCreate      ID = "project.create"
 	ProjectActivate    ID = "project.activate"
 	ProjectClearActive ID = "project.clear-active"
+	ProjectIDSHeader   ID = "project.ids-header"
+	IDSExportPDF       ID = "ids.export-pdf"
 
 	// Filtering.
 	Filter   ID = "view.filter"
@@ -269,5 +271,7 @@ func Default() (*Registry, error) {
 
 		// --- projects (engine) ---
 		Command{ID: ProjectCreate, Name: "project.create", Aliases: []string{"create-project"}, Usage: ":project.create [NAME]", Kind: KindEngine, Method: proto.MethodProjectCreate, Scopes: []Scope{ScopeProjects}},
+		Command{ID: ProjectIDSHeader, Name: "project.ids-header", Aliases: []string{"ids-header", "project-header"}, Usage: ":project.ids-header", Kind: KindView, Scopes: projectScopes},
+		Command{ID: IDSExportPDF, Name: "ids.export.pdf", Aliases: []string{"export-ids-pdf", "ids-pdf"}, Usage: ":ids.export.pdf", Kind: KindEngine, Method: proto.MethodIDSPDFExport, Scopes: projectScopes},
 	)
 }

@@ -142,6 +142,14 @@ type ReviewStateChangedMsg struct {
 	State   domain.ReviewState
 }
 
+// IDSEntryChangedMsg reports a committed change to a patent's curated IDS entry.
+type IDSEntryChangedMsg struct {
+	Project domain.ProjectID
+	Patent  domain.PatentNumber
+	Entry   *domain.IDSEntry // nil if the entry was deleted
+}
+
+
 // MultiCrawlStartedMsg is emitted when multiple patents are selected and a
 // crawl or lookup is started for each of them. It carries all job IDs so the
 // app can show a single aggregate overlay instead of stacking one per job.

@@ -34,6 +34,32 @@ func (s *Server) handleIDS(w http.ResponseWriter, r *http.Request) {
 		proto.IDSExportParams{Project: domain.ProjectID(r.PathValue("id"))}, &res)
 }
 
+// handleIDSPDF renders the IDS bundle (PTO/SB/08a + 08c) to disk.
+// Optional JSON body fields override defaults: cumulative_count, fee_amount,
+// deposit_account, signer_name, signer_signature, signer_reg_number.
+func (s *Server) handleIDSPDF(w http.ResponseWriter, r *http.Request) {
+	params := proto.IDSPDFExportParams{Project: domain.ProjectID(r.PathValue("id"))}
+	if r.ContentLength > 0 {
+		if !decodeBody(w, r, &params) {
+			return
+		}
+		params.Project = domain.ProjectID(r.PathValue("id"))
+	}
+	var res proto.IDSPDFExportResult
+	s.call(w, r, proto.MethodIDSPDFExport, params, &res)
+}
+
+// handleProjectUpdate persists changes to a project's mutable fields.
+func (s *Server) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
+	var body domain.Project
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	body.ID = domain.ProjectID(r.PathValue("id"))
+	var res proto.ProjectResult
+	s.call(w, r, proto.MethodProjectUpdate, proto.ProjectUpdateParams{Project: body}, &res)
+}
+
 // handleProjectList lists projects.
 func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 	var res proto.ProjectListResult

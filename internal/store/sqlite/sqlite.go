@@ -125,15 +125,65 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err := r.syncFTS(ctx); err != nil {
 		return err
 	}
-	// Migrate existing project tables to add IDS metadata columns when missing.
+	// Migration G: drop redundant ids_country_code (country lives on the
+	// patent), add ids_submitted_at to timestamp the submitted transition.
+	if has, _ := r.columnExists(ctx, "membership", "ids_country_code"); has {
+		if _, err := r.writer.ExecContext(ctx,
+			`ALTER TABLE membership DROP COLUMN ids_country_code`); err != nil {
+			return fmt.Errorf("store/sqlite: drop ids_country_code: %w", err)
+		}
+	}
+	if has, _ := r.columnExists(ctx, "membership", "ids_submitted_at"); !has {
+		if _, err := r.writer.ExecContext(ctx,
+			`ALTER TABLE membership ADD COLUMN ids_submitted_at TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("store/sqlite: add ids_submitted_at: %w", err)
+		}
+	}
+	// Migrate existing project tables to add IDS header columns when missing.
 	for _, col := range []string{
-		"application_number", "filing_date", "first_named_inventor",
-		"art_unit", "examiner_name", "attorney_docket_number",
+		"application_number", "filing_date",
+		"art_unit", "attorney_docket_number",
 	} {
 		has, err := r.columnExists(ctx, "project", col)
 		if err == nil && !has {
 			_, _ = r.writer.ExecContext(ctx,
 				`ALTER TABLE project ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`)
+		}
+	}
+	// Create the per-project inventor + examiner side tables when missing, and
+	// fold any legacy single-value columns into them.
+	hasInventorTable, _ := r.tableExists(ctx, "project_inventor")
+	if !hasInventorTable {
+		_, _ = r.writer.ExecContext(ctx, `
+			CREATE TABLE project_inventor (
+				project_id TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+				ordering   INTEGER NOT NULL,
+				name       TEXT NOT NULL,
+				PRIMARY KEY (project_id, ordering)
+			)`)
+		if legacy, _ := r.columnExists(ctx, "project", "first_named_inventor"); legacy {
+			_, _ = r.writer.ExecContext(ctx, `
+				INSERT INTO project_inventor (project_id, ordering, name)
+				SELECT id, 0, first_named_inventor FROM project
+				WHERE first_named_inventor <> ''`)
+		}
+	}
+	hasExaminerTable, _ := r.tableExists(ctx, "project_examiner")
+	if !hasExaminerTable {
+		_, _ = r.writer.ExecContext(ctx, `
+			CREATE TABLE project_examiner (
+				project_id  TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+				name        TEXT NOT NULL,
+				recorded_at TEXT NOT NULL,
+				PRIMARY KEY (project_id, recorded_at, name)
+			)`)
+		_, _ = r.writer.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_project_examiner_latest ON project_examiner (project_id, recorded_at DESC)`)
+		if legacy, _ := r.columnExists(ctx, "project", "examiner_name"); legacy {
+			_, _ = r.writer.ExecContext(ctx, `
+				INSERT INTO project_examiner (project_id, name, recorded_at)
+				SELECT id, examiner_name, created_at FROM project
+				WHERE examiner_name <> ''`)
 		}
 	}
 	hasPatentNotes, err := r.tableExists(ctx, "project_patent_note")

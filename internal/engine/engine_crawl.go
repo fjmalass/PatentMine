@@ -30,7 +30,7 @@ func (e *Engine) StartFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 	}
 	e.log(ctx, slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "crawl.start",
+		Action:   observability.ActionCrawlStart,
 		Entity:   "job",
 		EntityID: string(id),
 		Status:   "queued",
@@ -56,7 +56,7 @@ func (e *Engine) ImportFile(ctx context.Context, path string) (err error) {
 	}
 	e.log(ctx, slog.LevelInfo, "file imported", slog.String("path", path))
 	e.recordActivity(ctx, observability.Record{
-		Action: "import.file", Entity: "patent", EntityID: path, Status: "committed",
+		Action: observability.ActionImportFile, Entity: "patent", EntityID: path, Status: "committed",
 	})
 	e.announceChange()
 	return nil
@@ -131,7 +131,7 @@ func (e *Engine) CancelCrawl(ctx context.Context, id JobID) (err error) {
 	}
 	e.log(ctx, slog.LevelInfo, "crawl cancelled", slog.String("job_id", string(id)))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "crawl.cancel",
+		Action:   observability.ActionCrawlCancel,
 		Entity:   "job",
 		EntityID: string(id),
 		Status:   "committed",

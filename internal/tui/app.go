@@ -104,6 +104,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.ProjectActivate:            (*App).cmdProjectActivate,
 	command.ProjectClearActive:         (*App).cmdProjectClear,
 	command.ProjectCreate:              (*App).cmdProjectCreate,
+	command.ProjectIDSHeader:           (*App).cmdEditIDSHeader,
+	command.IDSExportPDF:               (*App).cmdIDSExportPDF,
 	command.AddToProject:               (*App).cmdAddToProject,
 	command.Import:                     (*App).cmdImport,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
@@ -386,6 +388,11 @@ func (a *App) fetchPing() tea.Cmd {
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case idsHeaderSavedMsg:
+		saved := m.project
+		a.activeProject = &saved
+		a.setStatus(text.StatusUsage, "IDS header saved")
+		return a, nil
 	case aiPatentLoadedMsg:
 		if m.err != nil {
 			a.setErr(text.StatusAIAnalysisFailed, m.err.Error())
@@ -450,6 +457,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
 		return a.handleTextSubmit(m)
+	case overlay.IDSHeaderSubmitMsg:
+		a.popOverlay()
+		return a.handleIDSHeaderSubmit(m.Project)
+	case idsExportPreviewedMsg:
+		return a.handleIDSExportPreviewed(m)
+	case overlay.IDSExportSubmitMsg:
+		a.popOverlay()
+		return a.handleIDSExportSubmit(m)
 	case pane.EditIDSFieldMsg:
 		return a.openIDSEditInput(m.Field)
 	case pane.SearchAppliedMsg:
@@ -458,7 +473,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			projectID = a.activeProject.ID
 		}
 		return a, a.recordActivity(observability.Record{
-			Action:   "filter.apply",
+			Action:   observability.ActionFilterApply,
 			Entity:   "filter",
 			EntityID: m.Query,
 			Status:   "requested",
@@ -559,7 +574,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				projectName = a.activeProject.Name
 			}
 			return a, a.recordActivity(observability.Record{
-				Action:   "notes.export",
+				Action:   observability.ActionNotesExport,
 				Entity:   "project",
 				EntityID: string(projectID),
 				Status:   "done",
@@ -597,6 +612,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.setStatus(text.StatusSetState, fmt.Sprintf("%d patents", len(m.Patents)), string(m.State), string(m.Project))
 		}
+		return a, a.broadcast(m)
+	case pane.IDSEntryChangedMsg:
+		var statusStr string
+		if m.Entry != nil {
+			statusStr = string(m.Entry.Status)
+		} else {
+			statusStr = "deleted"
+		}
+		a.log().Info("tui.ids_entry.broadcast",
+			slog.String("project_id", string(m.Project)),
+			slog.String("patent", m.Patent.String()),
+			slog.String("status", statusStr))
 		return a, a.broadcast(m)
 	case pane.MultiCrawlStartedMsg:
 		isLookup := m.Depth == 0

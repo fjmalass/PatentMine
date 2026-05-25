@@ -54,13 +54,32 @@ func TestEngineWritesSemanticActivityRecords(t *testing.T) {
 	if err := eng.SetReviewState(context.Background(), project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
 		t.Fatalf("SetReviewState: %v", err)
 	}
+	if _, err := eng.SaveIDSEntry(context.Background(), domain.IDSEntry{
+		Project: project.ID,
+		Patent:  patent.Number,
+		Status:  domain.IDSEntrySubmitted,
+		Notes:   "primary reference",
+	}); err != nil {
+		t.Fatalf("SaveIDSEntry: %v", err)
+	}
+	if err := eng.DeleteIDSEntry(context.Background(), project.ID, patent.Number); err != nil {
+		t.Fatalf("DeleteIDSEntry: %v", err)
+	}
 
 	date := time.Now().In(time.Local).Format("2006-01-02")
 	body, err := os.ReadFile(filepath.Join(logsDir, "activity-"+date+".jsonl"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	for _, action := range []string{`"action":"patent.save"`, `"action":"project.create"`, `"action":"membership.add"`, `"action":"membership.set_state"`, `"mutation_group_id"`} {
+	for _, action := range []string{
+		`"action":"patent.save"`,
+		`"action":"project.create"`,
+		`"action":"membership.add"`,
+		`"action":"membership.set_state"`,
+		`"action":"ids.entry.save"`,
+		`"action":"ids.entry.delete"`,
+		`"mutation_group_id"`,
+	} {
 		if !strings.Contains(string(body), action) {
 			t.Fatalf("activity log missing %s: %s", action, body)
 		}

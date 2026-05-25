@@ -653,20 +653,23 @@ func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
 	var lastKey string
 	for _, r := range records {
 		key := r.Action + ":" + r.Entity + ":" + r.EntityID
-		if r.Action == "filter.apply" || r.Action == "project.switch" || r.Action == "membership.set_state" || r.Action == "patent.tag_assign" || r.Action == "patent.tag_remove" {
-			if key != lastKey {
-				filtered = append(filtered, r)
-				lastKey = key
-			}
-		} else if r.Action == "ui.focus" && r.Entity == "patent" {
-			// Only include actual detail/navigation page views (detail, citations, family, ids, fulltext),
-			// ignoring background catalog hover cursor dwell events (catalog).
+		// ui.focus is listed by classifier but further filtered by scope so
+		// background catalog hover dwell events stay out.
+		if r.Action == observability.ActionUIFocus && r.Entity == "patent" {
 			if scope, ok := r.Metadata["scope"].(string); ok && (scope == "detail" || scope == "citations" || scope == "family" || scope == "ids" || scope == "fulltext") {
 				if key != lastKey {
 					filtered = append(filtered, r)
 					lastKey = key
 				}
 			}
+			continue
+		}
+		if !overlay.IsListedAction(r.Action) {
+			continue
+		}
+		if key != lastKey {
+			filtered = append(filtered, r)
+			lastKey = key
 		}
 	}
 	if len(filtered) == 0 {
@@ -691,14 +694,17 @@ func (a *App) cmdOpenHistory(invocation) (tea.Model, tea.Cmd) {
 
 func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea.Model, tea.Cmd) {
 	switch rec.Action {
-	case "ui.focus", "membership.set_state", "patent.tag_assign", "patent.tag_remove":
+	case observability.ActionUIFocus,
+		observability.ActionMembershipSetState,
+		observability.ActionPatentTagAssign, observability.ActionPatentTagRemove,
+		observability.ActionIDSEntrySave, observability.ActionIDSEntryDelete:
 		// Immediate navigation to patent details/views (no confirmation overlay required)
 		a.overlays = nil
 		if len(a.panes) > 1 {
 			a.panes = a.panes[:1]
 		}
 		var numStr string
-		if rec.Action == "ui.focus" {
+		if rec.Action == observability.ActionUIFocus {
 			numStr = rec.EntityID
 		} else if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
 			numStr = reqNum
@@ -711,12 +717,12 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 		}
 		if number, err := domain.ParsePatentNumber(numStr); err == nil {
 			entityParts := strings.Split(rec.EntityID, "/")
-			isMembershipOrTag := rec.Action == "membership.set_state" || rec.Action == "patent.tag_assign" || rec.Action == "patent.tag_remove"
+			isProjectPatentRec := overlay.IsProjectPatentAction(rec.Action)
 
 			var project domain.ProjectID
 			if pVal, ok := rec.Metadata["project"].(string); ok && pVal != "" {
 				project = domain.ProjectID(pVal)
-			} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
+			} else if isProjectPatentRec && len(entityParts) >= 1 && entityParts[0] != "" {
 				project = domain.ProjectID(entityParts[0])
 			} else if a.activeProject != nil {
 				project = a.activeProject.ID
@@ -736,6 +742,9 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 			}
 
 			scope, _ := rec.Metadata["scope"].(string)
+			if s := overlay.ReplayScope(rec.Action); s != "" {
+				scope = s
+			}
 			var replayModel tea.Model
 			var replayCmd tea.Cmd
 			switch scope {
@@ -773,7 +782,7 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 		a.setErr(text.StatusHistoryPatentUnavailable, rec.EntityID)
 		return a, nil
 
-	case "filter.apply":
+	case observability.ActionFilterApply:
 		if !confirmed {
 			a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
 			prompt := fmt.Sprintf("Apply filter '%s'?", rec.EntityID)
@@ -787,7 +796,7 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 		}
 		return a.executeTypedCommand("filter " + rec.EntityID)
 
-	case "project.switch":
+	case observability.ActionProjectSwitch:
 		if !confirmed {
 			a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
 			projectName := rec.EntityID

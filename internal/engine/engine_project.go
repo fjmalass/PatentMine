@@ -37,7 +37,7 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 	}
 	e.log(ctx, slog.LevelInfo, "project created", slog.String("project_id", string(p.ID)), slog.String("name", p.Name))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "project.create",
+		Action:   observability.ActionProjectCreate,
 		Entity:   "project",
 		EntityID: string(p.ID),
 		Status:   "committed",
@@ -78,7 +78,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	}
 	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
 	e.recordActivity(ctx, observability.Record{
-		Action:   "membership.add",
+		Action:   observability.ActionMembershipAdd,
 		Entity:   "membership",
 		EntityID: string(project) + "/" + record.String(),
 		Status:   "committed",
@@ -198,7 +198,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				slog.String("requested", record.String()))
 
 			e.recordActivity(ctx, observability.Record{
-				Action:   "membership.add",
+				Action:   observability.ActionMembershipAdd,
 				Entity:   "membership",
 				EntityID: string(project) + "/" + record.String(),
 				Status:   "committed",
@@ -278,7 +278,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				metadata["mutation_group_id"] = mutationGroupID
 			}
 			rec := observability.Record{
-				Action:   "membership.set_state",
+				Action:   observability.ActionMembershipSetState,
 				Entity:   "membership",
 				EntityID: string(project) + "/" + record.String(),
 				Status:   "committed",

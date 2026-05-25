@@ -512,6 +512,16 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			}
 			c.patents[i].ReviewState = m.State
 		}
+	case IDSEntryChangedMsg:
+		if c.activeProject == nil || c.activeProject.ID != m.Project {
+			return c, nil
+		}
+		for i := range c.patents {
+			if c.patents[i].Number == m.Patent {
+				c.patents[i].IDSEntry = m.Entry
+				break
+			}
+		}
 	case patentTableColumnsLoadedMsg:
 		if m.requestID != c.columnsLoadID {
 			return c, nil

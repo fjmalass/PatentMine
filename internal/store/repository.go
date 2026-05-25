@@ -28,6 +28,8 @@ type PatentQuery struct {
 	Filter string
 	// ReviewState, when set together with Project, filters by review state.
 	ReviewState domain.ReviewState
+	// IDSStatus, when set together with Project, filters by curated IDS entry status.
+	IDSStatus string
 	// Relation, when set together with RelationKind, restricts results to
 	// patents having that relation to the given patent number.
 	Relation     domain.PatentNumber

@@ -115,6 +115,9 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.IDSEditField}, Label: text.HintDetail},
 			{Commands: []command.ID{command.IDSToggleFull}, Label: text.HintDetail},
 			{Commands: []command.ID{command.IDSCycleStatus}, Label: text.HintProjectActions},
+			{Commands: []command.ID{command.ProjectIDSHeader}, Label: text.HintIDSHeader},
+			{Commands: []command.ID{command.IDSExportPDF}, Label: text.HintExportIDSPDF},
+			{Commands: []command.ID{command.OpenAllNotes}, Label: text.HintNotes},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
 		command.ScopeProjects: {
@@ -123,12 +126,30 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.ProjectActivate}, Label: text.HintSelectProject},
 			{Commands: []command.ID{command.ProjectClearActive}, Label: text.HintClearActive},
 			{Commands: []command.ID{command.ProjectCreate}, Label: text.HintNewProject},
+			{Commands: []command.ID{command.ProjectIDSHeader}, Label: text.HintIDSHeader},
+			{Commands: []command.ID{command.IDSExportPDF}, Label: text.HintExportIDSPDF},
 			{Commands: []command.ID{command.ExportIDS}, Label: text.HintExportIDS},
+			{Commands: []command.ID{command.OpenAllNotes}, Label: text.HintNotes},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
 		command.ScopeOverlay: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
+		},
+		command.ScopeFullText: {
+			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
+			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
+			{Commands: []command.ID{command.CopyYank, command.CopyYankMeta}, Label: text.HintCopy},
+			{Commands: []command.ID{command.NoteAdd}, Label: text.HintNoteAdd},
+			{Commands: []command.ID{command.NoteOpen}, Label: text.HintNoteOpen},
+			{Commands: []command.ID{command.Back}, Label: text.HintBack},
+		},
+		command.ScopeNotes: {
+			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
+			{Commands: []command.ID{command.OpenPatentNote}, Label: text.HintDetail},
+			{Commands: []command.ID{command.NotesSortToggle}, Label: text.HintMove},
+			{Commands: []command.ID{command.NotesExportMD}, Label: text.HintExportNotes},
+			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
 	}
 }

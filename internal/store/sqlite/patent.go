@@ -39,13 +39,14 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
-				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_country_code, ''), COALESCE(m.ids_in_full, 0), ` +
-				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), COALESCE(m.ids_added_at, '')` +
+				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_in_full, 0), ` +
+				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), ` +
+				`COALESCE(m.ids_added_at, ''), COALESCE(m.ids_submitted_at, '')` +
 				relationCounts + `, p.classifications`,
 			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', '', 0, '', '', '', ''` +
+		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', 0, '', '', '', '', ''` +
 		relationCounts + `, p.classifications`, nil
 }
 
@@ -256,9 +257,10 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		expirationDate               string
 		fetchState, reviewState      string
 		tagsJSON                     string
-		idsKindCode, idsCountryCode  string
+		idsKindCode                  string
 		idsRelevant, idsNotes        string
 		idsStatus, idsAddedAt        string
+		idsSubmittedAt               string
 		idsInFull                    int
 		citationsCount, citedByCount int
 		parentsCount                 int
@@ -266,7 +268,7 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
-		&idsKindCode, &idsCountryCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt,
+		&idsKindCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt, &idsSubmittedAt,
 		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON); err != nil {
 		return domain.PatentRow{}, err
 	}
@@ -298,11 +300,10 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	row.CitationsCount = citationsCount
 	row.CitedByCount = citedByCount
 	row.ParentsCount = parentsCount
-	if idsStatus != "" || idsKindCode != "" || idsCountryCode != "" || idsRelevant != "" || idsNotes != "" || idsAddedAt != "" || idsInFull != 0 {
+	if idsStatus != "" || idsKindCode != "" || idsRelevant != "" || idsNotes != "" || idsAddedAt != "" || idsInFull != 0 {
 		row.IDSEntry = &domain.IDSEntry{
 			Patent:           row.Number,
 			KindCode:         idsKindCode,
-			CountryCode:      idsCountryCode,
 			InFull:           idsInFull != 0,
 			RelevantPassages: idsRelevant,
 			Notes:            idsNotes,
@@ -310,6 +311,9 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		}
 		if t, err := decodeTime(idsAddedAt); err == nil {
 			row.IDSEntry.AddedAt = t
+		}
+		if t, err := decodeTime(idsSubmittedAt); err == nil {
+			row.IDSEntry.SubmittedAt = t
 		}
 	}
 	return row, nil
@@ -403,6 +407,17 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 			conds = append(conds, "m.state = ?")
 			args = append(args, string(q.ReviewState))
 		}
+		if q.IDSStatus != "" {
+			status, err := filterexpr.ParseIDSEntryStatus(q.IDSStatus)
+			if err != nil {
+				return "", nil, err
+			}
+			cond, condArgs := idsStatusCondition(status)
+			conds = append(conds, cond)
+			args = append(args, condArgs...)
+		}
+	} else if q.IDSStatus != "" {
+		return "", nil, fmt.Errorf("ids_status filters require an active project")
 	}
 
 	if len(q.Numbers) > 0 {
@@ -507,6 +522,9 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 	switch term.Field {
 	case filterexpr.FieldState:
 		return "m.state = ?", []any{string(term.State)}, nil
+	case filterexpr.FieldIDSStatus:
+		cond, args := idsStatusCondition(term.IDSStatus)
+		return cond, args, nil
 	case filterexpr.FieldTag:
 		return `EXISTS (SELECT 1 FROM patent_tag pt JOIN tag t ON t.id = pt.tag_id ` +
 			`WHERE t.project_id = ? AND pt.patent_number = p.number AND LOWER(t.name) = LOWER(?))`, []any{string(q.Project), term.Value}, nil
@@ -534,6 +552,13 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
 	}
+}
+
+func idsStatusCondition(status string) (string, []any) {
+	if status == "none" {
+		return "COALESCE(m.ids_status, '') = ''", nil
+	}
+	return "m.ids_status = ?", []any{status}
 }
 
 func classificationLikePattern(part string, wildcard bool) string {

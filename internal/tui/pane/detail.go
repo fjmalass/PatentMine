@@ -22,6 +22,32 @@ const detailDateLayout = "2006-01-02"
 
 const detailClassificationLimit = 24
 
+const (
+	detailLabelShownAs         = "Shown as"
+	detailLabelRecordKey       = "Record key"
+	detailLabelTitle           = "Title"
+	detailLabelAssignee        = "Assignee"
+	detailLabelInventors       = "Inventors"
+	detailLabelCountry         = "Country"
+	detailLabelFetchState      = "Fetch state"
+	detailLabelSource          = "Source"
+	detailLabelSourceURL       = "Source URL"
+	detailLabelExpiration      = "Expiration"
+	detailLabelClassifications = "Classifications"
+	detailLabelReviewState     = "Review state"
+	detailLabelIDS             = "IDS"
+	detailLabelTags            = "Tags"
+	detailLabelNotes           = "Notes"
+	detailLabelCitations       = "Citations"
+	detailLabelCitedBy         = "Cited by"
+	detailLabelParents         = "Parents"
+	detailLabelChildren        = "Children"
+	detailLabelDocuments       = "Documents"
+	detailLabelFirstClaim      = "First claim"
+	detailLabelFullClaimsText  = "Full claims text"
+	detailLabelAbstract        = "Abstract"
+)
+
 // detailLoadedMsg delivers a finished patent.get result. state and tags are
 // project-scoped and empty when the detail pane has no project.
 type detailLoadedMsg struct {
@@ -87,21 +113,21 @@ type detailLineGroup struct {
 // detailAnchorLabels are the section labels in display order. The jump key
 // assignment algorithm uses this order to assign keys.
 var detailAnchorLabels = []string{
-	"Assignee",
-	"Inventors",
-	"Expiration",
-	"Classifications",
-	"Review state",
-	"IDS",
-	"Tags",
-	"Notes",
-	"Citations",
-	"Cited by",
-	"Parents",
-	"Children",
-	"Documents",
-	"First claim",
-	"Abstract",
+	detailLabelAssignee,
+	detailLabelInventors,
+	detailLabelExpiration,
+	detailLabelClassifications,
+	detailLabelReviewState,
+	detailLabelIDS,
+	detailLabelTags,
+	detailLabelNotes,
+	detailLabelCitations,
+	detailLabelCitedBy,
+	detailLabelParents,
+	detailLabelChildren,
+	detailLabelDocuments,
+	detailLabelFirstClaim,
+	detailLabelAbstract,
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
@@ -131,19 +157,19 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 	}
 	override := func(label string, used map[rune]bool) rune {
 		switch label {
-		case "Citations":
+		case detailLabelCitations:
 			if !used['c'] {
 				return 'c'
 			}
-		case "Cited by":
+		case detailLabelCitedBy:
 			if !used['b'] {
 				return 'b'
 			}
-		case "Parents":
+		case detailLabelParents:
 			if !used['p'] {
 				return 'p'
 			}
-		case "Children":
+		case detailLabelChildren:
 			if !used['C'] {
 				return 'C'
 			}
@@ -313,6 +339,12 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			d.cachedLines = nil
 			break
 		}
+	case IDSEntryChangedMsg:
+		if d.project != m.Project || d.number != m.Patent {
+			return d, nil
+		}
+		d.idsEntry = m.Entry
+		d.cachedLines = nil
 	}
 	return d, nil
 }
@@ -387,14 +419,14 @@ func (d *Detail) body(w int) string {
 	d.jump.ClearAnchors()
 	d.lineGroups = d.lineGroups[:0]
 	var b strings.Builder
-	d.field(&b, w, "Shown as", numberToShow(p).String())
-	d.field(&b, w, "Record key", p.Number.String())
-	d.field(&b, w, "Title", p.Title)
+	d.field(&b, w, detailLabelShownAs, numberToShow(p).String())
+	d.field(&b, w, detailLabelRecordKey, p.Number.String())
+	d.field(&b, w, detailLabelTitle, p.Title)
 
 	// Assignee
-	d.addAnchor(&b, d.jumpKey("Assignee"), "Assignee", p.Assignee, false, 0)
+	d.addAnchor(&b, d.jumpKey(detailLabelAssignee), detailLabelAssignee, p.Assignee, false, 0)
 	d.assigneeLine = strings.Count(b.String(), "\n")
-	d.field(&b, w, "Assignee", p.Assignee)
+	d.field(&b, w, detailLabelAssignee, p.Assignee)
 
 	// Inventors
 	var names []string
@@ -402,43 +434,43 @@ func (d *Detail) body(w int) string {
 		names = append(names, string(inv))
 	}
 	invsVal := strings.Join(names, ", ")
-	d.addAnchor(&b, d.jumpKey("Inventors"), "Inventors", invsVal, false, 0)
+	d.addAnchor(&b, d.jumpKey(detailLabelInventors), detailLabelInventors, invsVal, false, 0)
 	d.inventorLine = strings.Count(b.String(), "\n")
-	d.field(&b, w, "Inventors", invsVal)
+	d.field(&b, w, detailLabelInventors, invsVal)
 
-	d.field(&b, w, "Country", countryOrDash(p.Number.Country))
-	d.field(&b, w, "Fetch state", detailFetchStateText(d.theme, p.FetchState))
-	d.field(&b, w, "Source", string(p.Source))
-	d.field(&b, w, "Source URL", p.SourceURL)
+	d.field(&b, w, detailLabelCountry, countryOrDash(p.Number.Country))
+	d.field(&b, w, detailLabelFetchState, detailFetchStateText(d.theme, p.FetchState))
+	d.field(&b, w, detailLabelSource, string(p.Source))
+	d.field(&b, w, detailLabelSourceURL, p.SourceURL)
 
 	// Expiration
 	expVal := expirationText(p)
-	d.addAnchor(&b, d.jumpKey("Expiration"), "Expiration", expVal, false, 0)
-	d.field(&b, w, "Expiration", expVal)
+	d.addAnchor(&b, d.jumpKey(detailLabelExpiration), detailLabelExpiration, expVal, false, 0)
+	d.field(&b, w, detailLabelExpiration, expVal)
 
 	// Classifications: comma-joined codes wrapped across the value column.
 	// Cached descriptions live in the dedicated popup (K), so the detail field
 	// stays compact regardless of how many codes a record carries.
 	classVal := detailClassificationsText(p.Classifications)
-	d.addAnchor(&b, d.jumpKey("Classifications"), "Classifications", classVal, false, 0)
+	d.addAnchor(&b, d.jumpKey(detailLabelClassifications), detailLabelClassifications, classVal, false, 0)
 	d.classificationLine = strings.Count(b.String(), "\n")
-	d.wrappedField(&b, w, "Classifications", classVal)
+	d.wrappedField(&b, w, detailLabelClassifications, classVal)
 
 	// Project-scoped fields. Review state and tags describe the patent within
 	// one project, so they appear only when the pane has an active project.
 	if d.project != "" {
 		b.WriteByte('\n')
 		revVal := detailReviewStateText(d.state)
-		d.addAnchor(&b, d.jumpKey("Review state"), "Review state", revVal, true, 0)
-		d.field(&b, w, "Review state", detailStyledReviewStateText(d.theme, d.state))
+		d.addAnchor(&b, d.jumpKey(detailLabelReviewState), detailLabelReviewState, revVal, true, 0)
+		d.field(&b, w, detailLabelReviewState, detailStyledReviewStateText(d.theme, d.state))
 
-		idsVal := detailIDSText(d.idsEntry)
-		d.addAnchor(&b, d.jumpKey("IDS"), "IDS", idsVal, true, 0)
-		d.field(&b, w, "IDS", idsVal)
+		idsVal := detailIDSText(d.theme, d.idsEntry)
+		d.addAnchor(&b, d.jumpKey(detailLabelIDS), detailLabelIDS, idsVal, true, 0)
+		d.field(&b, w, detailLabelIDS, idsVal)
 
 		tagsVal := tagsText(d.tags)
-		d.addAnchor(&b, d.jumpKey("Tags"), "Tags", tagsVal, true, 0)
-		d.field(&b, w, "Tags", tagsVal)
+		d.addAnchor(&b, d.jumpKey(detailLabelTags), detailLabelTags, tagsVal, true, 0)
+		d.field(&b, w, detailLabelTags, tagsVal)
 
 		var notesVal string
 		if d.patentNote == nil || strings.TrimSpace(d.patentNote.Markdown) == "" {
@@ -446,37 +478,37 @@ func (d *Detail) body(w int) string {
 		} else {
 			notesVal = render.MarkdownHeadings(d.patentNote.Markdown)
 		}
-		d.addAnchor(&b, d.jumpKey("Notes"), "Notes", notesVal, true, 0)
-		d.field(&b, w, "Notes", notesVal)
+		d.addAnchor(&b, d.jumpKey(detailLabelNotes), detailLabelNotes, notesVal, true, 0)
+		d.field(&b, w, detailLabelNotes, notesVal)
 	}
 
 	// Family-graph edge counts. The dedicated panes (c/b) list the edges.
 	b.WriteByte('\n')
 	citeVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCites])
-	d.addAnchor(&b, d.jumpKey("Citations"), "Citations", citeVal, false, 0)
-	d.field(&b, w, "Citations", citeVal)
+	d.addAnchor(&b, d.jumpKey(detailLabelCitations), detailLabelCitations, citeVal, false, 0)
+	d.field(&b, w, detailLabelCitations, citeVal)
 
 	citedByVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCitedBy])
-	d.addAnchor(&b, d.jumpKey("Cited by"), "Cited by", citedByVal, false, 0)
-	d.field(&b, w, "Cited by", citedByVal)
+	d.addAnchor(&b, d.jumpKey(detailLabelCitedBy), detailLabelCitedBy, citedByVal, false, 0)
+	d.field(&b, w, detailLabelCitedBy, citedByVal)
 
 	parentsVal := fmt.Sprintf("%d", d.relCounts[domain.RelationParent])
-	d.addAnchor(&b, d.jumpKey("Parents"), "Parents", parentsVal, false, 0)
-	d.field(&b, w, "Parents", parentsVal)
+	d.addAnchor(&b, d.jumpKey(detailLabelParents), detailLabelParents, parentsVal, false, 0)
+	d.field(&b, w, detailLabelParents, parentsVal)
 
 	childVal := fmt.Sprintf("%d", d.relCounts[domain.RelationChild])
-	d.addAnchor(&b, d.jumpKey("Children"), "Children", childVal, false, 0)
-	d.field(&b, w, "Children", childVal)
+	d.addAnchor(&b, d.jumpKey(detailLabelChildren), detailLabelChildren, childVal, false, 0)
+	d.field(&b, w, detailLabelChildren, childVal)
 
 	// Every life-stage document — the application stays visible here even once
 	// the patent has published.
 	docVal := fmt.Sprintf("%d documents", len(p.Documents))
-	d.addAnchor(&b, d.jumpKey("Documents"), "Documents", docVal, false, 1)
+	d.addAnchor(&b, d.jumpKey(detailLabelDocuments), detailLabelDocuments, docVal, false, 1)
 	docStart := strings.Count(b.String(), "\n") + 1
 	b.WriteByte('\n')
-	displayDocs := "Documents"
+	displayDocs := detailLabelDocuments
 	if d.jump.Active {
-		displayDocs = fmt.Sprintf("[%s] Documents", d.theme.Warn.Copy().Bold(true).Render(string(d.jumpKey("Documents"))))
+		displayDocs = fmt.Sprintf("[%s] %s", d.theme.Warn.Copy().Bold(true).Render(string(d.jumpKey(detailLabelDocuments))), detailLabelDocuments)
 	}
 	b.WriteString(d.theme.Header.Render(displayDocs))
 	b.WriteByte('\n')
@@ -497,12 +529,12 @@ func (d *Detail) body(w int) string {
 	}
 
 	claimVal := render.Truncate(p.FirstClaim, 60)
-	d.addAnchor(&b, d.jumpKey("First claim"), "First claim", claimVal, false, 1)
-	d.section(&b, w, "First claim", p.FirstClaim)
+	d.addAnchor(&b, d.jumpKey(detailLabelFirstClaim), detailLabelFirstClaim, claimVal, false, 1)
+	d.section(&b, w, detailLabelFirstClaim, p.FirstClaim)
 
 	// Full claims text action hint
 	b.WriteByte('\n')
-	fullTextLabel := "Full claims text"
+	fullTextLabel := detailLabelFullClaimsText
 	key := d.jumpKey(fullTextLabel)
 	if key != 0 {
 		b.WriteString(d.theme.Warn.Render(fmt.Sprintf("[%s] %s — press '%s' to open full text viewer", string(key), fullTextLabel, string(key))))
@@ -512,8 +544,8 @@ func (d *Detail) body(w int) string {
 	b.WriteByte('\n')
 
 	abstractVal := render.Truncate(p.Abstract, 60)
-	d.addAnchor(&b, d.jumpKey("Abstract"), "Abstract", abstractVal, false, 1)
-	d.section(&b, w, "Abstract", p.Abstract)
+	d.addAnchor(&b, d.jumpKey(detailLabelAbstract), detailLabelAbstract, abstractVal, false, 1)
+	d.section(&b, w, detailLabelAbstract, p.Abstract)
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -745,7 +777,7 @@ func (d *Detail) section(b *strings.Builder, w int, heading, text string) {
 
 func isLocalField(label string) bool {
 	switch label {
-	case "Review state", "IDS", "Tags", "Notes":
+	case detailLabelReviewState, detailLabelIDS, detailLabelTags, detailLabelNotes:
 		return true
 	default:
 		return false
@@ -888,17 +920,14 @@ func detailClassificationsText(classifications []string) string {
 	return fmt.Sprintf("%s (+%d more; press K)", shown, len(classifications)-detailClassificationLimit)
 }
 
-func detailIDSText(entry *domain.IDSEntry) string {
+func detailIDSText(theme render.Theme, entry *domain.IDSEntry) string {
 	if entry == nil {
-		return "not on IDS"
+		return theme.IDSEntryStatusGlyph("none") + " none"
 	}
 	if entry.Project == "" || entry.Patent.IsZero() {
 		return "—"
 	}
-	parts := []string{string(entry.Status)}
-	if !entry.Status.Valid() {
-		parts[0] = string(domain.IDSEntryPending)
-	}
+	parts := []string{idsStatusDisplayText(theme, entry.Status)}
 	switch {
 	case entry.InFull:
 		parts = append(parts, "full")
@@ -958,13 +987,13 @@ func (d *Detail) ResolveCursorRelation() (domain.RelationKind, bool) {
 	for _, a := range d.jump.JumpAnchors() {
 		if a.Line == cursor {
 			switch a.Label {
-			case "Citations":
+			case detailLabelCitations:
 				return domain.RelationCites, true
-			case "Cited by":
+			case detailLabelCitedBy:
 				return domain.RelationCitedBy, true
-			case "Parents":
+			case detailLabelParents:
 				return domain.RelationParent, true
-			case "Children":
+			case detailLabelChildren:
 				return domain.RelationChild, true
 			}
 		}

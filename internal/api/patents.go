@@ -25,21 +25,31 @@ func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	sortAscending, _ := strconv.ParseBool(q.Get("sort_ascending"))
+	params := proto.RelationsParams{
+		Number:         number,
+		Kind:           kind,
+		Project:        domain.ProjectID(q.Get("project")),
+		Filter:         q.Get("filter"),
+		ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
+		IDSStatus:      q.Get("ids_status"),
+		Search:         q.Get("search"),
+		Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),
+		Limit:          limit,
+		Offset:         offset,
+		SortColumn:     domain.SortColumn(q.Get("sort_column")),
+		SortAscending:  sortAscending,
+	}
+	if s.activity != nil && (params.Filter != "" || params.ReviewState != "" || params.IDSStatus != "" || params.Search != "" || params.Classification != "") {
+		_ = s.activity.Record(r.Context(), observability.Record{
+			Action:   observability.ActionFilterApply,
+			Entity:   "filter",
+			EntityID: r.URL.RawQuery,
+			Status:   "requested",
+			Metadata: map[string]any{"source": "http", "path": r.URL.Path, "query": r.URL.RawQuery, "ids_status": params.IDSStatus},
+		})
+	}
 	var res proto.RelationsResult
-	s.call(w, r, proto.MethodRelations,
-		proto.RelationsParams{
-			Number:         number,
-			Kind:           kind,
-			Project:        domain.ProjectID(q.Get("project")),
-			Filter:         q.Get("filter"),
-			ReviewState:    domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
-			Search:         q.Get("search"),
-			Classification: firstNonEmpty(q.Get("classification"), q.Get("class")),
-			Limit:          limit,
-			Offset:         offset,
-			SortColumn:     domain.SortColumn(q.Get("sort_column")),
-			SortAscending:  sortAscending,
-		}, &res)
+	s.call(w, r, proto.MethodRelations, params, &res)
 }
 
 // handleFamilyGraph returns a bounded parent/child family DAG around one patent.
@@ -72,6 +82,7 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 		Project:            domain.ProjectID(q.Get("project")),
 		Filter:             q.Get("filter"),
 		ReviewState:        domain.ReviewState(firstNonEmpty(q.Get("review_state"), q.Get("state"))),
+		IDSStatus:          q.Get("ids_status"),
 		Search:             q.Get("search"),
 		Classification:     firstNonEmpty(q.Get("classification"), q.Get("class")),
 		ClassificationCode: q.Get("classification_code"),
@@ -82,13 +93,13 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 		SortColumn:         domain.SortColumn(q.Get("sort_column")),
 		SortAscending:      sortAscending,
 	}
-	if s.activity != nil && (params.Filter != "" || params.ReviewState != "" || params.Search != "" || params.Classification != "" || params.ClassificationCode != "" || params.Inventor != "" || params.Assignee != "") {
+	if s.activity != nil && (params.Filter != "" || params.ReviewState != "" || params.IDSStatus != "" || params.Search != "" || params.Classification != "" || params.ClassificationCode != "" || params.Inventor != "" || params.Assignee != "") {
 		_ = s.activity.Record(r.Context(), observability.Record{
-			Action:   "filter.apply",
+			Action:   observability.ActionFilterApply,
 			Entity:   "filter",
 			EntityID: r.URL.RawQuery,
 			Status:   "requested",
-			Metadata: map[string]any{"source": "http", "path": r.URL.Path, "query": r.URL.RawQuery},
+			Metadata: map[string]any{"source": "http", "path": r.URL.Path, "query": r.URL.RawQuery, "ids_status": params.IDSStatus},
 		})
 	}
 	var res proto.PatentListResult
@@ -123,7 +134,7 @@ func (s *Server) handlePatentGet(w http.ResponseWriter, r *http.Request) {
 				metadata["duration_ms"] = durationMS
 			}
 			_ = s.activity.Record(r.Context(), observability.Record{
-				Action:   "ui.focus",
+				Action:   observability.ActionUIFocus,
 				Entity:   "patent",
 				EntityID: number.String(),
 				Status:   "observed",

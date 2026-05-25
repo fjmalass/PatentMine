@@ -87,6 +87,7 @@ func viewActions() map[string]command.ID {
 		"C":      command.OpenChildren,
 		"F":      command.OpenFamilyGraph,
 		"g f":    command.OpenFamilyGraph,
+		"g n":    command.OpenAllNotes,
 		"P":      command.OpenProjects,
 		"ctrl+r": command.Refresh,
 	}
@@ -199,6 +200,8 @@ func Default() *Keymaps {
 			"s":      command.IDSCycleStatus,
 			"D":      command.IDSDelete,
 			"p":      command.OpenProjects,
+			"g h":    command.ProjectIDSHeader,
+			"g x":    command.IDSExportPDF,
 			"ctrl+r": command.Refresh,
 		})
 
@@ -211,6 +214,9 @@ func Default() *Keymaps {
 			"u":      command.ProjectClearActive,
 			"n":      command.ProjectCreate,
 			"I":      command.ExportIDS,
+			"g h":    command.ProjectIDSHeader,
+			"g x":    command.IDSExportPDF,
+			"g n":    command.OpenAllNotes,
 			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
@@ -220,6 +226,7 @@ func Default() *Keymaps {
 		BindAll(map[string]command.ID{
 			"s":      command.NotesSortToggle,
 			"e":      command.NotesExportMD,
+			"g x":    command.NotesExportMD,
 			"enter":  command.OpenPatentNote,
 			"N":      command.OpenPatentNote,
 			"h":      command.Back,

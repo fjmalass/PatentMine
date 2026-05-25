@@ -42,6 +42,16 @@ func TestParseSupportsAssigneeWildcard(t *testing.T) {
 	}
 }
 
+func TestParseSupportsIDSStatus(t *testing.T) {
+	expr, err := Parse("ids:pending or ids_status:none")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := CanonicalString(expr), "ids_status:pending or ids_status:none"; got != want {
+		t.Fatalf("CanonicalString = %q, want %q", got, want)
+	}
+}
+
 func TestParseRejectsLegacySyntax(t *testing.T) {
 	_, err := Parse("state active")
 	if err == nil {
@@ -69,5 +79,13 @@ func TestValidateProjectScope(t *testing.T) {
 	}
 	if err := ValidateProjectScope(expr, false); err == nil {
 		t.Fatal("expected project-scope error")
+	}
+
+	expr, err = Parse("ids_status:ignored")
+	if err != nil {
+		t.Fatalf("Parse ids_status: %v", err)
+	}
+	if err := ValidateProjectScope(expr, false); err == nil {
+		t.Fatal("expected ids_status project-scope error")
 	}
 }

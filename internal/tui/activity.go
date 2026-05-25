@@ -59,7 +59,7 @@ func (a *App) handleFocusDwell(m focusDwellMsg) tea.Cmd {
 	metadata["label"] = focus.Label
 	metadata["duration_ms"] = duration.Milliseconds()
 	return a.recordActivity(observability.Record{
-		Action:   "ui.focus",
+		Action:   observability.ActionUIFocus,
 		Entity:   focus.Entity,
 		EntityID: focus.EntityID,
 		Status:   "observed",

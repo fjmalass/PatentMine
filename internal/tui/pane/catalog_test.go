@@ -101,7 +101,7 @@ func TestCatalogViewUsesReviewStateForActiveProject(t *testing.T) {
 	c.patents[0].IDSEntry = &domain.IDSEntry{Project: project.ID, Patent: c.patents[0].Number, Status: domain.IDSEntrySubmitted}
 
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "REVIEW ST", "IDS", "submitt", "🔍"} {
+	for _, want := range []string{"[1/3]", "REVIEW ST", "IDS", "📨", "⭕", "🔍"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog project view missing %q\n%s", want, out)
 		}
@@ -121,6 +121,42 @@ func TestCatalogAppliesReviewStateChangeImmediately(t *testing.T) {
 
 	if got := c.patents[1].ReviewState; got != domain.ReviewStateUnderReview {
 		t.Fatalf("catalog review state = %q, want %q", got, domain.ReviewStateUnderReview)
+	}
+}
+
+func TestCatalogAppliesIDSEntryChangeImmediately(t *testing.T) {
+	c := loadedCatalog(t)
+	c.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
+	entry := &domain.IDSEntry{
+		Project: "p-1",
+		Patent:  c.patents[1].Number,
+		Status:  domain.IDSEntryAccepted,
+		InFull:  true,
+	}
+
+	updated, _ := c.Update(IDSEntryChangedMsg{
+		Project: "p-1",
+		Patent:  c.patents[1].Number,
+		Entry:   entry,
+	})
+	c = updated.(*Catalog)
+
+	if got := c.patents[1].IDSEntry; got != entry {
+		t.Fatalf("catalog IDS entry = %+v, want %+v", got, entry)
+	}
+	out := c.View(testPaneWidth, testPaneHeight)
+	if !strings.Contains(out, "✅") {
+		t.Fatalf("catalog view should include updated IDS status, got:\n%s", out)
+	}
+
+	updated, _ = c.Update(IDSEntryChangedMsg{
+		Project: "p-2",
+		Patent:  c.patents[1].Number,
+		Entry:   nil,
+	})
+	c = updated.(*Catalog)
+	if got := c.patents[1].IDSEntry; got != entry {
+		t.Fatalf("catalog IDS entry changed for another project: %+v", got)
 	}
 }
 

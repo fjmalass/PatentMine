@@ -154,16 +154,14 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 // historyProjectName resolves the project ID embedded in the record into a display name.
 func historyProjectName(rec observability.Record, projectNames map[string]string) string {
 	entityParts := strings.Split(rec.EntityID, "/")
-	isMembershipOrTag := rec.Action == "membership.set_state" ||
-		rec.Action == "patent.tag_assign" ||
-		rec.Action == "patent.tag_remove"
+	isProjectPatentRec := IsProjectPatentAction(rec.Action)
 
 	projID := ""
 	if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
 		projID = pid
-	} else if isMembershipOrTag && len(entityParts) >= 1 && entityParts[0] != "" {
+	} else if isProjectPatentRec && len(entityParts) >= 1 && entityParts[0] != "" {
 		projID = entityParts[0]
-	} else if rec.Action == "project.switch" {
+	} else if rec.Action == observability.ActionProjectSwitch {
 		projID = rec.EntityID
 	}
 
@@ -182,16 +180,14 @@ func historyProjectName(rec observability.Record, projectNames map[string]string
 // historyIconAndDetails returns the action icon and details column text for a record.
 func historyIconAndDetails(theme render.Theme, rec observability.Record) (string, string) {
 	entityParts := strings.Split(rec.EntityID, "/")
-	isMembershipOrTag := rec.Action == "membership.set_state" ||
-		rec.Action == "patent.tag_assign" ||
-		rec.Action == "patent.tag_remove"
+	isProjectPatentRec := IsProjectPatentAction(rec.Action)
 
 	numStr := rec.EntityID
 	if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
 		numStr = reqNum
 	} else if dn, ok := rec.Metadata["display_number"].(string); ok && dn != "" {
 		numStr = dn
-	} else if isMembershipOrTag && len(entityParts) >= 2 {
+	} else if isProjectPatentRec && len(entityParts) >= 2 {
 		numStr = entityParts[1]
 	}
 
@@ -210,15 +206,20 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 	pat := patentSummary(numStr, invs, pubDate, title)
 
 	switch rec.Action {
-	case "filter.apply":
-		return theme.Glyphs.HistSearch, fmt.Sprintf("Search: %q", rec.EntityID)
-	case "project.switch":
+	case observability.ActionFilterApply:
+		if _, ok := rec.Metadata["search"].(string); ok {
+			if _, hasFilter := rec.Metadata["filter"]; !hasFilter {
+				return theme.Glyphs.HistSearch, fmt.Sprintf("Search: %q", rec.EntityID)
+			}
+		}
+		return theme.Glyphs.HistSearch, fmt.Sprintf("Filter: %q", rec.EntityID)
+	case observability.ActionProjectSwitch:
 		pName := rec.EntityID
 		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
 			pName = name
 		}
 		return theme.Glyphs.HistProject, fmt.Sprintf("Switch Project to %q", pName)
-	case "ui.focus":
+	case observability.ActionUIFocus:
 		scope, _ := rec.Metadata["scope"].(string)
 		switch scope {
 		case "citations":
@@ -232,7 +233,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		default:
 			return theme.Glyphs.HistPatent, pat
 		}
-	case "notes.export":
+	case observability.ActionNotesExport:
 		projectName := rec.EntityID
 		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
 			projectName = name
@@ -240,7 +241,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		count, _ := rec.Metadata["count"].(float64)
 		path, _ := rec.Metadata["path"].(string)
 		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Export notes %q: %d note(s) → %s", projectName, int(count), path)
-	case "membership.set_state":
+	case observability.ActionMembershipSetState:
 		rawState := ""
 		if afterMap, ok := rec.After.(map[string]any); ok {
 			if s, ok := afterMap["review_state"].(string); ok {
@@ -249,7 +250,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		}
 		stateIcon := theme.ReviewStateGlyph(rawState)
 		return theme.Glyphs.HistState, "State: " + stateIcon + "  " + pat
-	case "patent.tag_assign":
+	case observability.ActionPatentTagAssign:
 		tagName := ""
 		if len(entityParts) >= 3 {
 			tagName = entityParts[2]
@@ -259,7 +260,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 			}
 		}
 		return theme.Glyphs.HistTagAdd, fmt.Sprintf("Tag %q: ", tagName) + pat
-	case "patent.tag_remove":
+	case observability.ActionPatentTagRemove:
 		tagName := ""
 		if len(entityParts) >= 3 {
 			tagName = entityParts[2]
@@ -269,6 +270,24 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 			}
 		}
 		return theme.Glyphs.HistTagRemove, fmt.Sprintf("Untag %q: ", tagName) + pat
+	case observability.ActionIDSEntrySave:
+		status := ""
+		if s, ok := rec.Metadata["status"].(string); ok {
+			status = s
+		}
+		prior := ""
+		if s, ok := rec.Metadata["prior_status"].(string); ok {
+			prior = s
+		}
+		label := "IDS save"
+		if prior != "" && prior != status {
+			label = fmt.Sprintf("IDS %s → %s", prior, status)
+		} else if status != "" {
+			label = "IDS " + status
+		}
+		return theme.Glyphs.HistIDS, label + ": " + pat
+	case observability.ActionIDSEntryDelete:
+		return theme.Glyphs.HistIDS, "IDS delete: " + pat
 	}
 	return theme.Glyphs.HistUnknown, rec.EntityID
 }
