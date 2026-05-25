@@ -46,6 +46,7 @@ const (
 	MethodIDSEntryGet               Method = "ids.entry.get"
 	MethodIDSEntrySave              Method = "ids.entry.save"
 	MethodIDSEntryDelete            Method = "ids.entry.delete"
+	MethodIDSEntryBulkSetStatus     Method = "ids.entry.bulk_set_status"
 	MethodPatentNoteGet             Method = "patent.note.get"
 	MethodPatentNoteSave            Method = "patent.note.save"
 	MethodPatentNoteDelete          Method = "patent.note.delete"
@@ -488,6 +489,20 @@ type IDSEntrySaveParams struct {
 // IDSEntryResult carries one curated IDS entry.
 type IDSEntryResult struct {
 	Entry domain.IDSEntry `json:"entry"`
+}
+
+// IDSEntryBulkSetStatusParams applies a single IDSEntryStatus to every patent
+// in Patents under Project. Missing entries are created with InFull=DefaultInFull.
+type IDSEntryBulkSetStatusParams struct {
+	Project       domain.ProjectID       `json:"project"`
+	Patents       []domain.PatentNumber  `json:"patents"`
+	Status        domain.IDSEntryStatus  `json:"status"`
+	DefaultInFull bool                   `json:"default_in_full"`
+}
+
+// IDSEntriesResult carries every curated IDS entry touched by a bulk write.
+type IDSEntriesResult struct {
+	Entries []domain.IDSEntry `json:"entries"`
 }
 
 // PatentNoteParams identifies one project-scoped patent note.

@@ -679,22 +679,37 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("patent", m.Patent.String()),
 			slog.String("status", statusStr))
 		return a, a.broadcast(m)
+	case overlay.IDSSetStatusMsg:
+		a.popOverlay()
+		if a.activeProject == nil {
+			a.setErr(text.StatusNoActiveProject)
+			return a, nil
+		}
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, nil
+		}
+		a.metrics.IncCounter("tui.ids_entry.bulk_set_status.requested", 1)
+		a.log().Info("tui.ids_entry.bulk_set_status.requested",
+			slog.String("project_id", string(a.activeProject.ID)),
+			slog.String("status", string(m.Status)),
+			slog.Int("patents", len(m.Patents)))
+		return a, pane.BulkSetIDSStatusCmd(a.client, a.activeProject.ID, m.Patents, m.Status)
 	case pane.IDSEntriesChangedMsg:
-		var cmds []tea.Cmd
-		for _, entry := range m.Entries {
-			entry := entry
-			cmds = append(cmds, a.broadcast(pane.IDSEntryChangedMsg{
-				Project: entry.Project,
-				Patent:  entry.Patent,
-				Entry:   &entry,
-			}))
-		}
 		if m.Err != nil {
+			a.metrics.IncCounter("tui.ids_entry.bulk_set_status.error", 1)
 			a.setErr(text.StatusIDSUpdateFailed, m.Err.Error())
-		} else {
-			a.setStatus(text.StatusIDSCycled, len(m.Entries))
+			a.log().Error("tui.ids_entry.bulk_set_status.failed",
+				slog.Int("entries", len(m.Entries)),
+				slog.String("error", m.Err.Error()))
+			return a, nil
 		}
-		return a, tea.Batch(cmds...)
+		a.metrics.IncCounter("tui.ids_entry.bulk_set_status.ok", 1)
+		a.metrics.IncCounter("tui.ids_entry.bulk_set_status.entries", int64(len(m.Entries)))
+		a.setStatus(text.StatusIDSCycled, len(m.Entries))
+		a.log().Info("tui.ids_entry.bulk_set_status.applied",
+			slog.Int("entries", len(m.Entries)))
+		return a, a.broadcast(m)
 	case pane.MultiCrawlStartedMsg:
 		isLookup := m.Depth == 0
 		verb := "Crawling"

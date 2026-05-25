@@ -9,6 +9,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
@@ -52,10 +53,20 @@ type IDSDetail struct {
 	loadErr string
 	loadID  uint64
 	logger  *slog.Logger
+	metrics *observability.Metrics
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
 func (p *IDSDetail) WithLogger(l *slog.Logger) *IDSDetail { p.logger = l; return p }
+
+// WithMetrics attaches the runtime metrics sink. Optional: nil is safe.
+func (p *IDSDetail) WithMetrics(m *observability.Metrics) *IDSDetail { p.metrics = m; return p }
+
+func (p *IDSDetail) incCounter(name string, delta int64) {
+	if p.metrics != nil {
+		p.metrics.IncCounter(name, delta)
+	}
+}
 
 func (p *IDSDetail) log() *slog.Logger {
 	if p.logger != nil {
@@ -167,12 +178,45 @@ func (p *IDSDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		p.page.Top()
 	case IDSEntryChangedMsg:
 		if p.project == m.Project && p.patent.Number == m.Patent {
+			prior := p.entry.Status
 			if m.Entry != nil {
 				p.entry = *m.Entry
 			} else {
 				p.entry = domain.IDSEntry{Project: p.project, Patent: p.patent.Number, Status: domain.IDSEntryPending}
 			}
 			p.loading = false
+			p.incCounter("tui.ids_detail.mutation.applied", 1)
+			if prior != p.entry.Status {
+				p.incCounter("tui.ids_detail.status_transition", 1)
+			}
+			p.log().Info("tui.ids_detail.mutation",
+				slog.String("project_id", string(p.project)),
+				slog.String("patent", p.patent.Number.String()),
+				slog.String("prior_status", string(prior)),
+				slog.String("status", string(p.entry.Status)),
+				slog.Bool("deleted", m.Entry == nil),
+				slog.String("source", "single"))
+		}
+	case IDSEntriesChangedMsg:
+		for i := range m.Entries {
+			entry := m.Entries[i]
+			if entry.Project == p.project && entry.Patent == p.patent.Number {
+				prior := p.entry.Status
+				p.entry = entry
+				p.loading = false
+				p.incCounter("tui.ids_detail.mutation.applied", 1)
+				if prior != p.entry.Status {
+					p.incCounter("tui.ids_detail.status_transition", 1)
+				}
+				p.log().Info("tui.ids_detail.mutation",
+					slog.String("project_id", string(p.project)),
+					slog.String("patent", p.patent.Number.String()),
+					slog.String("prior_status", string(prior)),
+					slog.String("status", string(p.entry.Status)),
+					slog.Int("batch_size", len(m.Entries)),
+					slog.String("source", "bulk"))
+				break
+			}
 		}
 	case ProjectChangedMsg:
 		var project domain.ProjectID
@@ -211,7 +255,7 @@ func (p *IDSDetail) body(w int) string {
 		{"Country", orDash(p.patent.Number.Country)},
 		{"Status", idsStatusDisplayText(p.theme, p.entry.Status)},
 		{"Kind code", orDash(p.entry.KindCode)},
-		{"In full", p.checkbox(p.entry.InFull)},
+		{"In full", p.inFullGlyph(p.entry.InFull)},
 		{"Added", formatDate(p.entry.AddedAt)},
 		{"Submitted", formatDate(p.entry.SubmittedAt)},
 		{"Relevant passages", orDash(p.entry.RelevantPassages)},
@@ -355,14 +399,14 @@ func orDash(s string) string {
 	return s
 }
 
-// checkbox renders the in-full flag as a green checked box when true, an empty
-// box when false. Glyphs live on the theme so a terminal-specific build can
-// override them without touching pane code.
-func (p *IDSDetail) checkbox(v bool) string {
+// inFullGlyph renders the IDS in-full flag as a full-moon glyph when set and
+// a half-moon (partial) glyph when not. Glyphs live on the theme so a
+// terminal-specific build can override them without touching pane code.
+func (p *IDSDetail) inFullGlyph(v bool) string {
 	if v {
-		return p.theme.OK.Render(p.theme.Glyphs.CheckboxChecked)
+		return p.theme.Glyphs.IDSInFullFull
 	}
-	return p.theme.Glyphs.CheckboxUnchecked
+	return p.theme.Glyphs.IDSInFullPartial
 }
 
 func (p *IDSDetail) PatentNumber() domain.PatentNumber { return p.number }

@@ -36,6 +36,10 @@ func (e *Engine) IDSEntryOf(ctx context.Context, project domain.ProjectID, paten
 // any) is captured as the Before snapshot on the activity record, so a future
 // replay/undo can restore it.
 func (e *Engine) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (saved domain.IDSEntry, err error) {
+	return e.saveIDSEntry(ctx, entry, true)
+}
+
+func (e *Engine) saveIDSEntry(ctx context.Context, entry domain.IDSEntry, announce bool) (saved domain.IDSEntry, err error) {
 	defer e.observeDuration("engine.save_ids_entry", time.Now(), &err)
 	if entry.Project == "" {
 		return domain.IDSEntry{}, errors.New("engine: ids entry needs a project")
@@ -102,6 +106,83 @@ func (e *Engine) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (saved
 		Metadata: map[string]any{
 			"prior_status": string(priorStat),
 			"status":       string(saved.Status),
+		},
+	})
+	if announce {
+		e.announceChange()
+	}
+	return saved, nil
+}
+
+// BulkSetIDSStatus applies status to every patent in patents, creating missing
+// entries with InFull=defaultInFull. Each save still flows through
+// SaveIDSEntry so per-entry activity records, metrics, and Before snapshots
+// remain intact; only the network round-trip is consolidated. Returns every
+// saved entry so the caller can flush the UI in one pass.
+func (e *Engine) BulkSetIDSStatus(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, status domain.IDSEntryStatus, defaultInFull bool) (saved []domain.IDSEntry, err error) {
+	defer e.observeDuration("engine.bulk_set_ids_status", time.Now(), &err)
+	if project == "" {
+		return nil, errors.New("engine: bulk ids set status needs a project")
+	}
+	if !status.Valid() {
+		return nil, errors.New("engine: invalid ids entry status")
+	}
+	saved = make([]domain.IDSEntry, 0, len(patents))
+	requested := len(patents)
+	for _, patent := range patents {
+		record, rerr := e.recordNumber(ctx, patent)
+		if rerr != nil {
+			e.incCounter("engine.ids_entry.bulk_set_status.error_total", 1)
+			e.log(ctx, slog.LevelError, "bulk set ids status: resolve patent failed",
+				slog.String("project_id", string(project)),
+				slog.String("patent", patent.String()),
+				slog.String("error", rerr.Error()))
+			return saved, rerr
+		}
+		entry := domain.IDSEntry{Project: project, Patent: record, Status: status, InFull: defaultInFull}
+		if prev, perr := e.repo.IDSEntry(ctx, project, record); perr == nil {
+			entry = prev
+			entry.Status = status
+		} else if !errors.Is(perr, store.ErrNotFound) {
+			e.incCounter("engine.ids_entry.bulk_set_status.error_total", 1)
+			e.log(ctx, slog.LevelError, "bulk set ids status: prior lookup failed",
+				slog.String("project_id", string(project)),
+				slog.String("patent", record.String()),
+				slog.String("error", perr.Error()))
+			return saved, perr
+		}
+		out, serr := e.saveIDSEntry(ctx, entry, false)
+		if serr != nil {
+			e.incCounter("engine.ids_entry.bulk_set_status.error_total", 1)
+			e.log(ctx, slog.LevelError, "bulk set ids status: save failed",
+				slog.String("project_id", string(project)),
+				slog.String("patent", record.String()),
+				slog.String("error", serr.Error()))
+			if len(saved) > 0 {
+				e.announceChange()
+			}
+			return saved, serr
+		}
+		saved = append(saved, out)
+	}
+	e.incCounter("engine.ids_entry.bulk_set_status.committed_total", 1)
+	e.incCounter("engine.ids_entry.bulk_set_status.entries_total", int64(len(saved)))
+	e.log(ctx, slog.LevelInfo, "bulk set ids status",
+		slog.String("project_id", string(project)),
+		slog.String("status", string(status)),
+		slog.Bool("default_in_full", defaultInFull),
+		slog.Int("requested", requested),
+		slog.Int("saved", len(saved)))
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionIDSEntryBulkSetStatus,
+		Entity:   "ids_entry",
+		EntityID: string(project),
+		Status:   "committed",
+		Metadata: map[string]any{
+			"status":          string(status),
+			"default_in_full": defaultInFull,
+			"requested":       requested,
+			"saved":           len(saved),
 		},
 	})
 	e.announceChange()

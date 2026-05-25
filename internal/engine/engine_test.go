@@ -333,6 +333,56 @@ func TestEngineExportIDSUsesOnlyCuratedEntries(t *testing.T) {
 	}
 }
 
+func TestEngineBulkSetIDSStatusReturnsAllEntriesAndAnnouncesOnce(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "Filing")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	numbers := []domain.PatentNumber{
+		domain.MustParsePatentNumber("US0000001B2"),
+		domain.MustParsePatentNumber("US0000002B2"),
+	}
+	for _, n := range numbers {
+		if err := repo.SavePatent(ctx, domain.Patent{Number: n, DisplayNumber: n, Title: n.String(), FetchState: domain.FetchCached}); err != nil {
+			t.Fatalf("SavePatent %s: %v", n, err)
+		}
+	}
+	// Let setup writes leave the debounce window so this test observes only the bulk operation.
+	time.Sleep(2 * changeDebounce)
+	events, unsubscribe := eng.Subscribe()
+	defer unsubscribe()
+
+	entries, err := eng.BulkSetIDSStatus(ctx, project.ID, numbers, domain.IDSEntryAccepted, true)
+	if err != nil {
+		t.Fatalf("BulkSetIDSStatus: %v", err)
+	}
+	if len(entries) != len(numbers) {
+		t.Fatalf("BulkSetIDSStatus returned %d entries, want %d", len(entries), len(numbers))
+	}
+	for i, entry := range entries {
+		if entry.Patent != numbers[i] || entry.Status != domain.IDSEntryAccepted {
+			t.Fatalf("entry %d = %+v, want patent %s accepted", i, entry, numbers[i])
+		}
+	}
+
+	select {
+	case ev := <-events:
+		if ev.Method != proto.EventDBChanged {
+			t.Fatalf("event type = %s, want %s", ev.Method, proto.EventDBChanged)
+		}
+	case <-time.After(changeDebounce):
+		t.Fatal("bulk IDS status did not announce a database change")
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("bulk IDS status announced more than once; extra event: %+v", ev)
+	case <-time.After(2 * changeDebounce):
+	}
+}
+
 func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	eng, repo := newTestEngine(t, nil)
 	ctx := context.Background()
@@ -1412,4 +1462,3 @@ func TestPatentNoteActivityLogging(t *testing.T) {
 		t.Errorf("3rd rec After = %v, want nil", notesRecords[2].After)
 	}
 }
-

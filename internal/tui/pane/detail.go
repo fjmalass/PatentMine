@@ -345,6 +345,17 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		d.idsEntry = m.Entry
 		d.cachedLines = nil
+	case IDSEntriesChangedMsg:
+		for i := range m.Entries {
+			entry := &m.Entries[i]
+			if d.project != entry.Project || !patentNumberMatches(d.number, d.patent.DisplayNumber, entry.Patent) {
+				continue
+			}
+			copied := *entry
+			d.idsEntry = &copied
+			d.cachedLines = nil
+			break
+		}
 	}
 	return d, nil
 }

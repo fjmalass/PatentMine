@@ -226,6 +226,27 @@ func CycleIDSEntryStatusesCmd(client *rpc.Client, project domain.ProjectID, pate
 	}
 }
 
+// BulkSetIDSStatusCmd sets the IDS entry status for every patent in patents
+// using a single daemon round-trip. Missing entries are created with
+// InFull=true so the picker's "default to in full" promise holds; existing
+// entries keep every other field. The single returned IDSEntriesChangedMsg
+// lets the App flush every pane in one Update→View cycle.
+func BulkSetIDSStatusCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, status domain.IDSEntryStatus) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.IDSEntriesResult
+		err := client.Call(ctx, proto.MethodIDSEntryBulkSetStatus,
+			proto.IDSEntryBulkSetStatusParams{
+				Project:       project,
+				Patents:       patents,
+				Status:        status,
+				DefaultInFull: true,
+			}, &res)
+		return IDSEntriesChangedMsg{Entries: res.Entries, Err: err}
+	}
+}
+
 // TagPatentCmd tags multiple patents within the active project, creating the tag when
 // the project does not have it yet. When a single patent is targeted, it is passed in a slice of length 1.
 func TagPatentCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, name string) tea.Cmd {

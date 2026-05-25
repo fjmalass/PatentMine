@@ -69,7 +69,7 @@ func patentActions() map[string]command.ID {
 		"D":   command.PatentDelete,
 		"a":   command.AddToProject,
 		"f":   command.CrawlFamily,
-		"g i": command.IDSCycleStatus,
+		"g i": command.OpenIDS,
 		"L":   command.LookupPatent,
 		"K":   command.OpenPatentClassifications,
 	}

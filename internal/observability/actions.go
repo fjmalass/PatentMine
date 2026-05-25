@@ -35,9 +35,10 @@ const (
 	ActionNotesExport        = "notes.export"
 	ActionNotesSave          = "notes.save"
 	ActionNotesDelete        = "notes.delete"
-	ActionIDSEntrySave       = "ids.entry.save"
-	ActionIDSEntryDelete     = "ids.entry.delete"
-	ActionIDSExportPDF       = "ids.export.pdf"
+	ActionIDSEntrySave           = "ids.entry.save"
+	ActionIDSEntryDelete         = "ids.entry.delete"
+	ActionIDSEntryBulkSetStatus  = "ids.entry.bulk_set_status"
+	ActionIDSExportPDF           = "ids.export.pdf"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -70,5 +71,6 @@ var AllActions = []string{
 	ActionNotesDelete,
 	ActionIDSEntrySave,
 	ActionIDSEntryDelete,
+	ActionIDSEntryBulkSetStatus,
 	ActionIDSExportPDF,
 }

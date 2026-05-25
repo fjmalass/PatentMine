@@ -231,6 +231,23 @@ func (c *Cache) AddMembership(ctx context.Context, m domain.Membership) error {
 	return nil
 }
 
+func (c *Cache) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (domain.IDSEntry, error) {
+	saved, err := c.Repository.SaveIDSEntry(ctx, entry)
+	if err != nil {
+		return domain.IDSEntry{}, err
+	}
+	c.flush()
+	return saved, nil
+}
+
+func (c *Cache) DeleteIDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error {
+	if err := c.Repository.DeleteIDSEntry(ctx, project, patent); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 func (c *Cache) CreateTag(ctx context.Context, project domain.ProjectID, name string) (domain.Tag, error) {
 	tag, err := c.Repository.CreateTag(ctx, project, name)
 	if err != nil {

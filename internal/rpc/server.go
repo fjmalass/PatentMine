@@ -85,6 +85,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodIDSEntryGet:               s.idsEntryGet,
 		proto.MethodIDSEntrySave:              s.idsEntrySave,
 		proto.MethodIDSEntryDelete:            s.idsEntryDelete,
+		proto.MethodIDSEntryBulkSetStatus:     s.idsEntryBulkSetStatus,
 		proto.MethodPatentNoteGet:             s.patentNoteGet,
 		proto.MethodPatentNoteSave:            s.patentNoteSave,
 		proto.MethodPatentNoteDelete:          s.patentNoteDelete,
@@ -812,6 +813,18 @@ func (s *Server) idsEntrySave(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, err
 	}
 	return proto.IDSEntryResult{Entry: entry}, nil
+}
+
+func (s *Server) idsEntryBulkSetStatus(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSEntryBulkSetStatusParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.engine.BulkSetIDSStatus(ctx, p.Project, p.Patents, p.Status, p.DefaultInFull)
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSEntriesResult{Entries: entries}, nil
 }
 
 func (s *Server) idsEntryDelete(ctx context.Context, raw json.RawMessage) (any, error) {
