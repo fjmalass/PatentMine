@@ -1,7 +1,9 @@
 package overlay
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,21 +16,27 @@ import (
 // HistoryOverlay displays the persistent timeline of recent searches, project switches, and patent details views.
 type HistoryOverlay struct {
 	theme        render.Theme
+	allRecords   []observability.Record
 	records      []observability.Record
 	projectNames map[string]string
 	page         render.Paginator
 	vimCount     int
+
+	filterMode    bool
+	filterInput   string
+	filterQuery   string
+	sortAscending bool
 }
 
 // NewHistoryOverlay builds a HistoryOverlay.
 func NewHistoryOverlay(theme render.Theme, records []observability.Record, projectNames map[string]string) *HistoryOverlay {
 	h := &HistoryOverlay{
 		theme:        theme,
-		records:      records,
+		allRecords:   append([]observability.Record(nil), records...),
 		projectNames: projectNames,
 		page:         render.NewPaginator(1),
 	}
-	h.page.SetTotal(len(records))
+	h.applyHistoryView()
 	return h
 }
 
@@ -48,8 +56,35 @@ func (h *HistoryOverlay) OverlaySize(termW, termH int) (int, int) {
 
 // HandleKey implements KeyHandler.
 func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if h.filterMode {
+		return h.handleFilterKey(msg)
+	}
+	s := msg.String()
+	switch s {
+	case "/":
+		h.filterMode = true
+		h.filterInput = h.filterQuery
+		return h, nil, true
+	case "c", "C":
+		if h.filterQuery == "" && !h.sortAscending {
+			return h, nil, true
+		}
+		h.filterQuery = ""
+		h.filterInput = ""
+		h.sortAscending = false
+		h.applyHistoryView()
+		return h, h.historyFilterMsg(), true
+	case ".":
+		h.sortAscending = !h.sortAscending
+		h.applyHistoryView()
+		return h, h.historyFilterMsg(), true
+	}
 	if len(h.records) == 0 {
-		return h, func() tea.Msg { return CloseOverlayMsg{} }, true
+		switch s {
+		case "q", "Q", "esc":
+			return h, func() tea.Msg { return CloseOverlayMsg{} }, true
+		}
+		return h, nil, true
 	}
 	if h.page.HandleKey(msg) {
 		return h, nil, true
@@ -58,7 +93,7 @@ func (h *HistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		return h, nil, true
 	}
 
-	s := msg.String()
+	s = msg.String()
 	switch s {
 	case "enter":
 		rec := h.records[h.page.Cursor()]
@@ -87,7 +122,13 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	maxW = max(maxW-2, 10)
 	n := len(h.records)
 	if n == 0 {
-		return h.theme.Dim.Render("No history entries found.")
+		lines := []string{h.theme.Dim.Render("No history entries found.")}
+		if h.filterQuery != "" {
+			lines = append(lines, h.theme.Dim.Render(fmt.Sprintf("Filter: %q  [/] Edit  [c] Clear  [q/Esc] Close", h.filterQuery)))
+		} else {
+			lines = append(lines, h.theme.Dim.Render("[/] Filter  [q/Esc] Close"))
+		}
+		return strings.Join(lines, "\n")
 	}
 
 	pageSize := max(maxH-3, 1)
@@ -131,6 +172,21 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	}
 
 	var b strings.Builder
+	if h.filterMode {
+		b.WriteString(h.theme.Dim.Render(render.Pad("  Filter history: "+h.filterInput+"█", maxW)))
+		b.WriteString("\n")
+	} else if h.filterQuery != "" || h.sortAscending {
+		sortLabel := "newest first"
+		if h.sortAscending {
+			sortLabel = "oldest first"
+		}
+		filterLabel := "all"
+		if h.filterQuery != "" {
+			filterLabel = h.filterQuery
+		}
+		b.WriteString(h.theme.Dim.Render(render.Pad(fmt.Sprintf("  Filter: %q  Sort: %s", filterLabel, sortLabel), maxW)))
+		b.WriteString("\n")
+	}
 	b.WriteString(renderSubtable(subtableParams{
 		Theme:        h.theme,
 		Columns:      cols,
@@ -146,9 +202,88 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		},
 	}, maxW, getCell))
 	b.WriteString("\n")
-	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [gg/G] Top/Bot  [v] Visual  [ga] All  [Enter] Replay  [q/Esc] Close", subtableStatus(h.page))
+	help := fmt.Sprintf("  %s  [/] Filter  [.] Sort  [c] Clear  [j/k] Move  [ctrl+u/d] Page  [Enter] Replay  [q/Esc] Close", subtableStatus(h.page))
 	b.WriteString(h.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
+}
+
+func (h *HistoryOverlay) handleFilterKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		h.filterMode = false
+		h.filterInput = h.filterQuery
+		return h, nil, true
+	case tea.KeyEnter:
+		h.filterMode = false
+		h.filterQuery = strings.TrimSpace(h.filterInput)
+		h.applyHistoryView()
+		return h, h.historyFilterMsg(), true
+	case tea.KeyBackspace:
+		if h.filterInput != "" {
+			runes := []rune(h.filterInput)
+			h.filterInput = string(runes[:len(runes)-1])
+		}
+		return h, nil, true
+	case tea.KeyRunes, tea.KeySpace:
+		h.filterInput += msg.String()
+		return h, nil, true
+	}
+	return h, nil, true
+}
+
+func (h *HistoryOverlay) applyHistoryView() {
+	query := strings.TrimSpace(h.filterQuery)
+	h.records = h.records[:0]
+	for _, rec := range h.allRecords {
+		if query == "" || historyRecordMatches(rec, h.projectNames, query) {
+			h.records = append(h.records, rec)
+		}
+	}
+	sort.SliceStable(h.records, func(i, j int) bool {
+		if h.sortAscending {
+			return h.records[i].Timestamp.Before(h.records[j].Timestamp)
+		}
+		return h.records[j].Timestamp.Before(h.records[i].Timestamp)
+	})
+	h.page.SetTotal(len(h.records))
+	h.page.Top()
+	h.page.ClearVisual()
+}
+
+func (h *HistoryOverlay) historyFilterMsg() tea.Cmd {
+	query := h.filterQuery
+	sortAscending := h.sortAscending
+	resultCount := len(h.records)
+	totalCount := len(h.allRecords)
+	return func() tea.Msg {
+		return HistoryFilterAppliedMsg{Query: query, SortAscending: sortAscending, ResultCount: resultCount, TotalCount: totalCount}
+	}
+}
+
+func historyRecordMatches(rec observability.Record, projectNames map[string]string, query string) bool {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" {
+		return true
+	}
+	_, details := historyIconAndDetails(render.NewTheme(), rec)
+	parts := []string{
+		rec.Action,
+		rec.Entity,
+		rec.EntityID,
+		rec.Status,
+		historyProjectName(rec, projectNames),
+		details,
+		rec.Timestamp.Format("2006-01-02 15:04:05"),
+	}
+	for _, raw := range []any{rec.Metadata, rec.Before, rec.After} {
+		if raw == nil {
+			continue
+		}
+		if b, err := json.Marshal(raw); err == nil {
+			parts = append(parts, string(b))
+		}
+	}
+	return strings.Contains(strings.ToLower(strings.Join(parts, " ")), needle)
 }
 
 // historyProjectName resolves the project ID embedded in the record into a display name.

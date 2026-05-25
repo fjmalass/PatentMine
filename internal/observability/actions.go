@@ -6,10 +6,10 @@ package observability
 // discoverable from one place.
 //
 // Adding a new action:
-//   1. Add the constant here and append it to AllActions.
-//   2. Classify it in internal/tui/overlay/history_actions.go (render in the
-//      overlay, or explicitly hide). TestEveryActionClassifiedByHistory fails
-//      until that is done.
+//  1. Add the constant here and append it to AllActions.
+//  2. Classify it in internal/tui/overlay/history_actions.go (render in the
+//     overlay, or explicitly hide). TestEveryActionClassifiedByHistory fails
+//     until that is done.
 const (
 	ActionCrawlStart         = "crawl.start"
 	ActionCrawlCancel        = "crawl.cancel"
@@ -26,6 +26,10 @@ const (
 	ActionPatentTagAssign    = "patent.tag_assign"
 	ActionPatentTagRemove    = "patent.tag_remove"
 	ActionFilterApply        = "filter.apply"
+	ActionTableFilterApply   = "table_filter.apply"
+	ActionTableViewSelect    = "table_view.select"
+	ActionTableViewSave      = "table_view.save"
+	ActionTableViewDelete    = "table_view.delete"
 	ActionUIFocus            = "ui.focus"
 	ActionNotesExport        = "notes.export"
 	ActionNotesSave          = "notes.save"
@@ -54,6 +58,10 @@ var AllActions = []string{
 	ActionPatentTagAssign,
 	ActionPatentTagRemove,
 	ActionFilterApply,
+	ActionTableFilterApply,
+	ActionTableViewSelect,
+	ActionTableViewSave,
+	ActionTableViewDelete,
 	ActionUIFocus,
 	ActionNotesExport,
 	ActionNotesSave,

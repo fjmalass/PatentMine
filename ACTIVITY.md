@@ -48,6 +48,10 @@ The full list of semantic actions tracked by the system is enumerated in `intern
 | `patent.tag_remove` | `patent` | Records removing tags from specific patent records. |
 | `ui.focus` | `patent` | UI navigation tracking. Records focus dwell durations (100ms+) on individual patent panels. |
 | `filter.apply` | `filter` | Telemetry recording applied search queries, active tags, and filter expressions. |
+| `table_filter.apply` | `table_filter` | Low-level table filter/search/sort telemetry, including table type, active fields, sort fields, and complexity. Hidden from the high-signal history feed. |
+| `table_view.select` | `table_view` | Records a saved table view fetched for use, with table type and saved-view complexity metadata. Hidden from the high-signal history feed. |
+| `table_view.save` | `table_view` | Records saved table view creation/update and complexity metadata. Hidden from the high-signal history feed. |
+| `table_view.delete` | `table_view` | Records saved table view deletion. Hidden from the high-signal history feed. |
 | `project.switch` | `project` | Logged whenever a user changes their active workspace project. |
 
 ---

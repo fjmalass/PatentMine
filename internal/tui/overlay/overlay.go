@@ -120,6 +120,15 @@ type HistoryReplayMsg struct {
 	Record observability.Record
 }
 
+// HistoryFilterAppliedMsg reports local activity-history filtering/sorting from
+// the history overlay so the App can record usage telemetry.
+type HistoryFilterAppliedMsg struct {
+	Query         string
+	SortAscending bool
+	ResultCount   int
+	TotalCount    int
+}
+
 // ConfirmHistoryReplayMsg tells the app that the user has confirmed a history action replay.
 type ConfirmHistoryReplayMsg struct {
 	Record observability.Record

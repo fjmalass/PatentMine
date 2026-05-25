@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -522,6 +523,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.HistoryReplayMsg:
 		a.popOverlay()
 		return a.handleHistoryReplay(m.Record, false)
+	case overlay.HistoryFilterAppliedMsg:
+		if a.activity == nil {
+			return a, nil
+		}
+		query := strings.TrimSpace(m.Query)
+		metadata := observability.TableFilter{
+			Source:      "tui.history_overlay",
+			TableType:   string(domain.TableIDSActivityHistory),
+			Search:      query,
+			SearchTerms: len(strings.Fields(query)),
+		}.Metadata()
+		metadata["sort_ascending"] = m.SortAscending
+		metadata["result_count"] = m.ResultCount
+		metadata["total_count"] = m.TotalCount
+		return a, a.recordActivity(observability.Record{
+			Action:   observability.ActionTableFilterApply,
+			Entity:   "table_filter",
+			EntityID: string(domain.TableIDSActivityHistory),
+			Status:   "requested",
+			Metadata: metadata,
+		})
 	case overlay.ConfirmHistoryReplayMsg:
 		return a.handleHistoryReplay(m.Record, true)
 	case overlay.ReplayActivityMsg:
@@ -624,7 +646,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("project_id", string(m.Project)),
 			slog.String("patent", m.Entry.Patent.String()),
 			slog.String("status", string(m.Entry.Status)))
-		
+
 		entryCopy := m.Entry
 		return a, a.broadcast(pane.IDSEntryChangedMsg{
 			Project: m.Project,

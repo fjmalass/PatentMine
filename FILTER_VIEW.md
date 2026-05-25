@@ -183,3 +183,54 @@ Cons:
 Use `All` as the initial built-in default for IDS activity history because it is least surprising and safest for audit workflows.
 
 Expose `Recent`, `My Activity`, `Needs Attention`, and `Submitted` as prominent built-in views or chips. Store user-created named views in `saved_table_view`, and treat built-ins as code/config until there is a reason to let users edit or share them.
+
+## Telemetry And Metrics
+
+Filter and saved-view usage is tracked in two places:
+
+* Metrics counters/gauges for aggregate usage and complexity.
+* Activity JSONL records for durable, queryable usage events.
+
+The API records table-query telemetry for patent lists, citation/relation lists, and history queries. Complexity is currently computed as:
+
+```text
+search term count + active filter count + sort field count + column preference count
+```
+
+Saved views use the same complexity model by reading `view_json.search`, `view_json.filters`, `view_json.sort`, and `view_json.columns`.
+
+Aggregate metric examples:
+
+* `api.table_filter.patents.query_total`
+* `api.table_filter.patents.complexity_total`
+* `api.table_filter.patents.last_complexity`
+* `api.table_filter.patents.search_used_total`
+* `api.table_filter.patents.filter_field.ids_status.total`
+* `api.table_filter.patents.sort_field.expires.total`
+* `api.table_view.ids_activity_history.select_total`
+* `api.table_view.ids_activity_history.save_total`
+* `api.table_view.ids_activity_history.delete_total`
+* `api.table_view.ids_activity_history.view.view_123.select_total`
+
+Activity actions:
+
+* `table_filter.apply` : Records table type, query path, search term count, filter count, sort count, column count, active fields, and complexity.
+* `table_view.select` : Records which saved view was fetched for use.
+* `table_view.save` : Records saved-view creation or update, including complexity.
+* `table_view.delete` : Records saved-view removal.
+
+These activity records are intentionally not part of the high-signal history feed. They remain available through `/activity/raw` for product analysis, while aggregate metrics are available through `/metricsz` and `/metrics`.
+
+## TUI Activity History
+
+Press `H` in the TUI to open Activity History.
+
+Inside the history overlay:
+
+* `/` : Enter a free-form filter. The filter matches rendered details, action, entity, status, project name, metadata, and timestamp text in the currently loaded history window.
+* `.` : Toggle sort order between newest-first and oldest-first.
+* `c` : Clear the local history filter and restore newest-first sorting.
+* `Enter` : Replay the selected history entry.
+* `q` / `Esc` : Close the overlay.
+
+This is currently a local overlay filter over the loaded history window, not a backend saved view application. Applying, clearing, or toggling sort emits `table_filter.apply` activity telemetry with `source=tui.history_overlay`, `table_type=ids_activity_history`, search term count, sort direction, result count, and total loaded count.

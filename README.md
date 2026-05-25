@@ -435,6 +435,7 @@ The TUI automatically builds its scrollable help overlay (`?`) dynamically from 
 * `ctrl+u` / `pgup` : Page selection up.
 * `g g` : Jump straight to the top of the list.
 * `G` : Jump straight to the bottom of the list.
+* `H` : Open the Activity History overlay. Inside history, use `/` for free-form filtering, `.` to toggle newest/oldest sorting, and `c` to clear the history filter/sort.
 
 #### C. Common Patent Workflow Actions
 *(Available in Catalog, Detail, and Citations views when a patent is selected)*
@@ -565,6 +566,8 @@ HTTP endpoints:
 * `DELETE /table_views/{id}` : Delete a saved view.
 
 Supported `table_type` values are `ids_activity_history`, `patents`, `citations`, and `inventor_stats`. See [`FILTER_VIEW.md`](./FILTER_VIEW.md) for the design notes, tradeoffs, and storage model.
+
+Filter/search/sort usage is recorded through metrics and activity telemetry so common fields, sort columns, saved-view selections, and view complexity can be reviewed later.
 
 * `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
 * `:tag.list` : List all tags currently registered in the active project's taxonomy.
