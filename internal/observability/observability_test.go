@@ -108,3 +108,79 @@ func TestReadActivityRecordsHandlesCorruptedLines(t *testing.T) {
 	}
 }
 
+func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
+	logsDir := t.TempDir()
+	
+	// Set LogRetainDays package variable dynamically
+	originalDays := LogRetainDays
+	originalSize := LogMaxSizeBytes
+	t.Cleanup(func() {
+		LogRetainDays = originalDays
+		LogMaxSizeBytes = originalSize
+	})
+	
+	LogRetainDays = 3
+	LogMaxSizeBytes = 200 // Very small limit so it triggers size pruning
+
+	now := time.Now()
+	
+	// Create some mock activity files
+	dates := []string{
+		now.AddDate(0, 0, -5).Format(dateLayout), // older than 3 days cutoff
+		now.AddDate(0, 0, -2).Format(dateLayout), // within 3 days
+		now.AddDate(0, 0, -1).Format(dateLayout), // within 3 days
+		now.Format(dateLayout),                  // today
+	}
+
+	payload := "some dummy content that exceeds size limit\n" // ~40 bytes
+	
+	for _, d := range dates {
+		path := filepath.Join(logsDir, "activity-"+d+".jsonl")
+		if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", d, err)
+		}
+	}
+
+	// Trigger pruning
+	pruneOldLogs(logsDir, now)
+
+	// Older than 3 days (dates[0]) should be deleted because of time-based pruning.
+	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[0]+".jsonl")); !os.IsNotExist(err) {
+		t.Errorf("expected oldest time-pruned file to be deleted, stat error: %v", err)
+	}
+
+	// But dates[1], dates[2], dates[3] are each ~40 bytes. Total is ~120 bytes.
+	// Since LogMaxSizeBytes is 200, they fit.
+	// Let's now reduce LogMaxSizeBytes to 50 bytes.
+	// Now only one file can be kept! Since dates[3] is the newest, it should survive, and the older ones should be pruned oldest-first.
+	LogMaxSizeBytes = 50
+	
+	// Write more files to trigger size pruning
+	for _, d := range dates[1:] {
+		path := filepath.Join(logsDir, "activity-"+d+".jsonl")
+		// Write large payloads
+		largePayload := strings.Repeat("A", 40) + "\n" // 41 bytes
+		if err := os.WriteFile(path, []byte(largePayload), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", d, err)
+		}
+	}
+
+	// Trigger pruning again
+	pruneOldLogs(logsDir, now)
+
+	// Since LogMaxSizeBytes = 50, and each file is 41 bytes, only 1 file can survive.
+	// The newest file (today) should survive, others should be pruned.
+	todayPath := filepath.Join(logsDir, "activity-"+dates[3]+".jsonl")
+	if _, err := os.Stat(todayPath); err != nil {
+		t.Errorf("expected newest file to survive, error: %v", err)
+	}
+
+	// Older files like dates[1] and dates[2] should be pruned oldest-first to stay under 50 bytes.
+	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[1]+".jsonl")); !os.IsNotExist(err) {
+		t.Errorf("expected dates[1] to be size-pruned")
+	}
+	if _, err := os.Stat(filepath.Join(logsDir, "activity-"+dates[2]+".jsonl")); !os.IsNotExist(err) {
+		t.Errorf("expected dates[2] to be size-pruned")
+	}
+}
+

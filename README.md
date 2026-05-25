@@ -7,6 +7,7 @@ This manual details the architecture, dynamic value-type systems, lifecycle phas
 Related docs:
 
 1. [Metrics Guide](./metrics.md)
+2. [Telemetry & Activity Tracking Guide](./ACTIVITY.md)
 
 ---
 
@@ -543,3 +544,5 @@ Pattern rules:
 * `:tag.patent.list` : List all tags assigned to the selected patent, along with their assignment timestamps.
 
 For fuller metrics details, including API access paths, overlay behavior, limitations, and follow-up work, see [`metrics.md`](./metrics.md).
+
+For fuller telemetry and activity auditing details, including event catalogs, history feeds, configuration, adaptive size-based pruning, and analytical storage tiering, see [`ACTIVITY.md`](./ACTIVITY.md).

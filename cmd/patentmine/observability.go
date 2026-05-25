@@ -10,5 +10,7 @@ import (
 )
 
 func openObservability(cfg config.Config, component string) (*observability.Runtime, error) {
+	observability.LogRetainDays = cfg.LogRetainDays
+	observability.LogMaxSizeBytes = cfg.LogMaxSizeBytes
 	return observability.Open(string(cfg.LogsDir), component, appversion.String())
 }

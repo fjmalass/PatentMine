@@ -145,17 +145,30 @@ type Recorder struct {
 	w         io.Writer
 }
 
-// logRetainDays is how many days of log/activity files to keep on startup.
-const logRetainDays = 14
+var (
+	LogRetainDays   = 14
+	LogMaxSizeBytes int64 = 100 * 1024 * 1024 // Default: 100MB
+)
+
+type logFileInfo struct {
+	path string
+	size int64
+	t    time.Time
+}
 
 // pruneOldLogs deletes log-*.jsonl and activity-*.jsonl files in logsDir
-// whose date suffix is older than logRetainDays days.
+// whose date suffix is older than LogRetainDays days, or if the total
+// directory size of all logs exceeds LogMaxSizeBytes, deleting the oldest first.
 func pruneOldLogs(logsDir string, now time.Time) {
-	cutoff := now.In(time.Local).AddDate(0, 0, -logRetainDays)
 	entries, err := os.ReadDir(logsDir)
 	if err != nil {
 		return
 	}
+
+	cutoff := now.In(time.Local).AddDate(0, 0, -LogRetainDays)
+	var logFiles []logFileInfo
+	var totalSize int64
+
 	for _, e := range entries {
 		name := e.Name()
 		var prefix string
@@ -172,8 +185,39 @@ func pruneOldLogs(logsDir string, now time.Time) {
 		if err != nil {
 			continue
 		}
+
+		fullPath := filepath.Join(logsDir, name)
 		if t.Before(cutoff) {
-			_ = os.Remove(filepath.Join(logsDir, name))
+			_ = os.Remove(fullPath)
+			continue
+		}
+
+		// Keep track of remaining files for size pruning
+		info, err := e.Info()
+		if err == nil {
+			size := info.Size()
+			logFiles = append(logFiles, logFileInfo{
+				path: fullPath,
+				size: size,
+				t:    t,
+			})
+			totalSize += size
+		}
+	}
+
+	// Size-based pruning: delete oldest files first if total size exceeds limit
+	if totalSize > LogMaxSizeBytes {
+		sort.Slice(logFiles, func(i, j int) bool {
+			return logFiles[i].t.Before(logFiles[j].t)
+		})
+
+		for _, lf := range logFiles {
+			if totalSize <= LogMaxSizeBytes {
+				break
+			}
+			if err := os.Remove(lf.path); err == nil {
+				totalSize -= lf.size
+			}
 		}
 	}
 }
