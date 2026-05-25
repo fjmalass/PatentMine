@@ -90,6 +90,16 @@ type Repository interface {
 	// DeletePatents permanently removes multiple patents and all their associated
 	// documents, relations, and memberships in one transaction.
 	DeletePatents(ctx context.Context, patents []domain.PatentNumber) error
+	// SoftDeletePatent demotes a patent to FetchStub: documents, memberships,
+	// project notes, tag assignments, and outbound family-graph edges are
+	// removed; inbound edges from other patents are kept so the family-graph
+	// topology survives. When no inbound edge remains, the patent row is
+	// hard-purged to avoid an orphan stub.
+	SoftDeletePatent(ctx context.Context, n domain.PatentNumber) error
+	// SoftDeletePatents is the batch variant of SoftDeletePatent. Orphan-stub
+	// purging is computed after every patent in the batch has been demoted,
+	// so mutually-referencing pairs deleted together are both purged.
+	SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) error
 	// Patent returns one patent, or ErrNotFound.
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
 	// ListPatents returns one page of lightweight listing rows matching q.

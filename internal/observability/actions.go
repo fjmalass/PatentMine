@@ -16,6 +16,7 @@ const (
 	ActionImportFile         = "import.file"
 	ActionPatentSave         = "patent.save"
 	ActionPatentDelete       = "patent.delete"
+	ActionPatentSoftDelete   = "patent.soft_delete"
 	ActionPatentRestore      = "patent.restore"
 	ActionProjectCreate      = "project.create"
 	ActionProjectSwitch      = "project.switch"
@@ -48,6 +49,7 @@ var AllActions = []string{
 	ActionImportFile,
 	ActionPatentSave,
 	ActionPatentDelete,
+	ActionPatentSoftDelete,
 	ActionPatentRestore,
 	ActionProjectCreate,
 	ActionProjectSwitch,

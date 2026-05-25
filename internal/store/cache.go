@@ -147,6 +147,22 @@ func (c *Cache) DeletePatents(ctx context.Context, patents []domain.PatentNumber
 	return nil
 }
 
+func (c *Cache) SoftDeletePatent(ctx context.Context, n domain.PatentNumber) error {
+	if err := c.Repository.SoftDeletePatent(ctx, n); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) error {
+	if err := c.Repository.SoftDeletePatents(ctx, patents); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 func (c *Cache) SaveNode(ctx context.Context, batch NodeBatch) error {
 	if err := c.Repository.SaveNode(ctx, batch); err != nil {
 		return err

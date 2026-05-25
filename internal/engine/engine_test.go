@@ -733,15 +733,22 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 		t.Fatalf("Expected 2 relations, got %d", len(storedRels))
 	}
 
-	// 6. Delete P1
+	// 6. Soft-delete P1. P3 still cites P1, so P1 survives as a FetchStub
+	// with its inbound edge intact; documents and the outbound P1->P2 edge
+	// are dropped.
 	if err := eng.DeletePatent(ctx, p1); err != nil {
 		t.Fatalf("DeletePatent: %v", err)
 	}
 
-	// Verify completely deleted
-	_, err = eng.Patent(ctx, p1)
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("Expected store.ErrNotFound, got %v", err)
+	stubAfterDelete, err := eng.Patent(ctx, p1)
+	if err != nil {
+		t.Fatalf("Patent after soft delete: %v", err)
+	}
+	if stubAfterDelete.FetchState != domain.FetchStub {
+		t.Fatalf("FetchState after soft delete = %s, want %s", stubAfterDelete.FetchState, domain.FetchStub)
+	}
+	if stubAfterDelete.Title != "" || stubAfterDelete.Abstract != "" {
+		t.Fatalf("Bib fields not cleared: title=%q abstract=%q", stubAfterDelete.Title, stubAfterDelete.Abstract)
 	}
 	delDocs, err := repo.Documents(ctx, p1)
 	if err != nil {
@@ -754,8 +761,11 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repo.AllRelations: %v", err)
 	}
-	if len(delRels) != 0 {
-		t.Fatalf("Expected relations to be deleted, got %d", len(delRels))
+	if len(delRels) != 1 {
+		t.Fatalf("Expected 1 surviving inbound relation, got %d", len(delRels))
+	}
+	if delRels[0].From != p3 || delRels[0].To != p1 {
+		t.Fatalf("Surviving relation = %v->%v, want %v->%v", delRels[0].From, delRels[0].To, p3, p1)
 	}
 
 	// 7. Flush activity records and find the delete event
@@ -798,7 +808,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 		var temp struct {
 			Action string `json:"action"`
 		}
-		if err := json.Unmarshal(line, &temp); err == nil && temp.Action == "patent.delete" {
+		if err := json.Unmarshal(line, &temp); err == nil && temp.Action == observability.ActionPatentSoftDelete {
 			if err := json.Unmarshal(line, &deleteRecord); err != nil {
 				t.Fatalf("Unmarshal delete action: %v", err)
 			}
@@ -808,7 +818,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 	}
 
 	if !found {
-		t.Fatal("Could not find patent.delete in activity journal")
+		t.Fatalf("Could not find %s in activity journal", observability.ActionPatentSoftDelete)
 	}
 
 	snapshot := deleteRecord.Before
@@ -1158,7 +1168,7 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 			continue
 		}
 		var rec deleteRecord
-		if err := json.Unmarshal(line, &rec); err != nil || rec.Action != "patent.delete" {
+		if err := json.Unmarshal(line, &rec); err != nil || rec.Action != observability.ActionPatentSoftDelete {
 			continue
 		}
 		records[rec.EntityID] = rec

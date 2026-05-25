@@ -84,7 +84,7 @@ const (
 	glyphReviewStateUnknown     = "?"
 	glyphReviewStateUnderReview = "🔍"
 	glyphReviewStateActive      = "✅"
-	glyphReviewStateIgnored     = "☐"
+	glyphReviewStateIgnored     = "⬜"
 	glyphReviewStateDeleted     = "❌"
 
 	glyphIDSEntryNone      = "⭕"
