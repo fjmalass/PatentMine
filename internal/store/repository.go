@@ -189,6 +189,15 @@ type Repository interface {
 	// SaveMutationGroup appends an auditable mutation journal entry.
 	SaveMutationGroup(ctx context.Context, group domain.MutationGroup, items []domain.MutationItem) error
 
+	// SaveTableView inserts or updates one named saved table view.
+	SaveTableView(ctx context.Context, view domain.SavedTableView) (domain.SavedTableView, error)
+	// TableView returns one saved table view owned by owner, or ErrNotFound.
+	TableView(ctx context.Context, owner, id string) (domain.SavedTableView, error)
+	// ListTableViews returns saved table views for an owner and optional table type.
+	ListTableViews(ctx context.Context, owner string, tableType domain.TableType) ([]domain.SavedTableView, error)
+	// DeleteTableView removes one saved table view owned by owner.
+	DeleteTableView(ctx context.Context, owner, id string) error
+
 	// Close releases all database resources.
 	Close() error
 }

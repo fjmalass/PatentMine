@@ -189,3 +189,18 @@ CREATE TABLE IF NOT EXISTS mutation_item (
 );
 
 CREATE INDEX IF NOT EXISTS idx_mutation_item_patent ON mutation_item (patent_number, group_id);
+
+CREATE TABLE IF NOT EXISTS saved_table_view (
+    id         TEXT PRIMARY KEY,
+    owner      TEXT NOT NULL,
+    table_type TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    scope      TEXT NOT NULL DEFAULT 'user',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    view_json  TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (owner, table_type, scope, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_table_view_owner_table ON saved_table_view (owner, table_type, scope, updated_at DESC);

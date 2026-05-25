@@ -68,6 +68,10 @@ const (
 	MethodClassificationLookup      Method = "classification.lookup"
 	MethodClassificationListByCodes Method = "classification.list_by_codes"
 	MethodPatentClassificationList  Method = "patent.classification.list"
+	MethodTableViewList             Method = "table_view.list"
+	MethodTableViewGet              Method = "table_view.get"
+	MethodTableViewSave             Method = "table_view.save"
+	MethodTableViewDelete           Method = "table_view.delete"
 )
 
 // EventKind names a server->client push (a JSON-RPC notification).
@@ -570,6 +574,33 @@ type HistoryFeedParams struct {
 	RawLimit  int       `json:"raw_limit,omitempty"`
 	Component string    `json:"component,omitempty"`
 	Since     time.Time `json:"since,omitempty"`
+}
+
+// TableViewListParams selects saved views for an owner and optional table type.
+type TableViewListParams struct {
+	Owner     string           `json:"owner,omitempty"`
+	TableType domain.TableType `json:"table_type,omitempty"`
+}
+
+// TableViewGetParams identifies one saved table view.
+type TableViewGetParams struct {
+	Owner string `json:"owner,omitempty"`
+	ID    string `json:"id"`
+}
+
+// TableViewSaveParams carries a saved table view to insert or update.
+type TableViewSaveParams struct {
+	View domain.SavedTableView `json:"view"`
+}
+
+// TableViewResult carries one saved table view.
+type TableViewResult struct {
+	View domain.SavedTableView `json:"view"`
+}
+
+// TableViewListResult carries saved table views.
+type TableViewListResult struct {
+	Views []domain.SavedTableView `json:"views"`
 }
 
 // MetricsSnapshot is a transport-safe view of the daemon's metrics.

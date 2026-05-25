@@ -536,6 +536,36 @@ Pattern rules:
 * Values with spaces should be quoted, for example `inventor:"Ada Lovelace"` or `search:"widget sensor"`.
 * Bare values like `*Lovelace*` are not valid by themselves; keep the explicit field prefix such as `inventor:*Lovelace*`.
 
+#### Saved table views
+
+PatentMine stores reusable table state as generic saved table views. A view is keyed by `owner` and `table_type`, so the same persistence path can support IDS activity history, patent lists, citation tables, and inventor-stat tables. Until authenticated users exist, empty owners default to `local`.
+
+Saved view JSON can include free-form search text, structured filters, sort order, and column preferences:
+
+```json
+{
+  "search": "office action",
+  "filters": {
+    "status": ["failed", "needs_attention"]
+  },
+  "sort": [
+    { "field": "activityDate", "direction": "desc" }
+  ],
+  "columns": {
+    "visible": ["activityDate", "activityType", "user", "status"]
+  }
+}
+```
+
+HTTP endpoints:
+
+* `GET /table_views?table_type=ids_activity_history` : List saved views for the owner/table.
+* `GET /table_views/{id}` : Fetch one saved view.
+* `POST /table_views` : Create or update a saved view.
+* `DELETE /table_views/{id}` : Delete a saved view.
+
+Supported `table_type` values are `ids_activity_history`, `patents`, `citations`, and `inventor_stats`. See [`FILTER_VIEW.md`](./FILTER_VIEW.md) for the design notes, tradeoffs, and storage model.
+
 * `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
 * `:tag.list` : List all tags currently registered in the active project's taxonomy.
 * `:tag.delete <name>` : Remove a tag from the active project's taxonomy (cascades to delete all patent assignments for this tag).

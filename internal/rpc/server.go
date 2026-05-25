@@ -107,6 +107,10 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodClassificationLookup:      s.classificationLookup,
 		proto.MethodClassificationListByCodes: s.classificationListByCodes,
 		proto.MethodPatentClassificationList:  s.patentClassificationList,
+		proto.MethodTableViewList:             s.tableViewList,
+		proto.MethodTableViewGet:              s.tableViewGet,
+		proto.MethodTableViewSave:             s.tableViewSave,
+		proto.MethodTableViewDelete:           s.tableViewDelete,
 	}
 	return s
 }
@@ -1013,6 +1017,53 @@ func (s *Server) historyFeed(_ context.Context, raw json.RawMessage) (any, error
 		Component: p.Component,
 		Since:     p.Since,
 	})
+}
+
+func (s *Server) tableViewList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TableViewListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.engine.ListTableViews(ctx, p.Owner, p.TableType)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TableViewListResult{Views: views}, nil
+}
+
+func (s *Server) tableViewGet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TableViewGetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.engine.TableView(ctx, p.Owner, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TableViewResult{View: view}, nil
+}
+
+func (s *Server) tableViewSave(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TableViewSaveParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.engine.SaveTableView(ctx, p.View)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TableViewResult{View: view}, nil
+}
+
+func (s *Server) tableViewDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TableViewGetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteTableView(ctx, p.Owner, p.ID); err != nil {
+		return nil, err
+	}
+	return proto.Empty{}, nil
 }
 
 // mergeTimingMetric combines two timing summaries for the same key.
