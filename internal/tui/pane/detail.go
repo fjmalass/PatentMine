@@ -69,6 +69,15 @@ type detailRelationCountMsg struct {
 	err       error
 }
 
+// detailSourceDiffsMsg delivers whether the current patent has recorded
+// source comparison diffs (from compare mode + enrichment). Used for the
+// conditional "C compare sources" hint in the detail view (Option A).
+type detailSourceDiffsMsg struct {
+	requestID uint64
+	hasDiffs  bool
+	err       error
+}
+
 // detailRelationKinds are the edge kinds the detail view counts, in display order.
 var detailRelationKinds = []domain.RelationKind{
 	domain.RelationCites, domain.RelationCitedBy,
@@ -92,6 +101,7 @@ type Detail struct {
 	patentNote         *domain.PatentNote
 	usptoApp           *domain.USPTOApplication
 	relCounts          map[domain.RelationKind]int
+	hasSourceDiffs     bool
 	jump               *JumpController
 	lineGroups         []detailLineGroup
 	page               render.Paginator
@@ -239,7 +249,7 @@ func (d *Detail) Init() tea.Cmd { return d.reload() }
 
 // reload fetches the patent record and its family-graph edge counts.
 func (d *Detail) reload() tea.Cmd {
-	return tea.Batch(d.load(), d.loadRelations())
+	return tea.Batch(d.load(), d.loadRelations(), d.loadSourceDiffs())
 }
 
 // load fetches the patent record from the daemon, scoped to the pane's project
@@ -285,6 +295,25 @@ func (d *Detail) loadRelations() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// loadSourceDiffs checks (lightweight) whether source comparison diffs exist
+// for the current patent. Used to drive the conditional hint + enable the
+// comparison overlay (Option A reconciliation flow).
+func (d *Detail) loadSourceDiffs() tea.Cmd {
+	client, number, requestID := d.client, d.number, d.loadID
+	if client == nil || number.IsZero() {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.SourceDiffsListResult
+		err := client.Call(ctx, proto.MethodSourceDiffsList,
+			proto.SourceDiffsListParams{Number: number}, &res)
+		has := err == nil && len(res.Diffs) > 0
+		return detailSourceDiffsMsg{requestID: requestID, hasDiffs: has, err: err}
+	}
+}
+
 // Command implements Pane.
 func (d *Detail) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if handler, ok := d.handlers[id]; ok {
@@ -316,11 +345,17 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.idsEntry = m.idsEntry
 		d.patentNote = m.patentNote
 		d.usptoApp = m.usptoApp
+		d.hasSourceDiffs = false // will be set by the async loadSourceDiffs
 		d.page.Top()
 		d.cachedLines = nil
 	case detailRelationCountMsg:
 		if m.requestID == d.loadID && m.err == nil {
 			d.relCounts[m.kind] = m.count
+			d.cachedLines = nil
+		}
+	case detailSourceDiffsMsg:
+		if m.requestID == d.loadID {
+			d.hasSourceDiffs = m.hasDiffs && m.err == nil
 			d.cachedLines = nil
 		}
 	case ProjectChangedMsg:
@@ -463,6 +498,15 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, detailLabelFetchState, detailFetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, detailLabelSource, string(p.Source))
 	d.field(&b, w, detailLabelSourceURL, p.SourceURL)
+
+	// Conditional source comparison hint (Option A) — shown only when
+	// source_diff rows exist for this patent (from compare mode + enrichment).
+	// Use "g c" (while detail focused) or :source-compare to open the split
+	// review & choose (defaults to USPTO).
+	if d.hasSourceDiffs {
+		b.WriteString(d.theme.Warn.Render("  compare sources — differences from other providers (g c / :source-compare)"))
+		b.WriteByte('\n')
+	}
 
 	// USPTO Application details
 	if d.usptoApp != nil && d.usptoApp.ApplicationNumber != "" {

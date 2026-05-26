@@ -173,16 +173,16 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		return Result{}, fmt.Errorf("crawl/uspto: decode response: %w", err)
 	}
 	if len(resp.PatentFileWrapperDataBag) == 0 {
-		return Result{}, ErrNotAvailable
+		return Result{}, ErrUSPTOApplicationNotFound
 	}
 
 	w, ok := matchingUSPTOWrapper(number, resp.PatentFileWrapperDataBag)
 	if !ok {
-		return Result{}, ErrNotAvailable
+		return Result{}, ErrUSPTOApplicationNotFound
 	}
 	appNumber := strings.TrimSpace(w.ApplicationNumberText)
 	if appNumber == "" {
-		return Result{}, ErrNotAvailable
+		return Result{}, ErrUSPTOApplicationNotFound
 	}
 
 	recordNumber, err := domain.ParsePatentNumber("US" + appNumber)
@@ -344,6 +344,10 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 	var wrapperResp usptoFileWrapperResponse
 	if err := json.Unmarshal(body, &wrapperResp); err != nil {
 		return nil, err
+	}
+
+	if len(wrapperResp.PatentFileWrapperDataBag) == 0 {
+		return nil, ErrUSPTOApplicationNotFound
 	}
 
 	var candidates []domain.USPTOCandidate

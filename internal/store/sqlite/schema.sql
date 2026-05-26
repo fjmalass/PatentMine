@@ -433,7 +433,12 @@ CREATE TABLE IF NOT EXISTS source_diff (
     severity           TEXT NOT NULL DEFAULT '',
     recorded_at        TEXT NOT NULL,
     uspto_snapshot_id  TEXT NOT NULL DEFAULT '',
-    google_snapshot_id TEXT NOT NULL DEFAULT ''
+    google_snapshot_id TEXT NOT NULL DEFAULT '',
+
+    -- Reconciliation metadata (Option A)
+    reconciled_at      TEXT,
+    reconciled_by      TEXT,
+    reconciled_choice  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_source_diff_patent ON source_diff (patent_number, recorded_at DESC);

@@ -207,18 +207,23 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO source_diff
 			(id, patent_number, field_path, uspto_value, google_value, chosen_value, chosen_source,
-			 severity, recorded_at, uspto_snapshot_id, google_snapshot_id)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?)
+			 severity, recorded_at, uspto_snapshot_id, google_snapshot_id,
+			 reconciled_at, reconciled_by, reconciled_choice)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				uspto_value=excluded.uspto_value,
 				google_value=excluded.google_value,
 				chosen_value=excluded.chosen_value,
 				chosen_source=excluded.chosen_source,
 				severity=excluded.severity,
-				recorded_at=excluded.recorded_at`,
+				recorded_at=excluded.recorded_at,
+				reconciled_at=excluded.reconciled_at,
+				reconciled_by=excluded.reconciled_by,
+				reconciled_choice=excluded.reconciled_choice`,
 			diff.ID, diff.PatentNumber.Normalized(), diff.FieldPath, diff.USPTOValue,
 			diff.GoogleValue, diff.ChosenValue, diff.ChosenSource, diff.Severity,
-			diff.RecordedAt, diff.USPTOSnapshotID, diff.GoogleSnapshotID); err != nil {
+			diff.RecordedAt, diff.USPTOSnapshotID, diff.GoogleSnapshotID,
+			diff.ReconciledAt, diff.ReconciledBy, diff.ReconciledChoice); err != nil {
 			return fmt.Errorf("store/sqlite: save source diff: %w", err)
 		}
 	}
@@ -329,5 +334,91 @@ func (r *Repo) RecordUSPTOXMLDownload(ctx context.Context, rec domain.USPTOXMLDo
 		return fmt.Errorf("store/sqlite: record uspto xml download: %w", err)
 	}
 	return nil
+}
+
+// ListSourceDiffs returns all recorded source comparison diffs for a patent
+// (newest first by recorded_at). This is the query side for Option A
+// reconciliation (the diffs hold the raw values + user Chosen + reconciled metadata).
+func (r *Repo) ListSourceDiffs(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceDiff, error) {
+	if patent.IsZero() {
+		return nil, nil
+	}
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT id, patent_number, field_path,
+		       uspto_value, google_value, chosen_value, chosen_source,
+		       severity, recorded_at,
+		       uspto_snapshot_id, google_snapshot_id,
+		       reconciled_at, reconciled_by, reconciled_choice
+		FROM source_diff
+		WHERE patent_number = ?
+		ORDER BY recorded_at DESC, id ASC`, patent.Normalized())
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list source diffs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.SourceDiff
+	for rows.Next() {
+		var d domain.SourceDiff
+		var pnum string
+		if err := rows.Scan(
+			&d.ID, &pnum, &d.FieldPath,
+			&d.USPTOValue, &d.GoogleValue, &d.ChosenValue, &d.ChosenSource,
+			&d.Severity, &d.RecordedAt,
+			&d.USPTOSnapshotID, &d.GoogleSnapshotID,
+			&d.ReconciledAt, &d.ReconciledBy, &d.ReconciledChoice,
+		); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan source diff: %w", err)
+		}
+		if pn, err := domain.ParsePatentNumber(pnum); err == nil {
+			d.PatentNumber = pn
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: iterate source diffs: %w", err)
+	}
+	return out, nil
+}
+
+// ListSourceSnapshots returns fetch snapshots for provenance/audit (newest first).
+func (r *Repo) ListSourceSnapshots(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceSnapshot, error) {
+	if patent.IsZero() {
+		return nil, nil
+	}
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT id, patent_number, source, source_record_id, source_url, fetched_at,
+		       payload_kind, payload_hash, payload_path, response_bytes, http_status,
+		       etag, last_modified, summary_json
+		FROM source_snapshot
+		WHERE patent_number = ?
+		ORDER BY fetched_at DESC, id ASC`, patent.Normalized())
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list source snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.SourceSnapshot
+	for rows.Next() {
+		var s domain.SourceSnapshot
+		var pnum string
+		var summary string
+		if err := rows.Scan(
+			&s.ID, &pnum, &s.Source, &s.SourceRecordID, &s.SourceURL, &s.FetchedAt,
+			&s.PayloadKind, &s.PayloadHash, &s.PayloadPath, &s.ResponseBytes, &s.HTTPStatus,
+			&s.ETag, &s.LastModified, &summary,
+		); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan source snapshot: %w", err)
+		}
+		if pn, err := domain.ParsePatentNumber(pnum); err == nil {
+			s.PatentNumber = pn
+		}
+		s.SummaryJSON = summary
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: iterate source snapshots: %w", err)
+	}
+	return out, nil
 }
 

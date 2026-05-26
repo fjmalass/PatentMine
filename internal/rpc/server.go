@@ -123,6 +123,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTableViewDelete:           s.tableViewDelete,
 		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
 		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
+		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
+		proto.MethodSourceDiffsList:           s.sourceDiffsList,
 	}
 	return s
 }
@@ -1238,4 +1240,33 @@ func (s *Server) usptoGrantBody(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, err
 	}
 	return proto.USPTOGrantBodyResult{Present: present, Body: body}, nil
+}
+
+func (s *Server) sourceResolveDiffs(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.SourceResolveDiffsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.ResolveSourceDiffs(ctx, p.Number, p.Diffs); err != nil {
+		return nil, err
+	}
+	if metrics := s.engineMetrics(); metrics != nil {
+		metrics.IncCounter("rpc.source.resolve_diffs.success_total", 1)
+	}
+	return proto.SourceResolveDiffsResult{
+		Resolved: len(p.Diffs),
+		Message:  "reconciled",
+	}, nil
+}
+
+func (s *Server) sourceDiffsList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.SourceDiffsListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	diffs, err := s.engine.ListSourceDiffs(ctx, p.Number)
+	if err != nil {
+		return nil, err
+	}
+	return proto.SourceDiffsListResult{Diffs: diffs}, nil
 }

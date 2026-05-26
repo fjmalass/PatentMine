@@ -153,6 +153,7 @@ func Default() *Keymaps {
 			"a":     command.AIAnalyze,
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
+			"g c":   command.SourceCompare, // conditional source comparison (Option A)
 		})
 
 	citations := NewLayer("citations", false).

@@ -161,7 +161,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.FetchUSPTOPGPub:            (*App).cmdFetchUSPTOPGPub,
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.Import:                     (*App).cmdImport,
-	command.SourceMode:                 (*App).cmdSourceMode,
+	command.SourceMode:     (*App).cmdSourceMode,
+	command.SourceCompare: (*App).cmdSourceCompare,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
 	command.MarkActive:                 (*App).cmdMarkActive,
 	command.MarkUnderReview:            (*App).cmdMarkUnderReview,
@@ -821,6 +822,58 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.CloseOverlayMsg:
 		a.popOverlay()
 		return a, nil
+
+	case overlay.SourceComparisonResolveMsg:
+		// User accepted choices in the source comparison overlay (default was USPTO).
+		// Persist via engine (applies ChosenValue to the patent row + stamps
+		// reconciled_* on the SourceDiff rows for audit — Option A).
+		if len(a.overlays) > 0 {
+			a.popOverlay()
+		}
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, a.refreshPanes()
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		params := proto.SourceResolveDiffsParams{
+			Number: m.Patent,
+			Diffs:  m.Diffs,
+		}
+		var res proto.SourceResolveDiffsResult
+		resolveErr := a.client.Call(ctx, proto.MethodSourceResolveDiffs, params, &res)
+
+		if resolveErr != nil {
+			a.metrics.IncCounter("tui.source.resolve.error_total", 1)
+			a.setErr(text.StatusGeneric, "resolve failed: "+resolveErr.Error())
+			a.log().Error("source resolve failed", slog.String("error", resolveErr.Error()))
+			return a, a.refreshPanes()
+		}
+
+		a.metrics.IncCounter("tui.source.resolve_total", 1)
+		a.metrics.IncCounter("tui.source.resolve.success_total", 1)
+
+		a.recordActivity(observability.Record{
+			Action:   observability.ActionSourceResolveDiffs,
+			Entity:   "patent",
+			EntityID: m.Patent.String(),
+			Status:   "committed",
+			Attributes: map[string]any{
+				"diff_count": len(m.Diffs),
+				"via":        "tui",
+			},
+		})
+
+		a.setStatus(text.StatusGeneric, "Source comparison reconciled (choices persisted).")
+
+		a.log().Info("source comparison resolved",
+			slog.String("patent", m.Patent.String()),
+			slog.Int("diff_count", len(m.Diffs)))
+
+		return a, a.refreshPanes()
+
 	case overlay.OpenPatentDetailMsg:
 		a.popOverlay()
 		var project domain.ProjectID

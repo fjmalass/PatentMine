@@ -111,6 +111,7 @@ const (
 	LookupPatent   ID = "patent.lookup"
 	Import         ID = "patent.import"
 	SourceMode     ID = "source.mode"
+	SourceCompare  ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -276,6 +277,7 @@ func Default() (*Registry, error) {
 		Command{ID: LookupPatent, Name: "lookup", Aliases: []string{"lookup-patent"}, Usage: ":lookup", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
 		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode", "google.mode", "google-mode"}, Usage: ":source.mode [compare|uspto-first|uspto-only|google-only]", Kind: KindView},
+		Command{ID: SourceCompare, Name: "source.compare", Aliases: []string{"compare", "compare-sources"}, Usage: ":source.compare", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: CrawlCancel, Kind: KindEngine, Method: proto.MethodCrawlCancel},
 
 		// --- full text viewer (view) ---

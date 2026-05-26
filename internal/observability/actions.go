@@ -41,6 +41,19 @@ const (
 	ActionIDSEntryBulkSetStatus = "ids.entry.bulk_set_status"
 	ActionIDSExportPDF          = "ids.export.pdf"
 	ActionSourceModeSet         = "config.source_mode.set"
+	// CLI management operations (for observability of backup/clean of patents XML cache, logs, etc.)
+	ActionCLIPatentsList   = "cli.patents.list"
+	ActionCLIPatentsArchive = "cli.patents.archive"
+	ActionCLIPatentsClean   = "cli.patents.clean"
+
+	// Resolution / crawl failure paths (for the compare-mode + grant number issues)
+	ActionCrawlRootNotFound     = "crawl.root_not_found"
+	ActionUSPTOCandidateSearch  = "uspto.candidate.search"
+
+	// Source comparison / reconciliation (Option A persistence of overlay choices)
+	ActionSourceCompareOpen = "source.compare.open"
+	ActionSourceDiffsLoad   = "source.diffs.load"
+	ActionSourceResolveDiffs = "source.resolve_diffs"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -77,4 +90,12 @@ var AllActions = []string{
 	ActionIDSEntryBulkSetStatus,
 	ActionIDSExportPDF,
 	ActionSourceModeSet,
+	ActionCLIPatentsList,
+	ActionCLIPatentsArchive,
+	ActionCLIPatentsClean,
+	ActionCrawlRootNotFound,
+	ActionUSPTOCandidateSearch,
+	ActionSourceCompareOpen,
+	ActionSourceDiffsLoad,
+	ActionSourceResolveDiffs,
 }

@@ -21,6 +21,7 @@ const (
 	StatusUsage                   Key = "status.usage"
 	StatusUnhandledCommand        Key = "status.unhandled_command"
 	StatusInvalidPatentNumber     Key = "status.invalid_patent_number"
+	StatusGeneric                 Key = "status.generic"
 	StatusDaemonClosed            Key = "status.daemon_closed"
 	StatusAIAnalysisStarted       Key = "status.ai_analysis_started"
 	StatusAIAnalysisFailed        Key = "status.ai_analysis_failed"
@@ -248,6 +249,7 @@ var cmdStrings = map[string][2]string{
 	"patent.lookup":              {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":              {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"source.mode":                {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
+	"source.compare":             {"Compare sources", "Review and reconcile differences between data sources (e.g. USPTO vs Google) for the current patent. Opens the split comparison overlay (default choice = USPTO)."},
 	"crawl.cancel":               {"Cancel crawl", "Cancel a running crawl job."},
 	"project.create":             {"Create project", "Create a new project."},
 	"project.activate":           {"Use project", "Make the selected project the active project for patent actions."},
@@ -301,17 +303,18 @@ var englishNamed = map[Key]string{
 	StatusUsage:                   "usage: %s",
 	StatusUnhandledCommand:        "unhandled command: %s",
 	StatusInvalidPatentNumber:     "invalid patent number: %s",
+	StatusGeneric:                 "%s",
 	StatusDaemonClosed:            "daemon connection closed",
 	StatusAIAnalysisStarted:       "AI analysis starting on patent %s via %s...",
 	StatusAIAnalysisFailed:        "AI curation failed: %s",
 	StatusAIAnalysisComplete:      "AI analysis complete for %s. Report saved in session notes.",
 	StatusCrawlProgress:           "crawl %s — depth %d/%d, crawled %d, discovered %d: %s",
-	StatusCrawlFailed:             "crawl %s failed: %s",
+	StatusCrawlFailed:             "crawl %s failed: %s  (see activity/logs for source details)",
 	StatusCrawlComplete:           "crawl %s complete",
 	StatusCrawlStarted:            "crawl started for %s (%s)",
 	StatusCrawlStartFailed:        "crawl failed: %s",
 	StatusCrawlDepthMax:           "crawl family depth max: %d",
-	StatusAddFailed:               "add to project failed: %s",
+	StatusAddFailed:               "add to project failed: %s  (resolution details may be in the error or activity)",
 	StatusAdded:                   "added %s to %s",
 	StatusAddedNoCrawl:            "added %s — press L to lookup",
 	StatusXMLFetched:              "downloaded %s XML to %s (%d bytes, requested %d times)",

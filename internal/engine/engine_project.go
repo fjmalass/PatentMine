@@ -69,8 +69,38 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 
 	if source == domain.SourceUSPTO && e.usptoSearcher != nil {
+		searchStart := time.Now()
 		candidates, err = e.usptoSearcher(ctx, patent)
+		searchDur := time.Since(searchStart)
+
+		if e.metrics != nil {
+			e.metrics.ObserveDuration("uspto.candidate.search", searchDur, err != nil)
+			if err != nil {
+				e.metrics.IncCounter("uspto.candidate.search.error", 1)
+			} else {
+				e.metrics.IncCounter("uspto.candidate.search.success", 1)
+				e.metrics.IncCounter("uspto.candidate.count", int64(len(candidates)))
+			}
+		}
+
 		if err != nil {
+			e.log(ctx, slog.LevelWarn, "uspto searcher failed during add (may be grant number vs application mismatch)",
+				slog.String("requested_number", patent.String()),
+				slog.String("error", err.Error()),
+				slog.Duration("duration", searchDur))
+			if e.metrics != nil {
+				e.metrics.IncCounter("engine.add.uspto_search.error", 1)
+			}
+			e.recordActivity(ctx, observability.Record{
+				Action:   observability.ActionUSPTOCandidateSearch,
+				Entity:   "uspto_resolution",
+				Status:   "error",
+				EntityID: patent.String(),
+				Attributes: map[string]any{
+					"error":       err.Error(),
+					"duration_ms": searchDur.Milliseconds(),
+				},
+			})
 			return false, nil, err
 		}
 		if len(candidates) > 1 {
@@ -187,6 +217,18 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 			return
 		}
 		ctx := context.Background()
+
+		e.recordActivity(ctx, observability.Record{
+			Action:   observability.ActionCrawlRootNotFound,
+			Entity:   "crawl",
+			Status:   "error",
+			EntityID: record.String(),
+			Attributes: map[string]any{
+				"job_id":  d.JobID,
+				"error":   d.Error,
+				"project": string(project),
+			},
+		})
 		membership, err := e.repo.Membership(ctx, project, record)
 		if err == nil && membership.ReviewState != domain.ReviewStateUnknown {
 			return

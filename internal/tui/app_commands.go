@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -64,6 +65,65 @@ func (a *App) cmdSourceMode(inv invocation) (tea.Model, tea.Cmd) {
 		}
 		return pane.StatusMsg{Key: text.StatusUsage, Args: []any{"source mode: " + res.Mode}}
 	}
+}
+
+// cmdSourceCompare opens the source comparison overlay for the current patent
+// (especially useful after USPTO enrichment when Google provided the primary data
+// in compare mode). Default choice is USPTO. Loads real diffs via RPC (Option A).
+func (a *App) cmdSourceCompare(inv invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+
+	// Try to get the patent from the focused pane (works great from detail pane).
+	pane := a.focusedPane()
+	number, ok := pane.Selection()
+	if !ok || number.IsZero() {
+		a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
+		return a, nil
+	}
+
+	// Load the actual diffs for this patent (generated during compare-mode fetch + enrichment).
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var listRes proto.SourceDiffsListResult
+	listErr := a.client.Call(ctx, proto.MethodSourceDiffsList, proto.SourceDiffsListParams{Number: number}, &listRes)
+
+	a.metrics.IncCounter("tui.source.compare.initiated_total", 1)
+	a.recordActivity(observability.Record{
+		Action:   observability.ActionSourceCompareOpen,
+		Entity:   "patent",
+		EntityID: number.String(),
+		Status:   map[bool]string{true: "error", false: "opened"}[listErr != nil],
+		Attributes: map[string]any{
+			"diff_count": len(listRes.Diffs),
+		},
+	})
+
+	if listErr != nil {
+		a.metrics.IncCounter("tui.source.compare.error_total", 1)
+		a.setErr(text.StatusGeneric, "load diffs failed: "+listErr.Error())
+		return a, nil
+	}
+
+	a.metrics.IncCounter("tui.source.diffs.loaded_total", int64(len(listRes.Diffs)))
+
+	o := overlay.NewSourceComparisonOverlay(a.theme, number, listRes.Diffs)
+	a.overlays = append(a.overlays, o)
+
+	a.setStatus(text.StatusGeneric, fmt.Sprintf("Source comparison — %s (default = USPTO)", number))
+
+	a.log().Info("source comparison opened",
+		slog.String("patent", number.String()),
+		slog.Int("diff_count", len(listRes.Diffs)))
+
+	return a, nil
 }
 
 func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
@@ -798,6 +858,8 @@ func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
 		a.theme, a.text, overlay.PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption))
 	return a, nil
 }
+
+
 
 // cmdImport fetches a patent by number — optionally forcing past the file
 // cache — or loads a fixture file when the argument is a path.

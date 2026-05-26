@@ -23,6 +23,20 @@ const slowSourceFetch = 300 * time.Millisecond
 // the Crawler should try the next source.
 var ErrNotAvailable = errors.New("crawl: patent not available from this source")
 
+// Granular USPTO-specific resolution errors (for better diagnostics and partial
+// data handling — e.g. "we have the application but no grant XML yet").
+var (
+	// ErrUSPTOApplicationNotFound is returned when the File Wrapper search
+	// returns no usable wrapper for the input (common when feeding a grant
+	// number into an application-oriented API).
+	ErrUSPTOApplicationNotFound = errors.New("crawl/uspto: no application data found for number (grant number may not map cleanly or wrapper missing)")
+
+	// ErrUSPTOGrantDocumentNotFound indicates we resolved an application
+	// record but the grant document metadata is absent. The patent can still
+	// be shown/used with whatever data we have; later enrichment is possible.
+	ErrUSPTOGrantDocumentNotFound = errors.New("crawl/uspto: grant document meta not present (only application or pre-grant data available)")
+)
+
 // Result is one patent fetched from a Source: the record's bibliographic data,
 // its life-stage documents (application, publication, grant), and the
 // family-graph edges discovered alongside it.
@@ -190,7 +204,15 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 		}
 	}()
 	mode := domain.SourceMode(r.SourceMode())
+
+	type fetchAttempt struct {
+		source string
+		err    error
+		dur    time.Duration
+	}
+	var attempts []fetchAttempt
 	lastErr := error(ErrNotAvailable)
+
 	for _, s := range r.sources {
 		// Honor source-mode exclusions: uspto-only blocks Google,
 		// google-only blocks USPTO. File source is always considered
@@ -210,8 +232,15 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 		}
 		sourceStart := time.Now()
 		res, err := s.Fetch(ctx, number)
+		d := time.Since(sourceStart)
+
+		attempts = append(attempts, fetchAttempt{
+			source: string(s.Name()),
+			err:    err,
+			dur:    d,
+		})
+
 		if r.metrics != nil {
-			d := time.Since(sourceStart)
 			r.metrics.ObserveDuration("crawl.source."+string(s.Name())+".fetch", d, err != nil)
 			if r.logger != nil && d >= slowSourceFetch {
 				r.logger.Warn("slow crawl source fetch",
@@ -222,20 +251,53 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 			}
 		}
 		if err == nil {
-			if s.Name() == domain.SourceUSPTO && mode == SourceModeCompare {
-				res = r.compareWithGoogle(ctx, number, res, exclude...)
+			if mode == SourceModeCompare {
+				if s.Name() == domain.SourceUSPTO {
+					res = r.compareWithGoogle(ctx, number, res, exclude...)
+				} else {
+					// Best-effort secondary USPTO enrichment when Google (or another source)
+					// succeeded first in compare mode. This populates the uspto_application
+					// row (and related data) needed for later grant XML fetches, even if
+					// the primary bibliographic data came from Google.
+					res = r.enrichWithUSPTO(ctx, number, res, exclude...)
+				}
 			}
 			return res, nil
 		}
 		if ctx.Err() != nil {
 			return Result{}, ctx.Err()
 		}
-		if !errors.Is(err, ErrNotAvailable) {
+		if errors.Is(err, ErrNotAvailable) {
+			if r.metrics != nil {
+				r.metrics.IncCounter("crawl.source."+string(s.Name())+".not_available_total", 1)
+			}
+		} else if err != nil {
+			if r.metrics != nil {
+				r.metrics.IncCounter("crawl.source."+string(s.Name())+".hard_error_total", 1)
+			}
 			lastErr = err
 			failed = true
 		}
 	}
 	failed = true
+
+	// Build richer error with per-source details (for better logging, telemetry,
+	// and user-facing messages per the approved plan).
+	if len(attempts) > 0 {
+		var details []string
+		for _, a := range attempts {
+			if a.err != nil {
+				details = append(details, fmt.Sprintf("%s: %v (%.2fs)", a.source, a.err, a.dur.Seconds()))
+			}
+		}
+		if len(details) > 0 {
+			if r.metrics != nil {
+				r.metrics.IncCounter("crawl.registry.all_sources_failed_total", 1)
+			}
+			return Result{}, fmt.Errorf("all sources failed for %s: %w; details: [%s]", number, lastErr, strings.Join(details, "; "))
+		}
+	}
+
 	return Result{}, lastErr
 }
 
@@ -247,15 +309,32 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		if s.Name() != domain.SourceGoogle {
 			continue
 		}
+		compStart := time.Now()
 		google, err := s.Fetch(ctx, number)
+		compDur := time.Since(compStart)
+
+		if r.metrics != nil {
+			r.metrics.ObserveDuration("crawl.source.google.comparison_fetch", compDur, err != nil)
+			r.metrics.IncCounter("crawl.source.google.comparison_attempted_total", 1)
+			if err != nil {
+				r.metrics.IncCounter("crawl.source.google.comparison_failed_total", 1)
+			}
+		}
+
 		if err != nil {
 			if r.logger != nil && !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
 				r.logger.Warn("google comparison fetch failed",
 					slog.String("number", number.String()),
-					slog.String("error", err.Error()))
+					slog.String("error", err.Error()),
+					slog.Duration("duration", compDur))
 			}
 			return uspto
 		}
+
+		if r.metrics != nil {
+			r.metrics.IncCounter("crawl.source.google.comparison_diffs_generated_total", int64(len(comparePatentFields(uspto.Patent, google.Patent))))
+		}
+
 		uspto.SourceSnapshots = append(uspto.SourceSnapshots, google.SourceSnapshots...)
 		uspto.SourceDiffs = append(uspto.SourceDiffs, comparePatentFields(uspto.Patent, google.Patent)...)
 		return uspto
@@ -263,37 +342,94 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 	return uspto
 }
 
+// enrichWithUSPTO is the symmetric counterpart to compareWithGoogle.
+// When a non-USPTO source (typically Google in compare mode) provides the
+// primary bibliographic data, we still attempt a best-effort secondary fetch
+// from USPTO. This populates the critical uspto_application row (and related
+// parties/events/continuities) needed for later grant XML downloads via
+// FetchUSPTOXML, without failing the overall fetch.
+func (r *Registry) enrichWithUSPTO(ctx context.Context, number domain.PatentNumber, primary Result, exclude ...domain.Source) Result {
+	if slices.Contains(exclude, domain.SourceUSPTO) {
+		return primary
+	}
+	for _, s := range r.sources {
+		if s.Name() != domain.SourceUSPTO {
+			continue
+		}
+		enrichStart := time.Now()
+		uspto, err := s.Fetch(ctx, number)
+		enrichDur := time.Since(enrichStart)
+
+		if r.metrics != nil {
+			r.metrics.ObserveDuration("crawl.source.uspto.enrichment_fetch", enrichDur, err != nil)
+			r.metrics.IncCounter("crawl.source.uspto.enrichment_attempted_total", 1)
+			if err != nil {
+				r.metrics.IncCounter("crawl.source.uspto.enrichment_failed_total", 1)
+			}
+		}
+
+		if err != nil {
+			if r.logger != nil && !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
+				r.logger.Debug("best-effort USPTO enrichment failed (non-fatal)",
+					slog.String("number", number.String()),
+					slog.String("error", err.Error()),
+					slog.Duration("duration", enrichDur))
+			}
+			return primary
+		}
+
+		// Merge the valuable USPTO-only data (especially the application record
+		// needed for grant XML URLs).
+		if uspto.USPTOApplication != nil {
+			primary.USPTOApplication = uspto.USPTOApplication
+		}
+		primary.USPTOParties = append(primary.USPTOParties, uspto.USPTOParties...)
+		primary.USPTOEvents = append(primary.USPTOEvents, uspto.USPTOEvents...)
+		primary.USPTOContinuities = append(primary.USPTOContinuities, uspto.USPTOContinuities...)
+		primary.USPTOForeignPriority = append(primary.USPTOForeignPriority, uspto.USPTOForeignPriority...)
+
+		// Also bring in any source snapshots from the enrichment for auditability.
+		primary.SourceSnapshots = append(primary.SourceSnapshots, uspto.SourceSnapshots...)
+
+		// Generate diffs (Google as primary vs this USPTO enrichment).
+		// Default choice = USPTO per user preference for the comparison UI.
+		diffs := comparePatentFields(primary.Patent, uspto.Patent)
+		for i := range diffs {
+			diffs[i].ChosenValue = diffs[i].USPTOValue // default to USPTO
+			diffs[i].ChosenSource = string(domain.SourceUSPTO)
+		}
+		primary.SourceDiffs = append(primary.SourceDiffs, diffs...)
+
+		if r.logger != nil {
+			r.logger.Info("best-effort USPTO enrichment succeeded",
+				slog.String("number", number.String()),
+				slog.Duration("duration", enrichDur),
+				slog.Bool("had_application", primary.USPTOApplication != nil))
+		}
+
+		return primary
+	}
+	return primary
+}
+
 func comparePatentFields(uspto, google domain.Patent) []domain.SourceDiff {
 	now := time.Now().UTC().Format(time.RFC3339)
-	fields := []struct {
-		path  string
-		left  string
-		right string
-	}{
-		{"title", uspto.Title, google.Title},
-		{"abstract", uspto.Abstract, google.Abstract},
-		{"assignee", uspto.Assignee, google.Assignee},
-		{"inventors", inventorsString(uspto.Inventors), inventorsString(google.Inventors)},
-		{"application_date", dateString(uspto.ApplicationDate), dateString(google.ApplicationDate)},
-		{"publication_date", dateString(uspto.PublicationDate), dateString(google.PublicationDate)},
-		{"grant_date", dateString(uspto.GrantDate), dateString(google.GrantDate)},
-		{"classifications", strings.Join(uspto.Classifications, ";"), strings.Join(google.Classifications, ";")},
-		{"first_claim", uspto.FirstClaim, google.FirstClaim},
-	}
+
 	var diffs []domain.SourceDiff
-	for _, f := range fields {
-		left, right := strings.TrimSpace(f.left), strings.TrimSpace(f.right)
+	for _, f := range domain.ReconciliableFields {
+		left := strings.TrimSpace(f.Get(&uspto))
+		right := strings.TrimSpace(f.Get(&google))
 		if left == right || (left == "" && right == "") {
 			continue
 		}
-		idSeed := uspto.Number.Normalized() + ":" + f.path + ":" + left + ":" + right
+		idSeed := uspto.Number.Normalized() + ":" + f.Path + ":" + left + ":" + right
 		diffs = append(diffs, domain.SourceDiff{
 			ID:           "diff:" + payloadHash([]byte(idSeed))[:24],
 			PatentNumber: uspto.Number,
-			FieldPath:    f.path,
+			FieldPath:    f.Path,
 			USPTOValue:   left,
 			GoogleValue:  right,
-			ChosenValue:  left,
+			ChosenValue:  left, // default to USPTO per long-standing preference
 			ChosenSource: string(domain.SourceUSPTO),
 			Severity:     diffSeverity(left, right),
 			RecordedAt:   now,

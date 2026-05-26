@@ -232,6 +232,14 @@ type Repository interface {
 	// DeleteTableView removes one saved table view owned by owner.
 	DeleteTableView(ctx context.Context, owner, id string) error
 
+	// ListSourceDiffs returns source comparison/reconciliation diffs for a patent
+	// (newest first). Used by the TUI comparison overlay and resolve flow (Option A).
+	ListSourceDiffs(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceDiff, error)
+
+	// ListSourceSnapshots returns fetch provenance snapshots for a patent (newest first).
+	// Supports audit and future diff reconstruction.
+	ListSourceSnapshots(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceSnapshot, error)
+
 	// Close releases all database resources.
 	Close() error
 }

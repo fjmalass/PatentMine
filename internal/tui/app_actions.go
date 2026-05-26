@@ -463,6 +463,8 @@ func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 		var d proto.CrawlDone
 		_ = json.Unmarshal(ev.Params, &d)
 		if d.Error != "" {
+			// The error now often contains per-source details (e.g. "USPTO: no application...; Google: ...")
+			// thanks to improved resolution error collection. Show a clearer message.
 			a.setErr(text.StatusCrawlFailed, d.JobID, d.Error)
 		} else {
 			a.setStatus(text.StatusCrawlComplete, d.JobID)

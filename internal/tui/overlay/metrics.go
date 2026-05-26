@@ -462,6 +462,13 @@ func metricsGroup(name string) string {
 			return group
 		}
 	}
+	// Special-case common resolution-related prefixes so they don't all fall to "other"
+	if strings.HasPrefix(name, "uspto.") {
+		return "uspto"
+	}
+	if strings.HasPrefix(name, "crawl.") {
+		return "crawl"
+	}
 	return string(observability.MetricNamespaceOther)
 }
 

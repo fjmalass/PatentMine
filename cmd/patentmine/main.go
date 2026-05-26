@@ -19,6 +19,7 @@ usage:
   patentmine paths     print resolved runtime paths
   patentmine logs      manage log and activity files (list, archive, ship)
   patentmine db        manage database tasks (backup, vacuum, status)
+  patentmine patents   manage the patents/XML cache directory (list, archive, clean)
   patentmine check     check configured external service connectivity
   patentmine lookup    look up a patent by USPTO application number
   patentmine version   print the build version
@@ -50,6 +51,8 @@ func run(args []string) int {
 		return runLogs(args[1:])
 	case "db":
 		return runDB(args[1:])
+	case "patents":
+		return runPatents(args[1:])
 	case "check":
 		return runCheck(args[1:])
 	case "lookup":

@@ -22,7 +22,7 @@ const lookupUsage = `usage:
   patentmine lookup [options] <application-number>  look up a patent by USPTO application number
 
 options:
-  -zip  download and unzip associated patent documents into ~/.config/patentmine/patents/
+  -zip  download and unzip associated patent documents into the configured patents (XML) cache dir
 `
 
 type lookupResponse struct {
@@ -175,11 +175,8 @@ func runLookup(args []string) int {
 			return 1
 		}
 
-		patentsDir := filepath.Join(string(cfg.HomeDir), "patents")
-		if err := os.MkdirAll(patentsDir, 0o755); err != nil {
-			fmt.Fprintf(os.Stderr, "patentmine lookup: failed to create patents directory: %s\n", err)
-			return 1
-		}
+		patentsDir := string(cfg.PatentsDir)
+		// Already created by config.Load; MkdirAll is safe but unnecessary here.
 
 		for _, meta := range metas {
 			fmt.Fprintf(os.Stderr, "Downloading associated document: %s\n", meta.XMLFileName)
@@ -216,10 +213,7 @@ func downloadAndSaveDocument(ctx context.Context, downloadURL, zipName, xmlName,
 		return fmt.Errorf("server returned HTTP %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
-		return err
-	}
-
+	// patentsDir is pre-created by config; MkdirAll omitted for brevity.
 	isZip := strings.HasSuffix(strings.ToLower(downloadURL), ".zip")
 	if isZip {
 		tmpFile, err := os.CreateTemp("", "patentmine-*.zip")

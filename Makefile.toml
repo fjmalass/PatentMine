@@ -221,6 +221,42 @@ eval "$PM_VERSION_SCRIPT"
 go run -ldflags "$PM_LDFLAGS" ${BINARY} logs archive
 '''
 
+[tasks.list-patents]
+description = "List files in the patents (XML cache) directory."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} patents list
+'''
+
+[tasks.archive-patents]
+description = "Compress the patents/XML cache directory into a timestamped backup archive (in backups/)."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} patents archive $CARGO_MAKE_TASK_ARGS
+'''
+
+[tasks.clean-patents]
+description = "Remove all cached files from the patents (XML) directory."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} patents clean
+'''
+
+# Direct shell variants (useful for CI or when avoiding repeated go run for simple ops)
+[tasks.clean-patents-direct]
+description = "Remove patents cache contents using path discovery + rm (no CLI)."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+paths="$(go run -ldflags "$PM_LDFLAGS" ${BINARY} paths)"
+patents_dir="$(echo "$paths" | awk -F= '/^PATENTS=/{print $2}')"
+if [ -n "$patents_dir" ] && [ -d "$patents_dir" ]; then
+  rm -rf "$patents_dir"/*
+  echo "cleaned patents cache: $patents_dir"
+else
+  echo "patents directory not found or empty: ${patents_dir:-<unset>}"
+fi
+'''
+
 [tasks.run-tui]
 description = "Restart the daemon, then launch the terminal UI."
 dependencies = ["restart-daemon"]

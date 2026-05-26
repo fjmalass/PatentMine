@@ -5,8 +5,10 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -285,4 +287,116 @@ func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
 	}
 	failed := errp != nil && *errp != nil
 	e.metrics.ObserveDuration(name, time.Since(start), failed)
+}
+
+// ResolveSourceDiffs applies user reconciliation choices from the source
+// comparison overlay (Option A). It updates the core patent fields from the
+// ChosenValue of each diff (title, abstract, inventors, dates, first_claim,
+// classifications, assignee), saves the patent, then marks the corresponding
+// SourceDiff rows as reconciled (ReconciledAt/By/Choice + final Chosen) for
+// provenance. This makes the overlay choices durable while keeping the
+// patent table as the single "current" view and source_* tables for audit.
+func (e *Engine) ResolveSourceDiffs(ctx context.Context, patentNum domain.PatentNumber, diffs []domain.SourceDiff) error {
+	var err error
+	defer e.observeDuration("engine.source.resolve_diffs", time.Now(), &err)
+
+	if patentNum.IsZero() {
+		return fmt.Errorf("engine: resolve diffs: zero patent number")
+	}
+	if len(diffs) == 0 {
+		return nil
+	}
+
+	p, err := e.repo.Patent(ctx, patentNum)
+	if err != nil {
+		return fmt.Errorf("engine: resolve diffs: load patent: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	reconciledBy := "user" // future: derive from ctx/identity when auth exists
+
+	// Apply chosen values back to the patent (reverse of comparePatentFields
+	// stringification in crawl/source.go).
+	for _, d := range diffs {
+		val := strings.TrimSpace(d.ChosenValue)
+		if val == "" {
+			continue
+		}
+
+		applied := false
+		for _, f := range domain.ReconciliableFields {
+			if f.Path == d.FieldPath {
+				f.Set(&p, val) // Set already takes *Patent (as does Get)
+				applied = true
+				break
+			}
+		}
+		if !applied {
+			// Unknown or future field; ignore for now (safe).
+			if e.logger != nil {
+				e.log(ctx, slog.LevelDebug, "resolve diffs: unknown field path",
+					slog.String("field", d.FieldPath))
+			}
+		}
+	}
+
+	// Persist the updated patent (this becomes the new "current" reconciled view).
+	if err = e.repo.SavePatent(ctx, p); err != nil {
+		return fmt.Errorf("engine: resolve diffs: save patent: %w", err)
+	}
+
+	// Mark the diffs as reconciled and persist the choice metadata.
+	// We reuse the NodeBatch path (saveSourceData handles ON CONFLICT update
+	// of the reconciled_* columns and Chosen*).
+	nowForDiffs := now
+	for i := range diffs {
+		diffs[i].ReconciledAt = nowForDiffs
+		diffs[i].ReconciledBy = reconciledBy
+		diffs[i].ReconciledChoice = diffs[i].ChosenSource
+		// Ensure ChosenValue/ChosenSource are the final user decision.
+		// (They were already set by the overlay before calling resolve.)
+	}
+	batch := store.NodeBatch{SourceDiffs: diffs}
+	if err = e.repo.SaveNode(ctx, batch); err != nil {
+		return fmt.Errorf("engine: resolve diffs: save reconciled diffs: %w", err)
+	}
+
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionSourceResolveDiffs,
+		Entity:   "patent",
+		EntityID: patentNum.String(),
+		Status:   "committed",
+		Attributes: map[string]any{
+			"diff_count": len(diffs),
+			"by":         reconciledBy,
+		},
+	})
+
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.source.resolve_diffs_total", 1)
+		e.metrics.IncCounter("engine.source.resolve_diffs.diffs_resolved_total", int64(len(diffs)))
+	}
+
+	e.announceChange()
+
+	e.log(ctx, slog.LevelInfo, "source diffs resolved",
+		slog.String("patent", patentNum.String()),
+		slog.Int("diff_count", len(diffs)),
+		slog.String("reconciled_by", reconciledBy))
+
+	return nil
+}
+
+// ListSourceDiffs is a thin pass-through for TUI / RPC (the real query lives in store).
+func (e *Engine) ListSourceDiffs(ctx context.Context, n domain.PatentNumber) ([]domain.SourceDiff, error) {
+	diffs, err := e.repo.ListSourceDiffs(ctx, n)
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.source.diffs.list_total", 1)
+		if err != nil {
+			e.metrics.IncCounter("engine.source.diffs.list_error_total", 1)
+		} else {
+			e.metrics.IncCounter("engine.source.diffs.list.diffs_returned_total", int64(len(diffs)))
+		}
+	}
+	return diffs, err
 }

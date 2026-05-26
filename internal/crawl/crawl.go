@@ -253,8 +253,19 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				slog.String("error", err.Error()))
 
 			// Root patent not found — fail the job so the caller can clean up.
+			// The error from the registry (in compare mode especially) now carries
+			// per-source details thanks to improved collection in FetchExcluding.
 			if cur.depth == 0 && errors.Is(err, ErrNotAvailable) {
-				return fmt.Errorf("crawl: patent %s not found", cur.number)
+				if c.metrics != nil {
+					c.metrics.IncCounter("crawl.root_not_found_total", 1)
+				}
+				if c.logger != nil {
+					c.logger.Warn("root patent not found after trying sources",
+						slog.String("number", cur.number.String()),
+						slog.String("error", err.Error()),
+						slog.Bool("depth_zero", true))
+				}
+				return fmt.Errorf("crawl: patent %s not found: %w", cur.number, err)
 			}
 
 			// A referenced patent that could not be fetched: record a stub

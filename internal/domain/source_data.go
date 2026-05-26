@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"strings"
+	"time"
+)
+
 // AuthorityIdentifier maps source-specific identifiers (USPTO application
 // numbers, PCT applications, foreign priorities, Google IDs) onto a Patent row.
 type AuthorityIdentifier struct {
@@ -284,6 +289,11 @@ type SourceDiff struct {
 	RecordedAt       string       `json:"recorded_at"`
 	USPTOSnapshotID  string       `json:"uspto_snapshot_id,omitempty"`
 	GoogleSnapshotID string       `json:"google_snapshot_id,omitempty"`
+
+	// Reconciliation metadata (Option A)
+	ReconciledAt     string `json:"reconciled_at,omitempty"`
+	ReconciledBy     string `json:"reconciled_by,omitempty"`
+	ReconciledChoice string `json:"reconciled_choice,omitempty"`
 }
 
 type USPTOCandidate struct {
@@ -291,5 +301,123 @@ type USPTOCandidate struct {
 	Title             string `json:"title"`
 	FilingDate        string `json:"filing_date"`
 	FirstInventorName string `json:"first_inventor_name"`
+}
+
+// ReconciliableField describes one field that can participate in source
+// comparison / user reconciliation (Option A).
+//
+// The canonical list below is the single source of truth for "which fields
+// from USPTO enrichment are allowed to differ from (and be chosen over) the
+// primary source data that ends up in the patent table".
+//
+// Adding a new comparable field is now a one-place change (plus any
+// UI or serialization tweaks if the field is complex).
+type ReconciliableField struct {
+	Path string
+	// Get turns the native Patent value into the string form stored in SourceDiff.
+	// It takes a pointer to avoid copying the (sometimes large) Patent struct on every call.
+	Get func(*Patent) string
+	// Set applies a user-chosen string value back onto a Patent (reverse of Get).
+	// It is responsible for parsing (dates, inventors, classifications, etc.).
+	Set func(*Patent, string)
+}
+
+// ReconciliableFields is the authoritative list of fields that go through
+// comparePatentFields <-> ResolveSourceDiffs.
+//
+// Keep this list in sync with what the UI and diff generation expect.
+var ReconciliableFields = []ReconciliableField{
+	{"title", getTitle, setTitle},
+	{"abstract", getAbstract, setAbstract},
+	{"assignee", getAssignee, setAssignee},
+	{"inventors", getInventors, setInventors},
+	{"application_date", getApplicationDate, setApplicationDate},
+	{"publication_date", getPublicationDate, setPublicationDate},
+	{"grant_date", getGrantDate, setGrantDate},
+	{"classifications", getClassifications, setClassifications},
+	{"first_claim", getFirstClaim, setFirstClaim},
+}
+
+// The small getters/setters below centralize the string conversion logic
+// that used to be duplicated between crawl/source.go and engine/engine.go.
+
+func getTitle(p *Patent) string        { return p.Title }
+func setTitle(p *Patent, v string)     { p.Title = v }
+
+func getAbstract(p *Patent) string     { return p.Abstract }
+func setAbstract(p *Patent, v string)  { p.Abstract = v }
+
+func getAssignee(p *Patent) string     { return p.Assignee }
+func setAssignee(p *Patent, v string)  { p.Assignee = v }
+
+func getFirstClaim(p *Patent) string   { return p.FirstClaim }
+func setFirstClaim(p *Patent, v string){ p.FirstClaim = v }
+
+func getInventors(p *Patent) string {
+	return inventorsString(p.Inventors)
+}
+func setInventors(p *Patent, v string) {
+	parts := strings.Split(v, ";")
+	invs := make([]Inventor, 0, len(parts))
+	for _, part := range parts {
+		if s := strings.TrimSpace(part); s != "" {
+			invs = append(invs, Inventor(s))
+		}
+	}
+	p.Inventors = invs
+}
+
+func getApplicationDate(p *Patent) string { return dateString(p.ApplicationDate) }
+func setApplicationDate(p *Patent, v string) {
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		p.ApplicationDate = t
+	}
+}
+
+func getPublicationDate(p *Patent) string { return dateString(p.PublicationDate) }
+func setPublicationDate(p *Patent, v string) {
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		p.PublicationDate = t
+	}
+}
+
+func getGrantDate(p *Patent) string { return dateString(p.GrantDate) }
+func setGrantDate(p *Patent, v string) {
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		p.GrantDate = t
+	}
+}
+
+func getClassifications(p *Patent) string {
+	return strings.Join(p.Classifications, ";")
+}
+func setClassifications(p *Patent, v string) {
+	parts := strings.Split(v, ";")
+	codes := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if s := strings.TrimSpace(part); s != "" {
+			codes = append(codes, s)
+		}
+	}
+	p.Classifications = codes
+}
+
+// Small helpers (duplicated here for now so the domain package stays
+// self-contained for the mapping; they can be moved to a shared util later
+// if we grow more date/inventor helpers).
+
+func inventorsString(in []Inventor) string {
+	parts := make([]string, 0, len(in))
+	for _, inv := range in {
+		parts = append(parts, string(inv))
+	}
+	return strings.Join(parts, ";")
+}
+
+func dateString(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02")
 }
 

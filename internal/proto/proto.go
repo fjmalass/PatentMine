@@ -77,6 +77,10 @@ const (
 	MethodTableViewDelete           Method = "table_view.delete"
 	MethodUSPTOFetchXML             Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody            Method = "uspto.grant_body"
+
+	// Source comparison reconciliation (Option A): persist overlay choices.
+	MethodSourceResolveDiffs Method = "source.resolve_diffs"
+	MethodSourceDiffsList    Method = "source.diffs.list"
 )
 
 // USPTOGrantBodyParams identifies the (patent, kind) whose parsed body should
@@ -118,6 +122,29 @@ type USPTOFetchXMLResult struct {
 	Bytes         int64  `json:"bytes"`
 	Cached        bool   `json:"cached"`
 	DownloadCount int64  `json:"download_count"`
+}
+
+// SourceResolveDiffsParams carries the patent and the (updated) diffs from the
+// comparison overlay. The engine will apply ChosenValue to patent fields and
+// stamp reconciled metadata on the diffs (Option A).
+type SourceResolveDiffsParams struct {
+	Number domain.PatentNumber `json:"number"`
+	Diffs  []domain.SourceDiff `json:"diffs"`
+}
+
+// SourceResolveDiffsResult reports the outcome of reconciliation.
+type SourceResolveDiffsResult struct {
+	Resolved int    `json:"resolved"`
+	Message  string `json:"message,omitempty"`
+}
+
+// SourceDiffsListParams / Result for loading diffs for the comparison overlay.
+type SourceDiffsListParams struct {
+	Number domain.PatentNumber `json:"number"`
+}
+
+type SourceDiffsListResult struct {
+	Diffs []domain.SourceDiff `json:"diffs"`
 }
 
 // EventKind names a server->client push (a JSON-RPC notification).

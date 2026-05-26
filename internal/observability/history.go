@@ -128,7 +128,10 @@ func historyFeedPreservesEveryRecord(rec Record) bool {
 		ActionIDSEntryBulkSetStatus,
 		ActionNotesExport,
 		ActionNotesSave,
-		ActionNotesDelete:
+		ActionNotesDelete,
+		ActionSourceCompareOpen,
+		ActionSourceDiffsLoad,
+		ActionSourceResolveDiffs:
 		return true
 	default:
 		return false

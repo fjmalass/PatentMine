@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
@@ -100,6 +101,35 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	}
 	if err := r.syncFTS(ctx); err != nil {
 		return err
+	}
+
+	// Best-effort: ensure the Option A reconciliation columns exist on
+	// source_diff for databases created before the columns were added to
+	// schema.sql. SQLite ALTER ADD COLUMN is safe and idempotent in effect.
+	// We swallow "duplicate column" errors so old DBs start cleanly.
+	_ = r.ensureReconciledColumns(ctx)
+
+	return nil
+}
+
+// ensureReconciledColumns adds the reconciled_* columns (Option A) if the
+// source_diff table exists but the columns are missing. Non-fatal.
+func (r *Repo) ensureReconciledColumns(ctx context.Context) error {
+	// Only relevant if the table was created by an older schema.sql.
+	// We don't check existence of table here (the main schema CREATE already ran).
+	stmts := []string{
+		`ALTER TABLE source_diff ADD COLUMN reconciled_at TEXT`,
+		`ALTER TABLE source_diff ADD COLUMN reconciled_by TEXT`,
+		`ALTER TABLE source_diff ADD COLUMN reconciled_choice TEXT`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			msg := err.Error()
+			if !strings.Contains(msg, "duplicate column") && !strings.Contains(msg, "already exists") {
+				// Unexpected; surface for diagnostics but do not fail startup.
+				return fmt.Errorf("ensure reconciled columns: %w", err)
+			}
+		}
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ func runPaths(_ []string) int {
 	fmt.Printf("HOME=%s\nDB=%s\nPID=%s\nSOCKET=%s\n",
 		cfg.HomeDir, cfg.DBPath, cfg.PIDPath, cfg.SocketPath)
 	fmt.Printf("LOGS=%s\n", cfg.LogsDir)
+	fmt.Printf("PATENTS=%s\n", cfg.PatentsDir)
 	return 0
 }
 
@@ -29,5 +30,6 @@ func reportPaths(w io.Writer, cfg config.Config) {
 	fmt.Fprintf(w, "  home    %s\n", cfg.HomeDir)
 	fmt.Fprintf(w, "  db      %s\n", cfg.DBPath)
 	fmt.Fprintf(w, "  logs    %s\n", cfg.LogsDir)
+	fmt.Fprintf(w, "  patents %s\n", cfg.PatentsDir)
 	fmt.Fprintf(w, "  socket  %s\n", cfg.SocketPath)
 }

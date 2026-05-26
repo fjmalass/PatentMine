@@ -158,6 +158,12 @@ var hintCoverageExempt = map[command.ID]bool{
 	command.TagPatentManage: true,
 	command.CrawlFamily:     true,
 	command.LookupPatent:    true,
+
+	// Source comparison is a conditional/advanced feature (only relevant after
+	// a compare-mode fetch that produced source_diff rows). The conditional
+	// hint inside the detail pane + the working command (g c / :source-compare)
+	// provide the discoverability; we don't want it in the global header footer.
+	command.SourceCompare: true,
 }
 
 // stubRegistry returns a command.Registry that contains every shipped command

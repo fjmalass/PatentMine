@@ -26,6 +26,7 @@ const (
 
 	dbFileName     = "patentmine.db"
 	logsDirName    = "logs"
+	patentsDirName = "patents"
 	pidFileName    = "patentmine.pid"
 	socketFileName = "patentmine.sock"
 	dirPerm        = 0o755
@@ -43,6 +44,7 @@ type Config struct {
 	HomeDir            Path              // Base directory; created if absent.
 	DBPath             Path              // SQLite database file.
 	LogsDir            Path              // Runtime logs and activity directory.
+	PatentsDir         Path              // Local cache for USPTO grant XML files (and ZIP extracts) used by lookup, engine, and file source.
 	PIDPath            Path              // Daemon pid file.
 	SocketPath         Path              // Unix domain socket for the daemon.
 	USPTOAPIKey        string            // USPTO Open Data Portal API Key.
@@ -224,6 +226,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: create logs dir %q: %w", logsDir, err)
 	}
 
+	patentsDir := filepath.Join(home, patentsDirName)
+	if err := os.MkdirAll(patentsDir, dirPerm); err != nil {
+		return Config{}, fmt.Errorf("config: create patents dir %q: %w", patentsDir, err)
+	}
+
 	usptoKey := os.Getenv("PATENTMINE_USPTO_API_KEY")
 	// PATENTMINE_SOURCE_MODE feeds crawl.NormalizeSourceMode so the canonical
 	// names live in one place. An invalid value silently falls back to
@@ -304,6 +311,7 @@ func Load() (Config, error) {
 		HomeDir:            Path(home),
 		DBPath:             Path(filepath.Join(home, dbFileName)),
 		LogsDir:            Path(logsDir),
+		PatentsDir:         Path(patentsDir),
 		PIDPath:            Path(filepath.Join(home, pidFileName)),
 		SocketPath:         Path(filepath.Join(home, socketFileName)),
 		USPTOAPIKey:        usptoKey,

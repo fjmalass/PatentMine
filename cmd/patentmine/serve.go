@@ -23,9 +23,6 @@ import (
 	appversion "patentmine/internal/version"
 )
 
-// patentsDirName holds local JSON patent files consulted before web sources.
-const patentsDirName = "patents"
-
 // runServe starts the engine daemon: it owns the database and serves every
 // thin client over a unix socket until it receives an interrupt.
 func runServe(_ []string) int {
@@ -116,10 +113,8 @@ func runServe(_ []string) int {
 
 // buildEngine assembles the ingest pipeline and the engine.
 func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, telemetry *observability.Runtime) (*engine.Engine, error) {
-	patentsDir := filepath.Join(string(cfg.HomeDir), patentsDirName)
-	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
-		return nil, err
-	}
+	// patentsDir is pre-created by config.Load; no need to MkdirAll here.
+	patentsDir := string(cfg.PatentsDir)
 	sources := []crawl.Source{
 		crawl.NewFileSource(patentsDir),
 		crawl.NewUSPTOSource(cfg.USPTOAPIKey),
