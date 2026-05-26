@@ -33,6 +33,14 @@ type Loading struct {
 	doneCount  int // number of jobs that have finished
 	doneErrors []string
 
+	// Numbers seen across all progress events for this job set; ordered by
+	// first-seen and deduped so the done view can list them.
+	savedNumbers  []string
+	savedSet      map[string]bool
+	stubNumbers   []string
+	stubSet       map[string]bool
+	recordSources map[string][]string // recordNumber → ordered unique source names
+
 	spinner     spinner.Model
 	finished    bool // true when all jobs are done; overlay stays open until user dismisses
 	finishedAt  time.Time
@@ -62,6 +70,9 @@ func NewLoading(theme render.Theme, jobIDs []string, title string, isLookup ...b
 		isLookup:   lk,
 		message:    "Starting…",
 		progresses: make(map[string]proto.CrawlProgress, len(jobIDs)),
+		savedSet:      make(map[string]bool),
+		stubSet:       make(map[string]bool),
+		recordSources: make(map[string][]string),
 		spinner:    s,
 		startTime:  time.Now(),
 		lastTime:   time.Now(),
@@ -113,6 +124,31 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			if err := json.Unmarshal(m.Params, &p); err == nil && l.matchJob(p.JobID) {
 				l.progresses[p.JobID] = p
 				l.message = p.Message
+				if p.RecordNumber != "" {
+					if !l.savedSet[p.RecordNumber] {
+						l.savedSet[p.RecordNumber] = true
+						l.savedNumbers = append(l.savedNumbers, p.RecordNumber)
+					}
+					existing := l.recordSources[p.RecordNumber]
+					seenSrc := make(map[string]bool, len(existing))
+					for _, s := range existing {
+						seenSrc[s] = true
+					}
+					for _, s := range p.Sources {
+						if s == "" || seenSrc[s] {
+							continue
+						}
+						seenSrc[s] = true
+						existing = append(existing, s)
+					}
+					l.recordSources[p.RecordNumber] = existing
+				}
+				for _, s := range p.Stubs {
+					if !l.stubSet[s] {
+						l.stubSet[s] = true
+						l.stubNumbers = append(l.stubNumbers, s)
+					}
+				}
 
 				totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
 				totalJobs := len(l.jobIDs)
@@ -307,6 +343,12 @@ func (l *Loading) viewDone(w int) string {
 			summary += fmt.Sprintf(" · %d reference stub(s) created", stubs)
 		}
 		b.WriteString("  " + l.theme.OK.Render(summary) + "\n")
+		for _, line := range l.savedBySourceLines(w - 10) {
+			b.WriteString("  " + l.theme.Dim.Render(line) + "\n")
+		}
+		if len(l.stubNumbers) > 0 {
+			b.WriteString("  " + l.theme.Dim.Render("stubs: "+formatNumberList(l.stubNumbers, w-10)) + "\n")
+		}
 		if l.isLookup && totalCrawled > 0 {
 			b.WriteString("  " + l.theme.Dim.Render("Navigate to the patent in your catalog to see the loaded data.") + "\n")
 			b.WriteString("  " + l.theme.Dim.Render("Press L on any stub patent to re-fetch its data.") + "\n")
@@ -315,6 +357,87 @@ func (l *Loading) viewDone(w int) string {
 	b.WriteByte('\n')
 	b.WriteString(l.theme.Dim.Render(render.Pad("press Esc to close", w-2)))
 	return b.String()
+}
+
+// canonicalProvider folds snapshot source strings like "uspto_file_wrapper" or
+// "uspto_grant_xml" back to the provider that emitted them ("uspto"), so the
+// popup groups by USPTO vs Google rather than by parser variant.
+func canonicalProvider(s string) string {
+	if i := strings.Index(s, "_"); i > 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// savedBySourceLines groups saved record numbers by source. A record present in
+// multiple sources is listed under each one so the user can see exactly what
+// every provider returned.
+func (l *Loading) savedBySourceLines(maxWidth int) []string {
+	if len(l.savedNumbers) == 0 {
+		return nil
+	}
+	// Collect ordered list of sources as they first appear, plus an "unknown"
+	// bucket for saved records that arrived without a source label.
+	var sourceOrder []string
+	byOrder := map[string]bool{}
+	bySource := map[string][]string{}
+	const unknown = "(unknown source)"
+	for _, num := range l.savedNumbers {
+		sources := l.recordSources[num]
+		if len(sources) == 0 {
+			if !byOrder[unknown] {
+				byOrder[unknown] = true
+				sourceOrder = append(sourceOrder, unknown)
+			}
+			bySource[unknown] = append(bySource[unknown], num)
+			continue
+		}
+		// Fold parser-specific names back to provider before grouping so
+		// "uspto_file_wrapper" and "uspto_grant_xml" both count as USPTO.
+		seenForRecord := map[string]bool{}
+		for _, raw := range sources {
+			s := canonicalProvider(raw)
+			if seenForRecord[s] {
+				continue
+			}
+			seenForRecord[s] = true
+			if !byOrder[s] {
+				byOrder[s] = true
+				sourceOrder = append(sourceOrder, s)
+			}
+			bySource[s] = append(bySource[s], num)
+		}
+	}
+	lines := make([]string, 0, len(sourceOrder))
+	for _, s := range sourceOrder {
+		label := strings.ToUpper(s) + " saved: "
+		lines = append(lines, label+formatNumberList(bySource[s], maxWidth-len(label)))
+	}
+	return lines
+}
+
+// formatNumberList joins patent numbers, truncating with a "(+N more)" tail
+// when the inline form would overflow the popup width.
+func formatNumberList(nums []string, maxWidth int) string {
+	if maxWidth <= 0 {
+		maxWidth = 1
+	}
+	if len(nums) == 0 {
+		return ""
+	}
+	full := strings.Join(nums, ", ")
+	if len(full) <= maxWidth {
+		return full
+	}
+	for keep := len(nums) - 1; keep > 0; keep-- {
+		tail := fmt.Sprintf(" (+%d more)", len(nums)-keep)
+		head := strings.Join(nums[:keep], ", ")
+		if len(head)+len(tail) <= maxWidth {
+			return head + tail
+		}
+	}
+	tail := fmt.Sprintf("(+%d more)", len(nums)-1)
+	return nums[0] + " " + tail
 }
 
 func formatDuration(d time.Duration) string {

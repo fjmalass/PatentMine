@@ -745,17 +745,20 @@ type Empty struct{}
 
 // CrawlProgress reports incremental progress of a crawl job.
 type CrawlProgress struct {
-	JobID           string `json:"job_id"`
-	CrawledCount    int    `json:"crawled_count"`
-	DiscoveredCount int    `json:"discovered_count"`
-	PendingCount    int    `json:"pending_count"`
-	Depth           int    `json:"depth"`
-	MaxDepth        int    `json:"max_depth"`
-	CitationsCount  int    `json:"citations_count,omitempty"`
-	CitedByCount    int    `json:"cited_by_count,omitempty"`
-	ParentsCount    int    `json:"parents_count,omitempty"`
-	ChildrenCount   int    `json:"children_count,omitempty"`
-	Message         string `json:"message"`
+	JobID           string   `json:"job_id"`
+	CrawledCount    int      `json:"crawled_count"`
+	DiscoveredCount int      `json:"discovered_count"`
+	PendingCount    int      `json:"pending_count"`
+	Depth           int      `json:"depth"`
+	MaxDepth        int      `json:"max_depth"`
+	CitationsCount  int      `json:"citations_count,omitempty"`
+	CitedByCount    int      `json:"cited_by_count,omitempty"`
+	ParentsCount    int      `json:"parents_count,omitempty"`
+	ChildrenCount   int      `json:"children_count,omitempty"`
+	Message         string   `json:"message"`
+	RecordNumber    string   `json:"record_number,omitempty"` // Record just saved in this event, if any.
+	Stubs           []string `json:"stubs,omitempty"`         // Numbers freshly stubbed in this event, if any.
+	Sources         []string `json:"sources,omitempty"`       // Providers (uspto, google, ...) that contributed snapshots for RecordNumber.
 }
 
 // CrawlDone reports that a crawl job finished, with an error if it failed.
