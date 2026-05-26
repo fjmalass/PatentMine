@@ -25,7 +25,7 @@ func TestProjectsPaneSelectsLastUsed(t *testing.T) {
 		{ID: "p-1", Name: "Project 1", CreatedAt: time.Now().UTC()},
 		{ID: "p-2", Name: "Project 2", CreatedAt: time.Now().UTC()},
 	}
-	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint", "AI: Gemini", "Search: Google, USPTO", "Backup: B2")
+	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint", "AI: Gemini", "Search: Google, USPTO", "Backup: B2", "Daemon: connected")
 
 	updated, _ := p.Update(projectsLoadedMsg{requestID: 0, projects: projects})
 	p = updated.(*Projects)

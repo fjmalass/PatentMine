@@ -369,6 +369,16 @@ func (a *App) activeBackupString() string {
 	return "Backup: " + a.serviceConnectionLabel(a.backupConnection)
 }
 
+func (a *App) activeDaemonString() string {
+	if a.daemonVersion == "connecting" {
+		return "Daemon: " + a.serviceConnectionLabel(serviceChecking)
+	}
+	if a.daemonVersion == "unavailable" {
+		return "Daemon: " + a.serviceConnectionLabel(serviceFailed)
+	}
+	return "Daemon: " + a.serviceConnectionLabel(serviceConnected)
+}
+
 func (a *App) serviceConnectionLabel(state serviceConnectionState) string {
 	switch state {
 	case serviceConnected:
@@ -453,7 +463,7 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		opt(app)
 	}
 	app.panes = []pane.Pane{pane.NewSplash(client, theme, app.lastProjectID,
-		app.splashFooterHint(), app.splashEmptyHint(), app.activeAIString(), app.activeSearchString(), app.activeBackupString())}
+		app.splashFooterHint(), app.splashEmptyHint(), app.activeAIString(), app.activeSearchString(), app.activeBackupString(), app.activeDaemonString())}
 	return app, nil
 }
 
@@ -468,6 +478,7 @@ func (a *App) Init() tea.Cmd {
 				ActiveAI:     a.activeAIString(),
 				ActiveSearch: a.activeSearchString(),
 				ActiveBackup: a.activeBackupString(),
+				ActiveDaemon: a.activeDaemonString(),
 			}
 		},
 	}
@@ -682,6 +693,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ActiveAI:     a.activeAIString(),
 			ActiveSearch: a.activeSearchString(),
 			ActiveBackup: a.activeBackupString(),
+			ActiveDaemon: a.activeDaemonString(),
 		})
 	case overlay.AIAnalyzeTriggerMsg:
 		a.popOverlay()
@@ -1076,6 +1088,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ActiveAI:     a.activeAIString(),
 			ActiveSearch: a.activeSearchString(),
 			ActiveBackup: a.activeBackupString(),
+			ActiveDaemon: a.activeDaemonString(),
 		})
 	case serviceConnectionLoadedMsg:
 		a.usptoConnection = m.uspto
@@ -1084,6 +1097,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ActiveAI:     a.activeAIString(),
 			ActiveSearch: a.activeSearchString(),
 			ActiveBackup: a.activeBackupString(),
+			ActiveDaemon: a.activeDaemonString(),
 		})
 	case pane.FullTextLoadedMsg:
 		failed := m.Err != nil
