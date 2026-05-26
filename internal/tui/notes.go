@@ -186,7 +186,7 @@ func (n *notesAccumulator) SaveToPatentNote(client *rpc.Client, number domain.Pa
 }
 
 // ExportNotes builds the clipboard text for the notes buffer: every captured
-// passage with its locator and timestamp, without patent metadata.
+// passage with its locator and timestamp, without patent attrs.
 func (n *notesAccumulator) ExportNotes(number domain.PatentNumber) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Notes · %s\n", number.String()))
@@ -195,7 +195,7 @@ func (n *notesAccumulator) ExportNotes(number domain.PatentNumber) string {
 }
 
 // ExportText builds the clipboard text for the notes buffer with the patent
-// metadata header prepended ("patent number info + notes").
+// attrs header prepended ("patent number info + notes").
 func (n *notesAccumulator) ExportText(number domain.PatentNumber, patent *domain.Patent) string {
 	var b strings.Builder
 	writeMeta(&b, number, patent)
@@ -320,7 +320,7 @@ func (o *NotesBufferOverlay) View(maxW, maxH int) string {
 	return b.String()
 }
 
-// writeMeta writes the patent metadata header to b.
+// writeMeta writes the patent attrs header to b.
 func writeMeta(b *strings.Builder, number domain.PatentNumber, p *domain.Patent) {
 	sep := strings.Repeat("═", 48)
 	b.WriteString(sep + "\n")

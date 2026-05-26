@@ -34,7 +34,7 @@ type ReplayHistoryEntry struct {
 	Entity            string         `json:"entity"`
 	EntityID          string         `json:"entity_id,omitempty"`
 	Status            string         `json:"status,omitempty"`
-	Metadata          map[string]any `json:"metadata,omitempty"`
+	Attributes          map[string]any `json:"attributes,omitempty"`
 }
 
 // ReadActivityRecords returns activity records newest-first from the JSONL log

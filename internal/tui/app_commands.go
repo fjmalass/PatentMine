@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -237,7 +238,12 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 		return a.openClassificationStats(p)
 	}
 
-	// 2. Only activate on Enter if the cursor is actually on the Inventors field
+	// 2. Cursor on a PGPub/Grant XML URL row: download (or load cached) + open.
+	if kind, ok := detail.ResolveCursorUSPTOXML(); ok {
+		return a.fetchAndOpenUSPTOXML([]domain.PatentNumber{detail.PatentNumber()}, kind)
+	}
+
+	// 3. Only activate on Enter if the cursor is actually on the Inventors field
 	if !detail.IsCursorOnInventors() {
 		return a, nil
 	}
@@ -414,30 +420,180 @@ func (a *App) cmdAddGoogle(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdAddToProjectFromSource(inv, domain.SourceGoogle, command.AddGoogle)
 }
 
+func (a *App) cmdFetchUSPTOPGPub(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdFetchUSPTOXML(inv, proto.USPTOXMLKindPGPub, command.FetchUSPTOPGPub)
+}
+
+func (a *App) cmdFetchUSPTOGrant(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdFetchUSPTOXML(inv, proto.USPTOXMLKindGrant, command.FetchUSPTOGrant)
+}
+
+func (a *App) cmdFetchUSPTOXML(inv invocation, kind proto.USPTOXMLKind, usage command.ID) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(usage)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	return a.fetchAndOpenUSPTOXML(numbers, kind)
+}
+
+// fetchAndOpenUSPTOXML dispatches one or more USPTO XML fetches concurrently.
+// Each fetch is an independent RPC; the daemon serves each on its own
+// goroutine, and USPTO bulk-dataset XML downloads carry no minimum-interval
+// rate limit, so concurrency is bounded only by the local HTTP client and
+// the upstream's own throttling.
+//
+// A single-patent dispatch keeps the spinner overlay (the most common
+// detail-pane case); a multi-patent dispatch swaps the spinner for an
+// inline batch status line so the user can still navigate other panes
+// while downloads run.
+func (a *App) fetchAndOpenUSPTOXML(numbers []domain.PatentNumber, kind proto.USPTOXMLKind) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	if len(numbers) == 1 {
+		spinner := overlay.NewUSPTOXMLFetchingOverlay(a.theme, numbers[0], kind)
+		a.overlays = append(a.overlays, spinner)
+		a.xmlBatch = nil
+		return a, tea.Batch(spinner.Init(), pane.FetchUSPTOXMLInteractiveCmd(a.client, numbers[0], kind))
+	}
+	a.xmlBatch = &xmlBatchState{
+		total:     len(numbers),
+		kind:      kind,
+		startedAt: time.Now(),
+	}
+	a.status = a.text.Tf(text.StatusXMLBatchStarted, len(numbers), string(kind))
+	a.statusErr = false
+	a.log().Info("uspto xml batch fetch started",
+		slog.Int("count", len(numbers)),
+		slog.String("kind", string(kind)))
+	a.metrics.IncCounter("tui.uspto.fetch_xml.batch.started", 1)
+	a.metrics.IncCounter("tui.uspto.fetch_xml.batch.total", int64(len(numbers)))
+	cmds := make([]tea.Cmd, 0, len(numbers))
+	for _, n := range numbers {
+		cmds = append(cmds, pane.FetchUSPTOXMLInteractiveCmd(a.client, n, kind))
+	}
+	return a, tea.Batch(cmds...)
+}
+
+// handleUSPTOXMLFetched dismisses the fetch spinner and reports the saved
+// path. We do not hand the file off to the OS opener: xdg-open on a .xml is
+// the system browser on most Linux desktops, which is not what the user
+// wants. They wanted the file on disk; the status line shows where it is.
+//
+// In batch mode (multi-patent fetch in flight) per-result statuses are
+// aggregated into a single running tally; the final message reports
+// successes / failures and clears the batch state.
+func (a *App) handleUSPTOXMLFetched(m pane.USPTOXMLFetchedMsg) (tea.Model, tea.Cmd) {
+	if a.xmlBatch != nil {
+		return a.handleUSPTOXMLBatchTick(m)
+	}
+	if len(a.overlays) > 0 {
+		if _, ok := a.overlays[len(a.overlays)-1].(*overlay.USPTOXMLFetchingOverlay); ok {
+			a.overlays = a.overlays[:len(a.overlays)-1]
+		}
+	}
+	if m.Err != "" {
+		a.setErr(text.StatusXMLFetchFailed, m.Err)
+		return a, nil
+	}
+	key := text.StatusXMLFetched
+	if m.Cached {
+		key = text.StatusXMLCached
+	}
+	a.status = a.text.Tf(key, string(m.Kind), m.LocalPath, m.Bytes, m.DownloadCount)
+	a.statusErr = false
+	return a, nil
+}
+
+func (a *App) handleUSPTOXMLBatchTick(m pane.USPTOXMLFetchedMsg) (tea.Model, tea.Cmd) {
+	b := a.xmlBatch
+	b.done++
+	switch {
+	case m.Err != "":
+		b.failed++
+		a.log().Warn("uspto xml batch item failed",
+			slog.String("patent", m.Number.String()),
+			slog.String("kind", string(m.Kind)),
+			slog.String("error", m.Err))
+		a.metrics.IncCounter("tui.uspto.fetch_xml.batch.failed", 1)
+	case m.Cached:
+		b.cached++
+		a.metrics.IncCounter("tui.uspto.fetch_xml.batch.cached", 1)
+	default:
+		b.downloaded++
+		a.metrics.IncCounter("tui.uspto.fetch_xml.batch.downloaded", 1)
+	}
+
+	if b.done < b.total {
+		a.status = a.text.Tf(text.StatusXMLBatchProgress, b.done, b.total, b.cached, b.downloaded, b.failed)
+		a.statusErr = false
+		return a, nil
+	}
+
+	elapsed := time.Since(b.startedAt)
+	a.log().Info("uspto xml batch fetch complete",
+		slog.Int("total", b.total),
+		slog.Int("cached", b.cached),
+		slog.Int("downloaded", b.downloaded),
+		slog.Int("failed", b.failed),
+		slog.Duration("elapsed", elapsed),
+		slog.String("kind", string(b.kind)))
+	a.metrics.ObserveDuration("tui.uspto.fetch_xml.batch.duration", elapsed, b.failed > 0)
+	a.status = a.text.Tf(text.StatusXMLBatchDone, b.total, b.downloaded, b.cached, b.failed)
+	a.statusErr = b.failed > 0
+	a.xmlBatch = nil
+	return a, nil
+}
+
 func (a *App) cmdAddToProjectFromSource(inv invocation, source domain.Source, usage command.ID) (tea.Model, tea.Cmd) {
-	switch len(inv.args) {
-	case 0:
+	if len(inv.args) == 0 {
 		return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
 			return pane.AddToProjectFromSourceCmd(a.client, project, patent, source)
 		})
-	case 1:
-		number, err := domain.ParsePatentNumber(inv.args[0])
+	}
+	// Batch typed form: `:add.uspto N1 N2 N3`. Each number is parsed up-front
+	// so a typo aborts the batch before any RPC is dispatched.
+	numbers := make([]domain.PatentNumber, 0, len(inv.args))
+	for _, arg := range inv.args {
+		number, err := domain.ParsePatentNumber(arg)
 		if err != nil {
 			a.setErr(text.StatusInvalidPatentNumber, err.Error())
 			return a, nil
 		}
-		if a.activeProject == nil {
-			a.setErr(text.StatusNoActiveProject)
-			return a, nil
-		}
-		if a.client == nil {
-			a.setErr(text.StatusDaemonUnavailable)
-			return a, nil
-		}
-		return a, pane.AddToProjectFromSourceCmd(a.client, a.activeProject.ID, number, source)
-	default:
-		return a.usageError(usage)
+		numbers = append(numbers, number)
 	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	cmds := make([]tea.Cmd, 0, len(numbers))
+	for _, n := range numbers {
+		cmds = append(cmds, pane.AddToProjectFromSourceCmd(a.client, a.activeProject.ID, n, source))
+	}
+	if len(numbers) > 1 {
+		a.status = a.text.Tf(text.StatusAddBatchStarted, len(numbers), string(source))
+		a.statusErr = false
+		a.log().Info("add batch dispatched",
+			slog.Int("count", len(numbers)),
+			slog.String("source", string(source)))
+		a.metrics.IncCounter("tui.add.batch.started", 1)
+		a.metrics.IncCounter("tui.add.batch.total", int64(len(numbers)))
+	}
+	_ = usage
+	return a, tea.Batch(cmds...)
 }
 
 // cmdTag tags the selected patent(s) within the active project. The tag name

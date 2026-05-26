@@ -298,7 +298,7 @@ func (o *ClassificationListOverlay) View(maxW, maxH int) string {
 	// Right: detail taxonomy card
 	if len(o.classifications) > 0 && o.selected >= 0 && o.selected < len(o.classifications) {
 		c := o.classifications[o.selected]
-		rightLines = append(rightLines, o.theme.Title.Render("Metadata Definition Card"))
+		rightLines = append(rightLines, o.theme.Title.Render("Attributes Definition Card"))
 		rightLines = append(rightLines, o.theme.Dim.Render(strings.Repeat("─", rightW)))
 		rightLines = append(rightLines, fmt.Sprintf("%s  %s", o.theme.HelpKey.Render("System:"), c.System))
 		rightLines = append(rightLines, fmt.Sprintf("%s    %s", o.theme.HelpKey.Render("Code:"), c.Code))

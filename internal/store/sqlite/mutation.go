@@ -27,9 +27,9 @@ func (r *Repo) SaveMutationGroup(ctx context.Context, group domain.MutationGroup
 	if err != nil {
 		return fmt.Errorf("store/sqlite: encode mutation selection snapshot: %w", err)
 	}
-	metadataJSON, err := json.Marshal(group.Metadata)
+	attrsJSON, err := json.Marshal(group.Attributes)
 	if err != nil {
-		return fmt.Errorf("store/sqlite: encode mutation metadata: %w", err)
+		return fmt.Errorf("store/sqlite: encode mutation attrs: %w", err)
 	}
 
 	tx, err := r.writer.BeginTx(ctx, nil)
@@ -42,8 +42,8 @@ func (r *Repo) SaveMutationGroup(ctx context.Context, group domain.MutationGroup
 		}
 	}()
 
-	if _, err = tx.ExecContext(ctx, `INSERT INTO mutation_group (id, project_id, action, created_at, selection_snapshot_json, metadata_json) VALUES (?,?,?,?,?,?)`,
-		group.ID, string(group.Project), group.Action, encodeTime(createdAt), string(selectionJSON), string(metadataJSON)); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO mutation_group (id, project_id, action, created_at, selection_snapshot_json, attrs_json) VALUES (?,?,?,?,?,?)`,
+		group.ID, string(group.Project), group.Action, encodeTime(createdAt), string(selectionJSON), string(attrsJSON)); err != nil {
 		return fmt.Errorf("store/sqlite: insert mutation group: %w", err)
 	}
 

@@ -240,7 +240,7 @@ func defaultJSON(s, fallback string) string {
 	return s
 }
 
-// USPTOApplication returns the saved USPTO application metadata for a patent record, or ErrNotFound.
+// USPTOApplication returns the saved USPTO application attrs for a patent record, or ErrNotFound.
 func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
 	row := r.reader.QueryRowContext(ctx, `
 		SELECT application_number, record_number, invention_title, filing_date, effective_filing_date,
@@ -285,5 +285,49 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 	}
 
 	return app, nil
+}
+
+// USPTOXMLDownload returns the per-document download record, or ErrNotFound.
+func (r *Repo) USPTOXMLDownload(ctx context.Context, applicationNumber, kind string) (domain.USPTOXMLDownload, error) {
+	row := r.reader.QueryRowContext(ctx, `
+		SELECT application_number, kind, source_url, local_path, bytes, download_count,
+		       first_downloaded_at, last_downloaded_at, last_accessed_at
+		FROM uspto_xml_download
+		WHERE application_number = ? AND kind = ?`, applicationNumber, kind)
+	var rec domain.USPTOXMLDownload
+	err := row.Scan(
+		&rec.ApplicationNumber, &rec.Kind, &rec.SourceURL, &rec.LocalPath, &rec.Bytes, &rec.DownloadCount,
+		&rec.FirstDownloadedAt, &rec.LastDownloadedAt, &rec.LastAccessedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.USPTOXMLDownload{}, store.ErrNotFound
+		}
+		return domain.USPTOXMLDownload{}, fmt.Errorf("store/sqlite: query uspto xml download: %w", err)
+	}
+	return rec, nil
+}
+
+// RecordUSPTOXMLDownload inserts or updates a per-document download record.
+func (r *Repo) RecordUSPTOXMLDownload(ctx context.Context, rec domain.USPTOXMLDownload) error {
+	_, err := r.writer.ExecContext(ctx, `
+		INSERT INTO uspto_xml_download
+		    (application_number, kind, source_url, local_path, bytes, download_count,
+		     first_downloaded_at, last_downloaded_at, last_accessed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(application_number, kind) DO UPDATE SET
+		    source_url=excluded.source_url,
+		    local_path=excluded.local_path,
+		    bytes=excluded.bytes,
+		    download_count=excluded.download_count,
+		    last_downloaded_at=excluded.last_downloaded_at,
+		    last_accessed_at=excluded.last_accessed_at`,
+		rec.ApplicationNumber, rec.Kind, rec.SourceURL, rec.LocalPath, rec.Bytes, rec.DownloadCount,
+		rec.FirstDownloadedAt, rec.LastDownloadedAt, rec.LastAccessedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: record uspto xml download: %w", err)
+	}
+	return nil
 }
 

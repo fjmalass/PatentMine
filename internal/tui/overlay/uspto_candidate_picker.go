@@ -47,6 +47,12 @@ func (p *USPTOCandidatePicker) Command(command.ID, int) (Overlay, tea.Cmd) { ret
 // Handles implements Overlay.
 func (p *USPTOCandidatePicker) Handles() []command.ID { return nil }
 
+// OverlaySize implements DynamicSize so the picker takes 80% of the screen,
+// preventing wraps on long titles.
+func (p *USPTOCandidatePicker) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, 80, 80, 40, 10)
+}
+
 // HandleKey implements KeyHandler.
 func (p *USPTOCandidatePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	key := msg.String()

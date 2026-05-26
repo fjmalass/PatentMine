@@ -65,7 +65,7 @@ func groupHistoryRecords(raw []Record) (records []Record, suppressed int) {
 
 func historyFeedIncludes(rec Record) bool {
 	if rec.Action == ActionUIFocus && rec.Entity == "patent" {
-		scope, _ := rec.Metadata["scope"].(string)
+		scope, _ := rec.Attributes["scope"].(string)
 		return historyFocusScope(scope)
 	}
 	return IsHistoryFeedAction(rec.Action)

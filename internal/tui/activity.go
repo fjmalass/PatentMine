@@ -29,7 +29,7 @@ func (a *App) observeFocus() tea.Cmd {
 	if !ok || focus.Entity == "" || focus.EntityID == "" {
 		return nil
 	}
-	key := focus.Entity + ":" + focus.EntityID + ":" + fmt.Sprint(focus.Metadata["scope"]) + ":" + fmt.Sprint(focus.Metadata["line"])
+	key := focus.Entity + ":" + focus.EntityID + ":" + fmt.Sprint(focus.Attributes["scope"]) + ":" + fmt.Sprint(focus.Attributes["line"])
 	if key == a.focusKey {
 		return nil
 	}
@@ -55,15 +55,15 @@ func (a *App) handleFocusDwell(m focusDwellMsg) tea.Cmd {
 		return nil
 	}
 	a.focusRecorded = true
-	metadata := cloneMetadata(focus.Metadata)
-	metadata["label"] = focus.Label
-	metadata["duration_ms"] = duration.Milliseconds()
+	attrs := cloneAttributes(focus.Attributes)
+	attrs["label"] = focus.Label
+	attrs["duration_ms"] = duration.Milliseconds()
 	return a.recordActivity(observability.Record{
 		Action:   observability.ActionUIFocus,
 		Entity:   focus.Entity,
 		EntityID: focus.EntityID,
 		Status:   "observed",
-		Metadata: metadata,
+		Attributes: attrs,
 	})
 }
 
@@ -79,7 +79,7 @@ func (a *App) currentActivityFocus() (pane.ActivityFocus, bool) {
 		Entity:   "patent",
 		EntityID: number.String(),
 		Label:    a.focusedPane().Title(),
-		Metadata: map[string]any{"scope": string(a.focusedPane().Scope())},
+		Attributes: map[string]any{"scope": string(a.focusedPane().Scope())},
 	}, true
 }
 
@@ -90,19 +90,19 @@ func (a *App) recordTypedActivity(id command.ID, args []string) tea.Cmd {
 	action := "tui.command"
 	entity := "command"
 	entityID := string(id)
-	metadata := map[string]any{"scope": string(a.scope()), "args": args}
+	attrs := map[string]any{"scope": string(a.scope()), "args": args}
 	if id == command.Filter {
 		action = "filter.apply"
 		entity = "filter"
 		entityID = strings.Join(args, " ")
-		metadata["filter"] = entityID
+		attrs["filter"] = entityID
 	}
 	return a.recordActivity(observability.Record{
 		Action:   action,
 		Entity:   entity,
 		EntityID: entityID,
 		Status:   "requested",
-		Metadata: metadata,
+		Attributes: attrs,
 	})
 }
 
@@ -111,11 +111,11 @@ func (a *App) recordActivity(rec observability.Record) tea.Cmd {
 	logger := a.log()
 	return func() tea.Msg {
 		if a.activeProject != nil {
-			if rec.Metadata == nil {
-				rec.Metadata = map[string]any{}
+			if rec.Attributes == nil {
+				rec.Attributes = map[string]any{}
 			}
-			rec.Metadata["project"] = string(a.activeProject.ID)
-			rec.Metadata["project_name"] = a.activeProject.Name
+			rec.Attributes["project"] = string(a.activeProject.ID)
+			rec.Attributes["project_name"] = a.activeProject.Name
 		}
 		if err := activity.Record(context.Background(), rec); err != nil {
 			logger.Warn("activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
@@ -131,8 +131,8 @@ func (a *App) recordReplayHistory(rec observability.Record) tea.Cmd {
 		if logsDir == "" {
 			return nil
 		}
-		metadata := cloneMetadata(rec.Metadata)
-		metadata["source"] = "tui.activity_overlay"
+		attrs := cloneAttributes(rec.Attributes)
+		attrs["source"] = "tui.activity_overlay"
 		entry := observability.ReplayHistoryEntry{
 			ActivityID:        rec.ID,
 			ActivityTimestamp: rec.Timestamp,
@@ -140,7 +140,7 @@ func (a *App) recordReplayHistory(rec observability.Record) tea.Cmd {
 			Entity:            rec.Entity,
 			EntityID:          rec.EntityID,
 			Status:            rec.Status,
-			Metadata:          metadata,
+			Attributes:          attrs,
 		}
 		if err := observability.AppendReplayHistory(logsDir, entry, replayHistoryCap); err != nil {
 			logger.Warn("replay history record failed", slog.String("activity_id", rec.ID), slog.String("error", err.Error()))
@@ -149,7 +149,7 @@ func (a *App) recordReplayHistory(rec observability.Record) tea.Cmd {
 	}
 }
 
-func cloneMetadata(in map[string]any) map[string]any {
+func cloneAttributes(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in)+2)
 	for k, v := range in {
 		out[k] = v

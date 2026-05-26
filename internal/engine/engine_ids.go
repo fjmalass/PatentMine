@@ -103,7 +103,7 @@ func (e *Engine) saveIDSEntry(ctx context.Context, entry domain.IDSEntry, announ
 		Status:   "committed",
 		Before:   before,
 		After:    saved,
-		Metadata: map[string]any{
+		Attributes: map[string]any{
 			"prior_status": string(priorStat),
 			"status":       string(saved.Status),
 		},
@@ -178,7 +178,7 @@ func (e *Engine) BulkSetIDSStatus(ctx context.Context, project domain.ProjectID,
 		Entity:   "ids_entry",
 		EntityID: string(project),
 		Status:   "committed",
-		Metadata: map[string]any{
+		Attributes: map[string]any{
 			"status":          string(status),
 			"default_in_full": defaultInFull,
 			"requested":       requested,

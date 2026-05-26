@@ -158,7 +158,7 @@ func (s *Server) observeTableQuery(r *http.Request, telemetry tableQueryTelemetr
 	if telemetry.TableType == "" {
 		return
 	}
-	metadata := telemetryMetadata(r, telemetry)
+	attrs := telemetryAttributes(r, telemetry)
 	if s.activityMetrics != nil {
 		s.recordTableQueryMetrics(telemetry)
 	}
@@ -168,17 +168,17 @@ func (s *Server) observeTableQuery(r *http.Request, telemetry tableQueryTelemetr
 			Entity:   "table_filter",
 			EntityID: string(telemetry.TableType),
 			Status:   "requested",
-			Metadata: metadata,
+			Attributes: attrs,
 		})
 	}
 }
 
 func (s *Server) observeTableView(r *http.Request, action string, view domain.SavedTableView) {
 	telemetry := tableQueryTelemetryFromView(view)
-	metadata := telemetryMetadata(r, telemetry)
-	metadata["view_id"] = view.ID
-	metadata["view_name"] = view.Name
-	metadata["scope"] = string(view.Scope)
+	attrs := telemetryAttributes(r, telemetry)
+	attrs["view_id"] = view.ID
+	attrs["view_name"] = view.Name
+	attrs["scope"] = string(view.Scope)
 	if s.activityMetrics != nil {
 		s.recordTableViewMetrics(action, telemetry)
 	}
@@ -192,7 +192,7 @@ func (s *Server) observeTableView(r *http.Request, action string, view domain.Sa
 			Entity:   "table_view",
 			EntityID: view.ID,
 			Status:   status,
-			Metadata: metadata,
+			Attributes: attrs,
 		})
 	}
 }
@@ -228,8 +228,8 @@ func (s *Server) recordTableViewMetrics(action string, t tableQueryTelemetry) {
 	}
 }
 
-func telemetryMetadata(r *http.Request, t tableQueryTelemetry) map[string]any {
-	metadata := observability.TableFilter{
+func telemetryAttributes(r *http.Request, t tableQueryTelemetry) map[string]any {
+	attrs := observability.TableFilter{
 		Source:       "http",
 		TableType:    string(t.TableType),
 		Search:       t.Search,
@@ -240,15 +240,15 @@ func telemetryMetadata(r *http.Request, t tableQueryTelemetry) map[string]any {
 		Complexity:   t.Complexity,
 		FilterFields: t.FilterFields,
 		SortFields:   t.SortFields,
-	}.Metadata()
-	metadata["path"] = r.URL.Path
-	metadata["query"] = r.URL.RawQuery
+	}.Attributes()
+	attrs["path"] = r.URL.Path
+	attrs["query"] = r.URL.RawQuery
 	if t.HasSavedView {
-		metadata["saved_view_id"] = t.SavedViewID
-		metadata["saved_view_name"] = t.SavedViewName
-		metadata["saved_view_scope"] = t.SavedViewScope
+		attrs["saved_view_id"] = t.SavedViewID
+		attrs["saved_view_name"] = t.SavedViewName
+		attrs["saved_view_scope"] = t.SavedViewScope
 	}
-	return metadata
+	return attrs
 }
 
 func metricPart(s string) string {

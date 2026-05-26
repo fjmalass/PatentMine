@@ -52,7 +52,7 @@ func IsProjectPatentAction(action string) bool {
 }
 
 // ReplayScope returns the pane scope an action's replay should land on, or ""
-// to fall back to the record's metadata["scope"] (used by ui.focus).
+// to fall back to the record's attrs["scope"] (used by ui.focus).
 func ReplayScope(action string) string {
 	switch action {
 	case observability.ActionIDSEntrySave, observability.ActionIDSEntryDelete, observability.ActionIDSEntryBulkSetStatus:

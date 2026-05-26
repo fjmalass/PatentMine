@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"patentmine/internal/crawl"
+	"patentmine/internal/domain"
 )
 
 const (
@@ -43,7 +46,7 @@ type Config struct {
 	PIDPath            Path   // Daemon pid file.
 	SocketPath         Path   // Unix domain socket for the daemon.
 	USPTOAPIKey        string // USPTO Open Data Portal API Key.
-	GoogleMode         string // Google Patents use: compare, fallback, or off.
+	SourceMode         domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
 	GeminiAPIKey       string // Google Gemini Developer API Key.
 	AIProvider         string // Chosen AI Provider ("gemini", "ollama")
 	OllamaModel        string // Local Ollama Model ("mistral", etc.)
@@ -225,14 +228,12 @@ func Load() (Config, error) {
 	if usptoKey == "" {
 		usptoKey = os.Getenv("USPTO_API_KEY")
 	}
-	googleMode := strings.ToLower(strings.TrimSpace(os.Getenv("PATENTMINE_GOOGLE_MODE")))
-	if googleMode == "" {
-		googleMode = "compare"
-	}
-	switch googleMode {
-	case "compare", "fallback", "off":
-	default:
-		googleMode = "compare"
+	// PATENTMINE_SOURCE_MODE feeds crawl.NormalizeSourceMode so the canonical
+	// names live in one place. An invalid value silently falls back to
+	// compare so a typo doesn't refuse to boot.
+	sourceMode, err := crawl.NormalizeSourceMode(os.Getenv("PATENTMINE_SOURCE_MODE"))
+	if err != nil {
+		sourceMode = crawl.SourceModeCompare
 	}
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 
@@ -309,7 +310,7 @@ func Load() (Config, error) {
 		PIDPath:            Path(filepath.Join(home, pidFileName)),
 		SocketPath:         Path(filepath.Join(home, socketFileName)),
 		USPTOAPIKey:        usptoKey,
-		GoogleMode:         googleMode,
+		SourceMode:         sourceMode,
 		GeminiAPIKey:       geminiKey,
 		AIProvider:         aiProvider,
 		OllamaModel:        ollamaModel,

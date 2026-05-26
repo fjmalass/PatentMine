@@ -70,6 +70,8 @@ type Engine struct {
 	crawlMaxDepth    int
 	crawlWorkerCount int
 	idsExportDir     string
+	usptoAPIKey      string
+	patentsDir       string
 
 	// changeMu guards the EventDBChanged debounce state below.
 	changeMu      sync.Mutex
@@ -146,6 +148,16 @@ func WithIDSExportDir(dir string) Option {
 // WithUSPTOSearcher wires the USPTO candidate searcher.
 func WithUSPTOSearcher(s USPTOSearcher) Option {
 	return func(e *Engine) { e.usptoSearcher = s }
+}
+
+// WithUSPTOAPIKey supplies the API key used when downloading USPTO XML files.
+func WithUSPTOAPIKey(key string) Option {
+	return func(e *Engine) { e.usptoAPIKey = key }
+}
+
+// WithPatentsDir names the on-disk directory XML downloads are written into.
+func WithPatentsDir(dir string) Option {
+	return func(e *Engine) { e.patentsDir = dir }
 }
 
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx

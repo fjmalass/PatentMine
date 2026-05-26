@@ -115,7 +115,29 @@ CREATE TABLE IF NOT EXISTS uspto_application (
     pgpub_xml_url                   TEXT NOT NULL DEFAULT '',
     pgpub_xml_name                  TEXT NOT NULL DEFAULT '',
     patent_grant_xml_url            TEXT NOT NULL DEFAULT '',
-    patent_grant_xml_name           TEXT NOT NULL DEFAULT ''
+    patent_grant_xml_name           TEXT NOT NULL DEFAULT '',
+    -- Fields populated from the grant XML when it has been parsed.
+    grant_doc_number                TEXT NOT NULL DEFAULT '',
+    grant_kind                      TEXT NOT NULL DEFAULT '',
+    grant_date                      TEXT NOT NULL DEFAULT '',
+    grant_dtd_version               TEXT NOT NULL DEFAULT '',
+    grant_status                    TEXT NOT NULL DEFAULT '',
+    grant_date_produced             TEXT NOT NULL DEFAULT '',
+    grant_file_name                 TEXT NOT NULL DEFAULT '',
+    grant_lang                      TEXT NOT NULL DEFAULT '',
+    term_extension_days             INTEGER NOT NULL DEFAULT 0,
+    number_of_claims                INTEGER NOT NULL DEFAULT 0,
+    exemplary_claim                 TEXT NOT NULL DEFAULT '',
+    number_of_drawing_sheets        INTEGER NOT NULL DEFAULT 0,
+    number_of_figures               INTEGER NOT NULL DEFAULT 0,
+    primary_examiner_first          TEXT NOT NULL DEFAULT '',
+    primary_examiner_last           TEXT NOT NULL DEFAULT '',
+    primary_examiner_department     TEXT NOT NULL DEFAULT '',
+    assistant_examiners_json        TEXT NOT NULL DEFAULT '[]',
+    attorney_org                    TEXT NOT NULL DEFAULT '',
+    attorney_type                   TEXT NOT NULL DEFAULT '',
+    field_of_search_json            TEXT NOT NULL DEFAULT '[]',
+    grant_parsed_at                 TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_uspto_application_record ON uspto_application (record_number);
@@ -263,6 +285,122 @@ CREATE TABLE IF NOT EXISTS uspto_bulk_file (
 );
 
 CREATE INDEX IF NOT EXISTS idx_uspto_bulk_file_status ON uspto_bulk_file (status);
+
+CREATE TABLE IF NOT EXISTS uspto_grant_body (
+    application_number    TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind                  TEXT NOT NULL,                  -- 'pgpub' or 'grant'
+    abstract_text         TEXT NOT NULL DEFAULT '',
+    abstract_xml          TEXT NOT NULL DEFAULT '',
+    description_text      TEXT NOT NULL DEFAULT '',
+    description_xml       TEXT NOT NULL DEFAULT '',
+    claim_statement       TEXT NOT NULL DEFAULT '',
+    claims_text           TEXT NOT NULL DEFAULT '',
+    claims_json           TEXT NOT NULL DEFAULT '[]',
+    parsed_at             TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_body_kind ON uspto_grant_body (kind);
+
+CREATE TABLE IF NOT EXISTS uspto_drawing (
+    application_number    TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind                  TEXT NOT NULL,
+    ordinal               INTEGER NOT NULL,
+    figure_num            TEXT NOT NULL DEFAULT '',
+    figure_id             TEXT NOT NULL DEFAULT '',
+    img_id                TEXT NOT NULL DEFAULT '',
+    file_name             TEXT NOT NULL DEFAULT '',
+    width                 TEXT NOT NULL DEFAULT '',
+    height                TEXT NOT NULL DEFAULT '',
+    alt_text              TEXT NOT NULL DEFAULT '',
+    img_format            TEXT NOT NULL DEFAULT '',
+    img_content           TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind, ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS uspto_grant_citation (
+    application_number    TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind                  TEXT NOT NULL,
+    ordinal               INTEGER NOT NULL,
+    citation_num          TEXT NOT NULL DEFAULT '',
+    citation_type         TEXT NOT NULL DEFAULT '',        -- 'patent' or 'npl'
+    category              TEXT NOT NULL DEFAULT '',        -- 'cited by examiner' / 'applicant' / 'other'
+    cited_country         TEXT NOT NULL DEFAULT '',
+    cited_doc_number      TEXT NOT NULL DEFAULT '',
+    cited_kind            TEXT NOT NULL DEFAULT '',
+    cited_date            TEXT NOT NULL DEFAULT '',
+    cited_name            TEXT NOT NULL DEFAULT '',
+    cpc_text              TEXT NOT NULL DEFAULT '',
+    national_country      TEXT NOT NULL DEFAULT '',
+    national_class        TEXT NOT NULL DEFAULT '',
+    npl_text              TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind, ordinal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_citation_cited ON uspto_grant_citation (cited_country, cited_doc_number);
+
+CREATE TABLE IF NOT EXISTS uspto_grant_classification (
+    application_number    TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind                  TEXT NOT NULL,
+    scheme                TEXT NOT NULL,                   -- 'ipcr' or 'cpc'
+    role                  TEXT NOT NULL DEFAULT '',        -- 'main' / 'further' / 'search'
+    ordinal               INTEGER NOT NULL,
+    full_code             TEXT NOT NULL DEFAULT '',        -- e.g. 'G01N 33/42'
+    section               TEXT NOT NULL DEFAULT '',
+    class                 TEXT NOT NULL DEFAULT '',
+    subclass              TEXT NOT NULL DEFAULT '',
+    main_group            TEXT NOT NULL DEFAULT '',
+    subgroup              TEXT NOT NULL DEFAULT '',
+    symbol_position       TEXT NOT NULL DEFAULT '',
+    classification_value  TEXT NOT NULL DEFAULT '',
+    classification_level  TEXT NOT NULL DEFAULT '',
+    classification_status TEXT NOT NULL DEFAULT '',
+    data_source           TEXT NOT NULL DEFAULT '',
+    action_date           TEXT NOT NULL DEFAULT '',
+    generating_office     TEXT NOT NULL DEFAULT '',
+    version_date          TEXT NOT NULL DEFAULT '',
+    scheme_origination    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind, scheme, role, ordinal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_classification_code ON uspto_grant_classification (full_code);
+
+CREATE TABLE IF NOT EXISTS uspto_grant_relation (
+    application_number     TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind                   TEXT NOT NULL,
+    ordinal                INTEGER NOT NULL,
+    relation_kind          TEXT NOT NULL,                  -- continuation / continuation-in-part / division / reissue / provisional / related-publication
+    parent_country         TEXT NOT NULL DEFAULT '',
+    parent_app_number      TEXT NOT NULL DEFAULT '',
+    parent_app_date        TEXT NOT NULL DEFAULT '',
+    parent_grant_country   TEXT NOT NULL DEFAULT '',
+    parent_grant_number    TEXT NOT NULL DEFAULT '',
+    parent_grant_date      TEXT NOT NULL DEFAULT '',
+    child_country          TEXT NOT NULL DEFAULT '',
+    child_app_number       TEXT NOT NULL DEFAULT '',
+    related_country        TEXT NOT NULL DEFAULT '',
+    related_doc_number     TEXT NOT NULL DEFAULT '',
+    related_kind           TEXT NOT NULL DEFAULT '',
+    related_date           TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind, ordinal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_relation_kind ON uspto_grant_relation (relation_kind);
+
+CREATE TABLE IF NOT EXISTS uspto_xml_download (
+    application_number    TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind                  TEXT NOT NULL,
+    source_url            TEXT NOT NULL,
+    local_path            TEXT NOT NULL,
+    bytes                 INTEGER NOT NULL DEFAULT 0,
+    download_count        INTEGER NOT NULL DEFAULT 0,
+    first_downloaded_at   TEXT NOT NULL DEFAULT '',
+    last_downloaded_at    TEXT NOT NULL DEFAULT '',
+    last_accessed_at      TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uspto_xml_download_kind ON uspto_xml_download (kind);
 
 CREATE TABLE IF NOT EXISTS source_snapshot (
     id               TEXT PRIMARY KEY,
@@ -457,7 +595,7 @@ CREATE TABLE IF NOT EXISTS mutation_group (
     action                  TEXT NOT NULL,
     created_at              TEXT NOT NULL,
     selection_snapshot_json TEXT NOT NULL DEFAULT '[]',
-    metadata_json           TEXT NOT NULL DEFAULT '{}'
+    attrs_json              TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_mutation_group_project_created ON mutation_group (project_id, created_at DESC);

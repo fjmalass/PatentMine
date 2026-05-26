@@ -916,7 +916,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 		t.Fatalf("RestorePatent soft: %v", err)
 	}
 
-	// Verify soft restore (FetchState should be FetchStub, no rich metadata, single guess-stage document)
+	// Verify soft restore (FetchState should be FetchStub, no rich attrs, single guess-stage document)
 	stubPatent, err := eng.Patent(ctx, p1)
 	if err != nil {
 		t.Fatalf("Patent after soft restore: %v", err)
@@ -925,7 +925,7 @@ func TestDeleteBackupAndReplay(t *testing.T) {
 		t.Fatalf("FetchState = %s, want %s", stubPatent.FetchState, domain.FetchStub)
 	}
 	if stubPatent.Title != "" || stubPatent.Abstract != "" {
-		t.Fatalf("Metadata was not stripped: title=%q abstract=%q", stubPatent.Title, stubPatent.Abstract)
+		t.Fatalf("Attributes was not stripped: title=%q abstract=%q", stubPatent.Title, stubPatent.Abstract)
 	}
 	if len(stubPatent.Documents) != 1 {
 		t.Fatalf("Stub documents count = %d, want 1", len(stubPatent.Documents))
@@ -1210,7 +1210,7 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 		Action   string         `json:"action"`
 		EntityID string         `json:"entity_id"`
 		Before   PatentSnapshot `json:"before"`
-		Metadata map[string]any `json:"metadata"`
+		Attributes map[string]any `json:"attributes"`
 	}
 	records := map[string]deleteRecord{}
 	for _, line := range bytes.Split(content, []byte("\n")) {
@@ -1235,10 +1235,10 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 		if rec.Before.Patent.Number != number {
 			t.Fatalf("snapshot patent number = %v, want %v", rec.Before.Patent.Number, number)
 		}
-		if _, ok := rec.Metadata["batch_id"]; !ok {
-			t.Fatalf("delete record for %s missing batch_id metadata", number)
+		if _, ok := rec.Attributes["batch_id"]; !ok {
+			t.Fatalf("delete record for %s missing batch_id attrs", number)
 		}
-		if got := int(rec.Metadata["batch_size"].(float64)); got != 2 {
+		if got := int(rec.Attributes["batch_size"].(float64)); got != 2 {
 			t.Fatalf("batch_size = %d, want 2", got)
 		}
 	}

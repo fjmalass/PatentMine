@@ -121,6 +121,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTableViewGet:              s.tableViewGet,
 		proto.MethodTableViewSave:             s.tableViewSave,
 		proto.MethodTableViewDelete:           s.tableViewDelete,
+		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
+		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
 	}
 	return s
 }
@@ -1216,4 +1218,24 @@ func (s *Server) patentClassificationList(ctx context.Context, raw json.RawMessa
 		return nil, err
 	}
 	return proto.ClassificationListResult{Classifications: classifications}, nil
+}
+
+func (s *Server) usptoFetchXML(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOFetchXMLParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.FetchUSPTOXML(ctx, p.Number, p.Kind)
+}
+
+func (s *Server) usptoGrantBody(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOGrantBodyParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	body, present, err := s.engine.USPTOGrantBody(ctx, p.Number, p.Kind)
+	if err != nil {
+		return nil, err
+	}
+	return proto.USPTOGrantBodyResult{Present: present, Body: body}, nil
 }

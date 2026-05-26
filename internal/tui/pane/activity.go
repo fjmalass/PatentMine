@@ -3,7 +3,7 @@ package pane
 import "patentmine/internal/domain"
 
 func patentRowActivity(scope, title string, row domain.PatentRow, project domain.ProjectID, filter PatentFilter) ActivityFocus {
-	metadata := map[string]any{
+	attrs := map[string]any{
 		"scope":           scope,
 		"display_number":  row.DisplayNumber.String(),
 		"title":           row.Title,
@@ -15,12 +15,12 @@ func patentRowActivity(scope, title string, row domain.PatentRow, project domain
 		"inventors_short":  formatInventorsShort(row.Inventors),
 	}
 	if !row.PublicationDate.IsZero() {
-		metadata["publication_date"] = row.PublicationDate.Format("2006-01-02")
+		attrs["publication_date"] = row.PublicationDate.Format("2006-01-02")
 	}
 	if project != "" {
-		metadata["project"] = project
+		attrs["project"] = project
 	}
-	return ActivityFocus{Entity: "patent", EntityID: row.Number.String(), Label: title, Metadata: metadata}
+	return ActivityFocus{Entity: "patent", EntityID: row.Number.String(), Label: title, Attributes: attrs}
 }
 
 func activeProjectID(project *domain.Project) domain.ProjectID {

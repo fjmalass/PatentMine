@@ -154,6 +154,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.AddToProject:               (*App).cmdAddToProject,
 	command.AddUSPTO:                   (*App).cmdAddUSPTO,
 	command.AddGoogle:                  (*App).cmdAddGoogle,
+	command.FetchUSPTOPGPub:            (*App).cmdFetchUSPTOPGPub,
+	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.Import:                     (*App).cmdImport,
 	command.SourceMode:                 (*App).cmdSourceMode,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
@@ -252,6 +254,7 @@ type App struct {
 	ollamaModel      string
 	aiTargetPatent   domain.Patent
 	usptoAPIKey      string
+	xmlBatch         *xmlBatchState
 	usptoConfigured  bool
 	usptoConnection  serviceConnectionState
 	backupConfigured bool
@@ -262,6 +265,20 @@ type App struct {
 	ollamaAnalyzer   ai.Analyzer
 
 	notesExportDir string
+}
+
+// xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
+// the TUI. The App owns it so the message handler can aggregate per-result
+// outcomes into one running status line without re-deriving counts from the
+// pane stack.
+type xmlBatchState struct {
+	total      int
+	done       int
+	cached     int
+	downloaded int
+	failed     int
+	kind       proto.USPTOXMLKind
+	startedAt  time.Time
 }
 
 type Option func(*App)
@@ -717,7 +734,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Entity:   "filter",
 			EntityID: m.Query,
 			Status:   "requested",
-			Metadata: map[string]any{
+			Attributes: map[string]any{
 				"search":  m.Query,
 				"project": projectID,
 			},
@@ -766,21 +783,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		query := strings.TrimSpace(m.Query)
-		metadata := observability.TableFilter{
+		attrs := observability.TableFilter{
 			Source:      "tui.history_overlay",
 			TableType:   string(domain.TableIDSActivityHistory),
 			Search:      query,
 			SearchTerms: len(strings.Fields(query)),
-		}.Metadata()
-		metadata["sort_ascending"] = m.SortAscending
-		metadata["result_count"] = m.ResultCount
-		metadata["total_count"] = m.TotalCount
+		}.Attributes()
+		attrs["sort_ascending"] = m.SortAscending
+		attrs["result_count"] = m.ResultCount
+		attrs["total_count"] = m.TotalCount
 		return a, a.recordActivity(observability.Record{
 			Action:   observability.ActionTableFilterApply,
 			Entity:   "table_filter",
 			EntityID: string(domain.TableIDSActivityHistory),
 			Status:   "requested",
-			Metadata: metadata,
+			Attributes: attrs,
 		})
 	case overlay.ConfirmHistoryReplayMsg:
 		return a.handleHistoryReplay(m.Record, true)
@@ -825,6 +842,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o := overlay.NewUSPTOCandidatePicker(a.theme, m.Project, m.Candidates)
 		a.overlays = append(a.overlays, o)
 		return a, nil
+	case pane.USPTOXMLFetchedMsg:
+		return a.handleUSPTOXMLFetched(m)
 	case overlay.USPTOCandidateSelectMsg:
 		if len(a.overlays) > 0 {
 			a.overlays = a.overlays[:len(a.overlays)-1]
@@ -853,7 +872,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Entity:   "project",
 				EntityID: string(projectID),
 				Status:   "done",
-				Metadata: map[string]any{
+				Attributes: map[string]any{
 					"count":        count,
 					"path":         path,
 					"project_name": projectName,

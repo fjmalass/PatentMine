@@ -40,6 +40,11 @@ func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 		e.log(ctx, slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("source", string(source)), slog.String("error", err.Error()))
 		return "", err
 	}
+	// Auto-fetch USPTO XML after the crawl finishes for the root, but only
+	// when the resolved Patent.Source is USPTO. This makes :lookup carry
+	// the same XML ingestion as :add.uspto whenever the live registry
+	// chose USPTO (or was forced to it) for the root.
+	go e.autoFetchUSPTOXMLAfterCrawl(root, id)
 	sourceMode := e.currentSourceMode()
 	e.log(ctx, slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.String("source", string(source)), slog.String("source_mode", sourceMode), slog.Bool("force", force))
 	if e.metrics != nil {
@@ -54,7 +59,7 @@ func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 		EntityID: string(id),
 		Status:   "queued",
 		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth, "force": force, "source": string(source), "source_mode": sourceMode},
-		Metadata: map[string]any{"source": string(source), "source_mode": sourceMode, "profile": string(profile)},
+		Attributes: map[string]any{"source": string(source), "source_mode": sourceMode, "profile": string(profile)},
 	})
 	return id, nil
 }
@@ -100,9 +105,19 @@ func (e *Engine) SetSourceMode(ctx context.Context, mode string) (result proto.S
 		Status:   "committed",
 		Before:   map[string]any{"mode": before},
 		After:    map[string]any{"mode": after},
-		Metadata: map[string]any{"mode": after},
+		Attributes: map[string]any{"mode": after},
 	})
 	return proto.SourceModeResult{Mode: after}, nil
+}
+
+// sourceModeNames are the canonical mode strings the engine emits gauges for.
+// The values mirror crawl.SourceMode* constants; the engine cannot import the
+// crawl package directly because crawl already imports engine.
+var sourceModeNames = []string{
+	"compare",
+	"uspto-first",
+	"uspto-only",
+	"google-only",
 }
 
 func (e *Engine) observeSourceMode(mode string) {
@@ -110,7 +125,7 @@ func (e *Engine) observeSourceMode(mode string) {
 		return
 	}
 	e.metrics.IncCounter("engine.source_mode.set_total", 1)
-	for _, candidate := range []string{"compare", "fallback", "off"} {
+	for _, candidate := range sourceModeNames {
 		value := int64(0)
 		if mode == candidate {
 			value = 1

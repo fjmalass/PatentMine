@@ -110,7 +110,7 @@ func Export(ctx context.Context, in Input, baseDir string, obs *observability.Ru
 				Entity:   "project",
 				EntityID: string(in.Project.ID),
 				Status:   "ok",
-				Metadata: map[string]any{
+				Attributes: map[string]any{
 					"sheets":           totalSheets,
 					"fee_tier":         feeTier,
 					"cumulative_count": in.CumulativeCount,

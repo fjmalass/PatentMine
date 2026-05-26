@@ -73,6 +73,8 @@ const (
 	AddToProject    ID = "patent.add-to-project"
 	AddUSPTO        ID = "patent.add-uspto"
 	AddGoogle       ID = "patent.add-google"
+	FetchUSPTOPGPub ID = "patent.fetch-uspto-pgpub"
+	FetchUSPTOGrant ID = "patent.fetch-uspto-grant"
 
 	// Tagging. Both act on the selected patent within the active project.
 	Tag   ID = "patent.tag"
@@ -239,6 +241,8 @@ func Default() (*Registry, error) {
 		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
 		Command{ID: AddUSPTO, Name: "add.uspto", Aliases: []string{"add_uspto", "uspto.add"}, Usage: ":add.uspto [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd},
 		Command{ID: AddGoogle, Name: "add.google", Aliases: []string{"add_google", "google.add"}, Usage: ":add.google [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd},
+		Command{ID: FetchUSPTOPGPub, Name: "fetch.uspto.pgpub", Aliases: []string{"fetch-pgpub", "pgpub.fetch"}, Usage: ":fetch.uspto.pgpub", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
+		Command{ID: FetchUSPTOGrant, Name: "fetch.uspto.grant", Aliases: []string{"fetch-grant", "grant.fetch"}, Usage: ":fetch.uspto.grant", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
 		Command{ID: Tag, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagPatent, Scopes: patentScopes},
 		Command{ID: Untag, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodUntagPatent, Scopes: patentScopes},
@@ -263,7 +267,7 @@ func Default() (*Registry, error) {
 		Command{ID: CrawlAll, Name: "crawl.all", Aliases: []string{"crawl", "recursion"}, Usage: ":crawl.all", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: LookupPatent, Name: "lookup", Aliases: []string{"lookup-patent"}, Usage: ":lookup", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
-		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode", "google.mode", "google-mode"}, Usage: ":source.mode [compare|fallback|off]", Kind: KindView},
+		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode", "google.mode", "google-mode"}, Usage: ":source.mode [compare|uspto-first|uspto-only|google-only]", Kind: KindView},
 		Command{ID: CrawlCancel, Kind: KindEngine, Method: proto.MethodCrawlCancel},
 
 		// --- full text viewer (view) ---

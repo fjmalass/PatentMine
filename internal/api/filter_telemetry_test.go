@@ -42,6 +42,6 @@ func TestTableQueryTelemetryFromView(t *testing.T) {
 		t.Fatalf("telemetry = %+v, want search=2 filters=3 sort=1 columns=2 complexity=8", got)
 	}
 	if !got.HasSavedView || got.SavedViewID != "view-1" || got.SavedViewName != "Needs Attention" {
-		t.Fatalf("saved view metadata missing: %+v", got)
+		t.Fatalf("saved view attrs missing: %+v", got)
 	}
 }

@@ -64,10 +64,10 @@ type ActivityFocus struct {
 	Entity   string
 	EntityID string
 	Label    string
-	Metadata map[string]any
+	Attributes map[string]any
 }
 
-// ActivityFocusProvider exposes richer focus metadata than Selection.
+// ActivityFocusProvider exposes richer focus attrs than Selection.
 type ActivityFocusProvider interface {
 	ActivityFocus() (ActivityFocus, bool)
 }

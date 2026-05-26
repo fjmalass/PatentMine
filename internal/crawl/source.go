@@ -53,7 +53,7 @@ type Source interface {
 // preferred provider can be consulted before a fallback.
 type Registry struct {
 	sources    []Source
-	googleMode string
+	sourceMode domain.SourceMode
 	modeMu     sync.RWMutex
 	metrics    *observability.Metrics
 	logger     *slog.Logger
@@ -61,7 +61,7 @@ type Registry struct {
 
 // NewRegistry builds a Registry from sources, consulted in the given order.
 func NewRegistry(sources ...Source) *Registry {
-	return &Registry{sources: sources, googleMode: SourceModeCompare}
+	return &Registry{sources: sources, sourceMode: SourceModeCompare}
 }
 
 // WithGoogleComparison enables best-effort Google fetches after a successful
@@ -69,9 +69,9 @@ func NewRegistry(sources ...Source) *Registry {
 // source_diff rows.
 func (r *Registry) WithGoogleComparison(enabled bool) *Registry {
 	if enabled {
-		_ = r.SetSourceMode(SourceModeCompare)
+		_ = r.SetSourceMode(string(SourceModeCompare))
 	} else {
-		_ = r.SetSourceMode(SourceModeFallback)
+		_ = r.SetSourceMode(string(SourceModeUSPTOFirst))
 	}
 	return r
 }
@@ -83,23 +83,32 @@ func (r *Registry) WithSourceMode(mode string) *Registry {
 	return r
 }
 
+// Re-exports of the canonical source-mode names so crawl callers do not
+// need to import the domain package just to name a mode. The values are
+// domain.SourceMode (a typed string) rather than bare strings, so a typo
+// is a compile error.
 const (
-	SourceModeCompare  = "compare"
-	SourceModeFallback = "fallback"
-	SourceModeOff      = "off"
+	SourceModeCompare    = domain.SourceModeCompare
+	SourceModeUSPTOFirst = domain.SourceModeUSPTOFirst
+	SourceModeUSPTOOnly  = domain.SourceModeUSPTOOnly
+	SourceModeGoogleOnly = domain.SourceModeGoogleOnly
 )
 
 // NormalizeSourceMode validates a user/config supplied source mode.
-func NormalizeSourceMode(mode string) (string, error) {
+// An empty value resolves to compare.
+func NormalizeSourceMode(mode string) (domain.SourceMode, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", SourceModeCompare:
+	case "", string(SourceModeCompare):
 		return SourceModeCompare, nil
-	case SourceModeFallback:
-		return SourceModeFallback, nil
-	case SourceModeOff:
-		return SourceModeOff, nil
+	case string(SourceModeUSPTOFirst):
+		return SourceModeUSPTOFirst, nil
+	case string(SourceModeUSPTOOnly):
+		return SourceModeUSPTOOnly, nil
+	case string(SourceModeGoogleOnly):
+		return SourceModeGoogleOnly, nil
 	default:
-		return "", fmt.Errorf("crawl: unknown source mode %q", mode)
+		return "", fmt.Errorf("crawl: unknown source mode %q (want %s, %s, %s, or %s)",
+			mode, SourceModeCompare, SourceModeUSPTOFirst, SourceModeUSPTOOnly, SourceModeGoogleOnly)
 	}
 }
 
@@ -110,7 +119,7 @@ func (r *Registry) SetSourceMode(mode string) error {
 		return err
 	}
 	r.modeMu.Lock()
-	r.googleMode = normalized
+	r.sourceMode = normalized
 	r.modeMu.Unlock()
 	return nil
 }
@@ -119,7 +128,7 @@ func (r *Registry) SetSourceMode(mode string) error {
 func (r *Registry) SourceMode() string {
 	r.modeMu.RLock()
 	defer r.modeMu.RUnlock()
-	return r.googleMode
+	return string(r.sourceMode)
 }
 
 // WithMetrics attaches a phase-1 in-process metrics recorder.
@@ -180,10 +189,21 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 			r.metrics.ObserveDuration("crawl.registry.fetch", time.Since(start), failed)
 		}
 	}()
+	mode := domain.SourceMode(r.SourceMode())
 	lastErr := error(ErrNotAvailable)
 	for _, s := range r.sources {
-		if s.Name() == domain.SourceGoogle && r.SourceMode() == SourceModeOff {
-			continue
+		// Honor source-mode exclusions: uspto-only blocks Google,
+		// google-only blocks USPTO. File source is always considered
+		// (it is the local cache, not a network provider).
+		switch s.Name() {
+		case domain.SourceGoogle:
+			if mode == SourceModeUSPTOOnly {
+				continue
+			}
+		case domain.SourceUSPTO:
+			if mode == SourceModeGoogleOnly {
+				continue
+			}
 		}
 		if slices.Contains(exclude, s.Name()) {
 			continue
@@ -202,7 +222,7 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 			}
 		}
 		if err == nil {
-			if s.Name() == domain.SourceUSPTO && r.SourceMode() == SourceModeCompare {
+			if s.Name() == domain.SourceUSPTO && mode == SourceModeCompare {
 				res = r.compareWithGoogle(ctx, number, res, exclude...)
 			}
 			return res, nil

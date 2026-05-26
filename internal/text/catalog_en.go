@@ -34,6 +34,15 @@ const (
 	StatusAddFailed               Key = "status.add_failed"
 	StatusAdded                   Key = "status.added"
 	StatusAddedNoCrawl            Key = "status.added_no_ingest"
+	StatusXMLFetched              Key = "status.xml_fetched"
+	StatusXMLCached               Key = "status.xml_cached"
+	StatusXMLFetchFailed          Key = "status.xml_fetch_failed"
+	StatusXMLOpenFailed           Key = "status.xml_open_failed"
+	StatusXMLOpened               Key = "status.xml_opened"
+	StatusXMLBatchStarted         Key = "status.xml_batch_started"
+	StatusXMLBatchProgress        Key = "status.xml_batch_progress"
+	StatusXMLBatchDone            Key = "status.xml_batch_done"
+	StatusAddBatchStarted         Key = "status.add_batch_started"
 	StatusSetStateFailed          Key = "status.set_state_failed"
 	StatusSetState                Key = "status.set_state"
 	StatusIDSUpdateFailed         Key = "status.ids_update_failed"
@@ -224,6 +233,8 @@ var cmdStrings = map[string][2]string{
 	"patent.add-to-project":      {"Add to project", "Add the selected patent to the active project."},
 	"patent.add-uspto":           {"Add via USPTO", "Add the selected patent and force a single-patent USPTO fetch without Google fallback."},
 	"patent.add-google":          {"Add via Google", "Add the selected patent and force a single-patent Google Patents fetch without USPTO fallback."},
+	"patent.fetch-uspto-pgpub":   {"Fetch PGPub XML", "Download the pre-grant publication XML for the selected patent from the USPTO bulk dataset."},
+	"patent.fetch-uspto-grant":   {"Fetch Grant XML", "Download the grant XML for the selected patent from the USPTO bulk dataset."},
 	"patent.tag":                 {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":               {"Untag patent", "Remove a tag from the selected patent within the active project."},
 	"crawl.family":               {"Crawl family", "Recursively crawl the selected patent's family graph (parents and children)."},
@@ -232,7 +243,7 @@ var cmdStrings = map[string][2]string{
 	"crawl.all":                  {"Crawl all", "Crawl the full family graph including citations and cited-by."},
 	"patent.lookup":              {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":              {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
-	"source.mode":                {"Source mode", "Show or set normal provider behavior: compare, fallback, or off."},
+	"source.mode":                {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
 	"crawl.cancel":               {"Cancel crawl", "Cancel a running crawl job."},
 	"project.create":             {"Create project", "Create a new project."},
 	"project.activate":           {"Use project", "Make the selected project the active project for patent actions."},
@@ -245,7 +256,7 @@ var cmdStrings = map[string][2]string{
 	"ids.delete":                 {"Delete IDS entry", "Remove the current patent from the curated IDS."},
 	"view.fulltext":              {"Full text", "Open the full claims text viewer for the selected patent."},
 	"edit.copy":                  {"Copy/yank", "Copy the selection to the clipboard with its locator and capture timestamp."},
-	"edit.copy-meta":             {"Copy with patent info", "Copy the selection to the clipboard with locator, timestamp, and patent metadata."},
+	"edit.copy-meta":             {"Copy with patent info", "Copy the selection to the clipboard with locator, timestamp, and patent attrs."},
 	"edit.note-add":              {"Add to notes", "Add the selected passage and its locator to the session notes buffer."},
 	"edit.note-open":             {"Open notes", "Show the accumulated notes buffer for this patent."},
 	"tag.add":                    {"Add taxonomy tag", "Register a new tag in the project's taxonomy."},
@@ -299,6 +310,15 @@ var englishNamed = map[Key]string{
 	StatusAddFailed:               "add to project failed: %s",
 	StatusAdded:                   "added %s to %s",
 	StatusAddedNoCrawl:            "added %s — press L to lookup",
+	StatusXMLFetched:              "downloaded %s XML to %s (%d bytes, requested %d times)",
+	StatusXMLCached:               "%s XML already on disk: %s (%d bytes, requested %d times)",
+	StatusXMLFetchFailed:          "fetch USPTO XML failed: %s",
+	StatusXMLOpenFailed:           "open XML failed: %s",
+	StatusXMLOpened:               "opened %s",
+	StatusXMLBatchStarted:         "fetching %d USPTO %s XMLs in parallel…",
+	StatusXMLBatchProgress:        "USPTO XML batch: %d/%d (cached %d, downloaded %d, failed %d)",
+	StatusXMLBatchDone:            "USPTO XML batch done: %d total — downloaded %d, cached %d, failed %d",
+	StatusAddBatchStarted:         "adding %d patents via %s in parallel…",
 	StatusSetStateFailed:          "set state failed: %s",
 	StatusSetState:                "set %s to %s review state in %s",
 	StatusIDSUpdateFailed:         "IDS update failed: %s",

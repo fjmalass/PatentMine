@@ -125,7 +125,7 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		crawl.NewUSPTOSource(cfg.USPTOAPIKey),
 		crawl.NewGoogleSource(),
 	}
-	registry := crawl.NewRegistry(sources...).WithSourceMode(cfg.GoogleMode).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	registry := crawl.NewRegistry(sources...).WithSourceMode(string(cfg.SourceMode)).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	cachingRepo := store.NewCache(repo)
 	crawler := crawl.NewCrawler(registry, cachingRepo, crawl.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	crawlCfg := crawler.Config()
@@ -139,6 +139,8 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithMetrics(telemetry.Metrics),
 		engine.WithSourceModeController(registry),
 		engine.WithIDSExportDir(cfg.IDSExportDir),
+		engine.WithUSPTOAPIKey(cfg.USPTOAPIKey),
+		engine.WithPatentsDir(patentsDir),
 		engine.WithUSPTOSearcher(func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
 			return crawl.SearchUSPTO(ctx, cfg.USPTOAPIKey, number)
 		})), nil

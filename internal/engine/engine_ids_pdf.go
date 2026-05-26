@@ -264,7 +264,7 @@ func pubDateFor(p domain.Patent, doc domain.Document) time.Time {
 }
 
 // UpdateProject persists changes to a project's mutable fields (name and IDS
-// metadata). The project's id and created_at are taken from the existing
+// attrs). The project's id and created_at are taken from the existing
 // record; everything else from the supplied value.
 func (e *Engine) UpdateProject(ctx context.Context, p domain.Project) (saved domain.Project, err error) {
 	defer e.observeDuration("engine.update_project", time.Now(), &err)

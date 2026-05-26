@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -21,6 +22,7 @@ const browserOpenTimeout = 15 * time.Second
 func (a *App) openPatentsInBrowser(numbers []domain.PatentNumber) tea.Cmd {
 	client := a.client
 	openURL := a.openURL
+	apiKey := strings.TrimSpace(a.usptoAPIKey)
 	project := domain.ProjectID("")
 	if a.activeProject != nil {
 		project = a.activeProject.ID
@@ -28,26 +30,51 @@ func (a *App) openPatentsInBrowser(numbers []domain.PatentNumber) tea.Cmd {
 	return func() tea.Msg {
 		opened := 0
 		for _, number := range numbers {
-			url := patentBrowserURL(number)
+			target := patentBrowserURL(number)
 			if client != nil {
 				ctx, cancel := context.WithTimeout(context.Background(), browserOpenTimeout)
 				var res proto.PatentResult
 				err := client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
 				cancel()
 				if err == nil {
-					url = patentBrowserURL(res.Patent.Number)
+					target = patentBrowserURL(res.Patent.Number)
 					if strings.TrimSpace(res.Patent.SourceURL) != "" {
-						url = res.Patent.SourceURL
+						target = res.Patent.SourceURL
 					}
 				}
 			}
-			if err := openURL(url); err != nil {
+			target = withUSPTOAPIKey(target, apiKey)
+			if err := openURL(target); err != nil {
 				return pane.StatusMsg{Key: text.StatusBrowserOpenFailed, Args: []any{err.Error()}, Error: true}
 			}
 			opened++
 		}
 		return pane.StatusMsg{Key: text.StatusBrowserOpened, Args: []any{opened}}
 	}
+}
+
+// withUSPTOAPIKey appends ?api_key=... to URLs whose host is api.uspto.gov so
+// the user can open the underlying ODP endpoint directly in a browser. Returns
+// the URL unchanged when there is no key, the URL is not a USPTO ODP URL, or
+// it already carries an api_key parameter.
+func withUSPTOAPIKey(raw, apiKey string) string {
+	if apiKey == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if !strings.EqualFold(u.Host, "api.uspto.gov") {
+		return raw
+	}
+	q := u.Query()
+	if q.Get("api_key") != "" {
+		return raw
+	}
+	q.Set("api_key", apiKey)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func patentBrowserURL(number domain.PatentNumber) string {

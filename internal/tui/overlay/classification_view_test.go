@@ -84,7 +84,7 @@ func TestClassificationListOverlayNavigationAndAdding(t *testing.T) {
 	if !strings.Contains(viewStr, "Information retrieval") {
 		t.Fatal("Expected view string to contain classification description")
 	}
-	if !strings.Contains(viewStr, "Metadata Definition Card") {
+	if !strings.Contains(viewStr, "Attributes Definition Card") {
 		t.Fatal("Expected view string to contain sidebar title")
 	}
 }

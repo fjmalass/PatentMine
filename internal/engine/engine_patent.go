@@ -216,14 +216,14 @@ func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumbe
 			slog.Int("inbound_count", inboundCounts[i]),
 			slog.Bool("demoted_to_stub", demoted),
 		)
-		metadata := map[string]any{
+		attrs := map[string]any{
 			"batch_size":      batchSize,
 			"mode":            "soft",
 			"demoted_to_stub": demoted,
 			"inbound_count":   inboundCounts[i],
 		}
 		if batchID != "" {
-			metadata["batch_id"] = batchID
+			attrs["batch_id"] = batchID
 		}
 		e.recordActivity(ctx, observability.Record{
 			Action:   observability.ActionPatentSoftDelete,
@@ -231,7 +231,7 @@ func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumbe
 			EntityID: record.String(),
 			Status:   "committed",
 			Before:   snapshots[i],
-			Metadata: metadata,
+			Attributes: attrs,
 		})
 	}
 
@@ -309,7 +309,7 @@ func (e *Engine) RestorePatent(ctx context.Context, snapshot PatentSnapshot, sof
 		EntityID: snapshot.Patent.Number.String(),
 		Status:   "committed",
 		After:    snapshot.Patent,
-		Metadata: map[string]any{"soft": soft},
+		Attributes: map[string]any{"soft": soft},
 	})
 
 	e.announceChange()

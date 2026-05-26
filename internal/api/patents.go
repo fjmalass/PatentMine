@@ -113,16 +113,16 @@ func (s *Server) handlePatentGet(w http.ResponseWriter, r *http.Request) {
 	if s.activity != nil {
 		durationMS, _ := strconv.ParseInt(r.URL.Query().Get("duration_ms"), 10, 64)
 		if durationMS <= 0 || time.Duration(durationMS)*time.Millisecond >= s.activityMinDuration {
-			metadata := map[string]any{"source": "http", "path": r.URL.Path}
+			attrs := map[string]any{"source": "http", "path": r.URL.Path}
 			if durationMS > 0 {
-				metadata["duration_ms"] = durationMS
+				attrs["duration_ms"] = durationMS
 			}
 			_ = s.activity.Record(r.Context(), observability.Record{
 				Action:   observability.ActionUIFocus,
 				Entity:   "patent",
 				EntityID: number.String(),
 				Status:   "observed",
-				Metadata: metadata,
+				Attributes: attrs,
 			})
 		}
 	}

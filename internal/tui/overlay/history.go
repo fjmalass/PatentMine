@@ -275,7 +275,7 @@ func historyRecordMatches(rec observability.Record, projectNames map[string]stri
 		details,
 		rec.Timestamp.Format("2006-01-02 15:04:05"),
 	}
-	for _, raw := range []any{rec.Metadata, rec.Before, rec.After} {
+	for _, raw := range []any{rec.Attributes, rec.Before, rec.After} {
 		if raw == nil {
 			continue
 		}
@@ -292,7 +292,7 @@ func historyProjectName(rec observability.Record, projectNames map[string]string
 	isProjectPatentRec := IsProjectPatentAction(rec.Action)
 
 	projID := ""
-	if pid, ok := rec.Metadata["project"].(string); ok && pid != "" {
+	if pid, ok := rec.Attributes["project"].(string); ok && pid != "" {
 		projID = pid
 	} else if isProjectPatentRec && len(entityParts) >= 1 && entityParts[0] != "" {
 		projID = entityParts[0]
@@ -306,7 +306,7 @@ func historyProjectName(rec observability.Record, projectNames map[string]string
 	if name, ok := projectNames[projID]; ok && name != "" {
 		return name
 	}
-	if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+	if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
 		return name
 	}
 	return projID
@@ -318,44 +318,44 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 	isProjectPatentRec := IsProjectPatentAction(rec.Action)
 
 	numStr := rec.EntityID
-	if reqNum, ok := rec.Metadata["requested_number"].(string); ok && reqNum != "" {
+	if reqNum, ok := rec.Attributes["requested_number"].(string); ok && reqNum != "" {
 		numStr = reqNum
-	} else if dn, ok := rec.Metadata["display_number"].(string); ok && dn != "" {
+	} else if dn, ok := rec.Attributes["display_number"].(string); ok && dn != "" {
 		numStr = dn
 	} else if isProjectPatentRec && len(entityParts) >= 2 {
 		numStr = entityParts[1]
 	}
 
 	invs := "-"
-	if is, ok := rec.Metadata["inventors_short"].(string); ok && is != "" {
+	if is, ok := rec.Attributes["inventors_short"].(string); ok && is != "" {
 		invs = is
 	}
 	pubDate := "-"
-	if pd, ok := rec.Metadata["publication_date"].(string); ok && pd != "" {
+	if pd, ok := rec.Attributes["publication_date"].(string); ok && pd != "" {
 		pubDate = pd
 	}
 	title := ""
-	if t, ok := rec.Metadata["title"].(string); ok && t != "" {
+	if t, ok := rec.Attributes["title"].(string); ok && t != "" {
 		title = t
 	}
 	pat := patentSummary(numStr, invs, pubDate, title)
 
 	switch rec.Action {
 	case observability.ActionFilterApply:
-		if _, ok := rec.Metadata["search"].(string); ok {
-			if _, hasFilter := rec.Metadata["filter"]; !hasFilter {
+		if _, ok := rec.Attributes["search"].(string); ok {
+			if _, hasFilter := rec.Attributes["filter"]; !hasFilter {
 				return theme.Glyphs.HistSearch, fmt.Sprintf("Search: %q", rec.EntityID)
 			}
 		}
 		return theme.Glyphs.HistSearch, fmt.Sprintf("Filter: %q", rec.EntityID)
 	case observability.ActionProjectSwitch:
 		pName := rec.EntityID
-		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
 			pName = name
 		}
 		return theme.Glyphs.HistProject, fmt.Sprintf("Switch Project to %q", pName)
 	case observability.ActionUIFocus:
-		scope, _ := rec.Metadata["scope"].(string)
+		scope, _ := rec.Attributes["scope"].(string)
 		switch scope {
 		case "citations":
 			return theme.Glyphs.HistCitations, "Citations: " + pat
@@ -370,11 +370,11 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		}
 	case observability.ActionNotesExport:
 		projectName := rec.EntityID
-		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
 			projectName = name
 		}
-		count, _ := rec.Metadata["count"].(float64)
-		path, _ := rec.Metadata["path"].(string)
+		count, _ := rec.Attributes["count"].(float64)
+		path, _ := rec.Attributes["path"].(string)
 		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Export notes %q: %d note(s) → %s", projectName, int(count), path)
 	case observability.ActionNotesSave:
 		return theme.Glyphs.HistNotesExport, "Save Note: " + pat
@@ -382,7 +382,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistNotesExport, "Delete Note: " + pat
 	case observability.ActionMembershipSetState:
 		rawState := ""
-		if s, ok := rec.Metadata["state"].(string); ok {
+		if s, ok := rec.Attributes["state"].(string); ok {
 			rawState = s
 		} else if afterMap, ok := rec.After.(map[string]any); ok {
 			if s, ok := afterMap["review_state"].(string); ok {
@@ -413,11 +413,11 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistTagRemove, fmt.Sprintf("Untag %q: ", tagName) + pat
 	case observability.ActionIDSEntrySave:
 		status := ""
-		if s, ok := rec.Metadata["status"].(string); ok {
+		if s, ok := rec.Attributes["status"].(string); ok {
 			status = s
 		}
 		prior := ""
-		if s, ok := rec.Metadata["prior_status"].(string); ok {
+		if s, ok := rec.Attributes["prior_status"].(string); ok {
 			prior = s
 		}
 		label := "IDS save"

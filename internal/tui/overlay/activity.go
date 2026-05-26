@@ -144,9 +144,9 @@ func activityEntity(rec observability.Record) string {
 
 func activitySummary(rec observability.Record) string {
 	parts := []string{activityEntity(rec)}
-	if rec.Metadata != nil {
+	if rec.Attributes != nil {
 		for _, key := range []string{"title", "filter", "review_state", "prior_state", "state", "prior_status", "status", "duration_ms"} {
-			if v, ok := rec.Metadata[key]; ok && fmt.Sprint(v) != "" {
+			if v, ok := rec.Attributes[key]; ok && fmt.Sprint(v) != "" {
 				parts = append(parts, fmt.Sprintf("%s=%v", key, v))
 			}
 		}
@@ -159,8 +159,8 @@ func activityPatent(rec observability.Record) (domain.PatentNumber, bool) {
 	if idx := strings.LastIndex(rec.EntityID, "/"); idx >= 0 {
 		candidates = append(candidates, rec.EntityID[idx+1:])
 	}
-	if rec.Metadata != nil {
-		if v, ok := rec.Metadata["requested_number"]; ok {
+	if rec.Attributes != nil {
+		if v, ok := rec.Attributes["requested_number"]; ok {
 			candidates = append(candidates, fmt.Sprint(v))
 		}
 	}

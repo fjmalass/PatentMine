@@ -16,7 +16,7 @@ type AuthorityIdentifier struct {
 	Confidence     int          `json:"confidence,omitempty"`
 }
 
-// USPTOApplication is the normalized subset of File Wrapper application metadata.
+// USPTOApplication is the normalized subset of File Wrapper application attrs.
 type USPTOApplication struct {
 	ApplicationNumber             string `json:"application_number"`
 	RecordNumber                  PatentNumber
@@ -50,6 +50,160 @@ type USPTOApplication struct {
 	PGPubXMLName                  string `json:"pgpub_xml_name,omitempty"`
 	PatentGrantXMLURL             string `json:"patent_grant_xml_url,omitempty"`
 	PatentGrantXMLName            string `json:"patent_grant_xml_name,omitempty"`
+}
+
+// USPTOGrantSummary is the single-row data extracted from a us-patent-grant
+// XML envelope: counts, examiner, attorney, term, dates.
+type USPTOGrantSummary struct {
+	ApplicationNumber     string   `json:"application_number"`
+	GrantDocNumber        string   `json:"grant_doc_number,omitempty"`
+	GrantKind             string   `json:"grant_kind,omitempty"`
+	GrantDate             string   `json:"grant_date,omitempty"`
+	GrantDTDVersion       string   `json:"grant_dtd_version,omitempty"`
+	GrantStatus           string   `json:"grant_status,omitempty"`
+	GrantDateProduced     string   `json:"grant_date_produced,omitempty"`
+	GrantFileName         string   `json:"grant_file_name,omitempty"`
+	GrantLang             string   `json:"grant_lang,omitempty"`
+	TermExtensionDays     int      `json:"term_extension_days,omitempty"`
+	NumberOfClaims        int      `json:"number_of_claims,omitempty"`
+	ExemplaryClaim        string   `json:"exemplary_claim,omitempty"`
+	NumberOfDrawingSheets int      `json:"number_of_drawing_sheets,omitempty"`
+	NumberOfFigures       int      `json:"number_of_figures,omitempty"`
+	PrimaryExaminerFirst  string   `json:"primary_examiner_first,omitempty"`
+	PrimaryExaminerLast   string   `json:"primary_examiner_last,omitempty"`
+	PrimaryExaminerDept   string   `json:"primary_examiner_department,omitempty"`
+	AssistantExaminers    []string `json:"assistant_examiners,omitempty"`
+	AttorneyOrg           string   `json:"attorney_org,omitempty"`
+	AttorneyType          string   `json:"attorney_type,omitempty"`
+	FieldOfSearch         []string `json:"field_of_search,omitempty"`
+	ParsedAt              string   `json:"parsed_at,omitempty"`
+}
+
+// USPTOGrantClaim is one numbered claim of a patent.
+type USPTOGrantClaim struct {
+	Number string `json:"number"`
+	Text   string `json:"text"`
+	XML    string `json:"xml,omitempty"`
+}
+
+// USPTOGrantBody is the human-readable body of the patent: abstract,
+// description and claims.
+type USPTOGrantBody struct {
+	ApplicationNumber string            `json:"application_number"`
+	Kind              string            `json:"kind"`
+	AbstractText      string            `json:"abstract_text,omitempty"`
+	AbstractXML       string            `json:"abstract_xml,omitempty"`
+	DescriptionText   string            `json:"description_text,omitempty"`
+	DescriptionXML   string            `json:"description_xml,omitempty"`
+	ClaimStatement    string            `json:"claim_statement,omitempty"`
+	ClaimsText        string            `json:"claims_text,omitempty"`
+	Claims            []USPTOGrantClaim `json:"claims,omitempty"`
+	ParsedAt          string            `json:"parsed_at,omitempty"`
+}
+
+// USPTODrawing is one figure referenced from the drawings section.
+type USPTODrawing struct {
+	ApplicationNumber string `json:"application_number"`
+	Kind              string `json:"kind"`
+	Ordinal           int    `json:"ordinal"`
+	FigureNum         string `json:"figure_num,omitempty"`
+	FigureID          string `json:"figure_id,omitempty"`
+	ImgID             string `json:"img_id,omitempty"`
+	FileName          string `json:"file_name,omitempty"`
+	Width             string `json:"width,omitempty"`
+	Height            string `json:"height,omitempty"`
+	AltText           string `json:"alt_text,omitempty"`
+	ImgFormat         string `json:"img_format,omitempty"`
+	ImgContent        string `json:"img_content,omitempty"`
+}
+
+// USPTOGrantCitation is one cited reference (patent or non-patent literature).
+type USPTOGrantCitation struct {
+	ApplicationNumber string `json:"application_number"`
+	Kind              string `json:"kind"`
+	Ordinal           int    `json:"ordinal"`
+	CitationNum       string `json:"citation_num,omitempty"`
+	CitationType      string `json:"citation_type"`
+	Category          string `json:"category,omitempty"`
+	CitedCountry      string `json:"cited_country,omitempty"`
+	CitedDocNumber    string `json:"cited_doc_number,omitempty"`
+	CitedKind         string `json:"cited_kind,omitempty"`
+	CitedDate         string `json:"cited_date,omitempty"`
+	CitedName         string `json:"cited_name,omitempty"`
+	CPCText           string `json:"cpc_text,omitempty"`
+	NationalCountry   string `json:"national_country,omitempty"`
+	NationalClass     string `json:"national_class,omitempty"`
+	NPLText           string `json:"npl_text,omitempty"`
+}
+
+// USPTOGrantClassification is one IPCR or CPC classification row.
+type USPTOGrantClassification struct {
+	ApplicationNumber    string `json:"application_number"`
+	Kind                 string `json:"kind"`
+	Scheme               string `json:"scheme"`
+	Role                 string `json:"role"`
+	Ordinal              int    `json:"ordinal"`
+	FullCode             string `json:"full_code"`
+	Section              string `json:"section,omitempty"`
+	Class                string `json:"class,omitempty"`
+	Subclass             string `json:"subclass,omitempty"`
+	MainGroup            string `json:"main_group,omitempty"`
+	Subgroup             string `json:"subgroup,omitempty"`
+	SymbolPosition       string `json:"symbol_position,omitempty"`
+	ClassificationValue  string `json:"classification_value,omitempty"`
+	ClassificationLevel  string `json:"classification_level,omitempty"`
+	ClassificationStatus string `json:"classification_status,omitempty"`
+	DataSource           string `json:"data_source,omitempty"`
+	ActionDate           string `json:"action_date,omitempty"`
+	GeneratingOffice     string `json:"generating_office,omitempty"`
+	VersionDate          string `json:"version_date,omitempty"`
+	SchemeOrigination    string `json:"scheme_origination,omitempty"`
+}
+
+// USPTOGrantRelation is one family relationship parsed from us-related-documents.
+type USPTOGrantRelation struct {
+	ApplicationNumber  string `json:"application_number"`
+	Kind               string `json:"kind"`
+	Ordinal            int    `json:"ordinal"`
+	RelationKind       string `json:"relation_kind"`
+	ParentCountry      string `json:"parent_country,omitempty"`
+	ParentAppNumber    string `json:"parent_app_number,omitempty"`
+	ParentAppDate      string `json:"parent_app_date,omitempty"`
+	ParentGrantCountry string `json:"parent_grant_country,omitempty"`
+	ParentGrantNumber  string `json:"parent_grant_number,omitempty"`
+	ParentGrantDate    string `json:"parent_grant_date,omitempty"`
+	ChildCountry       string `json:"child_country,omitempty"`
+	ChildAppNumber     string `json:"child_app_number,omitempty"`
+	RelatedCountry     string `json:"related_country,omitempty"`
+	RelatedDocNumber   string `json:"related_doc_number,omitempty"`
+	RelatedKind        string `json:"related_kind,omitempty"`
+	RelatedDate        string `json:"related_date,omitempty"`
+}
+
+// USPTOGrantIngest is the bundle of parsed grant XML data; persisting it is a
+// single transactional save.
+type USPTOGrantIngest struct {
+	Summary         USPTOGrantSummary          `json:"summary"`
+	Body            USPTOGrantBody             `json:"body"`
+	Drawings        []USPTODrawing             `json:"drawings,omitempty"`
+	Citations       []USPTOGrantCitation       `json:"citations,omitempty"`
+	Classifications []USPTOGrantClassification `json:"classifications,omitempty"`
+	Relations       []USPTOGrantRelation       `json:"relations,omitempty"`
+}
+
+// USPTOXMLDownload tracks per-document XML downloads (pgpub or grant).
+// download_count is bumped on every fetch (including cache hits), so callers
+// can see how often each document has been requested.
+type USPTOXMLDownload struct {
+	ApplicationNumber string `json:"application_number"`
+	Kind              string `json:"kind"`
+	SourceURL         string `json:"source_url"`
+	LocalPath         string `json:"local_path"`
+	Bytes             int64  `json:"bytes"`
+	DownloadCount     int64  `json:"download_count"`
+	FirstDownloadedAt string `json:"first_downloaded_at,omitempty"`
+	LastDownloadedAt  string `json:"last_downloaded_at,omitempty"`
+	LastAccessedAt    string `json:"last_accessed_at,omitempty"`
 }
 
 type USPTOParty struct {

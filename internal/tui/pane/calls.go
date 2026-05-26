@@ -457,3 +457,59 @@ func LookupClassificationCmd(client *rpc.Client, code string) tea.Cmd {
 		return StatusMsg{Key: text.StatusClassificationLookupSuccess, Args: []any{res.Code, res.Description}}
 	}
 }
+
+// FetchUSPTOXMLCmd downloads the pgpub or grant XML for a patent, or returns
+// the cached path when the file is already on disk.
+func FetchUSPTOXMLCmd(client *rpc.Client, number domain.PatentNumber, kind proto.USPTOXMLKind) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.USPTOFetchXMLResult
+		if err := client.Call(ctx, proto.MethodUSPTOFetchXML,
+			proto.USPTOFetchXMLParams{Number: number, Kind: kind}, &res); err != nil {
+			return StatusMsg{Key: text.StatusXMLFetchFailed, Args: []any{err.Error()}, Error: true}
+		}
+		key := text.StatusXMLFetched
+		if res.Cached {
+			key = text.StatusXMLCached
+		}
+		return StatusMsg{Key: key, Args: []any{string(kind), res.LocalPath, res.Bytes, res.DownloadCount}}
+	}
+}
+
+// USPTOXMLFetchedMsg is delivered when an interactive (Detail-pane Enter)
+// XML fetch completes. The App handler closes the spinner overlay, opens the
+// file, and emits a final status line.
+type USPTOXMLFetchedMsg struct {
+	Number        domain.PatentNumber
+	Kind          proto.USPTOXMLKind
+	LocalPath     string
+	Bytes         int64
+	Cached        bool
+	DownloadCount int64
+	Err           string
+}
+
+// FetchUSPTOXMLInteractiveCmd is the Detail-pane Enter variant: it returns a
+// typed result the App can dispatch on, rather than a finished status line, so
+// the App can close the spinner overlay and open the file.
+func FetchUSPTOXMLInteractiveCmd(client *rpc.Client, number domain.PatentNumber, kind proto.USPTOXMLKind) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.USPTOFetchXMLResult
+		if err := client.Call(ctx, proto.MethodUSPTOFetchXML,
+			proto.USPTOFetchXMLParams{Number: number, Kind: kind}, &res); err != nil {
+			return USPTOXMLFetchedMsg{Number: number, Kind: kind, Err: err.Error()}
+		}
+		return USPTOXMLFetchedMsg{
+			Number:        number,
+			Kind:          kind,
+			LocalPath:     res.LocalPath,
+			Bytes:         res.Bytes,
+			Cached:        res.Cached,
+			DownloadCount: res.DownloadCount,
+		}
+	}
+}
+

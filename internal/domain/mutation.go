@@ -9,7 +9,7 @@ type MutationGroup struct {
 	Action            string
 	CreatedAt         time.Time
 	SelectionSnapshot []PatentNumber
-	Metadata          map[string]any
+	Attributes          map[string]any
 }
 
 // MutationItem records one patent-level change inside a MutationGroup.

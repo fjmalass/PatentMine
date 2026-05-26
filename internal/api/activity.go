@@ -45,7 +45,7 @@ func (s *Server) handleActivityRecord(w http.ResponseWriter, r *http.Request) {
 		DurationMS int64          `json:"duration_ms"`
 		Before     any            `json:"before"`
 		After      any            `json:"after"`
-		Metadata   map[string]any `json:"metadata"`
+		Attributes   map[string]any `json:"attributes"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
@@ -61,12 +61,12 @@ func (s *Server) handleActivityRecord(w http.ResponseWriter, r *http.Request) {
 	if body.Status == "" {
 		body.Status = "observed"
 	}
-	metadata := body.Metadata
-	if metadata == nil {
-		metadata = map[string]any{}
+	attrs := body.Attributes
+	if attrs == nil {
+		attrs = map[string]any{}
 	}
 	if body.DurationMS > 0 {
-		metadata["duration_ms"] = body.DurationMS
+		attrs["duration_ms"] = body.DurationMS
 	}
 	rec := observability.Record{
 		Action:   body.Action,
@@ -75,7 +75,7 @@ func (s *Server) handleActivityRecord(w http.ResponseWriter, r *http.Request) {
 		Status:   body.Status,
 		Before:   body.Before,
 		After:    body.After,
-		Metadata: metadata,
+		Attributes: attrs,
 	}
 	if err := s.activity.Record(r.Context(), rec); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

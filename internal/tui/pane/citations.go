@@ -680,8 +680,8 @@ func (c *Citations) ActivityFocus() (ActivityFocus, bool) {
 		return ActivityFocus{}, false
 	}
 	focus := patentRowActivity("citations", c.Title(), c.patents[cur], activeProjectID(c.activeProject), c.filter)
-	focus.Metadata["root"] = c.root.String()
-	focus.Metadata["relation"] = c.kind
+	focus.Attributes["root"] = c.root.String()
+	focus.Attributes["relation"] = c.kind
 	return focus, true
 }
 

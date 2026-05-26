@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -146,7 +147,7 @@ func (f *FullText) load() tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 
-		// Load patent metadata from daemon
+		// Load patent attrs from daemon
 		ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 		var res proto.PatentResult
 		err := client.Call(ctx, proto.MethodPatentGet,
@@ -155,16 +156,20 @@ func (f *FullText) load() tea.Cmd {
 
 		patent := res.Patent
 
-		// If patent metadata fails, still try to load full text
+		// Try the USPTO-parsed body first when one has been ingested; fall
+		// back to Google's full-text fetch when nothing is on hand locally.
 		var fullText *domain.FullText
 		if err == nil {
-			fetchCtx, fetchCancel := context.WithTimeout(context.Background(), fullTextFetchTimeout)
-			fetched, fetchErr := crawl.FetchFullText(fetchCtx, number)
-			fetchCancel()
-			if fetchErr == nil {
-				fullText = fetched
-			} else {
-				err = fetchErr
+			fullText = fetchUSPTOFullText(client, number)
+			if fullText == nil {
+				fetchCtx, fetchCancel := context.WithTimeout(context.Background(), fullTextFetchTimeout)
+				fetched, fetchErr := crawl.FetchFullText(fetchCtx, number)
+				fetchCancel()
+				if fetchErr == nil {
+					fullText = fetched
+				} else {
+					err = fetchErr
+				}
 			}
 		}
 
@@ -276,7 +281,7 @@ func (f *FullText) render(w int) {
 		f.lines = append(f.lines, bodyLine{text: rendered, locator: locator})
 	}
 
-	// Patent metadata header.
+	// Patent attrs header.
 	metaLine := fmt.Sprintf("Patent #: %s", f.number.String())
 	if f.patent.Title != "" {
 		metaLine += " — " + f.patent.Title
@@ -444,7 +449,7 @@ func (f *FullText) bodyWidth() int {
 	return 80
 }
 
-// copyYank builds the clipboard text. When meta is true the patent metadata
+// copyYank builds the clipboard text. When meta is true the patent attrs
 // header is prepended ("copy with patent info").
 func (f *FullText) copyYank(meta bool) tea.Cmd {
 	body, locator := f.selection()
@@ -581,7 +586,7 @@ func (f *FullText) jumpKey(label string) rune {
 
 // --- Helpers ---
 
-// patentMeta builds the patent metadata header for clipboard export.
+// patentMeta builds the patent attrs header for clipboard export.
 func patentMeta(p domain.Patent, number domain.PatentNumber) string {
 	var b strings.Builder
 	sep := strings.Repeat("═", 48)
@@ -648,3 +653,46 @@ func stripANSI(s string) string {
 }
 
 func (f *FullText) PatentNumber() domain.PatentNumber { return f.number }
+
+// fetchUSPTOFullText queries the daemon for a parsed USPTO body and, when one
+// is present, projects it into the FullText shape the pane already renders.
+// A nil return means no XML has been ingested for this patent and the caller
+// should fall back to the live Google fetch.
+func fetchUSPTOFullText(client *rpc.Client, number domain.PatentNumber) *domain.FullText {
+	if client == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	var res proto.USPTOGrantBodyResult
+	if err := client.Call(ctx, proto.MethodUSPTOGrantBody,
+		proto.USPTOGrantBodyParams{Number: number}, &res); err != nil {
+		return nil
+	}
+	if !res.Present {
+		return nil
+	}
+	full := &domain.FullText{Number: number}
+	for _, c := range res.Body.Claims {
+		num := 0
+		if n, err := strconv.Atoi(strings.TrimLeft(c.Number, "0")); err == nil {
+			num = n
+		}
+		full.Claims = append(full.Claims, domain.ClaimSection{Number: num, Text: c.Text})
+	}
+	// Description text uses paragraph markers (<p num="..."/>) in the source.
+	// Without re-parsing the XML, fall back to a single paragraph that holds
+	// the abstract followed by the full description body — the existing pane
+	// is happy to render an unlimited-length paragraph.
+	bodyText := strings.TrimSpace(res.Body.AbstractText)
+	if d := strings.TrimSpace(res.Body.DescriptionText); d != "" {
+		if bodyText != "" {
+			bodyText += "\n\n"
+		}
+		bodyText += d
+	}
+	if bodyText != "" {
+		full.Paragraphs = append(full.Paragraphs, domain.DescriptionParagraph{Text: bodyText})
+	}
+	return full
+}

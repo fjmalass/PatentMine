@@ -116,11 +116,11 @@ func (a *App) replayHistoryPatentTarget(rec observability.Record) (tea.Model, te
 	project := a.historyProjectID(rec)
 	switchCmd := a.switchHistoryProject(project)
 	a.closeHistoryReplayOverlays()
-	scope, _ := rec.Metadata["scope"].(string)
+	scope, _ := rec.Attributes["scope"].(string)
 	if replayScope := overlay.ReplayScope(rec.Action); replayScope != "" {
 		scope = replayScope
 	}
-	replayModel, replayCmd := a.pushHistoryReplayPane(scope, number, project, rec.Metadata)
+	replayModel, replayCmd := a.pushHistoryReplayPane(scope, number, project, rec.Attributes)
 	return replayModel, tea.Batch(switchCmd, replayCmd)
 }
 
@@ -130,7 +130,7 @@ func historyPatentNumber(rec observability.Record) (domain.PatentNumber, bool) {
 			return number, true
 		}
 	}
-	if requested, ok := rec.Metadata["requested_number"].(string); ok && requested != "" {
+	if requested, ok := rec.Attributes["requested_number"].(string); ok && requested != "" {
 		if number, err := domain.ParsePatentNumber(requested); err == nil {
 			return number, true
 		}
@@ -145,7 +145,7 @@ func historyPatentNumber(rec observability.Record) (domain.PatentNumber, bool) {
 }
 
 func (a *App) historyProjectID(rec observability.Record) domain.ProjectID {
-	if project, ok := rec.Metadata["project"].(string); ok && project != "" {
+	if project, ok := rec.Attributes["project"].(string); ok && project != "" {
 		return domain.ProjectID(project)
 	}
 	if overlay.IsProjectPatentAction(rec.Action) {
@@ -184,21 +184,21 @@ func (a *App) closeHistoryReplayOverlays() {
 	}
 }
 
-func (a *App) pushHistoryReplayPane(scope string, number domain.PatentNumber, project domain.ProjectID, metadata map[string]any) (tea.Model, tea.Cmd) {
+func (a *App) pushHistoryReplayPane(scope string, number domain.PatentNumber, project domain.ProjectID, attrs map[string]any) (tea.Model, tea.Cmd) {
 	switch scope {
 	case "citations":
 		kind := domain.RelationCites
-		if relation, ok := metadata["relation"].(string); ok {
+		if relation, ok := attrs["relation"].(string); ok {
 			kind = domain.RelationKind(relation)
 		}
 		return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
 	case "family":
 		depth := 1
-		if value, ok := metadata["depth"].(float64); ok {
+		if value, ok := attrs["depth"].(float64); ok {
 			depth = int(value)
 		}
 		var countries []string
-		if values, ok := metadata["countries"].([]any); ok {
+		if values, ok := attrs["countries"].([]any); ok {
 			for _, value := range values {
 				if country, ok := value.(string); ok {
 					countries = append(countries, country)
@@ -231,7 +231,7 @@ func (a *App) replayHistoryProjectSwitch(rec observability.Record, confirmed boo
 	if !confirmed {
 		a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
 		projectName := rec.EntityID
-		if name, ok := rec.Metadata["project_name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
 			projectName = name
 		}
 		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, fmt.Sprintf("Switch to project '%s'?", projectName)))

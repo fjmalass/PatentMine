@@ -15,10 +15,10 @@ func TestReadHistoryFeedPreservesMutationsAndCollapsesFocus(t *testing.T) {
 	t.Cleanup(func() { _ = rt.Close() })
 
 	records := []Record{
-		{Action: ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Metadata: map[string]any{"scope": "detail"}},
-		{Action: ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Metadata: map[string]any{"scope": "detail"}},
-		{Action: ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Metadata: map[string]any{"prior_status": "ignored", "status": "pending"}},
-		{Action: ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Metadata: map[string]any{"prior_status": "pending", "status": "submitted"}},
+		{Action: ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Attributes: map[string]any{"scope": "detail"}},
+		{Action: ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Attributes: map[string]any{"scope": "detail"}},
+		{Action: ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Attributes: map[string]any{"prior_status": "ignored", "status": "pending"}},
+		{Action: ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Attributes: map[string]any{"prior_status": "pending", "status": "submitted"}},
 		{Action: ActionPatentSave, Entity: "patent", EntityID: "US10000000B2", Status: "committed"},
 	}
 	for _, record := range records {
@@ -56,7 +56,7 @@ func TestReadHistoryFeedIncludesIDSSaveRecord(t *testing.T) {
 		Entity:   "ids_entry",
 		EntityID: "p-1779646755967531735/US20080011946A1",
 		Status:   "committed",
-		Metadata: map[string]any{"prior_status": "ignored", "status": "pending"},
+		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	}
 	if err := rt.Activity.Record(context.Background(), rec); err != nil {
 		t.Fatalf("Record: %v", err)

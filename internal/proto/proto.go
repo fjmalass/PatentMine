@@ -75,7 +75,50 @@ const (
 	MethodTableViewGet              Method = "table_view.get"
 	MethodTableViewSave             Method = "table_view.save"
 	MethodTableViewDelete           Method = "table_view.delete"
+	MethodUSPTOFetchXML             Method = "uspto.fetch_xml"
+	MethodUSPTOGrantBody            Method = "uspto.grant_body"
 )
+
+// USPTOGrantBodyParams identifies the (patent, kind) whose parsed body should
+// be returned. Kind defaults to grant; the daemon falls back to pgpub when no
+// grant body has been ingested yet.
+type USPTOGrantBodyParams struct {
+	Number domain.PatentNumber `json:"number"`
+	Kind   USPTOXMLKind        `json:"kind,omitempty"`
+}
+
+// USPTOGrantBodyResult carries the body parsed from XML, when one has been
+// ingested. Present is false when nothing has been parsed for this patent.
+type USPTOGrantBodyResult struct {
+	Present bool                   `json:"present"`
+	Body    domain.USPTOGrantBody  `json:"body,omitempty"`
+}
+
+// USPTOXMLKind selects which XML document to fetch for a USPTO application.
+type USPTOXMLKind string
+
+const (
+	USPTOXMLKindPGPub USPTOXMLKind = "pgpub"
+	USPTOXMLKindGrant USPTOXMLKind = "grant"
+)
+
+// USPTOFetchXMLParams identifies which XML to download for a patent.
+type USPTOFetchXMLParams struct {
+	Number domain.PatentNumber `json:"number"`
+	Kind   USPTOXMLKind        `json:"kind"`
+}
+
+// USPTOFetchXMLResult reports the local file written and how many bytes the
+// upstream returned (after unzip, when applicable). Cached is true when the
+// XML was served from the local patents dir without re-hitting the API.
+// DownloadCount is the total number of times this (application, kind) has
+// been requested, including the call that produced this result.
+type USPTOFetchXMLResult struct {
+	LocalPath     string `json:"local_path"`
+	Bytes         int64  `json:"bytes"`
+	Cached        bool   `json:"cached"`
+	DownloadCount int64  `json:"download_count"`
+}
 
 // EventKind names a server->client push (a JSON-RPC notification).
 type EventKind string
@@ -427,7 +470,7 @@ type FamilyGraphEdge struct {
 	Inconsistent bool                `json:"inconsistent,omitempty"`
 }
 
-// FamilyGraphResult carries a bounded parent/child graph plus traversal metadata.
+// FamilyGraphResult carries a bounded parent/child graph plus traversal attrs.
 type FamilyGraphResult struct {
 	Root               domain.PatentNumber `json:"root"`
 	Depth              int                 `json:"depth"`
@@ -557,7 +600,7 @@ type PatentNoteListResult struct {
 }
 
 // PatentNoteExportParams requests a markdown export of all notes for a project.
-// When OutputPath is set the server writes the file and returns metadata.
+// When OutputPath is set the server writes the file and returns attrs.
 // When OutputPath is empty the server returns the markdown in Content.
 type PatentNoteExportParams struct {
 	Project    domain.ProjectID `json:"project"`

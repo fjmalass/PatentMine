@@ -304,7 +304,7 @@ func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (
 }
 
 // SearchUSPTO queries the USPTO ODP API using a broad query across multiple fields
-// and returns candidate lightweight metadata rows.
+// and returns candidate lightweight attrs rows.
 func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
 	serial := strings.TrimSpace(number.Serial)
 	if serial == "" {

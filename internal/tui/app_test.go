@@ -634,10 +634,10 @@ func TestHistoryFeedGroupKeyKeepsIDSStatusTransitions(t *testing.T) {
 	}
 	first := base
 	first.ID = "activity-1"
-	first.Metadata = map[string]any{"prior_status": "pending", "status": "submitted"}
+	first.Attributes = map[string]any{"prior_status": "pending", "status": "submitted"}
 	second := base
 	second.ID = "activity-2"
-	second.Metadata = map[string]any{"prior_status": "submitted", "status": "accepted"}
+	second.Attributes = map[string]any{"prior_status": "submitted", "status": "accepted"}
 
 	if observability.HistoryFeedGroupKey(first) == observability.HistoryFeedGroupKey(second) {
 		t.Fatal("IDS status transitions should not collapse to the same history key")
@@ -650,7 +650,7 @@ func TestHistoryFeedGroupKeyKeepsDistinctIDSSaveRecords(t *testing.T) {
 		Entity:   "ids_entry",
 		EntityID: "project/US11611785B2",
 		Status:   "committed",
-		Metadata: map[string]any{"prior_status": "ignored", "status": "pending"},
+		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	}
 	first := base
 	first.ID = "activity-1"
@@ -671,10 +671,10 @@ func TestHistoryFeedGroupKeyKeepsReviewStateTransitions(t *testing.T) {
 	}
 	first := base
 	first.ID = "activity-1"
-	first.Metadata = map[string]any{"prior_state": "under_review", "state": "active"}
+	first.Attributes = map[string]any{"prior_state": "under_review", "state": "active"}
 	second := base
 	second.ID = "activity-2"
-	second.Metadata = map[string]any{"prior_state": "active", "state": "ignored"}
+	second.Attributes = map[string]any{"prior_state": "active", "state": "ignored"}
 
 	if observability.HistoryFeedGroupKey(first) == observability.HistoryFeedGroupKey(second) {
 		t.Fatal("review state transitions should not collapse to the same history key")

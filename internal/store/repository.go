@@ -110,8 +110,22 @@ type Repository interface {
 	SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) error
 	// Patent returns one patent, or ErrNotFound.
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
-	// USPTOApplication returns the saved USPTO application metadata for a patent record, or ErrNotFound.
+	// USPTOApplication returns the saved USPTO application attrs for a patent record, or ErrNotFound.
 	USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error)
+	// USPTOXMLDownload returns the per-document download record, or ErrNotFound
+	// when nothing has been fetched yet for that (application, kind) pair.
+	USPTOXMLDownload(ctx context.Context, applicationNumber, kind string) (domain.USPTOXMLDownload, error)
+	// RecordUSPTOXMLDownload inserts or updates a download record. The record's
+	// DownloadCount is taken as-is; callers should pre-increment.
+	RecordUSPTOXMLDownload(ctx context.Context, rec domain.USPTOXMLDownload) error
+	// SaveUSPTOGrantIngest persists a parsed grant XML bundle for one
+	// application: summary fields are merged onto uspto_application; body,
+	// drawings, citations, classifications, and relations are written into
+	// their child tables. The save is atomic.
+	SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGrantIngest) error
+	// USPTOGrantBody returns the body for one (application_number, kind), or
+	// ErrNotFound when the XML has not been ingested yet.
+	USPTOGrantBody(ctx context.Context, applicationNumber, kind string) (domain.USPTOGrantBody, error)
 	// ListPatents returns one page of lightweight listing rows matching q.
 	ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error)
 	// CountPatents returns the total rows matching q, ignoring its paging.

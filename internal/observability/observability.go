@@ -162,7 +162,7 @@ type Record struct {
 	SpanID    string         `json:"span_id,omitempty"`
 	Before    any            `json:"before,omitempty"`
 	After     any            `json:"after,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Attributes  map[string]any `json:"attributes,omitempty"`
 }
 
 // Recorder appends JSONL activity events to a file.
@@ -516,13 +516,13 @@ func sortedKeys[T any](m map[string]T) []string {
 	return keys
 }
 
-// WithTraceIDs stores trace metadata in a context without taking an OTel dependency.
+// WithTraceIDs stores trace attrs in a context without taking an OTel dependency.
 func WithTraceIDs(ctx context.Context, traceID, spanID string) context.Context {
 	ctx = context.WithValue(ctx, traceIDKey, traceID)
 	return context.WithValue(ctx, spanIDKey, spanID)
 }
 
-// TraceIDs returns trace metadata previously associated with ctx.
+// TraceIDs returns trace attrs previously associated with ctx.
 func TraceIDs(ctx context.Context) (traceID, spanID string) {
 	if v, ok := ctx.Value(traceIDKey).(string); ok {
 		traceID = v

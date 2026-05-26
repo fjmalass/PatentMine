@@ -117,7 +117,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		Status:   "committed",
 		Before:   before,
 		After:    after,
-		Metadata: map[string]any{
+		Attributes: map[string]any{
 			"requested_number": patent.String(),
 			"project":          string(project),
 			"source":           string(source),
@@ -142,6 +142,9 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		if created {
 			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
+		// startFamilyCrawl already arms the USPTO XML auto-fetch listener,
+		// so no extra goroutine is needed here.
+		_ = jobID
 		return fetchStarted, nil, nil
 	}
 	// Any unknown project membership for a stub patent kicks a single-patent
@@ -258,7 +261,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				Status:   "committed",
 				Before:   domain.Membership{},
 				After:    m,
-				Metadata: map[string]any{"requested_number": record.String()},
+				Attributes: map[string]any{"requested_number": record.String()},
 			})
 
 			addedRecords = append(addedRecords, record)
@@ -325,21 +328,21 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 		for _, record := range changedRecords {
 			e.log(ctx, slog.LevelInfo, "review state changed", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("to", string(target)))
 			current := beforeMemberships[record]
-			metadata := map[string]any{
+			attrs := map[string]any{
 				"requested_number": record.String(),
 				"project":          string(project),
 				"prior_state":      string(current.ReviewState),
 				"state":            string(target),
 			}
 			if mutationGroupID != "" {
-				metadata["mutation_group_id"] = mutationGroupID
+				attrs["mutation_group_id"] = mutationGroupID
 			}
 			rec := observability.Record{
 				Action:   observability.ActionMembershipSetState,
 				Entity:   "membership",
 				EntityID: string(project) + "/" + record.String(),
 				Status:   "committed",
-				Metadata: metadata,
+				Attributes: attrs,
 			}
 			after := current
 			after.ReviewState = target

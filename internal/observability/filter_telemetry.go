@@ -3,7 +3,7 @@ package observability
 // TableFilter carries the shared shape of a "table filter applied" activity
 // record. Both the HTTP API and the TUI build records around the same core
 // signals; this builder keeps them in sync and prevents callers from filling
-// the metadata map with hardcoded zeros to mimic each other.
+// the attrs map with hardcoded zeros to mimic each other.
 //
 // Required fields: Source, TableType. SearchTerms is always emitted (zero is a
 // real value — no search). Everything else is omit-when-zero / omit-when-empty
@@ -22,10 +22,10 @@ type TableFilter struct {
 	SortFields   []string
 }
 
-// Metadata renders the builder as an activity record metadata map. Callers may
+// Attributes renders the builder as an activity record attrs map. Callers may
 // merge additional keys (e.g. HTTP path, TUI result_count) on top of the
 // returned map.
-func (t TableFilter) Metadata() map[string]any {
+func (t TableFilter) Attributes() map[string]any {
 	m := map[string]any{
 		"source":       t.Source,
 		"table_type":   t.TableType,

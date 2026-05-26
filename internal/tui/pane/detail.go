@@ -101,6 +101,10 @@ type Detail struct {
 	assigneeLine       int
 	classificationLine int
 	inventorLine       int
+	pgpubURLLine       int
+	pgpubURLLineEnd    int
+	grantURLLine       int
+	grantURLLineEnd    int
 	cachedLines        []string
 	lastWidth          int
 	lastJumpActive     bool
@@ -371,7 +375,7 @@ func (d *Detail) Selection() (domain.PatentNumber, bool) {
 
 // ActivityFocus implements ActivityFocusProvider.
 func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
-	metadata := map[string]any{
+	attrs := map[string]any{
 		"scope":           "detail",
 		"display_number":  numberToShow(d.patent).String(),
 		"title":           d.patent.Title,
@@ -382,12 +386,12 @@ func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
 		"inventors_short": formatInventorsShort(d.patent.Inventors),
 	}
 	if !d.patent.PublicationDate.IsZero() {
-		metadata["publication_date"] = d.patent.PublicationDate.Format("2006-01-02")
+		attrs["publication_date"] = d.patent.PublicationDate.Format("2006-01-02")
 	}
 	if d.project != "" {
-		metadata["project"] = d.project
+		attrs["project"] = d.project
 	}
-	return ActivityFocus{Entity: "patent", EntityID: d.number.String(), Label: d.Title(), Metadata: metadata}, true
+	return ActivityFocus{Entity: "patent", EntityID: d.number.String(), Label: d.Title(), Attributes: attrs}, true
 }
 
 // View implements Pane. Long records scroll: the body is built in full, then
@@ -433,6 +437,8 @@ func (d *Detail) body(w int) string {
 	p := d.patent
 	d.jump.ClearAnchors()
 	d.lineGroups = d.lineGroups[:0]
+	d.pgpubURLLine, d.pgpubURLLineEnd = -1, -1
+	d.grantURLLine, d.grantURLLineEnd = -1, -1
 	var b strings.Builder
 	d.field(&b, w, detailLabelShownAs, numberToShow(p).String())
 	d.field(&b, w, detailLabelRecordKey, p.Number.String())
@@ -497,12 +503,16 @@ func (d *Detail) body(w int) string {
 			d.field(&b, w, "Entity", entityVal)
 		}
 		if d.usptoApp.PGPubXMLURL != "" {
+			d.pgpubURLLine = strings.Count(b.String(), "\n")
 			d.field(&b, w, "PGPub XML", d.usptoApp.PGPubXMLName)
 			d.wrappedField(&b, w, "PGPub URL", d.usptoApp.PGPubXMLURL)
+			d.pgpubURLLineEnd = strings.Count(b.String(), "\n") - 1
 		}
 		if d.usptoApp.PatentGrantXMLURL != "" {
+			d.grantURLLine = strings.Count(b.String(), "\n")
 			d.field(&b, w, "Grant XML", d.usptoApp.PatentGrantXMLName)
 			d.wrappedField(&b, w, "Grant URL", d.usptoApp.PatentGrantXMLURL)
+			d.grantURLLineEnd = strings.Count(b.String(), "\n") - 1
 		}
 	}
 
@@ -1065,3 +1075,18 @@ func (d *Detail) ResolveCursorRelation() (domain.RelationKind, bool) {
 }
 
 func (d *Detail) PatentNumber() domain.PatentNumber { return d.number }
+
+// ResolveCursorUSPTOXML reports the USPTO XML kind whose URL row the cursor
+// is currently hovering, or false when the cursor is not on a PGPub/Grant URL
+// line. The label rows (e.g. "PGPub XML") are intentionally not matched —
+// only the URL value (which may wrap across multiple lines) triggers a fetch.
+func (d *Detail) ResolveCursorUSPTOXML() (proto.USPTOXMLKind, bool) {
+	cursor := d.page.Cursor()
+	if d.pgpubURLLine >= 0 && cursor >= d.pgpubURLLine && cursor <= d.pgpubURLLineEnd {
+		return proto.USPTOXMLKindPGPub, true
+	}
+	if d.grantURLLine >= 0 && cursor >= d.grantURLLine && cursor <= d.grantURLLineEnd {
+		return proto.USPTOXMLKindGrant, true
+	}
+	return "", false
+}

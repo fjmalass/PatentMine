@@ -107,7 +107,7 @@ func (r *Repo) initSchema(ctx context.Context) error {
 func (r *Repo) rejectObsoleteSchema(ctx context.Context) error {
 	hasMeta, err := r.tableExists(ctx, "schema_meta")
 	if err != nil {
-		return fmt.Errorf("store/sqlite: inspect schema metadata: %w", err)
+		return fmt.Errorf("store/sqlite: inspect schema attrs: %w", err)
 	}
 	if hasMeta {
 		return nil

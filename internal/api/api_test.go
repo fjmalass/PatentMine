@@ -135,9 +135,9 @@ func TestAPIActivityRawAndHistory(t *testing.T) {
 	t.Cleanup(func() { _ = rt.Close() })
 
 	for _, record := range []observability.Record{
-		{Action: observability.ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Metadata: map[string]any{"scope": "detail"}},
-		{Action: observability.ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Metadata: map[string]any{"scope": "detail"}},
-		{Action: observability.ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Metadata: map[string]any{"prior_status": "ignored", "status": "pending"}},
+		{Action: observability.ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Attributes: map[string]any{"scope": "detail"}},
+		{Action: observability.ActionUIFocus, Entity: "patent", EntityID: "US10000000B2", Status: "observed", Attributes: map[string]any{"scope": "detail"}},
+		{Action: observability.ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000000B2", Status: "committed", Attributes: map[string]any{"prior_status": "ignored", "status": "pending"}},
 	} {
 		if err := rt.Activity.Record(context.Background(), record); err != nil {
 			t.Fatalf("Record: %v", err)

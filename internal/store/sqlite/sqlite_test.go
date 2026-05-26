@@ -1115,7 +1115,7 @@ func TestSaveMutationGroup(t *testing.T) {
 		Action:            "membership.set_state",
 		CreatedAt:         time.Now().UTC(),
 		SelectionSnapshot: []domain.PatentNumber{patent.Number},
-		Metadata:          map[string]any{"target_state": domain.ReviewStateUnderReview},
+		Attributes:          map[string]any{"target_state": domain.ReviewStateUnderReview},
 	}, []domain.MutationItem{{Patent: patent.Number, Kind: "membership.state", Before: map[string]any{"state": domain.ReviewStateUnknown}, After: map[string]any{"state": domain.ReviewStateUnderReview}, Inverse: map[string]any{"state": domain.ReviewStateUnknown}}})
 	if err != nil {
 		t.Fatalf("SaveMutationGroup: %v", err)

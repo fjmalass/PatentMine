@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-func TestTableFilterMetadataMinimal(t *testing.T) {
+func TestTableFilterAttributesMinimal(t *testing.T) {
 	got := TableFilter{
 		Source:    "tui.history_overlay",
 		TableType: "ids_activity_history",
-	}.Metadata()
+	}.Attributes()
 
 	want := map[string]any{
 		"source":       "tui.history_overlay",
@@ -17,17 +17,17 @@ func TestTableFilterMetadataMinimal(t *testing.T) {
 		"search_terms": 0,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("minimal metadata = %v, want %v", got, want)
+		t.Fatalf("minimal attrs = %v, want %v", got, want)
 	}
 }
 
-func TestTableFilterMetadataOmitsZeroCounts(t *testing.T) {
+func TestTableFilterAttributesOmitsZeroCounts(t *testing.T) {
 	got := TableFilter{
 		Source:      "tui.history_overlay",
 		TableType:   "ids_activity_history",
 		SearchTerms: 2,
 		Search:      "office action",
-	}.Metadata()
+	}.Attributes()
 
 	if _, ok := got["filter_count"]; ok {
 		t.Errorf("filter_count must be omitted when zero, got %v", got["filter_count"])
@@ -55,18 +55,18 @@ func TestTableFilterMetadataOmitsZeroCounts(t *testing.T) {
 	}
 }
 
-func TestTableFilterMetadataOmitsEmptySearch(t *testing.T) {
+func TestTableFilterAttributesOmitsEmptySearch(t *testing.T) {
 	got := TableFilter{
 		Source:    "http",
 		TableType: "patents",
-	}.Metadata()
+	}.Attributes()
 
 	if _, ok := got["search"]; ok {
 		t.Errorf("search must be omitted when empty, got %v", got["search"])
 	}
 }
 
-func TestTableFilterMetadataKeepsRealValues(t *testing.T) {
+func TestTableFilterAttributesKeepsRealValues(t *testing.T) {
 	got := TableFilter{
 		Source:       "http",
 		TableType:    "patents",
@@ -78,7 +78,7 @@ func TestTableFilterMetadataKeepsRealValues(t *testing.T) {
 		Complexity:   8,
 		FilterFields: []string{"review_state", "ids_status"},
 		SortFields:   []string{"expires"},
-	}.Metadata()
+	}.Attributes()
 
 	want := map[string]any{
 		"source":        "http",
@@ -93,6 +93,6 @@ func TestTableFilterMetadataKeepsRealValues(t *testing.T) {
 		"sort_fields":   []string{"expires"},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("full metadata = %v, want %v", got, want)
+		t.Fatalf("full attrs = %v, want %v", got, want)
 	}
 }

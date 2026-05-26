@@ -17,7 +17,7 @@ func TestHistoryFilterActionDetails(t *testing.T) {
 		Entity:   "filter",
 		EntityID: "ids_status:pending",
 		Status:   "requested",
-		Metadata: map[string]any{"filter": "ids_status:pending"},
+		Attributes: map[string]any{"filter": "ids_status:pending"},
 	})
 	if details != `Filter: "ids_status:pending"` {
 		t.Fatalf("filter details = %q", details)
@@ -28,7 +28,7 @@ func TestHistoryFilterActionDetails(t *testing.T) {
 		Entity:   "filter",
 		EntityID: "needle",
 		Status:   "requested",
-		Metadata: map[string]any{"search": "needle"},
+		Attributes: map[string]any{"search": "needle"},
 	})
 	if details != `Search: "needle"` {
 		t.Fatalf("search details = %q", details)
@@ -41,7 +41,7 @@ func TestHistoryIDSSaveDetailsShowStatusTransition(t *testing.T) {
 		Entity:   "ids_entry",
 		EntityID: "p-1779646755967531735/US20080011946A1",
 		Status:   "committed",
-		Metadata: map[string]any{"prior_status": "ignored", "status": "pending"},
+		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	})
 	if !strings.Contains(details, "IDS ignored") || !strings.Contains(details, "pending") || !strings.Contains(details, "US20080011946A1") {
 		t.Fatalf("IDS details = %q", details)
@@ -50,7 +50,7 @@ func TestHistoryIDSSaveDetailsShowStatusTransition(t *testing.T) {
 
 func TestHistoryOverlayFreeFormFilter(t *testing.T) {
 	records := []observability.Record{
-		{Timestamp: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC), Action: observability.ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000001A1", Status: "committed", Metadata: map[string]any{"status": "submitted"}},
+		{Timestamp: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC), Action: observability.ActionIDSEntrySave, Entity: "ids_entry", EntityID: "p-1/US10000001A1", Status: "committed", Attributes: map[string]any{"status": "submitted"}},
 		{Timestamp: time.Date(2026, 5, 1, 11, 0, 0, 0, time.UTC), Action: observability.ActionProjectSwitch, Entity: "project", EntityID: "p-2", Status: "observed"},
 	}
 	h := NewHistoryOverlay(render.NewTheme(), records, map[string]string{"p-1": "IDS Project"})
