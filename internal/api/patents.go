@@ -152,3 +152,35 @@ func (s *Server) handleReviewState(w http.ResponseWriter, r *http.Request) {
 	var res proto.Empty
 	s.call(w, r, proto.MethodReviewState, params, &res)
 }
+
+// handleSourceDiffsList lists all source comparison discrepancies generated for a patent.
+func (s *Server) handleSourceDiffsList(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var res proto.SourceDiffsListResult
+	s.call(w, r, proto.MethodSourceDiffsList, proto.SourceDiffsListParams{Number: number}, &res)
+}
+
+// handleSourceResolveDiffs resolves source comparison discrepancies for a patent.
+func (s *Server) handleSourceResolveDiffs(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var body struct {
+		Diffs []domain.SourceDiff `json:"diffs"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	params := proto.SourceResolveDiffsParams{
+		Number: number,
+		Diffs:  body.Diffs,
+	}
+	var res proto.SourceResolveDiffsResult
+	s.call(w, r, proto.MethodSourceResolveDiffs, params, &res)
+}

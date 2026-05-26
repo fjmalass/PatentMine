@@ -41,6 +41,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations)
 	s.mux.HandleFunc("GET /patents/{number}/family", s.handleFamilyGraph)
 	s.mux.HandleFunc("PUT /patents/{number}/review_state", s.handleReviewState)
+	s.mux.HandleFunc("GET /patents/{number}/diffs", s.handleSourceDiffsList)
+	s.mux.HandleFunc("POST /patents/{number}/diffs/resolve", s.handleSourceResolveDiffs)
 	s.mux.HandleFunc("GET /projects", s.handleProjectList)
 	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)

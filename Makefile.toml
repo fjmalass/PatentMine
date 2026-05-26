@@ -75,14 +75,14 @@ args = ["test", "./..."]
 description = "Check configured external service connectivity."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} check $CARGO_MAKE_TASK_ARGS
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity $CARGO_MAKE_TASK_ARGS
 '''
 
 [tasks.check-uspto]
 description = "Check USPTO API key and connectivity."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} check uspto $CARGO_MAKE_TASK_ARGS
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity uspto $CARGO_MAKE_TASK_ARGS
 '''
 
 [tasks.lookup]
@@ -96,21 +96,21 @@ go run -ldflags "$PM_LDFLAGS" ${BINARY} lookup $CARGO_MAKE_TASK_ARGS
 description = "Check Backblaze B2 access through rclone."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} check b2 $CARGO_MAKE_TASK_ARGS
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity b2 $CARGO_MAKE_TASK_ARGS
 '''
 
 [tasks.check-b2-api]
 description = "Check Backblaze B2 native API key and bucket access."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} check b2-api $CARGO_MAKE_TASK_ARGS
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity b2-api $CARGO_MAKE_TASK_ARGS
 '''
 
 [tasks.check-rclone-b2]
 description = "Check Backblaze B2 access through rclone only."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} check rclone-b2 $CARGO_MAKE_TASK_ARGS
+go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity rclone-b2 $CARGO_MAKE_TASK_ARGS
 '''
 
 [tasks.run-daemon]
@@ -225,21 +225,21 @@ go run -ldflags "$PM_LDFLAGS" ${BINARY} logs archive
 description = "List files in the patents (XML cache) directory."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} patents list
+go run -ldflags "$PM_LDFLAGS" ${BINARY} uspto-manage list
 '''
 
 [tasks.archive-patents]
 description = "Compress the patents/XML cache directory into a timestamped backup archive (in backups/)."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} patents archive $CARGO_MAKE_TASK_ARGS
+go run -ldflags "$PM_LDFLAGS" ${BINARY} uspto-manage archive $CARGO_MAKE_TASK_ARGS
 '''
 
 [tasks.clean-patents]
 description = "Remove all cached files from the patents (XML) directory."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} patents clean
+go run -ldflags "$PM_LDFLAGS" ${BINARY} uspto-manage clean
 '''
 
 # Direct shell variants (useful for CI or when avoiding repeated go run for simple ops)

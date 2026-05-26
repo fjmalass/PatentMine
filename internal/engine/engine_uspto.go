@@ -606,3 +606,54 @@ func pickAutoFetchKind(app domain.USPTOApplication) proto.USPTOXMLKind {
 	}
 	return ""
 }
+
+// USPTOLookup queries the USPTO ODP API using the configured API key and returns the raw JSON response as a string.
+func (e *Engine) USPTOLookup(ctx context.Context, number domain.PatentNumber) (string, error) {
+	apiKey := strings.TrimSpace(e.usptoAPIKey)
+	if apiKey == "" {
+		return "", fmt.Errorf("engine: USPTO API key not configured")
+	}
+
+	serial := strings.TrimSpace(number.Serial)
+	if serial == "" {
+		return "", fmt.Errorf("engine: empty application number")
+	}
+
+	// Query formulation matching crawl/uspto.go / cmd/patentmine/lookup.go
+	norm := number.Normalized()
+	var query string
+	if norm != "" && norm != serial {
+		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
+			serial, serial, serial, serial, norm, serial)
+	} else {
+		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
+			serial, serial, serial, serial, serial)
+	}
+
+	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("engine: USPTO returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	return string(body), nil
+}

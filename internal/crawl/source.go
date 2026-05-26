@@ -29,7 +29,7 @@ var (
 	// ErrUSPTOApplicationNotFound is returned when the File Wrapper search
 	// returns no usable wrapper for the input (common when feeding a grant
 	// number into an application-oriented API).
-	ErrUSPTOApplicationNotFound = errors.New("crawl/uspto: no application data found for number (grant number may not map cleanly or wrapper missing)")
+	ErrUSPTOApplicationNotFound = fmt.Errorf("crawl/uspto: no application data found for number (grant number may not map cleanly or wrapper missing): %w", ErrNotAvailable)
 
 	// ErrUSPTOGrantDocumentNotFound indicates we resolved an application
 	// record but the grant document metadata is absent. The patent can still

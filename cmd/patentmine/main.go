@@ -12,17 +12,17 @@ import (
 const usageText = `patentmine — patent tracking
 
 usage:
-  patentmine serve     start the engine daemon
-  patentmine stop      stop the engine daemon
-  patentmine tui       launch the terminal UI
-  patentmine api       start the web API server (use --addr host:port)
-  patentmine paths     print resolved runtime paths
-  patentmine logs      manage log and activity files (list, archive, ship)
-  patentmine db        manage database tasks (backup, vacuum, status)
-  patentmine patents   manage the patents/XML cache directory (list, archive, clean)
-  patentmine check     check configured external service connectivity
-  patentmine lookup    look up a patent by USPTO application number
-  patentmine version   print the build version
+  patentmine serve              start the engine daemon
+  patentmine stop               stop the engine daemon
+  patentmine tui                launch the terminal UI
+  patentmine api                start the web API server (use --addr host:port)
+  patentmine paths              print resolved runtime paths
+  patentmine logs               manage log and activity files (list, archive, ship)
+  patentmine db                 manage database tasks (backup, vacuum, status)
+  patentmine uspto-manage       manage the patents/XML cache directory (list, archive, clean)
+  patentmine check-connectivity check configured external service connectivity
+  patentmine lookup             look up a patent by USPTO application number
+  patentmine version            print the build version
 `
 
 func main() {
@@ -51,9 +51,9 @@ func run(args []string) int {
 		return runLogs(args[1:])
 	case "db":
 		return runDB(args[1:])
-	case "patents":
+	case "uspto-manage":
 		return runPatents(args[1:])
-	case "check":
+	case "check-connectivity":
 		return runCheck(args[1:])
 	case "lookup":
 		return runLookup(args[1:])

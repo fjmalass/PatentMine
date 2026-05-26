@@ -16,6 +16,8 @@ import (
 
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
+	"patentmine/internal/proto"
+	"patentmine/internal/rpc"
 )
 
 const lookupUsage = `usage:
@@ -90,6 +92,82 @@ func runLookup(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
+
+	// Try daemon socket first (hybrid client logic)
+	if client, err := rpc.Dial(string(cfg.SocketPath)); err == nil {
+		defer client.Close()
+		fmt.Fprintln(os.Stderr, "[Notice: Connected to active daemon, executing lookup via RPC]")
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+
+		var pn domain.PatentNumber
+		if parsed, err := domain.ParsePatentNumber(rawNum); err == nil {
+			pn = parsed
+		} else {
+			pn = domain.PatentNumber{Serial: appNum}
+		}
+
+		var res proto.USPTOLookupResult
+		err = client.Call(ctx, proto.MethodUSPTOLookup, proto.USPTOLookupParams{Number: pn}, &res)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "patentmine lookup: daemon RPC lookup failed: %v\n", err)
+			return 1
+		}
+
+		var pretty json.RawMessage
+		if err := json.Unmarshal([]byte(res.RawJSON), &pretty); err != nil {
+			fmt.Fprintf(os.Stderr, "patentmine lookup: daemon returned invalid JSON: %v\n", err)
+			return 1
+		}
+		formatted, _ := json.MarshalIndent(pretty, "", "  ")
+		fmt.Println(string(formatted))
+
+		if zipFlag {
+			fmt.Fprintln(os.Stderr, "\n[ZIP Option Enabled] Extracting document download URLs from metadata...")
+			var respData fileWrapperResponse
+			if err := json.Unmarshal([]byte(res.RawJSON), &respData); err != nil {
+				fmt.Fprintf(os.Stderr, "patentmine lookup: failed to parse response for ZIP download: %s\n", err)
+				return 1
+			}
+
+			var metas []*documentMeta
+			for _, w := range respData.PatentFileWrapperDataBag {
+				if w.GrantDocumentMetaData != nil && w.GrantDocumentMetaData.FileLocationURI != "" {
+					metas = append(metas, w.GrantDocumentMetaData)
+				}
+				if w.PGPubDocumentMetaData != nil && w.PGPubDocumentMetaData.FileLocationURI != "" {
+					metas = append(metas, w.PGPubDocumentMetaData)
+				}
+			}
+
+			if len(metas) == 0 {
+				fmt.Fprintln(os.Stderr, "patentmine lookup: no associated document ZIP URLs found in response")
+				return 1
+			}
+
+			patentsDir := string(cfg.PatentsDir)
+			apiKey := strings.TrimSpace(cfg.USPTOAPIKey)
+			if apiKey != "" {
+				resolved, err := config.ResolveAPIKey(apiKey)
+				if err == nil {
+					apiKey = resolved
+				}
+			}
+
+			httpClient := &http.Client{}
+			for _, meta := range metas {
+				fmt.Fprintf(os.Stderr, "Downloading associated document: %s\n", meta.XMLFileName)
+				if err := downloadAndSaveDocument(ctx, meta.FileLocationURI, meta.ZipFileName, meta.XMLFileName, patentsDir, httpClient, apiKey); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to download/save %s: %s\n", meta.XMLFileName, err)
+					return 1
+				}
+				fmt.Fprintf(os.Stderr, "Successfully saved %s to %s\n", meta.XMLFileName, patentsDir)
+			}
+		}
+		return 0
+	}
+
+	fmt.Fprintln(os.Stderr, "[Notice: Daemon offline, running in standalone mode]")
 
 	apiKey := strings.TrimSpace(cfg.USPTOAPIKey)
 	if apiKey == "" {

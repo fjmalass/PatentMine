@@ -77,6 +77,7 @@ const (
 	MethodTableViewDelete           Method = "table_view.delete"
 	MethodUSPTOFetchXML             Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody            Method = "uspto.grant_body"
+	MethodUSPTOLookup               Method = "uspto.lookup"
 
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
@@ -145,6 +146,14 @@ type SourceDiffsListParams struct {
 
 type SourceDiffsListResult struct {
 	Diffs []domain.SourceDiff `json:"diffs"`
+}
+
+type USPTOLookupParams struct {
+	Number domain.PatentNumber `json:"number"`
+}
+
+type USPTOLookupResult struct {
+	RawJSON string `json:"raw_json"`
 }
 
 // EventKind names a server->client push (a JSON-RPC notification).

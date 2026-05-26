@@ -123,6 +123,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTableViewDelete:           s.tableViewDelete,
 		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
 		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
+		proto.MethodUSPTOLookup:               s.usptoLookup,
 		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:           s.sourceDiffsList,
 	}
@@ -1269,4 +1270,16 @@ func (s *Server) sourceDiffsList(ctx context.Context, raw json.RawMessage) (any,
 		return nil, err
 	}
 	return proto.SourceDiffsListResult{Diffs: diffs}, nil
+}
+
+func (s *Server) usptoLookup(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOLookupParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	rawJSON, err := s.engine.USPTOLookup(ctx, p.Number)
+	if err != nil {
+		return nil, err
+	}
+	return proto.USPTOLookupResult{RawJSON: rawJSON}, nil
 }

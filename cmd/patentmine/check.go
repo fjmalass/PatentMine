@@ -18,10 +18,10 @@ import (
 )
 
 const checkUsage = `usage:
-  patentmine check        check all external service connectivity
-  patentmine check uspto  check USPTO ODP API key and connectivity
-  patentmine check b2     check Backblaze B2 access through rclone
-  patentmine check b2-api check Backblaze B2 native API key and bucket access
+  patentmine check-connectivity        check all external service connectivity
+  patentmine check-connectivity uspto  check USPTO ODP API key and connectivity
+  patentmine check-connectivity b2     check Backblaze B2 access through rclone
+  patentmine check-connectivity b2-api check Backblaze B2 native API key and bucket access
 
 flags:
   -v, --verbose  show the equivalent curl command for each check
@@ -42,7 +42,7 @@ type checkResult struct {
 }
 
 func runCheck(args []string) int {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	fs := flag.NewFlagSet("check-connectivity", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	verbose := fs.Bool("v", false, "show equivalent curl command")
 	fs.BoolVar(verbose, "verbose", false, "show equivalent curl command")
@@ -87,7 +87,7 @@ func runCheck(args []string) int {
 		fmt.Print(checkUsage)
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "patentmine check: unknown target %q\n\n%s", target, checkUsage)
+		fmt.Fprintf(os.Stderr, "patentmine check-connectivity: unknown target %q\n\n%s", target, checkUsage)
 		return 2
 	}
 

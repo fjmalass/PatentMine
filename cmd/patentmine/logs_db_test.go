@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"patentmine/internal/config"
 	"patentmine/internal/store/sqlite"
@@ -37,9 +38,13 @@ func TestLogsCommands(t *testing.T) {
 	}
 
 	// 1. Create a log file that is old (for archiving) and one that is current
-	oldLog := filepath.Join(logsDir, "log-2026-05-20.jsonl")
-	currentLog := filepath.Join(logsDir, "log-2026-05-24.jsonl")
-	oldActivity := filepath.Join(logsDir, "activity-2026-05-20.jsonl")
+	nowTime := time.Now()
+	oldDateStr := nowTime.AddDate(0, 0, -5).Format("2006-01-02")
+	currentDateStr := nowTime.Format("2006-01-02")
+
+	oldLog := filepath.Join(logsDir, "log-"+oldDateStr+".jsonl")
+	currentLog := filepath.Join(logsDir, "log-"+currentDateStr+".jsonl")
+	oldActivity := filepath.Join(logsDir, "activity-"+oldDateStr+".jsonl")
 
 	_ = os.WriteFile(oldLog, []byte("{\"level\":\"info\",\"msg\":\"old log\"}\n"), 0644)
 	_ = os.WriteFile(currentLog, []byte("{\"level\":\"info\",\"msg\":\"new log\"}\n"), 0644)

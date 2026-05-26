@@ -21,9 +21,9 @@ import (
 )
 
 const patentsUsage = `usage:
-  patentmine patents list                         list files in the patents (XML) cache dir
-  patentmine patents archive [options]            compress patents dir into a timestamped backup archive
-  patentmine patents clean                        remove all files from the patents cache directory
+  patentmine uspto-manage list                         list files in the patents (XML) cache dir
+  patentmine uspto-manage archive [options]            compress patents dir into a timestamped backup archive
+  patentmine uspto-manage clean                        remove all files from the patents cache directory
 `
 
 func runPatents(args []string) int {
@@ -63,7 +63,7 @@ func runPatents(args []string) int {
 		fmt.Print(patentsUsage)
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "patentmine patents: unknown subcommand %q\n\n%s", sub, patentsUsage)
+		fmt.Fprintf(os.Stderr, "patentmine uspto-manage: unknown subcommand %q\n\n%s", sub, patentsUsage)
 		return 2
 	}
 	if telemetry != nil {
@@ -76,7 +76,7 @@ func runPatents(args []string) int {
 }
 
 func runPatentsList(cfg config.Config, args []string, telemetry *observability.Runtime) int {
-	fs := flag.NewFlagSet("patents list", flag.ExitOnError)
+	fs := flag.NewFlagSet("uspto-manage list", flag.ExitOnError)
 	_ = fs.Parse(args)
 
 	dir := string(cfg.PatentsDir)
@@ -149,7 +149,7 @@ func runPatentsList(cfg config.Config, args []string, telemetry *observability.R
 }
 
 func runPatentsClean(cfg config.Config, args []string, telemetry *observability.Runtime) int {
-	fs := flag.NewFlagSet("patents clean", flag.ExitOnError)
+	fs := flag.NewFlagSet("uspto-manage clean", flag.ExitOnError)
 	_ = fs.Parse(args)
 
 	dir := string(cfg.PatentsDir)
@@ -208,7 +208,7 @@ func runPatentsClean(cfg config.Config, args []string, telemetry *observability.
 }
 
 func runPatentsArchive(cfg config.Config, args []string, telemetry *observability.Runtime) int {
-	fs := flag.NewFlagSet("patents archive", flag.ExitOnError)
+	fs := flag.NewFlagSet("uspto-manage archive", flag.ExitOnError)
 	keepDays := fs.Int("keep-days", 0, "reserved for future (currently archives everything)")
 	outFlag := fs.String("out", "", "explicit path for the archive file")
 	prune := fs.Bool("prune", false, "remove files from patents dir after successful archiving")
