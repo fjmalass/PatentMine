@@ -62,3 +62,35 @@ func TestPromptDirectFooterStaysSingleLine(t *testing.T) {
 		t.Fatalf("prompt footer wrapped in full view: %q", view)
 	}
 }
+
+func TestPromptDirectListsBrowseVariants(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
+	prompt.query = "browse.uspto"
+	prompt.filter()
+
+	want := map[string]bool{
+		"browse.uspto":       false,
+		"browse.uspto.grant": false,
+		"browse.uspto.pgpub": false,
+	}
+	for _, entry := range prompt.shown {
+		if _, ok := want[entry.command.Name]; ok {
+			want[entry.command.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("direct prompt missing %s in shown commands: %+v", name, prompt.shown)
+		}
+	}
+
+	prompt.query = "browse.google"
+	prompt.filter()
+	if len(prompt.shown) == 0 || prompt.shown[0].command.Name != "browse.google" {
+		t.Fatalf("browse.google top result = %+v", prompt.shown)
+	}
+}

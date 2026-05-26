@@ -8,6 +8,7 @@ Related docs:
 
 1. [Metrics Guide](./metrics.md)
 2. [Telemetry & Activity Tracking Guide](./ACTIVITY.md)
+3. [USPTO Loading & Source Configuration](./USPTO_CONFIG_LOADING.md)
 
 ---
 
@@ -404,22 +405,113 @@ Automate your local AI setups using `cargo-make` commands:
 
 ---
 
-## 8. Broad USPTO Loading & Candidate Selection
+## 8. USPTO Source Setup, Loading & Link Viewing
 
-PatentMine supports robust, multi-field USPTO patent wrapper searches when loading data directly from the USPTO Open Data Portal (ODP) API.
+PatentMine can load US patent records directly from the USPTO Open Data Portal (ODP), then optionally download the official USPTO grant or pre-grant XML. The ODP search gives PatentMine file-wrapper bibliographic data and application metadata; the XML ingest adds claims, abstract/description text, classifications, drawings, cited references, and USPTO-specific relation details.
 
-### How it works
-When you enter a patent identifier (via the TUI command `:add.uspto` or the CLI lookup tools), the system automatically executes a broad, multi-field query searching for the serial number across all key identifier fields:
-- **`applicationNumberText`** (e.g., `17812078` or `17/812,078`)
-- **`patentNumberText`** (e.g., `12614626` or `US12614626B2`)
-- **`publicationNumberText`** / **`publicationNumber`** (e.g., `20230021336` or `US20230021336A1`)
+For the full operational reference, see [`USPTO_CONFIG_LOADING.md`](./USPTO_CONFIG_LOADING.md).
 
-### Interactive Candidate Picker Popup
-If the broader query resolves to **multiple candidate wrappers** (which can happen for short serial numbers or ambiguous query parameters), PatentMine does not silently proceed or fail:
-1. The daemon server returns the list of candidate application wrappers to the client.
-2. The Terminal UI immediately draws an interactive **Choice Menu Popup** modal overlay.
-3. You can navigate the list using arrow keys/VIM navigation keys (`up`, `down`, `k`, `j`) and select the correct record by pressing `[enter]`.
-4. Choosing a candidate automatically re-submits a precise request using the exact application number to safely import and crawl the correct file wrapper!
+### 8.1 Configure the USPTO API key
+
+PatentMine reads the USPTO key from `PATENTMINE_USPTO_API_KEY`.
+
+Direct environment variable:
+
+```bash
+export PATENTMINE_USPTO_API_KEY=YOUR_USPTO_ODP_KEY
+```
+
+Recommended file-based setup:
+
+```bash
+mkdir -p ~/.ssh/patentmine
+printf '%s\n' 'YOUR_USPTO_ODP_KEY' > ~/.ssh/patentmine/uspto_odp_key
+chmod 600 ~/.ssh/patentmine/uspto_odp_key
+```
+
+Then put this in `.env`, `~/.ssh/patentmine/.env`, or `~/.config/patentmine/.env`:
+
+```dotenv
+PATENTMINE_CREDENTIALS_DIR=~/.ssh/patentmine
+PATENTMINE_USPTO_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/uspto_odp_key
+PATENTMINE_SOURCE_MODE=uspto-first
+```
+
+Config files are loaded in this order: project `.env`, then `~/.ssh/patentmine/.env`, then the PatentMine home `.env`. Existing shell variables win over `.env` values. `file:` entries are read at startup, whitespace is trimmed, and `${VAR}` references are expanded.
+
+Verify the key:
+
+```bash
+patentmine check uspto
+```
+
+### 8.2 Choose the source policy
+
+`PATENTMINE_SOURCE_MODE` controls which provider is used when a normal `:add` or lookup runs:
+
+| Mode | Behavior |
+| --- | --- |
+| `uspto-first` | Recommended default. Try USPTO first; fall back to Google only when USPTO has no record. |
+| `uspto-only` | Use only USPTO. Missing USPTO records fail instead of falling back. |
+| `google-only` | Use only Google. Useful for non-US records or USPTO outages. |
+| `compare` | Fetch USPTO and Google; USPTO remains authoritative and differences are stored for review. |
+
+At runtime, use the TUI command palette:
+
+```text
+:source.mode uspto-first
+:source.mode
+```
+
+The no-argument form prints the current mode.
+
+### 8.3 Load patents from USPTO
+
+Start the daemon/TUI as usual, then use these commands from the TUI `:` prompt:
+
+```text
+:add.uspto 17730671
+:add.uspto 17730671 17696256 18493058
+:add
+```
+
+`:add.uspto` forces a USPTO fetch for the typed patent or current selection. `:add` uses the current source mode. After a USPTO record is saved, PatentMine auto-fetches grant XML when a grant XML URL exists, otherwise it falls back to pre-grant publication XML.
+
+Manual XML fetch commands are available when you want to re-request XML or fetch it for selected rows:
+
+```text
+:fetch.uspto.grant
+:fetch.uspto.pgpub
+```
+
+Both commands work on the cursor row or visual selection. XML is cached on disk and tracked in `uspto_xml_download`; repeated fetches count as accesses and do not redownload if the local file exists.
+
+### 8.4 View source, XML, full text, and citations
+
+Use these TUI surfaces after loading a USPTO record:
+
+| Goal | How |
+| --- | --- |
+| Open provider/source link | Select a patent and press `w`, or run `:browse`. If the record came from USPTO, PatentMine opens the saved ODP source URL and appends `api_key` for browser access. |
+| Force USPTO XML link | Run `:browse.uspto` for grant-first publication fallback, `:browse.uspto.grant` for grant only, or `:browse.uspto.pgpub` / `:browse.uspto.pub` for publication only. |
+| Force Google link | Run `:browse.google` to open Google Patents regardless of saved source. |
+| Inspect source URL in-app | Open Detail with `enter` / `l`; the `Source URL`, `PGPub URL`, `Grant URL`, and XML filename rows appear when known. |
+| Fetch XML from Detail | Put the cursor on `PGPub URL`, `Grant URL`, `PGPub XML`, or `Grant XML`, then press `Enter`. |
+| View parsed claims/full text | In Detail, run `:open.fulltext` or use `T`; USPTO XML text is preferred when present. |
+| View patents cited by this patent | Press `c` or run `:open.citations`. USPTO XML patent citations are loaded into the normal citation graph after XML ingest. |
+| View patents that cite this patent | Press `b` or run the cited-by command. This shows relation-graph data already known locally. |
+
+NPL citations are preserved in the USPTO citation table for downstream use, while patent citations are also normalized into graph edges so the citation pane and citation counts work like Google-loaded citations.
+
+### 8.5 Candidate picker
+
+When you enter a patent identifier, PatentMine searches across multiple USPTO identifier fields:
+
+- `applicationNumberText`, for application numbers such as `17812078` or `17/812,078`.
+- `patentNumberText` / `patentNumber`, for grant numbers such as `12614626` or `US12614626B2`.
+- `publicationNumberText` / `publicationNumber`, for publication numbers such as `20230021336` or `US20230021336A1`.
+
+If the broad search returns multiple possible wrappers, the TUI opens the `USPTOCandidatePicker` overlay. Navigate with `up` / `down` or `j` / `k`, then press `Enter` to choose the correct application. PatentMine then re-submits the load using that exact application number.
 
 ---
 
@@ -444,6 +536,23 @@ You can also execute lookups from the command line using `cargo make`:
 ### TUI Keyboard Shortcuts
 
 The TUI automatically builds its scrollable help overlay (`?`) dynamically from source bindings, ensuring it never drifts. Below is the master keymap reference:
+
+### `:` vs `/` In The TUI
+
+PatentMine intentionally keeps two prompt styles because they do different jobs:
+
+| Prompt | Purpose | Examples |
+| --- | --- | --- |
+| `:` | Command/action prompt. Use it when you want PatentMine to do something: load, browse, fetch XML, change source mode, export, tag, open panes. | `:add.uspto 17730671`, `:browse.uspto.grant`, `:source.mode uspto-first`, `:fetch.uspto.grant` |
+| `/` | Search/filter prompt. Use it when you want to find, narrow, or highlight what is already on screen. | `/ widget sensor`, `/ class:G06F*`, `/ inventor:"Ada Lovelace"` |
+
+This follows the Vim convention: `:` is for commands, `/` is for searching. It also matches modern command palettes because the `:` overlay filters command names as you type, so typing `:browse` shows browse-related commands before you run one.
+
+Rules of thumb:
+
+- Use `:` when the result is an action, navigation, network fetch, config change, or database change.
+- Use `/` when the result is a filtered view, in-pane search, or text highlight.
+- Press `?` to see key bindings; press `:` to discover typed commands available in the current pane.
 
 #### A. Global Key Bindings (Active Everywhere)
 * `ctrl+c` / `Q` : Quit the TUI application completely.

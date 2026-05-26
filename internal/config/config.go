@@ -40,29 +40,29 @@ func (p Path) String() string { return string(p) }
 
 // Config holds the resolved paths the process needs.
 type Config struct {
-	HomeDir            Path   // Base directory; created if absent.
-	DBPath             Path   // SQLite database file.
-	LogsDir            Path   // Runtime logs and activity directory.
-	PIDPath            Path   // Daemon pid file.
-	SocketPath         Path   // Unix domain socket for the daemon.
-	USPTOAPIKey        string // USPTO Open Data Portal API Key.
+	HomeDir            Path              // Base directory; created if absent.
+	DBPath             Path              // SQLite database file.
+	LogsDir            Path              // Runtime logs and activity directory.
+	PIDPath            Path              // Daemon pid file.
+	SocketPath         Path              // Unix domain socket for the daemon.
+	USPTOAPIKey        string            // USPTO Open Data Portal API Key.
 	SourceMode         domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
-	GeminiAPIKey       string // Google Gemini Developer API Key.
-	AIProvider         string // Chosen AI Provider ("gemini", "ollama")
-	OllamaModel        string // Local Ollama Model ("mistral", etc.)
-	OllamaHost         string // Local Ollama server host
-	CrawlWorkers       int    // Concurrent crawl goroutines; 0 means use engine default.
-	ActivityMinMS      int    // Minimum UI look/hover duration to record.
-	NotesExportDir     string // Directory for exported notes .md files; empty means user home dir.
-	IDSExportDir       string // Directory for exported IDS PDF bundles; empty means $HomeDir/exports.
-	BackupProvider     string // Backup provider name, e.g. b2.
-	BackupBucket       string // Remote backup bucket/container name.
-	BackupB2KeyID      string // Backblaze B2 application key ID.
-	BackupB2Secret     string // Backblaze B2 application key secret.
-	BackupB2APIURL     string // Backblaze B2 native API base URL.
-	BackupRcloneRemote string // rclone remote name used for backup checks.
-	LogRetainDays      int    // Number of days of log/activity files to keep.
-	LogMaxSizeBytes    int64  // Maximum size limit for the logs directory in bytes.
+	GeminiAPIKey       string            // Google Gemini Developer API Key.
+	AIProvider         string            // Chosen AI Provider ("gemini", "ollama")
+	OllamaModel        string            // Local Ollama Model ("mistral", etc.)
+	OllamaHost         string            // Local Ollama server host
+	CrawlWorkers       int               // Concurrent crawl goroutines; 0 means use engine default.
+	ActivityMinMS      int               // Minimum UI look/hover duration to record.
+	NotesExportDir     string            // Directory for exported notes .md files; empty means user home dir.
+	IDSExportDir       string            // Directory for exported IDS PDF bundles; empty means $HomeDir/exports.
+	BackupProvider     string            // Backup provider name, e.g. b2.
+	BackupBucket       string            // Remote backup bucket/container name.
+	BackupB2KeyID      string            // Backblaze B2 application key ID.
+	BackupB2Secret     string            // Backblaze B2 application key secret.
+	BackupB2APIURL     string            // Backblaze B2 native API base URL.
+	BackupRcloneRemote string            // rclone remote name used for backup checks.
+	LogRetainDays      int               // Number of days of log/activity files to keep.
+	LogMaxSizeBytes    int64             // Maximum size limit for the logs directory in bytes.
 }
 
 // BackupConfigured reports whether backup settings are present. Connectivity is
@@ -225,9 +225,6 @@ func Load() (Config, error) {
 	}
 
 	usptoKey := os.Getenv("PATENTMINE_USPTO_API_KEY")
-	if usptoKey == "" {
-		usptoKey = os.Getenv("USPTO_API_KEY")
-	}
 	// PATENTMINE_SOURCE_MODE feeds crawl.NormalizeSourceMode so the canonical
 	// names live in one place. An invalid value silently falls back to
 	// compare so a typo doesn't refuse to boot.

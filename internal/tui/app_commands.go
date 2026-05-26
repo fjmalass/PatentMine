@@ -139,6 +139,26 @@ func (a *App) cmdOpenDetail(invocation) (tea.Model, tea.Cmd) { return a.openDeta
 func (a *App) cmdOpenFullText(invocation) (tea.Model, tea.Cmd) { return a.openFullText() }
 
 func (a *App) cmdOpenBrowser(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdOpenBrowserTarget(inv, browseTargetDefault)
+}
+
+func (a *App) cmdOpenBrowserUSPTO(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdOpenBrowserTarget(inv, browseTargetUSPTOSmart)
+}
+
+func (a *App) cmdOpenBrowserUSPTOGrant(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdOpenBrowserTarget(inv, browseTargetUSPTOGrant)
+}
+
+func (a *App) cmdOpenBrowserUSPTOPGPub(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdOpenBrowserTarget(inv, browseTargetUSPTOPGPub)
+}
+
+func (a *App) cmdOpenBrowserGoogle(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdOpenBrowserTarget(inv, browseTargetGoogle)
+}
+
+func (a *App) cmdOpenBrowserTarget(inv invocation, target browseTarget) (tea.Model, tea.Cmd) {
 	var numbers []domain.PatentNumber
 	if len(inv.args) > 0 {
 		numbers = make([]domain.PatentNumber, 0, len(inv.args))
@@ -157,7 +177,7 @@ func (a *App) cmdOpenBrowser(inv invocation) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 	}
-	return a, a.openPatentsInBrowser(numbers)
+	return a, a.openPatentsInBrowser(numbers, target)
 }
 func (a *App) cmdOpenCitations(invocation) (tea.Model, tea.Cmd) {
 	return a.openCitations(domain.RelationCites)

@@ -31,6 +31,7 @@ const (
 	ActionTableViewSelect       = "table_view.select"
 	ActionTableViewSave         = "table_view.save"
 	ActionTableViewDelete       = "table_view.delete"
+	ActionUIBrowse              = "ui.browse"
 	ActionUIFocus               = "ui.focus"
 	ActionNotesExport           = "notes.export"
 	ActionNotesSave             = "notes.save"
@@ -66,6 +67,7 @@ var AllActions = []string{
 	ActionTableViewSelect,
 	ActionTableViewSave,
 	ActionTableViewDelete,
+	ActionUIBrowse,
 	ActionUIFocus,
 	ActionNotesExport,
 	ActionNotesSave,

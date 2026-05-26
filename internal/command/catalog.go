@@ -44,6 +44,10 @@ const (
 	ColPrev                 ID = "col.prev"
 	SortApply               ID = "col.sort-apply"
 	OpenBrowser             ID = "view.browser"
+	OpenBrowserUSPTO        ID = "view.browser-uspto"
+	OpenBrowserUSPTOGrant   ID = "view.browser-uspto-grant"
+	OpenBrowserUSPTOPGPub   ID = "view.browser-uspto-pgpub"
+	OpenBrowserGoogle       ID = "view.browser-google"
 	OpenMetrics             ID = "view.metrics"
 	OpenPatentNote          ID = "view.patent-note"
 	FamilyDepthMore         ID = "view.family-depth-more"
@@ -171,6 +175,10 @@ func Default() (*Registry, error) {
 		// --- panes and overlays (view) ---
 		Command{ID: OpenDetail, Name: "open.detail", Aliases: []string{"detail"}, Usage: ":open.detail", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
 		Command{ID: OpenBrowser, Name: "browse", Aliases: []string{"open.browser", "web"}, Usage: ":browse [PATENT ...]", Kind: KindView, Scopes: patentScopes},
+		Command{ID: OpenBrowserUSPTO, Name: "browse.uspto", Aliases: []string{"browse-uspto"}, Usage: ":browse.uspto [PATENT ...]", Kind: KindView, Scopes: patentScopes},
+		Command{ID: OpenBrowserUSPTOGrant, Name: "browse.uspto.grant", Aliases: []string{"browse-grant", "browse.uspto.patent"}, Usage: ":browse.uspto.grant [PATENT ...]", Kind: KindView, Scopes: patentScopes},
+		Command{ID: OpenBrowserUSPTOPGPub, Name: "browse.uspto.pgpub", Aliases: []string{"browse.uspto.pub", "browse-pgpub", "browse-pub"}, Usage: ":browse.uspto.pgpub [PATENT ...]", Kind: KindView, Scopes: patentScopes},
+		Command{ID: OpenBrowserGoogle, Name: "browse.google", Aliases: []string{"browse-google", "google.browse"}, Usage: ":browse.google [PATENT ...]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenMetrics, Name: "metrics", Aliases: []string{"open.metrics", "observability"}, Usage: ":metrics", Kind: KindView},
 		Command{ID: OpenCitations, Name: "open.citations", Aliases: []string{"citations"}, Usage: ":open.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},
 		Command{ID: OpenCitedBy, Name: "open.citedby", Aliases: []string{"citedby"}, Usage: ":open.citedby", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeFamily}},

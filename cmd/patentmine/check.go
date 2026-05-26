@@ -137,7 +137,7 @@ func checksHealthy(results []checkResult) bool {
 
 func checkUSPTO(ctx context.Context, cfg config.Config, verbose bool) checkResult {
 	if strings.TrimSpace(cfg.USPTOAPIKey) == "" {
-		return checkResult{Name: "USPTO", State: checkRed, Message: "missing PATENTMINE_USPTO_API_KEY or USPTO_API_KEY"}
+		return checkResult{Name: "USPTO", State: checkRed, Message: "missing PATENTMINE_USPTO_API_KEY"}
 	}
 
 	apiKey, err := config.ResolveAPIKey(cfg.USPTOAPIKey)

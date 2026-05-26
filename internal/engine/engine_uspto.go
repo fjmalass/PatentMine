@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"patentmine/internal/uspto"
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
+	"patentmine/internal/uspto"
 )
 
 const usptoXMLFetchTimeout = 60 * time.Second
@@ -239,9 +239,11 @@ func (e *Engine) recordXMLAccess(ctx context.Context, prior domain.USPTOXMLDownl
 // bundle. It is best-effort from the caller's perspective: failures are
 // logged but do not fail the fetch — the XML file itself is still on disk.
 // Three phase timings are recorded so slow stages can be located:
-//   uspto.xml.parse  — read + decode
-//   uspto.xml.map    — XML doc to ingest bundle
-//   uspto.xml.save   — sqlite transaction
+//
+//	uspto.xml.parse  — read + decode
+//	uspto.xml.map    — XML doc to ingest bundle
+//	uspto.xml.save   — sqlite transaction
+//
 // plus the wrapping uspto.xml.ingest timing covering all three.
 func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind proto.USPTOXMLKind, applicationNumber, localPath string) error {
 	start := time.Now()
@@ -274,10 +276,10 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 			slog.String("path", localPath),
 			slog.String("error", parseErr.Error()))
 		e.recordActivity(ctx, observability.Record{
-			Component: "engine",
-			Action:    "uspto.xml.parse",
-			Entity:    n.Normalized(),
-			Status:    "error",
+			Component:  "engine",
+			Action:     "uspto.xml.parse",
+			Entity:     n.Normalized(),
+			Status:     "error",
 			Attributes: map[string]any{"kind": string(kind), "error": parseErr.Error()},
 		})
 		return parseErr
@@ -301,10 +303,21 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 			slog.String("error", saveErr.Error()))
 		return fmt.Errorf("engine: save grant ingest: %w", saveErr)
 	}
+	graphCitations, graphErr := e.saveUSPTOCitationGraph(ctx, n, bundle.Citations)
+	if graphErr != nil {
+		ingestErr = graphErr
+		e.incCounter("uspto.xml.save.error", 1)
+		e.log(ctx, slog.LevelError, "uspto citation graph save failed",
+			slog.String("patent", n.Normalized()),
+			slog.String("kind", string(kind)),
+			slog.String("error", graphErr.Error()))
+		return fmt.Errorf("engine: save citation graph: %w", graphErr)
+	}
 
 	e.incCounter("uspto.xml.ingest.count", 1)
 	e.incCounter("uspto.xml.ingest.claims", int64(len(bundle.Body.Claims)))
 	e.incCounter("uspto.xml.ingest.citations", int64(len(bundle.Citations)))
+	e.incCounter("uspto.xml.ingest.citation_relations", int64(graphCitations))
 	e.incCounter("uspto.xml.ingest.classifications", int64(len(bundle.Classifications)))
 	e.incCounter("uspto.xml.ingest.drawings", int64(len(bundle.Drawings)))
 	e.incCounter("uspto.xml.ingest.relations", int64(len(bundle.Relations)))
@@ -317,6 +330,7 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 		slog.String("kind", string(kind)),
 		slog.Int("claims", len(bundle.Body.Claims)),
 		slog.Int("citations", len(bundle.Citations)),
+		slog.Int("citation_relations", graphCitations),
 		slog.Int("classifications", len(bundle.Classifications)),
 		slog.Int("drawings", len(bundle.Drawings)),
 		slog.Int("relations", len(bundle.Relations)),
@@ -331,18 +345,108 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 		Entity:    n.Normalized(),
 		Status:    "ok",
 		Attributes: map[string]any{
-			"kind":              string(kind),
-			"claims":            len(bundle.Body.Claims),
-			"citations":         len(bundle.Citations),
-			"classifications":   len(bundle.Classifications),
-			"drawings":          len(bundle.Drawings),
-			"relations":         len(bundle.Relations),
-			"abstract_chars":    len(bundle.Body.AbstractText),
-			"description_chars": len(bundle.Body.DescriptionText),
-			"claims_chars":      len(bundle.Body.ClaimsText),
+			"kind":               string(kind),
+			"claims":             len(bundle.Body.Claims),
+			"citations":          len(bundle.Citations),
+			"citation_relations": graphCitations,
+			"classifications":    len(bundle.Classifications),
+			"drawings":           len(bundle.Drawings),
+			"relations":          len(bundle.Relations),
+			"abstract_chars":     len(bundle.Body.AbstractText),
+			"description_chars":  len(bundle.Body.DescriptionText),
+			"claims_chars":       len(bundle.Body.ClaimsText),
 		},
 	})
 	return nil
+}
+
+func (e *Engine) saveUSPTOCitationGraph(ctx context.Context, record domain.PatentNumber, citations []domain.USPTOGrantCitation) (int, error) {
+	if record.IsZero() || len(citations) == 0 {
+		return 0, nil
+	}
+	batch := store.NodeBatch{}
+	seenRelations := map[string]bool{}
+	seenStubs := map[string]bool{}
+
+	for _, citation := range citations {
+		cited, ok := patentNumberFromUSPTOCitation(citation)
+		if !ok || cited.IsZero() {
+			continue
+		}
+		if cited == record {
+			continue
+		}
+
+		citedRecord, err := e.repo.RecordOf(ctx, cited)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			citedRecord = cited
+			key := citedRecord.Normalized()
+			if key != "" && !seenStubs[key] {
+				seenStubs[key] = true
+				batch.Stubs = append(batch.Stubs, store.StubRecord{
+					Number: citedRecord,
+					Stage:  domain.GuessStage(citedRecord),
+				})
+			}
+		case err != nil:
+			return 0, err
+		}
+
+		if citedRecord.IsZero() || citedRecord == record {
+			continue
+		}
+		key := record.Normalized() + "\x00" + citedRecord.Normalized()
+		if seenRelations[key] {
+			continue
+		}
+		seenRelations[key] = true
+		batch.Relations = append(batch.Relations, domain.Relation{
+			From: record,
+			To:   citedRecord,
+			Kind: domain.RelationCites,
+		})
+	}
+
+	if len(batch.Relations) == 0 && len(batch.Stubs) == 0 {
+		return 0, nil
+	}
+	if err := e.repo.SaveNode(ctx, batch); err != nil {
+		return 0, err
+	}
+	return len(batch.Relations), nil
+}
+
+func patentNumberFromUSPTOCitation(c domain.USPTOGrantCitation) (domain.PatentNumber, bool) {
+	if c.CitationType != "" && !strings.EqualFold(c.CitationType, "patent") {
+		return domain.PatentNumber{}, false
+	}
+	doc := strings.TrimSpace(c.CitedDocNumber)
+	if doc == "" {
+		return domain.PatentNumber{}, false
+	}
+	country := strings.ToUpper(strings.TrimSpace(c.CitedCountry))
+	kind := strings.ToUpper(strings.TrimSpace(c.CitedKind))
+
+	for _, raw := range []string{
+		country + doc + kind,
+		country + doc,
+		doc + kind,
+		doc,
+	} {
+		n, err := domain.ParsePatentNumber(raw)
+		if err != nil {
+			continue
+		}
+		if n.Country == "" {
+			n.Country = country
+		}
+		if n.Kind == "" {
+			n.Kind = kind
+		}
+		return n, true
+	}
+	return domain.PatentNumber{}, false
 }
 
 func xmlTarget(app domain.USPTOApplication, kind proto.USPTOXMLKind) (string, string) {

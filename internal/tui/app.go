@@ -139,6 +139,10 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenDetail:                 (*App).cmdOpenDetail,
 	command.OpenFullText:               (*App).cmdOpenFullText,
 	command.OpenBrowser:                (*App).cmdOpenBrowser,
+	command.OpenBrowserUSPTO:           (*App).cmdOpenBrowserUSPTO,
+	command.OpenBrowserUSPTOGrant:      (*App).cmdOpenBrowserUSPTOGrant,
+	command.OpenBrowserUSPTOPGPub:      (*App).cmdOpenBrowserUSPTOPGPub,
+	command.OpenBrowserGoogle:          (*App).cmdOpenBrowserGoogle,
 	command.OpenCitations:              (*App).cmdOpenCitations,
 	command.OpenCitedBy:                (*App).cmdOpenCitedBy,
 	command.OpenParents:                (*App).cmdOpenParents,
@@ -193,22 +197,26 @@ var appHandlers = map[command.ID]appHandler{
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
 // other typed command is rejected with a usage error when given any.
 var typedAcceptsArgs = map[command.ID]bool{
-	command.AddToProject:         true,
-	command.AddUSPTO:             true,
-	command.AddGoogle:            true,
-	command.ProjectActivate:      true,
-	command.ProjectCreate:        true,
-	command.Import:               true,
-	command.SourceMode:           true,
-	command.Tag:                  true,
-	command.Untag:                true,
-	command.TagTaxonomyAdd:       true,
-	command.TagTaxonomyDelete:    true,
-	command.TagStrict:            true,
-	command.UntagStrict:          true,
-	command.ClassificationLookup: true,
-	command.Filter:               true,
-	command.OpenBrowser:          true,
+	command.AddToProject:          true,
+	command.AddUSPTO:              true,
+	command.AddGoogle:             true,
+	command.ProjectActivate:       true,
+	command.ProjectCreate:         true,
+	command.Import:                true,
+	command.SourceMode:            true,
+	command.Tag:                   true,
+	command.Untag:                 true,
+	command.TagTaxonomyAdd:        true,
+	command.TagTaxonomyDelete:     true,
+	command.TagStrict:             true,
+	command.UntagStrict:           true,
+	command.ClassificationLookup:  true,
+	command.Filter:                true,
+	command.OpenBrowser:           true,
+	command.OpenBrowserUSPTO:      true,
+	command.OpenBrowserUSPTOGrant: true,
+	command.OpenBrowserUSPTOPGPub: true,
+	command.OpenBrowserGoogle:     true,
 }
 
 // App is the bubbletea root model.
@@ -793,10 +801,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		attrs["result_count"] = m.ResultCount
 		attrs["total_count"] = m.TotalCount
 		return a, a.recordActivity(observability.Record{
-			Action:   observability.ActionTableFilterApply,
-			Entity:   "table_filter",
-			EntityID: string(domain.TableIDSActivityHistory),
-			Status:   "requested",
+			Action:     observability.ActionTableFilterApply,
+			Entity:     "table_filter",
+			EntityID:   string(domain.TableIDSActivityHistory),
+			Status:     "requested",
 			Attributes: attrs,
 		})
 	case overlay.ConfirmHistoryReplayMsg:

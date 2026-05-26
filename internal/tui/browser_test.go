@@ -1,6 +1,11 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"patentmine/internal/domain"
+	"patentmine/internal/proto"
+)
 
 func TestWithUSPTOAPIKey(t *testing.T) {
 	cases := []struct {
@@ -53,5 +58,53 @@ func TestWithUSPTOAPIKey(t *testing.T) {
 				t.Fatalf("withUSPTOAPIKey(%q, %q) = %q, want %q", tc.in, tc.key, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveBrowseURLUSPTOSelection(t *testing.T) {
+	number := domain.MustParsePatentNumber("US17730671")
+	res := &proto.PatentResult{
+		Patent: domain.Patent{Number: number, DisplayNumber: number, Source: domain.SourceUSPTO},
+		USPTOApplication: &domain.USPTOApplication{
+			PatentGrantXMLURL: "https://api.uspto.gov/grant.xml",
+			PGPubXMLURL:       "https://api.uspto.gov/pub.xml",
+		},
+	}
+
+	got, errText := resolveBrowseURL(number, res, browseTargetUSPTOSmart)
+	if errText != "" {
+		t.Fatalf("smart USPTO browse error = %q", errText)
+	}
+	if got.URL != "https://api.uspto.gov/grant.xml" || got.Kind != "grant" || got.Provider != "uspto" {
+		t.Fatalf("smart USPTO browse = %+v, want grant URL", got)
+	}
+
+	res.USPTOApplication.PatentGrantXMLURL = ""
+	got, errText = resolveBrowseURL(number, res, browseTargetUSPTOSmart)
+	if errText != "" {
+		t.Fatalf("smart USPTO browse fallback error = %q", errText)
+	}
+	if got.URL != "https://api.uspto.gov/pub.xml" || got.Kind != "pgpub" {
+		t.Fatalf("smart USPTO fallback = %+v, want pgpub URL", got)
+	}
+}
+
+func TestResolveBrowseURLForcedGoogle(t *testing.T) {
+	number := domain.MustParsePatentNumber("US17730671")
+	res := &proto.PatentResult{
+		Patent: domain.Patent{
+			Number:    number,
+			Source:    domain.SourceUSPTO,
+			SourceURL: "https://api.uspto.gov/source",
+			Documents: []domain.Document{{Number: domain.MustParsePatentNumber("US11921100B2"), Stage: domain.StageGrant}},
+		},
+	}
+
+	got, errText := resolveBrowseURL(number, res, browseTargetGoogle)
+	if errText != "" {
+		t.Fatalf("google browse error = %q", errText)
+	}
+	if got.URL != "https://patents.google.com/patent/US11921100B2" || got.Provider != "google" {
+		t.Fatalf("google browse = %+v", got)
 	}
 }

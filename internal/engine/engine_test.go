@@ -82,6 +82,49 @@ func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
 	}
 }
 
+func TestUSPTOCitationGraphCreatesCitationRelations(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	root := domain.MustParsePatentNumber("US17730671")
+	if err := repo.SavePatent(ctx, domain.Patent{
+		Number:        root,
+		DisplayNumber: root,
+		FetchState:    domain.FetchCached,
+		Source:        domain.SourceUSPTO,
+	}); err != nil {
+		t.Fatalf("SavePatent root: %v", err)
+	}
+
+	created, err := eng.saveUSPTOCitationGraph(ctx, root, []domain.USPTOGrantCitation{
+		{CitationType: "patent", CitedCountry: "US", CitedDocNumber: "7654321", CitedKind: "B2"},
+		{CitationType: "patent", CitedCountry: "US", CitedDocNumber: "7654321", CitedKind: "B2"},
+		{CitationType: "npl", NPLText: "Some journal article"},
+	})
+	if err != nil {
+		t.Fatalf("saveUSPTOCitationGraph: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("created citation relations = %d, want 1", created)
+	}
+
+	cited := domain.MustParsePatentNumber("US7654321B2")
+	rels, err := repo.Relations(ctx, root, domain.RelationCites)
+	if err != nil {
+		t.Fatalf("Relations: %v", err)
+	}
+	if len(rels) != 1 || rels[0].To != cited {
+		t.Fatalf("relations = %#v, want one citation to %s", rels, cited)
+	}
+	stub, err := repo.Patent(ctx, cited)
+	if err != nil {
+		t.Fatalf("Patent cited stub: %v", err)
+	}
+	if !stub.IsStub() {
+		t.Fatalf("cited patent fetch state = %q, want stub", stub.FetchState)
+	}
+}
+
 // TestEngineAddToProjectAutoFetchesNewStub checks that adding a never-seen
 // patent enqueues a single-patent fetch (depth 0) so the record fills in.
 func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {
@@ -1207,9 +1250,9 @@ func TestEngineDeletePatentsWritesReplayableSnapshots(t *testing.T) {
 	}
 
 	type deleteRecord struct {
-		Action   string         `json:"action"`
-		EntityID string         `json:"entity_id"`
-		Before   PatentSnapshot `json:"before"`
+		Action     string         `json:"action"`
+		EntityID   string         `json:"entity_id"`
+		Before     PatentSnapshot `json:"before"`
 		Attributes map[string]any `json:"attributes"`
 	}
 	records := map[string]deleteRecord{}
@@ -1585,4 +1628,3 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		}
 	})
 }
-

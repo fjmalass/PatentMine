@@ -20,19 +20,58 @@ searches and to the USPTO bulk dataset for grant / pre-grant XML files. Both
 endpoints accept the same `x-api-key` header. PatentMine reads the key from
 the `PATENTMINE_USPTO_API_KEY` environment variable.
 
-### 1.1 Direct value
+`PATENTMINE_USPTO_API_KEY` is the only supported USPTO key variable; legacy
+generic names are intentionally ignored so credential provenance is explicit.
+
+### 1.1 Where configuration is loaded from
+
+At startup, PatentMine loads configuration from the shell environment and from
+`.env` files. The loader checks these files in order:
+
+1. `./.env` in the current working directory.
+2. `~/.ssh/patentmine/.env`.
+3. `$PATENTMINE_HOME/.env`, where `PATENTMINE_HOME` defaults to the user's
+   config directory plus `patentmine`.
+
+If a variable is already set in the shell, the `.env` value does not overwrite
+it. This lets you temporarily override a saved setup for one terminal session.
+
+`.env` values support simple `${VAR}` expansion, which is useful for keeping a
+single credentials directory variable:
+
+```dotenv
+PATENTMINE_CREDENTIALS_DIR=~/.ssh/patentmine
+PATENTMINE_USPTO_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/uspto_odp_key
+PATENTMINE_SOURCE_MODE=uspto-first
+```
+
+### 1.2 Direct value
 
 ```bash
 export PATENTMINE_USPTO_API_KEY=ABCDEFGHIJ1234567890
 ```
 
-### 1.2 `file:` indirection (recommended)
+This is fine for one-off testing, but it leaves the secret in shell history or
+process environment. Use `file:` for regular use.
+
+### 1.3 `file:` indirection (recommended)
 
 `file:` makes PatentMine read the key from a file on disk instead of carrying
-it through process environment. `~/` is expanded to `$HOME`.
+it through process environment. `~/` is expanded to `$HOME`, and whitespace is
+trimmed from the file contents.
+
+Create the key file:
 
 ```bash
-export PATENTMINE_USPTO_API_KEY=file:~/.ssh/uspto_odp_key
+mkdir -p ~/.ssh/patentmine
+printf '%s\n' 'ABCDEFGHIJ1234567890' > ~/.ssh/patentmine/uspto_odp_key
+chmod 600 ~/.ssh/patentmine/uspto_odp_key
+```
+
+Use it directly from the shell:
+
+```bash
+export PATENTMINE_USPTO_API_KEY=file:~/.ssh/patentmine/uspto_odp_key
 ```
 
 The file should contain only the key (whitespace trimmed). This is the
@@ -40,11 +79,25 @@ shape `.env` uses out of the box:
 
 ```dotenv
 # .env
-PATENTMINE_CREDENTIALS_DIR=~/.ssh
+PATENTMINE_CREDENTIALS_DIR=~/.ssh/patentmine
 PATENTMINE_USPTO_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/uspto_odp_key
 ```
 
-### 1.3 Verifying
+### 1.4 Full minimal `.env`
+
+For a USPTO-first workstation setup, use:
+
+```dotenv
+PATENTMINE_HOME=~/.config/patentmine
+PATENTMINE_CREDENTIALS_DIR=~/.ssh/patentmine
+PATENTMINE_USPTO_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/uspto_odp_key
+PATENTMINE_SOURCE_MODE=uspto-first
+```
+
+`PATENTMINE_HOME` is optional. Set it only when you want the database, socket,
+logs, activity journal, and exports under a specific directory.
+
+### 1.5 Verifying
 
 The daemon logs `service check uspto connected` when the startup probe
 succeeds. From a running daemon you can also run:
@@ -57,13 +110,28 @@ which prints the resolved status code, request/response bytes, and the
 rate-limit headers returned by ODP. The TUI surfaces the same state in the
 status bar shortly after launch.
 
-### 1.4 Where the key is used
+Troubleshooting checklist:
+
+- `patentmine check uspto` reports HTTP 401/403: the key is missing, wrong, or
+  expired according to USPTO.
+- The command reports `read ...`: the `file:` path is wrong or permissions block
+  the process from reading it.
+- `:add.uspto` works but XML fetch fails: the ODP search endpoint is reachable,
+  but the saved USPTO record may not have a grant/pgpub XML URL, or the bulk
+  file endpoint is temporarily unavailable.
+- A shell export appears ignored: check whether another shell variable is
+  already set. Shell values win over `.env` values.
+
+### 1.6 Where the key is used
 
 | Surface | Endpoint | Notes |
 | --- | --- | --- |
 | `:add.uspto` / `:lookup` | `api.uspto.gov/api/v1/patent/applications/search` | One request per patent. Subject to USPTO's 1 s minimum interval. |
 | Auto / manual XML fetch | `api.uspto.gov/api/v1/datasets/products/files/...` | Bulk dataset. **No** minimum-interval rate limit on PatentMine's side — parallel downloads OK. |
 | Browser open of USPTO Source URL | URL is opened with `?api_key=` appended so the browser can hit ODP directly. |
+
+Do not commit `.env` files or key files. Keep the actual key in a private file
+and store only the `file:` reference in local config.
 
 ---
 
@@ -98,7 +166,30 @@ The mode is enforced inside `Registry.FetchExcluding` in `internal/crawl/source.
 Type-safety: the value is a `domain.SourceMode` typed string, so the four
 constants are the only valid identifiers in code.
 
-### 2.2 Telemetry
+### 2.2 Choosing the right mode
+
+Use `uspto-first` for normal US patent work. It gives USPTO provenance when a
+record exists and still lets Google cover gaps such as foreign records, older
+records, or USPTO outages.
+
+Use `uspto-only` when provenance matters more than convenience. This is the
+right mode when you are validating USPTO data quality or want failures to be
+visible instead of silently filled by Google.
+
+Use `compare` when you want to investigate source differences. The USPTO record
+is still the saved authoritative patent row, but Google is fetched too and field
+differences are recorded as `source_diff` rows.
+
+Use `google-only` when the USPTO key is unavailable or when most of the current
+work is non-US prior art.
+
+Source-specific commands override the mode:
+
+- `:add.uspto` always uses USPTO and does not fall back to Google.
+- `:add.google` always uses Google and does not consult USPTO.
+- `:add` uses the current `:source.mode` policy.
+
+### 2.3 Telemetry
 
 Each mode emits a gauge on switch so dashboards can pin live state:
 
@@ -166,22 +257,76 @@ All three commands accept three input forms:
                                                    else pgpub XML
                        │
                        ▼
-                  uspto_xml_download bump  +  parse  +  uspto_grant_body /
-                                                       drawings /
-                                                       citations /
-                                                       classifications /
-                                                       relations
+                   uspto_xml_download bump  +  parse  +  uspto_grant_body /
+                                                        drawings /
+                                                        citations /
+                                                        classifications /
+                                                        relations
+                       │
+                       ▼
+                  patent citations normalized into relation graph
 ```
 
 The auto-fetch listener is armed by every `startFamilyCrawl`, so `:lookup`
 on a USPTO-resolvable patent ingests its grant XML on completion too.
 
-### 3.3 Candidate picker
+The ODP file-wrapper search does not carry prior-art citations. Citations are
+loaded only after the XML path runs. PatentMine still stores every parsed
+reference in `uspto_grant_citation`; patent references are also converted into
+normal `relation` rows so `:open.citations`, citation counts, highlighting, and
+project graph workflows see them. Non-patent literature references remain in
+the USPTO citation table for downstream use.
+
+### 3.3 Normal load recipes
+
+Fresh USPTO load of one patent:
+
+```
+:add.uspto 17730671
+```
+
+Batch USPTO load:
+
+```
+:add.uspto 17730671 17696256 18493058
+```
+
+Use configured provider policy:
+
+```
+:source.mode uspto-first
+:add 17730671
+```
+
+Load selected rows from the catalog:
+
+1. Move the cursor to one patent, or press `v` and select multiple rows.
+2. Run `:add.uspto` with no arguments.
+3. Watch the status line for the add and auto XML-fetch progress.
+
+If the record is already present as a stub, the USPTO fetch fills it in. If the
+record is already cached, use a force lookup/crawl path or manual XML fetch when
+you specifically need to refresh side data.
+
+### 3.4 Candidate picker
 
 If the ODP search returns multiple matching applications for the requested
 number, the daemon returns the list and the TUI opens the
 `USPTOCandidatePicker` overlay (80% × 80%) so the user picks one. The
 selected candidate's application number is then used for the actual add.
+
+The broad search checks these fields where available:
+
+- `applicationNumberText`, for application numbers such as `17812078` or
+  `17/812,078`.
+- `patentNumberText` / `patentNumber`, for grant numbers such as `12614626` or
+  `US12614626B2`.
+- `publicationNumberText` / `publicationNumber`, for publication numbers such
+  as `20230021336` or `US20230021336A1`.
+
+In the picker, use `up` / `down` or `j` / `k`, then press `Enter` to select the
+correct application. If none is correct, close the overlay and try a more exact
+application, publication, or grant number.
 
 ---
 
@@ -228,7 +373,63 @@ cached copy), and writes the saved path into the status line. xdg-open is
 intentionally **not** invoked — on Linux it would open the `.xml` in the
 default browser, which is not the user goal.
 
-### 4.3 Telemetry around fetch
+### 4.3 Viewing USPTO links in the TUI
+
+PatentMine exposes source and XML links in three places:
+
+| Location | What you see | Action |
+| --- | --- | --- |
+| Catalog / citations table | Patent rows and citation counts | Select a row and press `w`, or run `:browse`, to open the provider URL in the browser. |
+| Detail pane | `Source URL`, `PGPub URL`, `Grant URL`, `PGPub XML`, and `Grant XML` rows when known | Use these rows to confirm which USPTO endpoints and XML filenames are attached to the record. |
+| Full-text pane | Parsed claims, abstract, and description | Run `:open.fulltext` or press `T` from Detail. USPTO XML is preferred when present. |
+
+Browser behavior:
+
+- For USPTO-loaded records, `:browse` opens the saved ODP source URL.
+- If the URL host is `api.uspto.gov` and a USPTO key is configured, PatentMine
+  appends `api_key=<key>` to the opened browser URL because the browser cannot
+  send the `x-api-key` header that the daemon uses internally.
+- For non-USPTO records, `:browse` falls back to the saved provider URL or a
+  Google Patents URL for the selected number.
+
+Explicit browse commands:
+
+| Command | Behavior |
+| --- | --- |
+| `:browse` | Open the saved source URL when present; otherwise fall back to Google Patents. |
+| `:browse.uspto` | Open the USPTO grant XML URL when present; otherwise open the USPTO pre-grant publication XML URL. |
+| `:browse.uspto.grant` | Open only the USPTO grant XML URL. If missing, report a status-line error. |
+| `:browse.uspto.pgpub` | Open only the USPTO pre-grant publication XML URL. |
+| `:browse.uspto.pub` | Alias for `:browse.uspto.pgpub`. |
+| `:browse.google` | Open Google Patents, regardless of saved source. |
+
+Each browse command accepts typed patent numbers, just like `:browse`, for
+example `:browse.uspto.grant 17730671` or `:browse.google US11921100B2`.
+PatentMine records browse metrics, logs, and activity telemetry with the
+requested target (`default`, `uspto`, `uspto_grant`, `uspto_pgpub`, `google`),
+the actual provider/kind opened, and success/error status. URLs in activity
+records have browser API keys redacted.
+
+Detail-pane XML fetch behavior:
+
+1. Open Detail with `Enter` / `l`.
+2. Move the cursor to `Grant URL`, `PGPub URL`, `Grant XML`, or `PGPub XML`.
+3. Press `Enter`.
+4. PatentMine fetches the corresponding XML, parses it, updates parsed body
+   tables, saves citations/classifications/drawings, and adds patent citations
+   to the normal relation graph.
+
+Citation viewing:
+
+- Press `c` or run `:open.citations` to show patents cited by the selected
+  patent.
+- Press `b` or open the cited-by view to show patents that cite the selected
+  patent, when those edges are already known locally.
+- USPTO XML patent citations become normal `relation` rows after XML ingest.
+  NPL references are preserved in `uspto_grant_citation` but are not shown as
+  patent graph rows.
+
+### 4.4 Telemetry around fetch
 
 | Counter | When |
 | --- | --- |
@@ -240,6 +441,7 @@ default browser, which is not the user goal.
 | `uspto.xml.parse.count` / `.error` | XML parse pass. |
 | `uspto.xml.save.error` | Database save pass. |
 | `uspto.xml.ingest.{claims,citations,classifications,drawings,relations}` | Per-section row counts on a successful ingest. |
+| `uspto.xml.ingest.citation_relations` | Patent citations normalized into the regular relation graph. |
 | `uspto.xml.ingest.{abstract,description,claims}_bytes` | Body sizes. |
 | Timings | `uspto.fetch_xml`, `uspto.xml.parse`, `uspto.xml.map`, `uspto.xml.save`, `uspto.xml.ingest`. |
 
@@ -262,6 +464,12 @@ When the XML is ingested, body content lands in:
 - `uspto_grant_relation` — continuation, continuation-in-part, division,
   reissue, provisional, related-publication rows.
 
+Patent citations from `uspto_grant_citation` are additionally normalized into
+the regular `relation` table as `cites` edges. This is what drives the citation
+pane, cited-by lookups, inline citation highlighting, and citation count
+columns. Cited patent documents that are not already known are inserted as
+stubs so the edge has a local endpoint and can be crawled later.
+
 The single-row summary (`grant_doc_number`, `grant_kind`, `grant_date`,
 `term_extension_days`, `number_of_claims`, `number_of_drawing_sheets`,
 `number_of_figures`, `primary_examiner_*`, `attorney_org`, `attorney_type`,
@@ -283,7 +491,7 @@ exists does the viewer fall back to the live Google fetch via
 
 ```
 # .env
-PATENTMINE_CREDENTIALS_DIR=~/.ssh
+PATENTMINE_CREDENTIALS_DIR=~/.ssh/patentmine
 PATENTMINE_USPTO_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/uspto_odp_key
 PATENTMINE_SOURCE_MODE=uspto-first
 ```
@@ -300,6 +508,12 @@ PATENTMINE_SOURCE_MODE=uspto-first
 :fetch.uspto.pgpub                # cursor / visual-selection patents
 :fetch.uspto.grant                # cursor / visual-selection patents
 
+:browse                           # open Source URL / provider URL in browser
+:browse.uspto                     # open grant XML URL, fallback to publication XML URL
+:browse.uspto.grant               # force USPTO grant XML URL
+:browse.uspto.pgpub               # force USPTO publication XML URL
+:browse.google                    # force Google Patents URL
+:open.citations                   # view patents cited by current patent
 :open.fulltext                    # prefers parsed XML body
 ```
 
