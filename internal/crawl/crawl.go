@@ -90,6 +90,10 @@ type node struct {
 // fetch retrieves one patent. A force fetch skips the local file cache and
 // the SQLite database so the crawl re-pulls from the web.
 func (c *Crawler) fetch(ctx context.Context, number domain.PatentNumber, force bool) (Result, error) {
+	return c.fetchFromSource(ctx, number, force, "")
+}
+
+func (c *Crawler) fetchFromSource(ctx context.Context, number domain.PatentNumber, force bool, source domain.Source) (Result, error) {
 	if !force {
 		p, err := c.repo.Patent(ctx, number)
 		if err == nil && p.FetchState == domain.FetchCached {
@@ -104,6 +108,9 @@ func (c *Crawler) fetch(ctx context.Context, number domain.PatentNumber, force b
 			}
 			return Result{Patent: p, Documents: p.Documents, Relations: rels}, nil
 		}
+	}
+	if source != "" {
+		return c.registry.FetchOnly(ctx, number, source)
 	}
 	if force {
 		return c.registry.FetchExcluding(ctx, number, domain.SourceFile)
@@ -123,6 +130,17 @@ const (
 // uses the configured depth; zero crawls the root only. force bypasses the
 // local file cache. emit, which may be nil, receives progress.
 func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, force bool, emit func(Progress)) error {
+	return c.crawl(ctx, root, maxDepth, profile, force, "", emit)
+}
+
+// CrawlFromSource crawls using exactly one external provider. It bypasses the
+// normal provider fallback order so callers can intentionally request USPTO or
+// Google data.
+func (c *Crawler) CrawlFromSource(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, source domain.Source, emit func(Progress)) error {
+	return c.crawl(ctx, root, maxDepth, profile, true, source, emit)
+}
+
+func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, force bool, source domain.Source, emit func(Progress)) error {
 	start := time.Now()
 	failed := true
 	log := observability.WithContextAttrs(ctx, c.logger)
@@ -159,6 +177,8 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		slog.String("root", root.String()),
 		slog.Int("max_depth", maxDepth),
 		slog.String("profile", string(profile)),
+		slog.String("source", string(source)),
+		slog.String("source_mode", c.registry.SourceMode()),
 		slog.Bool("force", force))
 
 	depthLimit := maxDepth
@@ -218,7 +238,7 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		queue = queue[1:]
 
 		fstart := time.Now()
-		res, err := c.fetch(ctx, cur.number, force)
+		res, err := c.fetchFromSource(ctx, cur.number, force, source)
 		if c.metrics != nil {
 			c.metrics.ObserveDuration("crawl.crawler.fetch", time.Since(fstart), err != nil)
 		}
@@ -286,6 +306,8 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 	log.Info("crawl finished",
 		slog.String("root", root.String()),
+		slog.String("source", string(source)),
+		slog.String("source_mode", c.registry.SourceMode()),
 		slog.String("reason", reason),
 		slog.Int("crawled", ingested),
 		slog.Int("discovered", len(seen)),
@@ -332,7 +354,18 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 	patent.Documents = mergeDocuments(existing, res.Documents)
 	patent.DisplayNumber = patent.NumberToShow()
 
-	batch := store.NodeBatch{Patent: patent, Documents: res.Documents}
+	batch := store.NodeBatch{
+		Patent:               patent,
+		Documents:            res.Documents,
+		AuthorityIdentifiers: stampAuthorityIdentifiers(res.AuthorityIdentifiers, recordNumber),
+		USPTOApplication:     stampUSPTOApplication(res.USPTOApplication, recordNumber),
+		USPTOParties:         res.USPTOParties,
+		USPTOEvents:          res.USPTOEvents,
+		USPTOContinuities:    stampUSPTOContinuities(res.USPTOContinuities, recordNumber),
+		USPTOForeignPriority: res.USPTOForeignPriority,
+		SourceSnapshots:      stampSourceSnapshots(res.SourceSnapshots, recordNumber),
+		SourceDiffs:          stampSourceDiffs(res.SourceDiffs, recordNumber),
+	}
 	stubbed := map[domain.PatentNumber]bool{}
 
 	for _, rel := range res.Relations {
@@ -368,6 +401,61 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 		return domain.PatentNumber{}, err
 	}
 	return recordNumber, nil
+}
+
+func stampAuthorityIdentifiers(in []domain.AuthorityIdentifier, record domain.PatentNumber) []domain.AuthorityIdentifier {
+	out := make([]domain.AuthorityIdentifier, 0, len(in))
+	for _, ident := range in {
+		if ident.RecordNumber.IsZero() {
+			ident.RecordNumber = record
+		}
+		out = append(out, ident)
+	}
+	return out
+}
+
+func stampUSPTOApplication(app *domain.USPTOApplication, record domain.PatentNumber) *domain.USPTOApplication {
+	if app == nil {
+		return nil
+	}
+	copy := *app
+	if copy.RecordNumber.IsZero() {
+		copy.RecordNumber = record
+	}
+	return &copy
+}
+
+func stampUSPTOContinuities(in []domain.USPTOContinuity, record domain.PatentNumber) []domain.USPTOContinuity {
+	out := make([]domain.USPTOContinuity, 0, len(in))
+	for _, c := range in {
+		if c.ChildRecordNumber.IsZero() {
+			c.ChildRecordNumber = record
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func stampSourceSnapshots(in []domain.SourceSnapshot, record domain.PatentNumber) []domain.SourceSnapshot {
+	out := make([]domain.SourceSnapshot, 0, len(in))
+	for _, snap := range in {
+		if snap.PatentNumber.IsZero() {
+			snap.PatentNumber = record
+		}
+		out = append(out, snap)
+	}
+	return out
+}
+
+func stampSourceDiffs(in []domain.SourceDiff, record domain.PatentNumber) []domain.SourceDiff {
+	out := make([]domain.SourceDiff, 0, len(in))
+	for _, diff := range in {
+		if diff.PatentNumber.IsZero() {
+			diff.PatentNumber = record
+		}
+		out = append(out, diff)
+	}
+	return out
 }
 
 // resolveRecord finds which existing record (if any) the candidate numbers

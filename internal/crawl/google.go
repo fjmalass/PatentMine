@@ -106,6 +106,30 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 		Patent:    patent,
 		Documents: []domain.Document{document},
 		Relations: googleRelations(doc, number),
+		AuthorityIdentifiers: []domain.AuthorityIdentifier{{
+			Authority:      "GOOGLE",
+			IdentifierType: string(domain.GuessStage(number)),
+			Identifier:     number.Normalized(),
+			RawIdentifier:  number.Normalized(),
+			RecordNumber:   number,
+			DocumentNumber: number.Normalized(),
+			Country:        number.Country,
+			Kind:           number.Kind,
+			Source:         string(domain.SourceGoogle),
+			Confidence:     80,
+		}},
+		SourceSnapshots: []domain.SourceSnapshot{{
+			ID:             snapshotID(string(domain.SourceGoogle), number.Normalized(), body),
+			PatentNumber:   number,
+			Source:         "google",
+			SourceRecordID: number.Normalized(),
+			SourceURL:      patent.SourceURL,
+			FetchedAt:      encodeRFC3339(patent.FetchedAt),
+			PayloadKind:    "html",
+			PayloadHash:    payloadHash(body),
+			ResponseBytes:  int64(len(body)),
+			SummaryJSON:    `{"parser":"google"}`,
+		}},
 	}, nil
 }
 

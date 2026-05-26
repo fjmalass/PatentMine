@@ -86,7 +86,7 @@ func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
 // patent enqueues a single-patent fetch (depth 0) so the record fills in.
 func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {
 	gotDepth := make(chan int, 1)
-	factory := func(_ domain.PatentNumber, depth int, _ domain.CrawlProfile, _ bool) Job {
+	factory := func(_ domain.PatentNumber, depth int, _ domain.CrawlProfile, _ bool, _ domain.Source) Job {
 		gotDepth <- depth
 		return JobFunc(func(context.Context, JobID, func(proto.Event)) error { return nil })
 	}
@@ -217,7 +217,7 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 }
 
 func TestEngineCrawlEmitsProgressAndDone(t *testing.T) {
-	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) Job {
+	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool, _ domain.Source) Job {
 		return JobFunc(func(_ context.Context, id JobID, emit func(proto.Event)) error {
 			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
 				JobID: string(id), CrawledCount: 1, Message: "crawled " + root.String(),
@@ -1462,3 +1462,127 @@ func TestPatentNoteActivityLogging(t *testing.T) {
 		t.Errorf("3rd rec After = %v, want nil", notesRecords[2].After)
 	}
 }
+
+func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Multiple candidates
+	t.Run("Multiple Candidates", func(t *testing.T) {
+		mockCrawl := func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) Job {
+			return JobFunc(func(ctx context.Context, id JobID, emit func(proto.Event)) error { return nil })
+		}
+		eng, repo := newTestEngine(t, mockCrawl)
+
+		// Set up mock searcher that returns multiple candidates
+		eng.usptoSearcher = func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
+			return []domain.USPTOCandidate{
+				{ApplicationNumber: "17812078", Title: "A"},
+				{ApplicationNumber: "17812079", Title: "B"},
+			}, nil
+		}
+
+		project, _ := eng.CreateProject(ctx, "Test Project")
+		patent := domain.MustParsePatentNumber("US20230021336A1")
+
+		fetchStarted, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO)
+		if err != nil {
+			t.Fatalf("AddToProjectFromSource: %v", err)
+		}
+		if fetchStarted {
+			t.Error("expected fetchStarted to be false when multiple candidates are returned")
+		}
+		if len(candidates) != 2 {
+			t.Errorf("expected 2 candidates, got %d", len(candidates))
+		}
+
+		// Verify no records were saved
+		_, err = repo.Patent(ctx, patent)
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("expected patent not to be saved, got err: %v", err)
+		}
+	})
+
+	// 2. Exactly 1 candidate
+	t.Run("Single Candidate Resolution", func(t *testing.T) {
+		mockCrawlCalled := false
+		mockCrawl := func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) Job {
+			if root.Serial == "17812078" {
+				mockCrawlCalled = true
+			}
+			return JobFunc(func(ctx context.Context, id JobID, emit func(proto.Event)) error { return nil })
+		}
+		eng, repo := newTestEngine(t, mockCrawl)
+
+		eng.usptoSearcher = func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
+			return []domain.USPTOCandidate{
+				{ApplicationNumber: "17812078", Title: "A"},
+			}, nil
+		}
+
+		project, _ := eng.CreateProject(ctx, "Test Project")
+		patent := domain.MustParsePatentNumber("US20230021336A1")
+
+		fetchStarted, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO)
+		if err != nil {
+			t.Fatalf("AddToProjectFromSource: %v", err)
+		}
+		if !fetchStarted {
+			t.Error("expected fetchStarted to be true when single candidate is resolved")
+		}
+		if len(candidates) != 0 {
+			t.Errorf("expected 0 candidates returned, got %d", len(candidates))
+		}
+		if !mockCrawlCalled {
+			t.Error("expected family crawl to be enqueued for exact application number")
+		}
+
+		// Verify resolved patent was saved as stub
+		p, err := repo.Patent(ctx, domain.MustParsePatentNumber("US17812078"))
+		if err != nil {
+			t.Fatalf("expected resolved patent US17812078 to exist: %v", err)
+		}
+		if p.FetchState != domain.FetchStub {
+			t.Errorf("expected resolved patent to be FetchStub, got: %s", p.FetchState)
+		}
+	})
+
+	// 3. Error cleanups
+	t.Run("Crawl Start Failure Cleanup", func(t *testing.T) {
+		mockCrawl := func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) Job {
+			return JobFunc(func(ctx context.Context, id JobID, emit func(proto.Event)) error { return nil })
+		}
+		eng, repo := newTestEngine(t, mockCrawl)
+
+		// Set up usptoSearcher to return 1 candidate
+		eng.usptoSearcher = func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
+			return []domain.USPTOCandidate{
+				{ApplicationNumber: "17812078", Title: "A"},
+			}, nil
+		}
+
+		// Close the engine to stop the worker pool and force startFamilyCrawl to fail
+		eng.Close()
+
+		project, _ := eng.CreateProject(ctx, "Test Project")
+		patent := domain.MustParsePatentNumber("US20230021336A1")
+
+		fetchStarted, _, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO)
+		if err == nil {
+			t.Fatal("expected crawl start to fail because pool is stopped")
+		}
+		if fetchStarted {
+			t.Error("expected fetchStarted to be false")
+		}
+
+		// Verify database was cleaned up
+		_, err = repo.Patent(ctx, domain.MustParsePatentNumber("US17812078"))
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("expected resolved patent to be cleaned up, got: %v", err)
+		}
+		_, err = repo.Membership(ctx, project.ID, domain.MustParsePatentNumber("US17812078"))
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("expected membership to be cleaned up, got: %v", err)
+		}
+	})
+}
+

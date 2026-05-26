@@ -19,11 +19,22 @@ const useConfiguredDepth = -1
 // patent lookup), and a positive depth bounds the family walk explicitly. force
 // bypasses the local file cache.
 func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) engine.Job {
+	return NewFamilyJobFromSource(crawler, root, depth, profile, force, "")
+}
+
+// NewFamilyJobFromSource adapts a source-constrained crawl to engine.Job.
+func NewFamilyJobFromSource(crawler *Crawler, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) engine.Job {
 	if depth < 0 {
 		depth = useConfiguredDepth
 	}
 	return engine.JobFunc(func(ctx context.Context, id engine.JobID, emit func(proto.Event)) error {
-		return crawler.Crawl(ctx, root, depth, profile, force, func(p Progress) {
+		run := crawler.Crawl
+		if source != "" {
+			run = func(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, _ bool, emit func(Progress)) error {
+				return crawler.CrawlFromSource(ctx, root, depth, profile, source, emit)
+			}
+		}
+		return run(ctx, root, depth, profile, force, func(p Progress) {
 			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
 				JobID:           string(id),
 				CrawledCount:    p.CrawledCount,
@@ -44,7 +55,7 @@ func NewFamilyJob(crawler *Crawler, root domain.PatentNumber, depth int, profile
 // Factory returns an engine.CrawlFactory bound to a crawler, ready to hand to
 // engine.New.
 func Factory(crawler *Crawler) engine.CrawlFactory {
-	return func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) engine.Job {
-		return NewFamilyJob(crawler, root, depth, profile, force)
+	return func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) engine.Job {
+		return NewFamilyJobFromSource(crawler, root, depth, profile, force, source)
 	}
 }

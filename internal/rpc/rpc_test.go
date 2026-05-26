@@ -26,7 +26,7 @@ func testHarness(t *testing.T) *rpc.Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// A factory whose job emits one progress event then finishes.
-	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) engine.Job {
+	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool, _ domain.Source) engine.Job {
 		return engine.JobFunc(func(_ context.Context, id engine.JobID, emit func(proto.Event)) error {
 			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
 				JobID: string(id), CrawledCount: 1, Message: root.String(),

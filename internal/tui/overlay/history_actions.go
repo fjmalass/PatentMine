@@ -38,7 +38,8 @@ func IsListedAction(action string) bool {
 // the record for display and replay routing.
 func IsProjectPatentAction(action string) bool {
 	switch action {
-	case observability.ActionMembershipSetState,
+	case observability.ActionMembershipAdd,
+		observability.ActionMembershipSetState,
 		observability.ActionPatentTagAssign,
 		observability.ActionPatentTagRemove,
 		observability.ActionIDSEntrySave,

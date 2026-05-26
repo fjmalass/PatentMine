@@ -36,6 +36,35 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 	return a.openPrompt(overlay.PromptDirect)
 }
 
+func (a *App) cmdSourceMode(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) > 1 {
+		return a.usageError(command.SourceMode)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	mode := ""
+	if len(inv.args) == 1 {
+		mode = strings.TrimSpace(inv.args[0])
+	}
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		defer cancel()
+		var res proto.SourceModeResult
+		method := proto.MethodSourceModeGet
+		var params any
+		if mode != "" {
+			method = proto.MethodSourceModeSet
+			params = proto.SourceModeParams{Mode: mode}
+		}
+		if err := a.client.Call(ctx, method, params, &res); err != nil {
+			return pane.StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true}
+		}
+		return pane.StatusMsg{Key: text.StatusUsage, Args: []any{"source mode: " + res.Mode}}
+	}
+}
+
 func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text, a.metrics)
 	a.overlays = append(a.overlays, o)
@@ -374,10 +403,22 @@ func (a *App) cmdProjectActivate(inv invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdAddToProject(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdAddToProjectFromSource(inv, "", command.AddToProject)
+}
+
+func (a *App) cmdAddUSPTO(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdAddToProjectFromSource(inv, domain.SourceUSPTO, command.AddUSPTO)
+}
+
+func (a *App) cmdAddGoogle(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdAddToProjectFromSource(inv, domain.SourceGoogle, command.AddGoogle)
+}
+
+func (a *App) cmdAddToProjectFromSource(inv invocation, source domain.Source, usage command.ID) (tea.Model, tea.Cmd) {
 	switch len(inv.args) {
 	case 0:
 		return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
-			return pane.AddToProjectCmd(a.client, project, patent)
+			return pane.AddToProjectFromSourceCmd(a.client, project, patent, source)
 		})
 	case 1:
 		number, err := domain.ParsePatentNumber(inv.args[0])
@@ -393,9 +434,9 @@ func (a *App) cmdAddToProject(inv invocation) (tea.Model, tea.Cmd) {
 			a.setErr(text.StatusDaemonUnavailable)
 			return a, nil
 		}
-		return a, pane.AddToProjectCmd(a.client, a.activeProject.ID, number)
+		return a, pane.AddToProjectFromSourceCmd(a.client, a.activeProject.ID, number, source)
 	default:
-		return a.usageError(command.AddToProject)
+		return a.usageError(usage)
 	}
 }
 

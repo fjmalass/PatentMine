@@ -84,8 +84,11 @@ func historyFocusScope(scope string) bool {
 // feed. Low-signal/background records remain available from /activity/raw.
 func IsHistoryFeedAction(action string) bool {
 	switch action {
-	case ActionFilterApply,
+	case ActionCrawlStart,
+		ActionSourceModeSet,
+		ActionFilterApply,
 		ActionProjectSwitch,
+		ActionMembershipAdd,
 		ActionMembershipSetState,
 		ActionPatentTagAssign,
 		ActionPatentTagRemove,
@@ -114,7 +117,10 @@ func HistoryFeedGroupKey(rec Record) string {
 
 func historyFeedPreservesEveryRecord(rec Record) bool {
 	switch rec.Action {
-	case ActionMembershipSetState,
+	case ActionCrawlStart,
+		ActionSourceModeSet,
+		ActionMembershipAdd,
+		ActionMembershipSetState,
 		ActionPatentTagAssign,
 		ActionPatentTagRemove,
 		ActionIDSEntrySave,

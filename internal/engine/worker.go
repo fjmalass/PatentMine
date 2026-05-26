@@ -51,6 +51,7 @@ type workerPool struct {
 	mu      sync.Mutex
 	cancels map[JobID]context.CancelFunc
 	metrics *observability.Metrics
+	closed  bool
 
 	wg sync.WaitGroup
 }
@@ -106,10 +107,14 @@ func (p *workerPool) run(qj queuedJob) {
 // submit enqueues a job and returns its id. The job's context is a child of
 // the pool's base context, so a daemon shutdown cancels every running job.
 func (p *workerPool) submit(job Job) (JobID, error) {
+	p.mu.Lock()
+	if p.closed || p.baseCtx.Err() != nil {
+		p.mu.Unlock()
+		return "", errors.New("engine: worker pool is closed")
+	}
 	id := JobID(fmt.Sprintf("job-%d", p.seq.Add(1)))
 	ctx, cancel := context.WithCancel(p.baseCtx)
 
-	p.mu.Lock()
 	p.cancels[id] = cancel
 	p.mu.Unlock()
 
@@ -151,6 +156,13 @@ func (p *workerPool) cancel(id JobID) bool {
 
 // shutdown stops accepting jobs and waits for in-flight jobs to finish.
 func (p *workerPool) shutdown() {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.closed = true
 	close(p.queue)
+	p.mu.Unlock()
 	p.wg.Wait()
 }

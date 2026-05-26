@@ -150,7 +150,7 @@ func checkUSPTO(ctx context.Context, cfg config.Config, verbose bool) checkResul
 		if len(displayKey) > 8 {
 			displayKey = displayKey[:4] + "..." + displayKey[len(displayKey)-4:]
 		}
-		url := fmt.Sprintf("https://api.uspto.gov/api/v1/patent/applications/search?patentApplicationNumber=%s", "16123456")
+		url := fmt.Sprintf("https://api.uspto.gov/api/v1/patent/applications/search?q=applicationNumberText:%s", "16123456")
 		fmt.Fprintf(os.Stderr, "[verbose] curl -L -X GET -H 'x-api-key: %s' -H 'Accept: application/json' '%s'\n", displayKey, url)
 	}
 

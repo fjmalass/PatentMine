@@ -3,11 +3,9 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	"patentmine/internal/domain"
 )
 
 // legacySchemaSQL is the pre-migration-F shape: a standalone project_ids table,
@@ -68,76 +66,13 @@ func writeLegacyDB(t *testing.T, path string) {
 	}
 }
 
-func TestMigrateFFoldsProjectIDsAndBacksUp(t *testing.T) {
+func TestObsoleteSchemaFailsClearly(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	writeLegacyDB(t, path)
 
-	repo, err := Open(ctx, path)
-	if err != nil {
-		t.Fatalf("Open (runs migration): %v", err)
+	_, err := Open(ctx, path)
+	if err == nil || !strings.Contains(err.Error(), "obsolete database schema") {
+		t.Fatalf("Open legacy schema err = %v, want obsolete schema error", err)
 	}
-	defer func() { _ = repo.Close() }()
-
-	// The backup copy must exist.
-	if _, err := os.Stat(path + ".bak"); err != nil {
-		t.Fatalf("expected backup at %s.bak: %v", path, err)
-	}
-
-	// project_ids must be gone.
-	var leftover int
-	if err := repo.reader.QueryRowContext(ctx,
-		`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='project_ids'`).
-		Scan(&leftover); err != nil {
-		t.Fatalf("check project_ids: %v", err)
-	}
-	if leftover != 0 {
-		t.Fatalf("project_ids table still present after migration")
-	}
-
-	// The curated IDS entry must have moved onto the membership row.
-	entry, err := repo.IDSEntry(ctx, "p-1", domain.MustParsePatentNumber("US0000001B2"))
-	if err != nil {
-		t.Fatalf("IDSEntry after migration: %v", err)
-	}
-	if entry.Notes != "keep this" || entry.Status != domain.IDSEntrySubmitted {
-		t.Fatalf("migrated IDS entry = %+v, want notes 'keep this' / submitted", entry)
-	}
-
-	// Legacy cached review state is folded back to unknown; fetch_state carries cache status.
-	m, err := repo.Membership(ctx, "p-1", domain.MustParsePatentNumber("US0000001B2"))
-	if err != nil {
-		t.Fatalf("Membership after migration: %v", err)
-	}
-	if m.ReviewState != domain.ReviewStateUnknown {
-		t.Fatalf("membership state = %q, want unknown", m.ReviewState)
-	}
-
-	// The orphan IDS entry must have a synthesized membership.
-	orphan, err := repo.IDSEntry(ctx, "p-1", domain.MustParsePatentNumber("US0000002B2"))
-	if err != nil {
-		t.Fatalf("orphan IDSEntry after migration: %v", err)
-	}
-	if orphan.Status != domain.IDSEntryPending {
-		t.Fatalf("orphan IDS entry status = %q, want pending", orphan.Status)
-	}
-
-	// The relation must survive the rebuild.
-	rels, err := repo.Relations(ctx, domain.MustParsePatentNumber("US0000001B2"), domain.RelationCites)
-	if err != nil {
-		t.Fatalf("Relations after migration: %v", err)
-	}
-	if len(rels) != 1 {
-		t.Fatalf("got %d relations after migration, want 1", len(rels))
-	}
-
-	// Re-opening must be a no-op (migration is idempotent).
-	if err := repo.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	repo2, err := Open(ctx, path)
-	if err != nil {
-		t.Fatalf("re-Open: %v", err)
-	}
-	_ = repo2.Close()
 }

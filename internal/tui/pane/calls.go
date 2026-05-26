@@ -149,15 +149,29 @@ func ImportFileCmd(client *rpc.Client, path string) tea.Cmd {
 	}
 }
 
+// AddUSPTOShowCandidatesMsg is returned when a broad search yields multiple candidate wrappers.
+type AddUSPTOShowCandidatesMsg struct {
+	Project    domain.ProjectID
+	Candidates []domain.USPTOCandidate
+}
+
 // AddToProjectCmd links a patent to the active project.
 func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber) tea.Cmd {
+	return AddToProjectFromSourceCmd(client, project, number, "")
+}
+
+// AddToProjectFromSourceCmd links a patent and optionally forces a provider-specific fetch.
+func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, source domain.Source) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.MembershipAddResult
 		if err := client.Call(ctx, proto.MethodMembershipAdd,
-			proto.MembershipParams{Project: project, Patent: number}, &res); err != nil {
+			proto.MembershipParams{Project: project, Patent: number, Source: source}, &res); err != nil {
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
+		}
+		if len(res.Candidates) > 0 {
+			return AddUSPTOShowCandidatesMsg{Project: project, Candidates: res.Candidates}
 		}
 		if !res.FetchStarted {
 			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{number.String()}}

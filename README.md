@@ -404,7 +404,26 @@ Automate your local AI setups using `cargo-make` commands:
 
 ---
 
-## 8. CLI Subcommands & TUI Shortcut Reference
+## 8. Broad USPTO Loading & Candidate Selection
+
+PatentMine supports robust, multi-field USPTO patent wrapper searches when loading data directly from the USPTO Open Data Portal (ODP) API.
+
+### How it works
+When you enter a patent identifier (via the TUI command `:add.uspto` or the CLI lookup tools), the system automatically executes a broad, multi-field query searching for the serial number across all key identifier fields:
+- **`applicationNumberText`** (e.g., `17812078` or `17/812,078`)
+- **`patentNumberText`** (e.g., `12614626` or `US12614626B2`)
+- **`publicationNumberText`** / **`publicationNumber`** (e.g., `20230021336` or `US20230021336A1`)
+
+### Interactive Candidate Picker Popup
+If the broader query resolves to **multiple candidate wrappers** (which can happen for short serial numbers or ambiguous query parameters), PatentMine does not silently proceed or fail:
+1. The daemon server returns the list of candidate application wrappers to the client.
+2. The Terminal UI immediately draws an interactive **Choice Menu Popup** modal overlay.
+3. You can navigate the list using arrow keys/VIM navigation keys (`up`, `down`, `k`, `j`) and select the correct record by pressing `[enter]`.
+4. Choosing a candidate automatically re-submits a precise request using the exact application number to safely import and crawl the correct file wrapper!
+
+---
+
+## 9. CLI Subcommands & TUI Shortcut Reference
 
 For complete operational visibility, the command-line interface subcommands and the Terminal User Interface (TUI) keyboard shortcuts are cataloged below.
 
@@ -415,7 +434,12 @@ Launch CLI operations using the `patentmine` binary:
 * `patentmine tui` : Launch the interactive Terminal User Interface thin client.
 * `patentmine api` : Boot the web API server gateway.
 * `patentmine paths` : Output the resolved runtime directories and file paths.
+* `patentmine lookup <number>` : Look up raw USPTO file wrapper metadata by application number, publication number, or patent number.
 * `patentmine version` : Print the current system build version.
+
+You can also execute lookups from the command line using `cargo make`:
+* **`cargo make check-uspto`**: Verify your API key configuration and USPTO ODP connectivity.
+* **`cargo make lookup <number>`**: Perform a broad search lookup directly from the command line (e.g. `cargo make lookup US20230021336A1`).
 
 ### TUI Keyboard Shortcuts
 

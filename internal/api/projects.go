@@ -82,6 +82,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Patent domain.PatentNumber `json:"patent"`
+		Source domain.Source       `json:"source"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
@@ -89,6 +90,7 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	params := proto.MembershipParams{
 		Project: domain.ProjectID(r.PathValue("id")),
 		Patent:  body.Patent,
+		Source:  body.Source,
 	}
 	var res proto.Empty
 	s.call(w, r, proto.MethodMembershipAdd, params, &res)

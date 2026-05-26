@@ -81,6 +81,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodUntagPatent:               s.untagPatent,
 		proto.MethodCrawlFamily:               s.crawlFamily,
 		proto.MethodCrawlConfig:               s.crawlConfig,
+		proto.MethodSourceModeGet:             s.sourceModeGet,
+		proto.MethodSourceModeSet:             s.sourceModeSet,
 		proto.MethodCrawlCancel:               s.crawlCancel,
 		proto.MethodImportFile:                s.importFile,
 		proto.MethodRelations:                 s.relations,
@@ -501,11 +503,17 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	fetchStarted, err := s.engine.AddToProject(ctx, p.Project, p.Patent)
+	var fetchStarted bool
+	var candidates []domain.USPTOCandidate
+	if p.Source != "" {
+		fetchStarted, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source)
+	} else {
+		fetchStarted, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return proto.MembershipAddResult{FetchStarted: fetchStarted}, nil
+	return proto.MembershipAddResult{FetchStarted: fetchStarted, Candidates: candidates}, nil
 }
 
 func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -636,6 +644,18 @@ func (s *Server) crawlFamily(ctx context.Context, raw json.RawMessage) (any, err
 
 func (s *Server) crawlConfig(_ context.Context, _ json.RawMessage) (any, error) {
 	return s.engine.CrawlConfig(), nil
+}
+
+func (s *Server) sourceModeGet(_ context.Context, _ json.RawMessage) (any, error) {
+	return s.engine.SourceMode(), nil
+}
+
+func (s *Server) sourceModeSet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.SourceModeParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.SetSourceMode(ctx, p.Mode)
 }
 
 func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, error) {

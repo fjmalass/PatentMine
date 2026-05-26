@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -73,7 +74,9 @@ func runLookup(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	url := fmt.Sprintf("https://api.uspto.gov/api/v1/patent/applications/search?patentApplicationNumber=%s", appNum)
+	appNum = strings.TrimSpace(appNum)
+	query := fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s", appNum, appNum, appNum, appNum)
+	url := fmt.Sprintf("https://api.uspto.gov/api/v1/patent/applications/search?q=%s", strings.ReplaceAll(url.QueryEscape(query), "+", "%20"))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "patentmine lookup: %s\n", err)

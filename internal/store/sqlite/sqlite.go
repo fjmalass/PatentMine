@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"time"
 
@@ -85,123 +86,64 @@ func (r *Repo) Close() error {
 }
 
 func (r *Repo) initSchema(ctx context.Context) error {
+	if err := r.rejectObsoleteSchema(ctx); err != nil {
+		return err
+	}
 	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("store/sqlite: init schema: %w", err)
 	}
-	// Fold the legacy project_ids table into membership and add FK cascades.
-	if err := r.migrateF(ctx); err != nil {
+	if err := r.requireSchemaVersion(ctx); err != nil {
 		return err
-	}
-	// Migrate existing database instances if they lack the created_at column in patent_tag.
-	hasCreatedAt, err := r.columnExists(ctx, "patent_tag", "created_at")
-	if err == nil && !hasCreatedAt {
-		_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent_tag ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
-	}
-	// Migrate existing database instances if they lack the classifications column in patent.
-	hasClassifications, err := r.columnExists(ctx, "patent", "classifications")
-	if err == nil && !hasClassifications {
-		_, _ = r.writer.ExecContext(ctx, "ALTER TABLE patent ADD COLUMN classifications TEXT NOT NULL DEFAULT '[]'")
 	}
 	if err := r.ensureClassificationsFTSColumn(ctx); err != nil {
 		return err
 	}
-	// Migrate existing database instances if they lack the classification_definition table.
-	hasClassDef, err := r.tableExists(ctx, "classification_definition")
-	if err == nil && !hasClassDef {
-		_, _ = r.writer.ExecContext(ctx, `
-			CREATE TABLE classification_definition (
-				system      TEXT NOT NULL,
-				code        TEXT NOT NULL,
-				section     TEXT NOT NULL DEFAULT '',
-				class       TEXT NOT NULL DEFAULT '',
-				subclass    TEXT NOT NULL DEFAULT '',
-				main_group  TEXT NOT NULL DEFAULT '',
-				subgroup    TEXT NOT NULL DEFAULT '',
-				description TEXT NOT NULL DEFAULT '',
-				PRIMARY KEY (system, code)
-			)
-		`)
-	}
 	if err := r.syncFTS(ctx); err != nil {
 		return err
 	}
-	// Migration G: drop redundant ids_country_code (country lives on the
-	// patent), add ids_submitted_at to timestamp the submitted transition.
-	if has, _ := r.columnExists(ctx, "membership", "ids_country_code"); has {
-		if _, err := r.writer.ExecContext(ctx,
-			`ALTER TABLE membership DROP COLUMN ids_country_code`); err != nil {
-			return fmt.Errorf("store/sqlite: drop ids_country_code: %w", err)
-		}
+	return nil
+}
+
+func (r *Repo) rejectObsoleteSchema(ctx context.Context) error {
+	hasMeta, err := r.tableExists(ctx, "schema_meta")
+	if err != nil {
+		return fmt.Errorf("store/sqlite: inspect schema metadata: %w", err)
 	}
-	if has, _ := r.columnExists(ctx, "membership", "ids_submitted_at"); !has {
-		if _, err := r.writer.ExecContext(ctx,
-			`ALTER TABLE membership ADD COLUMN ids_submitted_at TEXT NOT NULL DEFAULT ''`); err != nil {
-			return fmt.Errorf("store/sqlite: add ids_submitted_at: %w", err)
-		}
+	if hasMeta {
+		return nil
 	}
-	// Migrate existing project tables to add IDS header columns when missing.
-	for _, col := range []string{
-		"application_number", "filing_date",
-		"art_unit", "attorney_docket_number",
-	} {
-		has, err := r.columnExists(ctx, "project", col)
-		if err == nil && !has {
-			_, _ = r.writer.ExecContext(ctx,
-				`ALTER TABLE project ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`)
-		}
+	hasTables, err := r.hasApplicationTables(ctx)
+	if err != nil {
+		return err
 	}
-	// Create the per-project inventor + examiner side tables when missing, and
-	// fold any legacy single-value columns into them.
-	hasInventorTable, _ := r.tableExists(ctx, "project_inventor")
-	if !hasInventorTable {
-		_, _ = r.writer.ExecContext(ctx, `
-			CREATE TABLE project_inventor (
-				project_id TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
-				ordering   INTEGER NOT NULL,
-				name       TEXT NOT NULL,
-				PRIMARY KEY (project_id, ordering)
-			)`)
-		if legacy, _ := r.columnExists(ctx, "project", "first_named_inventor"); legacy {
-			_, _ = r.writer.ExecContext(ctx, `
-				INSERT INTO project_inventor (project_id, ordering, name)
-				SELECT id, 0, first_named_inventor FROM project
-				WHERE first_named_inventor <> ''`)
-		}
-	}
-	hasExaminerTable, _ := r.tableExists(ctx, "project_examiner")
-	if !hasExaminerTable {
-		_, _ = r.writer.ExecContext(ctx, `
-			CREATE TABLE project_examiner (
-				project_id  TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
-				name        TEXT NOT NULL,
-				recorded_at TEXT NOT NULL,
-				PRIMARY KEY (project_id, recorded_at, name)
-			)`)
-		_, _ = r.writer.ExecContext(ctx,
-			`CREATE INDEX IF NOT EXISTS idx_project_examiner_latest ON project_examiner (project_id, recorded_at DESC)`)
-		if legacy, _ := r.columnExists(ctx, "project", "examiner_name"); legacy {
-			_, _ = r.writer.ExecContext(ctx, `
-				INSERT INTO project_examiner (project_id, name, recorded_at)
-				SELECT id, examiner_name, created_at FROM project
-				WHERE examiner_name <> ''`)
-		}
-	}
-	hasPatentNotes, err := r.tableExists(ctx, "project_patent_note")
-	if err == nil && !hasPatentNotes {
-		_, _ = r.writer.ExecContext(ctx, `
-			CREATE TABLE project_patent_note (
-				project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
-				patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-				markdown      TEXT NOT NULL DEFAULT '',
-				added_at      TEXT NOT NULL,
-				updated_at    TEXT NOT NULL,
-				PRIMARY KEY (project_id, patent_number)
-			)
-		`)
-		_, _ = r.writer.ExecContext(ctx,
-			`CREATE INDEX IF NOT EXISTS idx_project_patent_note_project ON project_patent_note (project_id, updated_at DESC)`)
+	if hasTables {
+		return errors.New("store/sqlite: obsolete database schema detected; recreate the database or export/rebuild for schema v2")
 	}
 	return nil
+}
+
+func (r *Repo) requireSchemaVersion(ctx context.Context) error {
+	var version string
+	if err := r.writer.QueryRowContext(ctx,
+		`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
+		return fmt.Errorf("store/sqlite: read schema version: %w", err)
+	}
+	if version != "2" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 2", version)
+	}
+	return nil
+}
+
+func (r *Repo) hasApplicationTables(ctx context.Context) (bool, error) {
+	var count int
+	if err := r.writer.QueryRowContext(ctx, `
+		SELECT count(*) FROM sqlite_master
+		WHERE type IN ('table', 'view')
+		  AND name NOT LIKE 'sqlite_%'
+		  AND name != 'schema_meta'`).Scan(&count); err != nil {
+		return false, fmt.Errorf("store/sqlite: inspect existing schema: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (r *Repo) tableExists(ctx context.Context, name string) (bool, error) {

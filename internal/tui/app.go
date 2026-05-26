@@ -152,7 +152,10 @@ var appHandlers = map[command.ID]appHandler{
 	command.ProjectIDSHeader:           (*App).cmdEditIDSHeader,
 	command.IDSExportPDF:               (*App).cmdIDSExportPDF,
 	command.AddToProject:               (*App).cmdAddToProject,
+	command.AddUSPTO:                   (*App).cmdAddUSPTO,
+	command.AddGoogle:                  (*App).cmdAddGoogle,
 	command.Import:                     (*App).cmdImport,
+	command.SourceMode:                 (*App).cmdSourceMode,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
 	command.MarkActive:                 (*App).cmdMarkActive,
 	command.MarkUnderReview:            (*App).cmdMarkUnderReview,
@@ -189,9 +192,12 @@ var appHandlers = map[command.ID]appHandler{
 // other typed command is rejected with a usage error when given any.
 var typedAcceptsArgs = map[command.ID]bool{
 	command.AddToProject:         true,
+	command.AddUSPTO:             true,
+	command.AddGoogle:            true,
 	command.ProjectActivate:      true,
 	command.ProjectCreate:        true,
 	command.Import:               true,
+	command.SourceMode:           true,
 	command.Tag:                  true,
 	command.Untag:                true,
 	command.TagTaxonomyAdd:       true,
@@ -815,6 +821,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("path", m.Path),
 			slog.Int("existing_files", len(m.ExistingFiles)))
 		return a, nil
+	case pane.AddUSPTOShowCandidatesMsg:
+		o := overlay.NewUSPTOCandidatePicker(a.theme, m.Project, m.Candidates)
+		a.overlays = append(a.overlays, o)
+		return a, nil
+	case overlay.USPTOCandidateSelectMsg:
+		if len(a.overlays) > 0 {
+			a.overlays = a.overlays[:len(a.overlays)-1]
+		}
+		exact, err := domain.ParsePatentNumber("US" + m.Candidate.ApplicationNumber)
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+		return a, pane.AddToProjectFromSourceCmd(a.client, m.Project, exact, domain.SourceUSPTO)
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		if m.Key == text.StatusNotesExportDone {

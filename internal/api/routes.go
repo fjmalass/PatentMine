@@ -49,6 +49,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /projects/{id}", s.handleProjectUpdate)
 	s.mux.HandleFunc("GET /projects/{id}/notes/export", s.handleNotesExport)
 	s.mux.HandleFunc("GET /crawl/config", s.handleCrawlConfig)
+	s.mux.HandleFunc("GET /source_mode", s.handleSourceModeGet)
+	s.mux.HandleFunc("PUT /source_mode", s.handleSourceModeSet)
+	s.mux.HandleFunc("GET /config/source_mode", s.handleSourceModeGet)
+	s.mux.HandleFunc("PUT /config/source_mode", s.handleSourceModeSet)
 	s.mux.HandleFunc("POST /crawl", s.handleCrawl)
 
 	// Tag Taxonomy endpoints

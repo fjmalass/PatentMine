@@ -54,7 +54,7 @@ func newRPCBackedTestApp(t *testing.T) *App {
 		t.Fatalf("open store: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool) engine.Job {
+	factory := func(root domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool, _ domain.Source) engine.Job {
 		return engine.JobFunc(func(_ context.Context, id engine.JobID, emit func(proto.Event)) error {
 			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{JobID: string(id), Message: root.String()}))
 			return nil

@@ -28,8 +28,18 @@ const changeDebounce = 100 * time.Millisecond
 // CrawlFactory builds the Job that crawls a patent family. It is injected so
 // the engine does not depend on the crawl package directly: a stub factory
 // works for tests, the real crawler is wired in at daemon startup. force makes
-// the crawl bypass the local file cache and re-fetch from the web.
-type CrawlFactory func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) Job
+// the crawl bypass the local file cache and re-fetch from the web. Source, when
+// non-empty, constrains the crawl to that provider and disables fallback.
+type CrawlFactory func(root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) Job
+
+// SourceModeController owns the runtime crawl source policy.
+type SourceModeController interface {
+	SetSourceMode(mode string) error
+	SourceMode() string
+}
+
+// USPTOSearcher searches the USPTO database for candidates matching the number.
+type USPTOSearcher func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error)
 
 // FileImporter loads a patent record from a local file into the store. Like
 // CrawlFactory it is injected, so the engine never imports the crawl package.
@@ -50,8 +60,10 @@ type Engine struct {
 	bus              *Bus
 	pool             *workerPool
 	crawl            CrawlFactory
+	sourceModes      SourceModeController
 	fileImporter     FileImporter
 	cpcLookup        CPCLookup
+	usptoSearcher    USPTOSearcher
 	logger           *slog.Logger
 	activities       *observability.Recorder
 	metrics          *observability.Metrics
@@ -98,6 +110,16 @@ func WithMetrics(metrics *observability.Metrics) Option {
 	}
 }
 
+// WithSourceModeController wires runtime source mode control and records the
+// startup mode in metrics/logging once the engine is assembled.
+func WithSourceModeController(controller SourceModeController) Option {
+	return func(e *Engine) {
+		e.sourceModes = controller
+		e.observeSourceMode(controller.SourceMode())
+		e.log(context.Background(), slog.LevelInfo, "source mode configured", slog.String("mode", controller.SourceMode()))
+	}
+}
+
 // WithCrawlMaxDepth records the daemon's default family-crawl depth.
 func WithCrawlMaxDepth(maxDepth int) Option {
 	return func(e *Engine) {
@@ -119,6 +141,11 @@ func WithCrawlWorkers(n int) Option {
 // Empty leaves it unset; ExportIDSPDF will then return an error when called.
 func WithIDSExportDir(dir string) Option {
 	return func(e *Engine) { e.idsExportDir = dir }
+}
+
+// WithUSPTOSearcher wires the USPTO candidate searcher.
+func WithUSPTOSearcher(s USPTOSearcher) Option {
+	return func(e *Engine) { e.usptoSearcher = s }
 }
 
 // New builds an Engine. The pool's jobs are children of ctx, so cancelling ctx

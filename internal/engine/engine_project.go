@@ -55,10 +55,37 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // fetch was enqueued; false means the caller should prompt the user to fetch
 // manually (e.g. with F).
 func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, err error) {
+	fetchStarted, _, err = e.addToProject(ctx, project, patent, "")
+	return fetchStarted, err
+}
+
+// AddToProjectFromSource adds a patent and forces a single-patent fetch from
+// the selected provider. It never falls back to another source.
+func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source) (fetchStarted bool, candidates []domain.USPTOCandidate, err error) {
+	return e.addToProject(ctx, project, patent, source)
+}
+
+func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source) (fetchStarted bool, candidates []domain.USPTOCandidate, err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
+
+	if source == domain.SourceUSPTO && e.usptoSearcher != nil {
+		candidates, err = e.usptoSearcher(ctx, patent)
+		if err != nil {
+			return false, nil, err
+		}
+		if len(candidates) > 1 {
+			return false, candidates, nil
+		}
+		if len(candidates) == 1 {
+			if exact, err := domain.ParsePatentNumber("US" + candidates[0].ApplicationNumber); err == nil {
+				patent = exact
+			}
+		}
+	}
+
 	record, created, err := e.ensureRecord(ctx, patent)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	before, exists := e.existingMembership(ctx, project, record)
 	state := domain.ReviewStateUnknown
@@ -74,9 +101,15 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 	err = e.repo.AddMembership(ctx, after)
 	if err != nil {
 		e.log(ctx, slog.LevelError, "add membership failed", slog.String("project_id", string(project)), slog.String("patent", patent.String()), slog.String("error", err.Error()))
-		return false, err
+		return false, nil, err
 	}
 	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.membership.add_total", 1)
+		if source != "" {
+			e.metrics.IncCounter("engine.membership.add.source."+string(source)+"_total", 1)
+		}
+	}
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionMembershipAdd,
 		Entity:   "membership",
@@ -87,9 +120,30 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 		Metadata: map[string]any{
 			"requested_number": patent.String(),
 			"project":          string(project),
+			"source":           string(source),
 		},
 	})
 	e.announceChange()
+	if source != "" && e.crawl != nil {
+		jobID, fetchErr := e.StartFamilyCrawlFromSource(ctx, record, 0, domain.CrawlProfileAll, source)
+		if fetchErr != nil {
+			e.log(ctx, slog.LevelWarn, "source-specific fetch on add failed to start",
+				slog.String("record", record.String()), slog.String("source", string(source)), slog.String("error", fetchErr.Error()))
+			// Clean up newly created database state on start failure
+			if created {
+				_ = e.repo.DeletePatent(ctx, record)
+			} else if !exists {
+				_ = e.repo.DeleteMembership(ctx, project, record)
+			}
+			e.announceChange()
+			return false, nil, fetchErr
+		}
+		fetchStarted = true
+		if created {
+			go e.cleanupIfNotFound(project, record, created, jobID)
+		}
+		return fetchStarted, nil, nil
+	}
 	// Any unknown project membership for a stub patent kicks a single-patent
 	// fetch so bibliographic data fills in shortly after the patent is added.
 	// This covers both brand-new stubs (created==true) and existing stubs that
@@ -109,7 +163,7 @@ func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, pat
 			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
 	}
-	return fetchStarted, nil
+	return fetchStarted, nil, nil
 }
 
 // cleanupIfNotFound watches for the done event of a single-patent fetch job

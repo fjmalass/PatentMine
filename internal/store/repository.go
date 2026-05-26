@@ -69,10 +69,18 @@ type StubRecord struct {
 // instead of hundreds. A zero-value Patent is skipped, so a batch may carry
 // only stubs (used when a referenced patent could not be fetched).
 type NodeBatch struct {
-	Patent    domain.Patent
-	Documents []domain.Document
-	Stubs     []StubRecord
-	Relations []domain.Relation
+	Patent               domain.Patent
+	Documents            []domain.Document
+	Stubs                []StubRecord
+	Relations            []domain.Relation
+	AuthorityIdentifiers []domain.AuthorityIdentifier
+	USPTOApplication     *domain.USPTOApplication
+	USPTOParties         []domain.USPTOParty
+	USPTOEvents          []domain.USPTOEvent
+	USPTOContinuities    []domain.USPTOContinuity
+	USPTOForeignPriority []domain.USPTOForeignPriority
+	SourceSnapshots      []domain.SourceSnapshot
+	SourceDiffs          []domain.SourceDiff
 }
 
 // Repository is the persistence contract. Every method takes a context so the

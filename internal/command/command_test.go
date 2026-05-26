@@ -168,9 +168,16 @@ func TestTypedCommandsInScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
+	seen := map[ID]bool{}
 	for _, c := range reg.TypedInScope(ScopeCatalog) {
 		if c.Name == "" {
 			t.Fatalf("TypedInScope returned command %q with empty Name", c.ID)
+		}
+		seen[c.ID] = true
+	}
+	for _, id := range []ID{AddUSPTO, AddGoogle, SourceMode} {
+		if !seen[id] {
+			t.Fatalf("TypedInScope(catalog) missing %q", id)
 		}
 	}
 }

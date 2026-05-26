@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	usptoCheckURL     = "https://api.uspto.gov/api/v1/patent/applications/search?patentApplicationNumber=%s"
+	usptoCheckURL     = "https://api.uspto.gov/api/v1/patent/applications/search?q=applicationNumberText:%s"
 	usptoAppNumber    = "16123456"
 	usptoCheckTimeout = 10 * time.Second
 )

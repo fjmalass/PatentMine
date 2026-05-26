@@ -18,16 +18,16 @@ import (
 const patentUpsertSQL = `
 	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
-		grant_date, fetched_at, display_number,
+		grant_date, fetched_at, updated_at, display_number,
 		first_claim, expiration_date, expiration_source, source_url, classifications, classifications_text)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO UPDATE SET
 		country=excluded.country, serial=excluded.serial, kind=excluded.kind,
 		title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
 		inventors=excluded.inventors, fetch_state=excluded.fetch_state,
 		source=excluded.source, application_date=excluded.application_date,
 		publication_date=excluded.publication_date, grant_date=excluded.grant_date,
-		fetched_at=excluded.fetched_at, display_number=excluded.display_number,
+		fetched_at=excluded.fetched_at, updated_at=excluded.updated_at, display_number=excluded.display_number,
 		first_claim=excluded.first_claim, expiration_date=excluded.expiration_date,
 		expiration_source=excluded.expiration_source, source_url=excluded.source_url,
 		classifications=excluded.classifications,
@@ -61,7 +61,7 @@ func patentUpsertArgs(p domain.Patent) ([]any, error) {
 		p.Title, p.Abstract, p.Assignee, string(inventors),
 		string(p.FetchState), string(p.Source),
 		encodeTime(p.ApplicationDate), encodeTime(p.PublicationDate),
-		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), display.Normalized(),
+		encodeTime(p.GrantDate), encodeTime(p.FetchedAt), encodeTime(time.Now().UTC()), display.Normalized(),
 		p.FirstClaim, encodeTime(p.ExpirationDate), p.ExpirationSource, p.SourceURL,
 		string(classifications), classificationsText(p.Classifications),
 	}, nil
@@ -150,11 +150,17 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 			return fmt.Errorf("store/sqlite: save node: invalid relation %s->%s %q", rel.From, rel.To, rel.Kind)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO relation (from_number, to_number, kind) VALUES (?,?,?)
-			 ON CONFLICT(from_number, to_number, kind) DO NOTHING`,
-			rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind)); err != nil {
+			`INSERT INTO relation (from_number, to_number, kind, source, observed_at) VALUES (?,?,?,?,?)
+			 ON CONFLICT(from_number, to_number, kind) DO UPDATE SET
+			 	source=COALESCE(NULLIF(excluded.source, ''), relation.source),
+			 	observed_at=COALESCE(NULLIF(excluded.observed_at, ''), relation.observed_at)`,
+			rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind), string(batch.Patent.Source), encodeTime(time.Now().UTC())); err != nil {
 			return fmt.Errorf("store/sqlite: save node relation: %w", err)
 		}
+	}
+
+	if err := r.saveSourceData(ctx, tx, batch); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -167,9 +173,9 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 const patentInsertOrIgnoreSQL = `
 	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
-		grant_date, fetched_at, display_number,
+		grant_date, fetched_at, updated_at, display_number,
 		first_claim, expiration_date, expiration_source, source_url, classifications, classifications_text)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO NOTHING`
 
 // documentInsertOrIgnoreSQL inserts a document only when its number is new.

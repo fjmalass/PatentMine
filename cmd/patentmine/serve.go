@@ -14,6 +14,7 @@ import (
 
 	"patentmine/internal/config"
 	"patentmine/internal/crawl"
+	"patentmine/internal/domain"
 	"patentmine/internal/engine"
 	"patentmine/internal/observability"
 	"patentmine/internal/rpc"
@@ -119,11 +120,12 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	if err := os.MkdirAll(patentsDir, 0o755); err != nil {
 		return nil, err
 	}
-	registry := crawl.NewRegistry(
+	sources := []crawl.Source{
 		crawl.NewFileSource(patentsDir),
 		crawl.NewUSPTOSource(cfg.USPTOAPIKey),
 		crawl.NewGoogleSource(),
-	).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	}
+	registry := crawl.NewRegistry(sources...).WithSourceMode(cfg.GoogleMode).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	cachingRepo := store.NewCache(repo)
 	crawler := crawl.NewCrawler(registry, cachingRepo, crawl.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	crawlCfg := crawler.Config()
@@ -135,7 +137,11 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithLogger(telemetry.Logger),
 		engine.WithActivityRecorder(telemetry.Activity),
 		engine.WithMetrics(telemetry.Metrics),
-		engine.WithIDSExportDir(cfg.IDSExportDir)), nil
+		engine.WithSourceModeController(registry),
+		engine.WithIDSExportDir(cfg.IDSExportDir),
+		engine.WithUSPTOSearcher(func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
+			return crawl.SearchUSPTO(ctx, cfg.USPTOAPIKey, number)
+		})), nil
 }
 
 // fail prints err and returns the failure exit code.

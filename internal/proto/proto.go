@@ -35,6 +35,8 @@ const (
 	MethodUntagPatent               Method = "tag.remove"
 	MethodCrawlFamily               Method = "crawl.family"
 	MethodCrawlConfig               Method = "crawl.config"
+	MethodSourceModeGet             Method = "source_mode.get"
+	MethodSourceModeSet             Method = "source_mode.set"
 	MethodCrawlCancel               Method = "crawl.cancel"
 	MethodImportFile                Method = "import.file"
 	MethodRelations                 Method = "patent.relations"
@@ -235,11 +237,13 @@ type ProjectResult struct {
 type MembershipParams struct {
 	Project domain.ProjectID    `json:"project"`
 	Patent  domain.PatentNumber `json:"patent"`
+	Source  domain.Source       `json:"source,omitempty"`
 }
 
 // MembershipAddResult reports the outcome of adding a patent to a project.
 type MembershipAddResult struct {
-	FetchStarted bool `json:"fetch_started"`
+	FetchStarted bool                    `json:"fetch_started"`
+	Candidates   []domain.USPTOCandidate `json:"candidates,omitempty"`
 }
 
 // ReviewStateParams sets one or more memberships' states.
@@ -353,6 +357,16 @@ type CrawlStartResult struct {
 // CrawlConfigResult reports daemon-owned crawl defaults.
 type CrawlConfigResult struct {
 	MaxDepth int `json:"max_depth"`
+}
+
+// SourceModeParams changes normal provider behavior: compare, fallback, or off.
+type SourceModeParams struct {
+	Mode string `json:"mode"`
+}
+
+// SourceModeResult reports normal provider behavior.
+type SourceModeResult struct {
+	Mode string `json:"mode"`
 }
 
 // ImportFileParams loads a patent record from a local fixture file.

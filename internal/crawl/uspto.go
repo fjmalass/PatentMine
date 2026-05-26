@@ -1,9 +1,15 @@
 package crawl
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,18 +19,20 @@ import (
 // usptoMinInterval keeps requests to the USPTO ODP API polite.
 const usptoMinInterval = 1 * time.Second
 
-// NewUSPTOSource builds a Source backed by the USPTO Open Data Portal (ODP) API.
+// NewUSPTOSource builds a Source backed by the USPTO Patent File Wrapper API.
 func NewUSPTOSource(apiKey string) Source {
 	return &httpSource{
 		name:    domain.SourceUSPTO,
 		client:  &http.Client{Timeout: httpTimeout},
 		limiter: newLimiter(usptoMinInterval),
 		urlFor: func(n domain.PatentNumber) string {
-			return "https://api.uspto.gov/api/v1/patent/applications/search?q=patentNumberText:" + n.Serial
+			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(usptoQuery(n))
 		},
 		headers: func() http.Header {
 			h := make(http.Header)
-			h.Set("x-api-key", apiKey)
+			if strings.TrimSpace(apiKey) != "" {
+				h.Set("x-api-key", apiKey)
+			}
 			h.Set("Accept", "application/json")
 			return h
 		},
@@ -32,82 +40,551 @@ func NewUSPTOSource(apiKey string) Source {
 	}
 }
 
-// usptoResponse is the USPTO ODP search query response shape.
-type usptoResponse struct {
-	Results []struct {
-		PatentNumberText      string `json:"patentNumberText"`
-		InventionTitle        string `json:"inventionTitle"`
-		AbstractText          string `json:"abstractText"`
-		PatentGrantDate       string `json:"patentGrantDate"`
-		GrantDate             string `json:"grantDate"`
-		FilingDate            string `json:"filingDate"`
-		PublicationDate       string `json:"publicationDate"`
-		InventorNameBag       []struct {
-			NameText string `json:"nameText"`
-		} `json:"inventorNameBag"`
-		AssigneeBag           []struct {
-			OrganizationName string `json:"organizationName"`
-		} `json:"assigneeBag"`
-	} `json:"results"`
+func usptoQuery(n domain.PatentNumber) string {
+	serial := strings.TrimSpace(n.Serial)
+	if serial == "" {
+		return ""
+	}
+	return "applicationNumberText:" + serial + " OR patentNumberText:" + serial + " OR publicationNumberText:" + serial + " OR publicationNumber:" + serial
 }
 
-// parseUSPTO extracts a patent from a USPTO ODP API response.
+type usptoFileWrapperResponse struct {
+	Count                    int                `json:"count"`
+	RequestIdentifier        string             `json:"requestIdentifier"`
+	PatentFileWrapperDataBag []usptoWrapperData `json:"patentFileWrapperDataBag"`
+}
+
+type usptoWrapperData struct {
+	ApplicationNumberText string               `json:"applicationNumberText"`
+	ApplicationMetaData   usptoApplicationMeta `json:"applicationMetaData"`
+	EventDataBag          []usptoEventData     `json:"eventDataBag"`
+	ParentContinuityBag   []usptoContinuity    `json:"parentContinuityBag"`
+	ForeignPriorityBag    []usptoForeign       `json:"foreignPriorityBag"`
+	RecordAttorney        usptoRecordAttorney  `json:"recordAttorney"`
+	LastIngestionDateTime string               `json:"lastIngestionDateTime"`
+}
+
+type usptoApplicationMeta struct {
+	InventionTitle                string           `json:"inventionTitle"`
+	FilingDate                    string           `json:"filingDate"`
+	EffectiveFilingDate           string           `json:"effectiveFilingDate"`
+	ApplicationStatusCode         any              `json:"applicationStatusCode"`
+	ApplicationStatusDescription  string           `json:"applicationStatusDescriptionText"`
+	ApplicationStatusDate         string           `json:"applicationStatusDate"`
+	ApplicationTypeCode           string           `json:"applicationTypeCode"`
+	ApplicationTypeLabelName      string           `json:"applicationTypeLabelName"`
+	ApplicationTypeCategory       string           `json:"applicationTypeCategory"`
+	FirstInventorToFileIndicator  string           `json:"firstInventorToFileIndicator"`
+	NationalStageIndicator        bool             `json:"nationalStageIndicator"`
+	FirstInventorName             string           `json:"firstInventorName"`
+	FirstApplicantName            string           `json:"firstApplicantName"`
+	CustomerNumber                any              `json:"customerNumber"`
+	GroupArtUnitNumber            string           `json:"groupArtUnitNumber"`
+	ExaminerNameText              string           `json:"examinerNameText"`
+	DocketNumber                  string           `json:"docketNumber"`
+	ApplicationConfirmationNumber any              `json:"applicationConfirmationNumber"`
+	USPCSymbolText                string           `json:"uspcSymbolText"`
+	Class                         string           `json:"class"`
+	Subclass                      string           `json:"subclass"`
+	EntityStatusData              usptoEntity      `json:"entityStatusData"`
+	PublicationCategoryBag        json.RawMessage  `json:"publicationCategoryBag"`
+	InventorBag                   []usptoInventor  `json:"inventorBag"`
+	ApplicantBag                  []usptoApplicant `json:"applicantBag"`
+	PatentNumberText              string           `json:"patentNumberText"`
+	PatentNumber                  string           `json:"patentNumber"`
+	PublicationNumber             string           `json:"publicationNumber"`
+}
+
+type usptoEntity struct {
+	SmallEntityStatusIndicator   bool   `json:"smallEntityStatusIndicator"`
+	BusinessEntityStatusCategory string `json:"businessEntityStatusCategory"`
+}
+
+type usptoInventor struct {
+	FirstName                string          `json:"firstName"`
+	MiddleName               string          `json:"middleName"`
+	LastName                 string          `json:"lastName"`
+	NameSuffix               string          `json:"nameSuffix"`
+	InventorNameText         string          `json:"inventorNameText"`
+	CorrespondenceAddressBag json.RawMessage `json:"correspondenceAddressBag"`
+}
+
+type usptoApplicant struct {
+	ApplicantNameText        string          `json:"applicantNameText"`
+	CorrespondenceAddressBag json.RawMessage `json:"correspondenceAddressBag"`
+}
+
+type usptoEventData struct {
+	EventCode            string `json:"eventCode"`
+	EventDescriptionText string `json:"eventDescriptionText"`
+	EventDate            string `json:"eventDate"`
+}
+
+type usptoContinuity struct {
+	ParentApplicationNumberText        string `json:"parentApplicationNumberText"`
+	ChildApplicationNumberText         string `json:"childApplicationNumberText"`
+	ParentApplicationFilingDate        string `json:"parentApplicationFilingDate"`
+	ParentApplicationStatusCode        any    `json:"parentApplicationStatusCode"`
+	ParentApplicationStatusDescription string `json:"parentApplicationStatusDescriptionText"`
+	ClaimParentageTypeCode             string `json:"claimParentageTypeCode"`
+	ClaimParentageTypeDescriptionText  string `json:"claimParentageTypeCodeDescriptionText"`
+}
+
+type usptoForeign struct {
+	ApplicationNumberText string `json:"applicationNumberText"`
+	FilingDate            string `json:"filingDate"`
+	IPOfficeName          string `json:"ipOfficeName"`
+}
+
+type usptoRecordAttorney struct {
+	AttorneyBag []usptoAttorney `json:"attorneyBag"`
+}
+
+type usptoAttorney struct {
+	ActiveIndicator                string          `json:"activeIndicator"`
+	FirstName                      string          `json:"firstName"`
+	MiddleName                     string          `json:"middleName"`
+	LastName                       string          `json:"lastName"`
+	RegistrationNumber             string          `json:"registrationNumber"`
+	RegisteredPractitionerCategory string          `json:"registeredPractitionerCategory"`
+	AttorneyAddressBag             json.RawMessage `json:"attorneyAddressBag"`
+	TelecommunicationAddressBag    json.RawMessage `json:"telecommunicationAddressBag"`
+}
+
 func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
-	var resp usptoResponse
+	var resp usptoFileWrapperResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return Result{}, fmt.Errorf("crawl/uspto: decode response: %w", err)
 	}
-	if len(resp.Results) == 0 {
+	if len(resp.PatentFileWrapperDataBag) == 0 {
 		return Result{}, ErrNotAvailable
 	}
-	p := resp.Results[0]
 
-	var inventors []domain.Inventor
-	for _, inv := range p.InventorNameBag {
-		if name := strings.TrimSpace(inv.NameText); name != "" {
-			inventors = append(inventors, domain.Inventor(name))
-		}
+	w, ok := matchingUSPTOWrapper(number, resp.PatentFileWrapperDataBag)
+	if !ok {
+		return Result{}, ErrNotAvailable
 	}
-	var assignees []string
-	for _, a := range p.AssigneeBag {
-		if org := strings.TrimSpace(a.OrganizationName); org != "" {
-			assignees = append(assignees, org)
-		}
+	appNumber := strings.TrimSpace(w.ApplicationNumberText)
+	if appNumber == "" {
+		return Result{}, ErrNotAvailable
 	}
 
-	dateStr := p.PatentGrantDate
-	if dateStr == "" {
-		dateStr = p.GrantDate
+	recordNumber, err := domain.ParsePatentNumber("US" + appNumber)
+	if err != nil {
+		recordNumber = number
 	}
-	if dateStr == "" {
-		dateStr = p.PublicationDate
-	}
-	grantDate := parseISODate(dateStr)
-	filingDate := parseISODate(p.FilingDate)
+	filingDate := parseISODate(w.ApplicationMetaData.FilingDate)
+	now := time.Now().UTC()
+	nowText := encodeRFC3339(now)
 
+	inventors := usptoInventors(w.ApplicationMetaData)
+	assignees := usptoApplicants(w.ApplicationMetaData)
 	patent := domain.Patent{
-		Number:          number,
-		DisplayNumber:   number,
-		Title:           strings.TrimSpace(p.InventionTitle),
-		Abstract:        strings.TrimSpace(p.AbstractText),
+		Number:          recordNumber,
+		DisplayNumber:   recordNumber,
+		Title:           strings.TrimSpace(w.ApplicationMetaData.InventionTitle),
 		Assignee:        strings.Join(assignees, "; "),
 		Inventors:       inventors,
 		FetchState:      domain.FetchCached,
 		Source:          domain.SourceUSPTO,
-		FetchedAt:       time.Now().UTC(),
+		FetchedAt:       now,
 		ApplicationDate: filingDate,
-		PublicationDate: grantDate,
-		GrantDate:       grantDate,
+		SourceURL:       "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape("applicationNumberText:"+appNumber),
 	}
-	doc := domain.Document{
-		Number: number,
-		Stage:  domain.GuessStage(number),
-		Dated:  grantDate,
+
+	res := Result{
+		Patent: patent,
+		Documents: []domain.Document{{
+			Number: recordNumber,
+			Stage:  domain.StageApplication,
+			Dated:  filingDate,
+		}},
+		AuthorityIdentifiers: []domain.AuthorityIdentifier{{
+			Authority:      "US",
+			IdentifierType: "application",
+			Identifier:     appNumber,
+			RawIdentifier:  w.ApplicationNumberText,
+			RecordNumber:   recordNumber,
+			DocumentNumber: recordNumber.Normalized(),
+			Country:        "US",
+			Dated:          w.ApplicationMetaData.FilingDate,
+			Source:         string(domain.SourceUSPTO),
+			Confidence:     100,
+		}},
+		USPTOApplication: &domain.USPTOApplication{
+			ApplicationNumber:             appNumber,
+			RecordNumber:                  recordNumber,
+			InventionTitle:                patent.Title,
+			FilingDate:                    w.ApplicationMetaData.FilingDate,
+			EffectiveFilingDate:           w.ApplicationMetaData.EffectiveFilingDate,
+			ApplicationStatusCode:         stringify(w.ApplicationMetaData.ApplicationStatusCode),
+			ApplicationStatusText:         strings.TrimSpace(w.ApplicationMetaData.ApplicationStatusDescription),
+			ApplicationStatusDate:         w.ApplicationMetaData.ApplicationStatusDate,
+			ApplicationTypeCode:           w.ApplicationMetaData.ApplicationTypeCode,
+			ApplicationTypeLabel:          w.ApplicationMetaData.ApplicationTypeLabelName,
+			ApplicationTypeCategory:       w.ApplicationMetaData.ApplicationTypeCategory,
+			FirstInventorToFile:           strings.EqualFold(w.ApplicationMetaData.FirstInventorToFileIndicator, "Y"),
+			NationalStage:                 w.ApplicationMetaData.NationalStageIndicator,
+			FirstInventorName:             w.ApplicationMetaData.FirstInventorName,
+			FirstApplicantName:            w.ApplicationMetaData.FirstApplicantName,
+			CustomerNumber:                stringify(w.ApplicationMetaData.CustomerNumber),
+			GroupArtUnitNumber:            w.ApplicationMetaData.GroupArtUnitNumber,
+			ExaminerName:                  w.ApplicationMetaData.ExaminerNameText,
+			DocketNumber:                  w.ApplicationMetaData.DocketNumber,
+			ApplicationConfirmationNumber: stringify(w.ApplicationMetaData.ApplicationConfirmationNumber),
+			USPCSymbolText:                w.ApplicationMetaData.USPCSymbolText,
+			USPCClass:                     w.ApplicationMetaData.Class,
+			USPCSubclass:                  w.ApplicationMetaData.Subclass,
+			SmallEntityStatus:             w.ApplicationMetaData.EntityStatusData.SmallEntityStatusIndicator,
+			BusinessEntityStatus:          w.ApplicationMetaData.EntityStatusData.BusinessEntityStatusCategory,
+			PublicationCategoryJSON:       rawJSONOrDefault(w.ApplicationMetaData.PublicationCategoryBag, "[]"),
+			LastIngestionDateTime:         w.LastIngestionDateTime,
+			FetchedAt:                     nowText,
+		},
+		USPTOParties:         usptoParties(appNumber, w),
+		USPTOEvents:          usptoEvents(appNumber, w.EventDataBag),
+		USPTOContinuities:    usptoContinuities(appNumber, recordNumber, w.ParentContinuityBag),
+		USPTOForeignPriority: usptoForeignPriorities(appNumber, w.ForeignPriorityBag),
+		SourceSnapshots: []domain.SourceSnapshot{{
+			ID:             snapshotID(string(domain.SourceUSPTO), appNumber, body),
+			PatentNumber:   recordNumber,
+			Source:         "uspto_file_wrapper",
+			SourceRecordID: appNumber,
+			SourceURL:      patent.SourceURL,
+			FetchedAt:      nowText,
+			PayloadKind:    "json",
+			PayloadHash:    payloadHash(body),
+			ResponseBytes:  int64(len(body)),
+			HTTPStatus:     http.StatusOK,
+			SummaryJSON:    `{"parser":"file_wrapper"}`,
+		}},
 	}
-	return Result{Patent: patent, Documents: []domain.Document{doc}}, nil
+	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, identifiersFromUSPTO(recordNumber, appNumber, w)...)
+	res.Relations = append(res.Relations, relationsFromUSPTOContinuity(recordNumber, w.ParentContinuityBag)...)
+	return res, nil
 }
 
-// parseISODate converts an ISO date string to a time.Time object.
+func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (usptoWrapperData, bool) {
+	serial := strings.TrimLeft(number.Serial, "0")
+	if serial == "" {
+		serial = number.Serial
+	}
+	if len(bags) == 1 {
+		return bags[0], true
+	}
+	for _, w := range bags {
+		if sameDigits(w.ApplicationNumberText, serial) ||
+			sameDigits(w.ApplicationMetaData.PatentNumber, serial) ||
+			sameDigits(w.ApplicationMetaData.PatentNumberText, serial) ||
+			sameDigits(w.ApplicationMetaData.PublicationNumber, serial) {
+			return w, true
+		}
+	}
+	return usptoWrapperData{}, false
+}
+
+// SearchUSPTO queries the USPTO ODP API using a broad query across multiple fields
+// and returns candidate lightweight metadata rows.
+func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
+	serial := strings.TrimSpace(number.Serial)
+	if serial == "" {
+		return nil, nil
+	}
+	query := fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s", serial, serial, serial, serial)
+	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("x-api-key", apiKey)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("uspto: unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var wrapperResp usptoFileWrapperResponse
+	if err := json.Unmarshal(body, &wrapperResp); err != nil {
+		return nil, err
+	}
+
+	var candidates []domain.USPTOCandidate
+	for _, w := range wrapperResp.PatentFileWrapperDataBag {
+		candidates = append(candidates, domain.USPTOCandidate{
+			ApplicationNumber: w.ApplicationNumberText,
+			Title:             w.ApplicationMetaData.InventionTitle,
+			FilingDate:        w.ApplicationMetaData.FilingDate,
+			FirstInventorName: w.ApplicationMetaData.FirstInventorName,
+		})
+	}
+	return candidates, nil
+}
+
+func sameDigits(a, b string) bool {
+	return strings.TrimLeft(onlyDigits(a), "0") == strings.TrimLeft(onlyDigits(b), "0")
+}
+
+func onlyDigits(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func usptoInventors(m usptoApplicationMeta) []domain.Inventor {
+	var out []domain.Inventor
+	for _, inv := range m.InventorBag {
+		name := strings.TrimSpace(inv.InventorNameText)
+		if name == "" {
+			name = strings.TrimSpace(strings.Join([]string{inv.FirstName, inv.MiddleName, inv.LastName, inv.NameSuffix}, " "))
+		}
+		if name != "" {
+			out = append(out, domain.Inventor(clean(name)))
+		}
+	}
+	if len(out) == 0 && strings.TrimSpace(m.FirstInventorName) != "" {
+		out = append(out, domain.Inventor(strings.TrimSpace(m.FirstInventorName)))
+	}
+	return out
+}
+
+func usptoApplicants(m usptoApplicationMeta) []string {
+	var out []string
+	for _, a := range m.ApplicantBag {
+		if name := strings.TrimSpace(a.ApplicantNameText); name != "" {
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 && strings.TrimSpace(m.FirstApplicantName) != "" {
+		out = append(out, strings.TrimSpace(m.FirstApplicantName))
+	}
+	return out
+}
+
+func usptoParties(appNumber string, w usptoWrapperData) []domain.USPTOParty {
+	var out []domain.USPTOParty
+	for i, inv := range w.ApplicationMetaData.InventorBag {
+		out = append(out, domain.USPTOParty{
+			ApplicationNumber: appNumber,
+			Role:              "inventor",
+			Ordinal:           i,
+			NameText:          firstNonEmpty(inv.InventorNameText, strings.TrimSpace(strings.Join([]string{inv.FirstName, inv.MiddleName, inv.LastName, inv.NameSuffix}, " "))),
+			FirstName:         inv.FirstName,
+			MiddleName:        inv.MiddleName,
+			LastName:          inv.LastName,
+			NameSuffix:        inv.NameSuffix,
+			AddressJSON:       rawJSONOrDefault(inv.CorrespondenceAddressBag, "[]"),
+		})
+	}
+	for i, a := range w.ApplicationMetaData.ApplicantBag {
+		out = append(out, domain.USPTOParty{
+			ApplicationNumber: appNumber,
+			Role:              "applicant",
+			Ordinal:           i,
+			NameText:          a.ApplicantNameText,
+			OrganizationName:  a.ApplicantNameText,
+			AddressJSON:       rawJSONOrDefault(a.CorrespondenceAddressBag, "[]"),
+		})
+	}
+	for i, a := range w.RecordAttorney.AttorneyBag {
+		out = append(out, domain.USPTOParty{
+			ApplicationNumber:    appNumber,
+			Role:                 "attorney",
+			Ordinal:              i,
+			NameText:             strings.TrimSpace(strings.Join([]string{a.FirstName, a.MiddleName, a.LastName}, " ")),
+			FirstName:            a.FirstName,
+			MiddleName:           a.MiddleName,
+			LastName:             a.LastName,
+			RegistrationNumber:   a.RegistrationNumber,
+			ActiveIndicator:      a.ActiveIndicator,
+			PractitionerCategory: a.RegisteredPractitionerCategory,
+			AddressJSON:          rawJSONOrDefault(a.AttorneyAddressBag, "[]"),
+			TelecomJSON:          rawJSONOrDefault(a.TelecommunicationAddressBag, "[]"),
+		})
+	}
+	return out
+}
+
+func usptoEvents(appNumber string, events []usptoEventData) []domain.USPTOEvent {
+	out := make([]domain.USPTOEvent, 0, len(events))
+	for i, e := range events {
+		out = append(out, domain.USPTOEvent{
+			ApplicationNumber:    appNumber,
+			Ordinal:              i,
+			EventCode:            e.EventCode,
+			EventDescriptionText: e.EventDescriptionText,
+			EventDate:            e.EventDate,
+		})
+	}
+	return out
+}
+
+func usptoContinuities(appNumber string, childRecord domain.PatentNumber, rows []usptoContinuity) []domain.USPTOContinuity {
+	out := make([]domain.USPTOContinuity, 0, len(rows))
+	for i, c := range rows {
+		parent, _ := parseUSApplicationNumber(c.ParentApplicationNumberText)
+		out = append(out, domain.USPTOContinuity{
+			ApplicationNumber:                 appNumber,
+			Ordinal:                           i,
+			ParentApplicationNumberText:       c.ParentApplicationNumberText,
+			ChildApplicationNumberText:        c.ChildApplicationNumberText,
+			ParentApplicationFilingDate:       c.ParentApplicationFilingDate,
+			ParentApplicationStatusCode:       stringify(c.ParentApplicationStatusCode),
+			ParentApplicationStatusText:       c.ParentApplicationStatusDescription,
+			ClaimParentageTypeCode:            c.ClaimParentageTypeCode,
+			ClaimParentageTypeDescriptionText: c.ClaimParentageTypeDescriptionText,
+			ParentRecordNumber:                parent,
+			ChildRecordNumber:                 childRecord,
+		})
+	}
+	return out
+}
+
+func usptoForeignPriorities(appNumber string, rows []usptoForeign) []domain.USPTOForeignPriority {
+	out := make([]domain.USPTOForeignPriority, 0, len(rows))
+	for i, f := range rows {
+		out = append(out, domain.USPTOForeignPriority{
+			ApplicationNumber:        appNumber,
+			Ordinal:                  i,
+			ForeignApplicationNumber: strings.TrimSpace(f.ApplicationNumberText),
+			FilingDate:               f.FilingDate,
+			IPOfficeName:             f.IPOfficeName,
+			Authority:                strings.ToUpper(strings.TrimSpace(f.IPOfficeName)),
+		})
+	}
+	return out
+}
+
+func identifiersFromUSPTO(record domain.PatentNumber, appNumber string, w usptoWrapperData) []domain.AuthorityIdentifier {
+	var out []domain.AuthorityIdentifier
+	for _, c := range w.ParentContinuityBag {
+		if raw := strings.TrimSpace(c.ParentApplicationNumberText); raw != "" {
+			out = append(out, domain.AuthorityIdentifier{
+				Authority:      authorityFromRaw(raw),
+				IdentifierType: "application",
+				Identifier:     raw,
+				RawIdentifier:  raw,
+				RecordNumber:   record,
+				Dated:          c.ParentApplicationFilingDate,
+				Source:         string(domain.SourceUSPTO),
+				Confidence:     60,
+			})
+		}
+	}
+	for _, f := range w.ForeignPriorityBag {
+		if raw := strings.TrimSpace(f.ApplicationNumberText); raw != "" {
+			out = append(out, domain.AuthorityIdentifier{
+				Authority:      firstNonEmpty(strings.ToUpper(strings.TrimSpace(f.IPOfficeName)), "FOREIGN"),
+				IdentifierType: "priority",
+				Identifier:     raw,
+				RawIdentifier:  raw,
+				RecordNumber:   record,
+				Dated:          f.FilingDate,
+				Source:         string(domain.SourceUSPTO),
+				Confidence:     70,
+			})
+		}
+	}
+	return out
+}
+
+func relationsFromUSPTOContinuity(child domain.PatentNumber, rows []usptoContinuity) []domain.Relation {
+	var out []domain.Relation
+	for _, c := range rows {
+		parent, ok := parseUSApplicationNumber(c.ParentApplicationNumberText)
+		if !ok || parent.IsZero() || parent == child {
+			continue
+		}
+		out = append(out,
+			domain.Relation{From: child, To: parent, Kind: domain.RelationParent},
+			domain.Relation{From: parent, To: child, Kind: domain.RelationChild})
+	}
+	return out
+}
+
+func parseUSApplicationNumber(raw string) (domain.PatentNumber, bool) {
+	digits := onlyDigits(raw)
+	if digits == "" || len(digits) > 9 || strings.Contains(strings.ToUpper(raw), "PCT") {
+		return domain.PatentNumber{}, false
+	}
+	n, err := domain.ParsePatentNumber("US" + digits)
+	return n, err == nil
+}
+
+func stringify(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(x)
+	case float64:
+		return strconv.FormatInt(int64(x), 10)
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	default:
+		return strings.TrimSpace(fmt.Sprint(x))
+	}
+}
+
+func rawJSONOrDefault(raw json.RawMessage, fallback string) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return fallback
+	}
+	return string(raw)
+}
+
+func authorityFromRaw(raw string) string {
+	upper := strings.ToUpper(strings.TrimSpace(raw))
+	switch {
+	case strings.HasPrefix(upper, "PCT"):
+		return "PCT"
+	case strings.HasPrefix(upper, "WO"):
+		return "WO"
+	default:
+		return "US"
+	}
+}
+
+func payloadHash(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
+}
+
+func snapshotID(source, record string, body []byte) string {
+	return source + ":" + record + ":" + payloadHash(body)[:16]
+}
+
+func encodeRFC3339(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 func parseISODate(s string) time.Time {
 	s = strings.TrimSpace(s)
 	for _, layout := range []string{"2006-01-02", "2006/01/02", time.RFC3339} {

@@ -16,6 +16,18 @@ import (
 // StartFamilyCrawl enqueues a family-graph crawl and returns its job id. A
 // force crawl bypasses the local file cache and re-fetches from the web.
 func (e *Engine) StartFamilyCrawl(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
+	return e.startFamilyCrawl(ctx, root, depth, profile, force, "")
+}
+
+// StartFamilyCrawlFromSource enqueues a crawl constrained to one provider.
+func (e *Engine) StartFamilyCrawlFromSource(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, source domain.Source) (id JobID, err error) {
+	if source == "" {
+		return e.StartFamilyCrawl(ctx, root, depth, profile, true)
+	}
+	return e.startFamilyCrawl(ctx, root, depth, profile, true, source)
+}
+
+func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) (id JobID, err error) {
 	defer e.observeDuration("engine.start_family_crawl", time.Now(), &err)
 	if e.crawl == nil {
 		return "", errors.New("engine: no crawl factory configured")
@@ -23,25 +35,88 @@ func (e *Engine) StartFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 	if root.IsZero() {
 		return "", errors.New("engine: crawl root must not be empty")
 	}
-	id, err = e.pool.submit(e.crawl(root, depth, profile, force))
+	id, err = e.pool.submit(e.crawl(root, depth, profile, force, source))
 	if err != nil {
-		e.log(ctx, slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("error", err.Error()))
+		e.log(ctx, slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("source", string(source)), slog.String("error", err.Error()))
 		return "", err
 	}
-	e.log(ctx, slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.Bool("force", force))
+	sourceMode := e.currentSourceMode()
+	e.log(ctx, slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.String("source", string(source)), slog.String("source_mode", sourceMode), slog.Bool("force", force))
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.crawl.start_total", 1)
+		if source != "" {
+			e.metrics.IncCounter("engine.crawl.start.source."+string(source)+"_total", 1)
+		}
+	}
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionCrawlStart,
 		Entity:   "job",
 		EntityID: string(id),
 		Status:   "queued",
-		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth, "force": force},
+		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth, "force": force, "source": string(source), "source_mode": sourceMode},
+		Metadata: map[string]any{"source": string(source), "source_mode": sourceMode, "profile": string(profile)},
 	})
 	return id, nil
+}
+
+func (e *Engine) currentSourceMode() string {
+	if e.sourceModes == nil {
+		return ""
+	}
+	return e.sourceModes.SourceMode()
 }
 
 // CrawlConfig reports the daemon's default family-crawl depth.
 func (e *Engine) CrawlConfig() proto.CrawlConfigResult {
 	return proto.CrawlConfigResult{MaxDepth: e.crawlMaxDepth}
+}
+
+// SourceMode reports the current normal provider behavior.
+func (e *Engine) SourceMode() proto.SourceModeResult {
+	if e.sourceModes == nil {
+		return proto.SourceModeResult{Mode: ""}
+	}
+	return proto.SourceModeResult{Mode: e.sourceModes.SourceMode()}
+}
+
+// SetSourceMode changes normal provider behavior at runtime and records the
+// change in logs, metrics, and Activity History.
+func (e *Engine) SetSourceMode(ctx context.Context, mode string) (result proto.SourceModeResult, err error) {
+	defer e.observeDuration("engine.source_mode.set", time.Now(), &err)
+	if e.sourceModes == nil {
+		return proto.SourceModeResult{}, errors.New("engine: source mode controller not configured")
+	}
+	before := e.sourceModes.SourceMode()
+	if err := e.sourceModes.SetSourceMode(mode); err != nil {
+		return proto.SourceModeResult{}, err
+	}
+	after := e.sourceModes.SourceMode()
+	e.observeSourceMode(after)
+	e.log(ctx, slog.LevelInfo, "source mode changed", slog.String("before", before), slog.String("after", after))
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionSourceModeSet,
+		Entity:   "config",
+		EntityID: "source_mode",
+		Status:   "committed",
+		Before:   map[string]any{"mode": before},
+		After:    map[string]any{"mode": after},
+		Metadata: map[string]any{"mode": after},
+	})
+	return proto.SourceModeResult{Mode: after}, nil
+}
+
+func (e *Engine) observeSourceMode(mode string) {
+	if e.metrics == nil {
+		return
+	}
+	e.metrics.IncCounter("engine.source_mode.set_total", 1)
+	for _, candidate := range []string{"compare", "fallback", "off"} {
+		value := int64(0)
+		if mode == candidate {
+			value = 1
+		}
+		e.metrics.SetGauge("engine.source_mode."+candidate, value)
+	}
 }
 
 // ImportFile loads a patent record from a local fixture file into the store.
