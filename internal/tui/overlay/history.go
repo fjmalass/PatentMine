@@ -194,8 +194,6 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		Total:        n,
 		PageSize:     pageSize,
 		FocusActive:  true,
-		PrefixCursor: "→ ",
-		PrefixNormal: "  ",
 		VisualMode:   h.page.VisualMode(),
 		IsRowSelected: func(absIdx int) bool {
 			return h.page.IsRowSelected(absIdx)

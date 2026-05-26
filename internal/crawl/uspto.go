@@ -46,6 +46,17 @@ func usptoQuery(n domain.PatentNumber) string {
 		return ""
 	}
 	norm := n.Normalized()
+	if n.Kind != "" {
+		// Serial is a grant/publication number, not an application number.
+		// Excluding applicationNumberText avoids false positives where an
+		// unrelated application happens to share the same serial digits.
+		if norm != "" && norm != serial {
+			return fmt.Sprintf("patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
+				serial, serial, serial, norm, serial)
+		}
+		return fmt.Sprintf("patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
+			serial, serial, serial, serial)
+	}
 	if norm != "" && norm != serial {
 		return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
 			serial, serial, serial, serial, norm, serial)
@@ -402,6 +413,8 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 			Title:             w.ApplicationMetaData.InventionTitle,
 			FilingDate:        w.ApplicationMetaData.FilingDate,
 			FirstInventorName: w.ApplicationMetaData.FirstInventorName,
+			GrantNumber:       w.ApplicationMetaData.PatentNumberText,
+			PublicationNumber: w.ApplicationMetaData.PublicationNumber,
 		})
 	}
 	return candidates, nil

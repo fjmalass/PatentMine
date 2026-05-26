@@ -301,6 +301,8 @@ type USPTOCandidate struct {
 	Title             string `json:"title"`
 	FilingDate        string `json:"filing_date"`
 	FirstInventorName string `json:"first_inventor_name"`
+	GrantNumber       string `json:"grant_number,omitempty"`
+	PublicationNumber string `json:"publication_number,omitempty"`
 }
 
 // ReconciliableField describes one field that can participate in source

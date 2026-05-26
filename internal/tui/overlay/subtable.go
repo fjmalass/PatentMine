@@ -18,12 +18,10 @@ type subtableParams struct {
 	FocusedColIdx int
 	ActiveSort    string
 	SortAscending bool
-	PrefixCursor  string
-	PrefixNormal  string
 	VisualMode    bool
 	IsRowSelected func(absIdx int) bool
 	IsRowMarked   func(absIdx int) bool
-	PrefixMarked  string
+	MarkGlyph     string // override mark glyph (defaults to Theme.Glyphs.RowMark)
 }
 
 func renderSubtable(params subtableParams, maxW int, getCellValue func(absIdx, rowIdx, colIdx int) string) string {
@@ -31,19 +29,21 @@ func renderSubtable(params subtableParams, maxW int, getCellValue func(absIdx, r
 	params.Page.SetPageSize(params.PageSize)
 	start, end := params.Page.Window()
 
+	cursor := params.Page.Cursor()
+	focusActive := params.FocusActive
 	tableParams := render.TableParams{
 		Theme:         params.Theme,
 		Columns:       params.Columns,
 		RowCount:      end - start,
-		Cursor:        params.Page.Cursor() - start,
 		FocusedColIdx: params.FocusedColIdx,
 		ActiveSort:    params.ActiveSort,
 		SortAscending: params.SortAscending,
-		FocusActive:   params.FocusActive,
-		PrefixCursor:  params.PrefixCursor,
-		PrefixNormal:  params.PrefixNormal,
+		FocusActive:   focusActive,
 		VisualMode:    params.VisualMode,
-		PrefixMarked:  params.PrefixMarked,
+		MarkGlyph:     params.MarkGlyph,
+		IsRowCursor: func(rowIdx int) bool {
+			return focusActive && start+rowIdx == cursor
+		},
 	}
 	if params.IsRowSelected != nil {
 		tableParams.IsRowSelected = func(rowIdx int) bool {

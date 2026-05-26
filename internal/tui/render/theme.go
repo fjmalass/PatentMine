@@ -98,6 +98,15 @@ const (
 	glyphFetchStateCached  = "🗃️"
 	glyphFetchStateStub    = "🦴"
 
+	// Table row prefix glyphs. Each is a single display-width character;
+	// table.go composes them as cursor+mark+" " for a fixed 3-char prefix.
+	glyphRowCursor  = ">" // cursor row in focused table
+	glyphRowNoCursor = " " // not the cursor row
+	glyphRowActive  = "*" // active/current item mark (e.g. active project), passed via MarkGlyph
+	glyphRowMark    = "⚑"
+	glyphRowChosen  = "✓" // override for confirmed-selection rows
+	glyphRowNoMark  = " " // placeholder when row has no mark
+
 	glyphCheckboxChecked   = "✅"
 	glyphCheckboxUnchecked = "☐"
 
@@ -238,6 +247,14 @@ type ThemeGlyphs struct {
 	HistTagAdd      string
 	HistTagRemove   string
 	HistColType     string
+
+	// Table row prefix glyphs. table.go composes cursor+mark+" " = 3-char prefix.
+	RowCursor  string // cursor row in focused table, e.g. ">"
+	RowNoCursor string // non-cursor row placeholder
+	RowActive  string // active/current item mark passed via MarkGlyph, e.g. "*"
+	RowMark    string // flagged/marked row indicator, e.g. "⚑"
+	RowChosen  string // confirmed-selection indicator, e.g. "✓" (caller override)
+	RowNoMark  string // no-mark placeholder, same display width
 }
 
 // NewTheme builds the default theme.
@@ -424,6 +441,13 @@ func NewTheme() Theme {
 			HistTagAdd:      glyphHistTagAdd,
 			HistTagRemove:   glyphHistTagRemove,
 			HistColType:     glyphHistColType,
+
+			RowCursor:  glyphRowCursor,
+			RowNoCursor: glyphRowNoCursor,
+			RowActive:  glyphRowActive,
+			RowMark:    glyphRowMark,
+			RowChosen:  glyphRowChosen,
+			RowNoMark:  glyphRowNoMark,
 		},
 	}
 }

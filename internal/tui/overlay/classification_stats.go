@@ -395,10 +395,11 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 	}
 	for i := startStats; i < endStats; i++ {
 		s := o.stats[i]
-		prefix := "  "
+		cursorPart := o.theme.Glyphs.RowNoCursor
 		if i == o.selected && o.focus == focusInventors {
-			prefix = "→ "
+			cursorPart = o.theme.Glyphs.RowCursor
 		}
+		prefix := cursorPart + o.theme.Glyphs.RowNoMark + " "
 		label := render.Pad(classificationStatsLabel(s.Classification), maxNameLen+2)
 		line := fmt.Sprintf("%s%s%s", prefix, label, render.FormatEntityStats(s.Total, s.States, s.Tags))
 		if i == o.selected && o.focus == focusInventors {
@@ -429,7 +430,9 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 	} else {
 		cols := o.currentCols()
 		startPat, endPat := o.patentsPage.Window()
-		params := render.TableParams{Theme: o.theme, Columns: cols, RowCount: endPat - startPat, Cursor: o.patentsPage.Cursor() - startPat, FocusedColIdx: o.focusedColIdx, ActiveSort: string(o.activeSort), SortAscending: o.sortAscending, FocusActive: o.focus == focusPatents, PrefixCursor: "→ ", PrefixNormal: "  ", VisualMode: o.patentsPage.VisualMode(), IsRowSelected: func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) }, IsRowMarked: func(rowIdx int) bool {
+		patCursor := o.patentsPage.Cursor()
+		focusPatents := o.focus == focusPatents
+		params := render.TableParams{Theme: o.theme, Columns: cols, RowCount: endPat - startPat, FocusedColIdx: o.focusedColIdx, ActiveSort: string(o.activeSort), SortAscending: o.sortAscending, FocusActive: focusPatents, VisualMode: o.patentsPage.VisualMode(), IsRowCursor: func(rowIdx int) bool { return focusPatents && startPat+rowIdx == patCursor }, IsRowSelected: func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) }, IsRowMarked: func(rowIdx int) bool {
 			absIdx := startPat + rowIdx
 			return absIdx >= 0 && absIdx < len(o.patents) && o.patents[absIdx].Number == o.patent.Number
 		}}

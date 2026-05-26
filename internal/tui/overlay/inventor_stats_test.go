@@ -542,9 +542,9 @@ func TestInventorStatsOverlaySourcePatentHighlight(t *testing.T) {
 	// We reverse order or move cursor to index 1 (which is the source patent).
 	o.patentsPage.MoveDown(1) // Move cursor to the source patent (index 1)
 
-	// Now the source patent row is selected. The prefix should change to cursor + marked: "→⚑"
+	// Cursor now on source patent row. Prefix composes cursor glyph + mark glyph: ">⚑".
 	viewStrCursor := o.View(120, 20)
-	if !strings.Contains(viewStrCursor, "→⚑") {
-		t.Errorf("Expected combined cursor + marked icon '→⚑' to be rendered when cursor is on the source patent row")
+	if !strings.Contains(viewStrCursor, ">⚑") {
+		t.Errorf("Expected combined cursor + marked icon '>⚑' to be rendered when cursor is on the source patent row")
 	}
 }

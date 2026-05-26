@@ -115,8 +115,6 @@ func (a *Activity) View(maxW, maxH int) string {
 		Total:        n,
 		PageSize:     pageSize,
 		FocusActive:  true,
-		PrefixCursor: " >",
-		PrefixNormal: "  ",
 	}, maxW, getCell))
 	b.WriteByte('\n')
 	selected := a.records[a.page.Cursor()]

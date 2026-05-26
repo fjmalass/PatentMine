@@ -454,11 +454,12 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 
 	for i := startStats; i < endStats; i++ {
 		s := o.stats[i]
-		prefix := "  "
 		isSelectedRow := i == o.selected
+		cursorPart := o.theme.Glyphs.RowNoCursor
 		if isSelectedRow && o.focus == focusInventors {
-			prefix = "→ "
+			cursorPart = o.theme.Glyphs.RowCursor
 		}
+		prefix := cursorPart + o.theme.Glyphs.RowNoMark + " "
 
 		paddedName := render.Pad(s.Inventor, maxNameLen+2)
 		statsStr := render.FormatEntityStats(s.Total, s.States, s.Tags)
@@ -509,8 +510,6 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 			ActiveSort:    string(o.activeSort),
 			SortAscending: o.sortAscending,
 			FocusActive:   o.focus == focusPatents,
-			PrefixCursor:  "→ ",
-			PrefixNormal:  "  ",
 			VisualMode:    o.patentsPage.VisualMode(),
 			IsRowSelected: func(absIdx int) bool {
 				return o.patentsPage.IsRowSelected(absIdx)

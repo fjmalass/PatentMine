@@ -923,13 +923,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(a.overlays) > 0 {
 			a.overlays = a.overlays[:len(a.overlays)-1]
 		}
-		a.log().Info("tui.add.uspto.candidate_selected",
-			slog.String("app_number", m.Candidate.ApplicationNumber),
-			slog.String("original", m.OriginalPatent.String()),
-			slog.String("title", m.Candidate.Title),
-			slog.String("filing_date", m.Candidate.FilingDate))
-		a.metrics.IncCounter("tui.add.uspto_candidate.selected", 1)
-		return a, pane.AddToProjectWithCandidateCmd(a.client, m.Project, m.Candidate)
+		if len(m.Candidates) == 0 {
+			return a, nil
+		}
+		a.metrics.IncCounter("tui.add.uspto_candidate.selected", int64(len(m.Candidates)))
+		a.metrics.IncCounter("tui.add.uspto_candidate.batches", 1)
+		cmds := make([]tea.Cmd, 0, len(m.Candidates))
+		for _, c := range m.Candidates {
+			a.log().Info("tui.add.uspto.candidate_selected",
+				slog.String("app_number", c.ApplicationNumber),
+				slog.String("original", m.OriginalPatent.String()),
+				slog.String("title", c.Title),
+				slog.String("filing_date", c.FilingDate),
+				slog.Int("batch_size", len(m.Candidates)))
+			cmds = append(cmds, pane.AddToProjectWithCandidateCmd(a.client, m.Project, c))
+		}
+		return a, tea.Batch(cmds...)
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		if m.Key == text.StatusNotesExportDone {

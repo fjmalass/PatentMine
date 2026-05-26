@@ -274,10 +274,11 @@ func (o *ClassificationListOverlay) View(maxW, maxH int) string {
 
 		for i := start; i < end; i++ {
 			c := o.classifications[i]
-			prefix := "  "
+			cursorPart := o.theme.Glyphs.RowNoCursor
 			if i == o.selected {
-				prefix = "→ "
+				cursorPart = o.theme.Glyphs.RowCursor
 			}
+			prefix := cursorPart + o.theme.Glyphs.RowNoMark + " "
 
 			// Clean/truncate description for left side list
 			descTrunc := render.Truncate(c.Description, leftW-22)

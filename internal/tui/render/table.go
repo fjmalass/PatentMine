@@ -19,17 +19,15 @@ type TableParams struct {
 	Theme         Theme
 	Columns       []TableColumn
 	RowCount      int
-	Cursor        int          // highlighted row index (-1 if none)
-	FocusedColIdx int          // focused sort column index (-1 if none)
+	FocusedColIdx int          // focused sort column index (-1 if none, disables col highlight)
 	ActiveSort    string       // active database sorting key
 	SortAscending bool         // ascending sort order
-	FocusActive   bool         // whether this table has active input focus
-	PrefixCursor  string       // custom active row prefix, e.g. "→ "
-	PrefixNormal  string       // custom normal row prefix, e.g. "  "
+	FocusActive   bool         // whether this table has active input focus (col highlight)
 	VisualMode    bool         // whether visual mode is active
-	IsRowSelected func(rowIdx int) bool // returns whether a row should be highlighted as selected/visual
+	IsRowCursor   func(rowIdx int) bool // returns whether a row is under the cursor
+	IsRowSelected func(rowIdx int) bool // returns whether a row is highlighted as selected/visual
 	IsRowMarked   func(rowIdx int) bool // returns whether a row is permanently marked (e.g. source item)
-	PrefixMarked  string                // custom normal row prefix for marked rows, e.g. "⚑ " (defaults to "⚑ " if empty)
+	MarkGlyph     string                // override mark indicator glyph (defaults to Theme.Glyphs.RowMark)
 }
 
 // RenderTable draws a mathematically padded, truncated, and styled table.
@@ -38,8 +36,9 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 
 	// 1. Render Table Header
 	baseHeaderStyle := params.Theme.Header.Underline(true)
-	prefixStyled := baseHeaderStyle.Render(params.PrefixNormal)
-	currentW := StringWidth(params.PrefixNormal)
+	headerPrefix := params.Theme.Glyphs.RowNoCursor + params.Theme.Glyphs.RowNoMark + " "
+	prefixStyled := baseHeaderStyle.Render(headerPrefix)
+	currentW := StringWidth(headerPrefix)
 
 	var hdrParts []string
 	for i, col := range params.Columns {
@@ -78,13 +77,13 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 	b.WriteString("\n")
 
 	// 2. Render Rows
-	prefixMarked := params.PrefixMarked
-	if prefixMarked == "" {
-		prefixMarked = "⚑ "
+	markGlyph := params.MarkGlyph
+	if markGlyph == "" {
+		markGlyph = params.Theme.Glyphs.RowMark
 	}
 
 	for i := 0; i < params.RowCount; i++ {
-		isSelectedRow := i == params.Cursor && params.FocusActive
+		isSelectedRow := params.IsRowCursor != nil && params.IsRowCursor(i)
 		isVisualRow := params.IsRowSelected != nil && params.IsRowSelected(i)
 		isMarkedRow := params.IsRowMarked != nil && params.IsRowMarked(i)
 
@@ -123,16 +122,15 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 			parts = append(parts, style.Render(cell))
 		}
 
-		prefix := params.PrefixNormal
+		cursorPart := params.Theme.Glyphs.RowNoCursor
 		if isSelectedRow {
-			if isMarkedRow {
-				prefix = "→⚑"
-			} else {
-				prefix = params.PrefixCursor
-			}
-		} else if isMarkedRow {
-			prefix = prefixMarked
+			cursorPart = params.Theme.Glyphs.RowCursor
 		}
+		markPart := params.Theme.Glyphs.RowNoMark
+		if isMarkedRow {
+			markPart = markGlyph
+		}
+		prefix := cursorPart + markPart + " "
 		prefixStyled := rowStyle.Render(prefix)
 
 		rowLine := prefixStyled + strings.Join(parts, "")
