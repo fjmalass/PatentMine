@@ -1259,3 +1259,86 @@ func TestBackupTelemetry(t *testing.T) {
 		t.Fatalf("backup.size_bytes gauge = %d, want > 0", size)
 	}
 }
+
+func TestUSPTOApplicationStoreRoundTrip(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "uspto.db")
+	repo, err := Open(context.Background(), tempDB)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	ctx := context.Background()
+	n := domain.MustParsePatentNumber("US17812078")
+
+	// Verify not found initially
+	_, err = repo.USPTOApplication(ctx, n)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected store.ErrNotFound, got %v", err)
+	}
+
+	patent := domain.Patent{
+		Number:     n,
+		Title:      "Test Patent",
+		FetchState: domain.FetchStub,
+		Source:     domain.SourceUSPTO,
+	}
+
+	usptoApp := &domain.USPTOApplication{
+		ApplicationNumber:     "17812078",
+		RecordNumber:          n,
+		InventionTitle:        "Test USPTO Application",
+		FilingDate:            "2022-07-12",
+		ApplicationStatusText: "Pending",
+		ExaminerName:          "Smith, John",
+		GroupArtUnitNumber:    "1234",
+		PGPubXMLURL:           "https://api.uspto.gov/files/app.xml",
+		PGPubXMLName:          "app.xml",
+		PatentGrantXMLURL:     "https://api.uspto.gov/files/grant.xml",
+		PatentGrantXMLName:    "grant.xml",
+	}
+
+	batch := store.NodeBatch{
+		Patent:           patent,
+		USPTOApplication: usptoApp,
+	}
+
+	if err := repo.SaveNode(ctx, batch); err != nil {
+		t.Fatalf("SaveNode failed: %v", err)
+	}
+
+	// Retrieve and verify
+	got, err := repo.USPTOApplication(ctx, n)
+	if err != nil {
+		t.Fatalf("USPTOApplication: %v", err)
+	}
+
+	if got.ApplicationNumber != "17812078" {
+		t.Errorf("got.ApplicationNumber = %q, want 17812078", got.ApplicationNumber)
+	}
+	if got.InventionTitle != "Test USPTO Application" {
+		t.Errorf("got.InventionTitle = %q, want Test USPTO Application", got.InventionTitle)
+	}
+	if got.FilingDate != "2022-07-12" {
+		t.Errorf("got.FilingDate = %q, want 2022-07-12", got.FilingDate)
+	}
+	if got.ExaminerName != "Smith, John" {
+		t.Errorf("got.ExaminerName = %q, want Smith, John", got.ExaminerName)
+	}
+	if got.GroupArtUnitNumber != "1234" {
+		t.Errorf("got.GroupArtUnitNumber = %q, want 1234", got.GroupArtUnitNumber)
+	}
+	if got.PGPubXMLURL != "https://api.uspto.gov/files/app.xml" {
+		t.Errorf("got.PGPubXMLURL = %q, want https://api.uspto.gov/files/app.xml", got.PGPubXMLURL)
+	}
+	if got.PGPubXMLName != "app.xml" {
+		t.Errorf("got.PGPubXMLName = %q, want app.xml", got.PGPubXMLName)
+	}
+	if got.PatentGrantXMLURL != "https://api.uspto.gov/files/grant.xml" {
+		t.Errorf("got.PatentGrantXMLURL = %q, want https://api.uspto.gov/files/grant.xml", got.PatentGrantXMLURL)
+	}
+	if got.PatentGrantXMLName != "grant.xml" {
+		t.Errorf("got.PatentGrantXMLName = %q, want grant.xml", got.PatentGrantXMLName)
+	}
+}
+

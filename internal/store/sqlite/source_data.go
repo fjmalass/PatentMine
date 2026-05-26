@@ -67,8 +67,8 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			 customer_number, group_art_unit_number, examiner_name, docket_number,
 			 application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
 			 small_entity_status, business_entity_status, publication_category_json,
-			 last_ingestion_datetime, fetched_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(application_number) DO UPDATE SET
 				record_number=excluded.record_number,
 				invention_title=excluded.invention_title,
@@ -96,7 +96,11 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 				business_entity_status=excluded.business_entity_status,
 				publication_category_json=excluded.publication_category_json,
 				last_ingestion_datetime=excluded.last_ingestion_datetime,
-				fetched_at=excluded.fetched_at`,
+				fetched_at=excluded.fetched_at,
+				pgpub_xml_url=excluded.pgpub_xml_url,
+				pgpub_xml_name=excluded.pgpub_xml_name,
+				patent_grant_xml_url=excluded.patent_grant_xml_url,
+				patent_grant_xml_name=excluded.patent_grant_xml_name`,
 			app.ApplicationNumber, app.RecordNumber.Normalized(), app.InventionTitle,
 			app.FilingDate, app.EffectiveFilingDate, app.ApplicationStatusCode,
 			app.ApplicationStatusText, app.ApplicationStatusDate, app.ApplicationTypeCode,
@@ -105,7 +109,8 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			app.CustomerNumber, app.GroupArtUnitNumber, app.ExaminerName, app.DocketNumber,
 			app.ApplicationConfirmationNumber, app.USPCSymbolText, app.USPCClass, app.USPCSubclass,
 			boolInt(app.SmallEntityStatus), app.BusinessEntityStatus, defaultJSON(app.PublicationCategoryJSON, "[]"),
-			app.LastIngestionDateTime, app.FetchedAt); err != nil {
+			app.LastIngestionDateTime, app.FetchedAt,
+			app.PGPubXMLURL, app.PGPubXMLName, app.PatentGrantXMLURL, app.PatentGrantXMLName); err != nil {
 			return fmt.Errorf("store/sqlite: save uspto application: %w", err)
 		}
 	}
@@ -234,3 +239,51 @@ func defaultJSON(s, fallback string) string {
 	}
 	return s
 }
+
+// USPTOApplication returns the saved USPTO application metadata for a patent record, or ErrNotFound.
+func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
+	row := r.reader.QueryRowContext(ctx, `
+		SELECT application_number, record_number, invention_title, filing_date, effective_filing_date,
+			   application_status_code, application_status_text, application_status_date,
+			   application_type_code, application_type_label, application_type_category,
+			   first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
+			   customer_number, group_art_unit_number, examiner_name, docket_number,
+			   application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
+			   small_entity_status, business_entity_status, publication_category_json,
+			   last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name
+		FROM uspto_application
+		WHERE record_number = ?`, n.Normalized())
+
+	var app domain.USPTOApplication
+	var recordNumStr string
+	var firstInventorToFile, nationalStage, smallEntityStatus int
+
+	err := row.Scan(
+		&app.ApplicationNumber, &recordNumStr, &app.InventionTitle, &app.FilingDate, &app.EffectiveFilingDate,
+		&app.ApplicationStatusCode, &app.ApplicationStatusText, &app.ApplicationStatusDate,
+		&app.ApplicationTypeCode, &app.ApplicationTypeLabel, &app.ApplicationTypeCategory,
+		&firstInventorToFile, &nationalStage, &app.FirstInventorName, &app.FirstApplicantName,
+		&app.CustomerNumber, &app.GroupArtUnitNumber, &app.ExaminerName, &app.DocketNumber,
+		&app.ApplicationConfirmationNumber, &app.USPCSymbolText, &app.USPCClass, &app.USPCSubclass,
+		&smallEntityStatus, &app.BusinessEntityStatus, &app.PublicationCategoryJSON,
+		&app.LastIngestionDateTime, &app.FetchedAt,
+		&app.PGPubXMLURL, &app.PGPubXMLName, &app.PatentGrantXMLURL, &app.PatentGrantXMLName,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.USPTOApplication{}, store.ErrNotFound
+		}
+		return domain.USPTOApplication{}, fmt.Errorf("store/sqlite: query uspto application: %w", err)
+	}
+
+	app.FirstInventorToFile = firstInventorToFile != 0
+	app.NationalStage = nationalStage != 0
+	app.SmallEntityStatus = smallEntityStatus != 0
+
+	if parsed, err := domain.ParsePatentNumber(recordNumStr); err == nil {
+		app.RecordNumber = parsed
+	}
+
+	return app, nil
+}
+

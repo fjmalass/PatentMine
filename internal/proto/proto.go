@@ -162,11 +162,12 @@ type PatentGetParams struct {
 // request named a project the patent is a member of, and are empty otherwise:
 // they describe the (patent, project) pair, not the patent.
 type PatentResult struct {
-	Patent      domain.Patent      `json:"patent"`
-	ReviewState domain.ReviewState `json:"review_state,omitempty"`
-	Tags        []domain.Tag       `json:"tags,omitempty"`
-	IDSEntry    *domain.IDSEntry   `json:"ids_entry,omitempty"`
-	PatentNote  *domain.PatentNote `json:"patent_note,omitempty"`
+	Patent           domain.Patent            `json:"patent"`
+	ReviewState      domain.ReviewState       `json:"review_state,omitempty"`
+	Tags             []domain.Tag             `json:"tags,omitempty"`
+	IDSEntry         *domain.IDSEntry         `json:"ids_entry,omitempty"`
+	PatentNote       *domain.PatentNote       `json:"patent_note,omitempty"`
+	USPTOApplication *domain.USPTOApplication `json:"uspto_application,omitempty"`
 }
 
 // PatentListParams selects and paginates a patent listing.

@@ -57,6 +57,7 @@ type detailLoadedMsg struct {
 	tags       []domain.Tag
 	idsEntry   *domain.IDSEntry
 	patentNote *domain.PatentNote
+	usptoApp   *domain.USPTOApplication
 	err        error
 }
 
@@ -89,6 +90,7 @@ type Detail struct {
 	tags               []domain.Tag
 	idsEntry           *domain.IDSEntry
 	patentNote         *domain.PatentNote
+	usptoApp           *domain.USPTOApplication
 	relCounts          map[domain.RelationKind]int
 	jump               *JumpController
 	lineGroups         []detailLineGroup
@@ -255,6 +257,7 @@ func (d *Detail) load() tea.Cmd {
 			tags:       res.Tags,
 			idsEntry:   res.IDSEntry,
 			patentNote: res.PatentNote,
+			usptoApp:   res.USPTOApplication,
 			err:        err,
 		}
 	}
@@ -308,6 +311,7 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.tags = m.tags
 		d.idsEntry = m.idsEntry
 		d.patentNote = m.patentNote
+		d.usptoApp = m.usptoApp
 		d.page.Top()
 		d.cachedLines = nil
 	case detailRelationCountMsg:
@@ -453,6 +457,54 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, detailLabelFetchState, detailFetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, detailLabelSource, string(p.Source))
 	d.field(&b, w, detailLabelSourceURL, p.SourceURL)
+
+	// USPTO Application details
+	if d.usptoApp != nil && d.usptoApp.ApplicationNumber != "" {
+		b.WriteByte('\n')
+		b.WriteString(d.theme.Dim.Render("—— USPTO Application File Wrapper ——"))
+		b.WriteByte('\n')
+		d.field(&b, w, "USPTO App", d.usptoApp.ApplicationNumber)
+		d.field(&b, w, "Filing Date", d.usptoApp.FilingDate)
+		if d.usptoApp.EffectiveFilingDate != "" && d.usptoApp.EffectiveFilingDate != d.usptoApp.FilingDate {
+			d.field(&b, w, "Eff. Filing", d.usptoApp.EffectiveFilingDate)
+		}
+		statusVal := d.usptoApp.ApplicationStatusText
+		if d.usptoApp.ApplicationStatusCode != "" {
+			statusVal = fmt.Sprintf("[%s] %s", d.usptoApp.ApplicationStatusCode, d.usptoApp.ApplicationStatusText)
+		}
+		d.field(&b, w, "Status", statusVal)
+		if d.usptoApp.ApplicationStatusDate != "" {
+			d.field(&b, w, "Status Date", d.usptoApp.ApplicationStatusDate)
+		}
+		if d.usptoApp.GroupArtUnitNumber != "" {
+			d.field(&b, w, "Art Unit", d.usptoApp.GroupArtUnitNumber)
+		}
+		if d.usptoApp.ExaminerName != "" {
+			d.field(&b, w, "Examiner", d.usptoApp.ExaminerName)
+		}
+		if d.usptoApp.DocketNumber != "" {
+			d.field(&b, w, "Docket Num", d.usptoApp.DocketNumber)
+		}
+		entityVal := d.usptoApp.BusinessEntityStatus
+		if d.usptoApp.SmallEntityStatus {
+			if entityVal != "" {
+				entityVal += " (Small)"
+			} else {
+				entityVal = "Small"
+			}
+		}
+		if entityVal != "" {
+			d.field(&b, w, "Entity", entityVal)
+		}
+		if d.usptoApp.PGPubXMLURL != "" {
+			d.field(&b, w, "PGPub XML", d.usptoApp.PGPubXMLName)
+			d.wrappedField(&b, w, "PGPub URL", d.usptoApp.PGPubXMLURL)
+		}
+		if d.usptoApp.PatentGrantXMLURL != "" {
+			d.field(&b, w, "Grant XML", d.usptoApp.PatentGrantXMLName)
+			d.wrappedField(&b, w, "Grant URL", d.usptoApp.PatentGrantXMLURL)
+		}
+	}
 
 	// Expiration
 	expVal := expirationText(p)

@@ -45,7 +45,13 @@ func usptoQuery(n domain.PatentNumber) string {
 	if serial == "" {
 		return ""
 	}
-	return "applicationNumberText:" + serial + " OR patentNumberText:" + serial + " OR publicationNumberText:" + serial + " OR publicationNumber:" + serial
+	norm := n.Normalized()
+	if norm != "" && norm != serial {
+		return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
+			serial, serial, serial, serial, norm, serial)
+	}
+	return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
+		serial, serial, serial, serial, serial)
 }
 
 type usptoFileWrapperResponse struct {
@@ -54,14 +60,24 @@ type usptoFileWrapperResponse struct {
 	PatentFileWrapperDataBag []usptoWrapperData `json:"patentFileWrapperDataBag"`
 }
 
+type usptoDocumentMeta struct {
+	ProductIdentifier  string `json:"productIdentifier"`
+	ZipFileName        string `json:"zipFileName"`
+	FileCreateDateTime string `json:"fileCreateDateTime"`
+	XMLFileName        string `json:"xmlFileName"`
+	FileLocationURI    string `json:"fileLocationURI"`
+}
+
 type usptoWrapperData struct {
-	ApplicationNumberText string               `json:"applicationNumberText"`
-	ApplicationMetaData   usptoApplicationMeta `json:"applicationMetaData"`
-	EventDataBag          []usptoEventData     `json:"eventDataBag"`
-	ParentContinuityBag   []usptoContinuity    `json:"parentContinuityBag"`
-	ForeignPriorityBag    []usptoForeign       `json:"foreignPriorityBag"`
-	RecordAttorney        usptoRecordAttorney  `json:"recordAttorney"`
-	LastIngestionDateTime string               `json:"lastIngestionDateTime"`
+	ApplicationNumberText string                `json:"applicationNumberText"`
+	ApplicationMetaData   usptoApplicationMeta  `json:"applicationMetaData"`
+	EventDataBag          []usptoEventData      `json:"eventDataBag"`
+	ParentContinuityBag   []usptoContinuity     `json:"parentContinuityBag"`
+	ForeignPriorityBag    []usptoForeign        `json:"foreignPriorityBag"`
+	RecordAttorney        usptoRecordAttorney   `json:"recordAttorney"`
+	LastIngestionDateTime string                `json:"lastIngestionDateTime"`
+	GrantDocumentMetaData *usptoDocumentMeta    `json:"grantDocumentMetaData"`
+	PGPubDocumentMetaData *usptoDocumentMeta    `json:"pgpubDocumentMetaData"`
 }
 
 type usptoApplicationMeta struct {
@@ -240,6 +256,10 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 			PublicationCategoryJSON:       rawJSONOrDefault(w.ApplicationMetaData.PublicationCategoryBag, "[]"),
 			LastIngestionDateTime:         w.LastIngestionDateTime,
 			FetchedAt:                     nowText,
+			PGPubXMLURL:                   func() string { if w.PGPubDocumentMetaData != nil { return w.PGPubDocumentMetaData.FileLocationURI }; return "" }(),
+			PGPubXMLName:                  func() string { if w.PGPubDocumentMetaData != nil { return w.PGPubDocumentMetaData.XMLFileName }; return "" }(),
+			PatentGrantXMLURL:             func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.FileLocationURI }; return "" }(),
+			PatentGrantXMLName:            func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.XMLFileName }; return "" }(),
 		},
 		USPTOParties:         usptoParties(appNumber, w),
 		USPTOEvents:          usptoEvents(appNumber, w.EventDataBag),
@@ -290,7 +310,7 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 	if serial == "" {
 		return nil, nil
 	}
-	query := fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s", serial, serial, serial, serial)
+	query := usptoQuery(number)
 	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)

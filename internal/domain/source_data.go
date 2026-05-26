@@ -46,6 +46,10 @@ type USPTOApplication struct {
 	PublicationCategoryJSON       string `json:"publication_category_json,omitempty"`
 	LastIngestionDateTime         string `json:"last_ingestion_datetime,omitempty"`
 	FetchedAt                     string `json:"fetched_at,omitempty"`
+	PGPubXMLURL                   string `json:"pgpub_xml_url,omitempty"`
+	PGPubXMLName                  string `json:"pgpub_xml_name,omitempty"`
+	PatentGrantXMLURL             string `json:"patent_grant_xml_url,omitempty"`
+	PatentGrantXMLName            string `json:"patent_grant_xml_name,omitempty"`
 }
 
 type USPTOParty struct {

@@ -111,7 +111,11 @@ CREATE TABLE IF NOT EXISTS uspto_application (
     business_entity_status          TEXT NOT NULL DEFAULT '',
     publication_category_json       TEXT NOT NULL DEFAULT '[]',
     last_ingestion_datetime         TEXT NOT NULL DEFAULT '',
-    fetched_at                      TEXT NOT NULL
+    fetched_at                      TEXT NOT NULL,
+    pgpub_xml_url                   TEXT NOT NULL DEFAULT '',
+    pgpub_xml_name                  TEXT NOT NULL DEFAULT '',
+    patent_grant_xml_url            TEXT NOT NULL DEFAULT '',
+    patent_grant_xml_name           TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_uspto_application_record ON uspto_application (record_number);

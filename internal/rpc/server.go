@@ -345,6 +345,10 @@ func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error
 			result.PatentNote = &note
 		}
 	}
+	usptoApp, err := s.engine.USPTOApplication(ctx, p.Number)
+	if err == nil {
+		result.USPTOApplication = &usptoApp
+	}
 	return result, nil
 }
 

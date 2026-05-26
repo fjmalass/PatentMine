@@ -110,6 +110,8 @@ type Repository interface {
 	SoftDeletePatents(ctx context.Context, patents []domain.PatentNumber) error
 	// Patent returns one patent, or ErrNotFound.
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
+	// USPTOApplication returns the saved USPTO application metadata for a patent record, or ErrNotFound.
+	USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error)
 	// ListPatents returns one page of lightweight listing rows matching q.
 	ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error)
 	// CountPatents returns the total rows matching q, ignoring its paging.

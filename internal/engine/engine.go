@@ -237,6 +237,11 @@ func (e *Engine) existingMembership(ctx context.Context, project domain.ProjectI
 	return domain.Membership{}, false
 }
 
+// USPTOApplication returns the saved USPTO application details, or ErrNotFound.
+func (e *Engine) USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
+	return e.repo.USPTOApplication(ctx, n)
+}
+
 func (e *Engine) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	logger := observability.WithContextAttrs(ctx, e.logger)
 	args := make([]any, 0, len(attrs))
