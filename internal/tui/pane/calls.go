@@ -152,6 +152,7 @@ func ImportFileCmd(client *rpc.Client, path string) tea.Cmd {
 // AddUSPTOShowCandidatesMsg is returned when a broad search yields multiple candidate wrappers.
 type AddUSPTOShowCandidatesMsg struct {
 	Project    domain.ProjectID
+	Patent     domain.PatentNumber
 	Candidates []domain.USPTOCandidate
 }
 
@@ -171,7 +172,7 @@ func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, num
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if len(res.Candidates) > 0 {
-			return AddUSPTOShowCandidatesMsg{Project: project, Candidates: res.Candidates}
+			return AddUSPTOShowCandidatesMsg{Project: project, Patent: number, Candidates: res.Candidates}
 		}
 		if !res.FetchStarted {
 			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{number.String()}}
@@ -180,6 +181,38 @@ func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, num
 			return StatusMsg{Key: text.StatusCrawlStarted, Args: []any{number.String(), res.JobID, 0}}
 		}
 		return StatusMsg{Key: text.StatusAdded, Args: []any{number.String(), string(project)}}
+	}
+}
+
+// AddToProjectWithCandidateCmd adds a patent using a pre-selected USPTO application
+// number, bypassing the USPTO candidate search in the engine.
+func AddToProjectWithCandidateCmd(client *rpc.Client, project domain.ProjectID, candidate domain.USPTOCandidate) tea.Cmd {
+	appNum, err := domain.ParsePatentNumber("US" + candidate.ApplicationNumber)
+	if err != nil {
+		return func() tea.Msg {
+			return StatusMsg{Key: text.StatusInvalidPatentNumber, Args: []any{err.Error()}, Error: true}
+		}
+	}
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.MembershipAddResult
+		if err := client.Call(ctx, proto.MethodMembershipAdd,
+			proto.MembershipParams{
+				Project:           project,
+				Patent:            appNum,
+				Source:            domain.SourceUSPTO,
+				ApplicationNumber: candidate.ApplicationNumber,
+			}, &res); err != nil {
+			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
+		}
+		if !res.FetchStarted {
+			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{appNum.String()}}
+		}
+		if res.JobID != "" {
+			return StatusMsg{Key: text.StatusCrawlStarted, Args: []any{appNum.String(), res.JobID, 0}}
+		}
+		return StatusMsg{Key: text.StatusAdded, Args: []any{appNum.String(), string(project)}}
 	}
 }
 

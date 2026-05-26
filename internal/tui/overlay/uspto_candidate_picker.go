@@ -13,29 +13,32 @@ import (
 
 // USPTOCandidateSelectMsg is dispatched when the user selects a candidate.
 type USPTOCandidateSelectMsg struct {
-	Project   domain.ProjectID
-	Candidate domain.USPTOCandidate
+	Project        domain.ProjectID
+	OriginalPatent domain.PatentNumber
+	Candidate      domain.USPTOCandidate
 }
 
 // USPTOCandidatePicker is the Choice Menu Popup overlay shown when multiple
 // matching wrappers are found.
 type USPTOCandidatePicker struct {
-	theme      render.Theme
-	project    domain.ProjectID
-	candidates []domain.USPTOCandidate
-	page       render.Paginator
-	vimCount   int
+	theme          render.Theme
+	project        domain.ProjectID
+	candidates     []domain.USPTOCandidate
+	originalPatent domain.PatentNumber
+	page           render.Paginator
+	vimCount       int
 }
 
 // NewUSPTOCandidatePicker builds the candidate picker.
-func NewUSPTOCandidatePicker(theme render.Theme, project domain.ProjectID, candidates []domain.USPTOCandidate) *USPTOCandidatePicker {
+func NewUSPTOCandidatePicker(theme render.Theme, project domain.ProjectID, candidates []domain.USPTOCandidate, originalPatent domain.PatentNumber) *USPTOCandidatePicker {
 	page := render.NewPaginator(5)
 	page.SetTotal(len(candidates))
 	return &USPTOCandidatePicker{
-		theme:      theme,
-		project:    project,
-		candidates: candidates,
-		page:       page,
+		theme:          theme,
+		project:        project,
+		candidates:     candidates,
+		originalPatent: originalPatent,
+		page:           page,
 	}
 }
 
@@ -69,8 +72,9 @@ func (p *USPTOCandidatePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 		if len(p.candidates) > 0 {
 			c := p.candidates[p.page.Cursor()]
 			project := p.project
+			orig := p.originalPatent
 			return p, func() tea.Msg {
-				return USPTOCandidateSelectMsg{Project: project, Candidate: c}
+				return USPTOCandidateSelectMsg{Project: project, OriginalPatent: orig, Candidate: c}
 			}, true
 		}
 	}

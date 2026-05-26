@@ -516,7 +516,7 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	var jobID engine.JobID
 	var candidates []domain.USPTOCandidate
 	if p.Source != "" {
-		fetchStarted, jobID, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source)
+		fetchStarted, jobID, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source, p.ApplicationNumber)
 	} else {
 		fetchStarted, jobID, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
 	}

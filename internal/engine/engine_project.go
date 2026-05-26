@@ -62,60 +62,85 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // fetch was enqueued; false means the caller should prompt the user to fetch
 // manually (e.g. with F).
 func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, jobID JobID, err error) {
-	fetchStarted, jobID, _, err = e.addToProject(ctx, project, patent, "")
+	fetchStarted, jobID, _, err = e.addToProject(ctx, project, patent, "", "")
 	return fetchStarted, jobID, err
 }
 
 // AddToProjectFromSource adds a patent and forces a single-patent fetch from
 // the selected provider. It never falls back to another source.
-func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
-	return e.addToProject(ctx, project, patent, source)
+func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
+	return e.addToProject(ctx, project, patent, source, applicationNumber)
 }
 
-func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
+func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 
 	if source == domain.SourceUSPTO && e.usptoSearcher != nil {
-		searchStart := time.Now()
-		candidates, err = e.usptoSearcher(ctx, patent)
-		searchDur := time.Since(searchStart)
-
-		if e.metrics != nil {
-			e.metrics.ObserveDuration("uspto.candidate.search", searchDur, err != nil)
-			if err != nil {
-				e.metrics.IncCounter("uspto.candidate.search.error", 1)
-			} else {
-				e.metrics.IncCounter("uspto.candidate.search.success", 1)
-				e.metrics.IncCounter("uspto.candidate.count", int64(len(candidates)))
-			}
-		}
-
-		if err != nil {
-			e.log(ctx, slog.LevelWarn, "uspto searcher failed during add (may be grant number vs application mismatch)",
-				slog.String("requested_number", patent.String()),
-				slog.String("error", err.Error()),
-				slog.Duration("duration", searchDur))
-			if e.metrics != nil {
-				e.metrics.IncCounter("engine.add.uspto_search.error", 1)
-			}
-			e.recordActivity(ctx, observability.Record{
-				Action:   observability.ActionUSPTOCandidateSearch,
-				Entity:   "uspto_resolution",
-				Status:   "error",
-				EntityID: patent.String(),
-				Attributes: map[string]any{
-					"error":       err.Error(),
-					"duration_ms": searchDur.Milliseconds(),
-				},
-			})
-			return false, "", nil, err
-		}
-		if len(candidates) > 1 {
-			return false, "", candidates, nil
-		}
-		if len(candidates) == 1 {
-			if exact, err := domain.ParsePatentNumber("US" + candidates[0].ApplicationNumber); err == nil {
+		if applicationNumber != "" {
+			// Candidate already selected by user — skip re-search, use directly.
+			if exact, err2 := domain.ParsePatentNumber("US" + applicationNumber); err2 == nil {
 				patent = exact
+			}
+			e.log(ctx, slog.LevelInfo, "engine.add.uspto.candidate_selected",
+				slog.String("requested_number", patent.String()),
+				slog.String("app_number", applicationNumber))
+			if e.metrics != nil {
+				e.metrics.IncCounter("engine.add.uspto_candidate.direct", 1)
+			}
+		} else {
+			searchStart := time.Now()
+			candidates, err = e.usptoSearcher(ctx, patent)
+			searchDur := time.Since(searchStart)
+
+			if e.metrics != nil {
+				e.metrics.ObserveDuration("uspto.candidate.search", searchDur, err != nil)
+				if err != nil {
+					e.metrics.IncCounter("uspto.candidate.search.error", 1)
+				} else {
+					e.metrics.IncCounter("uspto.candidate.search.success", 1)
+					e.metrics.IncCounter("uspto.candidate.count", int64(len(candidates)))
+				}
+			}
+
+			if err != nil {
+				e.log(ctx, slog.LevelWarn, "uspto searcher failed during add (may be grant number vs application mismatch)",
+					slog.String("requested_number", patent.String()),
+					slog.String("error", err.Error()),
+					slog.Duration("duration", searchDur))
+				if e.metrics != nil {
+					e.metrics.IncCounter("engine.add.uspto_search.error", 1)
+				}
+				e.recordActivity(ctx, observability.Record{
+					Action:   observability.ActionUSPTOCandidateSearch,
+					Entity:   "uspto_resolution",
+					Status:   "error",
+					EntityID: patent.String(),
+					Attributes: map[string]any{
+						"error":       err.Error(),
+						"duration_ms": searchDur.Milliseconds(),
+					},
+				})
+				return false, "", nil, err
+			}
+			if len(candidates) > 1 {
+				e.log(ctx, slog.LevelInfo, "engine.add.uspto.candidates_found",
+					slog.String("requested_number", patent.String()),
+					slog.Int("count", len(candidates)))
+				if e.metrics != nil {
+					e.metrics.IncCounter("engine.add.uspto_candidate.picker_shown", 1)
+				}
+				return false, "", candidates, nil
+			}
+			if len(candidates) == 1 {
+				if exact, err2 := domain.ParsePatentNumber("US" + candidates[0].ApplicationNumber); err2 == nil {
+					patent = exact
+				}
+				e.log(ctx, slog.LevelInfo, "engine.add.uspto.auto_selected",
+					slog.String("requested_number", patent.String()),
+					slog.String("app_number", candidates[0].ApplicationNumber))
+				if e.metrics != nil {
+					e.metrics.IncCounter("engine.add.uspto_candidate.auto_selected", 1)
+				}
 			}
 		}
 	}

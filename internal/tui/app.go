@@ -914,7 +914,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Int("existing_files", len(m.ExistingFiles)))
 		return a, nil
 	case pane.AddUSPTOShowCandidatesMsg:
-		o := overlay.NewUSPTOCandidatePicker(a.theme, m.Project, m.Candidates)
+		o := overlay.NewUSPTOCandidatePicker(a.theme, m.Project, m.Candidates, m.Patent)
 		a.overlays = append(a.overlays, o)
 		return a, nil
 	case pane.USPTOXMLFetchedMsg:
@@ -923,12 +923,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(a.overlays) > 0 {
 			a.overlays = a.overlays[:len(a.overlays)-1]
 		}
-		exact, err := domain.ParsePatentNumber("US" + m.Candidate.ApplicationNumber)
-		if err != nil {
-			a.setErr(text.StatusInvalidPatentNumber, err.Error())
-			return a, nil
-		}
-		return a, pane.AddToProjectFromSourceCmd(a.client, m.Project, exact, domain.SourceUSPTO)
+		a.log().Info("tui.add.uspto.candidate_selected",
+			slog.String("app_number", m.Candidate.ApplicationNumber),
+			slog.String("original", m.OriginalPatent.String()),
+			slog.String("title", m.Candidate.Title),
+			slog.String("filing_date", m.Candidate.FilingDate))
+		a.metrics.IncCounter("tui.add.uspto_candidate.selected", 1)
+		return a, pane.AddToProjectWithCandidateCmd(a.client, m.Project, m.Candidate)
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		if m.Key == text.StatusNotesExportDone {

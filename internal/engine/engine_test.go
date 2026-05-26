@@ -1527,7 +1527,7 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		project, _ := eng.CreateProject(ctx, "Test Project")
 		patent := domain.MustParsePatentNumber("US20230021336A1")
 
-		fetchStarted, _, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO)
+		fetchStarted, _, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
 		if err != nil {
 			t.Fatalf("AddToProjectFromSource: %v", err)
 		}
@@ -1565,7 +1565,7 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		project, _ := eng.CreateProject(ctx, "Test Project")
 		patent := domain.MustParsePatentNumber("US20230021336A1")
 
-		fetchStarted, _, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO)
+		fetchStarted, _, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
 		if err != nil {
 			t.Fatalf("AddToProjectFromSource: %v", err)
 		}
@@ -1609,7 +1609,7 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		project, _ := eng.CreateProject(ctx, "Test Project")
 		patent := domain.MustParsePatentNumber("US20230021336A1")
 
-		fetchStarted, _, _, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO)
+		fetchStarted, _, _, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
 		if err == nil {
 			t.Fatal("expected crawl start to fail because pool is stopped")
 		}

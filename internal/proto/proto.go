@@ -315,9 +315,10 @@ type ProjectResult struct {
 
 // MembershipParams identifies a (project, patent) pair.
 type MembershipParams struct {
-	Project domain.ProjectID    `json:"project"`
-	Patent  domain.PatentNumber `json:"patent"`
-	Source  domain.Source       `json:"source,omitempty"`
+	Project           domain.ProjectID    `json:"project"`
+	Patent            domain.PatentNumber `json:"patent"`
+	Source            domain.Source       `json:"source,omitempty"`
+	ApplicationNumber string              `json:"application_number,omitempty"`
 }
 
 // MembershipAddResult reports the outcome of adding a patent to a project.

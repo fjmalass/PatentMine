@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,9 +31,11 @@ type Loading struct {
 	// jobs are aggregated independently.
 	progresses map[string]proto.CrawlProgress
 	doneCount  int // number of jobs that have finished
+	doneErrors []string
 
-	spinner  spinner.Model
-	finished bool // true when all jobs are done
+	spinner     spinner.Model
+	finished    bool // true when all jobs are done; overlay stays open until user dismisses
+	finishedAt  time.Time
 
 	startTime time.Time
 	lastTime  time.Time
@@ -72,19 +75,22 @@ func (l *Loading) Init() tea.Cmd {
 }
 
 func (l *Loading) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
+	if l.finished && (id == command.CloseOverlay || id == command.Back) {
+		return l, func() tea.Msg { return CloseOverlayMsg{} }
+	}
 	return l, nil
 }
 
-func (l *Loading) Handles() []command.ID { return nil }
+func (l *Loading) Handles() []command.ID {
+	if l.finished {
+		return []command.ID{command.CloseOverlay, command.Back}
+	}
+	return nil
+}
 
 // matchJob reports whether an event belongs to one of the tracked jobs.
 func (l *Loading) matchJob(jobID string) bool {
-	for _, id := range l.jobIDs {
-		if id == jobID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(l.jobIDs, jobID)
 }
 
 func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
@@ -92,6 +98,9 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.String() == "ctrl+c" {
 			return l, tea.Quit
+		}
+		if l.finished && (m.String() == "esc" || m.String() == "enter" || m.String() == "q") {
+			return l, func() tea.Msg { return CloseOverlayMsg{} }
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -133,9 +142,12 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			var d proto.CrawlDone
 			if err := json.Unmarshal(m.Params, &d); err == nil && l.matchJob(d.JobID) {
 				l.doneCount++
+				if d.Error != "" {
+					l.doneErrors = append(l.doneErrors, d.Error)
+				}
 				if l.doneCount >= len(l.jobIDs) {
 					l.finished = true
-					return l, func() tea.Msg { return CloseOverlayMsg{} }
+					l.finishedAt = time.Now()
 				}
 			}
 		}
@@ -169,6 +181,9 @@ func (l *Loading) depthLabel() string {
 }
 
 func (l *Loading) View(w, h int) string {
+	if l.finished {
+		return l.viewDone(w)
+	}
 	var b strings.Builder
 	b.WriteString("\n")
 	b.WriteString("  " + l.spinner.View() + " " + render.Truncate(l.message, w-6))
@@ -268,6 +283,37 @@ func (l *Loading) View(w, h int) string {
 	} else {
 		b.WriteString(l.theme.Dim.Render(render.Pad(fmt.Sprintf("%d jobs", len(l.jobIDs)), w-2)))
 	}
+	return b.String()
+}
+
+func (l *Loading) viewDone(w int) string {
+	var b strings.Builder
+	b.WriteString("\n")
+	elapsed := l.finishedAt.Sub(l.startTime).Round(time.Millisecond)
+	if len(l.doneErrors) > 0 {
+		b.WriteString("  " + l.theme.Error.Render("Failed") + "\n")
+		for _, e := range l.doneErrors {
+			b.WriteString("  " + render.Truncate(e, w-4) + "\n")
+		}
+	} else {
+		totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
+		totalDiscovered := l.sumProgress(func(p proto.CrawlProgress) int { return p.DiscoveredCount })
+		stubs := totalDiscovered - totalCrawled
+		summary := fmt.Sprintf("Done in %s", formatDuration(elapsed))
+		if totalCrawled > 0 {
+			summary += fmt.Sprintf(" · %d patent(s) saved", totalCrawled)
+		}
+		if stubs > 0 {
+			summary += fmt.Sprintf(" · %d reference stub(s) created", stubs)
+		}
+		b.WriteString("  " + l.theme.OK.Render(summary) + "\n")
+		if l.isLookup && totalCrawled > 0 {
+			b.WriteString("  " + l.theme.Dim.Render("Navigate to the patent in your catalog to see the loaded data.") + "\n")
+			b.WriteString("  " + l.theme.Dim.Render("Press L on any stub patent to re-fetch its data.") + "\n")
+		}
+	}
+	b.WriteByte('\n')
+	b.WriteString(l.theme.Dim.Render(render.Pad("press Esc to close", w-2)))
 	return b.String()
 }
 
