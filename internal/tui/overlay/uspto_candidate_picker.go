@@ -23,16 +23,19 @@ type USPTOCandidatePicker struct {
 	theme      render.Theme
 	project    domain.ProjectID
 	candidates []domain.USPTOCandidate
-	cursor     int
+	page       render.Paginator
+	vimCount   int
 }
 
 // NewUSPTOCandidatePicker builds the candidate picker.
 func NewUSPTOCandidatePicker(theme render.Theme, project domain.ProjectID, candidates []domain.USPTOCandidate) *USPTOCandidatePicker {
+	page := render.NewPaginator(5)
+	page.SetTotal(len(candidates))
 	return &USPTOCandidatePicker{
 		theme:      theme,
 		project:    project,
 		candidates: candidates,
-		cursor:     0,
+		page:       page,
 	}
 }
 
@@ -55,25 +58,16 @@ func (p *USPTOCandidatePicker) OverlaySize(termW, termH int) (int, int) {
 
 // HandleKey implements KeyHandler.
 func (p *USPTOCandidatePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if handleSubtableMotionKey(&p.page, msg, &p.vimCount) {
+		return p, nil, true
+	}
 	key := msg.String()
 	switch key {
 	case "q", "esc":
 		return p, func() tea.Msg { return CloseOverlayMsg{} }, true
-	case "up", "k":
-		if p.cursor > 0 {
-			p.cursor--
-		} else {
-			p.cursor = len(p.candidates) - 1
-		}
-	case "down", "j":
-		if p.cursor < len(p.candidates)-1 {
-			p.cursor++
-		} else {
-			p.cursor = 0
-		}
 	case "enter":
 		if len(p.candidates) > 0 {
-			c := p.candidates[p.cursor]
+			c := p.candidates[p.page.Cursor()]
 			project := p.project
 			return p, func() tea.Msg {
 				return USPTOCandidateSelectMsg{Project: project, Candidate: c}
@@ -84,43 +78,67 @@ func (p *USPTOCandidatePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 }
 
 // View implements Overlay.
-func (p *USPTOCandidatePicker) View(maxW, _ int) string {
+func (p *USPTOCandidatePicker) View(maxW, maxH int) string {
+	maxW = max(maxW-2, 10)
+	pageSize := max(maxH-5, 1)
+
+	// Columns: App Number, Filing Date, First Inventor, Title
+	const appW = 12
+	const filingW = 11
+	const inventorW = 25
+	fixed := 2 + appW + filingW + inventorW + 3 // prefix + 3 gaps
+	titleW := max(maxW-fixed, 15)
+
+	cols := []render.TableColumn{
+		{Key: "app_num", Label: "App Number", Width: appW},
+		{Key: "filing", Label: "Filing Date", Width: filingW},
+		{Key: "inventor", Label: "First Inventor", Width: inventorW},
+		{Key: "title", Label: "Title", Width: titleW},
+	}
+
+	getCell := func(absIdx, _ int, colIdx int) string {
+		if absIdx < 0 || absIdx >= len(p.candidates) {
+			return ""
+		}
+		c := p.candidates[absIdx]
+		switch cols[colIdx].Key {
+		case "app_num":
+			return c.ApplicationNumber
+		case "filing":
+			return firstNonEmpty(c.FilingDate, "N/A")
+		case "inventor":
+			return firstNonEmpty(c.FirstInventorName, "Unknown")
+		case "title":
+			title := c.Title
+			if title == "" {
+				title = "(No Title)"
+			}
+			return title
+		}
+		return ""
+	}
+
 	var b strings.Builder
 	b.WriteString(p.theme.Dim.Render(render.Truncate(
 		"Select the correct application wrapper to load from USPTO:",
 		maxW)))
 	b.WriteString("\n\n")
 
-	for i, c := range p.candidates {
-		prefix := "  "
-		style := p.theme.Row
-		if i == p.cursor {
-			prefix = "> "
-			style = p.theme.Selected
-		}
-
-		b.WriteString(prefix)
-		appNumStr := fmt.Sprintf("[%s]", c.ApplicationNumber)
-		b.WriteString(p.theme.HelpKey.Render(render.Pad(appNumStr, 12)))
-		b.WriteString(" ")
-
-		metaStr := fmt.Sprintf("Filing: %s | Inventor: %s", firstNonEmpty(c.FilingDate, "N/A"), firstNonEmpty(c.FirstInventorName, "Unknown"))
-		b.WriteString(p.theme.Dim.Render(render.Pad(metaStr, 35)))
-		b.WriteString(" ")
-
-		title := c.Title
-		if title == "" {
-			title = "(No Title)"
-		}
-		b.WriteString(style.Render(render.Truncate(title, maxW-2-12-1-35-1)))
-		b.WriteByte('\n')
-	}
+	b.WriteString(renderSubtable(subtableParams{
+		Theme:        p.theme,
+		Columns:      cols,
+		Page:         &p.page,
+		Total:        len(p.candidates),
+		PageSize:     pageSize,
+		FocusActive:  true,
+		PrefixCursor: "→ ",
+		PrefixNormal: "  ",
+		VisualMode:   false,
+	}, maxW, getCell))
 
 	b.WriteByte('\n')
-	b.WriteString(p.theme.HelpKey.Render("[enter]"))
-	b.WriteString(p.theme.Row.Render(" Choose  "))
-	b.WriteString(p.theme.HelpKey.Render("[q/esc]"))
-	b.WriteString(p.theme.Row.Render(" Cancel"))
+	help := fmt.Sprintf("  %s  [enter] Choose  [q/esc] Cancel", subtableStatus(p.page))
+	b.WriteString(p.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
 }
 

@@ -39,6 +39,8 @@ var nonDigit = regexp.MustCompile(`[^0-9]`)
 // different sources parses to an equal value.
 func ParsePatentNumber(raw string) (PatentNumber, error) {
 	s := strings.ToUpper(strings.TrimSpace(raw))
+	s = strings.Trim(s, "[]")
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return PatentNumber{}, ErrEmptyNumber
 	}

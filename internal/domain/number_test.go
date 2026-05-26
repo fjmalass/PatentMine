@@ -18,6 +18,8 @@ func TestParsePatentNumber(t *testing.T) {
 		{"no kind", "US11611785", PatentNumber{"US", "11611785", ""}},
 		{"serial only", "11611785", PatentNumber{"", "11611785", ""}},
 		{"surrounding space", "  US11611785B2  ", PatentNumber{"US", "11611785", "B2"}},
+		{"with brackets", "[US11611785B2]", PatentNumber{"US", "11611785", "B2"}},
+		{"with application brackets", "[17696256]", PatentNumber{"", "17696256", ""}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
