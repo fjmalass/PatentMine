@@ -229,6 +229,18 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 	queue := []node{{number: root, depth: 0}}
 	ingested := 0
 
+	var curDepth int
+	ctx = WithProgressReporter(ctx, func(msg string) {
+		report(Progress{
+			CrawledCount:    ingested,
+			DiscoveredCount: len(seen),
+			PendingCount:    len(queue),
+			Depth:           curDepth,
+			MaxDepth:        depthLimit,
+			Message:         msg,
+		})
+	})
+
 	for len(queue) > 0 && ingested < c.cfg.NodeBudget {
 		if err := ctx.Err(); err != nil {
 			log.Info("crawl cancelled", slog.String("error", err.Error()))
@@ -236,6 +248,9 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		}
 		cur := queue[0]
 		queue = queue[1:]
+		curDepth = cur.depth
+
+		ReportProgress(ctx, fmt.Sprintf("fetching %s...", cur.number))
 
 		fstart := time.Now()
 		res, err := c.fetchFromSource(ctx, cur.number, force, source)
@@ -568,3 +583,16 @@ func mergeDocuments(existing, fetched []domain.Document) []domain.Document {
 	}
 	return out
 }
+
+type progressReporterKey struct{}
+
+func WithProgressReporter(ctx context.Context, report func(string)) context.Context {
+	return context.WithValue(ctx, progressReporterKey{}, report)
+}
+
+func ReportProgress(ctx context.Context, msg string) {
+	if report, ok := ctx.Value(progressReporterKey{}).(func(string)); ok {
+		report(msg)
+	}
+}
+

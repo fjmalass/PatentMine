@@ -168,3 +168,51 @@ func TestParseGoogleUnknownPageIsNotAvailable(t *testing.T) {
 		t.Fatalf("parseGoogle on a non-patent page = %v, want ErrNotAvailable", err)
 	}
 }
+
+func TestParseGoogleExtractsMetaTags(t *testing.T) {
+	googleMetaPage := `<!doctype html><html><head>
+<meta name="DC.title" content="Meta title"/>
+<meta name="citation_patent_application_number" content="US17696256" />
+<meta name="citation_patent_publication_number" content="US20220205933A1" />
+</head><body>
+<span itemprop="title">Meta title</span>
+</body></html>`
+
+	number := domain.MustParsePatentNumber("US11714053B2")
+	res, err := parseGoogle(number, []byte(googleMetaPage))
+	if err != nil {
+		t.Fatalf("parseGoogle: %v", err)
+	}
+
+	var foundApp, foundPub bool
+	for _, d := range res.Documents {
+		if d.Stage == domain.StageApplication && d.Number.Normalized() == "US17696256" {
+			foundApp = true
+		}
+		if d.Stage == domain.StagePublication && d.Number.Normalized() == "US20220205933A1" {
+			foundPub = true
+		}
+	}
+	if !foundApp {
+		t.Error("missing StageApplication document in Google parsed Documents")
+	}
+	if !foundPub {
+		t.Error("missing StagePublication document in Google parsed Documents")
+	}
+
+	var foundAppID, foundPubID bool
+	for _, id := range res.AuthorityIdentifiers {
+		if id.IdentifierType == "application" && id.Identifier == "US17696256" {
+			foundAppID = true
+		}
+		if id.IdentifierType == "publication" && id.Identifier == "US20220205933A1" {
+			foundPubID = true
+		}
+	}
+	if !foundAppID {
+		t.Error("missing application AuthorityIdentifier in Google result")
+	}
+	if !foundPubID {
+		t.Error("missing publication AuthorityIdentifier in Google result")
+	}
+}

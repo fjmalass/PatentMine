@@ -176,6 +176,9 @@ func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, num
 		if !res.FetchStarted {
 			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{number.String()}}
 		}
+		if res.JobID != "" {
+			return StatusMsg{Key: text.StatusCrawlStarted, Args: []any{number.String(), res.JobID, 0}}
+		}
 		return StatusMsg{Key: text.StatusAdded, Args: []any{number.String(), string(project)}}
 	}
 }

@@ -181,6 +181,7 @@ func (r *Registry) FetchOnly(ctx context.Context, number domain.PatentNumber, so
 		if s.Name() != source {
 			continue
 		}
+		ReportProgress(ctx, fmt.Sprintf("fetching %s from %s...", number, strings.ToUpper(string(s.Name()))))
 		res, err := s.Fetch(ctx, number)
 		if err == nil {
 			return res, nil
@@ -230,6 +231,7 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 		if slices.Contains(exclude, s.Name()) {
 			continue
 		}
+		ReportProgress(ctx, fmt.Sprintf("fetching %s from %s...", number, strings.ToUpper(string(s.Name()))))
 		sourceStart := time.Now()
 		res, err := s.Fetch(ctx, number)
 		d := time.Since(sourceStart)
@@ -309,6 +311,7 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		if s.Name() != domain.SourceGoogle {
 			continue
 		}
+		ReportProgress(ctx, fmt.Sprintf("comparing %s with GOOGLE...", number))
 		compStart := time.Now()
 		google, err := s.Fetch(ctx, number)
 		compDur := time.Since(compStart)
@@ -356,6 +359,7 @@ func (r *Registry) enrichWithUSPTO(ctx context.Context, number domain.PatentNumb
 		if s.Name() != domain.SourceUSPTO {
 			continue
 		}
+		ReportProgress(ctx, fmt.Sprintf("enriching %s with USPTO...", number))
 		enrichStart := time.Now()
 		uspto, err := s.Fetch(ctx, number)
 		enrichDur := time.Since(enrichStart)

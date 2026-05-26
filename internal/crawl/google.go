@@ -102,7 +102,7 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 		Stage:  domain.GuessStage(number),
 		Dated:  firstNonZeroTime(patent.GrantDate, patent.PublicationDate, patent.ApplicationDate),
 	}
-	return Result{
+	res := Result{
 		Patent:    patent,
 		Documents: []domain.Document{document},
 		Relations: googleRelations(doc, number),
@@ -130,7 +130,13 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 			ResponseBytes:  int64(len(body)),
 			SummaryJSON:    `{"parser":"google"}`,
 		}},
-	}, nil
+	}
+
+	extraDocs, extraIds := extractAdditionalGoogleDocuments(number, doc)
+	res.Documents = append(res.Documents, extraDocs...)
+	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
+
+	return res, nil
 }
 
 // googleRelations extracts every citation and family edge for number. The
@@ -450,6 +456,68 @@ func FetchFullText(ctx context.Context, number domain.PatentNumber) (*domain.Ful
 		Claims:     claims,
 		Paragraphs: paragraphs,
 	}, nil
+}
+
+func extractAdditionalGoogleDocuments(recordNumber domain.PatentNumber, doc *goquery.Document) ([]domain.Document, []domain.AuthorityIdentifier) {
+	var docs []domain.Document
+	var ids []domain.AuthorityIdentifier
+	seenDocs := make(map[domain.PatentNumber]bool)
+
+	doc.Find("meta").Each(func(_ int, s *goquery.Selection) {
+		name, _ := s.Attr("name")
+		content, _ := s.Attr("content")
+		scheme, _ := s.Attr("scheme")
+		if content == "" {
+			return
+		}
+		content = strings.TrimSpace(content)
+
+		// Parse using domain.ParsePatentNumber
+		if name == "citation_patent_application_number" || (name == "DC.relation" && scheme == "application") {
+			if num, err := domain.ParsePatentNumber(content); err == nil && !seenDocs[num] {
+				seenDocs[num] = true
+				docs = append(docs, domain.Document{
+					Number: num,
+					Stage:  domain.StageApplication,
+				})
+				ids = append(ids, domain.AuthorityIdentifier{
+					Authority:      "GOOGLE",
+					IdentifierType: "application",
+					Identifier:     num.Normalized(),
+					RawIdentifier:  content,
+					RecordNumber:   recordNumber,
+					DocumentNumber: num.Normalized(),
+					Country:        num.Country,
+					Kind:           num.Kind,
+					Source:         string(domain.SourceGoogle),
+					Confidence:     80,
+				})
+			}
+		}
+		if name == "citation_patent_publication_number" || name == "citation_patent_number" || (name == "DC.relation" && scheme == "patent") {
+			if num, err := domain.ParsePatentNumber(content); err == nil && !seenDocs[num] {
+				seenDocs[num] = true
+				stage := domain.GuessStage(num)
+				docs = append(docs, domain.Document{
+					Number: num,
+					Stage:  stage,
+				})
+				ids = append(ids, domain.AuthorityIdentifier{
+					Authority:      "GOOGLE",
+					IdentifierType: string(stage),
+					Identifier:     num.Normalized(),
+					RawIdentifier:  content,
+					RecordNumber:   recordNumber,
+					DocumentNumber: num.Normalized(),
+					Country:        num.Country,
+					Kind:           num.Kind,
+					Source:         string(domain.SourceGoogle),
+					Confidence:     80,
+				})
+			}
+		}
+	})
+	return docs, ids
 }
 
 // clean collapses runs of whitespace in scraped text to single spaces.

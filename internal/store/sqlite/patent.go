@@ -225,6 +225,9 @@ func (r *Repo) DeletePatents(ctx context.Context, patents []domain.PatentNumber)
 // Patent returns one patent, or store.ErrNotFound.
 func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (patent domain.Patent, err error) {
 	defer r.observeDuration("patent", time.Now(), &err)
+	if recNum, err := r.RecordOf(ctx, n); err == nil {
+		n = recNum
+	}
 	row := r.reader.QueryRowContext(ctx,
 		`SELECT `+patentColumns+` FROM patent p WHERE p.number = ?`, n.Normalized())
 	p, err := scanPatent(row)

@@ -2,11 +2,9 @@ package crawl
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"patentmine/internal/domain"
-	"patentmine/internal/store"
 )
 
 func TestCrawlUnifiesApplicationAndGrant(t *testing.T) {
@@ -73,8 +71,13 @@ func TestCrawlFoldsGrantIntoExistingApplicationRecord(t *testing.T) {
 	if !record.DisplayNumber.Equal(grant) {
 		t.Fatalf("display number = %s, want the grant %s", record.DisplayNumber, grant)
 	}
-	// There is exactly one record — the grant number is not its own record.
-	if _, err := repo.Patent(ctx, grant); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("grant should not be a separate record: err = %v", err)
+	// There is exactly one record — the grant number is not its own separate record,
+	// but gracefully resolves to the parent application record.
+	gotGrant, err := repo.Patent(ctx, grant)
+	if err != nil {
+		t.Fatalf("Patent(grant) failed: %v", err)
+	}
+	if !gotGrant.Number.Equal(application) {
+		t.Fatalf("Patent(grant) = %s, want resolved record %s", gotGrant.Number, application)
 	}
 }

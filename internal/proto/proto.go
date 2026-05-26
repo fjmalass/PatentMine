@@ -323,6 +323,7 @@ type MembershipParams struct {
 // MembershipAddResult reports the outcome of adding a patent to a project.
 type MembershipAddResult struct {
 	FetchStarted bool                    `json:"fetch_started"`
+	JobID        string                  `json:"job_id,omitempty"`
 	Candidates   []domain.USPTOCandidate `json:"candidates,omitempty"`
 }
 

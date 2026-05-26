@@ -147,8 +147,21 @@ func TestMergeRecords(t *testing.T) {
 	if len(rels) != 1 {
 		t.Fatalf("kept record has %d cites edges, want 1 after merge", len(rels))
 	}
-	// The absorbed patent row is gone.
-	if _, err := repo.Patent(ctx, absorb); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("absorbed record still present: err = %v", err)
+	// The absorbed patent row is gone from the patent table.
+	var count int
+	if err := repo.reader.QueryRowContext(ctx, "SELECT COUNT(*) FROM patent WHERE number = ?", absorb.Normalized()).Scan(&count); err != nil {
+		t.Fatalf("query count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("absorbed patent row still present in patent table")
+	}
+
+	// But repo.Patent now gracefully resolves the absorbed alias to the kept record
+	got, err := repo.Patent(ctx, absorb)
+	if err != nil {
+		t.Fatalf("repo.Patent failed on absorbed alias: %v", err)
+	}
+	if !got.Number.Equal(keep) {
+		t.Errorf("repo.Patent(absorb) = %s, want %s (resolved keep record)", got.Number, keep)
 	}
 }

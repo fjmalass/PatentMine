@@ -513,16 +513,17 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 		return nil, err
 	}
 	var fetchStarted bool
+	var jobID engine.JobID
 	var candidates []domain.USPTOCandidate
 	if p.Source != "" {
-		fetchStarted, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source)
+		fetchStarted, jobID, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source)
 	} else {
-		fetchStarted, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
+		fetchStarted, jobID, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return proto.MembershipAddResult{FetchStarted: fetchStarted, Candidates: candidates}, nil
+	return proto.MembershipAddResult{FetchStarted: fetchStarted, JobID: string(jobID), Candidates: candidates}, nil
 }
 
 func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, error) {

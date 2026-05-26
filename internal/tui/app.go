@@ -494,6 +494,7 @@ func (a *App) checkServiceConnections() tea.Cmd {
 			if err != nil {
 				uspto = serviceFailed
 				usptoInfo = serviceCheckInfo{Err: err.Error()}
+				a.log().Error("uspto resolve API key failed", slog.String("error", err.Error()))
 				a.observeServiceCheck("uspto", uspto, usptoInfo)
 			} else {
 				ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
@@ -511,6 +512,7 @@ func (a *App) checkServiceConnections() tea.Cmd {
 					uspto = serviceConnected
 				} else {
 					uspto = serviceFailed
+					a.log().Error("uspto connection check failed", slog.String("message", result.Message), slog.Int("status_code", result.StatusCode))
 				}
 				a.observeServiceCheck("uspto", uspto, usptoInfo)
 			}
