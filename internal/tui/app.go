@@ -956,6 +956,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
+		if m.Key == text.StatusAddAlreadyExists {
+			errMessage := a.text.Tf(m.Key, m.Args...)
+			a.overlays = append(a.overlays, overlay.NewErrorOverlay(a.theme, errMessage))
+			return a, nil
+		}
 		if m.Key == text.StatusNotesExportDone {
 			count, _ := m.Args[0].(int)
 			path, _ := m.Args[1].(string)

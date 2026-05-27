@@ -905,3 +905,46 @@ func TestAppRoutesBulkIDSEntriesAsSingleBatchUpdate(t *testing.T) {
 		t.Fatalf("bulk IDS update should not emit per-patent messages, got %T", catalog.receivedMsg)
 	}
 }
+
+func TestAppStatusAlreadyExistsWarnAndPopup(t *testing.T) {
+	app := &App{
+		text:    text.English(),
+		metrics: observability.NewMetrics(),
+	}
+	app.theme = render.NewTheme()
+
+	num := domain.MustParsePatentNumber("US0000001B2")
+	proj := "p-12345"
+
+	// Simulate receiving StatusMsg indicating that the patent already exists
+	msg := pane.StatusMsg{
+		Key:   text.StatusAddAlreadyExists,
+		Args:  []any{num.String(), proj},
+		Error: true,
+	}
+
+	updatedModel, _ := app.Update(msg)
+	app = updatedModel.(*App)
+
+	// Verify status line properties: it should be set and marked as an error/warning
+	expectedStatus := "US0000001B2 already in p-12345 — skipped"
+	if app.status != expectedStatus {
+		t.Fatalf("expected status %q, got %q", expectedStatus, app.status)
+	}
+	if !app.statusErr {
+		t.Fatal("expected statusErr to be true for prominent warning styling")
+	}
+
+	// Verify overlay properties: an ErrorOverlay should have been pushed
+	if len(app.overlays) != 1 {
+		t.Fatalf("expected 1 overlay, got %d", len(app.overlays))
+	}
+	errOverlay, ok := app.focusedOverlay().(*overlay.ErrorOverlay)
+	if !ok {
+		t.Fatalf("expected ErrorOverlay, got %T", app.focusedOverlay())
+	}
+	if view := errOverlay.View(100, 30); !strings.Contains(view, expectedStatus) {
+		t.Fatalf("expected overlay view to contain %q, got view:\n%s", expectedStatus, view)
+	}
+}
+

@@ -172,7 +172,7 @@ func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, num
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if res.AlreadyExisted {
-			return StatusMsg{Key: text.StatusAddAlreadyExists, Args: []any{number.String(), string(project)}}
+			return StatusMsg{Key: text.StatusAddAlreadyExists, Args: []any{number.String(), string(project)}, Error: true}
 		}
 		if len(res.Candidates) > 0 {
 			return AddUSPTOShowCandidatesMsg{Project: project, Patent: number, Candidates: res.Candidates}
@@ -210,7 +210,7 @@ func AddToProjectWithCandidateCmd(client *rpc.Client, project domain.ProjectID, 
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if res.AlreadyExisted {
-			return StatusMsg{Key: text.StatusAddAlreadyExists, Args: []any{appNum.String(), string(project)}}
+			return StatusMsg{Key: text.StatusAddAlreadyExists, Args: []any{appNum.String(), string(project)}, Error: true}
 		}
 		if !res.FetchStarted {
 			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{appNum.String()}}
