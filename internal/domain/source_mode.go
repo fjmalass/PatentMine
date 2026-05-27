@@ -23,14 +23,26 @@ const (
 	SourceModeGoogleOnly SourceMode = "google-only"
 )
 
+// AllSourceModes returns all canonical source modes in a stable order.
+// This is the single source of truth for the set of valid modes.
+func AllSourceModes() []SourceMode {
+	return []SourceMode{
+		SourceModeCompare,
+		SourceModeUSPTOFirst,
+		SourceModeUSPTOOnly,
+		SourceModeGoogleOnly,
+	}
+}
+
 // String returns the canonical wire-form name of the mode.
 func (m SourceMode) String() string { return string(m) }
 
 // IsValid reports whether m is one of the four canonical modes.
 func (m SourceMode) IsValid() bool {
-	switch m {
-	case SourceModeCompare, SourceModeUSPTOFirst, SourceModeUSPTOOnly, SourceModeGoogleOnly:
-		return true
+	for _, valid := range AllSourceModes() {
+		if m == valid {
+			return true
+		}
 	}
 	return false
 }

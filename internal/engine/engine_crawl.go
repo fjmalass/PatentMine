@@ -20,11 +20,12 @@ func (e *Engine) StartFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 }
 
 // StartFamilyCrawlFromSource enqueues a crawl constrained to one provider.
-func (e *Engine) StartFamilyCrawlFromSource(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, source domain.Source) (id JobID, err error) {
+// When force is true it bypasses cache (suitable for explicit "L" lookups).
+func (e *Engine) StartFamilyCrawlFromSource(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, source domain.Source, force bool) (id JobID, err error) {
 	if source == "" {
-		return e.StartFamilyCrawl(ctx, root, depth, profile, true)
+		return e.StartFamilyCrawl(ctx, root, depth, profile, force)
 	}
-	return e.startFamilyCrawl(ctx, root, depth, profile, true, source)
+	return e.startFamilyCrawl(ctx, root, depth, profile, force, source)
 }
 
 func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) (id JobID, err error) {
@@ -110,27 +111,18 @@ func (e *Engine) SetSourceMode(ctx context.Context, mode string) (result proto.S
 	return proto.SourceModeResult{Mode: after}, nil
 }
 
-// sourceModeNames are the canonical mode strings the engine emits gauges for.
-// The values mirror crawl.SourceMode* constants; the engine cannot import the
-// crawl package directly because crawl already imports engine.
-var sourceModeNames = []string{
-	"compare",
-	"uspto-first",
-	"uspto-only",
-	"google-only",
-}
-
 func (e *Engine) observeSourceMode(mode string) {
 	if e.metrics == nil {
 		return
 	}
 	e.metrics.IncCounter("engine.source_mode.set_total", 1)
-	for _, candidate := range sourceModeNames {
+	for _, m := range domain.AllSourceModes() {
+		s := string(m)
 		value := int64(0)
-		if mode == candidate {
+		if mode == s {
 			value = 1
 		}
-		e.metrics.SetGauge("engine.source_mode."+candidate, value)
+		e.metrics.SetGauge("engine.source_mode."+s, value)
 	}
 }
 

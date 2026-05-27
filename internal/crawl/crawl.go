@@ -139,9 +139,9 @@ func (c *Crawler) Crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 
 // CrawlFromSource crawls using exactly one external provider. It bypasses the
 // normal provider fallback order so callers can intentionally request USPTO or
-// Google data.
-func (c *Crawler) CrawlFromSource(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, source domain.Source, emit func(Progress)) error {
-	return c.crawl(ctx, root, maxDepth, profile, true, source, emit)
+// Google data. The force flag controls whether the local cache is bypassed.
+func (c *Crawler) CrawlFromSource(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, source domain.Source, force bool, emit func(Progress)) error {
+	return c.crawl(ctx, root, maxDepth, profile, force, source, emit)
 }
 
 func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth int, profile domain.CrawlProfile, force bool, source domain.Source, emit func(Progress)) error {

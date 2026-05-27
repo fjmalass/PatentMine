@@ -30,8 +30,8 @@ func NewFamilyJobFromSource(crawler *Crawler, root domain.PatentNumber, depth in
 	return engine.JobFunc(func(ctx context.Context, id engine.JobID, emit func(proto.Event)) error {
 		run := crawler.Crawl
 		if source != "" {
-			run = func(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, _ bool, emit func(Progress)) error {
-				return crawler.CrawlFromSource(ctx, root, depth, profile, source, emit)
+			run = func(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, emit func(Progress)) error {
+				return crawler.CrawlFromSource(ctx, root, depth, profile, source, force, emit)
 			}
 		}
 		return run(ctx, root, depth, profile, force, func(p Progress) {

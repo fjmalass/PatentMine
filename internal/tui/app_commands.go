@@ -1247,7 +1247,7 @@ func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusInvalidPatentNumber, err.Error())
 		return a, nil
 	}
-	return a, pane.CrawlCmd(a.client, number, 0, "", force)
+	return a, pane.CrawlCmd(a.client, number, 0, "", force, "")
 }
 
 // isFixturePath reports whether arg names a fixture file rather than a patent.

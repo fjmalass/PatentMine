@@ -219,7 +219,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	})
 	e.announceChange()
 	if source != "" && e.crawl != nil {
-		jobID, fetchErr := e.StartFamilyCrawlFromSource(ctx, record, 0, domain.CrawlProfileAll, source)
+		jobID, fetchErr := e.StartFamilyCrawlFromSource(ctx, record, 0, domain.CrawlProfileAll, source, true)
 		if fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "source-specific fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("source", string(source)), slog.String("error", fetchErr.Error()))

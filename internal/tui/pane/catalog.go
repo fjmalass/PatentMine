@@ -394,9 +394,9 @@ func (c *Catalog) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false)
+		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false, "")
 	}
-	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false)
+	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false, "")
 }
 
 // crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
@@ -409,9 +409,9 @@ func (c *Catalog) crawlSelectedLookup() tea.Cmd {
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(c.client, n, lookupDepth, "", true)
+		return CrawlCmd(c.client, n, lookupDepth, "", true, "")
 	}
-	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true)
+	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true, "")
 }
 
 // move runs a cursor motion and reloads the page when the visible window

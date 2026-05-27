@@ -220,22 +220,22 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 		command.NavBottom:   func(inv Invocation) tea.Cmd { d.page.NavBottom(inv.Repeat); return nil },
 		command.Refresh:     func(Invocation) tea.Cmd { d.loading = true; return d.reload() },
 		command.CrawlFamily: func(Invocation) tea.Cmd {
-			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileFamily, false)
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileFamily, false, "")
 		},
 		command.CrawlCitations: func(Invocation) tea.Cmd {
-			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileCitations, false)
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileCitations, false, "")
 		},
 		command.CrawlCitedBy: func(Invocation) tea.Cmd {
-			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileCitedBy, false)
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileCitedBy, false, "")
 		},
 		command.CrawlAll: func(Invocation) tea.Cmd {
-			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileAll, false)
+			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileAll, false, "")
 		},
 		command.LookupPatent: func(Invocation) tea.Cmd {
 			// Force a fresh fetch when the user explicitly hits L on a stub.
 			// The plain :add / depth-0 path can leave a near-empty stub; L must
 			// actually pull data instead of repeating the same weak lookup.
-			return CrawlCmd(d.client, d.number, lookupDepth, "", true)
+			return CrawlCmd(d.client, d.number, lookupDepth, "", true, "")
 		},
 	}
 	return d

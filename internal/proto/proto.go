@@ -514,6 +514,7 @@ type CrawlFamilyParams struct {
 	Depth   int                 `json:"depth"`
 	Profile domain.CrawlProfile `json:"profile,omitempty"`
 	Force   bool                `json:"force,omitempty"`
+	Source  domain.Source       `json:"source,omitempty"`
 }
 
 // CrawlStartResult returns the id of an enqueued job.
