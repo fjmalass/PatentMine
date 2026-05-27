@@ -9,6 +9,42 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [v0.5.0] — 2026-05-27
+
+### Database
+- **Major `record_id` surrogate key migration (migrateG)**: Introduced a stable UUID-style `record_id` as the primary key on the `patent` table. All referencing tables — including `membership`, `patent_tag`, `project_patent_note`, `source_diff`, and others — were atomically rebuilt to use `record_id` instead of the human-readable `patent_number`. This is a foundational change that:
+  - Enables reliable USPTO application-based loading and tracking (an application can be a first-class record even before a grant number is assigned).
+  - Decouples internal foreign keys and graph edges from display numbers that can change or be rewritten by the crawler.
+  - For `membership` specifically: the primary key and references changed from `(project_id, patent_number)` to `(project_id, record_id)`.
+- **Membership `review_state` column rename (migrateH)**: The legacy `state` column on the `membership` table was renamed to `review_state` for naming consistency with the `ReviewState` domain type and the rest of the daemon/TUI model. The supporting index `idx_membership_project` on `(project_id, review_state)` was recreated under the new name. This migration is a no-op on already-migrated or fresh databases.
+- The `membership` table retains its full curated IDS columns (`ids_kind_code`, `ids_in_full`, `ids_relevant_passages`, `ids_notes`, `ids_status`, `ids_added_at`, `ids_submitted_at`) that were folded in from the legacy `project_ids` table (via earlier migration F).
+- All migrations are idempotent where possible, perform necessary backups for destructive rebuilds (F/G), and preserve data across the key and column renames.
+
+### Added
+- `domain.AllSourceModes()` helper returning the canonical list of source modes. This serves as the single source of truth and eliminates duplication in the engine (which previously maintained a parallel raw-string list due to import cycle constraints with the crawl package).
+
+### Fixed
+- `:add.uspto` (and equivalent USPTO-source paths) now populates the full comma-delimited `Classifications` list (normalized to the same compact form as Google) instead of only a single classification.
+- Multi-selection followed by the `L` (explicit lookup / force re-fetch) command now correctly respects the active `source.mode` (including `uspto-only`, `google-only`, etc.). Previously it bypassed the mode and always loaded via Google.
+- Loading popup shown for multi-selection `L`: now uses `DynamicSize` / `PctSize` to occupy a large portion of the screen (≈90% width, generous height targeting the lower ~65% area). Long status messages and error reports are wrapped via lipgloss instead of hard-truncated with `render.Truncate` / `Pad`.
+- Brittle hardcoded source-mode string literals (`"uspto-only"`, `"google-only"`, etc.) removed from the RPC `crawlFamily` handler. Replaced with a proper `switch`/`case` over `domain.SourceMode*` constants (plus comment explaining the policy application for Only modes).
+
+### Changed
+- Source mode handling centralized: engine metrics observation now iterates `domain.AllSourceModes()` instead of a duplicated `sourceModeNames` slice.
+- Various TUI / engine slop cleanups, column/emoji sizing fixes, stats pane refinements, USPTO XML full-text integration (disclosure/claims now drive the `T` viewer), duplicate `:add` handling (now logged as a no-op with metric), and TOML grant viewer command wiring.
+- UI sizing and popup behavior for multi-selection flows improved overall.
+- Review state naming and database column/index consistency aligned across the membership table, domain model, and daemon.
+
+### Fixed (additional)
+- Duplicate `:add` operations now surface as a clean warning + metric instead of silent or erroneous behavior.
+- Multiple TUI rendering and alignment issues in stats, tables, and overlays.
+
+---
+
+## [v0.4.3] — 2026
+
 ### Added
 - **USPTO Loading & Source Configuration**:
   - Full integration with the USPTO Open Data Portal (ODP) for bibliographic metadata search and USPTO bulk datasets for grant / pre-grant XML files.
