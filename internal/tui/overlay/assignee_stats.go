@@ -324,28 +324,21 @@ func (o *AssigneeStatsOverlay) OverlaySize(termW, termH int) (w, h int) {
 }
 
 func (o *AssigneeStatsOverlay) currentCols() []render.TableColumn {
-	w := o.lastWidth - statsTableMargin
-	if w < 40 {
-		w = 40
-	}
+	avail := o.lastWidth - statsTableMargin
+
+	// For assignee stats we keep the inventor and tags columns visible
+	// in more width buckets than the inventor stats view does.
+	var includeInventor, includeTags bool
 	switch {
-	case w >= 80:
-		fixedWidth := 70
-		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "inventor", Label: "Inventor", SortKey: string(domain.SortByInventor), Width: 16}, {Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4}, {Key: "tags", Label: "Tags", SortKey: string(domain.SortByTags), Width: 15}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
-	case w >= 65:
-		fixedWidth := 54
-		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "inventor", Label: "Inventor", SortKey: string(domain.SortByInventor), Width: 16}, {Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
-	case w >= 55:
-		fixedWidth := 37
-		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
+	case avail >= 65:
+		includeInventor, includeTags = true, true
+	case avail >= 55:
+		includeInventor, includeTags = true, false
 	default:
-		fixedWidth := 32
-		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
+		includeInventor, includeTags = false, false
 	}
+
+	return StatsPatentsColumns(avail, includeInventor, includeTags, 0)
 }
 
 func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
@@ -420,7 +413,7 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 
 	b.WriteString("\n")
 	dividerText := fmt.Sprintf("─── Patents by Selected Assignee (%s) ───", o.stats[o.selected].Assignee)
-	dashCount := targetW - len(dividerText)
+	dashCount := targetW - render.StringWidth(dividerText)
 	if dashCount > 0 {
 		dividerText += strings.Repeat("─", dashCount)
 	}
@@ -438,6 +431,21 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	} else {
 		cols := o.currentCols()
+
+		// Make the Number column catch up to the longest visible patent
+		// number in the current page (instead of always hardcoding 16).
+		if len(o.patents) > 0 {
+			start, cnt := o.patentsPage.Window()
+			if maxNum := maxVisiblePatentNumberWidth(o.patents, start, cnt); maxNum > 0 {
+				for i := range cols {
+					if cols[i].Key == "number" {
+						cols[i].Width = max(maxNum+1, 8)
+						break
+					}
+				}
+			}
+		}
+
 		offset := o.patentsPage.Offset()
 		tableStr := renderSubtable(subtableParams{
 			Theme:         o.theme,
@@ -484,14 +492,14 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 				return "-"
 			case "state":
 				if o.project != "" {
-					return o.theme.ReviewStateGlyph(string(p.ReviewState))
+					return o.theme.ReviewStateGlyph(p.ReviewState)
 				}
-				return o.theme.FetchStateGlyph(string(p.FetchState))
+				return o.theme.FetchStateGlyph(p.FetchState)
 			default:
 				return ""
 			}
 		})
-		b.WriteString(tableStr)
+		b.WriteString(normalizeOverlayContent(tableStr, targetW))
 	}
 
 	b.WriteString("\n")
@@ -506,7 +514,7 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 		}
 		b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 	}
-	return b.String()
+	return normalizeOverlayContent(b.String(), targetW)
 }
 
 func (o *AssigneeStatsOverlay) loadStatsCmd() tea.Cmd {

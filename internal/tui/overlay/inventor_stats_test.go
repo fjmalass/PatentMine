@@ -534,8 +534,8 @@ func TestInventorStatsOverlaySourcePatentHighlight(t *testing.T) {
 	// Cursor is at index 0 initially. Row 1 is the marked source patent.
 	// Render view and check if the marked icon '⚑' is present in the rendered output.
 	viewStr := o.View(120, 20)
-	if !strings.Contains(viewStr, "⚑") {
-		t.Errorf("Expected marked icon '⚑' to be rendered on the source patent row")
+	if !strings.Contains(viewStr, "◆") {
+		t.Errorf("Expected marked icon '◆' to be rendered on the source patent row")
 	}
 
 	// 2. Test sorting: when sorted, the row indices change, but the marker should still be correct.
@@ -544,7 +544,7 @@ func TestInventorStatsOverlaySourcePatentHighlight(t *testing.T) {
 
 	// Cursor now on source patent row. Prefix composes cursor glyph + mark glyph: ">⚑".
 	viewStrCursor := o.View(120, 20)
-	if !strings.Contains(viewStrCursor, ">⚑") {
-		t.Errorf("Expected combined cursor + marked icon '>⚑' to be rendered when cursor is on the source patent row")
+	if !strings.Contains(viewStrCursor, ">◆") {
+		t.Errorf("Expected combined cursor + marked icon '>◆' to be rendered when cursor is on the source patent row")
 	}
 }

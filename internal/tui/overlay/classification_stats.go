@@ -413,7 +413,7 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 	}
 	b.WriteString("\n")
 	dividerText := fmt.Sprintf("─── Patents by Selected Classification (%s) ───", o.stats[o.selected].Classification.Code)
-	if dashCount := targetW - len(dividerText); dashCount > 0 {
+	if dashCount := targetW - render.StringWidth(dividerText); dashCount > 0 {
 		dividerText += strings.Repeat("─", dashCount)
 	}
 	b.WriteString(o.theme.Header.Render(render.Truncate(dividerText, targetW)))
@@ -429,6 +429,20 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	} else {
 		cols := o.currentCols()
+
+		// Dynamic catch-up for Number column based on visible patents.
+		if len(o.patents) > 0 {
+			startPat, cnt := o.patentsPage.Window()
+			if maxNum := maxVisiblePatentNumberWidth(o.patents, startPat, cnt); maxNum > 0 {
+				for i := range cols {
+					if cols[i].Key == "number" {
+						cols[i].Width = max(maxNum+1, 8)
+						break
+					}
+				}
+			}
+		}
+
 		startPat, endPat := o.patentsPage.Window()
 		patCursor := o.patentsPage.Cursor()
 		focusPatents := o.focus == focusPatents
@@ -463,14 +477,14 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 				return "-"
 			case "state":
 				if o.project != "" {
-					return o.theme.ReviewStateGlyph(string(p.ReviewState))
+					return o.theme.ReviewStateGlyph(p.ReviewState)
 				}
-				return o.theme.FetchStateGlyph(string(p.FetchState))
+				return o.theme.FetchStateGlyph(p.FetchState)
 			default:
 				return ""
 			}
 		})
-		b.WriteString(tableStr)
+		b.WriteString(normalizeOverlayContent(tableStr, targetW))
 	}
 	b.WriteString("\n")
 	if o.focus == focusInventors {
@@ -487,7 +501,7 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		}
 		b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 	}
-	return b.String()
+	return normalizeOverlayContent(b.String(), targetW)
 }
 
 func (o *ClassificationStatsOverlay) loadStatsCmd() tea.Cmd {

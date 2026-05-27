@@ -184,9 +184,9 @@ func renderTableHeader(theme render.Theme, cols []tableCol, activeSortKey domain
 func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, projectID domain.ProjectID, absoluteIndex int, classDescs map[string]string) string {
 	if col.cellType == domain.CellTypeState {
 		if projectID != "" {
-			return theme.ReviewStateGlyph(string(row.ReviewState))
+			return theme.ReviewStateGlyph(row.ReviewState)
 		}
-		return theme.FetchStateGlyph(string(row.FetchState))
+		return theme.FetchStateGlyph(row.FetchState)
 	}
 
 	switch col.key {
@@ -410,14 +410,14 @@ func formatTags(tags []string) string {
 
 func formatIDSSummary(theme render.Theme, entry *domain.IDSEntry) string {
 	if entry == nil {
-		return theme.IDSEntryStatusGlyph("none")
+		return theme.IDSEntryNoneGlyph()
 	}
-	return theme.IDSEntryStatusGlyph(string(normalizedIDSEntryStatus(entry.Status)))
+	return theme.IDSEntryStatusGlyph(normalizedIDSEntryStatus(entry.Status))
 }
 
 func idsStatusDisplayText(theme render.Theme, status domain.IDSEntryStatus) string {
 	status = normalizedIDSEntryStatus(status)
-	return theme.IDSEntryStatusGlyph(string(status)) + " " + string(status)
+	return theme.IDSEntryStatusGlyph(status) + " " + string(status)
 }
 
 func normalizedIDSEntryStatus(status domain.IDSEntryStatus) domain.IDSEntryStatus {

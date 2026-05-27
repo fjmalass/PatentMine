@@ -387,7 +387,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 				rawState = s
 			}
 		}
-		stateIcon := theme.ReviewStateGlyph(rawState)
+		stateIcon := theme.ReviewStateGlyphFromString(rawState)
 		return theme.Glyphs.HistState, "State: " + stateIcon + "  " + pat
 	case observability.ActionPatentTagAssign:
 		tagName := ""

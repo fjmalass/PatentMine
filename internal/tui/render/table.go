@@ -134,6 +134,11 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 		prefixStyled := rowStyle.Render(prefix)
 
 		rowLine := prefixStyled + strings.Join(parts, "")
+		used := StringWidth(rowLine)
+		if maxW > used {
+			filler := rowStyle.Render(strings.Repeat(" ", maxW-used))
+			rowLine += filler
+		}
 		b.WriteString(rowLine)
 		b.WriteString("\n")
 	}

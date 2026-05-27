@@ -988,21 +988,27 @@ func detailReviewStateText(state domain.ReviewState) string {
 }
 
 func detailStyledReviewStateText(theme render.Theme, state domain.ReviewState) string {
-	text := detailReviewStateText(state)
+	if state == "" {
+		return theme.Dim.Render("not in project")
+	}
+	glyph := theme.ReviewStateGlyph(state)
+	name := string(state)
+	var styledName string
 	switch state {
 	case domain.ReviewStateUnknown:
-		return theme.Dim.Render(text)
+		styledName = theme.Dim.Render(name)
 	case domain.ReviewStateUnderReview:
-		return theme.Warn.Render(text)
+		styledName = theme.Warn.Render(name)
 	case domain.ReviewStateActive:
-		return theme.OK.Render(text)
+		styledName = theme.OK.Render(name)
 	case domain.ReviewStateIgnored:
-		return theme.Dim.Render(text)
+		styledName = theme.Dim.Render(name)
 	case domain.ReviewStateDeleted:
-		return theme.Error.Render(text)
+		styledName = theme.Error.Render(name)
 	default:
-		return text
+		styledName = name
 	}
+	return glyph + "  " + styledName
 }
 
 func detailFetchStateText(theme render.Theme, state domain.FetchState) string {
@@ -1021,7 +1027,7 @@ func reviewStateText(theme render.Theme, state domain.ReviewState) string {
 	if state == "" {
 		return "not in project"
 	}
-	return theme.ReviewStateGlyph(string(state))
+	return theme.ReviewStateGlyph(state)
 }
 
 func styledReviewStateText(theme render.Theme, state domain.ReviewState) string {
@@ -1043,7 +1049,7 @@ func styledReviewStateText(theme render.Theme, state domain.ReviewState) string 
 }
 
 func fetchStateText(theme render.Theme, state domain.FetchState) string {
-	text := theme.FetchStateGlyph(string(state))
+	text := theme.FetchStateGlyph(state)
 	switch state {
 	case domain.FetchCached:
 		return theme.Dim.Render(text)
@@ -1077,7 +1083,7 @@ func detailClassificationsText(classifications []string) string {
 
 func detailIDSText(theme render.Theme, entry *domain.IDSEntry) string {
 	if entry == nil {
-		return theme.IDSEntryStatusGlyph("none") + " none"
+		return theme.IDSEntryNoneGlyph() + " none"
 	}
 	if entry.Project == "" || entry.Patent.IsZero() {
 		return "—"

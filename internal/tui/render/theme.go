@@ -1,6 +1,10 @@
 package render
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"patentmine/internal/domain"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Theme colours, named so no raw colour code appears at a call site.
 const (
@@ -98,12 +102,14 @@ const (
 	glyphFetchStateCached  = "🗃️"
 	glyphFetchStateStub    = "🦴"
 
-	// Table row prefix glyphs. Each is a single display-width character;
-	// table.go composes them as cursor+mark+" " for a fixed 3-char prefix.
+	// Table row prefix glyphs. Each is intended to be a single display-width character
+	// so that cursor+mark+" " produces a predictable prefix width (currently 3 columns).
+	// The mark glyph is deliberately chosen to be single-width to avoid right-edge
+	// misalignment on marked rows in tables.
 	glyphRowCursor  = ">" // cursor row in focused table
 	glyphRowNoCursor = " " // not the cursor row
 	glyphRowActive  = "*" // active/current item mark (e.g. active project), passed via MarkGlyph
-	glyphRowMark    = "⚑"
+	glyphRowMark    = "◆" // marked/flagged row (single display width for aligned table right edges)
 	glyphRowChosen  = "✓" // override for confirmed-selection rows
 	glyphRowNoMark  = " " // placeholder when row has no mark
 
@@ -252,7 +258,7 @@ type ThemeGlyphs struct {
 	RowCursor  string // cursor row in focused table, e.g. ">"
 	RowNoCursor string // non-cursor row placeholder
 	RowActive  string // active/current item mark passed via MarkGlyph, e.g. "*"
-	RowMark    string // flagged/marked row indicator, e.g. "⚑"
+	RowMark    string // flagged/marked row indicator, e.g. "◆" (must be single display width)
 	RowChosen  string // confirmed-selection indicator, e.g. "✓" (caller override)
 	RowNoMark  string // no-mark placeholder, same display width
 }
@@ -452,52 +458,80 @@ func NewTheme() Theme {
 	}
 }
 
-// ReviewStateGlyph returns the glyph corresponding to the review state.
-func (t Theme) ReviewStateGlyph(state string) string {
-	switch state {
-	case "unknown", "":
+// ReviewStateGlyph returns the glyph corresponding to a review state.
+// This is the preferred API (uses the domain type as the source of truth).
+func (t Theme) ReviewStateGlyph(s domain.ReviewState) string {
+	switch s {
+	case domain.ReviewStateUnknown, domain.ReviewStateNone:
 		return t.Glyphs.ReviewStateUnknown
-	case "under_review":
+	case domain.ReviewStateUnderReview:
 		return t.Glyphs.ReviewStateUnderReview
-	case "active":
+	case domain.ReviewStateActive:
 		return t.Glyphs.ReviewStateActive
-	case "ignored":
+	case domain.ReviewStateIgnored:
 		return t.Glyphs.ReviewStateIgnored
-	case "deleted":
+	case domain.ReviewStateDeleted:
 		return t.Glyphs.ReviewStateDeleted
 	default:
 		return t.Glyphs.ReviewStateUnknown
 	}
 }
 
+// ReviewStateGlyphFromString is a convenience for the rare cases where only a
+// raw string is available (primarily activity history records).
+func (t Theme) ReviewStateGlyphFromString(s string) string {
+	return t.ReviewStateGlyph(domain.ReviewState(s))
+}
+
 // IDSEntryStatusGlyph returns the glyph corresponding to a curated IDS entry status.
-func (t Theme) IDSEntryStatusGlyph(status string) string {
-	switch status {
-	case "none":
-		return t.Glyphs.IDSEntryNone
-	case "pending", "":
+// This is the preferred API.
+func (t Theme) IDSEntryStatusGlyph(s domain.IDSEntryStatus) string {
+	switch s {
+	case domain.IDSEntryPending, "":
 		return t.Glyphs.IDSEntryPending
-	case "submitted":
+	case domain.IDSEntrySubmitted:
 		return t.Glyphs.IDSEntrySubmitted
-	case "accepted":
+	case domain.IDSEntryAccepted:
 		return t.Glyphs.IDSEntryAccepted
-	case "ignored":
+	case domain.IDSEntryIgnored:
 		return t.Glyphs.IDSEntryIgnored
 	default:
 		return t.Glyphs.IDSEntryUnknown
 	}
 }
 
+// IDSEntryNoneGlyph returns the glyph used when there is no IDS entry
+// (a presentation concept, not a domain state value).
+func (t Theme) IDSEntryNoneGlyph() string {
+	return t.Glyphs.IDSEntryNone
+}
+
+// IDSEntryStatusGlyphFromString is a convenience for the rare cases where only
+// a raw string is available.
+func (t Theme) IDSEntryStatusGlyphFromString(s string) string {
+	if s == "none" {
+		return t.Glyphs.IDSEntryNone
+	}
+	return t.IDSEntryStatusGlyph(domain.IDSEntryStatus(s))
+}
+
 // FetchStateGlyph returns the glyph corresponding to the fetch state.
-func (t Theme) FetchStateGlyph(state string) string {
-	switch state {
-	case "cached":
+// This is the preferred API.
+func (t Theme) FetchStateGlyph(s domain.FetchState) string {
+	switch s {
+	case domain.FetchCached:
 		return t.Glyphs.FetchStateCached
-	case "stub":
+	case domain.FetchStub:
 		return t.Glyphs.FetchStateStub
-	case "unknown":
+	case domain.FetchUnknown, "":
 		return t.Glyphs.FetchStateUnknown
 	default:
 		return t.Glyphs.FetchStateUnknown
 	}
+}
+
+// FetchStateGlyphFromString is a convenience for the rare cases where only a
+// raw string is available.
+func (t Theme) FetchStateGlyphFromString(s string) string {
+	return t.FetchStateGlyph(domain.FetchState(s))
 }

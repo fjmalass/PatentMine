@@ -82,7 +82,7 @@ func (p *IDSStatusPicker) View(maxW, _ int) string {
 		b.WriteString("  ")
 		b.WriteString(p.theme.HelpKey.Render("[" + c.key + "]"))
 		b.WriteString(" ")
-		b.WriteString(p.theme.Row.Render(p.theme.IDSEntryStatusGlyph(string(c.status)) + " " + c.label))
+		b.WriteString(p.theme.Row.Render(p.theme.IDSEntryStatusGlyph(c.status) + " " + c.label))
 		b.WriteByte('\n')
 	}
 	b.WriteByte('\n')
