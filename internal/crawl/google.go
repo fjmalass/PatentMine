@@ -514,18 +514,27 @@ func extractAdditionalGoogleDocuments(recordNumber domain.PatentNumber, doc *goq
 					Number: num,
 					Stage:  domain.StageApplication,
 				})
-				ids = append(ids, domain.AuthorityIdentifier{
-					Authority:      "GOOGLE",
-					IdentifierType: "application",
-					Identifier:     num.Normalized(),
-					RawIdentifier:  content,
-					RecordNumber:   recordNumber,
-					DocumentNumber: num.Normalized(),
-					Country:        num.Country,
-					Kind:           num.Kind,
-					Source:         string(domain.SourceGoogle),
-					Confidence:     80,
-				})
+				if num.Country != "" {
+					// Use country-code authority + bare serial so USPTO's
+					// resolveByAuthority can latch onto this record when it
+					// ingests the same application (USPTO stores "17812078",
+					// not "US17812078", as the identifier).
+					ids = append(ids, domain.AuthorityIdentifier{
+						Authority:      num.Country,
+						IdentifierType: "application",
+						Identifier:     num.Serial,
+						RawIdentifier:  content,
+						RecordNumber:   recordNumber,
+						DocumentNumber: num.Normalized(),
+						Country:        num.Country,
+						Kind:           num.Kind,
+						Source:         string(domain.SourceGoogle),
+						Confidence:     80,
+					})
+					if Metrics != nil {
+						Metrics.IncCounter("crawl.google.authority_id.application_crossref.count", 1)
+					}
+				}
 			}
 		}
 		if name == "citation_patent_publication_number" || name == "citation_patent_number" || (name == "DC.relation" && scheme == "patent") {

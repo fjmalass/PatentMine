@@ -202,7 +202,7 @@ func TestParseGoogleExtractsMetaTags(t *testing.T) {
 
 	var foundAppID, foundPubID bool
 	for _, id := range res.AuthorityIdentifiers {
-		if id.IdentifierType == "application" && id.Identifier == "US17696256" {
+		if id.Authority == "US" && id.IdentifierType == "application" && id.Identifier == "17696256" {
 			foundAppID = true
 		}
 		if id.IdentifierType == "publication" && id.Identifier == "US20220205933A1" {
