@@ -428,20 +428,32 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString(o.theme.MutedItalic.Render("No patents found for this classification."))
 		b.WriteString("\n")
 	} else {
-		cols := o.currentCols()
+		avail := o.lastWidth - statsTableMargin
+		if avail < 40 {
+			avail = 40
+		}
 
-		// Dynamic catch-up for Number column based on visible patents.
+		// Classification delegates include logic from assignee, but we need
+		// the same include flags here for the call.
+		var includeInventor, includeTags bool
+		switch {
+		case avail >= 65:
+			includeInventor, includeTags = true, true
+		case avail >= 55:
+			includeInventor, includeTags = true, false
+		default:
+			includeInventor, includeTags = false, false
+		}
+
+		numColWidth := 16
 		if len(o.patents) > 0 {
 			startPat, cnt := o.patentsPage.Window()
 			if maxNum := maxVisiblePatentNumberWidth(o.patents, startPat, cnt); maxNum > 0 {
-				for i := range cols {
-					if cols[i].Key == "number" {
-						cols[i].Width = max(maxNum+1, 8)
-						break
-					}
-				}
+				numColWidth = max(maxNum+1, 8)
 			}
 		}
+
+		cols := StatsPatentsColumns(avail, includeInventor, includeTags, numColWidth)
 
 		startPat, endPat := o.patentsPage.Window()
 		patCursor := o.patentsPage.Cursor()

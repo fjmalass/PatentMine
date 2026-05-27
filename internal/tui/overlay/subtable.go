@@ -116,11 +116,15 @@ const statsRowPrefixWidth = 3
 // for the non-flexible columns (number, inventor, year, tags).
 // Everything else is computed:
 //
-//   - Title gets the bulk of the flexible space (after reserving prefix + gaps).
-//   - The last column ("state", which holds the icon/glyph) is the
-//     explicit "catch-up" column. After title is assigned, we give the
-//     state column whatever width is needed so that
-//       prefix + sum(all widths) + gaps == exact target row width.
+//   - Title gets most of the flexible space, but we deliberately reserve
+//     at least 20 columns of the flexible space. This makes the title
+//     column noticeably smaller.
+//   - The state column has a small fixed width. Final right-edge alignment
+//     for the entire overlay (including subtable rows with icons) is
+//     enforced uniformly by normalizeOverlayContent after the table is
+//     generated. This approach is much less brittle than trying to make
+//     any single column (especially the one with the emoji) absorb the
+//     exact remainder through column math.
 //
 // When numberColWidth > 0 it overrides the default minimum for the
 // Number column (allowing it to dynamically size to the longest
@@ -137,19 +141,19 @@ func StatsPatentsColumns(availWidth int, includeInventorCol, includeTagsCol bool
 		w = 40
 	}
 
-	// Minimum widths for columns. The last column ("state", which holds the
-	// icon/glyph) acts as the "catch-up" column: after we give the title
-	// the bulk of the flexible space, we assign whatever is left to the
-	// last column. This guarantees that every rendered table row has a
-	// deterministic total width (prefix + sum(widths) + gaps), so the
-	// right edge of the subtable lines up perfectly with the rest of the
-	// overlay content even when the icon is double-width.
+	// Minimum widths for columns.
+	//
+	// The state column (last one) is deliberately kept small and fixed.
+	// The final right-edge alignment for the whole overlay is handled by
+	// normalizeOverlayContent after the subtable is generated. This is much
+	// less brittle than trying to make the icon column itself be the
+	// variable-width catch-up column.
 	const (
 		defaultNumWidth = 16
 		yearWidth       = 4
 		tagsWidth       = 15
-		invWidth        = 16
-		// state has no fixed min here — it will be computed as the catch-up
+		invWidth        = 24
+		stateWidth      = 6 // small fixed width for the icon column
 	)
 
 	numWidth := defaultNumWidth
@@ -177,34 +181,30 @@ func StatsPatentsColumns(availWidth int, includeInventorCol, includeTagsCol bool
 	if includeTagsCol {
 		cols = append(cols, spec{"tags", "Tags", string(domain.SortByTags), tagsWidth})
 	}
-	cols = append(cols, spec{"state", "State", string(domain.SortByReviewState), 0}) // catch-up column for icon alignment
+	cols = append(cols, spec{"state", "State", string(domain.SortByReviewState), stateWidth})
 
-	// Sum the fixed (non-title, non-catch-up) columns.
+	// Sum everything except title (title is the main flexible column).
 	fixed := 0
 	for _, c := range cols {
-		if c.key != "title" && c.key != "state" {
+		if c.key != "title" {
 			fixed += c.width
 		}
 	}
 
 	gaps := len(cols) - 1
 
-	// Give the title most of the remaining space (after reserving for prefix).
-	titleW := max(10, w-fixed-gaps-statsRowPrefixWidth)
+	flex := w - fixed - gaps - statsRowPrefixWidth
 
-	// Now compute what the last column (state/icon) must be to make the
-	// total row width exact: prefix + all widths + gaps == target content width.
-	// This is the "catch-up" that makes the right edge line up reliably.
-	nonCatchup := fixed + titleW + gaps + statsRowPrefixWidth
-	catchUpWidth := max(4, w-nonCatchup) // at least 4 so the icon has breathing room
+	// Title is the main flexible column.
+	// We deliberately give it less space (reserve at least 20 columns of flex)
+	// so the overall layout feels better balanced.
+	titleW := max(10, flex-20)
 
 	out := make([]render.TableColumn, len(cols))
 	for i, c := range cols {
 		width := c.width
 		if c.key == "title" {
 			width = titleW
-		} else if c.key == "state" {
-			width = catchUpWidth
 		}
 		out[i] = render.TableColumn{
 			Key:     c.key,

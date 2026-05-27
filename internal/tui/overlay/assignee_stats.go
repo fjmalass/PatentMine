@@ -430,21 +430,33 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString(o.theme.MutedItalic.Render("No patents found for this assignee."))
 		b.WriteString("\n")
 	} else {
-		cols := o.currentCols()
+		avail := o.lastWidth - statsTableMargin
+		if avail < 40 {
+			avail = 40
+		}
 
-		// Make the Number column catch up to the longest visible patent
-		// number in the current page (instead of always hardcoding 16).
+		// Decide optional columns (same logic as currentCols)
+		var includeInventor, includeTags bool
+		switch {
+		case avail >= 65:
+			includeInventor, includeTags = true, true
+		case avail >= 55:
+			includeInventor, includeTags = true, false
+		default:
+			includeInventor, includeTags = false, false
+		}
+
+		// Compute dynamic width for Number column from visible data
+		numColWidth := 16
 		if len(o.patents) > 0 {
 			start, cnt := o.patentsPage.Window()
 			if maxNum := maxVisiblePatentNumberWidth(o.patents, start, cnt); maxNum > 0 {
-				for i := range cols {
-					if cols[i].Key == "number" {
-						cols[i].Width = max(maxNum+1, 8)
-						break
-					}
-				}
+				numColWidth = max(maxNum+1, 8)
 			}
 		}
+
+		// Get columns with *correct* num width so title + state catch-up math is valid
+		cols := StatsPatentsColumns(avail, includeInventor, includeTags, numColWidth)
 
 		offset := o.patentsPage.Offset()
 		tableStr := renderSubtable(subtableParams{
