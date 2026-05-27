@@ -38,7 +38,7 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 			(rel.to_record_id = p.record_id AND rel.kind = 'child'))`
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
-				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
+				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.review_state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_in_full, 0), ` +
 				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), ` +
 				`COALESCE(m.ids_added_at, ''), COALESCE(m.ids_submitted_at, '')` +
@@ -507,7 +507,7 @@ func patentSortExpr(q store.PatentQuery) (string, []any, error) {
 		return "p.expiration_date " + dir, nil, nil
 	case domain.SortByReviewState:
 		if q.Project != "" {
-			return "COALESCE(m.state, p.fetch_state) " + dir, nil, nil
+			return "COALESCE(m.review_state, p.fetch_state) " + dir, nil, nil
 		}
 		return "p.fetch_state " + dir, nil, nil
 	case domain.SortByIDS:
@@ -567,7 +567,7 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 		sb.WriteString(" " + joinType + " membership m ON m.record_id = p.record_id AND m.project_id = ?")
 		args = append(args, string(q.Project))
 		if q.ReviewState != domain.ReviewStateNone {
-			conds = append(conds, "m.state = ?")
+			conds = append(conds, "m.review_state = ?")
 			args = append(args, string(q.ReviewState))
 		}
 		if q.IDSStatus != "" {
@@ -686,7 +686,7 @@ func compileBooleanExpr(op string, left, right filterexpr.Expr, q store.PatentQu
 func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, []any, error) {
 	switch term.Field {
 	case filterexpr.FieldState:
-		return "m.state = ?", []any{string(term.State)}, nil
+		return "m.review_state = ?", []any{string(term.State)}, nil
 	case filterexpr.FieldIDSStatus:
 		cond, args := idsStatusCondition(term.IDSStatus)
 		return cond, args, nil
@@ -945,7 +945,7 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 			Tags:     make(map[string]int),
 		}
 
-		query := `SELECT p.number, COALESCE(m.state, '') AS state, COALESCE(t.name, '') AS tag_name
+		query := `SELECT p.number, COALESCE(m.review_state, '') AS state, COALESCE(t.name, '') AS tag_name
 			FROM patent p
 			LEFT JOIN membership m ON m.record_id = p.record_id AND m.project_id = ?
 			LEFT JOIN patent_tag pt ON pt.record_id = p.record_id
@@ -997,7 +997,7 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 // PatentAssigneeStats aggregates database statistics for all non-empty assignees within a project.
 func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID) (out []domain.AssigneeStats, err error) {
 	defer r.observeDuration("patent_assignee_stats", time.Now(), &err)
-	query := `SELECT p.assignee, p.number, COALESCE(m.state, ''), COALESCE(t.name, '')
+	query := `SELECT p.assignee, p.number, COALESCE(m.review_state, ''), COALESCE(t.name, '')
 		FROM patent p
 		LEFT JOIN membership m ON m.record_id = p.record_id AND m.project_id = ?
 		LEFT JOIN patent_tag pt ON pt.record_id = p.record_id
@@ -1060,7 +1060,7 @@ func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID
 // PatentClassificationStats aggregates database statistics for all classification codes within a project.
 func (r *Repo) PatentClassificationStats(ctx context.Context, project domain.ProjectID) (out []domain.ClassificationStats, err error) {
 	defer r.observeDuration("patent_classification_stats", time.Now(), &err)
-	query := `SELECT json_each.value, p.number, COALESCE(m.state, ''), COALESCE(t.name, ''),
+	query := `SELECT json_each.value, p.number, COALESCE(m.review_state, ''), COALESCE(t.name, ''),
 		COALESCE(cd.system, ''), COALESCE(cd.description, '')
 		FROM patent p
 		JOIN json_each(p.classifications)

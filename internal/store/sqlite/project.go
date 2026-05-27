@@ -221,7 +221,7 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err erro
 		return fmt.Errorf("store/sqlite: invalid review state %q", m.ReviewState)
 	}
 	_, err = r.writer.ExecContext(ctx,
-		`INSERT INTO membership (project_id, record_id, state, added_at)
+		`INSERT INTO membership (project_id, record_id, review_state, added_at)
 		 VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?)
 		 ON CONFLICT(project_id, record_id) DO NOTHING`,
 		string(m.Project), m.Patent.Normalized(), string(m.ReviewState), encodeTime(m.AddedAt))
@@ -235,7 +235,7 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err erro
 func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (membership domain.Membership, err error) {
 	defer r.observeDuration("membership", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
-		`SELECT m.project_id, p.number, m.state, m.added_at FROM membership m
+		`SELECT m.project_id, p.number, m.review_state, m.added_at FROM membership m
 		 JOIN patent p ON p.record_id = m.record_id
 		 WHERE m.project_id = ? AND p.number = ?`,
 		string(project), patent.Normalized())
@@ -274,7 +274,7 @@ func (r *Repo) SetReviewStates(ctx context.Context, project domain.ProjectID, pa
 		}
 	}()
 
-	stmt, err := tx.PrepareContext(ctx, `UPDATE membership SET state = ? WHERE project_id = ? AND record_id = (SELECT record_id FROM patent WHERE number = ?)`)
+	stmt, err := tx.PrepareContext(ctx, `UPDATE membership SET review_state = ? WHERE project_id = ? AND record_id = (SELECT record_id FROM patent WHERE number = ?)`)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: set review states prepare: %w", err)
 	}
@@ -309,7 +309,7 @@ func (r *Repo) DeleteMembership(ctx context.Context, project domain.ProjectID, p
 func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out []domain.Membership, err error) {
 	defer r.observeDuration("memberships", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT m.project_id, p.number, m.state, m.added_at FROM membership m
+		`SELECT m.project_id, p.number, m.review_state, m.added_at FROM membership m
 		 JOIN patent p ON p.record_id = m.record_id
 		 WHERE m.project_id = ? ORDER BY p.number`, string(project))
 	if err != nil {

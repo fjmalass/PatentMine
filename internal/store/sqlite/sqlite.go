@@ -93,6 +93,9 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err := r.migrateG(ctx); err != nil {
 		return err
 	}
+	if err := r.migrateH(ctx); err != nil {
+		return err
+	}
 	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("store/sqlite: init schema: %w", err)
 	}

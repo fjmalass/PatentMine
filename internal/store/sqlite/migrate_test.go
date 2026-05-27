@@ -23,7 +23,7 @@ CREATE TABLE relation (from_number TEXT NOT NULL, to_number TEXT NOT NULL,
 	kind TEXT NOT NULL, PRIMARY KEY (from_number, to_number, kind));
 CREATE TABLE project (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE membership (project_id TEXT NOT NULL, patent_number TEXT NOT NULL,
-	state TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY (project_id, patent_number));
+	review_state TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY (project_id, patent_number));
 CREATE TABLE project_ids (id INTEGER PRIMARY KEY AUTOINCREMENT,
 	project_id TEXT NOT NULL, patent_number TEXT NOT NULL,
 	kind_code TEXT NOT NULL DEFAULT '', country_code TEXT NOT NULL DEFAULT '',

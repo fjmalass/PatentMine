@@ -558,7 +558,7 @@ CREATE INDEX IF NOT EXISTS idx_project_examiner_latest ON project_examiner (proj
 CREATE TABLE IF NOT EXISTS membership (
     project_id            TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
     record_id             TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
-    state                 TEXT NOT NULL,
+    review_state          TEXT NOT NULL,
     added_at              TEXT NOT NULL,
     ids_kind_code         TEXT NOT NULL DEFAULT '',
     ids_in_full           INTEGER NOT NULL DEFAULT 0,
@@ -570,7 +570,7 @@ CREATE TABLE IF NOT EXISTS membership (
     PRIMARY KEY (project_id, record_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_membership_project ON membership (project_id, state);
+CREATE INDEX IF NOT EXISTS idx_membership_project ON membership (project_id, review_state);
 
 CREATE TABLE IF NOT EXISTS project_patent_note (
     project_id TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,

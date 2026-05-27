@@ -87,7 +87,7 @@ var migrationFStatements = []string{
 	`CREATE TABLE membership_new (
 		project_id            TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
 		patent_number         TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-		state                 TEXT NOT NULL,
+		review_state          TEXT NOT NULL,
 		added_at              TEXT NOT NULL,
 		ids_kind_code         TEXT NOT NULL DEFAULT '',
 		ids_in_full           INTEGER NOT NULL DEFAULT 0,
@@ -101,10 +101,10 @@ var migrationFStatements = []string{
 	// Every existing membership, decorated with its curated IDS data when one
 	// exists in project_ids. ids_submitted_at is backfilled to added_at when
 	// the legacy entry was already submitted, so we keep a plausible timestamp.
-	`INSERT INTO membership_new (project_id, patent_number, state, added_at,
+	`INSERT INTO membership_new (project_id, patent_number, review_state, added_at,
 		ids_kind_code, ids_in_full, ids_relevant_passages,
 		ids_notes, ids_status, ids_added_at, ids_submitted_at)
-	 SELECT m.project_id, m.patent_number, m.state, m.added_at,
+	 SELECT m.project_id, m.patent_number, m.review_state, m.added_at,
 		COALESCE(pid.kind_code, ''),
 		COALESCE(pid.in_full, 0), COALESCE(pid.relevant_passages, ''),
 		COALESCE(pid.notes, ''), COALESCE(pid.status, ''), COALESCE(pid.added_at, ''),
@@ -115,7 +115,7 @@ var migrationFStatements = []string{
 		ON pid.project_id = m.project_id AND pid.patent_number = m.patent_number`,
 	// IDS entries whose patent was never a project member: synthesize a
 	// membership row for them so no curated data is lost.
-	`INSERT INTO membership_new (project_id, patent_number, state, added_at,
+	`INSERT INTO membership_new (project_id, patent_number, review_state, added_at,
 		ids_kind_code, ids_in_full, ids_relevant_passages,
 		ids_notes, ids_status, ids_added_at, ids_submitted_at)
 	 SELECT pid.project_id, pid.patent_number, 'unknown', pid.added_at,
@@ -129,7 +129,7 @@ var migrationFStatements = []string{
 	 )`,
 	`DROP TABLE membership`,
 	`ALTER TABLE membership_new RENAME TO membership`,
-	`CREATE INDEX idx_membership_project ON membership (project_id, state)`,
+	`CREATE INDEX idx_membership_project ON membership (project_id, review_state)`,
 
 	`CREATE TABLE relation_new (
 		from_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
@@ -228,6 +228,72 @@ func (r *Repo) runMigrationG(ctx context.Context) error {
 
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
 		return fmt.Errorf("store/sqlite: migrate G: re-enable fk: %w", err)
+	}
+	return nil
+}
+
+// migrateH renames the legacy "state" column on the membership table to
+// "review_state" for naming consistency with the Go type (ReviewState).
+// It is safe to run on fresh databases (no-op) and on already-renamed ones.
+func (r *Repo) migrateH(ctx context.Context) error {
+	needed, err := r.needsMigrationH(ctx)
+	if err != nil {
+		return err
+	}
+	if !needed {
+		return nil
+	}
+	// No backup needed for a simple RENAME COLUMN + index recreation.
+	return r.runMigrationH(ctx)
+}
+
+// needsMigrationH reports whether the membership table still has the old
+// "state" column name.
+func (r *Repo) needsMigrationH(ctx context.Context) (bool, error) {
+	hasMembership, err := r.tableExists(ctx, "membership")
+	if err != nil {
+		return false, fmt.Errorf("store/sqlite: migrate H: detect membership: %w", err)
+	}
+	if !hasMembership {
+		return false, nil
+	}
+	hasState, err := r.columnExists(ctx, "membership", "state")
+	if err != nil {
+		return false, fmt.Errorf("store/sqlite: migrate H: detect state column: %w", err)
+	}
+	return hasState, nil
+}
+
+// runMigrationH performs the column rename and refreshes the index.
+func (r *Repo) runMigrationH(ctx context.Context) error {
+	conn, err := r.writer.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate H: connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate H: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// SQLite 3.25+ supports RENAME COLUMN. We already rely on it in migration G.
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE membership RENAME COLUMN state TO review_state`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate H: rename column: %w", err)
+	}
+
+	// Recreate the index under the new column name (RENAME COLUMN updates it,
+	// but recreating is explicit and harmless).
+	if _, err := tx.ExecContext(ctx, `DROP INDEX IF EXISTS idx_membership_project`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate H: drop index: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `CREATE INDEX idx_membership_project ON membership (project_id, review_state)`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate H: create index: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate H: commit: %w", err)
 	}
 	return nil
 }
@@ -498,7 +564,7 @@ var migrationGStatements = []string{
 	`CREATE TABLE membership_new_g (
 		project_id            TEXT NOT NULL,
 		record_id             TEXT NOT NULL,
-		state                 TEXT NOT NULL,
+		review_state          TEXT NOT NULL,
 		added_at              TEXT NOT NULL,
 		ids_kind_code         TEXT NOT NULL DEFAULT '',
 		ids_in_full           INTEGER NOT NULL DEFAULT 0,
@@ -510,7 +576,7 @@ var migrationGStatements = []string{
 		PRIMARY KEY (project_id, record_id)
 	)`,
 	`INSERT INTO membership_new_g SELECT
-		m.project_id, p.record_id, m.state, m.added_at,
+		m.project_id, p.record_id, m.review_state, m.added_at,
 		m.ids_kind_code, m.ids_in_full, m.ids_relevant_passages,
 		m.ids_notes, m.ids_status, m.ids_added_at, m.ids_submitted_at
 	 FROM membership m JOIN patent_new p ON p.number = m.patent_number`,

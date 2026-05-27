@@ -98,7 +98,7 @@ func (r *Repo) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (saved d
 		submittedAt = time.Time{}
 	}
 	_, err = r.writer.ExecContext(ctx, `
-		INSERT INTO membership (project_id, record_id, state, added_at,
+		INSERT INTO membership (project_id, record_id, review_state, added_at,
 			ids_kind_code, ids_in_full, ids_relevant_passages,
 			ids_notes, ids_status, ids_added_at, ids_submitted_at)
 		VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?,?,?,?,?)
