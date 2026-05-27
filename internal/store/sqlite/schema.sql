@@ -4,11 +4,12 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '2')
-ON CONFLICT(key) DO NOTHING;
+VALUES ('schema_version', '3')
+ON CONFLICT(key) DO UPDATE SET value=excluded.value;
 
 CREATE TABLE IF NOT EXISTS patent (
-    number               TEXT PRIMARY KEY,
+    record_id            TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    number               TEXT NOT NULL DEFAULT '',
     country              TEXT NOT NULL DEFAULT '',
     serial               TEXT NOT NULL DEFAULT '',
     kind                 TEXT NOT NULL DEFAULT '',
@@ -29,12 +30,15 @@ CREATE TABLE IF NOT EXISTS patent (
     expiration_source    TEXT NOT NULL DEFAULT '',
     source_url           TEXT NOT NULL DEFAULT '',
     classifications      TEXT NOT NULL DEFAULT '[]',
-    classifications_text TEXT NOT NULL DEFAULT ''
+    classifications_text TEXT NOT NULL DEFAULT '',
+    UNIQUE (country, serial, kind)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_patent_number ON patent (number);
 
 CREATE TABLE IF NOT EXISTS document (
     number        TEXT PRIMARY KEY,
-    record_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id     TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
     country       TEXT NOT NULL DEFAULT '',
     serial        TEXT NOT NULL DEFAULT '',
     kind          TEXT NOT NULL DEFAULT '',
@@ -42,24 +46,24 @@ CREATE TABLE IF NOT EXISTS document (
     dated         TEXT NOT NULL DEFAULT '',
     source        TEXT NOT NULL DEFAULT '',
     source_ref    TEXT NOT NULL DEFAULT '',
-    UNIQUE (record_number, stage, number)
+    UNIQUE (record_id, stage, number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_document_record_stage ON document (record_number, stage);
+CREATE INDEX IF NOT EXISTS idx_document_record_stage ON document (record_id, stage);
 CREATE INDEX IF NOT EXISTS idx_document_stage_dated ON document (stage, dated);
 
 CREATE TABLE IF NOT EXISTS relation (
-    from_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-    to_number   TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-    kind        TEXT NOT NULL,
-    source      TEXT NOT NULL DEFAULT '',
-    source_ref  TEXT NOT NULL DEFAULT '',
-    observed_at TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (from_number, to_number, kind)
+    from_record_id TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+    to_record_id   TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+    kind           TEXT NOT NULL,
+    source         TEXT NOT NULL DEFAULT '',
+    source_ref     TEXT NOT NULL DEFAULT '',
+    observed_at    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (from_record_id, to_record_id, kind)
 );
 
-CREATE INDEX IF NOT EXISTS idx_relation_from_kind ON relation (from_number, kind);
-CREATE INDEX IF NOT EXISTS idx_relation_to_kind ON relation (to_number, kind);
+CREATE INDEX IF NOT EXISTS idx_relation_from_kind ON relation (from_record_id, kind);
+CREATE INDEX IF NOT EXISTS idx_relation_to_kind ON relation (to_record_id, kind);
 CREATE INDEX IF NOT EXISTS idx_relation_kind ON relation (kind);
 
 CREATE TABLE IF NOT EXISTS authority_identifier (
@@ -67,7 +71,7 @@ CREATE TABLE IF NOT EXISTS authority_identifier (
     identifier_type TEXT NOT NULL,
     identifier      TEXT NOT NULL,
     raw_identifier  TEXT NOT NULL DEFAULT '',
-    record_number   TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id       TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
     document_number TEXT NOT NULL DEFAULT '',
     country         TEXT NOT NULL DEFAULT '',
     kind            TEXT NOT NULL DEFAULT '',
@@ -79,13 +83,14 @@ CREATE TABLE IF NOT EXISTS authority_identifier (
     PRIMARY KEY (authority, identifier_type, identifier)
 );
 
-CREATE INDEX IF NOT EXISTS idx_authority_identifier_record ON authority_identifier (record_number);
+CREATE INDEX IF NOT EXISTS idx_authority_identifier_record ON authority_identifier (record_id);
 CREATE INDEX IF NOT EXISTS idx_authority_identifier_lookup ON authority_identifier (identifier);
 CREATE INDEX IF NOT EXISTS idx_authority_identifier_document ON authority_identifier (document_number);
 
 CREATE TABLE IF NOT EXISTS uspto_application (
     application_number              TEXT PRIMARY KEY,
-    record_number                   TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id                       TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+    application_series_code         TEXT NOT NULL DEFAULT '',
     invention_title                 TEXT NOT NULL DEFAULT '',
     filing_date                     TEXT NOT NULL DEFAULT '',
     effective_filing_date           TEXT NOT NULL DEFAULT '',
@@ -140,7 +145,7 @@ CREATE TABLE IF NOT EXISTS uspto_application (
     grant_parsed_at                 TEXT NOT NULL DEFAULT ''
 );
 
-CREATE INDEX IF NOT EXISTS idx_uspto_application_record ON uspto_application (record_number);
+CREATE INDEX IF NOT EXISTS idx_uspto_application_record ON uspto_application (record_id);
 CREATE INDEX IF NOT EXISTS idx_uspto_application_status ON uspto_application (application_status_code, application_status_date);
 CREATE INDEX IF NOT EXISTS idx_uspto_application_filing ON uspto_application (filing_date);
 
@@ -187,8 +192,8 @@ CREATE TABLE IF NOT EXISTS uspto_continuity (
     parent_application_status_text        TEXT NOT NULL DEFAULT '',
     claim_parentage_type_code             TEXT NOT NULL DEFAULT '',
     claim_parentage_type_description_text TEXT NOT NULL DEFAULT '',
-    parent_record_number                  TEXT NOT NULL DEFAULT '',
-    child_record_number                   TEXT NOT NULL DEFAULT '',
+    parent_record_id                      TEXT NOT NULL DEFAULT '',
+    child_record_id                       TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (application_number, ordinal)
 );
 
@@ -202,7 +207,7 @@ CREATE TABLE IF NOT EXISTS uspto_foreign_priority (
     filing_date                TEXT NOT NULL DEFAULT '',
     ip_office_name             TEXT NOT NULL DEFAULT '',
     authority                  TEXT NOT NULL DEFAULT '',
-    linked_record_number       TEXT NOT NULL DEFAULT '',
+    linked_record_id           TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (application_number, ordinal)
 );
 
@@ -244,7 +249,7 @@ CREATE TABLE IF NOT EXISTS uspto_assignment_party (
 
 CREATE TABLE IF NOT EXISTS uspto_document (
     document_number      TEXT PRIMARY KEY,
-    record_number        TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id            TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
     application_number   TEXT NOT NULL DEFAULT '',
     document_stage       TEXT NOT NULL,
     country              TEXT NOT NULL DEFAULT 'US',
@@ -264,7 +269,7 @@ CREATE TABLE IF NOT EXISTS uspto_document (
     fetched_at           TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_uspto_document_record ON uspto_document (record_number);
+CREATE INDEX IF NOT EXISTS idx_uspto_document_record ON uspto_document (record_id);
 CREATE INDEX IF NOT EXISTS idx_uspto_document_application ON uspto_document (application_number);
 CREATE INDEX IF NOT EXISTS idx_uspto_document_publication_date ON uspto_document (publication_date);
 
@@ -441,7 +446,7 @@ CREATE INDEX IF NOT EXISTS idx_uspto_xml_download_kind ON uspto_xml_download (ki
 
 CREATE TABLE IF NOT EXISTS source_snapshot (
     id               TEXT PRIMARY KEY,
-    patent_number    TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id        TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
     source           TEXT NOT NULL,
     source_record_id TEXT NOT NULL DEFAULT '',
     source_url       TEXT NOT NULL DEFAULT '',
@@ -456,12 +461,12 @@ CREATE TABLE IF NOT EXISTS source_snapshot (
     summary_json     TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE INDEX IF NOT EXISTS idx_source_snapshot_patent ON source_snapshot (patent_number, fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_snapshot_patent ON source_snapshot (record_id, fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_source_snapshot_source ON source_snapshot (source, fetched_at DESC);
 
 CREATE TABLE IF NOT EXISTS source_diff (
     id                 TEXT PRIMARY KEY,
-    patent_number      TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id          TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
     field_path         TEXT NOT NULL,
     uspto_value        TEXT NOT NULL DEFAULT '',
     google_value       TEXT NOT NULL DEFAULT '',
@@ -478,7 +483,7 @@ CREATE TABLE IF NOT EXISTS source_diff (
     reconciled_choice  TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_source_diff_patent ON source_diff (patent_number, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_source_diff_patent ON source_diff (record_id, recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_source_diff_field ON source_diff (field_path);
 
 CREATE TABLE IF NOT EXISTS refresh_run (
@@ -511,6 +516,7 @@ CREATE INDEX IF NOT EXISTS idx_refresh_run_project ON refresh_run (project_id, s
 CREATE TABLE IF NOT EXISTS refresh_run_item (
     run_id             TEXT NOT NULL REFERENCES refresh_run (id) ON DELETE CASCADE,
     ordinal            INTEGER NOT NULL DEFAULT 0,
+    record_id          TEXT NOT NULL DEFAULT '',
     patent_number      TEXT NOT NULL DEFAULT '',
     application_number TEXT NOT NULL DEFAULT '',
     action             TEXT NOT NULL DEFAULT '',
@@ -521,7 +527,7 @@ CREATE TABLE IF NOT EXISTS refresh_run_item (
     PRIMARY KEY (run_id, ordinal)
 );
 
-CREATE INDEX IF NOT EXISTS idx_refresh_run_item_patent ON refresh_run_item (patent_number);
+CREATE INDEX IF NOT EXISTS idx_refresh_run_item_patent ON refresh_run_item (record_id);
 
 CREATE TABLE IF NOT EXISTS project (
     id                     TEXT PRIMARY KEY,
@@ -551,7 +557,7 @@ CREATE INDEX IF NOT EXISTS idx_project_examiner_latest ON project_examiner (proj
 
 CREATE TABLE IF NOT EXISTS membership (
     project_id            TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
-    patent_number         TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_id             TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
     state                 TEXT NOT NULL,
     added_at              TEXT NOT NULL,
     ids_kind_code         TEXT NOT NULL DEFAULT '',
@@ -561,18 +567,18 @@ CREATE TABLE IF NOT EXISTS membership (
     ids_status            TEXT NOT NULL DEFAULT '',
     ids_added_at          TEXT NOT NULL DEFAULT '',
     ids_submitted_at      TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (project_id, patent_number)
+    PRIMARY KEY (project_id, record_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_membership_project ON membership (project_id, state);
 
 CREATE TABLE IF NOT EXISTS project_patent_note (
-    project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
-    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-    markdown      TEXT NOT NULL DEFAULT '',
-    added_at      TEXT NOT NULL,
-    updated_at    TEXT NOT NULL,
-    PRIMARY KEY (project_id, patent_number)
+    project_id TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    record_id  TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+    markdown   TEXT NOT NULL DEFAULT '',
+    added_at   TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, record_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_patent_note_project ON project_patent_note (project_id, updated_at DESC);
@@ -586,13 +592,13 @@ CREATE TABLE IF NOT EXISTS tag (
 );
 
 CREATE TABLE IF NOT EXISTS patent_tag (
-    tag_id        INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
-    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-    created_at    TEXT NOT NULL,
-    PRIMARY KEY (tag_id, patent_number)
+    tag_id     INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+    record_id  TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (tag_id, record_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_patent_tag_patent ON patent_tag (patent_number);
+CREATE INDEX IF NOT EXISTS idx_patent_tag_patent ON patent_tag (record_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS patent_fts USING fts5 (
     title,
@@ -643,17 +649,17 @@ CREATE TABLE IF NOT EXISTS mutation_group (
 CREATE INDEX IF NOT EXISTS idx_mutation_group_project_created ON mutation_group (project_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS mutation_item (
-    group_id      TEXT NOT NULL REFERENCES mutation_group (id) ON DELETE CASCADE,
-    ordinal       INTEGER NOT NULL,
-    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
-    kind          TEXT NOT NULL,
-    before_json   TEXT NOT NULL DEFAULT 'null',
-    after_json    TEXT NOT NULL DEFAULT 'null',
-    inverse_json  TEXT NOT NULL DEFAULT 'null',
+    group_id     TEXT NOT NULL REFERENCES mutation_group (id) ON DELETE CASCADE,
+    ordinal      INTEGER NOT NULL,
+    record_id    TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL,
+    before_json  TEXT NOT NULL DEFAULT 'null',
+    after_json   TEXT NOT NULL DEFAULT 'null',
+    inverse_json TEXT NOT NULL DEFAULT 'null',
     PRIMARY KEY (group_id, ordinal)
 );
 
-CREATE INDEX IF NOT EXISTS idx_mutation_item_patent ON mutation_item (patent_number, group_id);
+CREATE INDEX IF NOT EXISTS idx_mutation_item_patent ON mutation_item (record_id, group_id);
 
 CREATE TABLE IF NOT EXISTS saved_table_view (
     id         TEXT PRIMARY KEY,

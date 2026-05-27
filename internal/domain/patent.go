@@ -102,9 +102,14 @@ type InventorStats struct {
 // Documents of the same record. It carries no I/O or UI concerns: persistence
 // lives in package store, display in package tui.
 type Patent struct {
+	// RecordID is the opaque surrogate primary key (UUIDv7). It is stable
+	// across renames, kind upgrades, and cross-source merges; it is the
+	// identifier every foreign-key column in the store refers to. Empty for
+	// a not-yet-persisted patent — SavePatent mints one in that case.
+	RecordID RecordID `json:"record_id,omitempty"`
 	// Number is the record's permanent number — the first document number
-	// ever seen for it. It never changes, even after the patent later
-	// publishes, so rows that point at a record stay valid.
+	// ever seen for it. It is the human-facing identifier the RPC/JSON wire
+	// contract exposes, but it is no longer the store's primary key.
 	Number PatentNumber `json:"number"`
 	// DisplayNumber is the number the record should be shown by: the
 	// latest-stage document (grant, else publication, else application).

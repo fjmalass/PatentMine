@@ -21,8 +21,9 @@ const idsSelectColumns = `ids_kind_code, ids_in_full,
 func (r *Repo) IDSEntry(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (entry domain.IDSEntry, err error) {
 	defer r.observeDuration("ids_entry", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
-		`SELECT rowid, `+idsSelectColumns+`
-		 FROM membership WHERE project_id = ? AND patent_number = ?`,
+		`SELECT m.rowid, `+idsSelectColumns+`
+		 FROM membership m JOIN patent p ON p.record_id = m.record_id
+		 WHERE m.project_id = ? AND p.number = ?`,
 		string(project), patent.Normalized())
 	entry, ok, err := scanIDSEntry(row, project, patent)
 	if err != nil {
@@ -97,11 +98,11 @@ func (r *Repo) SaveIDSEntry(ctx context.Context, entry domain.IDSEntry) (saved d
 		submittedAt = time.Time{}
 	}
 	_, err = r.writer.ExecContext(ctx, `
-		INSERT INTO membership (project_id, patent_number, state, added_at,
+		INSERT INTO membership (project_id, record_id, state, added_at,
 			ids_kind_code, ids_in_full, ids_relevant_passages,
 			ids_notes, ids_status, ids_added_at, ids_submitted_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(project_id, patent_number) DO UPDATE SET
+		VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(project_id, record_id) DO UPDATE SET
 			ids_kind_code=excluded.ids_kind_code,
 			ids_in_full=excluded.ids_in_full,
 			ids_relevant_passages=excluded.ids_relevant_passages,
@@ -133,7 +134,7 @@ func (r *Repo) DeleteIDSEntry(ctx context.Context, project domain.ProjectID, pat
 			ids_kind_code='', ids_in_full=0,
 			ids_relevant_passages='', ids_notes='', ids_status='',
 			ids_added_at='', ids_submitted_at=''
-		WHERE project_id = ? AND patent_number = ?`,
+		WHERE project_id = ? AND record_id = (SELECT record_id FROM patent WHERE number = ?)`,
 		string(project), patent.Normalized())
 	if err != nil {
 		return fmt.Errorf("store/sqlite: delete ids entry %s/%s: %w", project, patent, err)
@@ -146,8 +147,9 @@ func (r *Repo) DeleteIDSEntry(ctx context.Context, project domain.ProjectID, pat
 func (r *Repo) ListIDSEntries(ctx context.Context, project domain.ProjectID) (entries []domain.IDSEntry, err error) {
 	defer r.observeDuration("list_ids_entries", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT rowid, patent_number, `+idsSelectColumns+`
-		 FROM membership WHERE project_id = ? AND ids_status != '' ORDER BY ids_added_at DESC`,
+		`SELECT m.rowid, p.number, `+idsSelectColumns+`
+		 FROM membership m JOIN patent p ON p.record_id = m.record_id
+		 WHERE m.project_id = ? AND m.ids_status != '' ORDER BY m.ids_added_at DESC`,
 		string(project))
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list ids entries %s: %w", project, err)

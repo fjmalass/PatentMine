@@ -16,9 +16,9 @@ import (
 func (r *Repo) PatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (note domain.PatentNote, err error) {
 	defer r.observeDuration("patent_note", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx, `
-		SELECT project_id, patent_number, markdown, added_at, updated_at
-		FROM project_patent_note
-		WHERE project_id = ? AND patent_number = ?`,
+		SELECT n.project_id, p.number, n.markdown, n.added_at, n.updated_at
+		FROM project_patent_note n JOIN patent p ON p.record_id = n.record_id
+		WHERE n.project_id = ? AND p.number = ?`,
 		string(project), patent.Normalized())
 	note, err = scanPatentNote(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -57,17 +57,17 @@ func scanPatentNote(s rowScanner) (domain.PatentNote, error) {
 }
 
 // ListPatentNotes returns all notes for a project. When sortByDate is true the
-// results are ordered by updated_at DESC; otherwise by patent_number ASC.
+// results are ordered by updated_at DESC; otherwise by patent number ASC.
 func (r *Repo) ListPatentNotes(ctx context.Context, project domain.ProjectID, sortByDate bool) (notes []domain.PatentNote, err error) {
 	defer r.observeDuration("list_patent_notes", time.Now(), &err)
-	orderClause := "ORDER BY patent_number ASC"
+	orderClause := "ORDER BY p.number ASC"
 	if sortByDate {
-		orderClause = "ORDER BY updated_at DESC"
+		orderClause = "ORDER BY n.updated_at DESC"
 	}
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT project_id, patent_number, markdown, added_at, updated_at
-		 FROM project_patent_note
-		 WHERE project_id = ? `+orderClause,
+		`SELECT n.project_id, p.number, n.markdown, n.added_at, n.updated_at
+		 FROM project_patent_note n JOIN patent p ON p.record_id = n.record_id
+		 WHERE n.project_id = ? `+orderClause,
 		string(project))
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list patent notes %s: %w", project, err)
@@ -106,9 +106,9 @@ func (r *Repo) SavePatentNote(ctx context.Context, note domain.PatentNote) (save
 		updatedAt = now
 	}
 	_, err = r.writer.ExecContext(ctx, `
-		INSERT INTO project_patent_note (project_id, patent_number, markdown, added_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(project_id, patent_number) DO UPDATE SET
+		INSERT INTO project_patent_note (project_id, record_id, markdown, added_at, updated_at)
+		VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?, ?, ?)
+		ON CONFLICT(project_id, record_id) DO UPDATE SET
 			markdown=excluded.markdown,
 			updated_at=excluded.updated_at`,
 		string(note.Project), note.Patent.Normalized(), note.Markdown, encodeTime(addedAt), encodeTime(updatedAt))
@@ -122,7 +122,7 @@ func (r *Repo) SavePatentNote(ctx context.Context, note domain.PatentNote) (save
 func (r *Repo) DeletePatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
 	defer r.observeDuration("delete_patent_note", time.Now(), &err)
 	_, err = r.writer.ExecContext(ctx,
-		`DELETE FROM project_patent_note WHERE project_id = ? AND patent_number = ?`,
+		`DELETE FROM project_patent_note WHERE project_id = ? AND record_id = (SELECT record_id FROM patent WHERE number = ?)`,
 		string(project), patent.Normalized())
 	if err != nil {
 		return fmt.Errorf("store/sqlite: delete patent note %s/%s: %w", project, patent, err)

@@ -24,10 +24,10 @@ func (r *Repo) SaveDocument(ctx context.Context, recordNumber domain.PatentNumbe
 		return fmt.Errorf("store/sqlite: invalid document stage %q", doc.Stage)
 	}
 	_, err = r.writer.ExecContext(ctx, `
-		INSERT INTO document (number, record_number, country, serial, kind, stage, dated)
-		VALUES (?,?,?,?,?,?,?)
+		INSERT INTO document (number, record_id, country, serial, kind, stage, dated)
+		VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?)
 		ON CONFLICT(number) DO UPDATE SET
-			record_number=excluded.record_number, country=excluded.country,
+			record_id=excluded.record_id, country=excluded.country,
 			serial=excluded.serial, kind=excluded.kind, stage=excluded.stage,
 			dated=excluded.dated`,
 		doc.Number.Normalized(), recordNumber.Normalized(),
@@ -43,8 +43,9 @@ func (r *Repo) SaveDocument(ctx context.Context, recordNumber domain.PatentNumbe
 func (r *Repo) Documents(ctx context.Context, recordNumber domain.PatentNumber) (out []domain.Document, err error) {
 	defer r.observeDuration("documents", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT country, serial, kind, stage, dated FROM document
-		 WHERE record_number = ? ORDER BY number`, recordNumber.Normalized())
+		`SELECT d.country, d.serial, d.kind, d.stage, d.dated FROM document d
+		 JOIN patent p ON p.record_id = d.record_id
+		 WHERE p.number = ? ORDER BY d.number`, recordNumber.Normalized())
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list documents: %w", err)
 	}
@@ -78,7 +79,8 @@ func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (record
 	defer r.observeDuration("record_of", time.Now(), &err)
 	var recordNumber string
 	err = r.reader.QueryRowContext(ctx,
-		`SELECT record_number FROM document WHERE number = ?`, number.Normalized()).
+		`SELECT p.number FROM document d JOIN patent p ON p.record_id = d.record_id
+		 WHERE d.number = ?`, number.Normalized()).
 		Scan(&recordNumber)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.PatentNumber{}, store.ErrNotFound
@@ -108,6 +110,16 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Resolve record_ids for both numbers inside the tx so concurrent writes
+	// cannot remove either row between resolution and the merge.
+	var keepID, absorbID string
+	if err := tx.QueryRowContext(ctx, `SELECT record_id FROM patent WHERE number = ?`, k).Scan(&keepID); err != nil {
+		return fmt.Errorf("store/sqlite: merge %s -> %s: resolve keep: %w", a, k, err)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT record_id FROM patent WHERE number = ?`, a).Scan(&absorbID); err != nil {
+		return fmt.Errorf("store/sqlite: merge %s -> %s: resolve absorb: %w", a, k, err)
+	}
+
 	exec := func(query string, args ...any) error {
 		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("store/sqlite: merge %s -> %s: %w", a, k, err)
@@ -115,21 +127,21 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 		return nil
 	}
 
-	// Move documents to keep. Repoint memberships and relations; OR IGNORE
-	// skips a move that would collide with a row keep already has, and the
-	// leftovers still pointing at absorb are then deleted.
+	// Move documents and edge endpoints to keep's record_id; collisions are
+	// skipped with OR IGNORE and the leftovers still pointing at absorb are
+	// then deleted. Finally absorb's patent row is removed.
 	steps := []struct {
 		query string
 		args  []any
 	}{
-		{`UPDATE document SET record_number = ? WHERE record_number = ?`, []any{k, a}},
-		{`UPDATE OR IGNORE membership SET patent_number = ? WHERE patent_number = ?`, []any{k, a}},
-		{`DELETE FROM membership WHERE patent_number = ?`, []any{a}},
-		{`UPDATE OR IGNORE relation SET from_number = ? WHERE from_number = ?`, []any{k, a}},
-		{`UPDATE OR IGNORE relation SET to_number = ? WHERE to_number = ?`, []any{k, a}},
-		{`DELETE FROM relation WHERE from_number = ? OR to_number = ?`, []any{a, a}},
-		{`DELETE FROM relation WHERE from_number = to_number`, nil},
-		{`DELETE FROM patent WHERE number = ?`, []any{a}},
+		{`UPDATE document SET record_id = ? WHERE record_id = ?`, []any{keepID, absorbID}},
+		{`UPDATE OR IGNORE membership SET record_id = ? WHERE record_id = ?`, []any{keepID, absorbID}},
+		{`DELETE FROM membership WHERE record_id = ?`, []any{absorbID}},
+		{`UPDATE OR IGNORE relation SET from_record_id = ? WHERE from_record_id = ?`, []any{keepID, absorbID}},
+		{`UPDATE OR IGNORE relation SET to_record_id = ? WHERE to_record_id = ?`, []any{keepID, absorbID}},
+		{`DELETE FROM relation WHERE from_record_id = ? OR to_record_id = ?`, []any{absorbID, absorbID}},
+		{`DELETE FROM relation WHERE from_record_id = to_record_id`, nil},
+		{`DELETE FROM patent WHERE record_id = ?`, []any{absorbID}},
 	}
 	for _, s := range steps {
 		if err := exec(s.query, s.args...); err != nil {

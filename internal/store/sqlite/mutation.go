@@ -58,7 +58,7 @@ func (r *Repo) SaveMutationGroup(ctx context.Context, group domain.MutationGroup
 }
 
 func insertMutationItems(ctx context.Context, tx *sql.Tx, groupID string, items []domain.MutationItem) error {
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO mutation_item (group_id, ordinal, patent_number, kind, before_json, after_json, inverse_json) VALUES (?,?,?,?,?,?,?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO mutation_item (group_id, ordinal, record_id, kind, before_json, after_json, inverse_json) VALUES (?,?,(SELECT record_id FROM patent WHERE number = ?),?,?,?,?)`)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: prepare mutation items: %w", err)
 	}

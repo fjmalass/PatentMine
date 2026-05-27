@@ -90,6 +90,9 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err := r.rejectObsoleteSchema(ctx); err != nil {
 		return err
 	}
+	if err := r.migrateG(ctx); err != nil {
+		return err
+	}
 	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("store/sqlite: init schema: %w", err)
 	}
@@ -179,8 +182,8 @@ func (r *Repo) requireSchemaVersion(ctx context.Context) error {
 		`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
 		return fmt.Errorf("store/sqlite: read schema version: %w", err)
 	}
-	if version != "2" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 2", version)
+	if version != "3" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 3", version)
 	}
 	return nil
 }

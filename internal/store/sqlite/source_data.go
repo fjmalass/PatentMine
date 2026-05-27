@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,12 +27,12 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO authority_identifier
-			(authority, identifier_type, identifier, raw_identifier, record_number, document_number,
+			(authority, identifier_type, identifier, raw_identifier, record_id, document_number,
 			 country, kind, dated, source, confidence, created_at, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?,?,?,?)
 			ON CONFLICT(authority, identifier_type, identifier) DO UPDATE SET
 				raw_identifier=excluded.raw_identifier,
-				record_number=excluded.record_number,
+				record_id=excluded.record_id,
 				document_number=excluded.document_number,
 				country=excluded.country,
 				kind=excluded.kind,
@@ -60,7 +61,7 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO uspto_application
-			(application_number, record_number, invention_title, filing_date, effective_filing_date,
+			(application_number, record_id, invention_title, filing_date, effective_filing_date,
 			 application_status_code, application_status_text, application_status_date,
 			 application_type_code, application_type_label, application_type_category,
 			 first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
@@ -68,9 +69,9 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			 application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
 			 small_entity_status, business_entity_status, publication_category_json,
 			 last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(application_number) DO UPDATE SET
-				record_number=excluded.record_number,
+				record_id=excluded.record_id,
 				invention_title=excluded.invention_title,
 				filing_date=excluded.filing_date,
 				effective_filing_date=excluded.effective_filing_date,
@@ -153,8 +154,10 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			INSERT INTO uspto_continuity
 			(application_number, ordinal, parent_application_number_text, child_application_number_text,
 			 parent_application_filing_date, parent_application_status_code, parent_application_status_text,
-			 claim_parentage_type_code, claim_parentage_type_description_text, parent_record_number, child_record_number)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+			 claim_parentage_type_code, claim_parentage_type_description_text, parent_record_id, child_record_id)
+			VALUES (?,?,?,?,?,?,?,?,?,
+			        COALESCE((SELECT record_id FROM patent WHERE number = ?), ''),
+			        COALESCE((SELECT record_id FROM patent WHERE number = ?), ''))`,
 			c.ApplicationNumber, c.Ordinal, c.ParentApplicationNumberText, c.ChildApplicationNumberText,
 			c.ParentApplicationFilingDate, c.ParentApplicationStatusCode, c.ParentApplicationStatusText,
 			c.ClaimParentageTypeCode, c.ClaimParentageTypeDescriptionText,
@@ -169,8 +172,8 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO uspto_foreign_priority
-			(application_number, ordinal, foreign_application_number, filing_date, ip_office_name, authority, linked_record_number)
-			VALUES (?,?,?,?,?,?,?)`,
+			(application_number, ordinal, foreign_application_number, filing_date, ip_office_name, authority, linked_record_id)
+			VALUES (?,?,?,?,?,?, COALESCE((SELECT record_id FROM patent WHERE number = ?), ''))`,
 			fp.ApplicationNumber, fp.Ordinal, fp.ForeignApplicationNumber, fp.FilingDate,
 			fp.IPOfficeName, fp.Authority, numberString(fp.LinkedRecordNumber)); err != nil {
 			return fmt.Errorf("store/sqlite: save uspto foreign priority: %w", err)
@@ -186,9 +189,9 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO source_snapshot
-			(id, patent_number, source, source_record_id, source_url, fetched_at, payload_kind,
+			(id, record_id, source, source_record_id, source_url, fetched_at, payload_kind,
 			 payload_hash, payload_path, response_bytes, http_status, etag, last_modified, summary_json)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET summary_json=excluded.summary_json`,
 			snap.ID, snap.PatentNumber.Normalized(), snap.Source, snap.SourceRecordID,
 			snap.SourceURL, snap.FetchedAt, snap.PayloadKind, snap.PayloadHash, snap.PayloadPath,
@@ -206,10 +209,10 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO source_diff
-			(id, patent_number, field_path, uspto_value, google_value, chosen_value, chosen_source,
+			(id, record_id, field_path, uspto_value, google_value, chosen_value, chosen_source,
 			 severity, recorded_at, uspto_snapshot_id, google_snapshot_id,
 			 reconciled_at, reconciled_by, reconciled_choice)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				uspto_value=excluded.uspto_value,
 				google_value=excluded.google_value,
@@ -246,18 +249,20 @@ func defaultJSON(s, fallback string) string {
 }
 
 // USPTOApplication returns the saved USPTO application attrs for a patent record, or ErrNotFound.
+// The result's RecordNumber field carries the patent's human-readable number,
+// resolved via patent.record_id from the input number.
 func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
 	row := r.reader.QueryRowContext(ctx, `
-		SELECT application_number, record_number, invention_title, filing_date, effective_filing_date,
-			   application_status_code, application_status_text, application_status_date,
-			   application_type_code, application_type_label, application_type_category,
-			   first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
-			   customer_number, group_art_unit_number, examiner_name, docket_number,
-			   application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
-			   small_entity_status, business_entity_status, publication_category_json,
-			   last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name
-		FROM uspto_application
-		WHERE record_number = ?`, n.Normalized())
+		SELECT u.application_number, p.number, u.invention_title, u.filing_date, u.effective_filing_date,
+			   u.application_status_code, u.application_status_text, u.application_status_date,
+			   u.application_type_code, u.application_type_label, u.application_type_category,
+			   u.first_inventor_to_file, u.national_stage, u.first_inventor_name, u.first_applicant_name,
+			   u.customer_number, u.group_art_unit_number, u.examiner_name, u.docket_number,
+			   u.application_confirmation_number, u.uspc_symbol_text, u.uspc_class, u.uspc_subclass,
+			   u.small_entity_status, u.business_entity_status, u.publication_category_json,
+			   u.last_ingestion_datetime, u.fetched_at, u.pgpub_xml_url, u.pgpub_xml_name, u.patent_grant_xml_url, u.patent_grant_xml_name
+		FROM uspto_application u JOIN patent p ON p.record_id = u.record_id
+		WHERE p.number = ?`, n.Normalized())
 
 	var app domain.USPTOApplication
 	var recordNumStr string
@@ -343,14 +348,14 @@ func (r *Repo) ListSourceDiffs(ctx context.Context, patent domain.PatentNumber) 
 		return nil, nil
 	}
 	rows, err := r.reader.QueryContext(ctx, `
-		SELECT id, patent_number, field_path,
-		       uspto_value, google_value, chosen_value, chosen_source,
-		       severity, recorded_at,
-		       uspto_snapshot_id, google_snapshot_id,
-		       reconciled_at, reconciled_by, reconciled_choice
-		FROM source_diff
-		WHERE patent_number = ?
-		ORDER BY recorded_at DESC, id ASC`, patent.Normalized())
+		SELECT d.id, p.number, d.field_path,
+		       d.uspto_value, d.google_value, d.chosen_value, d.chosen_source,
+		       d.severity, d.recorded_at,
+		       d.uspto_snapshot_id, d.google_snapshot_id,
+		       d.reconciled_at, d.reconciled_by, d.reconciled_choice
+		FROM source_diff d JOIN patent p ON p.record_id = d.record_id
+		WHERE p.number = ?
+		ORDER BY d.recorded_at DESC, d.id ASC`, patent.Normalized())
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list source diffs: %w", err)
 	}
@@ -386,12 +391,12 @@ func (r *Repo) ListSourceSnapshots(ctx context.Context, patent domain.PatentNumb
 		return nil, nil
 	}
 	rows, err := r.reader.QueryContext(ctx, `
-		SELECT id, patent_number, source, source_record_id, source_url, fetched_at,
-		       payload_kind, payload_hash, payload_path, response_bytes, http_status,
-		       etag, last_modified, summary_json
-		FROM source_snapshot
-		WHERE patent_number = ?
-		ORDER BY fetched_at DESC, id ASC`, patent.Normalized())
+		SELECT s.id, p.number, s.source, s.source_record_id, s.source_url, s.fetched_at,
+		       s.payload_kind, s.payload_hash, s.payload_path, s.response_bytes, s.http_status,
+		       s.etag, s.last_modified, s.summary_json
+		FROM source_snapshot s JOIN patent p ON p.record_id = s.record_id
+		WHERE p.number = ?
+		ORDER BY s.fetched_at DESC, s.id ASC`, patent.Normalized())
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list source snapshots: %w", err)
 	}
@@ -419,5 +424,56 @@ func (r *Repo) ListSourceSnapshots(ctx context.Context, patent domain.PatentNumb
 		return nil, fmt.Errorf("store/sqlite: iterate source snapshots: %w", err)
 	}
 	return out, nil
+}
+
+// ResolveAuthority looks up which patent record carries the given
+// (authority, identifier_type, identifier) tuple. It is the read side of
+// authority_identifier and the resolver ingest paths use to dedup patents
+// already known under a different authority (Google vs USPTO).
+//
+// Returns store.ErrNotFound when no row matches; the lookup is read-only.
+func (r *Repo) ResolveAuthority(ctx context.Context, ref domain.AuthorityRef) (id domain.RecordID, err error) {
+	defer r.observeDuration("resolve_authority", time.Now(), &err)
+	if ref.IsZero() {
+		return "", errors.New("store/sqlite: resolve authority needs all three fields")
+	}
+	var recordID string
+	err = r.reader.QueryRowContext(ctx, `
+		SELECT record_id FROM authority_identifier
+		WHERE authority = ? AND identifier_type = ? AND identifier = ?`,
+		ref.Authority, ref.IdentifierType, ref.Identifier).Scan(&recordID)
+	if errors.Is(err, sql.ErrNoRows) {
+		if r.metrics != nil {
+			r.metrics.IncCounter("store.sqlite.resolve_authority.miss", 1)
+		}
+		return "", store.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("store/sqlite: resolve authority %s: %w", ref, err)
+	}
+	if r.metrics != nil {
+		r.metrics.IncCounter("store.sqlite.resolve_authority.hit", 1)
+	}
+	return domain.RecordID(recordID), nil
+}
+
+// RecordIDForNumber returns the surrogate record_id for a patent given its
+// human-readable number. It powers back-compat shims in ingest, RPC, and TUI
+// paths that still pass a PatentNumber as the key.
+func (r *Repo) RecordIDForNumber(ctx context.Context, n domain.PatentNumber) (id domain.RecordID, err error) {
+	defer r.observeDuration("record_id_for_number", time.Now(), &err)
+	if n.IsZero() {
+		return "", errors.New("store/sqlite: record id lookup needs a number")
+	}
+	var recordID string
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT record_id FROM patent WHERE number = ?`, n.Normalized()).Scan(&recordID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", store.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("store/sqlite: record id for %s: %w", n, err)
+	}
+	return domain.RecordID(recordID), nil
 }
 

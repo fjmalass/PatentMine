@@ -258,6 +258,25 @@ type Repository interface {
 	// Supports audit and future diff reconstruction.
 	ListSourceSnapshots(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceSnapshot, error)
 
+	// ResolveAuthority returns the surrogate record_id that an external
+	// (authority, identifier_type, identifier) tuple maps to, or ErrNotFound
+	// when no patent has been ingested under that identifier yet. It is the
+	// cross-source dedup primitive: ingesters call this before minting a new
+	// patent so a USPTO catalog fetch can latch onto a patent already known
+	// from Google (and vice versa).
+	ResolveAuthority(ctx context.Context, ref domain.AuthorityRef) (domain.RecordID, error)
+
+	// RecordIDForNumber returns the surrogate record_id for a patent given
+	// its human-readable number. Back-compat shim for callers that still pass
+	// PatentNumber.
+	RecordIDForNumber(ctx context.Context, n domain.PatentNumber) (domain.RecordID, error)
+
+	// PatentByRecordID returns the patent identified by a record_id. The
+	// detail view of a patent already loads documents via Patent(); this is
+	// the lighter lookup ingest paths use after ResolveAuthority to discover
+	// which human-readable number a surrogate id points at.
+	PatentByRecordID(ctx context.Context, id domain.RecordID) (domain.Patent, error)
+
 	// Close releases all database resources.
 	Close() error
 }

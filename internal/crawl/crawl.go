@@ -386,6 +386,19 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 		return domain.PatentNumber{}, nil, nil, err
 	}
 	if recordNumber.IsZero() {
+		// Document-number lookup found nothing. Try cross-source dedup via the
+		// authority_identifier table — if a previous ingest from another
+		// authority already registered this identifier (typical case: Google
+		// imported "US11611785B2" earlier; USPTO catalog ingest now arrives
+		// with bare application number "17812078"), latch onto that record so
+		// we update it instead of minting a duplicate row.
+		if rec, ok, err := c.resolveByAuthority(ctx, res.AuthorityIdentifiers); err != nil {
+			return domain.PatentNumber{}, nil, nil, err
+		} else if ok {
+			recordNumber = rec
+		}
+	}
+	if recordNumber.IsZero() {
 		recordNumber = res.Patent.Number
 	}
 
@@ -588,6 +601,57 @@ func (c *Crawler) stubRecord(ctx context.Context, number domain.PatentNumber) (d
 		return domain.PatentNumber{}, err
 	}
 	return number, nil
+}
+
+// resolveByAuthority consults authority_identifier for each of the candidate
+// (authority, type, identifier) refs the fetch produced and returns the
+// patent.number that backs the first match. ok is false when none of the refs
+// is registered in the local DB. This is the cross-source dedup primitive:
+// it lets a fetch under one authority (e.g. USPTO application number) latch
+// onto a patent previously known under another authority (e.g. Google
+// publication number).
+func (c *Crawler) resolveByAuthority(ctx context.Context, refs []domain.AuthorityIdentifier) (domain.PatentNumber, bool, error) {
+	for _, ident := range refs {
+		ref := domain.AuthorityRef{
+			Authority:      ident.Authority,
+			IdentifierType: ident.IdentifierType,
+			Identifier:     ident.Identifier,
+		}
+		if ref.IsZero() {
+			continue
+		}
+		recordID, err := c.repo.ResolveAuthority(ctx, ref)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return domain.PatentNumber{}, false, err
+		}
+		// Found a registered identifier — look up the patent number it
+		// points to so callers can keep using PatentNumber as the working
+		// key. A missing row here is unusual (the FK would normally fail)
+		// but we tolerate it and treat it as a miss.
+		if number, ok, err := c.numberForRecordID(ctx, recordID); err != nil {
+			return domain.PatentNumber{}, false, err
+		} else if ok {
+			return number, true, nil
+		}
+	}
+	return domain.PatentNumber{}, false, nil
+}
+
+// numberForRecordID is a thin shim that turns a record_id back into the
+// human-readable patent number. Returns ok=false when no patent row carries
+// the id, which would only happen mid-cascade.
+func (c *Crawler) numberForRecordID(ctx context.Context, recordID domain.RecordID) (domain.PatentNumber, bool, error) {
+	patent, err := c.repo.PatentByRecordID(ctx, recordID)
+	if errors.Is(err, store.ErrNotFound) {
+		return domain.PatentNumber{}, false, nil
+	}
+	if err != nil {
+		return domain.PatentNumber{}, false, err
+	}
+	return patent.Number, true, nil
 }
 
 // candidateNumbers lists every number that could identify a fetched Result's

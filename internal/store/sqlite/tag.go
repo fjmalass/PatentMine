@@ -116,7 +116,7 @@ func (r *Repo) TagPatents(ctx context.Context, tagID int64, patents []domain.Pat
 		}
 	}()
 
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO patent_tag (tag_id, patent_number, created_at) VALUES (?,?,?) ON CONFLICT(tag_id, patent_number) DO NOTHING`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO patent_tag (tag_id, record_id, created_at) VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?) ON CONFLICT(tag_id, record_id) DO NOTHING`)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: tag patents prepare: %w", err)
 	}
@@ -152,7 +152,7 @@ func (r *Repo) UntagPatents(ctx context.Context, tagID int64, patents []domain.P
 		}
 	}()
 
-	stmt, err := tx.PrepareContext(ctx, `DELETE FROM patent_tag WHERE tag_id = ? AND patent_number = ?`)
+	stmt, err := tx.PrepareContext(ctx, `DELETE FROM patent_tag WHERE tag_id = ? AND record_id = (SELECT record_id FROM patent WHERE number = ?)`)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: untag patents prepare: %w", err)
 	}
@@ -178,7 +178,8 @@ func (r *Repo) PatentTag(ctx context.Context, project domain.ProjectID, patent d
 		`SELECT t.id, t.project_id, t.name, t.created_at, pt.created_at
 		 FROM tag t
 		 JOIN patent_tag pt ON pt.tag_id = t.id
-		 WHERE t.project_id = ? AND pt.patent_number = ? AND lower(t.name) = lower(?)`,
+		 JOIN patent p ON p.record_id = pt.record_id
+		 WHERE t.project_id = ? AND p.number = ? AND lower(t.name) = lower(?)`,
 		string(project), patent.Normalized(), name)
 	t, err := scanAssignedTag(row)
 	if err != nil {
@@ -199,7 +200,8 @@ func (r *Repo) PatentTags(ctx context.Context, project domain.ProjectID, patent 
 		`SELECT t.id, t.project_id, t.name, t.created_at, pt.created_at
 		 FROM tag t
 		 JOIN patent_tag pt ON pt.tag_id = t.id
-		 WHERE t.project_id = ? AND pt.patent_number = ?
+		 JOIN patent p ON p.record_id = pt.record_id
+		 WHERE t.project_id = ? AND p.number = ?
 		 ORDER BY t.name`,
 		string(project), patent.Normalized())
 	if err != nil {

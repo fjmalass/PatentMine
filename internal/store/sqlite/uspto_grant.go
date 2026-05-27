@@ -54,6 +54,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE uspto_application SET
 			invention_title = COALESCE(NULLIF(?, ''), invention_title),
+			application_series_code = COALESCE(NULLIF(?, ''), application_series_code),
 			grant_doc_number = ?,
 			grant_kind = ?,
 			grant_date = ?,
@@ -77,6 +78,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 			grant_parsed_at = ?
 		WHERE application_number = ?`,
 		ingest.Summary.InventionTitle,
+		ingest.Summary.ApplicationSeriesCode,
 		ingest.Summary.GrantDocNumber, ingest.Summary.GrantKind, ingest.Summary.GrantDate,
 		ingest.Summary.GrantDTDVersion, ingest.Summary.GrantStatus, ingest.Summary.GrantDateProduced,
 		ingest.Summary.GrantFileName, ingest.Summary.GrantLang,

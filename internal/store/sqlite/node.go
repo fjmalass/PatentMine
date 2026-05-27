@@ -33,12 +33,14 @@ const patentUpsertSQL = `
 		classifications=excluded.classifications,
 		classifications_text=excluded.classifications_text`
 
-// documentUpsertSQL inserts or updates one life-stage document.
+// documentUpsertSQL inserts or updates one life-stage document. The record_id
+// is resolved from the record's number via a subquery so callers can keep
+// passing the human-readable PatentNumber.
 const documentUpsertSQL = `
-	INSERT INTO document (number, record_number, country, serial, kind, stage, dated)
-	VALUES (?,?,?,?,?,?,?)
+	INSERT INTO document (number, record_id, country, serial, kind, stage, dated)
+	VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?)
 	ON CONFLICT(number) DO UPDATE SET
-		record_number=excluded.record_number, country=excluded.country,
+		record_id=excluded.record_id, country=excluded.country,
 		serial=excluded.serial, kind=excluded.kind, stage=excluded.stage,
 		dated=excluded.dated`
 
@@ -137,10 +139,7 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 		if _, err := tx.ExecContext(ctx, patentInsertOrIgnoreSQL, args...); err != nil {
 			return fmt.Errorf("store/sqlite: save node stub %s: %w", stub.Number, err)
 		}
-		if _, err := tx.ExecContext(ctx, documentInsertOrIgnoreSQL,
-			stub.Number.Normalized(), stub.Number.Normalized(),
-			stub.Number.Country, stub.Number.Serial, stub.Number.Kind,
-			string(stub.Stage), encodeTime(time.Time{})); err != nil {
+		if err := execDocumentInsertOrIgnore(ctx, tx, stub.Number, stub.Number, stub.Stage, time.Time{}); err != nil {
 			return fmt.Errorf("store/sqlite: save node stub document %s: %w", stub.Number, err)
 		}
 	}
@@ -150,8 +149,10 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 			return fmt.Errorf("store/sqlite: save node: invalid relation %s->%s %q", rel.From, rel.To, rel.Kind)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO relation (from_number, to_number, kind, source, observed_at) VALUES (?,?,?,?,?)
-			 ON CONFLICT(from_number, to_number, kind) DO UPDATE SET
+			`INSERT INTO relation (from_record_id, to_record_id, kind, source, observed_at)
+			 VALUES ((SELECT record_id FROM patent WHERE number = ?),
+			         (SELECT record_id FROM patent WHERE number = ?), ?,?,?)
+			 ON CONFLICT(from_record_id, to_record_id, kind) DO UPDATE SET
 			 	source=COALESCE(NULLIF(excluded.source, ''), relation.source),
 			 	observed_at=COALESCE(NULLIF(excluded.observed_at, ''), relation.observed_at)`,
 			rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind), string(batch.Patent.Source), encodeTime(time.Now().UTC())); err != nil {
@@ -180,8 +181,8 @@ const patentInsertOrIgnoreSQL = `
 
 // documentInsertOrIgnoreSQL inserts a document only when its number is new.
 const documentInsertOrIgnoreSQL = `
-	INSERT INTO document (number, record_number, country, serial, kind, stage, dated)
-	VALUES (?,?,?,?,?,?,?)
+	INSERT INTO document (number, record_id, country, serial, kind, stage, dated)
+	VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?,?,?,?,?)
 	ON CONFLICT(number) DO NOTHING`
 
 // execDocumentUpsert writes one document within a transaction.
@@ -199,4 +200,14 @@ func execDocumentUpsert(ctx context.Context, tx *sql.Tx, recordNumber domain.Pat
 		return fmt.Errorf("store/sqlite: save node document %s: %w", doc.Number, err)
 	}
 	return nil
+}
+
+// execDocumentInsertOrIgnore writes a document only when its number is new.
+// Stub documents go through here so their owning patent stays intact.
+func execDocumentInsertOrIgnore(ctx context.Context, tx *sql.Tx, recordNumber, docNumber domain.PatentNumber, stage domain.Stage, dated time.Time) error {
+	_, err := tx.ExecContext(ctx, documentInsertOrIgnoreSQL,
+		docNumber.Normalized(), recordNumber.Normalized(),
+		docNumber.Country, docNumber.Serial, docNumber.Kind,
+		string(stage), encodeTime(dated))
+	return err
 }

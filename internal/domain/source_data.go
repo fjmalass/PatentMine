@@ -60,10 +60,11 @@ type USPTOApplication struct {
 // USPTOGrantSummary is the single-row data extracted from a us-patent-grant
 // XML envelope: counts, examiner, attorney, term, dates.
 type USPTOGrantSummary struct {
-	ApplicationNumber     string   `json:"application_number"`
-	InventionTitle        string   `json:"invention_title,omitempty"`
-	GrantDocNumber        string   `json:"grant_doc_number,omitempty"`
-	GrantKind             string   `json:"grant_kind,omitempty"`
+	ApplicationNumber       string `json:"application_number"`
+	ApplicationSeriesCode   string `json:"application_series_code,omitempty"`
+	InventionTitle          string `json:"invention_title,omitempty"`
+	GrantDocNumber          string `json:"grant_doc_number,omitempty"`
+	GrantKind               string `json:"grant_kind,omitempty"`
 	GrantDate             string   `json:"grant_date,omitempty"`
 	GrantDTDVersion       string   `json:"grant_dtd_version,omitempty"`
 	GrantStatus           string   `json:"grant_status,omitempty"`
