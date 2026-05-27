@@ -10,6 +10,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/filterexpr"
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
@@ -159,6 +160,9 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		activeSort:     domain.SortByReviewState,
 		sortAscending:  true,
 		focusedColIdx:  -1,
+	}
+	if expr, err := filterexpr.Parse("fetch_state:cached"); err == nil {
+		c.filter.setExpression(expr)
 	}
 	c.handlers = map[command.ID]cmdHandler{
 		command.NavDown:      func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },

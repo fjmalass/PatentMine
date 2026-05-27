@@ -41,6 +41,13 @@ func (l *Layer) BindAll(bindings map[string]command.ID) *Layer {
 	return l
 }
 
+// Unbind removes a binding from the layer.
+func (l *Layer) Unbind(sequence string) *Layer {
+	delete(l.bindings, sequence)
+	return l
+}
+
+
 // Bindings returns a copy of the layer's sequence-to-command map.
 func (l *Layer) Bindings() map[string]command.ID {
 	return maps.Clone(l.bindings)

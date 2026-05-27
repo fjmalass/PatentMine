@@ -74,3 +74,18 @@ func TestPatentFilterReplaceClassificationsPreservesOtherTerms(t *testing.T) {
 		t.Fatalf("Expression = %q, want %q", got, want)
 	}
 }
+
+func TestPatentFilterParseDefaultAlias(t *testing.T) {
+	f := PatentFilter{}
+	msg, err := f.parse([]string{"default"}, true)
+	if err != nil {
+		t.Fatalf("parse default error: %v", err)
+	}
+	if msg != "filtering: fetch_state:cached" {
+		t.Fatalf("parse default msg = %q, want filtering: fetch_state:cached", msg)
+	}
+	if f.Expression != "fetch_state:cached" {
+		t.Fatalf("filter Expression = %q, want fetch_state:cached", f.Expression)
+	}
+}
+

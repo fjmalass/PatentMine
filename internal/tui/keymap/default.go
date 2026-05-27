@@ -61,13 +61,13 @@ func listMotions() map[string]command.ID {
 // patentActions are the bindings shared by scopes where a patent is selected.
 func patentActions() map[string]command.ID {
 	return map[string]command.ID{
-		"s":   command.MarkActive,
+		"a":   command.MarkActive,
 		"r":   command.MarkUnderReview,
 		"i":   command.MarkIgnored,
 		"x":   command.MarkDeleted,
 		"t":   command.TagPatentManage,
 		"D":   command.PatentDelete,
-		"a":   command.AddToProject,
+		"s":   command.AddToProject,
 		"f":   command.CrawlFamily,
 		"g i": command.OpenIDS,
 		"L":   command.LookupPatent,
@@ -112,7 +112,7 @@ func Default() *Keymaps {
 		"tab":        command.HistoryForward,
 		"ctrl+right": command.HistoryForward,
 		"H":          command.OpenHistory,
-		"A":          command.OpenActivity,
+		"g a":        command.OpenActivity,
 		"Z":          command.OpenAllNotes,
 	})
 
@@ -150,7 +150,7 @@ func Default() *Keymaps {
 			"/":     command.OpenSearch,
 			";":     command.JumpMode,
 			"T":     command.OpenFullText,
-			"a":     command.AIAnalyze,
+			"A":     command.AIAnalyze,
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
 			"g c":   command.SourceCompare, // conditional source comparison (Option A)

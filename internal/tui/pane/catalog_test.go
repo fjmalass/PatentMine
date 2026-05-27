@@ -195,6 +195,7 @@ func TestCatalogStatusLineShowsFilters(t *testing.T) {
 
 func TestCatalogEmptyAndErrorStates(t *testing.T) {
 	c := NewCatalog(nil, render.NewTheme())
+	c.filter = PatentFilter{} // Clear default filter for testing raw empty states
 	if got := c.View(testPaneWidth, testPaneHeight); !strings.Contains(got, "loading") {
 		t.Errorf("fresh catalog should show a loading state, got %q", got)
 	}

@@ -18,7 +18,7 @@ type PatentFilter struct {
 
 const patentFilterClearName = "clear"
 
-var patentFilterClearAliases = []string{"clear", "none", "default", "reset"}
+var patentFilterClearAliases = []string{"clear", "none", "reset"}
 
 // IsActive reports whether any filter is set.
 func (f PatentFilter) IsActive() bool {
@@ -48,6 +48,9 @@ func (f PatentFilter) View(w int, theme render.Theme) string {
 }
 
 func (f *PatentFilter) parse(args []string, projectActive bool) (string, error) {
+	if len(args) > 0 && strings.ToLower(strings.TrimSpace(args[0])) == "default" {
+		args = []string{"fetch_state:cached"}
+	}
 	if len(args) == 0 || isPatentFilterClearToken(args[0]) {
 		*f = PatentFilter{}
 		return "filters cleared", nil
