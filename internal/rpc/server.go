@@ -529,18 +529,21 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	var fetchStarted bool
-	var jobID engine.JobID
-	var candidates []domain.USPTOCandidate
+	var res engine.AddToProjectResult
 	if p.Source != "" {
-		fetchStarted, jobID, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source, p.ApplicationNumber)
+		res, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source, p.ApplicationNumber)
 	} else {
-		fetchStarted, jobID, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
+		res, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return proto.MembershipAddResult{FetchStarted: fetchStarted, JobID: string(jobID), Candidates: candidates}, nil
+	return proto.MembershipAddResult{
+		FetchStarted:   res.FetchStarted,
+		JobID:          string(res.JobID),
+		Candidates:     res.Candidates,
+		AlreadyExisted: res.AlreadyExisted,
+	}, nil
 }
 
 func (s *Server) addRelated(ctx context.Context, raw json.RawMessage) (any, error) {

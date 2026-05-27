@@ -354,10 +354,13 @@ type MembershipParams struct {
 }
 
 // MembershipAddResult reports the outcome of adding a patent to a project.
+// AlreadyExisted is true when the membership was already present; in that case
+// no insert, log, metric, activity, or auto-crawl was performed by the engine.
 type MembershipAddResult struct {
-	FetchStarted bool                    `json:"fetch_started"`
-	JobID        string                  `json:"job_id,omitempty"`
-	Candidates   []domain.USPTOCandidate `json:"candidates,omitempty"`
+	FetchStarted   bool                    `json:"fetch_started"`
+	JobID          string                  `json:"job_id,omitempty"`
+	Candidates     []domain.USPTOCandidate `json:"candidates,omitempty"`
+	AlreadyExisted bool                    `json:"already_existed,omitempty"`
 }
 
 // AddRelatedParams asks the daemon to grant project membership to every

@@ -35,6 +35,7 @@ const (
 	StatusAddFailed               Key = "status.add_failed"
 	StatusAdded                   Key = "status.added"
 	StatusAddedNoCrawl            Key = "status.added_no_ingest"
+	StatusAddAlreadyExists        Key = "status.add_already_exists"
 	StatusXMLFetched              Key = "status.xml_fetched"
 	StatusXMLCached               Key = "status.xml_cached"
 	StatusXMLFetchFailed          Key = "status.xml_fetch_failed"
@@ -329,6 +330,7 @@ var englishNamed = map[Key]string{
 	StatusAddFailed:               "add to project failed: %s  (resolution details may be in the error or activity)",
 	StatusAdded:                   "added %s to %s",
 	StatusAddedNoCrawl:            "added %s — press L to lookup",
+	StatusAddAlreadyExists:        "%s already in %s — skipped",
 	StatusXMLFetched:              "downloaded %s XML to %s (%d bytes, requested %d times)",
 	StatusXMLCached:               "%s XML already on disk: %s (%d bytes, requested %d times)",
 	StatusXMLFetchFailed:          "fetch USPTO XML failed: %s",

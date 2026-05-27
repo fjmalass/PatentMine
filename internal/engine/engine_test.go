@@ -70,7 +70,7 @@ func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	number := domain.MustParsePatentNumber("AU607081B2")
-	if _, _, err := eng.AddToProject(ctx, project.ID, number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, number); err != nil {
 		t.Fatalf("AddToProject for an unfetched patent: %v", err)
 	}
 	stub, err := eng.Patent(ctx, number)
@@ -79,6 +79,52 @@ func TestEngineAddToProjectCreatesStubForUnknownPatent(t *testing.T) {
 	}
 	if !stub.IsStub() {
 		t.Fatalf("added patent fetch state = %q, want stub", stub.FetchState)
+	}
+}
+
+// TestEngineAddToProjectDuplicateIsNoOp covers the case where the user adds a
+// patent that is already in the project: the second call must report
+// AlreadyExisted, must NOT enqueue another crawl, and must NOT emit another
+// committed membership.add activity record.
+func TestEngineAddToProjectDuplicateIsNoOp(t *testing.T) {
+	crawlCalls := 0
+	factory := func(_ domain.PatentNumber, _ int, _ domain.CrawlProfile, _ bool, _ domain.Source) Job {
+		crawlCalls++
+		return JobFunc(func(context.Context, JobID, func(proto.Event)) error { return nil })
+	}
+	eng, _ := newTestEngine(t, factory)
+	ctx := context.Background()
+
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	number := domain.MustParsePatentNumber("AU607081B2")
+
+	res1, err := eng.AddToProject(ctx, project.ID, number)
+	if err != nil {
+		t.Fatalf("first AddToProject: %v", err)
+	}
+	if res1.AlreadyExisted {
+		t.Fatalf("first add: AlreadyExisted = true, want false")
+	}
+	if !res1.FetchStarted {
+		t.Fatalf("first add: FetchStarted = false, want true")
+	}
+	firstCalls := crawlCalls
+
+	res2, err := eng.AddToProject(ctx, project.ID, number)
+	if err != nil {
+		t.Fatalf("second AddToProject: %v", err)
+	}
+	if !res2.AlreadyExisted {
+		t.Fatalf("second add: AlreadyExisted = false, want true")
+	}
+	if res2.FetchStarted {
+		t.Fatalf("second add: FetchStarted = true, want false")
+	}
+	if crawlCalls != firstCalls {
+		t.Fatalf("crawl call count = %d after duplicate, want %d (no new crawl)", crawlCalls, firstCalls)
 	}
 }
 
@@ -140,7 +186,7 @@ func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, domain.MustParsePatentNumber("AU607081B2")); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, domain.MustParsePatentNumber("AU607081B2")); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	select {
@@ -204,7 +250,7 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateProject: %v", err)
 		}
-		if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+		if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 			t.Fatalf("AddToProject: %v", err)
 		}
 
@@ -238,7 +284,7 @@ func TestEngineEnforcesReviewStateTransitions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateProject: %v", err)
 		}
-		if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+		if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 			t.Fatalf("AddToProject: %v", err)
 		}
 
@@ -348,7 +394,7 @@ func TestEngineExportIDSUsesOnlyCuratedEntries(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("SaveDocument %s: %v", n, err)
 		}
-		if _, _, err := eng.AddToProject(ctx, project.ID, number); err != nil {
+		if _, err := eng.AddToProject(ctx, project.ID, number); err != nil {
 			t.Fatalf("AddToProject %s: %v", n, err)
 		}
 	}
@@ -450,7 +496,7 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 			t.Fatalf("SaveDocument: %v", err)
 		}
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, granted); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, granted); err != nil {
 		t.Fatalf("AddToProject granted: %v", err)
 	}
 	if _, err := eng.SaveIDSEntry(ctx, domain.IDSEntry{Project: project.ID, Patent: granted, Status: domain.IDSEntryPending}); err != nil {
@@ -469,7 +515,7 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveDocument pending: %v", err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, pending); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, pending); err != nil {
 		t.Fatalf("AddToProject pending: %v", err)
 	}
 	if _, err := eng.SaveIDSEntry(ctx, domain.IDSEntry{Project: project.ID, Patent: pending, Status: domain.IDSEntryPending}); err != nil {
@@ -520,7 +566,7 @@ func TestEngineResolvesDocumentNumberToRecord(t *testing.T) {
 	}
 
 	// Adding by the application number must resolve to the record.
-	if _, _, err := eng.AddToProject(ctx, project.ID, application); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, application); err != nil {
 		t.Fatalf("AddToProject by application number: %v", err)
 	}
 	members, err := repo.Memberships(ctx, project.ID)
@@ -577,7 +623,7 @@ func TestEngineReviewStateOf(t *testing.T) {
 	if _, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number); err != nil || ok {
 		t.Fatalf("ReviewStateOf before add = (ok %v, err %v), want ok false", ok, err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	state, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number)
@@ -618,7 +664,7 @@ func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	if _, err := eng.CreateTaxonomyTag(ctx, project.ID, "prior_art"); err != nil {
@@ -1527,15 +1573,15 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		project, _ := eng.CreateProject(ctx, "Test Project")
 		patent := domain.MustParsePatentNumber("US20230021336A1")
 
-		fetchStarted, _, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
+		res, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
 		if err != nil {
 			t.Fatalf("AddToProjectFromSource: %v", err)
 		}
-		if fetchStarted {
+		if res.FetchStarted {
 			t.Error("expected fetchStarted to be false when multiple candidates are returned")
 		}
-		if len(candidates) != 2 {
-			t.Errorf("expected 2 candidates, got %d", len(candidates))
+		if len(res.Candidates) != 2 {
+			t.Errorf("expected 2 candidates, got %d", len(res.Candidates))
 		}
 
 		// Verify no records were saved
@@ -1565,15 +1611,15 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		project, _ := eng.CreateProject(ctx, "Test Project")
 		patent := domain.MustParsePatentNumber("US20230021336A1")
 
-		fetchStarted, _, candidates, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
+		res, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
 		if err != nil {
 			t.Fatalf("AddToProjectFromSource: %v", err)
 		}
-		if !fetchStarted {
+		if !res.FetchStarted {
 			t.Error("expected fetchStarted to be true when single candidate is resolved")
 		}
-		if len(candidates) != 0 {
-			t.Errorf("expected 0 candidates returned, got %d", len(candidates))
+		if len(res.Candidates) != 0 {
+			t.Errorf("expected 0 candidates returned, got %d", len(res.Candidates))
 		}
 		if !mockCrawlCalled {
 			t.Error("expected family crawl to be enqueued for exact application number")
@@ -1609,11 +1655,11 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		project, _ := eng.CreateProject(ctx, "Test Project")
 		patent := domain.MustParsePatentNumber("US20230021336A1")
 
-		fetchStarted, _, _, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
+		res, err := eng.AddToProjectFromSource(ctx, project.ID, patent, domain.SourceUSPTO, "")
 		if err == nil {
 			t.Fatal("expected crawl start to fail because pool is stopped")
 		}
-		if fetchStarted {
+		if res.FetchStarted {
 			t.Error("expected fetchStarted to be false")
 		}
 

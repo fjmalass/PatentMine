@@ -61,18 +61,27 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // ahead of crawling. fetchStarted reports whether an automatic single-patent
 // fetch was enqueued; false means the caller should prompt the user to fetch
 // manually (e.g. with F).
-func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, jobID JobID, err error) {
-	fetchStarted, jobID, _, err = e.addToProject(ctx, project, patent, "", "")
-	return fetchStarted, jobID, err
+func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (AddToProjectResult, error) {
+	return e.addToProject(ctx, project, patent, "", "")
 }
 
 // AddToProjectFromSource adds a patent and forces a single-patent fetch from
 // the selected provider. It never falls back to another source.
-func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
+func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (AddToProjectResult, error) {
 	return e.addToProject(ctx, project, patent, source, applicationNumber)
 }
 
-func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
+// AddToProjectResult reports the outcome of an add-to-project call.
+// AlreadyExisted is true when the membership was already present; in that
+// case no insert, log-info, metric, activity, or auto-crawl was performed.
+type AddToProjectResult struct {
+	FetchStarted   bool
+	JobID          JobID
+	Candidates     []domain.USPTOCandidate
+	AlreadyExisted bool
+}
+
+func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (res AddToProjectResult, err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 
 	if source == domain.SourceUSPTO && e.usptoSearcher != nil {
@@ -89,12 +98,12 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 			}
 		} else {
 			searchStart := time.Now()
-			candidates, err = e.usptoSearcher(ctx, patent)
+			candidates, searchErr := e.usptoSearcher(ctx, patent)
 			searchDur := time.Since(searchStart)
 
 			if e.metrics != nil {
-				e.metrics.ObserveDuration("uspto.candidate.search", searchDur, err != nil)
-				if err != nil {
+				e.metrics.ObserveDuration("uspto.candidate.search", searchDur, searchErr != nil)
+				if searchErr != nil {
 					e.metrics.IncCounter("uspto.candidate.search.error", 1)
 				} else {
 					e.metrics.IncCounter("uspto.candidate.search.success", 1)
@@ -102,10 +111,10 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 				}
 			}
 
-			if err != nil {
+			if searchErr != nil {
 				e.log(ctx, slog.LevelWarn, "uspto searcher failed during add (may be grant number vs application mismatch)",
 					slog.String("requested_number", patent.String()),
-					slog.String("error", err.Error()),
+					slog.String("error", searchErr.Error()),
 					slog.Duration("duration", searchDur))
 				if e.metrics != nil {
 					e.metrics.IncCounter("engine.add.uspto_search.error", 1)
@@ -116,11 +125,11 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 					Status:   "error",
 					EntityID: patent.String(),
 					Attributes: map[string]any{
-						"error":       err.Error(),
+						"error":       searchErr.Error(),
 						"duration_ms": searchDur.Milliseconds(),
 					},
 				})
-				return false, "", nil, err
+				return AddToProjectResult{}, searchErr
 			}
 			if len(candidates) > 1 {
 				e.log(ctx, slog.LevelInfo, "engine.add.uspto.candidates_found",
@@ -129,7 +138,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 				if e.metrics != nil {
 					e.metrics.IncCounter("engine.add.uspto_candidate.picker_shown", 1)
 				}
-				return false, "", candidates, nil
+				return AddToProjectResult{Candidates: candidates}, nil
 			}
 			if len(candidates) == 1 {
 				if exact, err2 := domain.ParsePatentNumber("US" + candidates[0].ApplicationNumber); err2 == nil {
@@ -147,23 +156,46 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 
 	record, created, err := e.ensureRecord(ctx, patent)
 	if err != nil {
-		return false, "", nil, err
+		return AddToProjectResult{}, err
 	}
-	before, exists := e.existingMembership(ctx, project, record)
-	state := domain.ReviewStateUnknown
-	if exists {
-		state = before.ReviewState
+	if _, exists := e.existingMembership(ctx, project, record); exists {
+		// Duplicate add: do nothing to storage, log + metric so the caller and
+		// observers can see that the request was a no-op rather than a fresh
+		// insert. The TUI surfaces this as a distinct status line.
+		e.log(ctx, slog.LevelWarn, "membership add skipped: already exists",
+			slog.String("project_id", string(project)),
+			slog.String("record", record.String()),
+			slog.String("requested", patent.String()),
+			slog.String("source", string(source)))
+		if e.metrics != nil {
+			e.metrics.IncCounter("engine.membership.add_duplicate_total", 1)
+			if source != "" {
+				e.metrics.IncCounter("engine.membership.add_duplicate.source."+string(source)+"_total", 1)
+			}
+		}
+		e.recordActivity(ctx, observability.Record{
+			Action:   observability.ActionMembershipAdd,
+			Entity:   "membership",
+			EntityID: string(project) + "/" + record.String(),
+			Status:   "skipped",
+			Attributes: map[string]any{
+				"requested_number": patent.String(),
+				"project":          string(project),
+				"source":           string(source),
+				"reason":           "already_exists",
+			},
+		})
+		return AddToProjectResult{AlreadyExisted: true}, nil
 	}
 	after := domain.Membership{
 		Project:     project,
 		Patent:      record,
-		ReviewState: state,
+		ReviewState: domain.ReviewStateUnknown,
 		AddedAt:     time.Now().UTC(),
 	}
-	err = e.repo.AddMembership(ctx, after)
-	if err != nil {
+	if err := e.repo.AddMembership(ctx, after); err != nil {
 		e.log(ctx, slog.LevelError, "add membership failed", slog.String("project_id", string(project)), slog.String("patent", patent.String()), slog.String("error", err.Error()))
-		return false, "", nil, err
+		return AddToProjectResult{}, err
 	}
 	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
 	if e.metrics != nil {
@@ -177,7 +209,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		Entity:   "membership",
 		EntityID: string(project) + "/" + record.String(),
 		Status:   "committed",
-		Before:   before,
+		Before:   domain.Membership{},
 		After:    after,
 		Attributes: map[string]any{
 			"requested_number": patent.String(),
@@ -187,26 +219,24 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	})
 	e.announceChange()
 	if source != "" && e.crawl != nil {
-		var fetchErr error
-		jobID, fetchErr = e.StartFamilyCrawlFromSource(ctx, record, 0, domain.CrawlProfileAll, source)
+		jobID, fetchErr := e.StartFamilyCrawlFromSource(ctx, record, 0, domain.CrawlProfileAll, source)
 		if fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "source-specific fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("source", string(source)), slog.String("error", fetchErr.Error()))
 			// Clean up newly created database state on start failure
 			if created {
 				_ = e.repo.DeletePatent(ctx, record)
-			} else if !exists {
+			} else {
 				_ = e.repo.DeleteMembership(ctx, project, record)
 			}
 			e.announceChange()
-			return false, "", nil, fetchErr
+			return AddToProjectResult{}, fetchErr
 		}
-		fetchStarted = true
 		if created {
 			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
 		go e.autoAssignDepth1Neighbors(project, record, jobID)
-		return fetchStarted, jobID, nil, nil
+		return AddToProjectResult{FetchStarted: true, JobID: jobID}, nil
 	}
 	// Any unknown project membership for a stub patent kicks a single-patent
 	// fetch so bibliographic data fills in shortly after the patent is added.
@@ -218,19 +248,18 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 			needsFetch = p.FetchState == domain.FetchStub
 		}
 	}
-	if !exists && state == domain.ReviewStateUnknown && needsFetch && e.crawl != nil {
-		var fetchErr error
-		jobID, fetchErr = e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false)
+	if needsFetch && e.crawl != nil {
+		jobID, fetchErr := e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false)
 		if fetchErr != nil {
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
-		} else {
-			fetchStarted = true
-			go e.cleanupIfNotFound(project, record, created, jobID)
-			go e.autoAssignDepth1Neighbors(project, record, jobID)
+			return AddToProjectResult{}, nil
 		}
+		go e.cleanupIfNotFound(project, record, created, jobID)
+		go e.autoAssignDepth1Neighbors(project, record, jobID)
+		return AddToProjectResult{FetchStarted: true, JobID: jobID}, nil
 	}
-	return fetchStarted, jobID, nil, nil
+	return AddToProjectResult{}, nil
 }
 
 // AddRelated grants project membership to every family-graph neighbor of

@@ -725,7 +725,7 @@ func TestIDSCycleStatusCyclesSelectedPatents(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	for _, number := range numbers {
-		if _, _, err := eng.AddToProject(context.Background(), project.ID, number); err != nil {
+		if _, err := eng.AddToProject(context.Background(), project.ID, number); err != nil {
 			t.Fatalf("AddToProject: %v", err)
 		}
 	}

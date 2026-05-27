@@ -76,7 +76,7 @@ func TestTagTaxonomyEngineDecoupled(t *testing.T) {
 	if err := eng.SavePatent(ctx, patent); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestTagTaxonomyActivityLoggingAndReplay(t *testing.T) {
 	if err := eng.SavePatent(ctx, patent); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 
@@ -253,7 +253,7 @@ func TestTagTaxonomyRESTAPI(t *testing.T) {
 	if err := eng.SavePatent(ctx, patent); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
-	if _, _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
+	if _, err := eng.AddToProject(ctx, project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 
