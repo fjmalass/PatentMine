@@ -148,6 +148,26 @@ func (l *Loading) Init() tea.Cmd {
 	return l.spinner.Tick
 }
 
+// OverlaySize implements DynamicSize. For the multi-selection "L" (lookup)
+// case we deliberately request a tall box (~65% of screen height) so that
+// progress details + the rich "done" summary (errors, provider breakdown,
+// stub lists, etc.) have room and long messages/errors can be wrapped instead
+// of brutally truncated.
+func (l *Loading) OverlaySize(termW, termH int) (int, int) {
+	if len(l.jobIDs) > 1 || l.isLookup {
+		// Multi-selection "L" (batch lookup / "Looking up N patents") gets
+		// a wide, substantial panel (not the old 76x22 toy box).
+		// We go very wide so long daemon error messages and lists actually
+		// fit and wrap nicely. Height is generous but not a forced 65%
+		// empty frame — we want the content to feel substantial without
+		// ridiculous wasted space inside the borders.
+		return PctSize(termW, termH, 90, 42, 70, 20)
+	}
+	// Single-job case still gets more space than the old hard 22-line cap.
+	return PctSize(termW, termH, 60, 48, 38, 12)
+}
+
+
 func (l *Loading) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if l.finished && (id == command.CloseOverlay || id == command.Back) {
 		return l, func() tea.Msg { return CloseOverlayMsg{} }
@@ -320,8 +340,17 @@ func (l *Loading) View(w, h int) string {
 	}
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString("  " + l.spinner.View() + " " + render.Truncate(l.message, w-6))
-	b.WriteByte('\n')
+	// Wrap the status message (instead of hard truncate) so long progress
+	// descriptions from the daemon don't get cut off in the multi-L popup.
+	msg := lipgloss.NewStyle().Width(w - 6).Render(l.message)
+	for i, line := range strings.Split(msg, "\n") {
+		if i == 0 {
+			b.WriteString("  " + l.spinner.View() + " " + line)
+		} else {
+			b.WriteString("    " + line) // continuation indent
+		}
+		b.WriteByte('\n')
+	}
 
 	totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
 	totalJobs := len(l.jobIDs)
@@ -427,7 +456,12 @@ func (l *Loading) viewDone(w int) string {
 	if len(l.doneErrors) > 0 {
 		b.WriteString("  " + l.theme.Error.Render("Failed") + "\n")
 		for _, e := range l.doneErrors {
-			b.WriteString("  " + render.Truncate(e, w-4) + "\n")
+			// Wrap instead of truncate so long error messages (e.g. from
+			// many patents in a multi-L) remain readable.
+			wrapped := lipgloss.NewStyle().Width(w - 4).Render(e)
+			for _, line := range strings.Split(wrapped, "\n") {
+				b.WriteString("  " + line + "\n")
+			}
 		}
 	} else {
 		totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
