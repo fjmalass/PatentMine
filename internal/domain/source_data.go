@@ -61,6 +61,7 @@ type USPTOApplication struct {
 // XML envelope: counts, examiner, attorney, term, dates.
 type USPTOGrantSummary struct {
 	ApplicationNumber     string   `json:"application_number"`
+	InventionTitle        string   `json:"invention_title,omitempty"`
 	GrantDocNumber        string   `json:"grant_doc_number,omitempty"`
 	GrantKind             string   `json:"grant_kind,omitempty"`
 	GrantDate             string   `json:"grant_date,omitempty"`
@@ -194,6 +195,65 @@ type USPTOGrantIngest struct {
 	Citations       []USPTOGrantCitation       `json:"citations,omitempty"`
 	Classifications []USPTOGrantClassification `json:"classifications,omitempty"`
 	Relations       []USPTOGrantRelation       `json:"relations,omitempty"`
+	Parties         []USPTOGrantParty          `json:"parties,omitempty"`
+}
+
+// USPTOGrantParty is one applicant / inventor / assignee / agent extracted
+// from grant or pre-grant XML. role+ordinal uniquely identify a party within
+// an (application_number, kind) document. The struct flattens all common
+// addressbook fields so SQL inserts stay shape-stable.
+type USPTOGrantParty struct {
+	ApplicationNumber string `json:"application_number"`
+	Kind              string `json:"kind"`
+	Role              string `json:"role"`
+	Ordinal           int    `json:"ordinal"`
+	Sequence          string `json:"sequence,omitempty"`
+	Designation       string `json:"designation,omitempty"`
+	AppType           string `json:"app_type,omitempty"`
+	RepType           string `json:"rep_type,omitempty"`
+	OrgName           string `json:"org_name,omitempty"`
+	FirstName         string `json:"first_name,omitempty"`
+	LastName          string `json:"last_name,omitempty"`
+	ResidenceCountry  string `json:"residence_country,omitempty"`
+	AddressStreet     string `json:"address_street,omitempty"`
+	AddressCity       string `json:"address_city,omitempty"`
+	AddressState      string `json:"address_state,omitempty"`
+	AddressCountry    string `json:"address_country,omitempty"`
+	AddressPostal     string `json:"address_postal,omitempty"`
+	AssigneeRole      string `json:"assignee_role,omitempty"`
+}
+
+// USPTOAssignment is one recorded assignment from the USPTO Patent
+// Assignment Search API. Parties live on USPTOAssignmentParty and are
+// included for convenience when transporting a single assignment payload.
+type USPTOAssignment struct {
+	ApplicationNumber             string                 `json:"application_number"`
+	Ordinal                       int                    `json:"ordinal"`
+	ReelAndFrameNumber            string                 `json:"reel_and_frame_number,omitempty"`
+	ReelNumber                    string                 `json:"reel_number,omitempty"`
+	FrameNumber                   string                 `json:"frame_number,omitempty"`
+	ConveyanceText                string                 `json:"conveyance_text,omitempty"`
+	AssignmentReceivedDate        string                 `json:"assignment_received_date,omitempty"`
+	AssignmentRecordedDate        string                 `json:"assignment_recorded_date,omitempty"`
+	AssignmentMailedDate          string                 `json:"assignment_mailed_date,omitempty"`
+	AssignmentDocumentLocationURI string                 `json:"assignment_document_location_uri,omitempty"`
+	AttorneyDocketNumber          string                 `json:"attorney_docket_number,omitempty"`
+	PageTotalQuantity             int                    `json:"page_total_quantity,omitempty"`
+	ImageAvailable                bool                   `json:"image_available,omitempty"`
+	CorrespondenceAddressJSON     string                 `json:"correspondence_address_json,omitempty"`
+	Parties                       []USPTOAssignmentParty `json:"parties,omitempty"`
+}
+
+// USPTOAssignmentParty is one assignor or assignee on a recorded assignment.
+// AssignmentOrdinal is the parent assignment's ordinal within its application.
+type USPTOAssignmentParty struct {
+	ApplicationNumber string `json:"application_number"`
+	AssignmentOrdinal int    `json:"assignment_ordinal"`
+	Role              string `json:"role"`
+	Ordinal           int    `json:"ordinal"`
+	NameText          string `json:"name_text,omitempty"`
+	ExecutionDate     string `json:"execution_date,omitempty"`
+	AddressJSON       string `json:"address_json,omitempty"`
 }
 
 // USPTOXMLDownload tracks per-document local XML download stats (pgpub or

@@ -519,6 +519,29 @@ func (a *App) cmdFetchUSPTOPGPub(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdFetchUSPTOXML(inv, proto.USPTOXMLKindPGPub, command.FetchUSPTOPGPub)
 }
 
+// cmdFetchUSPTOAssignments triggers the engine's Patent Assignment Search
+// fetch for the focused patent. One RPC per selected patent — the chain is
+// usually small and the search endpoint replies fast, so no spinner overlay.
+func (a *App) cmdFetchUSPTOAssignments(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(command.FetchUSPTOAssignments)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	cmds := make([]tea.Cmd, 0, len(numbers))
+	for _, n := range numbers {
+		cmds = append(cmds, pane.FetchUSPTOAssignmentsCmd(a.client, n))
+	}
+	return a, tea.Batch(cmds...)
+}
+
 func (a *App) cmdFetchUSPTOGrant(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdFetchUSPTOXML(inv, proto.USPTOXMLKindGrant, command.FetchUSPTOGrant)
 }

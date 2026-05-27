@@ -603,6 +603,80 @@ func pickAutoFetchKind(app domain.USPTOApplication) proto.USPTOXMLKind {
 	return ""
 }
 
+// USPTOApplicationFor returns the saved USPTO application row for one patent
+// record. Thin wrapper over repo.USPTOApplication that the RPC layer uses to
+// resolve a patent to its application_number before calling assignment
+// list/save endpoints.
+func (e *Engine) USPTOApplicationFor(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
+	return e.repo.USPTOApplication(ctx, n)
+}
+
+// USPTOAssignments returns the persisted assignment chain for one
+// application number.
+func (e *Engine) USPTOAssignments(ctx context.Context, applicationNumber string) ([]domain.USPTOAssignment, error) {
+	return e.repo.USPTOAssignments(ctx, applicationNumber)
+}
+
+// FetchUSPTOAssignments calls the USPTO Patent Assignment Search API for the
+// patent's application number and persists every recorded assignment plus its
+// parties. Existing rows for the application are replaced (a re-fetch
+// reflects the current chain). Returns the saved count and the patent's
+// canonical record number.
+func (e *Engine) FetchUSPTOAssignments(ctx context.Context, n domain.PatentNumber) (res proto.USPTOFetchAssignmentsResult, err error) {
+	defer e.observeDuration("uspto.fetch_assignments", time.Now(), &err)
+	apiKey := strings.TrimSpace(e.usptoAPIKey)
+	if apiKey == "" {
+		return proto.USPTOFetchAssignmentsResult{}, errors.New("engine: USPTO API key not configured")
+	}
+	app, err := e.repo.USPTOApplication(ctx, n)
+	if err != nil {
+		return proto.USPTOFetchAssignmentsResult{}, fmt.Errorf("engine: load uspto application: %w", err)
+	}
+	if app.ApplicationNumber == "" {
+		return proto.USPTOFetchAssignmentsResult{}, errors.New("engine: no application number on record")
+	}
+	if e.usptoAssignments == nil {
+		return proto.USPTOFetchAssignmentsResult{}, errors.New("engine: USPTO assignment fetcher not configured")
+	}
+	assignments, err := e.usptoAssignments(ctx, apiKey, app.ApplicationNumber)
+	if err != nil {
+		e.incCounter("uspto.fetch_assignments.error", 1)
+		return proto.USPTOFetchAssignmentsResult{}, err
+	}
+	if saveErr := e.repo.SaveUSPTOAssignments(ctx, app.ApplicationNumber, assignments); saveErr != nil {
+		return proto.USPTOFetchAssignmentsResult{}, fmt.Errorf("engine: save uspto assignments: %w", saveErr)
+	}
+	parties := 0
+	for _, a := range assignments {
+		parties += len(a.Parties)
+	}
+	e.incCounter("uspto.fetch_assignments.ok", 1)
+	e.incCounter("uspto.fetch_assignments.records", int64(len(assignments)))
+	e.incCounter("uspto.fetch_assignments.parties", int64(parties))
+	e.log(ctx, slog.LevelInfo, "uspto assignments fetched",
+		slog.String("patent", n.Normalized()),
+		slog.String("application", app.ApplicationNumber),
+		slog.Int("assignments", len(assignments)),
+		slog.Int("parties", parties))
+	e.recordActivity(ctx, observability.Record{
+		Component: "engine",
+		Action:    "uspto.fetch_assignments",
+		Entity:    n.Normalized(),
+		Status:    "ok",
+		Attributes: map[string]any{
+			"application_number": app.ApplicationNumber,
+			"assignments":        len(assignments),
+			"parties":            parties,
+		},
+	})
+	e.announceChange()
+	return proto.USPTOFetchAssignmentsResult{
+		ApplicationNumber: app.ApplicationNumber,
+		Assignments:       len(assignments),
+		Parties:           parties,
+	}, nil
+}
+
 // USPTOLookup queries the USPTO ODP API using the configured API key and returns the raw JSON response as a string.
 func (e *Engine) USPTOLookup(ctx context.Context, number domain.PatentNumber) (string, error) {
 	apiKey := strings.TrimSpace(e.usptoAPIKey)

@@ -80,6 +80,8 @@ const (
 	MethodUSPTOFetchXML             Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody            Method = "uspto.grant_body"
 	MethodUSPTOLookup               Method = "uspto.lookup"
+	MethodUSPTOFetchAssignments     Method = "uspto.fetch_assignments"
+	MethodUSPTOAssignmentList       Method = "uspto.assignment.list"
 
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
@@ -125,6 +127,32 @@ type USPTOFetchXMLResult struct {
 	Bytes         int64  `json:"bytes"`
 	Cached        bool   `json:"cached"`
 	DownloadCount int64  `json:"download_count"`
+}
+
+// USPTOFetchAssignmentsParams names the patent whose recorded assignment
+// chain should be fetched from the USPTO Patent Assignment Search API.
+type USPTOFetchAssignmentsParams struct {
+	Number domain.PatentNumber `json:"number"`
+}
+
+// USPTOFetchAssignmentsResult reports the resolved application number and
+// counts saved. Existing assignments for the application are replaced.
+type USPTOFetchAssignmentsResult struct {
+	ApplicationNumber string `json:"application_number"`
+	Assignments       int    `json:"assignments"`
+	Parties           int    `json:"parties"`
+}
+
+// USPTOAssignmentListParams names the patent whose stored assignment chain
+// should be returned.
+type USPTOAssignmentListParams struct {
+	Number domain.PatentNumber `json:"number"`
+}
+
+// USPTOAssignmentListResult carries the persisted chain in document order.
+type USPTOAssignmentListResult struct {
+	ApplicationNumber string                   `json:"application_number"`
+	Assignments       []domain.USPTOAssignment `json:"assignments"`
 }
 
 // SourceResolveDiffsParams carries the patent and the (updated) diffs from the

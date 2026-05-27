@@ -387,6 +387,38 @@ CREATE TABLE IF NOT EXISTS uspto_grant_relation (
 
 CREATE INDEX IF NOT EXISTS idx_uspto_grant_relation_kind ON uspto_grant_relation (relation_kind);
 
+-- Parties (applicants, inventors, assignees, agents/attorneys) extracted
+-- directly from the grant or application XML. Distinct from uspto_party (which
+-- is populated from the ODP catalog API) so an XML-only ingest still captures
+-- a full party list. role is one of 'applicant' / 'inventor' / 'assignee' /
+-- 'agent'. assignee_role carries USPTO's numeric role code ('02' = assignment
+-- of inventor, '04' = assignment of part interest, etc.) when role='assignee'.
+CREATE TABLE IF NOT EXISTS uspto_grant_party (
+    application_number TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
+    kind               TEXT NOT NULL,                   -- 'pgpub' or 'grant'
+    role               TEXT NOT NULL,                   -- 'applicant' / 'inventor' / 'assignee' / 'agent'
+    ordinal            INTEGER NOT NULL DEFAULT 0,
+    sequence           TEXT NOT NULL DEFAULT '',
+    designation        TEXT NOT NULL DEFAULT '',
+    app_type           TEXT NOT NULL DEFAULT '',
+    rep_type           TEXT NOT NULL DEFAULT '',
+    org_name           TEXT NOT NULL DEFAULT '',
+    first_name         TEXT NOT NULL DEFAULT '',
+    last_name          TEXT NOT NULL DEFAULT '',
+    residence_country  TEXT NOT NULL DEFAULT '',
+    address_street     TEXT NOT NULL DEFAULT '',
+    address_city       TEXT NOT NULL DEFAULT '',
+    address_state      TEXT NOT NULL DEFAULT '',
+    address_country    TEXT NOT NULL DEFAULT '',
+    address_postal     TEXT NOT NULL DEFAULT '',
+    assignee_role      TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (application_number, kind, role, ordinal)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_party_role ON uspto_grant_party (role);
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_party_org ON uspto_grant_party (org_name);
+CREATE INDEX IF NOT EXISTS idx_uspto_grant_party_last ON uspto_grant_party (last_name);
+
 -- Per-document local XML download stats. The upstream URL and advertised file
 -- name live on uspto_application (pgpub_xml_url / pgpub_xml_name and
 -- patent_grant_xml_url / patent_grant_xml_name); duplicating them here drifted

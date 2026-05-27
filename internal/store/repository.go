@@ -126,6 +126,17 @@ type Repository interface {
 	// USPTOGrantBody returns the body for one (application_number, kind), or
 	// ErrNotFound when the XML has not been ingested yet.
 	USPTOGrantBody(ctx context.Context, applicationNumber, kind string) (domain.USPTOGrantBody, error)
+	// USPTOGrantParties returns every applicant/inventor/assignee/agent row
+	// extracted from the XML for one (application_number, kind). An empty
+	// result is returned when no party rows exist (not an error).
+	USPTOGrantParties(ctx context.Context, applicationNumber, kind string) ([]domain.USPTOGrantParty, error)
+	// SaveUSPTOAssignments persists every recorded assignment for one
+	// application as a full replacement. Each USPTOAssignment carries its
+	// own Parties slice; both tables are written in one transaction.
+	SaveUSPTOAssignments(ctx context.Context, applicationNumber string, assignments []domain.USPTOAssignment) error
+	// USPTOAssignments returns every recorded assignment for one application
+	// in document order, with their parties attached. Empty result, no error.
+	USPTOAssignments(ctx context.Context, applicationNumber string) ([]domain.USPTOAssignment, error)
 	// ListPatents returns one page of lightweight listing rows matching q.
 	ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error)
 	// CountPatents returns the total rows matching q, ignoring its paging.

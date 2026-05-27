@@ -43,6 +43,11 @@ type SourceModeController interface {
 // USPTOSearcher searches the USPTO database for candidates matching the number.
 type USPTOSearcher func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error)
 
+// USPTOAssignmentFetcher returns recorded assignments for one application
+// number. Wired by the daemon so engine does not import the crawl package
+// for HTTP work.
+type USPTOAssignmentFetcher func(ctx context.Context, apiKey, applicationNumber string) ([]domain.USPTOAssignment, error)
+
 // FileImporter loads a patent record from a local file into the store. Like
 // CrawlFactory it is injected, so the engine never imports the crawl package.
 type FileImporter interface {
@@ -66,6 +71,7 @@ type Engine struct {
 	fileImporter     FileImporter
 	cpcLookup        CPCLookup
 	usptoSearcher    USPTOSearcher
+	usptoAssignments USPTOAssignmentFetcher
 	logger           *slog.Logger
 	activities       *observability.Recorder
 	metrics          *observability.Metrics
@@ -150,6 +156,13 @@ func WithIDSExportDir(dir string) Option {
 // WithUSPTOSearcher wires the USPTO candidate searcher.
 func WithUSPTOSearcher(s USPTOSearcher) Option {
 	return func(e *Engine) { e.usptoSearcher = s }
+}
+
+// WithUSPTOAssignmentFetcher wires the Patent Assignment Search backend used
+// by FetchUSPTOAssignments. Nil leaves the engine with no assignment fetch
+// capability; the RPC returns an error in that case.
+func WithUSPTOAssignmentFetcher(f USPTOAssignmentFetcher) Option {
+	return func(e *Engine) { e.usptoAssignments = f }
 }
 
 // WithUSPTOAPIKey supplies the API key used when downloading USPTO XML files.

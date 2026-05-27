@@ -336,11 +336,6 @@ func (a *App) runBulkAction(
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	if len(numbers) >= 2 {
-		if vs, ok := a.focusedPane().(pane.VisualSelectionSaver); ok {
-			vs.SaveVisualSelection()
-		}
-	}
 	cmd := build(a.activeProject.ID, numbers)
 
 	if policy := commandPolicies[id]; policy.Confirm != nil {
@@ -348,6 +343,12 @@ func (a *App) runBulkAction(
 			a.confirmCmd = cmd
 			a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
 			return a, nil
+		}
+	}
+
+	if len(numbers) >= 2 {
+		if vs, ok := a.focusedPane().(pane.VisualSelectionSaver); ok {
+			vs.SaveVisualSelection()
 		}
 	}
 	return a, cmd

@@ -46,6 +46,8 @@ const (
 	StatusAddBatchStarted         Key = "status.add_batch_started"
 	StatusAddRelatedDone          Key = "status.add_related_done"
 	StatusAddRelatedFailed        Key = "status.add_related_failed"
+	StatusAssignmentsFetched      Key = "status.assignments_fetched"
+	StatusAssignmentsFetchFailed  Key = "status.assignments_fetch_failed"
 	StatusOrphanLoadFailed        Key = "status.orphan_load_failed"
 	StatusSetStateFailed          Key = "status.set_state_failed"
 	StatusSetState                Key = "status.set_state"
@@ -243,8 +245,9 @@ var cmdStrings = map[string][2]string{
 	"patent.add-google":          {"Add via Google", "Add the selected patent and force a single-patent Google Patents fetch without USPTO fallback."},
 	"patent.add-related":         {"Add related", "Grant active-project membership to every family-graph neighbor (citations, parents, children) of the selected patent that does not yet have one."},
 	"patent.orphan-list":         {"Orphan patents", "Open the list of patents in the database that are not associated with any project."},
-	"patent.fetch-uspto-pgpub":   {"Fetch PGPub XML", "Download the pre-grant publication XML for the selected patent from the USPTO bulk dataset."},
-	"patent.fetch-uspto-grant":   {"Fetch Grant XML", "Download the grant XML for the selected patent from the USPTO bulk dataset."},
+	"patent.fetch-uspto-pgpub":       {"Fetch PGPub XML", "Download the pre-grant publication XML for the selected patent from the USPTO bulk dataset."},
+	"patent.fetch-uspto-grant":       {"Fetch Grant XML", "Download the grant XML for the selected patent from the USPTO bulk dataset."},
+	"patent.fetch-uspto-assignments": {"Fetch Assignment chain", "Pull the full chain of recorded assignments for the selected patent from the USPTO Patent Assignment Search API."},
 	"patent.tag":                 {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":               {"Untag patent", "Remove a tag from the selected patent within the active project."},
 	"crawl.family":               {"Crawl family", "Recursively crawl the selected patent's family graph (parents and children)."},
@@ -333,6 +336,8 @@ var englishNamed = map[Key]string{
 	StatusAddBatchStarted:         "adding %d patents via %s in parallel…",
 	StatusAddRelatedDone:          "add.related: granted membership to %d neighbor(s) of %s",
 	StatusAddRelatedFailed:        "add.related failed: %s",
+	StatusAssignmentsFetched:      "assignments fetched for %s: %d recorded, %d parties",
+	StatusAssignmentsFetchFailed:  "fetch assignments failed: %s",
 	StatusOrphanLoadFailed:        "load orphan patents failed: %s",
 	StatusSetStateFailed:          "set state failed: %s",
 	StatusSetState:                "set %s to %s review state in %s",

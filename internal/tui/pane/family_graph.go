@@ -307,15 +307,17 @@ func (g *FamilyGraph) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if g.project != m.Project {
 			return g, nil
 		}
-		targets := make(map[domain.PatentNumber]struct{}, len(m.Patents))
-		for _, patent := range m.Patents {
-			targets[patent] = struct{}{}
-		}
 		for i := range g.nodes {
-			if _, ok := targets[g.nodes[i].Patent.Number]; !ok {
-				continue
+			matched := false
+			for _, pat := range m.Patents {
+				if patentNumberMatches(g.nodes[i].Patent.Number, g.nodes[i].Patent.DisplayNumber, pat) {
+					matched = true
+					break
+				}
 			}
-			g.nodes[i].Patent.ReviewState = m.State
+			if matched {
+				g.nodes[i].Patent.ReviewState = m.State
+			}
 		}
 	}
 	return g, nil

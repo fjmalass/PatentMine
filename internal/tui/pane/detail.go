@@ -378,15 +378,14 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			return d, nil
 		}
 		for _, patent := range m.Patents {
-			if patent != d.number {
-				continue
+			if patentNumberMatches(d.number, d.patent.DisplayNumber, patent) {
+				d.state = m.State
+				d.cachedLines = nil
+				break
 			}
-			d.state = m.State
-			d.cachedLines = nil
-			break
 		}
 	case IDSEntryChangedMsg:
-		if d.project != m.Project || d.number != m.Patent {
+		if d.project != m.Project || !patentNumberMatches(d.number, d.patent.DisplayNumber, m.Patent) {
 			return d, nil
 		}
 		d.idsEntry = m.Entry

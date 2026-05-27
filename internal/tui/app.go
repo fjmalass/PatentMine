@@ -161,6 +161,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.AddRelated:                 (*App).cmdAddRelated,
 	command.FetchUSPTOPGPub:            (*App).cmdFetchUSPTOPGPub,
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
+	command.FetchUSPTOAssignments:      (*App).cmdFetchUSPTOAssignments,
 	command.Import:                     (*App).cmdImport,
 	command.SourceMode:     (*App).cmdSourceMode,
 	command.SourceCompare: (*App).cmdSourceCompare,
@@ -723,6 +724,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleFocusDwell(m)
 	case overlay.ConfirmAcceptMsg:
 		a.popOverlay()
+		if vs, ok := a.focusedPane().(pane.VisualSelectionSaver); ok {
+			vs.SaveVisualSelection()
+		}
 		cmd := a.confirmCmd
 		a.confirmCmd = nil
 		return a, cmd

@@ -126,6 +126,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
 		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
 		proto.MethodUSPTOLookup:               s.usptoLookup,
+		proto.MethodUSPTOFetchAssignments:     s.usptoFetchAssignments,
+		proto.MethodUSPTOAssignmentList:       s.usptoAssignmentList,
 		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:           s.sourceDiffsList,
 	}
@@ -1309,4 +1311,31 @@ func (s *Server) usptoLookup(ctx context.Context, raw json.RawMessage) (any, err
 		return nil, err
 	}
 	return proto.USPTOLookupResult{RawJSON: rawJSON}, nil
+}
+
+func (s *Server) usptoFetchAssignments(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOFetchAssignmentsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.FetchUSPTOAssignments(ctx, p.Number)
+}
+
+func (s *Server) usptoAssignmentList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOAssignmentListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	app, err := s.engine.USPTOApplicationFor(ctx, p.Number)
+	if err != nil {
+		return nil, err
+	}
+	assignments, err := s.engine.USPTOAssignments(ctx, app.ApplicationNumber)
+	if err != nil {
+		return nil, err
+	}
+	return proto.USPTOAssignmentListResult{
+		ApplicationNumber: app.ApplicationNumber,
+		Assignments:       assignments,
+	}, nil
 }

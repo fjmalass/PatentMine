@@ -47,8 +47,12 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// invention_title is set by both grant XML and the ODP catalog. Keep
+	// whichever was already there if the XML one is empty (COALESCE on the
+	// NULL-IF-empty pattern), otherwise let the XML overwrite.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE uspto_application SET
+			invention_title = COALESCE(NULLIF(?, ''), invention_title),
 			grant_doc_number = ?,
 			grant_kind = ?,
 			grant_date = ?,
@@ -71,6 +75,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 			field_of_search_json = ?,
 			grant_parsed_at = ?
 		WHERE application_number = ?`,
+		ingest.Summary.InventionTitle,
 		ingest.Summary.GrantDocNumber, ingest.Summary.GrantKind, ingest.Summary.GrantDate,
 		ingest.Summary.GrantDTDVersion, ingest.Summary.GrantStatus, ingest.Summary.GrantDateProduced,
 		ingest.Summary.GrantFileName, ingest.Summary.GrantLang,
@@ -182,6 +187,26 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 		}
 	}
 
+	if err := replaceChildRows(ctx, tx, "uspto_grant_party", app, kind); err != nil {
+		return err
+	}
+	for _, p := range ingest.Parties {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO uspto_grant_party
+			    (application_number, kind, role, ordinal, sequence, designation,
+			     app_type, rep_type, org_name, first_name, last_name,
+			     residence_country, address_street, address_city, address_state,
+			     address_country, address_postal, assignee_role)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			app, kind, p.Role, p.Ordinal, p.Sequence, p.Designation,
+			p.AppType, p.RepType, p.OrgName, p.FirstName, p.LastName,
+			p.ResidenceCountry, p.AddressStreet, p.AddressCity, p.AddressState,
+			p.AddressCountry, p.AddressPostal, p.AssigneeRole,
+		); err != nil {
+			return fmt.Errorf("store/sqlite: save uspto grant party %s/%d: %w", p.Role, p.Ordinal, err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store/sqlite: save uspto grant: commit: %w", err)
 	}
@@ -197,6 +222,41 @@ func replaceChildRows(ctx context.Context, tx *sql.Tx, table, app, kind string) 
 		return fmt.Errorf("store/sqlite: clear %s: %w", table, err)
 	}
 	return nil
+}
+
+// USPTOGrantParties returns every party (applicant/inventor/assignee/agent)
+// extracted from the XML for one (application_number, kind), ordered by role
+// then ordinal so the original document order is preserved within each role.
+func (r *Repo) USPTOGrantParties(ctx context.Context, applicationNumber, kind string) ([]domain.USPTOGrantParty, error) {
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT application_number, kind, role, ordinal, sequence, designation,
+		       app_type, rep_type, org_name, first_name, last_name,
+		       residence_country, address_street, address_city, address_state,
+		       address_country, address_postal, assignee_role
+		FROM uspto_grant_party
+		WHERE application_number = ? AND kind = ?
+		ORDER BY role, ordinal`, applicationNumber, kind)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query uspto grant party: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []domain.USPTOGrantParty
+	for rows.Next() {
+		var p domain.USPTOGrantParty
+		if err := rows.Scan(
+			&p.ApplicationNumber, &p.Kind, &p.Role, &p.Ordinal, &p.Sequence, &p.Designation,
+			&p.AppType, &p.RepType, &p.OrgName, &p.FirstName, &p.LastName,
+			&p.ResidenceCountry, &p.AddressStreet, &p.AddressCity, &p.AddressState,
+			&p.AddressCountry, &p.AddressPostal, &p.AssigneeRole,
+		); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan uspto grant party: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: iterate uspto grant party: %w", err)
+	}
+	return out, nil
 }
 
 // USPTOGrantBody returns the body extracted from the XML.

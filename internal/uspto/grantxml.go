@@ -7,30 +7,37 @@ import (
 	"strings"
 )
 
-// USPTOGrantXML is the parsed shape of a USPTO us-patent-grant XML document
-// (DTD v4.x). The struct exposes every section the v4.7 schema can carry; an
-// individual XML may leave many of them empty. Field names mirror the XML
-// element names so the mapping back to the source is obvious.
+// USPTOGrantXML is the parsed shape of a USPTO us-patent-grant or
+// us-patent-application XML document (DTD v4.x). The struct accepts either
+// root element so the same code path ingests grants and pre-grant
+// publications. Field names mirror the XML element names so the mapping back
+// to the source is obvious. Sections absent from a given XML stay zero.
 type USPTOGrantXML struct {
-	XMLName            xml.Name `xml:"us-patent-grant"`
-	Lang               string   `xml:"lang,attr"`
-	DTDVersion         string   `xml:"dtd-version,attr"`
-	File               string   `xml:"file,attr"`
-	Status             string   `xml:"status,attr"`
-	Country            string   `xml:"country,attr"`
-	DateProduced       string   `xml:"date-produced,attr"`
-	DatePublished      string   `xml:"date-publ,attr"`
-	Bibliographic      USPTOGrantBibliographic
-	Abstract           USPTOGrantAbstract
-	Drawings           USPTOGrantDrawings
-	Description        USPTOGrantDescription
-	ClaimStatement     string             `xml:"us-claim-statement"`
-	Claims             USPTOGrantClaims   `xml:"claims"`
+	Lang             string `xml:"lang,attr"`
+	DTDVersion       string `xml:"dtd-version,attr"`
+	File             string `xml:"file,attr"`
+	Status           string `xml:"status,attr"`
+	Country          string `xml:"country,attr"`
+	DateProduced     string `xml:"date-produced,attr"`
+	DatePublished    string `xml:"date-publ,attr"`
+	// Two bibliographic fields: grant XML uses <us-bibliographic-data-grant>,
+	// pgpub XML uses <us-bibliographic-data-application>. The decoder only
+	// populates the field whose tag matches the element it sees, so for any
+	// given document exactly one will be non-empty. USPTOGrantToIngest picks
+	// whichever has data.
+	Bibliographic    USPTOGrantBibliographic `xml:"us-bibliographic-data-grant"`
+	BibliographicApp USPTOGrantBibliographic `xml:"us-bibliographic-data-application"`
+	Abstract         USPTOGrantAbstract
+	Drawings         USPTOGrantDrawings
+	Description      USPTOGrantDescription
+	ClaimStatement   string           `xml:"us-claim-statement"`
+	Claims           USPTOGrantClaims `xml:"claims"`
 }
 
-// USPTOGrantBibliographic holds the <us-bibliographic-data-grant> block.
+// USPTOGrantBibliographic holds the bibliographic block (either grant or
+// application). The XMLName is intentionally absent so the same struct can be
+// targeted by both root element tags above.
 type USPTOGrantBibliographic struct {
-	XMLName                 xml.Name                       `xml:"us-bibliographic-data-grant"`
 	PublicationRef          USPTOGrantDocRef               `xml:"publication-reference>document-id"`
 	ApplicationRef          USPTOGrantApplicationRef       `xml:"application-reference"`
 	ApplicationSeriesCode   string                         `xml:"us-application-series-code"`
@@ -176,6 +183,7 @@ type USPTOGrantAddressbook struct {
 	OrgName   string            `xml:"orgname"`
 	FirstName string            `xml:"first-name"`
 	LastName  string            `xml:"last-name"`
+	Role      string            `xml:"role"`
 	Address   USPTOGrantAddress `xml:"address"`
 }
 

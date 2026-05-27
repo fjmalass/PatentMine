@@ -16,39 +16,46 @@ import (
 // than the application number.
 func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) domain.USPTOGrantIngest {
 	now := time.Now().UTC().Format(time.RFC3339)
+	// Both roots map to the same bibliographic struct via separate fields;
+	// pick whichever the decoder populated.
+	bib := doc.Bibliographic
+	if bib.ApplicationRef.DocumentID.DocNumber == "" && bib.PublicationRef.DocNumber == "" {
+		bib = doc.BibliographicApp
+	}
 	if applicationNumber == "" {
-		applicationNumber = strings.TrimSpace(doc.Bibliographic.ApplicationRef.DocumentID.DocNumber)
+		applicationNumber = strings.TrimSpace(bib.ApplicationRef.DocumentID.DocNumber)
 	}
 
 	summary := domain.USPTOGrantSummary{
 		ApplicationNumber:     applicationNumber,
-		GrantDocNumber:        doc.Bibliographic.PublicationRef.DocNumber,
-		GrantKind:             doc.Bibliographic.PublicationRef.Kind,
-		GrantDate:             doc.Bibliographic.PublicationRef.Date,
+		InventionTitle:        strings.TrimSpace(bib.InventionTitle),
+		GrantDocNumber:        bib.PublicationRef.DocNumber,
+		GrantKind:             bib.PublicationRef.Kind,
+		GrantDate:             bib.PublicationRef.Date,
 		GrantDTDVersion:       doc.DTDVersion,
 		GrantStatus:           doc.Status,
 		GrantDateProduced:     doc.DateProduced,
 		GrantFileName:         doc.File,
 		GrantLang:             doc.Lang,
-		TermExtensionDays:     atoi(doc.Bibliographic.TermExtensionDays),
-		NumberOfClaims:        atoi(doc.Bibliographic.NumberOfClaims),
-		ExemplaryClaim:        doc.Bibliographic.ExemplaryClaim,
-		NumberOfDrawingSheets: atoi(doc.Bibliographic.NumberOfDrawingSheets),
-		NumberOfFigures:       atoi(doc.Bibliographic.NumberOfFigures),
-		PrimaryExaminerFirst:  doc.Bibliographic.PrimaryExaminer.FirstName,
-		PrimaryExaminerLast:   doc.Bibliographic.PrimaryExaminer.LastName,
-		PrimaryExaminerDept:   doc.Bibliographic.PrimaryExaminer.Department,
-		FieldOfSearch:         doc.Bibliographic.FieldOfClassification,
+		TermExtensionDays:     atoi(bib.TermExtensionDays),
+		NumberOfClaims:        atoi(bib.NumberOfClaims),
+		ExemplaryClaim:        bib.ExemplaryClaim,
+		NumberOfDrawingSheets: atoi(bib.NumberOfDrawingSheets),
+		NumberOfFigures:       atoi(bib.NumberOfFigures),
+		PrimaryExaminerFirst:  bib.PrimaryExaminer.FirstName,
+		PrimaryExaminerLast:   bib.PrimaryExaminer.LastName,
+		PrimaryExaminerDept:   bib.PrimaryExaminer.Department,
+		FieldOfSearch:         bib.FieldOfClassification,
 		ParsedAt:              now,
 	}
-	for _, ax := range doc.Bibliographic.AssistantExaminers {
+	for _, ax := range bib.AssistantExaminers {
 		name := strings.TrimSpace(strings.TrimSpace(ax.FirstName) + " " + strings.TrimSpace(ax.LastName))
 		if name != "" {
 			summary.AssistantExaminers = append(summary.AssistantExaminers, name)
 		}
 	}
-	if len(doc.Bibliographic.Agents) > 0 {
-		a := doc.Bibliographic.Agents[0]
+	if len(bib.Agents) > 0 {
+		a := bib.Agents[0]
 		summary.AttorneyOrg = a.Addressbook.OrgName
 		summary.AttorneyType = a.RepType
 	}
@@ -93,8 +100,8 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 		})
 	}
 
-	citations := make([]domain.USPTOGrantCitation, 0, len(doc.Bibliographic.ReferencesCited))
-	for i, c := range doc.Bibliographic.ReferencesCited {
+	citations := make([]domain.USPTOGrantCitation, 0, len(bib.ReferencesCited))
+	for i, c := range bib.ReferencesCited {
 		ct := domain.USPTOGrantCitation{
 			ApplicationNumber: applicationNumber,
 			Kind:              kind,
@@ -121,7 +128,7 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 	}
 
 	var classifications []domain.USPTOGrantClassification
-	for i, c := range doc.Bibliographic.IPCRClassifications {
+	for i, c := range bib.IPCRClassifications {
 		classifications = append(classifications, domain.USPTOGrantClassification{
 			ApplicationNumber:    applicationNumber,
 			Kind:                 kind,
@@ -169,9 +176,9 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 			})
 		}
 	}
-	addCPC("main", doc.Bibliographic.MainCPC)
-	addCPC("further", doc.Bibliographic.FurtherCPC)
-	for i, code := range doc.Bibliographic.FieldOfClassification {
+	addCPC("main", bib.MainCPC)
+	addCPC("further", bib.FurtherCPC)
+	for i, code := range bib.FieldOfClassification {
 		classifications = append(classifications, domain.USPTOGrantClassification{
 			ApplicationNumber: applicationNumber,
 			Kind:              kind,
@@ -202,11 +209,11 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 			_ = i
 		}
 	}
-	addRelations("continuation", doc.Bibliographic.Continuations)
-	addRelations("continuation-in-part", doc.Bibliographic.Continuations2)
-	addRelations("division", doc.Bibliographic.Divisions)
-	addRelations("reissue", doc.Bibliographic.Reissues)
-	for _, p := range doc.Bibliographic.ProvisionalApplications {
+	addRelations("continuation", bib.Continuations)
+	addRelations("continuation-in-part", bib.Continuations2)
+	addRelations("division", bib.Divisions)
+	addRelations("reissue", bib.Reissues)
+	for _, p := range bib.ProvisionalApplications {
 		relations = append(relations, domain.USPTOGrantRelation{
 			ApplicationNumber: applicationNumber,
 			Kind:              kind,
@@ -217,7 +224,7 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 			ParentAppDate:     p.Date,
 		})
 	}
-	for _, p := range doc.Bibliographic.RelatedPublications {
+	for _, p := range bib.RelatedPublications {
 		relations = append(relations, domain.USPTOGrantRelation{
 			ApplicationNumber: applicationNumber,
 			Kind:              kind,
@@ -230,6 +237,102 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 		})
 	}
 
+	var parties []domain.USPTOGrantParty
+	pushParty := func(p domain.USPTOGrantParty) {
+		p.ApplicationNumber = applicationNumber
+		p.Kind = kind
+		parties = append(parties, p)
+	}
+	for i, a := range bib.Applicants {
+		pushParty(domain.USPTOGrantParty{
+			Role:             "applicant",
+			Ordinal:          i,
+			Sequence:         a.Sequence,
+			Designation:      a.Designation,
+			AppType:          a.AppType,
+			OrgName:          a.Addressbook.OrgName,
+			FirstName:        a.Addressbook.FirstName,
+			LastName:         a.Addressbook.LastName,
+			ResidenceCountry: a.Residence.Country,
+			AddressStreet:    a.Addressbook.Address.Street,
+			AddressCity:      a.Addressbook.Address.City,
+			AddressState:     a.Addressbook.Address.State,
+			AddressCountry:   a.Addressbook.Address.Country,
+			AddressPostal:    a.Addressbook.Address.PostalCode,
+		})
+	}
+	for i, inv := range bib.Inventors {
+		pushParty(domain.USPTOGrantParty{
+			Role:             "inventor",
+			Ordinal:          i,
+			Sequence:         inv.Sequence,
+			Designation:      inv.Designation,
+			OrgName:          inv.Addressbook.OrgName,
+			FirstName:        inv.Addressbook.FirstName,
+			LastName:         inv.Addressbook.LastName,
+			ResidenceCountry: inv.Residence.Country,
+			AddressStreet:    inv.Addressbook.Address.Street,
+			AddressCity:      inv.Addressbook.Address.City,
+			AddressState:     inv.Addressbook.Address.State,
+			AddressCountry:   inv.Addressbook.Address.Country,
+			AddressPostal:    inv.Addressbook.Address.PostalCode,
+		})
+	}
+	for i, ag := range bib.Agents {
+		pushParty(domain.USPTOGrantParty{
+			Role:           "agent",
+			Ordinal:        i,
+			Sequence:       ag.Sequence,
+			RepType:        ag.RepType,
+			OrgName:        ag.Addressbook.OrgName,
+			FirstName:      ag.Addressbook.FirstName,
+			LastName:       ag.Addressbook.LastName,
+			AddressStreet:  ag.Addressbook.Address.Street,
+			AddressCity:    ag.Addressbook.Address.City,
+			AddressState:   ag.Addressbook.Address.State,
+			AddressCountry: ag.Addressbook.Address.Country,
+			AddressPostal:  ag.Addressbook.Address.PostalCode,
+		})
+	}
+	for i, as := range bib.Assignees {
+		// Assignees may carry name/address either at the assignee level
+		// directly or nested in an addressbook; pgpub places role inside
+		// addressbook while grant XML places it as a direct child. Merge.
+		org := as.OrgName
+		first := as.FirstName
+		last := as.LastName
+		role := as.Role
+		if org == "" {
+			org = as.Addressbook.OrgName
+		}
+		if first == "" {
+			first = as.Addressbook.FirstName
+		}
+		if last == "" {
+			last = as.Addressbook.LastName
+		}
+		if role == "" {
+			role = as.Addressbook.Role
+		}
+		addr := as.Addressbook.Address
+		if addr.City == "" && addr.State == "" && addr.Country == "" {
+			addr = as.Address
+		}
+		pushParty(domain.USPTOGrantParty{
+			Role:           "assignee",
+			Ordinal:        i,
+			AssigneeRole:   role,
+			OrgName:        org,
+			FirstName:      first,
+			LastName:       last,
+			AddressStreet:  addr.Street,
+			AddressCity:    addr.City,
+			AddressState:   addr.State,
+			AddressCountry: addr.Country,
+			AddressPostal:  addr.PostalCode,
+		})
+	}
+
 	return domain.USPTOGrantIngest{
 		Summary:         summary,
 		Body:            body,
@@ -237,6 +340,7 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 		Citations:       citations,
 		Classifications: classifications,
 		Relations:       relations,
+		Parties:         parties,
 	}
 }
 

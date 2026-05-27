@@ -510,6 +510,22 @@ func LookupClassificationCmd(client *rpc.Client, code string) tea.Cmd {
 	}
 }
 
+// FetchUSPTOAssignmentsCmd pulls the patent's assignment chain from the USPTO
+// Patent Assignment Search API and persists the result. Returns a status line
+// reporting how many assignments and parties were saved.
+func FetchUSPTOAssignmentsCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.USPTOFetchAssignmentsResult
+		if err := client.Call(ctx, proto.MethodUSPTOFetchAssignments,
+			proto.USPTOFetchAssignmentsParams{Number: number}, &res); err != nil {
+			return StatusMsg{Key: text.StatusAssignmentsFetchFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusAssignmentsFetched, Args: []any{number.String(), res.Assignments, res.Parties}}
+	}
+}
+
 // FetchUSPTOXMLCmd downloads the pgpub or grant XML for a patent, or returns
 // the cached path when the file is already on disk.
 func FetchUSPTOXMLCmd(client *rpc.Client, number domain.PatentNumber, kind proto.USPTOXMLKind) tea.Cmd {

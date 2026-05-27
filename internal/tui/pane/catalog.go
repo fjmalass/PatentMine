@@ -517,15 +517,23 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if c.activeProject == nil || c.activeProject.ID != m.Project {
 			return c, nil
 		}
-		targets := make(map[domain.PatentNumber]struct{}, len(m.Patents))
-		for _, patent := range m.Patents {
-			targets[patent] = struct{}{}
-		}
+		applied := 0
 		for i := range c.patents {
-			if _, ok := targets[c.patents[i].Number]; !ok {
-				continue
+			matched := false
+			for _, pat := range m.Patents {
+				if patentRowMatchesNumber(c.patents[i], pat) {
+					matched = true
+					break
+				}
 			}
-			c.patents[i].ReviewState = m.State
+			if matched {
+				c.patents[i].ReviewState = m.State
+				applied++
+			}
+		}
+		if len(m.Patents) > 0 && applied == 0 && !c.loading {
+			c.loading = true
+			return c, c.load()
 		}
 	case IDSEntryChangedMsg:
 		if c.activeProject == nil || c.activeProject.ID != m.Project {

@@ -138,7 +138,9 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithPatentsDir(patentsDir),
 		engine.WithUSPTOSearcher(func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
 			return crawl.SearchUSPTO(ctx, cfg.USPTOAPIKey, number)
-		})), nil
+		}),
+		engine.WithUSPTOAssignmentFetcher(crawl.FetchUSPTOAssignments),
+	), nil
 }
 
 // fail prints err and returns the failure exit code.

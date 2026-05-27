@@ -78,8 +78,9 @@ const (
 	AddUSPTO        ID = "patent.add-uspto"
 	AddGoogle       ID = "patent.add-google"
 	AddRelated      ID = "patent.add-related" // add the citations/parents/children of the current selection that are still stubs or lack membership in the active project
-	FetchUSPTOPGPub ID = "patent.fetch-uspto-pgpub"
-	FetchUSPTOGrant ID = "patent.fetch-uspto-grant"
+	FetchUSPTOPGPub       ID = "patent.fetch-uspto-pgpub"
+	FetchUSPTOGrant       ID = "patent.fetch-uspto-grant"
+	FetchUSPTOAssignments ID = "patent.fetch-uspto-assignments"
 
 	// Tagging. Both act on the selected patent within the active project.
 	Tag   ID = "patent.tag"
@@ -258,6 +259,7 @@ func Default() (*Registry, error) {
 		Command{ID: AddRelated, Name: "add.related", Aliases: []string{"add-stubs", "add.neighbors", "pull-refs", "add.refs", "add.related-patents"}, Usage: ":add.related", Kind: KindEngine, Method: proto.MethodAddRelated, Scopes: patentScopes},
 		Command{ID: FetchUSPTOPGPub, Name: "fetch.uspto.pgpub", Aliases: []string{"fetch-pgpub", "pgpub.fetch"}, Usage: ":fetch.uspto.pgpub", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: FetchUSPTOGrant, Name: "fetch.uspto.grant", Aliases: []string{"fetch-grant", "grant.fetch"}, Usage: ":fetch.uspto.grant", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
+		Command{ID: FetchUSPTOAssignments, Name: "fetch.uspto.assignments", Aliases: []string{"fetch-assignments", "assignments.fetch", "chain.fetch"}, Usage: ":fetch.uspto.assignments", Kind: KindEngine, Method: proto.MethodUSPTOFetchAssignments, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
 		Command{ID: Tag, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagPatent, Scopes: patentScopes},
 		Command{ID: Untag, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodUntagPatent, Scopes: patentScopes},
