@@ -112,10 +112,17 @@ func handleSubtableMotionKey(page *render.Paginator, msg tea.KeyMsg, vimCount *i
 	return false
 }
 
-// statsRowPrefixWidth is the display width of the prefix that RenderTable
-// always adds in front of every data row (cursor glyph + mark glyph + space).
-// We must reserve this when computing column widths for the stats subtables.
-const statsRowPrefixWidth = 3
+// TableRowPrefixWidth is the display width of the prefix that RenderTable
+// always adds in front of every data row:
+//   cursor glyph + mark glyph + one space.
+const TableRowPrefixWidth = 3
+
+// TableInterColumnGaps is the number of single-space separators that
+// RenderTable inserts between columns.
+const TableInterColumnGaps = 4
+
+// statsRowPrefixWidth is kept for the stats helpers (points at the shared value).
+const statsRowPrefixWidth = TableRowPrefixWidth
 
 // StatsPatentsColumns returns column widths for the patents subtable
 // shown inside the inventor/assignee/classification stats overlays.
@@ -182,7 +189,7 @@ func StatsPatentsColumns(availWidth int, includeInventorCol, includeTagsCol bool
 	}
 
 	gaps := len(cols) - 1
-	flex := w - fixed - gaps - statsRowPrefixWidth
+	flex := w - fixed - gaps - TableRowPrefixWidth
 
 	// Title gets most of the remaining space, but we reserve some
 	// so it doesn't overwhelm the other columns.

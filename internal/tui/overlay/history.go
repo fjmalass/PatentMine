@@ -131,14 +131,18 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		return strings.Join(lines, "\n")
 	}
 
-	pageSize := max(maxH-3, 1)
+	// Reserve vertical space below the table for the help line + separating newline.
+	const historyTableVerticalReserve = 3
+
+	pageSize := max(maxH-historyTableVerticalReserve, 1)
 
 	// Columns: line number, time, project, action icon, details.
 	gutterW := max(render.GutterWidth(n)-1, 1)
 	const timeW = 8
 	const projW = 12
-	const iconW = 2
-	fixed := 2 + gutterW + timeW + projW + iconW + 4 // prefix + cols + 4 single-space gaps
+	const iconW = 3 // 2-wide emoji + 1 extra cell buffer for lipgloss/emoji width measurement stability (prevents right border drift)
+
+	fixed := TableRowPrefixWidth + gutterW + timeW + projW + iconW + TableInterColumnGaps
 	detailsW := max(maxW-fixed, 10)
 
 	cols := []render.TableColumn{
@@ -188,16 +192,18 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString(renderSubtable(subtableParams{
-		Theme:        h.theme,
-		Columns:      cols,
-		Page:         &h.page,
-		Total:        n,
-		PageSize:     pageSize,
-		FocusActive:  true,
-		VisualMode:   h.page.VisualMode(),
+		Theme:           h.theme,
+		Columns:         cols,
+		Page:            &h.page,
+		Total:           n,
+		PageSize:        pageSize,
+		FocusActive:     true,
+		VisualMode:      h.page.VisualMode(),
 		IsRowSelected: func(absIdx int) bool {
 			return h.page.IsRowSelected(absIdx)
 		},
+		ForceExactWidth: true,
+		TargetWidth:     maxW,
 	}, maxW, getCell))
 	b.WriteString("\n")
 	help := fmt.Sprintf("  %s  [/] Filter  [.] Sort  [c] Clear  [j/k] Move  [ctrl+u/d] Page  [Enter] Replay  [q/Esc] Close", subtableStatus(h.page))

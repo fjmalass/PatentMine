@@ -216,6 +216,12 @@ func (a *App) compositeOverlay(screen string) string {
 	box := a.theme.Box.Width(innerWidth).Height(boxHeight - 2).Render(content)
 
 	dimmed := render.Dim(screen)
+
+	// We use lipgloss.Width here (and only here) to measure the final rendered
+	// box because it is the authoritative size of what lipgloss actually produced,
+	// including borders and padding. All internal table/overlay content continues
+	// to use render.StringWidth (uniseg) for layout and truncation.
+	// This ensures overlays (inventor stats, history, etc.) are centered correctly.
 	x, y := render.CenterOffset(a.width, a.height, lipgloss.Width(box), lipgloss.Height(box))
 	return render.Composite(dimmed, box, x, y)
 }

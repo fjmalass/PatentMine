@@ -120,14 +120,19 @@ func (p *USPTOCandidatePicker) pickedCandidates() []domain.USPTOCandidate {
 // View implements Overlay.
 func (p *USPTOCandidatePicker) View(maxW, maxH int) string {
 	maxW = max(maxW-2, 10)
-	pageSize := max(maxH-5, 1)
+
+	// Reserve vertical space below the table (title is wide, more footer content).
+	const candidatePickerVerticalReserve = 5
+
+	pageSize := max(maxH-candidatePickerVerticalReserve, 1)
 
 	// Columns: App Number, Filing Date, Patent #, First Inventor, Title
 	const appW = 12
 	const filingW = 11
 	const patentW = 13
 	const inventorW = 25
-	fixed := 3 + appW + filingW + patentW + inventorW + 4 // prefix (cursor+mark+space) + 4 gaps
+
+	fixed := TableRowPrefixWidth + appW + filingW + patentW + inventorW + TableInterColumnGaps
 	titleW := max(maxW-fixed, 15)
 
 	cols := []render.TableColumn{

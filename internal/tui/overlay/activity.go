@@ -70,13 +70,20 @@ func (a *Activity) View(maxW, maxH int) string {
 		return a.theme.Dim.Render("No activity records yet.")
 	}
 
-	pageSize := max(maxH-4, 1)
+	// Reserve vertical space below the table for:
+	//   - selected record detail line
+	//   - help line
+	//   - the two newlines that separate them
+	const activityTableVerticalReserve = 4
+
+	pageSize := max(maxH-activityTableVerticalReserve, 1)
 
 	gutterW := max(render.GutterWidth(n)-1, 1)
 	const timeW = 8
 	const compW = 9
 	const actW = 22
-	fixed := 2 + gutterW + timeW + compW + actW + 4 // prefix + cols + 4 single-space gaps
+
+	fixed := TableRowPrefixWidth + gutterW + timeW + compW + actW + TableInterColumnGaps
 	entityW := max(maxW-fixed, 10)
 
 	cols := []render.TableColumn{
@@ -109,12 +116,14 @@ func (a *Activity) View(maxW, maxH int) string {
 
 	var b strings.Builder
 	b.WriteString(renderSubtable(subtableParams{
-		Theme:        a.theme,
-		Columns:      cols,
-		Page:         &a.page,
-		Total:        n,
-		PageSize:     pageSize,
-		FocusActive:  true,
+		Theme:           a.theme,
+		Columns:         cols,
+		Page:            &a.page,
+		Total:           n,
+		PageSize:        pageSize,
+		FocusActive:     true,
+		ForceExactWidth: true,
+		TargetWidth:     maxW,
 	}, maxW, getCell))
 	b.WriteByte('\n')
 	selected := a.records[a.page.Cursor()]
