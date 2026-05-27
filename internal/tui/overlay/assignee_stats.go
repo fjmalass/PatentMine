@@ -455,11 +455,14 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 			}
 		}
 
-		// Get columns with *correct* num width so title + state catch-up math is valid
+		// Use ForceExactWidth so every subtable row is forced to exactly
+		// targetW. This avoids brittle catch-up math on the icon column.
 		cols := StatsPatentsColumns(avail, includeInventor, includeTags, numColWidth)
 
 		offset := o.patentsPage.Offset()
 		tableStr := renderSubtable(subtableParams{
+			ForceExactWidth: true,
+			TargetWidth:     targetW,
 			Theme:         o.theme,
 			Columns:       cols,
 			Page:          &o.patentsPage,

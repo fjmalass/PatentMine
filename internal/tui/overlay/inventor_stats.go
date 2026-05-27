@@ -495,11 +495,14 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 			}
 		}
 
-		// Get columns with *correct* num width so title + state catch-up math is valid
+		// Get columns. We deliberately avoid heavy catch-up math here.
+		// Instead we let RenderTable force every row to exactly targetW.
 		cols := StatsPatentsColumns(avail, includeInventor, includeTags, numColWidth)
 
 		offset := o.patentsPage.Offset()
 		tableStr := renderSubtable(subtableParams{
+			ForceExactWidth: true,
+			TargetWidth:     targetW,
 			Theme:         o.theme,
 			Columns:       cols,
 			Page:          &o.patentsPage,

@@ -28,9 +28,26 @@ type TableParams struct {
 	IsRowSelected func(rowIdx int) bool // returns whether a row is highlighted as selected/visual
 	IsRowMarked   func(rowIdx int) bool // returns whether a row is permanently marked (e.g. source item)
 	MarkGlyph     string                // override mark indicator glyph (defaults to Theme.Glyphs.RowMark)
+
+	// ForceExactWidth, when true, makes RenderTable guarantee that every
+	// data row (and header) has exactly TargetWidth display columns.
+	// It does this by padding the entire row after layout, rather than
+	// trying to absorb the remainder into any specific column.
+	// This is useful for cases where the table must sit inside a larger
+	// container (like stats subtables) and the right edge must be perfectly
+	// straight even when the last column contains double-width icons.
+	ForceExactWidth bool
+	TargetWidth     int
 }
 
 // RenderTable draws a mathematically padded, truncated, and styled table.
+//
+// When ForceExactWidth is true and TargetWidth > 0, every data row (and the
+// header) is forced to exactly TargetWidth display columns by appending
+// padding after the last column. This is the recommended mode when the
+// table must live inside a larger container (e.g. stats subtables) and
+// the right edge must stay perfectly straight even if the last column
+// contains double-width icons.
 func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx int) string) string {
 	var b strings.Builder
 
@@ -69,11 +86,15 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 		}
 	}
 	var trailingSpaces string
-	if currentW < maxW {
-		trailingSpaces = baseHeaderStyle.Render(strings.Repeat(" ", maxW-currentW))
+	headerTarget := maxW
+	if params.ForceExactWidth && params.TargetWidth > 0 {
+		headerTarget = params.TargetWidth
+	}
+	if currentW < headerTarget {
+		trailingSpaces = baseHeaderStyle.Render(strings.Repeat(" ", headerTarget-currentW))
 	}
 	headerLine := prefixStyled + strings.Join(hdrParts, "") + trailingSpaces
-	b.WriteString(Truncate(headerLine, maxW))
+	b.WriteString(Truncate(headerLine, headerTarget))
 	b.WriteString("\n")
 
 	// 2. Render Rows
@@ -134,11 +155,27 @@ func RenderTable(params TableParams, maxW int, getCellValue func(rowIdx, colIdx 
 		prefixStyled := rowStyle.Render(prefix)
 
 		rowLine := prefixStyled + strings.Join(parts, "")
-		used := StringWidth(rowLine)
-		if maxW > used {
-			filler := rowStyle.Render(strings.Repeat(" ", maxW-used))
-			rowLine += filler
+
+		// Determine the width target for this row.
+		// When ForceExactWidth is set, we force the entire row to TargetWidth
+		// by padding after the last column. This is the preferred way to
+		// guarantee right-edge alignment when the last column may contain
+		// double-width icons.
+		target := maxW
+		if params.ForceExactWidth && params.TargetWidth > 0 {
+			target = params.TargetWidth
 		}
+
+		used := StringWidth(rowLine)
+		if target > used {
+			filler := rowStyle.Render(strings.Repeat(" ", target-used))
+			rowLine += filler
+		} else if target < used && params.ForceExactWidth {
+			// If we're forcing exact width and the row is too wide,
+			// truncate the whole row (rare, but keeps behavior predictable).
+			rowLine = Truncate(rowLine, target)
+		}
+
 		b.WriteString(rowLine)
 		b.WriteString("\n")
 	}

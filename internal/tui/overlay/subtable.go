@@ -24,6 +24,13 @@ type subtableParams struct {
 	IsRowSelected func(absIdx int) bool
 	IsRowMarked   func(absIdx int) bool
 	MarkGlyph     string // override mark glyph (defaults to Theme.Glyphs.RowMark)
+
+	// Force the rendered table rows to exactly this width (by padding the
+	// entire row after column layout). This is the recommended way to
+	// guarantee right-edge alignment in stats subtables when the last
+	// column may contain double-width icons.
+	ForceExactWidth bool
+	TargetWidth     int
 }
 
 func renderSubtable(params subtableParams, maxW int, getCellValue func(absIdx, rowIdx, colIdx int) string) string {
@@ -34,15 +41,17 @@ func renderSubtable(params subtableParams, maxW int, getCellValue func(absIdx, r
 	cursor := params.Page.Cursor()
 	focusActive := params.FocusActive
 	tableParams := render.TableParams{
-		Theme:         params.Theme,
-		Columns:       params.Columns,
-		RowCount:      end - start,
-		FocusedColIdx: params.FocusedColIdx,
-		ActiveSort:    params.ActiveSort,
-		SortAscending: params.SortAscending,
-		FocusActive:   focusActive,
-		VisualMode:    params.VisualMode,
-		MarkGlyph:     params.MarkGlyph,
+		Theme:           params.Theme,
+		Columns:         params.Columns,
+		RowCount:        end - start,
+		FocusedColIdx:   params.FocusedColIdx,
+		ActiveSort:      params.ActiveSort,
+		SortAscending:   params.SortAscending,
+		FocusActive:     focusActive,
+		VisualMode:      params.VisualMode,
+		MarkGlyph:       params.MarkGlyph,
+		ForceExactWidth: params.ForceExactWidth,
+		TargetWidth:     params.TargetWidth,
 		IsRowCursor: func(rowIdx int) bool {
 			return focusActive && start+rowIdx == cursor
 		},
@@ -108,52 +117,33 @@ func handleSubtableMotionKey(page *render.Paginator, msg tea.KeyMsg, vimCount *i
 // We must reserve this when computing column widths for the stats subtables.
 const statsRowPrefixWidth = 3
 
-// StatsPatentsColumns returns a well-balanced set of columns for the
-// "Patents by Selected ..." subtable that appears inside the inventor,
-// assignee, and classification stats overlays.
+// StatsPatentsColumns returns column widths for the patents subtable
+// shown inside the inventor/assignee/classification stats overlays.
 //
-// The only remaining "configuration" numbers are the *minimum* widths
-// for the non-flexible columns (number, inventor, year, tags).
-// Everything else is computed:
+// It is intentionally simple:
+//   - Declare sensible minimum widths per column
+//   - Decide which optional columns (Inventor / Tags) to show based on width
+//   - Give the Title column most of the remaining space (with a deliberate
+//     reservation so it doesn't dominate)
 //
-//   - Title gets most of the flexible space, but we deliberately reserve
-//     at least 20 columns of the flexible space. This makes the title
-//     column noticeably smaller.
-//   - The state column has a small fixed width. Final right-edge alignment
-//     for the entire overlay (including subtable rows with icons) is
-//     enforced uniformly by normalizeOverlayContent after the table is
-//     generated. This approach is much less brittle than trying to make
-//     any single column (especially the one with the emoji) absorb the
-//     exact remainder through column math.
-//
-// When numberColWidth > 0 it overrides the default minimum for the
-// Number column (allowing it to dynamically size to the longest
-// visible patent number in the current page).
-//
-// This guarantees that every rendered subtable row has a deterministic
-// total width, so the right edge of the box lines up perfectly on rows
-// that contain double-width icons (✅, ◆, etc.) and rows that don't.
-//
-// The include* flags let callers drop optional columns on narrow terminals.
+// Final right-edge alignment of the overlay (even on rows containing
+// icons in the State column) is handled by normalizeOverlayContent +
+// ForceExactWidth on RenderTable. This function no longer does catch-up
+// arithmetic on any column.
 func StatsPatentsColumns(availWidth int, includeInventorCol, includeTagsCol bool, numberColWidth int) []render.TableColumn {
 	w := availWidth
 	if w < 40 {
 		w = 40
 	}
 
-	// Minimum widths for columns.
-	//
-	// The state column (last one) is deliberately kept small and fixed.
-	// The final right-edge alignment for the whole overlay is handled by
-	// normalizeOverlayContent after the subtable is generated. This is much
-	// less brittle than trying to make the icon column itself be the
-	// variable-width catch-up column.
+	// Minimum widths for the columns we show.
 	const (
 		defaultNumWidth = 16
 		yearWidth       = 4
 		tagsWidth       = 15
 		invWidth        = 24
-		stateWidth      = 6 // small fixed width for the icon column
+		stateWidth      = 6
+		titleReserve    = 20 // keep title from eating all the flexible space
 	)
 
 	numWidth := defaultNumWidth
@@ -183,7 +173,7 @@ func StatsPatentsColumns(availWidth int, includeInventorCol, includeTagsCol bool
 	}
 	cols = append(cols, spec{"state", "State", string(domain.SortByReviewState), stateWidth})
 
-	// Sum everything except title (title is the main flexible column).
+	// Sum non-title columns
 	fixed := 0
 	for _, c := range cols {
 		if c.key != "title" {
@@ -192,13 +182,11 @@ func StatsPatentsColumns(availWidth int, includeInventorCol, includeTagsCol bool
 	}
 
 	gaps := len(cols) - 1
-
 	flex := w - fixed - gaps - statsRowPrefixWidth
 
-	// Title is the main flexible column.
-	// We deliberately give it less space (reserve at least 20 columns of flex)
-	// so the overall layout feels better balanced.
-	titleW := max(10, flex-20)
+	// Title gets most of the remaining space, but we reserve some
+	// so it doesn't overwhelm the other columns.
+	titleW := max(10, flex-titleReserve)
 
 	out := make([]render.TableColumn, len(cols))
 	for i, c := range cols {

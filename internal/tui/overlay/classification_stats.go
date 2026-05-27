@@ -458,10 +458,24 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		startPat, endPat := o.patentsPage.Window()
 		patCursor := o.patentsPage.Cursor()
 		focusPatents := o.focus == focusPatents
-		params := render.TableParams{Theme: o.theme, Columns: cols, RowCount: endPat - startPat, FocusedColIdx: o.focusedColIdx, ActiveSort: string(o.activeSort), SortAscending: o.sortAscending, FocusActive: focusPatents, VisualMode: o.patentsPage.VisualMode(), IsRowCursor: func(rowIdx int) bool { return focusPatents && startPat+rowIdx == patCursor }, IsRowSelected: func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) }, IsRowMarked: func(rowIdx int) bool {
-			absIdx := startPat + rowIdx
-			return absIdx >= 0 && absIdx < len(o.patents) && o.patents[absIdx].Number == o.patent.Number
-		}}
+		params := render.TableParams{
+			Theme:           o.theme,
+			Columns:         cols,
+			RowCount:        endPat - startPat,
+			FocusedColIdx:   o.focusedColIdx,
+			ActiveSort:      string(o.activeSort),
+			SortAscending:   o.sortAscending,
+			FocusActive:     focusPatents,
+			VisualMode:      o.patentsPage.VisualMode(),
+			ForceExactWidth: true,
+			TargetWidth:     targetW,
+			IsRowCursor: func(rowIdx int) bool { return focusPatents && startPat+rowIdx == patCursor },
+			IsRowSelected: func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) },
+			IsRowMarked: func(rowIdx int) bool {
+				absIdx := startPat + rowIdx
+				return absIdx >= 0 && absIdx < len(o.patents) && o.patents[absIdx].Number == o.patent.Number
+			},
+		}
 		tableStr := render.RenderTable(params, targetW, func(rowIdx, colIdx int) string {
 			if rowIdx < 0 || rowIdx >= len(o.patents) {
 				return ""
