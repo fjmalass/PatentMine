@@ -130,11 +130,15 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 
 	var classifications []domain.USPTOGrantClassification
 	for i, c := range bib.IPCRClassifications {
+		role := "main"
+		if sp := strings.ToUpper(strings.TrimSpace(c.SymbolPosition)); sp == "L" {
+			role = "further"
+		}
 		classifications = append(classifications, domain.USPTOGrantClassification{
 			ApplicationNumber:    applicationNumber,
 			Kind:                 kind,
 			Scheme:               "ipcr",
-			Role:                 "main",
+			Role:                 role,
 			Ordinal:              i,
 			FullCode:             c.Code(),
 			Section:              c.Section,

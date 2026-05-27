@@ -133,6 +133,41 @@ func (a *App) openSourceCompare(number domain.PatentNumber) (tea.Model, tea.Cmd)
 
 	a.metrics.IncCounter("tui.source.diffs.loaded_total", int64(len(listRes.Diffs)))
 
+	// Enrich the in-memory diffs with the *current* live patent data for the
+	// USPTO side. This is important because good classifications (and sometimes
+	// first_claim/abstract) only arrive after the grant XML is fetched and our
+	// backfill runs. The stored SourceDiffs are historical snapshots from the
+	// thin file-wrapper crawl, so without this the U column would stay empty
+	// forever for those fields even after XML enrichment.
+	var currentPatent domain.Patent
+	if len(listRes.Diffs) > 0 {
+		var pRes proto.PatentResult
+		if perr := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number}, &pRes); perr == nil {
+			currentPatent = pRes.Patent
+		}
+	}
+
+	for i := range listRes.Diffs {
+		d := &listRes.Diffs[i]
+		if d.USPTOValue != "" {
+			continue
+		}
+		switch d.FieldPath {
+		case "classifications":
+			if len(currentPatent.Classifications) > 0 {
+				d.USPTOValue = strings.Join(currentPatent.Classifications, ";")
+			}
+		case "first_claim":
+			if currentPatent.FirstClaim != "" {
+				d.USPTOValue = currentPatent.FirstClaim
+			}
+		case "abstract":
+			if currentPatent.Abstract != "" {
+				d.USPTOValue = currentPatent.Abstract
+			}
+		}
+	}
+
 	o := overlay.NewSourceComparisonOverlay(a.theme, number, listRes.Diffs)
 	a.overlays = append(a.overlays, o)
 

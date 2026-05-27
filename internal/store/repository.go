@@ -133,6 +133,15 @@ type Repository interface {
 	// extracted from the XML for one (application_number, kind). An empty
 	// result is returned when no party rows exist (not an error).
 	USPTOGrantParties(ctx context.Context, applicationNumber, kind string) ([]domain.USPTOGrantParty, error)
+	// USPTOGrantClassifications returns the distinct classification codes
+	// (the full_code column, normalized to compact "G06F21/14" form with no
+	// spaces to match how Google Patents + cleanClassification populate
+	// Patent.Classifications) from the parsed grant/pgpub XML for the given
+	// (application_number, kind). It includes IPCR + CPC (main + further)
+	// rows but excludes "search" role entries. Results are de-duplicated and
+	// returned in stable document order (IPCR before CPC). Empty + nil when
+	// the XML has not been ingested or contained no invention classifications.
+	USPTOGrantClassifications(ctx context.Context, applicationNumber, kind string) ([]string, error)
 	// SaveUSPTOAssignments persists every recorded assignment for one
 	// application as a full replacement. Each USPTOAssignment carries its
 	// own Parties slice; both tables are written in one transaction.
@@ -253,6 +262,13 @@ type Repository interface {
 	// ListSourceDiffs returns source comparison/reconciliation diffs for a patent
 	// (newest first). Used by the TUI comparison overlay and resolve flow (Option A).
 	ListSourceDiffs(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceDiff, error)
+
+	// UpdateUnreconciledSourceDiffUSPTOValue is a targeted helper used after
+	// XML enrichment. It fills in a better USPTOValue for a specific field
+	// (e.g. "classifications") on any diffs that have not been reconciled yet.
+	// This makes the Source Comparison overlay show useful data from grant
+	// XML even if the original crawl-time snapshot for USPTO was thin.
+	UpdateUnreconciledSourceDiffUSPTOValue(ctx context.Context, patent domain.PatentNumber, fieldPath, newUSPTOValue string) error
 
 	// ListSourceSnapshots returns fetch provenance snapshots for a patent (newest first).
 	// Supports audit and future diff reconstruction.

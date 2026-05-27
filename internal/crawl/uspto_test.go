@@ -32,7 +32,8 @@ const usptoSampleResponse = `{
       "applicantBag": [{"applicantNameText": "Acme Corp"}],
       "patentNumber": "11611785",
       "patentNumberText": "11611785",
-      "publicationNumber": "20220252571"
+      "publicationNumber": "20220252571",
+      "cpcClassificationBag": ["G06F 16/245", "H04L9/00"]
     },
     "eventDataBag": [{"eventCode":"M844","eventDescriptionText":"IDS Filed","eventDate":"2026-01-02"}],
     "parentContinuityBag": [{
@@ -65,6 +66,9 @@ func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
 	}
 	if len(res.Patent.Inventors) != 1 || res.Patent.Inventors[0] != "Jane Doe" {
 		t.Errorf("inventors = %v", res.Patent.Inventors)
+	}
+	if len(res.Patent.Classifications) != 2 || res.Patent.Classifications[0] != "G06F16/245" || res.Patent.Classifications[1] != "H04L9/00" {
+		t.Errorf("classifications from cpcClassificationBag = %v", res.Patent.Classifications)
 	}
 	if res.Patent.Source != domain.SourceUSPTO {
 		t.Errorf("source = %q, want uspto", res.Patent.Source)

@@ -388,3 +388,49 @@ func (r *Repo) ClearUSPTOGrantBodies(ctx context.Context, applicationNumbers []s
 	return rowsDeleted, bytesSaved, nil
 }
 
+// USPTOGrantClassifications returns the distinct, normalized classification
+// codes present in a parsed grant or pgpub XML. It returns codes from IPCR
+// and CPC (main + further) entries, skips "search" rows, de-duplicates while
+// preserving first-seen order, and forces the compact no-space uppercase form
+// ("G06F21/14") so the values are directly usable in Patent.Classifications
+// (matching the Google crawl path).
+func (r *Repo) USPTOGrantClassifications(ctx context.Context, applicationNumber, kind string) ([]string, error) {
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT full_code, scheme, role, ordinal
+		FROM uspto_grant_classification
+		WHERE application_number = ? AND kind = ?
+		  AND scheme IN ('ipcr', 'cpc')
+		  AND role != 'search'
+		ORDER BY
+			CASE scheme WHEN 'ipcr' THEN 0 ELSE 1 END,
+			ordinal`,
+		applicationNumber, kind)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query uspto grant classifications: %w", err)
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	var out []string
+	for rows.Next() {
+		var fullCode, scheme, role string
+		var ordinal int
+		if err := rows.Scan(&fullCode, &scheme, &role, &ordinal); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan uspto grant classification: %w", err)
+		}
+		// Normalize exactly like cleanClassification does for Google:
+		// remove all whitespace, upper-case, strip residual punctuation.
+		norm := strings.ToUpper(strings.Join(strings.Fields(fullCode), ""))
+		norm = strings.Trim(norm, " /:-")
+		if norm == "" || seen[norm] {
+			continue
+		}
+		seen[norm] = true
+		out = append(out, norm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: iterate uspto grant classifications: %w", err)
+	}
+	return out, nil
+}
+

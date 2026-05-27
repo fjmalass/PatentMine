@@ -366,3 +366,30 @@ Depending on the level of expected or required protection against attacks, the p
 	t.Logf("FORMATTED OUTPUT:\n%s", got)
 }
 
+func TestClassificationCodeMatchesGoogleFormat(t *testing.T) {
+	// IPCR and CPC Code() must produce the same compact form that
+	// googleClassifications + cleanClassification emit (no spaces).
+	// Values taken directly from the user's <classifications-ipcr> example.
+
+	// Build from the exact component values in the user's <classification-ipcr> example
+	ipcr1 := USPTOGrantIPCR{Section: "G", Class: "06", Subclass: "F", MainGroup: "21", Subgroup: "14", SymbolPosition: "F"}
+	if got := ipcr1.Code(); got != "G06F21/14" {
+		t.Errorf("IPCR G06F21/14 = %q", got)
+	}
+
+	ipcr2 := USPTOGrantIPCR{Section: "G", Class: "06", Subclass: "F", MainGroup: "21", Subgroup: "75", SymbolPosition: "L"}
+	if got := ipcr2.Code(); got != "G06F21/75" {
+		t.Errorf("IPCR G06F21/75 = %q", got)
+	}
+
+	ipcr3 := USPTOGrantIPCR{Section: "H", Class: "04", Subclass: "L", MainGroup: "9", Subgroup: "00", SymbolPosition: "L"}
+	if got := ipcr3.Code(); got != "H04L9/00" {
+		t.Errorf("IPCR H04L9/00 = %q", got)
+	}
+
+	cpc := USPTOGrantCPC{Section: "G", Class: "06", Subclass: "F", MainGroup: "9", Subgroup: "30"}
+	if got := cpc.Code(); got != "G06F9/30" {
+		t.Errorf("CPC G06F9/30 = %q", got)
+	}
+}
+

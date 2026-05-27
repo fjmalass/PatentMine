@@ -386,6 +386,32 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 		return fmt.Errorf("engine: save citation graph: %w", graphErr)
 	}
 
+	// Best-effort enrichment: if this patent record has no classifications yet
+	// (common for pure-USPTO source or USPTOOnly mode), lift the IPCR/CPC codes
+	// we just parsed from the grant/pgpub XML. They are already normalized by
+	// the Code() helpers + the store reader to the same compact form Google
+	// uses (e.g. "G06F21/14"), so filters, detail view, K overlay, FTS etc.
+	// will all see them immediately.
+	if len(bundle.Classifications) > 0 {
+		if codes, cerr := e.repo.USPTOGrantClassifications(ctx, applicationNumber, string(kind)); cerr == nil && len(codes) > 0 {
+			if p, perr := e.repo.Patent(ctx, n); perr == nil && len(p.Classifications) == 0 {
+				p.Classifications = codes
+				if serr := e.repo.SavePatent(ctx, p); serr == nil {
+					e.incCounter("uspto.xml.ingest.classifications_backfilled", int64(len(codes)))
+					e.log(ctx, slog.LevelInfo, "uspto xml classifications backfilled to patent",
+						slog.String("patent", n.Normalized()),
+						slog.Int("count", len(codes)))
+
+					// Also upgrade any still-unreconciled source_diff rows for
+					// "classifications" so that the Source Comparison overlay (which
+					// the user is often looking at) will now show the real USPTO
+					// values from the XML instead of the empty snapshot from crawl time.
+					_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "classifications", strings.Join(codes, ";"))
+				}
+			}
+		}
+	}
+
 	e.incCounter("uspto.xml.ingest.count", 1)
 	e.incCounter("uspto.xml.ingest.claims", int64(len(bundle.Body.Claims)))
 	e.incCounter("uspto.xml.ingest.citations", int64(len(bundle.Citations)))
@@ -685,6 +711,15 @@ func pickAutoFetchKind(app domain.USPTOApplication) proto.USPTOXMLKind {
 // list/save endpoints.
 func (e *Engine) USPTOApplicationFor(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
 	return e.repo.USPTOApplication(ctx, n)
+}
+
+// USPTOGrantClassifications returns the normalized CPC/IPC codes extracted
+// from a previously ingested grant or pgpub XML (if any). It is the same data
+// that gets automatically back-filled into the patent record on ingest when
+// the patent had none. Exposed for future UI "refresh from XML" actions and
+// for observability.
+func (e *Engine) USPTOGrantClassifications(ctx context.Context, applicationNumber, kind string) ([]string, error) {
+	return e.repo.USPTOGrantClassifications(ctx, applicationNumber, kind)
 }
 
 // USPTOAssignments returns the persisted assignment chain for one

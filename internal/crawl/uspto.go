@@ -82,6 +82,7 @@ type usptoDocumentMeta struct {
 type usptoWrapperData struct {
 	ApplicationNumberText string                `json:"applicationNumberText"`
 	ApplicationMetaData   usptoApplicationMeta  `json:"applicationMetaData"`
+	CPCClassificationBag  []string              `json:"cpcClassificationBag"`
 	EventDataBag          []usptoEventData      `json:"eventDataBag"`
 	ParentContinuityBag   []usptoContinuity     `json:"parentContinuityBag"`
 	ForeignPriorityBag    []usptoForeign        `json:"foreignPriorityBag"`
@@ -113,6 +114,7 @@ type usptoApplicationMeta struct {
 	USPCSymbolText                string           `json:"uspcSymbolText"`
 	Class                         string           `json:"class"`
 	Subclass                      string           `json:"subclass"`
+	CPCClassificationBag          []string         `json:"cpcClassificationBag"`
 	EntityStatusData              usptoEntity      `json:"entityStatusData"`
 	PublicationCategoryBag        json.RawMessage  `json:"publicationCategoryBag"`
 	InventorBag                   []usptoInventor  `json:"inventorBag"`
@@ -212,6 +214,7 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		Title:           strings.TrimSpace(w.ApplicationMetaData.InventionTitle),
 		Assignee:        strings.Join(assignees, "; "),
 		Inventors:       inventors,
+		Classifications: usptoClassifications(w.ApplicationMetaData, w.CPCClassificationBag),
 		FetchState:      domain.FetchCached,
 		Source:          domain.SourceUSPTO,
 		FetchedAt:       now,
@@ -460,6 +463,28 @@ func usptoApplicants(m usptoApplicationMeta) []string {
 	}
 	if len(out) == 0 && strings.TrimSpace(m.FirstApplicantName) != "" {
 		out = append(out, strings.TrimSpace(m.FirstApplicantName))
+	}
+	return out
+}
+
+// usptoClassifications extracts and normalizes CPC codes from the file-wrapper
+// response's cpcClassificationBag (when present). It produces the same compact
+// upper-case no-space form that googleClassifications + cleanClassification
+// use, so :add.uspto immediately populates Patent.Classifications with the full
+// comma-delimited (in UI) set instead of waiting for grant XML.
+func usptoClassifications(m usptoApplicationMeta, fallback []string) []string {
+	bag := m.CPCClassificationBag
+	if len(bag) == 0 {
+		bag = fallback
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range bag {
+		c := cleanClassification(raw)
+		if c != "" && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
 	}
 	return out
 }

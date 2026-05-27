@@ -118,14 +118,25 @@ type USPTOGrantCPC struct {
 	SchemeOrigination  string `xml:"scheme-origination-code"`
 }
 
-// Code formats a CPC entry as the canonical "Section Class Subclass MainGroup/Subgroup" string.
+// Code formats a CPC entry as the compact "SectionClassSubclassMainGroup/Subgroup" string
+// (no space) to match the normalization used by googleClassifications / cleanClassification.
 func (c USPTOGrantCPC) Code() string {
-	return strings.TrimSpace(fmt.Sprintf("%s%s%s %s/%s", c.Section, c.Class, c.Subclass, c.MainGroup, c.Subgroup))
+	sec := strings.ToUpper(strings.TrimSpace(c.Section))
+	cls := strings.ToUpper(strings.TrimSpace(c.Class))
+	sub := strings.ToUpper(strings.TrimSpace(c.Subclass))
+	mg := strings.TrimSpace(c.MainGroup)
+	sg := strings.TrimSpace(c.Subgroup)
+	return fmt.Sprintf("%s%s%s%s/%s", sec, cls, sub, mg, sg)
 }
 
-// Code formats an IPCR entry the same way.
+// Code formats an IPCR entry the same way (matching Google Patents classification strings).
 func (c USPTOGrantIPCR) Code() string {
-	return strings.TrimSpace(fmt.Sprintf("%s%s%s %s/%s", c.Section, c.Class, c.Subclass, c.MainGroup, c.Subgroup))
+	sec := strings.ToUpper(strings.TrimSpace(c.Section))
+	cls := strings.ToUpper(strings.TrimSpace(c.Class))
+	sub := strings.ToUpper(strings.TrimSpace(c.Subclass))
+	mg := strings.TrimSpace(c.MainGroup)
+	sg := strings.TrimSpace(c.Subgroup)
+	return fmt.Sprintf("%s%s%s%s/%s", sec, cls, sub, mg, sg)
 }
 
 type USPTOGrantCitation struct {

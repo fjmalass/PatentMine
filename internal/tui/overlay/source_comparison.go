@@ -111,19 +111,29 @@ func (o *SourceComparisonOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, b
 func (o *SourceComparisonOverlay) View(maxW, _ int) string {
 	var b strings.Builder
 
-	header := o.theme.Dim.Render(fmt.Sprintf("Source Comparison — %s  (format: %s, default = USPTO)", o.patent, chosenSourceFormat))
-	b.WriteString(header)
-	b.WriteString("\n")
 	if len(o.diffs) == 0 {
 		b.WriteString(o.theme.OK.Render("No differences detected — USPTO and Google agreed on every compared field."))
 		b.WriteString("\n\n")
 		b.WriteString(o.theme.Dim.Render("press q or esc to close"))
 		return b.String()
 	}
-	b.WriteString(o.theme.Dim.Render(fmt.Sprintf("[u] = choose USPTO  |  [g] = choose Google  |  [enter] = accept all as %s  |  [q/esc] = cancel", fmt.Sprintf(chosenSourceFormat, "USPTO"))))
+	b.WriteString(o.theme.Dim.Render("[u] = choose USPTO  |  [g] = choose Google  |  [enter] = accept all as [USPTO]  |  [q/esc] = cancel"))
 	b.WriteString("\n\n")
 
-	// Better aligned split-screen columns
+	// Clear column headers with separator (user request) — no duplicate title
+	colHeader := o.theme.HelpKey.Render(
+		render.Pad("Field", 22) + "  " +
+			render.Pad("USPTO", 34) + " │ " +
+			render.Pad("Google", 34) + " │ " +
+			"Chosen value + source",
+	)
+	b.WriteString(colHeader)
+	b.WriteString("\n")
+	sep := o.theme.Dim.Render(strings.Repeat("─", 22) + "  " + strings.Repeat("─", 34) + "─┼─" + strings.Repeat("─", 34) + "─┼─" + strings.Repeat("─", 30))
+	b.WriteString(sep)
+	b.WriteString("\n")
+
+	// Wider value columns so long fields like classifications don't vanish
 	const fieldW = 22
 	const valW = 32
 
@@ -141,21 +151,28 @@ func (o *SourceComparisonOverlay) View(maxW, _ int) string {
 		googleVal := render.Truncate(d.GoogleValue, valW)
 		chosenVal := render.Truncate(d.ChosenValue, valW)
 
-		// Icons and highlighting
+		// Only mark ✓ when the chosen value is non-empty for that source
 		usptoIcon := " "
 		googleIcon := " "
-		if d.ChosenSource == string(domain.SourceUSPTO) && d.ChosenValue == d.USPTOValue {
+		if d.ChosenSource == string(domain.SourceUSPTO) && d.ChosenValue != "" && d.ChosenValue == d.USPTOValue {
 			usptoIcon = "✓"
 			usptoVal = o.theme.Selected.Render(usptoVal)
-		} else if d.ChosenSource == string(domain.SourceGoogle) && d.ChosenValue == d.GoogleValue {
+		} else if d.ChosenSource == string(domain.SourceGoogle) && d.ChosenValue != "" && d.ChosenValue == d.GoogleValue {
 			googleIcon = "✓"
 			googleVal = o.theme.Selected.Render(googleVal)
 		}
 
-		chosenSourcePrefix := fmt.Sprintf(chosenSourceFormat, d.ChosenSource)
-		chosenDisplay := rowStyle.Render(chosenVal + " " + chosenSourcePrefix)
+		// Always show the actual chosen text + a small source badge (user request)
+		sourceBadge := ""
+		if d.ChosenSource != "" {
+			sourceBadge = fmt.Sprintf(chosenSourceFormat, d.ChosenSource)
+		}
+		chosenDisplay := rowStyle.Render(chosenVal)
+		if sourceBadge != "" {
+			chosenDisplay += " " + o.theme.Dim.Render(sourceBadge)
+		}
 
-		line := fmt.Sprintf("%s%s  U:%s %s  |  G:%s %s  |  %s",
+		line := fmt.Sprintf("%s%s  U:%s %s  │  G:%s %s  │  %s",
 			prefix,
 			field,
 			usptoIcon, usptoVal,

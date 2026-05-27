@@ -385,6 +385,33 @@ func (r *Repo) ListSourceDiffs(ctx context.Context, patent domain.PatentNumber) 
 	return out, nil
 }
 
+// UpdateUnreconciledSourceDiffUSPTOValue fills a better USPTOValue into any
+// still-open (not yet reconciled) source_diff rows for the given field.
+// Used by XML ingest enrichment so the Source Comparison UI reflects grant
+// XML data (classifications, claims, etc.) instead of the thin crawl-time
+// USPTO snapshot.
+func (r *Repo) UpdateUnreconciledSourceDiffUSPTOValue(ctx context.Context, patent domain.PatentNumber, fieldPath, newUSPTOValue string) error {
+	if patent.IsZero() || fieldPath == "" {
+		return nil
+	}
+	res, err := r.writer.ExecContext(ctx, `
+		UPDATE source_diff
+		SET uspto_value = ?
+		WHERE record_id = (SELECT record_id FROM patent WHERE number = ?)
+		  AND field_path = ?
+		  AND (reconciled_at IS NULL OR reconciled_at = '')
+		  AND (uspto_value IS NULL OR uspto_value = '' OR LENGTH(uspto_value) < LENGTH(?))
+	`, newUSPTOValue, patent.Normalized(), fieldPath, newUSPTOValue)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: update unreconciled source diff uspto value: %w", err)
+	}
+	// Rows affected > 0 means we upgraded some pending diffs; the next
+	// ListSourceDiffs will see the better USPTO values. No explicit cache
+	// flush needed here because source diffs are not in the hot listing cache.
+	_ = res
+	return nil
+}
+
 // ListSourceSnapshots returns fetch snapshots for provenance/audit (newest first).
 func (r *Repo) ListSourceSnapshots(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceSnapshot, error) {
 	if patent.IsZero() {
