@@ -7,6 +7,45 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **USPTO Loading & Source Configuration**:
+  - Full integration with the USPTO Open Data Portal (ODP) for bibliographic metadata search and USPTO bulk datasets for grant / pre-grant XML files.
+  - Support for `PATENTMINE_USPTO_API_KEY` with standard `.env` configuration file loading and secure `file:path` secret indirection.
+  - Four runtime source-provider policy modes: `compare` (fetch from both USPTO and Google), `uspto-first` (default with fallback), `uspto-only` (strict provenance), and `google-only`. Configurable via environment/`.env` or dynamically via `:source.mode`.
+- **`:add` Command Family**:
+  - Support for `:add` (honors current source mode), `:add.uspto` (force USPTO), and `:add.google` (force Google).
+  - Multi-form input handling: works on cursor row, visual selections, single typed patent number, and space-separated batch numbers.
+  - Parallel background execution of batch patent additions.
+- **USPTOCandidatePicker Overlay**:
+  - Interactive TUI popup picker (80% × 80%) allowing the user to select the exact application when USPTO search yields multiple candidates.
+- **Manual & Auto XML Fetching**:
+  - Auto-fetch and ingest of USPTO XML following crawls and membership additions.
+  - New explicit commands `:fetch.uspto.grant` and `:fetch.uspto.pgpub` supporting parallel fetches.
+  - Direct detail-pane keyboard shortcut (**Enter** on `PGPub URL`, `Grant URL`, `PGPub XML`, or `Grant XML` rows) to fetch, parse, and ingest XML documents.
+  - XML download caching tracked via a persistent `uspto_xml_download` table.
+- **Expanded Browse Commands**:
+  - Explicit browser open commands: `:browse.uspto`, `:browse.uspto.grant`, `:browse.uspto.pgpub`, and `:browse.google`.
+  - Automatic `api_key=<key>` query-param injection when opening ODP URLs in the external browser.
+- **Parsed Body & Full-Text Integration**:
+  - Granular database storage for parsed USPTO XML sections: claims (individual statements), abstract, description, drawings, classifications, and relations.
+  - Full-text viewer (`T` / `:open.fulltext`) prioritizing parsed USPTO XML text over external Google crawl fallback.
+  - USPTO patent citation normalization: parses references from XML, populates the regular `relation` table (`cites` edges), and generates stubs for uncrawled references to construct a complete project citation graph.
+- **Telemetry & Metrics**:
+  - Structured logs, activity journal entries, and custom metrics around XML fetch/cache/parse operations, database saves, and runtime source mode changes.
+
+### Changed
+- Active project filter default updated to `:filter fetch_state:cached` (along with active default filters).
+- Configuration loading refined to target `PATENTMINE_USPTO_API_KEY`.
+- Splash screen upgraded to display live background daemon connection status.
+
+### Fixed
+- Keyboard shortcuts for active `review_state` selections.
+- Splash screen USPTO connectivity checks and general table rendering alignment.
+
+---
+
 ## [v0.4.2] — 2026
 
 ### Added
