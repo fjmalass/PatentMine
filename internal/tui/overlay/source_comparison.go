@@ -114,6 +114,12 @@ func (o *SourceComparisonOverlay) View(maxW, _ int) string {
 	header := o.theme.Dim.Render(fmt.Sprintf("Source Comparison — %s  (format: %s, default = USPTO)", o.patent, chosenSourceFormat))
 	b.WriteString(header)
 	b.WriteString("\n")
+	if len(o.diffs) == 0 {
+		b.WriteString(o.theme.OK.Render("No differences detected — USPTO and Google agreed on every compared field."))
+		b.WriteString("\n\n")
+		b.WriteString(o.theme.Dim.Render("press q or esc to close"))
+		return b.String()
+	}
 	b.WriteString(o.theme.Dim.Render(fmt.Sprintf("[u] = choose USPTO  |  [g] = choose Google  |  [enter] = accept all as %s  |  [q/esc] = cancel", fmt.Sprintf(chosenSourceFormat, "USPTO"))))
 	b.WriteString("\n\n")
 

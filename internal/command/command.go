@@ -47,6 +47,7 @@ const (
 	ScopeProjects  Scope = "projects"  // the project list
 	ScopeFullText  Scope = "fulltext"  // full claims text viewer
 	ScopeNotes     Scope = "notes"     // all-notes listing for a project
+	ScopeOrphans   Scope = "orphans"   // database-wide list of patents with no membership
 	ScopeOverlay   Scope = "overlay"   // a modal overlay is focused
 )
 

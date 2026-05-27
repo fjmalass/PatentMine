@@ -23,16 +23,20 @@ const (
 
 // Progress is an incremental crawl update reported through the emit callback.
 type Progress struct {
-	CrawledCount    int    // Total full records saved to the database.
-	DiscoveredCount int    // Total unique patent numbers seen (crawled + stubs).
-	PendingCount    int    // Items currently in the crawl queue.
-	Depth           int    // Current BFS depth being processed.
-	MaxDepth        int    // Maximum BFS depth this crawl will reach.
-	CitationsCount  int    // Total citation edges found.
-	CitedByCount    int    // Total cited-by edges found.
-	ParentsCount    int    // Total parent/continuation edges found.
-	ChildrenCount   int    // Total child edges found.
-	Message         string // Human-readable note about the latest step.
+	CrawledCount    int      // Total full records saved to the database.
+	DiscoveredCount int      // Total unique patent numbers seen (crawled + stubs).
+	PendingCount    int      // Items currently in the crawl queue.
+	Depth           int      // Current BFS depth being processed.
+	MaxDepth        int      // Maximum BFS depth this crawl will reach.
+	CitationsCount  int      // Total citation edges found.
+	CitedByCount    int      // Total cited-by edges found.
+	ParentsCount    int      // Total parent/continuation edges found.
+	ChildrenCount   int      // Total child edges found.
+	Message         string   // Human-readable note about the latest step.
+	RecordNumber    string   // Record just saved in this event, if any.
+	Stubs           []string // Numbers freshly stubbed in this event, if any.
+	Sources         []string // Providers (uspto, google, ...) that contributed snapshots for RecordNumber.
+	Mode            string   // Source-mode policy in effect during this crawl.
 }
 
 // CrawlConfig bounds a crawl.
@@ -267,20 +271,26 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 				slog.String("number", cur.number.String()),
 				slog.String("error", err.Error()))
 
-			// Root patent not found — fail the job so the caller can clean up.
-			// The error from the registry (in compare mode especially) now carries
-			// per-source details thanks to improved collection in FetchExcluding.
-			if cur.depth == 0 && errors.Is(err, ErrNotAvailable) {
+			// Root fetch failure — fail the job so cleanupIfNotFound can remove
+			// the stub left by ensureRecord. Both "not available" (no provider
+			// has the document) and hard errors (timeouts, 5xx, parse failures)
+			// must surface — otherwise a transient hard error silently leaves
+			// an empty stub in the database with no body data, which the user
+			// sees as "Fetch state: stub" with no way to retry except L.
+			if cur.depth == 0 {
+				notAvail := errors.Is(err, ErrNotAvailable)
 				if c.metrics != nil {
-					c.metrics.IncCounter("crawl.root_not_found_total", 1)
+					if notAvail {
+						c.metrics.IncCounter("crawl.root_not_found_total", 1)
+					} else {
+						c.metrics.IncCounter("crawl.root_hard_error_total", 1)
+					}
 				}
-				if c.logger != nil {
-					c.logger.Warn("root patent not found after trying sources",
-						slog.String("number", cur.number.String()),
-						slog.String("error", err.Error()),
-						slog.Bool("depth_zero", true))
-				}
-				return fmt.Errorf("crawl: patent %s not found: %w", cur.number, err)
+				log.Warn("root patent fetch failed",
+					slog.String("number", cur.number.String()),
+					slog.String("error", err.Error()),
+					slog.Bool("not_available", notAvail))
+				return fmt.Errorf("crawl: root %s fetch failed: %w", cur.number, err)
 			}
 
 			// A referenced patent that could not be fetched: record a stub
@@ -291,6 +301,8 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			report(Progress{
 				CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue), Depth: cur.depth, MaxDepth: depthLimit,
 				Message: fmt.Sprintf("%s unavailable: %v", cur.number, err),
+				Stubs:   []string{cur.number.String()},
+				Mode:    c.registry.SourceMode(),
 			})
 			continue
 		}
@@ -310,7 +322,7 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			}
 		}
 
-		recordNumber, err := c.ingestNode(ctx, res, cur.depth, depthLimit, profile, seen, &queue)
+		recordNumber, stubs, sources, err := c.ingestNode(ctx, res, cur.depth, depthLimit, profile, seen, &queue)
 		if err != nil {
 			log.Error("ingest node failed",
 				slog.String("number", cur.number.String()),
@@ -319,9 +331,17 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		}
 
 		ingested++
+		stubStrings := make([]string, 0, len(stubs))
+		for _, s := range stubs {
+			stubStrings = append(stubStrings, s.String())
+		}
 		report(Progress{
 			CrawledCount: ingested, DiscoveredCount: len(seen), PendingCount: len(queue), Depth: cur.depth, MaxDepth: depthLimit,
-			Message: fmt.Sprintf("crawled %s", recordNumber),
+			Message:      fmt.Sprintf("crawled %s", recordNumber),
+			RecordNumber: recordNumber.String(),
+			Stubs:        stubStrings,
+			Sources:      sources,
+			Mode:         c.registry.SourceMode(),
 		})
 	}
 
@@ -360,10 +380,10 @@ type cacheController interface {
 // noting a stub for any neighbour not yet known — queues neighbours per the
 // crawl profile, and issues exactly one SaveNode. A node with hundreds of
 // citations therefore costs one transaction, not hundreds.
-func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit int, profile domain.CrawlProfile, seen map[domain.PatentNumber]bool, queue *[]node) (domain.PatentNumber, error) {
+func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit int, profile domain.CrawlProfile, seen map[domain.PatentNumber]bool, queue *[]node) (domain.PatentNumber, []domain.PatentNumber, []string, error) {
 	recordNumber, err := c.resolveRecord(ctx, candidateNumbers(res))
 	if err != nil {
-		return domain.PatentNumber{}, err
+		return domain.PatentNumber{}, nil, nil, err
 	}
 	if recordNumber.IsZero() {
 		recordNumber = res.Patent.Number
@@ -371,7 +391,7 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 
 	existing, err := c.repo.Documents(ctx, recordNumber)
 	if err != nil {
-		return domain.PatentNumber{}, err
+		return domain.PatentNumber{}, nil, nil, err
 	}
 
 	patent := res.Patent
@@ -410,7 +430,7 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 				})
 			}
 		case err != nil:
-			return domain.PatentNumber{}, err
+			return domain.PatentNumber{}, nil, nil, err
 		}
 		batch.Relations = append(batch.Relations, domain.Relation{
 			From: recordNumber, To: neighbourRecord, Kind: rel.Kind,
@@ -424,9 +444,25 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 	}
 
 	if err := c.repo.SaveNode(ctx, batch); err != nil {
-		return domain.PatentNumber{}, err
+		return domain.PatentNumber{}, nil, nil, err
 	}
-	return recordNumber, nil
+	stubsOut := make([]domain.PatentNumber, 0, len(stubbed))
+	for n := range stubbed {
+		stubsOut = append(stubsOut, n)
+	}
+	sourceSet := map[string]bool{}
+	var sourcesOut []string
+	for _, snap := range batch.SourceSnapshots {
+		if snap.Source == "" || sourceSet[snap.Source] {
+			continue
+		}
+		sourceSet[snap.Source] = true
+		sourcesOut = append(sourcesOut, snap.Source)
+	}
+	if len(sourcesOut) == 0 && patent.Source != "" {
+		sourcesOut = append(sourcesOut, string(patent.Source))
+	}
+	return recordNumber, stubsOut, sourcesOut, nil
 }
 
 func stampAuthorityIdentifiers(in []domain.AuthorityIdentifier, record domain.PatentNumber) []domain.AuthorityIdentifier {

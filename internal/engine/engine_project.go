@@ -205,6 +205,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		if created {
 			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
+		go e.autoAssignDepth1Neighbors(project, record, jobID)
 		return fetchStarted, jobID, nil, nil
 	}
 	// Any unknown project membership for a stub patent kicks a single-patent
@@ -226,9 +227,173 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		} else {
 			fetchStarted = true
 			go e.cleanupIfNotFound(project, record, created, jobID)
+			go e.autoAssignDepth1Neighbors(project, record, jobID)
 		}
 	}
 	return fetchStarted, jobID, nil, nil
+}
+
+// AddRelated grants project membership to every family-graph neighbor of
+// patent that does not yet have one. It is the explicit "promote the stubs
+// the lookup discovered" operation: the caller has chosen which patent's
+// neighborhood matters, so the engine just walks the existing relations and
+// inserts the missing rows. Returns the neighbor records that were promoted.
+func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (added []domain.PatentNumber, err error) {
+	defer e.observeDuration("engine.add_related", time.Now(), &err)
+	if project == "" {
+		return nil, errors.New("engine: project required")
+	}
+	record, err := e.repo.RecordOf(ctx, patent)
+	if err != nil {
+		return nil, err
+	}
+	rels, err := e.repo.AllRelations(ctx, record)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[domain.PatentNumber]bool{record: true}
+	for _, rel := range rels {
+		var neighbor domain.PatentNumber
+		switch record {
+		case rel.From:
+			neighbor = rel.To
+		case rel.To:
+			neighbor = rel.From
+		default:
+			continue
+		}
+		if seen[neighbor] {
+			continue
+		}
+		seen[neighbor] = true
+		neighborRecord, err := e.repo.RecordOf(ctx, neighbor)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				return added, err
+			}
+			neighborRecord = neighbor
+		}
+		if _, exists := e.existingMembership(ctx, project, neighborRecord); exists {
+			continue
+		}
+		m := domain.Membership{
+			Project:     project,
+			Patent:      neighborRecord,
+			ReviewState: domain.ReviewStateUnknown,
+			AddedAt:     time.Now().UTC(),
+		}
+		if err := e.repo.AddMembership(ctx, m); err != nil {
+			e.log(ctx, slog.LevelError, "add related: membership insert failed",
+				slog.String("project_id", string(project)),
+				slog.String("neighbor", neighborRecord.String()),
+				slog.String("error", err.Error()))
+			return added, err
+		}
+		e.recordActivity(ctx, observability.Record{
+			Action:   observability.ActionMembershipAdd,
+			Entity:   "membership",
+			EntityID: string(project) + "/" + neighborRecord.String(),
+			Status:   "committed",
+			After:    m,
+			Attributes: map[string]any{
+				"requested_number": neighborRecord.String(),
+				"project":          string(project),
+				"source":           "add.related",
+				"root":             record.String(),
+			},
+		})
+		added = append(added, neighborRecord)
+	}
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.add_related.total", 1)
+		e.metrics.IncCounter("engine.add_related.neighbors_added", int64(len(added)))
+	}
+	e.log(ctx, slog.LevelInfo, "add related complete",
+		slog.String("project_id", string(project)),
+		slog.String("root", record.String()),
+		slog.Int("added", len(added)))
+	if len(added) > 0 {
+		e.announceChange()
+	}
+	return added, nil
+}
+
+// autoAssignDepth1Neighbors watches a freshly started single-patent fetch job
+// and grants membership to every direct neighbor that the crawl ingests at
+// depth 0. It is the engine-side companion of :add: the user added one patent;
+// the citation/parent stubs the crawl just discovered get the same membership
+// so they appear in the project right away. Depth-1 only — deeper transitive
+// stubs stay orphan unless the user runs :add.related explicitly.
+func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain.PatentNumber, id JobID) {
+	ch, unsub := e.pool.bus.Subscribe()
+	defer unsub()
+	rootStr := root.String()
+	added := 0
+	for ev := range ch {
+		switch proto.EventKind(ev.Method) {
+		case proto.EventCrawlProgress:
+			var p proto.CrawlProgress
+			if err := json.Unmarshal(ev.Params, &p); err != nil || p.JobID != string(id) {
+				continue
+			}
+			if p.Depth != 0 || p.RecordNumber != rootStr || len(p.Stubs) == 0 {
+				continue
+			}
+			ctx := context.Background()
+			for _, s := range p.Stubs {
+				neighbor, parseErr := domain.ParsePatentNumber(s)
+				if parseErr != nil {
+					continue
+				}
+				if _, exists := e.existingMembership(ctx, project, neighbor); exists {
+					continue
+				}
+				m := domain.Membership{
+					Project:     project,
+					Patent:      neighbor,
+					ReviewState: domain.ReviewStateUnknown,
+					AddedAt:     time.Now().UTC(),
+				}
+				if err := e.repo.AddMembership(ctx, m); err != nil {
+					e.log(ctx, slog.LevelWarn, "auto-assign depth-1 neighbor membership failed",
+						slog.String("project_id", string(project)),
+						slog.String("neighbor", neighbor.String()),
+						slog.String("error", err.Error()))
+					continue
+				}
+				e.recordActivity(ctx, observability.Record{
+					Action:   observability.ActionMembershipAdd,
+					Entity:   "membership",
+					EntityID: string(project) + "/" + neighbor.String(),
+					Status:   "committed",
+					After:    m,
+					Attributes: map[string]any{
+						"requested_number": neighbor.String(),
+						"project":          string(project),
+						"source":           "auto.depth1",
+						"root":             rootStr,
+						"job_id":           string(id),
+					},
+				})
+				added++
+				if e.metrics != nil {
+					e.metrics.IncCounter("engine.auto_assign.depth1.neighbors_added", 1)
+				}
+			}
+			e.announceChange()
+		case proto.EventCrawlDone:
+			var d proto.CrawlDone
+			if err := json.Unmarshal(ev.Params, &d); err == nil && d.JobID == string(id) {
+				e.pool.bus.Publish(proto.NewEvent(proto.EventMembershipAutoAssign, proto.MembershipAutoAssign{
+					JobID:   string(id),
+					Project: string(project),
+					Root:    rootStr,
+					Added:   added,
+				}))
+				return
+			}
+		}
+	}
 }
 
 // cleanupIfNotFound watches for the done event of a single-patent fetch job

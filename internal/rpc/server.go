@@ -76,6 +76,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodProjectList:               s.projectList,
 		proto.MethodProjectCreate:             s.projectCreate,
 		proto.MethodMembershipAdd:             s.membershipAdd,
+		proto.MethodAddRelated:                s.addRelated,
+		proto.MethodOrphanList:                s.orphanList,
 		proto.MethodReviewState:               s.reviewState,
 		proto.MethodTagPatent:                 s.tagPatent,
 		proto.MethodUntagPatent:               s.untagPatent,
@@ -524,6 +526,30 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 		return nil, err
 	}
 	return proto.MembershipAddResult{FetchStarted: fetchStarted, JobID: string(jobID), Candidates: candidates}, nil
+}
+
+func (s *Server) addRelated(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.AddRelatedParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	added, err := s.engine.AddRelated(ctx, p.Project, p.Patent)
+	if err != nil {
+		return nil, err
+	}
+	return proto.AddRelatedResult{Added: len(added), Neighbors: added}, nil
+}
+
+func (s *Server) orphanList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OrphanListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	rows, total, err := s.engine.OrphanPatents(ctx, p.Limit, p.Offset)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OrphanListResult{Patents: rows, Total: total}, nil
 }
 
 func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, error) {

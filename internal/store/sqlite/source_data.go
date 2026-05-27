@@ -295,13 +295,13 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 // USPTOXMLDownload returns the per-document download record, or ErrNotFound.
 func (r *Repo) USPTOXMLDownload(ctx context.Context, applicationNumber, kind string) (domain.USPTOXMLDownload, error) {
 	row := r.reader.QueryRowContext(ctx, `
-		SELECT application_number, kind, source_url, local_path, bytes, download_count,
+		SELECT application_number, kind, local_path, bytes, download_count,
 		       first_downloaded_at, last_downloaded_at, last_accessed_at
 		FROM uspto_xml_download
 		WHERE application_number = ? AND kind = ?`, applicationNumber, kind)
 	var rec domain.USPTOXMLDownload
 	err := row.Scan(
-		&rec.ApplicationNumber, &rec.Kind, &rec.SourceURL, &rec.LocalPath, &rec.Bytes, &rec.DownloadCount,
+		&rec.ApplicationNumber, &rec.Kind, &rec.LocalPath, &rec.Bytes, &rec.DownloadCount,
 		&rec.FirstDownloadedAt, &rec.LastDownloadedAt, &rec.LastAccessedAt,
 	)
 	if err != nil {
@@ -317,17 +317,16 @@ func (r *Repo) USPTOXMLDownload(ctx context.Context, applicationNumber, kind str
 func (r *Repo) RecordUSPTOXMLDownload(ctx context.Context, rec domain.USPTOXMLDownload) error {
 	_, err := r.writer.ExecContext(ctx, `
 		INSERT INTO uspto_xml_download
-		    (application_number, kind, source_url, local_path, bytes, download_count,
+		    (application_number, kind, local_path, bytes, download_count,
 		     first_downloaded_at, last_downloaded_at, last_accessed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(application_number, kind) DO UPDATE SET
-		    source_url=excluded.source_url,
 		    local_path=excluded.local_path,
 		    bytes=excluded.bytes,
 		    download_count=excluded.download_count,
 		    last_downloaded_at=excluded.last_downloaded_at,
 		    last_accessed_at=excluded.last_accessed_at`,
-		rec.ApplicationNumber, rec.Kind, rec.SourceURL, rec.LocalPath, rec.Bytes, rec.DownloadCount,
+		rec.ApplicationNumber, rec.Kind, rec.LocalPath, rec.Bytes, rec.DownloadCount,
 		rec.FirstDownloadedAt, rec.LastDownloadedAt, rec.LastAccessedAt,
 	)
 	if err != nil {

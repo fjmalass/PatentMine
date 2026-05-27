@@ -387,10 +387,15 @@ CREATE TABLE IF NOT EXISTS uspto_grant_relation (
 
 CREATE INDEX IF NOT EXISTS idx_uspto_grant_relation_kind ON uspto_grant_relation (relation_kind);
 
+-- Per-document local XML download stats. The upstream URL and advertised file
+-- name live on uspto_application (pgpub_xml_url / pgpub_xml_name and
+-- patent_grant_xml_url / patent_grant_xml_name); duplicating them here drifted
+-- (advertised vs. actually fetched) so they were removed. local_path is what
+-- this machine wrote to disk, bytes is the post-extract size, and the counters
+-- track usage independent of the catalog.
 CREATE TABLE IF NOT EXISTS uspto_xml_download (
     application_number    TEXT NOT NULL REFERENCES uspto_application (application_number) ON DELETE CASCADE,
     kind                  TEXT NOT NULL,
-    source_url            TEXT NOT NULL,
     local_path            TEXT NOT NULL,
     bytes                 INTEGER NOT NULL DEFAULT 0,
     download_count        INTEGER NOT NULL DEFAULT 0,

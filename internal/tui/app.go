@@ -158,6 +158,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.AddToProject:               (*App).cmdAddToProject,
 	command.AddUSPTO:                   (*App).cmdAddUSPTO,
 	command.AddGoogle:                  (*App).cmdAddGoogle,
+	command.AddRelated:                 (*App).cmdAddRelated,
 	command.FetchUSPTOPGPub:            (*App).cmdFetchUSPTOPGPub,
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.Import:                     (*App).cmdImport,
@@ -193,6 +194,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenHistory:                (*App).cmdOpenHistory,
 	command.OpenActivity:               (*App).cmdOpenActivity,
 	command.OpenAllNotes:               (*App).cmdOpenAllNotes,
+	command.OpenOrphans:                (*App).cmdOpenOrphans,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -837,6 +839,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.popOverlay()
 		return a, nil
 
+	case overlay.LoadingCompareSourcesMsg:
+		number, err := domain.ParsePatentNumber(m.Patent)
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+		return a.openSourceCompare(number)
+
 	case overlay.SourceComparisonResolveMsg:
 		// User accepted choices in the source comparison overlay (default was USPTO).
 		// Persist via engine (applies ChosenValue to the patent row + stamps
@@ -979,8 +989,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isLookup {
 				verb = "Looking up"
 			}
-			title := verb + " " + m.Args[0].(string)
-			loading := overlay.NewLoading(a.theme, []string{jobID}, title, isLookup)
+			patent, _ := m.Args[0].(string)
+			title := verb + " " + patent
+			loading := overlay.NewLoading(a.theme, []string{jobID}, title, isLookup).WithRoot(patent)
 			a.overlays = append(a.overlays, loading)
 			return a, loading.Init()
 		}

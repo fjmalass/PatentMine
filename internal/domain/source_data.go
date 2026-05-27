@@ -196,13 +196,15 @@ type USPTOGrantIngest struct {
 	Relations       []USPTOGrantRelation       `json:"relations,omitempty"`
 }
 
-// USPTOXMLDownload tracks per-document XML downloads (pgpub or grant).
-// download_count is bumped on every fetch (including cache hits), so callers
-// can see how often each document has been requested.
+// USPTOXMLDownload tracks per-document local XML download stats (pgpub or
+// grant). The upstream URL and advertised file name live on uspto_application
+// (pgpub_xml_url/pgpub_xml_name and patent_grant_xml_url/patent_grant_xml_name)
+// — they are not duplicated here. download_count is bumped on every fetch
+// (including cache hits) so callers can see how often each document has been
+// requested.
 type USPTOXMLDownload struct {
 	ApplicationNumber string `json:"application_number"`
 	Kind              string `json:"kind"`
-	SourceURL         string `json:"source_url"`
 	LocalPath         string `json:"local_path"`
 	Bytes             int64  `json:"bytes"`
 	DownloadCount     int64  `json:"download_count"`

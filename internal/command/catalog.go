@@ -77,6 +77,7 @@ const (
 	AddToProject    ID = "patent.add-to-project"
 	AddUSPTO        ID = "patent.add-uspto"
 	AddGoogle       ID = "patent.add-google"
+	AddRelated      ID = "patent.add-related" // add the citations/parents/children of the current selection that are still stubs or lack membership in the active project
 	FetchUSPTOPGPub ID = "patent.fetch-uspto-pgpub"
 	FetchUSPTOGrant ID = "patent.fetch-uspto-grant"
 
@@ -149,10 +150,13 @@ const (
 	OpenAllNotes    ID = "view.all-notes"
 	NotesSortToggle ID = "notes.sort-toggle"
 	NotesExportMD   ID = "notes.export-md"
+
+	// Orphans pane: patents in DB with no project membership.
+	OpenOrphans ID = "patent.orphan-list"
 )
 
 // listScopes are the scopes that behave as scrollable lists.
-var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText, ScopeNotes}
+var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText, ScopeNotes, ScopeOrphans}
 
 // patentScopes are the scopes where a patent is selected and can be acted on.
 var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}
@@ -203,6 +207,7 @@ func Default() (*Registry, error) {
 		Command{ID: OpenHistory, Name: "open.history", Aliases: []string{"history", "visits"}, Usage: ":open.history", Kind: KindView},
 		Command{ID: OpenActivity, Name: "open.activity", Aliases: []string{"activity", "replay"}, Usage: ":open.activity", Kind: KindView},
 		Command{ID: OpenAllNotes, Name: "open.notes", Aliases: []string{"all-notes"}, Usage: ":open.notes", Kind: KindView},
+		Command{ID: OpenOrphans, Name: "orphans", Aliases: []string{"open.orphans", "unassigned"}, Usage: ":orphans", Kind: KindView},
 		Command{ID: NotesSortToggle, Kind: KindView, Scopes: []Scope{ScopeNotes}},
 		Command{ID: NotesExportMD, Name: "notes.export", Aliases: []string{"export-notes"}, Usage: ":notes.export", Kind: KindView, Scopes: []Scope{ScopeNotes}},
 		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects, ScopeIDS}},
@@ -250,6 +255,7 @@ func Default() (*Registry, error) {
 		Command{ID: AddToProject, Name: "add", Aliases: []string{"add-to-project"}, Usage: ":add [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd, Scopes: patentScopes},
 		Command{ID: AddUSPTO, Name: "add.uspto", Aliases: []string{"add_uspto", "uspto.add"}, Usage: ":add.uspto [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd},
 		Command{ID: AddGoogle, Name: "add.google", Aliases: []string{"add_google", "google.add"}, Usage: ":add.google [PATENT]", Kind: KindEngine, Method: proto.MethodMembershipAdd},
+		Command{ID: AddRelated, Name: "add.related", Aliases: []string{"add-stubs", "add.neighbors", "pull-refs", "add.refs", "add.related-patents"}, Usage: ":add.related", Kind: KindEngine, Method: proto.MethodAddRelated, Scopes: patentScopes},
 		Command{ID: FetchUSPTOPGPub, Name: "fetch.uspto.pgpub", Aliases: []string{"fetch-pgpub", "pgpub.fetch"}, Usage: ":fetch.uspto.pgpub", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: FetchUSPTOGrant, Name: "fetch.uspto.grant", Aliases: []string{"fetch-grant", "grant.fetch"}, Usage: ":fetch.uspto.grant", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},

@@ -64,6 +64,17 @@ func (s *Server) handleFamilyGraph(w http.ResponseWriter, r *http.Request) {
 		}, &res)
 }
 
+// handleOrphanList returns patents that have no membership in any project.
+// Paged via ?limit=&offset=. The payload mirrors PatentListResult so existing
+// table renderers can consume it.
+func (s *Server) handleOrphanList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	var res proto.OrphanListResult
+	s.call(w, r, proto.MethodOrphanList, proto.OrphanListParams{Limit: limit, Offset: offset}, &res)
+}
+
 // handlePatentList lists patents, paginated via query parameters.
 func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

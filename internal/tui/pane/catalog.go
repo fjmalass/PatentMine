@@ -189,7 +189,7 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		command.CrawlCitations:         func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
 		command.CrawlCitedBy:           func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
 		command.CrawlAll:               func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
-		command.LookupPatent:           func(Invocation) tea.Cmd { return c.crawlSelected("") },
+		command.LookupPatent:           func(Invocation) tea.Cmd { return c.crawlSelectedLookup() },
 		command.ColNext:                func(Invocation) tea.Cmd { return c.focusNext() },
 		command.ColPrev:                func(Invocation) tea.Cmd { return c.focusPrev() },
 		command.SortApply:              func(Invocation) tea.Cmd { return c.applySort() },
@@ -393,6 +393,21 @@ func (c *Catalog) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false)
 	}
 	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false)
+}
+
+// crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
+// a fresh web fetch (bypassing any local cache or existing stub row). This is
+// the only way to turn a near-empty stub left by :add into real data.
+func (c *Catalog) crawlSelectedLookup() tea.Cmd {
+	numbers := c.Selections()
+	if len(numbers) < 2 {
+		n, ok := c.Selection()
+		if !ok {
+			return status(text.StatusNoPatentSelected, true)
+		}
+		return CrawlCmd(c.client, n, lookupDepth, "", true)
+	}
+	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true)
 }
 
 // move runs a cursor motion and reloads the page when the visible window

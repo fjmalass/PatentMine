@@ -133,7 +133,7 @@ func (c *Crawler) ImportFile(ctx context.Context, path string) error {
 	// depth 0 with limit 0: the record, its documents, neighbour stubs, and
 	// edges are written in one batch, but no neighbour is queued for crawling.
 	queue := []node{}
-	_, err = c.ingestNode(ctx, res, 0, 0, "", map[domain.PatentNumber]bool{}, &queue)
+	_, _, _, err = c.ingestNode(ctx, res, 0, 0, "", map[domain.PatentNumber]bool{}, &queue)
 	return err
 }
 

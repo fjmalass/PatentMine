@@ -13,9 +13,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/command"
+	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/tui/render"
 )
+
+// LoadingCompareSourcesMsg asks the App to open the source comparison overlay
+// for the loading overlay's root patent. It is emitted when the user presses C
+// after a multi-source lookup completed with at least two contributing
+// providers, so the diff overlay can be reached without leaving the popup.
+type LoadingCompareSourcesMsg struct {
+	Patent string
+}
 
 // Loading is a modal overlay that shows a throbber, progress bar, and ETA
 // while one or more background daemon jobs (like crawls) are running.
@@ -26,6 +35,29 @@ type Loading struct {
 	title    string
 	message  string
 	isLookup bool // when true, hide relations breakdown (parents/children etc.)
+
+	// rootPatent is the patent number whose lookup spawned this overlay (when
+	// known). It is only set for single-patent flows like :add — multi-job
+	// lookups leave it empty. Used by the "press C to compare" affordance to
+	// know which patent to reconcile.
+	rootPatent string
+
+	// sourceMode is the daemon's runtime provider policy in effect for this
+	// crawl (compare / uspto-first / uspto-only / google-only). Carried on the
+	// CrawlProgress events; the done view uses it to explain why a provider is
+	// absent (skipped by mode vs. tried but no result).
+	sourceMode string
+
+	// recordResolved is the canonical record number the root resolved to (the
+	// crawler may rewrite a grant number to its application). Empty until at
+	// least one CrawlProgress event for the root arrives.
+	recordResolved string
+
+	// membershipsAdded is the count of depth-1 neighbor stubs that received
+	// project membership through the engine's auto-assign goroutine. Populated
+	// when the EventMembershipAutoAssign event arrives.
+	membershipsAdded   int
+	membershipsKnown   bool // set once the auto-assign event lands
 
 	// Per-job progress; keyed by job ID so progress events from concurrent
 	// jobs are aggregated independently.
@@ -79,6 +111,29 @@ func NewLoading(theme render.Theme, jobIDs []string, title string, isLookup ...b
 	}
 }
 
+// WithRoot tags the overlay with the patent it is loading. The compare
+// affordance becomes active once the lookup completes and at least two
+// providers contributed data for that record.
+func (l *Loading) WithRoot(patent string) *Loading {
+	l.rootPatent = patent
+	return l
+}
+
+// canCompare reports whether the overlay should offer the "compare sources"
+// affordance — it needs a known root patent and at least two distinct provider
+// snapshots saved for it.
+func (l *Loading) canCompare() bool {
+	if l.rootPatent == "" {
+		return false
+	}
+	sources := l.recordSources[l.rootPatent]
+	seen := map[string]bool{}
+	for _, s := range sources {
+		seen[canonicalProvider(s)] = true
+	}
+	return len(seen) >= 2
+}
+
 func (l *Loading) Title() string { return l.title }
 
 func (l *Loading) Init() tea.Cmd {
@@ -110,8 +165,19 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		if m.String() == "ctrl+c" {
 			return l, tea.Quit
 		}
-		if l.finished && (m.String() == "esc" || m.String() == "enter" || m.String() == "q") {
-			return l, func() tea.Msg { return CloseOverlayMsg{} }
+		if l.finished {
+			switch m.String() {
+			case "esc", "enter", "q":
+				return l, func() tea.Msg { return CloseOverlayMsg{} }
+			case "c", "C":
+				if l.canCompare() {
+					patent := l.rootPatent
+					return l, tea.Batch(
+						func() tea.Msg { return CloseOverlayMsg{} },
+						func() tea.Msg { return LoadingCompareSourcesMsg{Patent: patent} },
+					)
+				}
+			}
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -124,7 +190,13 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			if err := json.Unmarshal(m.Params, &p); err == nil && l.matchJob(p.JobID) {
 				l.progresses[p.JobID] = p
 				l.message = p.Message
+				if p.Mode != "" {
+					l.sourceMode = p.Mode
+				}
 				if p.RecordNumber != "" {
+					if l.rootPatent != "" && l.recordResolved == "" && p.RecordNumber != l.rootPatent {
+						l.recordResolved = p.RecordNumber
+					}
 					if !l.savedSet[p.RecordNumber] {
 						l.savedSet[p.RecordNumber] = true
 						l.savedNumbers = append(l.savedNumbers, p.RecordNumber)
@@ -185,6 +257,12 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 					l.finished = true
 					l.finishedAt = time.Now()
 				}
+			}
+		case proto.EventMembershipAutoAssign:
+			var ma proto.MembershipAutoAssign
+			if err := json.Unmarshal(m.Params, &ma); err == nil && l.matchJob(ma.JobID) {
+				l.membershipsAdded = ma.Added
+				l.membershipsKnown = true
 			}
 		}
 	}
@@ -333,30 +411,92 @@ func (l *Loading) viewDone(w int) string {
 		}
 	} else {
 		totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
-		totalDiscovered := l.sumProgress(func(p proto.CrawlProgress) int { return p.DiscoveredCount })
-		stubs := totalDiscovered - totalCrawled
+		newStubs := len(l.stubNumbers)
 		summary := fmt.Sprintf("Done in %s", formatDuration(elapsed))
 		if totalCrawled > 0 {
 			summary += fmt.Sprintf(" · %d patent(s) saved", totalCrawled)
 		}
-		if stubs > 0 {
-			summary += fmt.Sprintf(" · %d reference stub(s) created", stubs)
+		if newStubs > 0 {
+			summary += fmt.Sprintf(" · %d new stub(s)", newStubs)
 		}
-		b.WriteString("  " + l.theme.OK.Render(summary) + "\n")
-		for _, line := range l.savedBySourceLines(w - 10) {
-			b.WriteString("  " + l.theme.Dim.Render(line) + "\n")
+		summaryStyle := l.theme.OK
+		if totalCrawled == 0 {
+			summaryStyle = l.theme.Warn
+		}
+		b.WriteString("  " + summaryStyle.Render(summary) + "\n")
+
+		if l.rootPatent != "" && l.recordResolved != "" {
+			b.WriteString("  " + l.theme.Dim.Render(fmt.Sprintf("resolved: %s → %s", l.rootPatent, l.recordResolved)) + "\n")
+		}
+		if l.sourceMode != "" {
+			b.WriteString("  " + l.theme.Dim.Render("mode: "+l.sourceMode) + "\n")
+		}
+		for _, line := range l.providerStatusLines() {
+			b.WriteString("  " + line + "\n")
+		}
+		if l.membershipsKnown && l.membershipsAdded > 0 {
+			b.WriteString("  " + l.theme.OK.Render(fmt.Sprintf("memberships granted: %d neighbor(s)", l.membershipsAdded)) + "\n")
+		} else if l.membershipsKnown {
+			b.WriteString("  " + l.theme.Dim.Render("memberships granted: 0 (all neighbors already in project, or no active project)") + "\n")
 		}
 		if len(l.stubNumbers) > 0 {
-			b.WriteString("  " + l.theme.Dim.Render("stubs: "+formatNumberList(l.stubNumbers, w-10)) + "\n")
+			b.WriteString("  " + l.theme.Dim.Render("new stubs: "+formatNumberList(l.stubNumbers, w-12)) + "\n")
 		}
-		if l.isLookup && totalCrawled > 0 {
+		if totalCrawled == 0 {
+			b.WriteString("  " + l.theme.Warn.Render("No patent body saved — record left as a stub.") + "\n")
+			b.WriteString("  " + l.theme.Dim.Render("Try :add.uspto or :add.google to force one provider, or press L to retry.") + "\n")
+		} else if l.isLookup {
 			b.WriteString("  " + l.theme.Dim.Render("Navigate to the patent in your catalog to see the loaded data.") + "\n")
 			b.WriteString("  " + l.theme.Dim.Render("Press L on any stub patent to re-fetch its data.") + "\n")
 		}
 	}
 	b.WriteByte('\n')
+	if l.canCompare() {
+		b.WriteString("  " + l.theme.OK.Render("USPTO + Google both contributed — press C to compare/edit/validate diffs") + "\n")
+	}
 	b.WriteString(l.theme.Dim.Render(render.Pad("press Esc to close", w-2)))
 	return b.String()
+}
+
+// providerStatusLines returns one styled line per known provider explaining
+// whether it contributed data, was tried with no result, or was skipped by the
+// active source-mode policy.
+func (l *Loading) providerStatusLines() []string {
+	if l.rootPatent == "" {
+		return nil
+	}
+	contributed := map[domain.Source]bool{}
+	collect := func(record string) {
+		for _, s := range l.recordSources[record] {
+			contributed[domain.Source(canonicalProvider(s))] = true
+		}
+	}
+	collect(l.rootPatent)
+	if l.recordResolved != "" {
+		collect(l.recordResolved)
+	}
+	providers := []domain.Source{domain.SourceUSPTO, domain.SourceGoogle}
+	var lines []string
+	for _, p := range providers {
+		status, style := l.providerStatus(p, contributed[p])
+		lines = append(lines, style.Render(fmt.Sprintf("%-7s %s", strings.ToUpper(string(p))+":", status)))
+	}
+	return lines
+}
+
+// providerStatus returns the human-readable state of one provider given the
+// active source mode and whether the provider actually saved data.
+func (l *Loading) providerStatus(provider domain.Source, contributed bool) (string, lipgloss.Style) {
+	if contributed {
+		return "saved", l.theme.OK
+	}
+	mode := domain.SourceMode(l.sourceMode)
+	skipped := (mode == domain.SourceModeUSPTOOnly && provider == domain.SourceGoogle) ||
+		(mode == domain.SourceModeGoogleOnly && provider == domain.SourceUSPTO)
+	if skipped {
+		return "skipped (mode=" + string(mode) + ")", l.theme.Dim
+	}
+	return "no result", l.theme.Dim
 }
 
 // canonicalProvider folds snapshot source strings like "uspto_file_wrapper" or

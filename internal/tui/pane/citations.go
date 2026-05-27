@@ -127,7 +127,7 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		command.CrawlCitations: func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitations) },
 		command.CrawlCitedBy:   func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileCitedBy) },
 		command.CrawlAll:       func(Invocation) tea.Cmd { return c.crawlSelected(domain.CrawlProfileAll) },
-		command.LookupPatent:   func(Invocation) tea.Cmd { return c.crawlSelected("") },
+		command.LookupPatent:   func(Invocation) tea.Cmd { return c.crawlSelectedLookup() },
 		command.ColNext:        func(Invocation) tea.Cmd { return c.focusNext() },
 		command.ColPrev:        func(Invocation) tea.Cmd { return c.focusPrev() },
 		command.SortApply:      func(Invocation) tea.Cmd { return c.applySort() },
@@ -333,6 +333,21 @@ func (c *Citations) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false)
 	}
 	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false)
+}
+
+// crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
+// a fresh web fetch. This is what makes "press L on a stub" actually pull
+// data instead of repeating the same weak depth-0 path that :add used.
+func (c *Citations) crawlSelectedLookup() tea.Cmd {
+	numbers := c.Selections()
+	if len(numbers) < 2 {
+		n, ok := c.Selection()
+		if !ok {
+			return status(text.StatusNoPatentSelected, true)
+		}
+		return CrawlCmd(c.client, n, lookupDepth, "", true)
+	}
+	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true)
 }
 
 // move runs a cursor motion and reloads the page when the visible window

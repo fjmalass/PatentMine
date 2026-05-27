@@ -130,6 +130,10 @@ type Repository interface {
 	ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error)
 	// CountPatents returns the total rows matching q, ignoring its paging.
 	CountPatents(ctx context.Context, q PatentQuery) (int, error)
+	// ListOrphanPatents returns patents that have no membership in any project,
+	// paged by limit/offset. The total reports the full orphan count regardless
+	// of paging. Tags are not attached: orphan patents belong to no project.
+	ListOrphanPatents(ctx context.Context, limit, offset int) ([]domain.PatentRow, int, error)
 	// PatentInventorStats aggregates database statistics for a set of inventors within a project.
 	PatentInventorStats(ctx context.Context, project domain.ProjectID, inventors []domain.Inventor) ([]domain.InventorStats, error)
 	// PatentAssigneeStats aggregates database statistics for assignees within a project.

@@ -121,6 +121,12 @@ func (c *Cache) CountPatents(ctx context.Context, q PatentQuery) (int, error) {
 	return total, nil
 }
 
+// ListOrphanPatents bypasses the cache: orphan membership joins change on
+// every project mutation, and the result is rarely re-read in a tight loop.
+func (c *Cache) ListOrphanPatents(ctx context.Context, limit, offset int) ([]domain.PatentRow, int, error) {
+	return c.Repository.ListOrphanPatents(ctx, limit, offset)
+}
+
 // --- Write operations flush the cache ---
 
 func (c *Cache) SavePatent(ctx context.Context, p domain.Patent) error {

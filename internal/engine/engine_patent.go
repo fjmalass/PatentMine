@@ -88,6 +88,22 @@ func (e *Engine) ensureRecord(ctx context.Context, n domain.PatentNumber) (domai
 	return n, true, nil
 }
 
+// OrphanPatents returns one page of patents that have no membership in any
+// project, plus the total orphan count. This is the "stuff in the database
+// nobody owns" view — useful for cleanup and for spotting patents discovered
+// as citation stubs but never assigned to a project.
+func (e *Engine) OrphanPatents(ctx context.Context, limit, offset int) (rows []domain.PatentRow, total int, err error) {
+	defer e.observeDuration("engine.orphan_patents", time.Now(), &err)
+	rows, total, err = e.repo.ListOrphanPatents(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	if e.metrics != nil {
+		e.metrics.SetGauge("engine.orphan_patents.total", int64(total))
+	}
+	return rows, total, nil
+}
+
 // ListPatents returns one page of lightweight listing rows and the unpaged total.
 func (e *Engine) ListPatents(ctx context.Context, q store.PatentQuery) (rows []domain.PatentRow, total int, err error) {
 	defer e.observeDuration("engine.list_patents", time.Now(), &err)

@@ -298,6 +298,44 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 	return out, nil
 }
 
+// ListOrphanPatents returns patents that have no membership in any project.
+// Filtering and project-scoped columns do not apply: an orphan belongs to
+// nothing, so curated IDS columns and tag attachments are intentionally empty.
+func (r *Repo) ListOrphanPatents(ctx context.Context, limit, offset int) (out []domain.PatentRow, total int, err error) {
+	defer r.observeDuration("list_orphan_patents", time.Now(), &err)
+	cols, _ := patentRowColumns("")
+	if limit <= 0 {
+		limit = store.DefaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	const orphanWhere = `WHERE NOT EXISTS (SELECT 1 FROM membership m WHERE m.patent_number = p.number)`
+	if err := r.reader.QueryRowContext(ctx,
+		`SELECT COUNT(1) FROM patent p `+orphanWhere).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("store/sqlite: count orphan patents: %w", err)
+	}
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT `+cols+` FROM patent p `+orphanWhere+
+			` ORDER BY p.fetched_at DESC, p.number ASC LIMIT ? OFFSET ?`,
+		limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store/sqlite: list orphan patents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		p, err := scanPatentRow(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("store/sqlite: scan orphan patent row: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("store/sqlite: list orphan patents: %w", err)
+	}
+	return out, total, nil
+}
+
 func (r *Repo) observeTagSortDuration(start time.Time, errp *error, rows int, q store.PatentQuery) {
 	if r.metrics == nil {
 		return

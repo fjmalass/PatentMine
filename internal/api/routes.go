@@ -33,6 +33,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /activity/replay_history", s.handleReplayHistory)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
 	s.mux.HandleFunc("GET /patents", s.handlePatentList)
+	s.mux.HandleFunc("GET /patents/orphans", s.handleOrphanList)
 	s.mux.HandleFunc("GET /assignees", s.handleAssigneeStats)
 	s.mux.HandleFunc("GET /assignees/stats", s.handleAssigneeStats)
 	s.mux.HandleFunc("GET /classifications/stats", s.handleClassificationStats)

@@ -79,16 +79,22 @@ func (a *App) cmdSourceCompare(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-
-	// Try to get the patent from the focused pane (works great from detail pane).
-	pane := a.focusedPane()
-	number, ok := pane.Selection()
+	number, ok := a.focusedPane().Selection()
 	if !ok || number.IsZero() {
 		a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
 		return a, nil
 	}
+	return a.openSourceCompare(number)
+}
 
-	// Load the actual diffs for this patent (generated during compare-mode fetch + enrichment).
+// openSourceCompare loads diffs for number and opens the comparison overlay.
+// Shared between the typed :source-compare command and the "press C" affordance
+// in the Loading overlay's done view.
+func (a *App) openSourceCompare(number domain.PatentNumber) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
@@ -498,6 +504,15 @@ func (a *App) cmdAddUSPTO(inv invocation) (tea.Model, tea.Cmd) {
 
 func (a *App) cmdAddGoogle(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdAddToProjectFromSource(inv, domain.SourceGoogle, command.AddGoogle)
+}
+
+// cmdAddRelated walks every relation edge of the current selection(s) and
+// grants membership in the active project to any neighbor that lacks one. The
+// engine resolves the relations and writes memberships in one RPC per patent.
+func (a *App) cmdAddRelated(inv invocation) (tea.Model, tea.Cmd) {
+	return a.runAction(command.AddRelated, func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+		return pane.AddRelatedCmd(a.client, project, patent)
+	})
 }
 
 func (a *App) cmdFetchUSPTOPGPub(inv invocation) (tea.Model, tea.Cmd) {
@@ -933,4 +948,12 @@ func (a *App) cmdOpenAllNotes(invocation) (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewAllNotes(a.client, a.theme, a.activeProject).
 		WithExportDir(a.notesExportDir).
 		WithMetrics(a.metrics))
+}
+
+func (a *App) cmdOpenOrphans(invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a.pushPane(pane.NewOrphans(a.client, a.theme).WithLogger(a.log()))
 }

@@ -232,7 +232,10 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			return CrawlCmd(d.client, d.number, crawlFamilyDepth, domain.CrawlProfileAll, false)
 		},
 		command.LookupPatent: func(Invocation) tea.Cmd {
-			return CrawlCmd(d.client, d.number, lookupDepth, "", false)
+			// Force a fresh fetch when the user explicitly hits L on a stub.
+			// The plain :add / depth-0 path can leave a near-empty stub; L must
+			// actually pull data instead of repeating the same weak lookup.
+			return CrawlCmd(d.client, d.number, lookupDepth, "", true)
 		},
 	}
 	return d

@@ -30,6 +30,8 @@ const (
 	MethodProjectList               Method = "project.list"
 	MethodProjectCreate             Method = "project.create"
 	MethodMembershipAdd             Method = "membership.add"
+	MethodAddRelated                Method = "membership.add_related"
+	MethodOrphanList                Method = "patent.orphan_list"
 	MethodReviewState               Method = "review_state.set"
 	MethodTagPatent                 Method = "tag.assign"
 	MethodUntagPatent               Method = "tag.remove"
@@ -160,9 +162,10 @@ type USPTOLookupResult struct {
 type EventKind string
 
 const (
-	EventCrawlProgress EventKind = "crawl.progress"
-	EventCrawlDone     EventKind = "crawl.done"
-	EventDBChanged     EventKind = "db.changed"
+	EventCrawlProgress       EventKind = "crawl.progress"
+	EventCrawlDone           EventKind = "crawl.done"
+	EventDBChanged           EventKind = "db.changed"
+	EventMembershipAutoAssign EventKind = "membership.auto_assign"
 )
 
 // JSON-RPC error codes. The negative range follows the spec; -32000 down is
@@ -326,6 +329,31 @@ type MembershipAddResult struct {
 	FetchStarted bool                    `json:"fetch_started"`
 	JobID        string                  `json:"job_id,omitempty"`
 	Candidates   []domain.USPTOCandidate `json:"candidates,omitempty"`
+}
+
+// AddRelatedParams asks the daemon to grant project membership to every
+// family-graph neighbor of patent that does not yet have one.
+type AddRelatedParams struct {
+	Project domain.ProjectID    `json:"project"`
+	Patent  domain.PatentNumber `json:"patent"`
+}
+
+// AddRelatedResult reports how many neighbor memberships were added.
+type AddRelatedResult struct {
+	Added     int                   `json:"added"`
+	Neighbors []domain.PatentNumber `json:"neighbors,omitempty"`
+}
+
+// OrphanListParams selects a page of patents with no membership in any project.
+type OrphanListParams struct {
+	Limit  int `json:"limit,omitempty"`
+	Offset int `json:"offset,omitempty"`
+}
+
+// OrphanListResult carries one page of orphan patent rows.
+type OrphanListResult struct {
+	Patents []domain.PatentRow `json:"patents"`
+	Total   int                `json:"total"`
 }
 
 // ReviewStateParams sets one or more memberships' states.
@@ -759,6 +787,16 @@ type CrawlProgress struct {
 	RecordNumber    string   `json:"record_number,omitempty"` // Record just saved in this event, if any.
 	Stubs           []string `json:"stubs,omitempty"`         // Numbers freshly stubbed in this event, if any.
 	Sources         []string `json:"sources,omitempty"`       // Providers (uspto, google, ...) that contributed snapshots for RecordNumber.
+	Mode            string   `json:"mode,omitempty"`          // Source-mode policy in effect (compare, uspto-first, uspto-only, google-only).
+}
+
+// MembershipAutoAssign reports the result of the engine's depth-1 auto-assign
+// after :add: how many neighbor stubs received project membership.
+type MembershipAutoAssign struct {
+	JobID   string `json:"job_id"`
+	Project string `json:"project"`
+	Root    string `json:"root"`
+	Added   int    `json:"added"`
 }
 
 // CrawlDone reports that a crawl job finished, with an error if it failed.

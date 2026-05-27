@@ -121,7 +121,7 @@ func NewFamilyGraph(client *rpc.Client, theme render.Theme, root domain.PatentNu
 		command.CrawlCitations:      func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileCitations) },
 		command.CrawlCitedBy:        func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileCitedBy) },
 		command.CrawlAll:            func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileAll) },
-		command.LookupPatent:        func(Invocation) tea.Cmd { return g.crawlSelected("") },
+		command.LookupPatent:        func(Invocation) tea.Cmd { return g.crawlSelectedLookup() },
 	}
 	return g
 }
@@ -253,6 +253,21 @@ func (g *FamilyGraph) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 		return CrawlCmd(g.client, n, crawlDepth(profile), profile, false)
 	}
 	return MultiCrawlCmd(g.client, numbers, crawlDepth(profile), profile, false)
+}
+
+// crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
+// a fresh web fetch. This is what makes "press L on a stub" actually pull
+// real data instead of repeating the weak lookup that created the stub.
+func (g *FamilyGraph) crawlSelectedLookup() tea.Cmd {
+	numbers := g.Selections()
+	if len(numbers) < 2 {
+		n, ok := g.Selection()
+		if !ok {
+			return status(text.StatusNoPatentSelected, true)
+		}
+		return CrawlCmd(g.client, n, lookupDepth, "", true)
+	}
+	return MultiCrawlCmd(g.client, numbers, lookupDepth, "", true)
 }
 
 func (g *FamilyGraph) Update(msg tea.Msg) (Pane, tea.Cmd) {

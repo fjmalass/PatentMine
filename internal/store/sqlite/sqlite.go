@@ -109,6 +109,27 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	// We swallow "duplicate column" errors so old DBs start cleanly.
 	_ = r.ensureReconciledColumns(ctx)
 
+	// Best-effort: drop redundant uspto_xml_download.source_url for databases
+	// created before it was removed. The URL is derived from uspto_application
+	// at call time so the column is dead weight; an ALTER DROP COLUMN is safe.
+	_ = r.dropUSPTOXMLDownloadSourceURL(ctx)
+
+	return nil
+}
+
+// dropUSPTOXMLDownloadSourceURL removes the legacy source_url column from
+// uspto_xml_download if it is still present. SQLite ALTER TABLE DROP COLUMN
+// requires modern (>=3.35) SQLite, which our driver bundles. "no such column"
+// is swallowed so a freshly-created DB starts cleanly.
+func (r *Repo) dropUSPTOXMLDownloadSourceURL(ctx context.Context) error {
+	if _, err := r.writer.ExecContext(ctx,
+		`ALTER TABLE uspto_xml_download DROP COLUMN source_url`); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "no such column") || strings.Contains(msg, "no such table") {
+			return nil
+		}
+		return fmt.Errorf("store/sqlite: drop uspto_xml_download.source_url: %w", err)
+	}
 	return nil
 }
 

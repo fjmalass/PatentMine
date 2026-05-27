@@ -216,6 +216,22 @@ func AddToProjectWithCandidateCmd(client *rpc.Client, project domain.ProjectID, 
 	}
 }
 
+// AddRelatedCmd asks the daemon to grant membership in project for every
+// family-graph neighbor of patent that does not already have one. The reply
+// reports the count added so the status line can confirm the result.
+func AddRelatedCmd(client *rpc.Client, project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.AddRelatedResult
+		if err := client.Call(ctx, proto.MethodAddRelated,
+			proto.AddRelatedParams{Project: project, Patent: patent}, &res); err != nil {
+			return StatusMsg{Key: text.StatusAddRelatedFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusAddRelatedDone, Args: []any{res.Added, patent.String()}}
+	}
+}
+
 // SetReviewStateCmd changes multiple memberships' states. When a single patent is targeted,
 // it is passed in a slice of length 1.
 func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) tea.Cmd {

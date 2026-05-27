@@ -66,7 +66,7 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 						slog.String("error", ingestErr.Error()))
 				}
 			}
-			return e.recordXMLAccess(ctx, prior, n, kind, downloadURL, true)
+			return e.recordXMLAccess(ctx, prior, n, kind, true)
 		}
 	}
 
@@ -107,7 +107,6 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 	rec := prior
 	rec.ApplicationNumber = app.ApplicationNumber
 	rec.Kind = string(kind)
-	rec.SourceURL = downloadURL
 	rec.LocalPath = localPath
 	rec.Bytes = bytes
 	rec.DownloadCount++
@@ -191,14 +190,11 @@ func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind
 
 // recordXMLAccess updates the access timestamp + counter for a cached XML
 // and emits the cache-hit observability signals.
-func (e *Engine) recordXMLAccess(ctx context.Context, prior domain.USPTOXMLDownload, n domain.PatentNumber, kind proto.USPTOXMLKind, downloadURL string, cached bool) (proto.USPTOFetchXMLResult, error) {
+func (e *Engine) recordXMLAccess(ctx context.Context, prior domain.USPTOXMLDownload, n domain.PatentNumber, kind proto.USPTOXMLKind, cached bool) (proto.USPTOFetchXMLResult, error) {
 	rec := prior
 	now := time.Now().UTC().Format(time.RFC3339)
 	rec.DownloadCount++
 	rec.LastAccessedAt = now
-	if rec.SourceURL == "" {
-		rec.SourceURL = downloadURL
-	}
 	if recErr := e.repo.RecordUSPTOXMLDownload(ctx, rec); recErr != nil {
 		e.log(ctx, slog.LevelWarn, "uspto xml record write failed",
 			slog.String("patent", n.Normalized()),

@@ -44,6 +44,9 @@ const (
 	StatusXMLBatchProgress        Key = "status.xml_batch_progress"
 	StatusXMLBatchDone            Key = "status.xml_batch_done"
 	StatusAddBatchStarted         Key = "status.add_batch_started"
+	StatusAddRelatedDone          Key = "status.add_related_done"
+	StatusAddRelatedFailed        Key = "status.add_related_failed"
+	StatusOrphanLoadFailed        Key = "status.orphan_load_failed"
 	StatusSetStateFailed          Key = "status.set_state_failed"
 	StatusSetState                Key = "status.set_state"
 	StatusIDSUpdateFailed         Key = "status.ids_update_failed"
@@ -238,6 +241,8 @@ var cmdStrings = map[string][2]string{
 	"patent.add-to-project":      {"Add to project", "Add the selected patent to the active project."},
 	"patent.add-uspto":           {"Add via USPTO", "Add the selected patent and force a single-patent USPTO fetch without Google fallback."},
 	"patent.add-google":          {"Add via Google", "Add the selected patent and force a single-patent Google Patents fetch without USPTO fallback."},
+	"patent.add-related":         {"Add related", "Grant active-project membership to every family-graph neighbor (citations, parents, children) of the selected patent that does not yet have one."},
+	"patent.orphan-list":         {"Orphan patents", "Open the list of patents in the database that are not associated with any project."},
 	"patent.fetch-uspto-pgpub":   {"Fetch PGPub XML", "Download the pre-grant publication XML for the selected patent from the USPTO bulk dataset."},
 	"patent.fetch-uspto-grant":   {"Fetch Grant XML", "Download the grant XML for the selected patent from the USPTO bulk dataset."},
 	"patent.tag":                 {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
@@ -326,6 +331,9 @@ var englishNamed = map[Key]string{
 	StatusXMLBatchProgress:        "USPTO XML batch: %d/%d (cached %d, downloaded %d, failed %d)",
 	StatusXMLBatchDone:            "USPTO XML batch done: %d total — downloaded %d, cached %d, failed %d",
 	StatusAddBatchStarted:         "adding %d patents via %s in parallel…",
+	StatusAddRelatedDone:          "add.related: granted membership to %d neighbor(s) of %s",
+	StatusAddRelatedFailed:        "add.related failed: %s",
+	StatusOrphanLoadFailed:        "load orphan patents failed: %s",
 	StatusSetStateFailed:          "set state failed: %s",
 	StatusSetState:                "set %s to %s review state in %s",
 	StatusIDSUpdateFailed:         "IDS update failed: %s",
