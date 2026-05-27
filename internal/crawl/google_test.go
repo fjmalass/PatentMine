@@ -216,3 +216,37 @@ func TestParseGoogleExtractsMetaTags(t *testing.T) {
 		t.Error("missing publication AuthorityIdentifier in Google result")
 	}
 }
+
+func TestParseDescription_Hierarchical(t *testing.T) {
+	googleHTML := `<!doctype html><html><body>
+<section itemprop="description">
+  <div class="description-paragraph" num="0001">
+    Here is a list of features:
+    <ul>
+      <li>first feature</li>
+      <li>second feature</li>
+    </ul>
+    And a line break.<br/>Done.
+  </div>
+</section>
+</body></html>`
+
+	paragraphs, err := ParseDescription([]byte(googleHTML))
+	if err != nil {
+		t.Fatalf("ParseDescription failed: %v", err)
+	}
+
+	if len(paragraphs) != 1 {
+		t.Fatalf("expected 1 paragraph, got %d", len(paragraphs))
+	}
+
+	expectedText := "Here is a list of features:\n" +
+		"    first feature\n" +
+		"    second feature\n\n" +
+		"And a line break.\n" +
+		"Done."
+
+	if paragraphs[0].Text != expectedText {
+		t.Errorf("Formatted Google description mismatch:\nwant:\n%q\ngot:\n%q", expectedText, paragraphs[0].Text)
+	}
+}

@@ -13,7 +13,12 @@ import (
 	"github.com/PuerkitoBio/goquery"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
+	"patentmine/internal/uspto"
 )
+
+// Metrics is wired up by the engine to track google crawl full text parsing telemetry.
+var Metrics *observability.Metrics
 
 // googleMinInterval keeps requests to Google Patents polite.
 const googleMinInterval = 2 * time.Second
@@ -377,8 +382,18 @@ func firstNonZeroTime(times ...time.Time) time.Time {
 // It returns the claims in document order with their numbers stripped from the
 // text and stored as ClaimSection.Number.
 func ParseAllClaims(body []byte) ([]domain.ClaimSection, error) {
+	start := time.Now()
+	var parseErr error
+	defer func() {
+		if Metrics != nil {
+			Metrics.ObserveDuration("crawl.google.claims.parse", time.Since(start), parseErr != nil)
+			Metrics.IncCounter("crawl.google.claims.parse.count", 1)
+		}
+	}()
+
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
+		parseErr = err
 		return nil, fmt.Errorf("crawl/google: parse claims HTML: %w", err)
 	}
 	var claims []domain.ClaimSection
@@ -393,6 +408,7 @@ func ParseAllClaims(body []byte) ([]domain.ClaimSection, error) {
 		claims = append(claims, domain.ClaimSection{Number: num, Text: cleaned})
 	})
 	if len(claims) == 0 {
+		parseErr = fmt.Errorf("no claims found")
 		return nil, fmt.Errorf("crawl/google: no claims found")
 	}
 	return claims, nil
@@ -402,13 +418,31 @@ func ParseAllClaims(body []byte) ([]domain.ClaimSection, error) {
 // HTML body. Google numbers paragraphs with a "num" attribute (e.g. "0045").
 // It returns an empty slice (not an error) when the page has no description.
 func ParseDescription(body []byte) ([]domain.DescriptionParagraph, error) {
+	start := time.Now()
+	var parseErr error
+	defer func() {
+		if Metrics != nil {
+			Metrics.ObserveDuration("crawl.google.description.parse", time.Since(start), parseErr != nil)
+			Metrics.IncCounter("crawl.google.description.parse.count", 1)
+		}
+	}()
+
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
+		parseErr = err
 		return nil, fmt.Errorf("crawl/google: parse description HTML: %w", err)
 	}
 	var paragraphs []domain.DescriptionParagraph
 	doc.Find("section[itemprop='description'] .description-paragraph, .description .description-paragraph").Each(func(i int, s *goquery.Selection) {
-		text := clean(s.Text())
+		// Use HTML to preserve nested list structures and line breaks, formatted generically
+		htmlStr, htmlErr := s.Html()
+		var text string
+		if htmlErr == nil {
+			text = uspto.FormatDescriptionText(htmlStr)
+		} else {
+			text = clean(s.Text())
+		}
+
 		if text == "" {
 			return
 		}

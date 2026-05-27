@@ -123,6 +123,9 @@ type Repository interface {
 	// drawings, citations, classifications, and relations are written into
 	// their child tables. The save is atomic.
 	SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGrantIngest) error
+	// ClearUSPTOGrantBodies clears cached parsed patent bodies in uspto_grant_body.
+	// If applicationNumbers is empty, it clears all cached patent bodies in the table.
+	ClearUSPTOGrantBodies(ctx context.Context, applicationNumbers []string) (int64, int64, error)
 	// USPTOGrantBody returns the body for one (application_number, kind), or
 	// ErrNotFound when the XML has not been ingested yet.
 	USPTOGrantBody(ctx context.Context, applicationNumber, kind string) (domain.USPTOGrantBody, error)

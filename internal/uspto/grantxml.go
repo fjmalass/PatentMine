@@ -3,9 +3,16 @@ package uspto
 import (
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"strings"
+	"time"
+
+	"patentmine/internal/observability"
 )
+
+// Metrics is wired up by the engine to track telemetry and durations.
+var Metrics *observability.Metrics
 
 // USPTOGrantXML is the parsed shape of a USPTO us-patent-grant or
 // us-patent-application XML document (DTD v4.x). The struct accepts either
@@ -237,8 +244,235 @@ type USPTOGrantDescription struct {
 	Inner   string   `xml:",innerxml"`
 }
 
-// Text returns the description text with all markup stripped.
-func (d USPTOGrantDescription) Text() string { return stripXMLTags(d.Inner) }
+// FormatDescriptionText decodes a USPTO description's inner XML, formatting headings,
+// paragraphs, lists, and line breaks with proper spacing and indentation.
+func FormatDescriptionText(innerXML string) string {
+	start := time.Now()
+	var parseErr error
+	defer func() {
+		if Metrics != nil {
+			Metrics.ObserveDuration("uspto.description.parse", time.Since(start), parseErr != nil)
+			Metrics.IncCounter("uspto.description.parse.count", 1)
+			if parseErr != nil {
+				Metrics.IncCounter("uspto.description.parse.fallback", 1)
+			}
+		}
+	}()
+
+	// Wrap in a dummy root tag to ensure it's a valid single-rooted XML fragment.
+	wrapped := "<root>" + innerXML + "</root>"
+	dec := xml.NewDecoder(strings.NewReader(wrapped))
+	dec.Strict = false
+	dec.Entity = xml.HTMLEntity
+
+	var buf strings.Builder
+	var currentText strings.Builder
+
+	listDepth := 0
+	linePrefix := ""
+	lineSpacing := "\n\n" // Default spacing between blocks
+
+	flushCurrentText := func(nextSpacing string, nextPrefix string) {
+		trimmed := collapseWhitespace(currentText.String())
+		currentText.Reset()
+		if trimmed == "" {
+			// Update spacing and prefix even if no text was flushed
+			linePrefix = nextPrefix
+			lineSpacing = nextSpacing
+			return
+		}
+
+		if buf.Len() > 0 {
+			buf.WriteString(lineSpacing)
+		}
+		buf.WriteString(linePrefix + trimmed)
+
+		linePrefix = nextPrefix
+		lineSpacing = nextSpacing
+	}
+
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			parseErr = err
+			// On any XML parsing error, fallback to permissive formatting
+			return permissiveFormatDescription(innerXML)
+		}
+
+		switch t := tok.(type) {
+		case xml.StartElement:
+			name := t.Name.Local
+			if name == "heading" {
+				flushCurrentText("\n\n", "")
+			} else if name == "p" {
+				// Extract paragraph number from 'num' attribute
+				pNum := ""
+				for _, attr := range t.Attr {
+					if attr.Name.Local == "num" {
+						pNum = attr.Value
+						break
+					}
+				}
+				prefix := ""
+				if pNum != "" {
+					prefix = fmt.Sprintf("[%s] ", pNum)
+				}
+				flushCurrentText("\n\n", prefix)
+			} else if name == "ul" || name == "ol" || name == "list" {
+				listDepth++
+			} else if name == "li" || name == "list-item" {
+				indent := strings.Repeat(" ", listDepth*ClaimIndentSize)
+				flushCurrentText("\n", indent)
+			} else if name == "br" {
+				nextPrefix := ""
+				if listDepth > 0 {
+					nextPrefix = strings.Repeat(" ", listDepth*ClaimIndentSize)
+				}
+				flushCurrentText("\n", nextPrefix)
+			}
+		case xml.CharData:
+			currentText.Write(t)
+		case xml.EndElement:
+			name := t.Name.Local
+			if name == "heading" || name == "p" {
+				flushCurrentText("\n\n", "")
+			} else if name == "ul" || name == "ol" || name == "list" {
+				if listDepth > 0 {
+					listDepth--
+				}
+			} else if name == "li" || name == "list-item" {
+				flushCurrentText("\n\n", "")
+			}
+		}
+	}
+
+	// Flush any remaining text
+	flushCurrentText("\n\n", "")
+
+	res := buf.String()
+	if res == "" {
+		return permissiveFormatDescription(innerXML)
+	}
+	return res
+}
+
+// permissiveFormatDescription formats descriptions without strict XML validation,
+// preserving paragraphs, headings, lists, line breaks and resolving all entities.
+func permissiveFormatDescription(innerXML string) string {
+	var buf strings.Builder
+	var currentText strings.Builder
+
+	listDepth := 0
+	linePrefix := ""
+	lineSpacing := "\n\n"
+
+	flushCurrentText := func(nextSpacing string, nextPrefix string) {
+		trimmed := collapseWhitespace(currentText.String())
+		currentText.Reset()
+		if trimmed == "" {
+			linePrefix = nextPrefix
+			lineSpacing = nextSpacing
+			return
+		}
+
+		if buf.Len() > 0 {
+			buf.WriteString(lineSpacing)
+		}
+		buf.WriteString(linePrefix + trimmed)
+
+		linePrefix = nextPrefix
+		lineSpacing = nextSpacing
+	}
+
+	i := 0
+	n := len(innerXML)
+	for i < n {
+		if innerXML[i] == '<' {
+			j := i + 1
+			for j < n && innerXML[j] != '>' {
+				j++
+			}
+			if j >= n {
+				currentText.WriteByte('<')
+				i++
+				continue
+			}
+			tagContent := innerXML[i+1 : j]
+			i = j + 1
+
+			tagContent = strings.TrimSpace(tagContent)
+			if tagContent == "" {
+				continue
+			}
+
+			if tagContent[0] == '?' || tagContent[0] == '!' {
+				continue
+			}
+
+			isEnd := tagContent[0] == '/'
+			if isEnd {
+				tagName := strings.ToLower(strings.TrimSpace(tagContent[1:]))
+				if tagName == "heading" || tagName == "p" {
+					flushCurrentText("\n\n", "")
+				} else if tagName == "ul" || tagName == "ol" || tagName == "list" {
+					if listDepth > 0 {
+						listDepth--
+					}
+				} else if tagName == "li" || tagName == "list-item" {
+					flushCurrentText("\n\n", "")
+				}
+			} else {
+				parts := strings.Fields(tagContent)
+				tagName := strings.ToLower(parts[0])
+				isSelfClosing := strings.HasSuffix(tagName, "/")
+				if isSelfClosing {
+					tagName = strings.TrimSuffix(tagName, "/")
+				}
+
+				if tagName == "heading" {
+					flushCurrentText("\n\n", "")
+				} else if tagName == "p" {
+					pNum := ""
+					for _, part := range parts[1:] {
+						lowerPart := strings.ToLower(part)
+						if strings.HasPrefix(lowerPart, "num=") {
+							pNum = strings.Trim(part[len("num="):], `"' `)
+							break
+						}
+					}
+					prefix := ""
+					if pNum != "" {
+						prefix = fmt.Sprintf("[%s] ", pNum)
+					}
+					flushCurrentText("\n\n", prefix)
+				} else if tagName == "ul" || tagName == "ol" || tagName == "list" {
+					listDepth++
+				} else if tagName == "li" || tagName == "list-item" {
+					indent := strings.Repeat(" ", listDepth*ClaimIndentSize)
+					flushCurrentText("\n", indent)
+				} else if tagName == "br" || tagName == "br/" {
+					nextPrefix := ""
+					if listDepth > 0 {
+						nextPrefix = strings.Repeat(" ", listDepth*ClaimIndentSize)
+					}
+					flushCurrentText("\n", nextPrefix)
+				}
+			}
+		} else {
+			currentText.WriteByte(innerXML[i])
+			i++
+		}
+	}
+
+	flushCurrentText("\n\n", "")
+	return html.UnescapeString(buf.String())
+}
+
+// Text returns the description text with all markup stripped, formatting headings and paragraphs.
+func (d USPTOGrantDescription) Text() string { return FormatDescriptionText(d.Inner) }
 
 // USPTOGrantClaims carries the patent claims. Inner XML is retained so claim
 // renderers can keep claim references and emphasis intact.
@@ -248,14 +482,167 @@ type USPTOGrantClaims struct {
 	Items   []USPTOGrantClaim `xml:"claim"`
 }
 
+// ClaimIndentSize is the number of spaces used per nesting level in a claim's text hierarchy.
+const ClaimIndentSize = 4
+
+// FormatClaimText decodes a USPTO claim's inner XML, preserving the nested
+// <claim-text> structure as proper patent indentation (new lines and spaces).
+func FormatClaimText(innerXML string) string {
+	start := time.Now()
+	var parseErr error
+	defer func() {
+		if Metrics != nil {
+			Metrics.ObserveDuration("uspto.claims.parse", time.Since(start), parseErr != nil)
+			Metrics.IncCounter("uspto.claims.parse.count", 1)
+			if parseErr != nil {
+				Metrics.IncCounter("uspto.claims.parse.fallback", 1)
+			}
+		}
+	}()
+
+	// Wrap in a dummy root tag to ensure it's a valid single-rooted XML fragment.
+	wrapped := "<root>" + innerXML + "</root>"
+	dec := xml.NewDecoder(strings.NewReader(wrapped))
+	dec.Strict = false
+	dec.Entity = xml.HTMLEntity
+
+	var buf strings.Builder
+	claimTextDepth := 0
+	var currentText strings.Builder
+
+	writeTextLine := func(text string, depth int) {
+		trimmed := collapseWhitespace(text)
+		if trimmed == "" {
+			return
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		if depth > 1 {
+			// Indent beyond the root claim-text
+			buf.WriteString(strings.Repeat(" ", (depth-1)*ClaimIndentSize))
+		}
+		buf.WriteString(trimmed)
+	}
+
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			parseErr = err
+			// On any XML parsing error, fallback to permissive claims formatting
+			return permissiveFormatClaim(innerXML)
+		}
+
+		switch t := tok.(type) {
+		case xml.StartElement:
+			if t.Name.Local == "claim-text" {
+				writeTextLine(currentText.String(), claimTextDepth)
+				currentText.Reset()
+				claimTextDepth++
+			}
+		case xml.CharData:
+			currentText.Write(t)
+		case xml.EndElement:
+			if t.Name.Local == "claim-text" {
+				writeTextLine(currentText.String(), claimTextDepth)
+				currentText.Reset()
+				if claimTextDepth > 0 {
+					claimTextDepth--
+				}
+			}
+		}
+	}
+
+	res := buf.String()
+	if res == "" {
+		return permissiveFormatClaim(innerXML)
+	}
+	return res
+}
+
+// permissiveFormatClaim formats claim text permissively, preserving nested claim-text indentations and entities.
+func permissiveFormatClaim(innerXML string) string {
+	var buf strings.Builder
+	claimTextDepth := 0
+	var currentText strings.Builder
+
+	writeTextLine := func(text string, depth int) {
+		trimmed := collapseWhitespace(text)
+		if trimmed == "" {
+			return
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte('\n')
+		}
+		if depth > 1 {
+			buf.WriteString(strings.Repeat(" ", (depth-1)*ClaimIndentSize))
+		}
+		buf.WriteString(trimmed)
+	}
+
+	i := 0
+	n := len(innerXML)
+	for i < n {
+		if innerXML[i] == '<' {
+			j := i + 1
+			for j < n && innerXML[j] != '>' {
+				j++
+			}
+			if j >= n {
+				currentText.WriteByte('<')
+				i++
+				continue
+			}
+			tagContent := innerXML[i+1 : j]
+			i = j + 1
+
+			tagContent = strings.TrimSpace(tagContent)
+			if tagContent == "" {
+				continue
+			}
+			if tagContent[0] == '?' || tagContent[0] == '!' {
+				continue
+			}
+
+			isEnd := tagContent[0] == '/'
+			if isEnd {
+				tagName := strings.ToLower(strings.TrimSpace(tagContent[1:]))
+				if tagName == "claim-text" {
+					writeTextLine(currentText.String(), claimTextDepth)
+					currentText.Reset()
+					if claimTextDepth > 0 {
+						claimTextDepth--
+					}
+				}
+			} else {
+				parts := strings.Fields(tagContent)
+				tagName := strings.ToLower(parts[0])
+				if tagName == "claim-text" {
+					writeTextLine(currentText.String(), claimTextDepth)
+					currentText.Reset()
+					claimTextDepth++
+				}
+			}
+		} else {
+			currentText.WriteByte(innerXML[i])
+			i++
+		}
+	}
+	writeTextLine(currentText.String(), claimTextDepth)
+	return html.UnescapeString(buf.String())
+}
+
 type USPTOGrantClaim struct {
 	ID    string `xml:"id,attr"`
 	Num   string `xml:"num,attr"`
 	Inner string `xml:",innerxml"`
 }
 
-// Text strips XML markup from a single claim's body.
-func (c USPTOGrantClaim) Text() string { return stripXMLTags(c.Inner) }
+// Text strips XML markup from a single claim's body, preserving hierarchical nested indentations.
+func (c USPTOGrantClaim) Text() string { return FormatClaimText(c.Inner) }
 
 // ParseUSPTOGrantXML decodes a us-patent-grant XML document.
 func ParseUSPTOGrantXML(r io.Reader) (*USPTOGrantXML, error) {

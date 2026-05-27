@@ -47,6 +47,7 @@ const (
 	MetricNamespaceEngine  MetricNamespace = "engine"
 	MetricNamespaceStore   MetricNamespace = "store"
 	MetricNamespaceCrawl   MetricNamespace = "crawl"
+	MetricNamespaceUSPTO   MetricNamespace = "uspto"
 	MetricNamespaceService MetricNamespace = "service"
 	MetricNamespaceTUI     MetricNamespace = "tui"
 	MetricNamespaceOther   MetricNamespace = "other"
@@ -59,6 +60,7 @@ func MetricNamespaceOrder() []MetricNamespace {
 		MetricNamespaceEngine,
 		MetricNamespaceStore,
 		MetricNamespaceCrawl,
+		MetricNamespaceUSPTO,
 		MetricNamespaceService,
 		MetricNamespaceTUI,
 		MetricNamespaceOther,

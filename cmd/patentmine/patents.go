@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	_ "modernc.org/sqlite"
+
 	"patentmine/internal/config"
 	"patentmine/internal/observability"
 )
@@ -24,6 +27,7 @@ const patentsUsage = `usage:
   patentmine uspto-manage list                         list files in the patents (XML) cache dir
   patentmine uspto-manage archive [options]            compress patents dir into a timestamped backup archive
   patentmine uspto-manage clean                        remove all files from the patents cache directory
+  patentmine uspto-manage clean-parsed                 remove all cached parsed patent bodies in SQLite (forces re-parsing)
 `
 
 func runPatents(args []string) int {
@@ -59,6 +63,8 @@ func runPatents(args []string) int {
 		code = runPatentsArchive(cfg, subArgs, telemetry)
 	case "clean":
 		code = runPatentsClean(cfg, subArgs, telemetry)
+	case "clean-parsed":
+		code = runPatentsCleanParsed(cfg, subArgs, telemetry)
 	case "help", "-h", "--help":
 		fmt.Print(patentsUsage)
 		return 0
@@ -386,4 +392,54 @@ func tarPaths(files []string, rootDir, dest string) error {
 		}
 	}
 	return nil
+}
+
+func runPatentsCleanParsed(cfg config.Config, args []string, telemetry *observability.Runtime) int {
+	fs := flag.NewFlagSet("uspto-manage clean-parsed", flag.ExitOnError)
+	_ = fs.Parse(args)
+
+	dbPath := string(cfg.DBPath)
+	start := time.Now()
+
+	fmt.Printf("Opening database at %s...\n", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return fail(fmt.Errorf("open sqlite database: %w", err))
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	var beforeCount int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM uspto_grant_body").Scan(&beforeCount); err != nil {
+		return fail(fmt.Errorf("query cached parsed bodies count: %w", err))
+	}
+
+	if beforeCount == 0 {
+		fmt.Println("No cached parsed patent bodies in database to clean.")
+		return 0
+	}
+
+	res, err := db.ExecContext(ctx, "DELETE FROM uspto_grant_body")
+	if err != nil {
+		return fail(fmt.Errorf("delete cached parsed bodies: %w", err))
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fail(fmt.Errorf("get rows affected: %w", err))
+	}
+
+	dur := time.Since(start)
+	fmt.Printf("Cleaned database parsed cache: removed %d parsed bodies  |  duration: %v\n", rows, dur)
+	fmt.Println("On next access, the engine will dynamically re-parse the XML with the new formatting logic.")
+
+	if telemetry != nil {
+		telemetry.Logger.Info("patents clean-parsed",
+			slog.String("db_path", dbPath),
+			slog.Int64("removed_count", rows),
+			slog.Duration("duration", dur))
+	}
+
+	return 0
 }

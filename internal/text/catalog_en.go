@@ -76,6 +76,9 @@ const (
 	StatusDeleteFailed            Key = "status.delete_failed"
 	StatusDeleted                 Key = "status.deleted"
 	StatusBatchDeleted            Key = "status.batch_deleted"
+	StatusClearCacheFailed        Key = "status.clear_cache_failed"
+	StatusCacheCleared            Key = "status.cache_cleared"
+	StatusAllCacheCleared         Key = "status.all_cache_cleared"
 	StatusBatchSetState           Key = "status.batch_set_state"
 	StatusBatchAdded              Key = "status.batch_added"
 	StatusFilter                  Key = "status.filter"
@@ -230,6 +233,7 @@ var cmdStrings = map[string][2]string{
 	"patent.mark-ignored":        {"Mark ignored", "Set the selected patent to ignored."},
 	"patent.mark-deleted":        {"Mark deleted", "Soft-delete the selected patent from the project."},
 	"patent.delete":              {"Delete patent", "Permanently remove the selected patent from the database."},
+	"patent.clear-cache":         {"Clear patent cache", "Clear the parsed XML claims and description cache for the selected patent(s)."},
 	"select.visual":              {"Visual select", "Toggle visual mode at the cursor to begin range selection."},
 	"select.clear":               {"Clear selection", "Exit visual mode and clear the selection range."},
 	"select.all":                 {"Select all", "Select every patent in the current list."},
@@ -361,6 +365,9 @@ var englishNamed = map[Key]string{
 	StatusDeleteFailed:            "delete failed: %s",
 	StatusDeleted:                 "deleted %s",
 	StatusBatchDeleted:            "deleted %d patents",
+	StatusClearCacheFailed:         "clear cache failed: %s",
+	StatusCacheCleared:             "cleared parsed cache for %d patent(s) (%s reclaimed)",
+	StatusAllCacheCleared:          "cleared parsed cache for all %d patent(s) (%s reclaimed)",
 	StatusBatchSetState:           "set %d patents to %s in %s",
 	StatusBatchAdded:              "added %d patents to %s",
 	StatusFilter:                  "%s",

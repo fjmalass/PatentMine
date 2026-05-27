@@ -184,6 +184,18 @@ func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind
 		if !errors.Is(err, store.ErrNotFound) {
 			return domain.USPTOGrantBody{}, false, err
 		}
+
+		// If not found in SQLite but XML has been downloaded on disk, ingest it now on-demand
+		prior, priorErr := e.repo.USPTOXMLDownload(ctx, app.ApplicationNumber, string(k))
+		if priorErr == nil && prior.LocalPath != "" {
+			if info, statErr := os.Stat(prior.LocalPath); statErr == nil && info.Size() > 0 {
+				if ingestErr := e.ingestUSPTOXML(ctx, n, k, app.ApplicationNumber, prior.LocalPath); ingestErr == nil {
+					if secondBody, secondErr := e.repo.USPTOGrantBody(ctx, app.ApplicationNumber, string(k)); secondErr == nil {
+						return secondBody, true, nil
+					}
+				}
+			}
+		}
 	}
 	return domain.USPTOGrantBody{}, false, nil
 }
@@ -727,3 +739,54 @@ func (e *Engine) USPTOLookup(ctx context.Context, number domain.PatentNumber) (s
 
 	return string(body), nil
 }
+
+// ClearPatentCache clears cached parsed XML bodies in uspto_grant_body for the given patents.
+// If the patents slice is empty, it clears all records in the table.
+// It returns the number of cleared records, estimated database bytes saved, and any error.
+func (e *Engine) ClearPatentCache(ctx context.Context, patents []domain.PatentNumber) (int64, int64, error) {
+	start := time.Now()
+	var cleared, bytesSaved int64
+	var opErr error
+	defer func() {
+		// Log telemetry & metrics
+		if e.metrics != nil {
+			e.metrics.ObserveDuration("engine.uspto.clear_cache", time.Since(start), opErr != nil)
+			e.metrics.IncCounter("engine.uspto.clear_cache.count", 1)
+			if opErr == nil {
+				e.metrics.IncCounter("engine.uspto.clear_cache.records", cleared)
+				e.metrics.IncCounter("engine.uspto.clear_cache.bytes_saved", bytesSaved)
+			}
+		}
+		e.log(ctx, slog.LevelInfo, "uspto clear cache completed",
+			slog.Int("requested_patents", len(patents)),
+			slog.Int64("cleared_records", cleared),
+			slog.Int64("bytes_saved", bytesSaved),
+			slog.Bool("success", opErr == nil))
+	}()
+
+	var appNums []string
+	if len(patents) > 0 {
+		for _, n := range patents {
+			app, err := e.repo.USPTOApplication(ctx, n)
+			if err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					// If the application doesn't exist, it has no cached body either. Skip.
+					continue
+				}
+				opErr = fmt.Errorf("engine: resolve application number for %s: %w", n.Normalized(), err)
+				return 0, 0, opErr
+			}
+			if strings.TrimSpace(app.ApplicationNumber) != "" {
+				appNums = append(appNums, app.ApplicationNumber)
+			}
+		}
+		// If we had patents but resolved none of them to an application, nothing to clear.
+		if len(appNums) == 0 {
+			return 0, 0, nil
+		}
+	}
+
+	cleared, bytesSaved, opErr = e.repo.ClearUSPTOGrantBodies(ctx, appNums)
+	return cleared, bytesSaved, opErr
+}
+

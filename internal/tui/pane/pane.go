@@ -204,12 +204,13 @@ type PatentNoteOpenMsg struct {
 
 // FullTextLoadedMsg delivers the result of fetching full patent claims text.
 type FullTextLoadedMsg struct {
-	RequestID uint64
-	Number    domain.PatentNumber
-	FullText  *domain.FullText
-	Patent    domain.Patent
-	Duration  time.Duration
-	Err       error
+	RequestID      uint64
+	Number         domain.PatentNumber
+	FullText       *domain.FullText
+	Patent         domain.Patent
+	Duration       time.Duration
+	Err            error
+	FallbackGoogle bool
 }
 
 // status returns a tea.Cmd that emits a StatusMsg for key.

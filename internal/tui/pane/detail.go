@@ -905,40 +905,76 @@ func isLocalField(label string) bool {
 
 // wrapText greedily word-wraps s to lines no wider than width, hard-splitting
 // single tokens that would otherwise force the terminal to wrap physical rows.
+// Pre-existing newlines and leading spaces are preserved to maintain hierarchical structures.
 func wrapText(s string, width int) []string {
 	if width <= 0 {
 		return nil
 	}
 	var lines []string
-	var line strings.Builder
-	flush := func() {
-		if line.Len() == 0 {
-			return
+
+	// Split by newlines to respect pre-existing line breaks and indentation
+	rawLines := strings.Split(s, "\n")
+	for _, rawLine := range rawLines {
+		// Detect leading spaces for indentation preservation
+		var indent strings.Builder
+		for _, r := range rawLine {
+			if r == ' ' {
+				indent.WriteRune(r)
+			} else {
+				break
+			}
 		}
-		lines = append(lines, line.String())
-		line.Reset()
-	}
-	for _, word := range strings.Fields(s) {
-		for render.StringWidth(word) > width {
-			flush()
-			lines = append(lines, ansi.Cut(word, 0, width))
-			word = ansi.Cut(word, width, render.StringWidth(word))
-		}
-		if word == "" {
+		indentStr := indent.String()
+		indentWidth := render.StringWidth(indentStr)
+
+		// Trim whitespace so we can wrap words
+		trimmed := strings.TrimSpace(rawLine)
+		if trimmed == "" {
+			lines = append(lines, "")
 			continue
 		}
-		switch {
-		case line.Len() == 0:
-			line.WriteString(word)
-		case render.StringWidth(line.String())+1+render.StringWidth(word) <= width:
-			line.WriteByte(' ')
-			line.WriteString(word)
-		default:
-			flush()
-			line.WriteString(word)
+
+		// If the indent width is greater than or equal to the target width,
+		// wrap without prepending the indent to avoid infinite loops/overflows.
+		effectiveIndent := indentStr
+		effectiveWidth := width - indentWidth
+		if effectiveWidth <= 5 { // Require a minimum of 5 characters for wrapped text
+			effectiveIndent = ""
+			effectiveWidth = width
 		}
+
+		var line strings.Builder
+		flush := func() {
+			if line.Len() == 0 {
+				return
+			}
+			lines = append(lines, effectiveIndent+line.String())
+			line.Reset()
+		}
+
+		for _, word := range strings.Fields(trimmed) {
+			for render.StringWidth(word) > effectiveWidth {
+				flush()
+				lines = append(lines, effectiveIndent+ansi.Cut(word, 0, effectiveWidth))
+				word = ansi.Cut(word, effectiveWidth, render.StringWidth(word))
+			}
+			if word == "" {
+				continue
+			}
+			switch {
+			case line.Len() == 0:
+				line.WriteString(word)
+			case render.StringWidth(line.String())+1+render.StringWidth(word) <= effectiveWidth:
+				line.WriteByte(' ')
+				line.WriteString(word)
+			default:
+				flush()
+				line.WriteString(word)
+			}
+		}
+		flush()
 	}
-	flush()
+
 	return lines
 }
 

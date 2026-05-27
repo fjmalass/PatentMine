@@ -183,6 +183,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.ClassificationLookup:       (*App).cmdClassificationLookup,
 	command.OpenPatentClassifications:  (*App).cmdOpenPatentClassifications,
 	command.PatentDelete:               (*App).cmdPatentDelete,
+	command.ClearPatentCache:           (*App).cmdClearPatentCache,
 	command.IDSCycleStatus:             (*App).cmdIDSCycleStatus,
 	command.AIAnalyze:                  (*App).cmdAIAnalyze,
 	command.SettingsAI:                 (*App).cmdSettingsAI,

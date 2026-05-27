@@ -102,6 +102,9 @@ const (
 
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
+	
+	// ClearPatentCache clears the parsed XML bodies cache.
+	ClearPatentCache ID = "patent.clear-cache"
 
 	// Crawling.
 	CrawlFamily    ID = "crawl.family"
@@ -261,6 +264,7 @@ func Default() (*Registry, error) {
 		Command{ID: FetchUSPTOGrant, Name: "fetch.uspto.grant", Aliases: []string{"fetch-grant", "grant.fetch"}, Usage: ":fetch.uspto.grant", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: FetchUSPTOAssignments, Name: "fetch.uspto.assignments", Aliases: []string{"fetch-assignments", "assignments.fetch", "chain.fetch"}, Usage: ":fetch.uspto.assignments", Kind: KindEngine, Method: proto.MethodUSPTOFetchAssignments, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
+		Command{ID: ClearPatentCache, Name: "patent.clear_cache", Aliases: []string{"clear-cache", "clear.cache", "patent.clear-cache"}, Usage: ":patent.clear_cache [PATENT ...]", Kind: KindEngine, Method: proto.MethodPatentClearCache, Scopes: patentScopes},
 		Command{ID: Tag, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagPatent, Scopes: patentScopes},
 		Command{ID: Untag, Name: "untag", Aliases: []string{"untag-patent"}, Usage: ":untag <name>", Kind: KindEngine, Method: proto.MethodUntagPatent, Scopes: patentScopes},
 		Command{ID: TagTaxonomyAdd, Name: "tag.add", Aliases: []string{"create-tag"}, Usage: ":tag.add <name>", Kind: KindEngine, Method: proto.MethodTagCreate, Scopes: projectScopes},

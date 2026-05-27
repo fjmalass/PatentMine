@@ -123,6 +123,7 @@ var hintCoverageExempt = map[command.ID]bool{
 	// Detail-pane jump + AI — surfaced in the detail header.
 	command.JumpMode: true, command.AIAnalyze: true,
 	command.OpenFullText: true,
+	command.FetchUSPTOGrant: true,
 
 	// IDS pane editing keys — the edit chrome marks them inline.
 	command.IDSEditField: true, command.IDSToggleFull: true,

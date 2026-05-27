@@ -123,6 +123,7 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	registry := crawl.NewRegistry(sources...).WithSourceMode(string(cfg.SourceMode)).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	cachingRepo := store.NewCache(repo)
 	crawler := crawl.NewCrawler(registry, cachingRepo, crawl.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
+	crawl.Metrics = telemetry.Metrics
 	crawlCfg := crawler.Config()
 	return engine.New(ctx, cachingRepo, crawl.Factory(crawler),
 		engine.WithFileImporter(crawler),

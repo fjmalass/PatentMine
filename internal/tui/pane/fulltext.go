@@ -52,11 +52,12 @@ type FullText struct {
 	handlers map[command.ID]cmdHandler
 
 	// loaded data
-	loading  bool
-	loadErr  string
-	loadID   uint64
-	patent   domain.Patent
-	fullText domain.FullText
+	loading        bool
+	loadErr        string
+	loadID         uint64
+	patent         domain.Patent
+	fullText       domain.FullText
+	fallbackGoogle bool
 
 	// rendered body
 	lines []bodyLine
@@ -125,6 +126,13 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 		command.NoteAdd:      func(Invocation) tea.Cmd { return f.noteAdd() },
 		command.NoteOpen:     func(Invocation) tea.Cmd { return f.noteOpen() },
 		command.Refresh:      func(Invocation) tea.Cmd { f.loading = true; return f.reload() },
+		command.FetchUSPTOGrant: func(Invocation) tea.Cmd {
+			if f.number.Country == "US" {
+				f.loading = true
+				return FetchUSPTOXMLInteractiveCmd(f.client, f.number, proto.USPTOXMLKindGrant)
+			}
+			return nil
+		},
 	}
 	return f
 }
@@ -159,6 +167,7 @@ func (f *FullText) load() tea.Cmd {
 		// Try the USPTO-parsed body first when one has been ingested; fall
 		// back to Google's full-text fetch when nothing is on hand locally.
 		var fullText *domain.FullText
+		fallbackGoogle := false
 		if err == nil {
 			fullText = fetchUSPTOFullText(client, number)
 			if fullText == nil {
@@ -167,6 +176,9 @@ func (f *FullText) load() tea.Cmd {
 				fetchCancel()
 				if fetchErr == nil {
 					fullText = fetched
+					if number.Country == "US" {
+						fallbackGoogle = true
+					}
 				} else {
 					err = fetchErr
 				}
@@ -174,12 +186,13 @@ func (f *FullText) load() tea.Cmd {
 		}
 
 		return FullTextLoadedMsg{
-			RequestID: requestID,
-			Number:    number,
-			FullText:  fullText,
-			Patent:    patent,
-			Duration:  time.Since(start),
-			Err:       err,
+			RequestID:      requestID,
+			Number:         number,
+			FullText:       fullText,
+			Patent:         patent,
+			Duration:       time.Since(start),
+			Err:            err,
+			FallbackGoogle: fallbackGoogle,
 		}
 	}
 }
@@ -211,12 +224,19 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		f.loadErr = ""
 		f.patent = m.Patent
+		f.fallbackGoogle = m.FallbackGoogle
 		if m.FullText != nil {
 			f.fullText = *m.FullText
 		}
 		f.computeJumpKeys(f.keymapBound)
 		f.lines = nil
 		f.page.Top()
+	case USPTOXMLFetchedMsg:
+		// Automatically reload the pane if the active USPTO patent XML was fetched successfully
+		if m.Number == f.number && m.Err == "" {
+			f.loading = true
+			return f, f.reload()
+		}
 	}
 	return f, nil
 }
@@ -282,6 +302,11 @@ func (f *FullText) render(w int) {
 	}
 
 	// Patent attrs header.
+	if f.fallbackGoogle {
+		add(f.theme.Warn.Render("  [Showing Google Patents fallback version. Press . to fetch high-quality USPTO XML]"), "")
+		add("", "")
+	}
+
 	metaLine := fmt.Sprintf("Patent #: %s", f.number.String())
 	if f.patent.Title != "" {
 		metaLine += " — " + f.patent.Title
@@ -680,19 +705,34 @@ func fetchUSPTOFullText(client *rpc.Client, number domain.PatentNumber) *domain.
 		}
 		full.Claims = append(full.Claims, domain.ClaimSection{Number: num, Text: c.Text})
 	}
-	// Description text uses paragraph markers (<p num="..."/>) in the source.
-	// Without re-parsing the XML, fall back to a single paragraph that holds
-	// the abstract followed by the full description body — the existing pane
-	// is happy to render an unlimited-length paragraph.
-	bodyText := strings.TrimSpace(res.Body.AbstractText)
-	if d := strings.TrimSpace(res.Body.DescriptionText); d != "" {
-		if bodyText != "" {
-			bodyText += "\n\n"
-		}
-		bodyText += d
+	if res.Body.AbstractText != "" {
+		full.Paragraphs = append(full.Paragraphs, domain.DescriptionParagraph{
+			Number: "Abstract",
+			Text:   strings.TrimSpace(res.Body.AbstractText),
+		})
 	}
-	if bodyText != "" {
-		full.Paragraphs = append(full.Paragraphs, domain.DescriptionParagraph{Text: bodyText})
+	if d := strings.TrimSpace(res.Body.DescriptionText); d != "" {
+		// Split by double newlines to populate separate paragraphs and headings
+		for _, part := range strings.Split(d, "\n\n") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			num := ""
+			text := part
+			// If it starts with a paragraph number like "[0001] ", extract it
+			if strings.HasPrefix(part, "[") {
+				idx := strings.Index(part, "]")
+				if idx > 1 {
+					num = part[1:idx]
+					text = strings.TrimSpace(part[idx+1:])
+				}
+			}
+			full.Paragraphs = append(full.Paragraphs, domain.DescriptionParagraph{
+				Number: num,
+				Text:   text,
+			})
+		}
 	}
 	return full
 }

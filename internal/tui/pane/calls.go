@@ -374,6 +374,24 @@ func DeletePatentsCmd(client *rpc.Client, patents []domain.PatentNumber) tea.Cmd
 	}
 }
 
+// ClearPatentCacheCmd clears the parsed XML body cache for one or more patents.
+func ClearPatentCacheCmd(client *rpc.Client, patents []domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentClearCacheResult
+		if err := client.Call(ctx, proto.MethodPatentClearCache,
+			proto.PatentClearCacheParams{Patents: patents}, &res); err != nil {
+			return StatusMsg{Key: text.StatusClearCacheFailed, Args: []any{err.Error()}, Error: true}
+		}
+		sizeStr := fmt.Sprintf("%.2f MB", float64(res.BytesSaved)/1024.0/1024.0)
+		if len(patents) == 0 {
+			return StatusMsg{Key: text.StatusAllCacheCleared, Args: []any{res.ClearedCount, sizeStr}}
+		}
+		return StatusMsg{Key: text.StatusCacheCleared, Args: []any{len(patents), sizeStr}}
+	}
+}
+
 // CreateProjectCmd creates a project with the given name.
 func CreateProjectCmd(client *rpc.Client, name string) tea.Cmd {
 	return func() tea.Msg {

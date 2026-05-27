@@ -33,6 +33,7 @@ const (
 	ActionTableViewDelete       = "table_view.delete"
 	ActionUIBrowse              = "ui.browse"
 	ActionUIFocus               = "ui.focus"
+	ActionUIClearCache          = "ui.clear_cache"
 	ActionNotesExport           = "notes.export"
 	ActionNotesSave             = "notes.save"
 	ActionNotesDelete           = "notes.delete"
@@ -98,4 +99,5 @@ var AllActions = []string{
 	ActionSourceCompareOpen,
 	ActionSourceDiffsLoad,
 	ActionSourceResolveDiffs,
+	ActionUIClearCache,
 }

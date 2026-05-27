@@ -154,6 +154,7 @@ func Default() *Keymaps {
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
 			"g c":   command.SourceCompare, // conditional source comparison (Option A)
+			".":     command.FetchUSPTOGrant,
 		})
 
 	citations := NewLayer("citations", false).
@@ -252,6 +253,7 @@ func Default() *Keymaps {
 			"/":   command.OpenSearch,
 			"h":   command.Back,
 			"esc": command.Back,
+			".":   command.FetchUSPTOGrant,
 		})
 
 	overlay := NewLayer("overlay", false).BindAll(map[string]command.ID{

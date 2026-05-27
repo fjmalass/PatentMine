@@ -98,7 +98,8 @@ func IsHistoryFeedAction(action string) bool {
 		ActionUIFocus,
 		ActionNotesExport,
 		ActionNotesSave,
-		ActionNotesDelete:
+		ActionNotesDelete,
+		ActionUIClearCache:
 		return true
 	default:
 		return false

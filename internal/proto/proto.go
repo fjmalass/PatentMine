@@ -27,6 +27,7 @@ const (
 	MethodPatentTableColumns        Method = "patent.table_columns"
 	MethodPatentDelete              Method = "patent.delete"
 	MethodPatentDeleteBulk          Method = "patent.delete_bulk"
+	MethodPatentClearCache          Method = "patent.clear_cache"
 	MethodProjectList               Method = "project.list"
 	MethodProjectCreate             Method = "project.create"
 	MethodMembershipAdd             Method = "membership.add"
@@ -841,4 +842,13 @@ func NewEvent(kind EventKind, params any) Event {
 		raw = nil
 	}
 	return Event{JSONRPC: Version, Method: kind, Params: raw}
+}
+
+type PatentClearCacheParams struct {
+	Patents []domain.PatentNumber `json:"patents"`
+}
+
+type PatentClearCacheResult struct {
+	ClearedCount int64 `json:"cleared_count"`
+	BytesSaved   int64 `json:"bytes_saved"`
 }

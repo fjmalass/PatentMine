@@ -73,6 +73,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodPatentTableColumns:        s.patentTableColumns,
 		proto.MethodPatentDelete:              s.patentDelete,
 		proto.MethodPatentDeleteBulk:          s.patentDeleteBulk,
+		proto.MethodPatentClearCache:          s.patentClearCache,
 		proto.MethodProjectList:               s.projectList,
 		proto.MethodProjectCreate:             s.projectCreate,
 		proto.MethodMembershipAdd:             s.membershipAdd,
@@ -509,6 +510,18 @@ func (s *Server) patentDeleteBulk(ctx context.Context, raw json.RawMessage) (any
 		return nil, err
 	}
 	return proto.Empty{}, nil
+}
+
+func (s *Server) patentClearCache(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentClearCacheParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	cleared, bytesSaved, err := s.engine.ClearPatentCache(ctx, p.Patents)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentClearCacheResult{ClearedCount: cleared, BytesSaved: bytesSaved}, nil
 }
 
 func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -564,6 +564,30 @@ func TestWrapTextSplitsLongTokens(t *testing.T) {
 	}
 }
 
+func TestWrapTextPreservesIndentation(t *testing.T) {
+	input := "line1\n    line2 nested wrapping here\n  line3"
+	lines := wrapText(input, 15)
+	
+	expected := []string{
+		"line1",
+		"    line2",
+		"    nested",
+		"    wrapping",
+		"    here",
+		"  line3",
+	}
+	
+	if len(lines) != len(expected) {
+		t.Fatalf("expected %d lines, got %d. Result:\n%q", len(expected), len(lines), lines)
+	}
+	
+	for i, exp := range expected {
+		if lines[i] != exp {
+			t.Errorf("line %d mismatch: got %q, want %q", i, lines[i], exp)
+		}
+	}
+}
+
 func TestDetailViewDoesNotEmitOverwideWrappedLines(t *testing.T) {
 	const width = 36
 	num := domain.MustParsePatentNumber("US0000001B2")

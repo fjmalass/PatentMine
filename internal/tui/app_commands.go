@@ -886,6 +886,71 @@ func (a *App) cmdPatentDelete(invocation) (tea.Model, tea.Cmd) {
 	})
 }
 
+func (a *App) cmdClearPatentCache(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+
+	// 1. Explicit arguments provided (e.g., ":patent.clear_cache US11611785B2 ...")
+	if len(inv.args) > 0 {
+		// Special keyword "all" to clear everything
+		if len(inv.args) == 1 && strings.ToLower(inv.args[0]) == "all" {
+			recCmd := a.recordActivity(observability.Record{
+				Action:     observability.ActionUIClearCache,
+				Entity:     "patents",
+				Status:     "requested",
+				Attributes: map[string]any{"scope": "all"},
+			})
+			return a, tea.Batch(pane.ClearPatentCacheCmd(a.client, nil), recCmd)
+		}
+
+		var patents []domain.PatentNumber
+		for _, arg := range inv.args {
+			num, err := domain.ParsePatentNumber(arg)
+			if err != nil {
+				a.status = fmt.Sprintf("invalid patent number %q: %v", arg, err)
+				a.statusErr = true
+				return a, nil
+			}
+			patents = append(patents, num)
+		}
+
+		recCmd := a.recordActivity(observability.Record{
+			Action:     observability.ActionUIClearCache,
+			Entity:     "patents",
+			Status:     "requested",
+			Attributes: map[string]any{"patents": inv.args},
+		})
+		return a, tea.Batch(pane.ClearPatentCacheCmd(a.client, patents), recCmd)
+	}
+
+	// 2. No arguments, check if we have focused selections in list scopes
+	numbers := a.focusedSelections()
+	if len(numbers) > 0 {
+		recCmd := a.recordActivity(observability.Record{
+			Action:     observability.ActionUIClearCache,
+			Entity:     "patents",
+			Status:     "requested",
+			Attributes: map[string]any{"patents_count": len(numbers)},
+		})
+		return a, tea.Batch(pane.ClearPatentCacheCmd(a.client, numbers), recCmd)
+	}
+
+	// 3. No selection and no arguments -> clear cache for all patents in the database (with confirmation)
+	a.confirmCmd = pane.ClearPatentCacheCmd(a.client, nil)
+	recCmd := a.recordActivity(observability.Record{
+		Action:     observability.ActionUIClearCache,
+		Entity:     "patents",
+		Status:     "requested",
+		Attributes: map[string]any{"scope": "all_confirm"},
+	})
+
+	confirmMsg := "Are you sure you want to clear the parsed body cache for ALL patents in the database?"
+	a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, confirmMsg))
+	return a, recCmd
+}
+
 // cmdProjectCreate opens a name-entry overlay, or — given a typed name — creates
 // the project directly.
 func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {

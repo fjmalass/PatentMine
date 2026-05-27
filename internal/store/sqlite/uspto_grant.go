@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/store"
@@ -287,3 +288,101 @@ func (r *Repo) USPTOGrantBody(ctx context.Context, applicationNumber, kind strin
 	}
 	return body, nil
 }
+
+// ClearUSPTOGrantBodies clears cached parsed patent bodies in uspto_grant_body for the given application numbers.
+// If applicationNumbers is empty, it clears all cached patent bodies in the table.
+// It returns the number of rows deleted, total text memory (bytes) saved, and any error.
+func (r *Repo) ClearUSPTOGrantBodies(ctx context.Context, applicationNumbers []string) (int64, int64, error) {
+	start := time.Now()
+	var rowsDeleted, bytesSaved int64
+	var opErr error
+	defer func() {
+		if r.metrics != nil {
+			r.metrics.ObserveDuration("store.sqlite.clear_cache.duration", time.Since(start), opErr != nil)
+			r.metrics.IncCounter("store.sqlite.clear_cache.count", 1)
+			if opErr == nil {
+				r.metrics.IncCounter("store.sqlite.clear_cache.rows_cleared", rowsDeleted)
+				r.metrics.IncCounter("store.sqlite.clear_cache.bytes_saved", bytesSaved)
+			}
+		}
+	}()
+
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		opErr = fmt.Errorf("store/sqlite: begin clear uspto grant: %w", err)
+		return 0, 0, opErr
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if len(applicationNumbers) == 0 {
+		// Calculate memory saved
+		querySize := `
+			SELECT COALESCE(SUM(
+				LENGTH(COALESCE(abstract_text, '')) + 
+				LENGTH(COALESCE(abstract_xml, '')) + 
+				LENGTH(COALESCE(description_text, '')) + 
+				LENGTH(COALESCE(description_xml, '')) + 
+				LENGTH(COALESCE(claim_statement, '')) + 
+				LENGTH(COALESCE(claims_text, '')) + 
+				LENGTH(COALESCE(claims_json, ''))
+			), 0) FROM uspto_grant_body`
+		if err := tx.QueryRowContext(ctx, querySize).Scan(&bytesSaved); err != nil {
+			opErr = fmt.Errorf("store/sqlite: calc bytes saved: %w", err)
+			return 0, 0, opErr
+		}
+
+		res, err := tx.ExecContext(ctx, "DELETE FROM uspto_grant_body")
+		if err != nil {
+			opErr = fmt.Errorf("store/sqlite: delete all cached parsed bodies: %w", err)
+			return 0, 0, opErr
+		}
+		rowsDeleted, err = res.RowsAffected()
+		if err != nil {
+			opErr = fmt.Errorf("store/sqlite: get rows affected: %w", err)
+			return 0, 0, opErr
+		}
+	} else {
+		// Dynamic IN clause
+		placeholders := make([]string, len(applicationNumbers))
+		args := make([]any, len(applicationNumbers))
+		for i, appNum := range applicationNumbers {
+			placeholders[i] = "?"
+			args[i] = appNum
+		}
+
+		querySize := fmt.Sprintf(`
+			SELECT COALESCE(SUM(
+				LENGTH(COALESCE(abstract_text, '')) + 
+				LENGTH(COALESCE(abstract_xml, '')) + 
+				LENGTH(COALESCE(description_text, '')) + 
+				LENGTH(COALESCE(description_xml, '')) + 
+				LENGTH(COALESCE(claim_statement, '')) + 
+				LENGTH(COALESCE(claims_text, '')) + 
+				LENGTH(COALESCE(claims_json, ''))
+			), 0) FROM uspto_grant_body WHERE application_number IN (%s)`, strings.Join(placeholders, ","))
+		if err := tx.QueryRowContext(ctx, querySize, args...).Scan(&bytesSaved); err != nil {
+			opErr = fmt.Errorf("store/sqlite: calc bytes saved bulk: %w", err)
+			return 0, 0, opErr
+		}
+
+		queryDel := fmt.Sprintf("DELETE FROM uspto_grant_body WHERE application_number IN (%s)", strings.Join(placeholders, ","))
+		res, err := tx.ExecContext(ctx, queryDel, args...)
+		if err != nil {
+			opErr = fmt.Errorf("store/sqlite: delete cached parsed bodies bulk: %w", err)
+			return 0, 0, opErr
+		}
+		rowsDeleted, err = res.RowsAffected()
+		if err != nil {
+			opErr = fmt.Errorf("store/sqlite: get rows affected bulk: %w", err)
+			return 0, 0, opErr
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		opErr = fmt.Errorf("store/sqlite: commit clear uspto grant: %w", err)
+		return 0, 0, opErr
+	}
+
+	return rowsDeleted, bytesSaved, nil
+}
+
