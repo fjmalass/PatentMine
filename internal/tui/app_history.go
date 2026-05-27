@@ -102,6 +102,8 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 		return a.replayHistoryFilter(rec, confirmed)
 	case observability.ActionProjectSwitch:
 		return a.replayHistoryProjectSwitch(rec, confirmed)
+	case observability.ActionUSPTOXMLView:
+		return a.replayHistoryUSPTOXMLView(rec)
 	default:
 		return a, nil
 	}
@@ -125,7 +127,7 @@ func (a *App) replayHistoryPatentTarget(rec observability.Record) (tea.Model, te
 }
 
 func historyPatentNumber(rec observability.Record) (domain.PatentNumber, bool) {
-	if rec.Action == observability.ActionUIFocus {
+	if rec.Action == observability.ActionUIFocus || rec.Action == observability.ActionUSPTOXMLView {
 		if number, err := domain.ParsePatentNumber(rec.EntityID); err == nil {
 			return number, true
 		}
@@ -239,4 +241,30 @@ func (a *App) replayHistoryProjectSwitch(rec observability.Record, confirmed boo
 	}
 	a.closeHistoryReplayOverlays()
 	return a.activateProjectByArg(rec.EntityID)
+}
+
+func (a *App) replayHistoryUSPTOXMLView(rec observability.Record) (tea.Model, tea.Cmd) {
+	number, ok := historyPatentNumber(rec)
+	if !ok {
+		a.setErr(text.StatusHistoryPatentUnavailable, rec.EntityID)
+		return a, nil
+	}
+	project := a.historyProjectID(rec)
+	switchCmd := a.switchHistoryProject(project)
+	a.closeHistoryReplayOverlays()
+
+	kindStr, _ := rec.Attributes["kind"].(string)
+	kind := proto.USPTOXMLKind(kindStr)
+	if kind == "" {
+		kind = proto.USPTOXMLKindGrant
+	}
+
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, switchCmd
+	}
+
+	spinner := overlay.NewUSPTOXMLFetchingOverlay(a.theme, number, kind)
+	a.overlays = append(a.overlays, spinner)
+	return a, tea.Batch(switchCmd, spinner.Init(), pane.FetchUSPTOXMLViewCmd(a.client, number, kind))
 }

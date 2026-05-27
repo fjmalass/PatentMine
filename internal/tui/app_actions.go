@@ -458,6 +458,9 @@ func (a *App) handleEvent(ev proto.Event) tea.Cmd {
 		var p proto.CrawlProgress
 		if json.Unmarshal(ev.Params, &p) == nil {
 			a.setStatus(text.StatusCrawlProgress, p.JobID, p.Depth, p.MaxDepth, p.CrawledCount, p.DiscoveredCount, p.Message)
+			if p.Mode != "" {
+				a.sourceMode = p.Mode
+			}
 		}
 		return nil
 	case proto.EventCrawlDone:

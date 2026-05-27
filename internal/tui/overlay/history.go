@@ -433,6 +433,14 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistIDS, label + ": " + pat
 	case observability.ActionIDSEntryDelete:
 		return theme.Glyphs.HistIDS, "IDS delete: " + pat
+	case observability.ActionUSPTOXMLView:
+		kind, _ := rec.Attributes["kind"].(string)
+		if kind == "" {
+			kind = "xml"
+		} else {
+			kind = strings.ToUpper(kind)
+		}
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("View USPTO %s: %s", kind, pat)
 	}
 	return theme.Glyphs.HistUnknown, rec.EntityID
 }

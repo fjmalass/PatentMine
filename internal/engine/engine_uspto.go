@@ -162,6 +162,70 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 	}, nil
 }
 
+// ViewUSPTOXML returns a human-readable TOML rendering of the raw grant or
+// pgpub XML for the given patent. It ensures the document is present on the
+// server (via the normal fetch/cache/ingest path), then parses and converts
+// it using the same logic the TUI popup uses. This removes any need for the
+// client to open server-side file paths directly.
+func (e *Engine) ViewUSPTOXML(ctx context.Context, n domain.PatentNumber, kind proto.USPTOXMLKind) (proto.USPTOXMLViewResult, error) {
+	start := time.Now()
+	var viewErr error
+	defer e.observeDuration("uspto.xml.view", start, &viewErr)
+
+	// Ensure the XML exists on the server (updates download counters, may
+	// trigger ingest into the grant body table, etc.).
+	fetched, err := e.FetchUSPTOXML(ctx, n, kind)
+	if err != nil {
+		viewErr = err
+		return proto.USPTOXMLViewResult{}, err
+	}
+
+	if fetched.LocalPath == "" {
+		viewErr = fmt.Errorf("engine: fetch returned no local path for %s %s", kind, n)
+		return proto.USPTOXMLViewResult{}, viewErr
+	}
+
+	f, err := os.Open(fetched.LocalPath)
+	if err != nil {
+		viewErr = fmt.Errorf("engine: open cached xml for view: %w", err)
+		return proto.USPTOXMLViewResult{}, viewErr
+	}
+	defer f.Close()
+
+	convertStart := time.Now()
+	doc, parseErr := uspto.ParseUSPTOGrantXML(f)
+	if parseErr != nil {
+		viewErr = fmt.Errorf("engine: parse xml for view: %w", parseErr)
+		return proto.USPTOXMLViewResult{}, viewErr
+	}
+
+	tomlStr, convErr := uspto.StructToTOML(doc)
+	convertDur := time.Since(convertStart)
+	if convErr != nil {
+		viewErr = fmt.Errorf("engine: convert xml to toml for view: %w", convErr)
+		return proto.USPTOXMLViewResult{}, viewErr
+	}
+
+	title := fmt.Sprintf("%s XML · %s", strings.ToUpper(string(kind)), n.String())
+
+	e.log(ctx, slog.LevelInfo, "uspto xml view rendered",
+		slog.String("patent", n.Normalized()),
+		slog.String("kind", string(kind)),
+		slog.String("path", fetched.LocalPath),
+		slog.Bool("cached", fetched.Cached),
+		slog.Int64("bytes", fetched.Bytes))
+
+	return proto.USPTOXMLViewResult{
+		TOML:                  tomlStr,
+		Title:                 title,
+		Kind:                  string(kind),
+		Bytes:                 fetched.Bytes,
+		Cached:                fetched.Cached,
+		DownloadCount:         fetched.DownloadCount,
+		ConvertDurationMillis: convertDur.Milliseconds(),
+	}, nil
+}
+
 // USPTOGrantBody returns the parsed body of the given patent. When kind is
 // empty, the engine tries grant first, then pgpub.
 func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind proto.USPTOXMLKind) (domain.USPTOGrantBody, bool, error) {

@@ -126,6 +126,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTableViewDelete:           s.tableViewDelete,
 		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
 		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
+		proto.MethodUSPTOXMLView:              s.usptoXMLView,
 		proto.MethodUSPTOLookup:               s.usptoLookup,
 		proto.MethodUSPTOFetchAssignments:     s.usptoFetchAssignments,
 		proto.MethodUSPTOAssignmentList:       s.usptoAssignmentList,
@@ -1288,12 +1289,20 @@ func (s *Server) usptoGrantBody(ctx context.Context, raw json.RawMessage) (any, 
 	return proto.USPTOGrantBodyResult{Present: present, Body: body}, nil
 }
 
+func (s *Server) usptoXMLView(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOXMLViewParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.ViewUSPTOXML(ctx, p.Number, p.Kind)
+}
+
 func (s *Server) sourceResolveDiffs(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.SourceResolveDiffsParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.engine.ResolveSourceDiffs(ctx, p.Number, p.Diffs); err != nil {
+	if err := s.engine.ResolveSourceDiffs(ctx, p.Number, p.Project, p.Diffs); err != nil {
 		return nil, err
 	}
 	if metrics := s.engineMetrics(); metrics != nil {

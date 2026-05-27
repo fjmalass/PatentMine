@@ -216,7 +216,7 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		Source:          domain.SourceUSPTO,
 		FetchedAt:       now,
 		ApplicationDate: filingDate,
-		SourceURL:       "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape("applicationNumberText:"+appNumber),
+		SourceURL:       googlePatentURL(recordNumber),
 	}
 
 	res := Result{

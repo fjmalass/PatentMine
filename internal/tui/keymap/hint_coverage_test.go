@@ -132,6 +132,11 @@ var hintCoverageExempt = map[command.ID]bool{
 	// Notes pane editing — header line tells the user.
 	command.NotesSortToggle: true,
 
+	// Raw XML viewer yank (very useful in a text viewer but we don't want
+	// to force a hint footer entry for the uspto-xml scope yet).
+	command.CopyYank:     true,
+	command.CopyYankMeta: true,
+
 	// Family controls — surfaced as +/− chips in the graph header.
 	command.FamilyDepthMore: true, command.FamilyDepthLess: true,
 	command.FamilyExportMermaid: true,

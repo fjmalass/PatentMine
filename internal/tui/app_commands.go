@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"patentmine/internal/text"
 	"patentmine/internal/tui/overlay"
 	"patentmine/internal/tui/pane"
+	"patentmine/internal/uspto"
 )
 
 // --- App-level command handlers ---------------------------------------------
@@ -79,10 +81,21 @@ func (a *App) cmdSourceCompare(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	number, ok := a.focusedPane().Selection()
-	if !ok || number.IsZero() {
-		a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
-		return a, nil
+	var number domain.PatentNumber
+	if len(inv.args) > 0 {
+		var err error
+		number, err = domain.ParsePatentNumber(inv.args[0])
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+	} else {
+		var ok bool
+		number, ok = a.focusedPane().Selection()
+		if !ok || number.IsZero() {
+			a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
+			return a, nil
+		}
 	}
 	return a.openSourceCompare(number)
 }
@@ -324,9 +337,11 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 		return a.openClassificationStats(p)
 	}
 
-	// 2. Cursor on a PGPub/Grant XML URL row: download (or load cached) + open.
+	// 2. Cursor on a PGPub/Grant XML URL row: ask the daemon for a ready-to-view
+	// TOML rendering of the raw XML. This path no longer assumes the XML file
+	// returned by the server is readable on the client's local disk.
 	if kind, ok := detail.ResolveCursorUSPTOXML(); ok {
-		return a.fetchAndOpenUSPTOXML([]domain.PatentNumber{detail.PatentNumber()}, kind)
+		return a.viewUSPTOXML(detail.PatentNumber(), kind)
 	}
 
 	// 3. Only activate on Enter if the cursor is actually on the Inventors field
@@ -542,6 +557,34 @@ func (a *App) cmdFetchUSPTOAssignments(inv invocation) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
+func (a *App) cmdViewUSPTOXML(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+
+	var number domain.PatentNumber
+	if len(inv.args) > 0 {
+		var err error
+		number, err = domain.ParsePatentNumber(inv.args[0])
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+	} else {
+		var ok bool
+		number, ok = a.focusedPane().Selection()
+		if !ok || number.IsZero() {
+			a.setErr(text.StatusNoPatentSelected)
+			return a, nil
+		}
+	}
+
+	// Default to grant for the direct command. Users who want the pgpub version
+	// can position the cursor on the PGPub XML line in the detail pane and press Enter.
+	return a.viewUSPTOXML(number, proto.USPTOXMLKindGrant)
+}
+
 func (a *App) cmdFetchUSPTOGrant(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdFetchUSPTOXML(inv, proto.USPTOXMLKindGrant, command.FetchUSPTOGrant)
 }
@@ -558,6 +601,12 @@ func (a *App) cmdFetchUSPTOXML(inv invocation, kind proto.USPTOXMLKind, usage co
 	if len(numbers) == 0 {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
+	}
+	// Single-patent explicit fetch commands now use the dedicated view RPC
+	// (daemon does parse + TOML) so we never assume the returned LocalPath is
+	// readable on the client machine.
+	if len(numbers) == 1 {
+		return a.viewUSPTOXML(numbers[0], kind)
 	}
 	return a.fetchAndOpenUSPTOXML(numbers, kind)
 }
@@ -602,6 +651,20 @@ func (a *App) fetchAndOpenUSPTOXML(numbers []domain.PatentNumber, kind proto.USP
 	return a, tea.Batch(cmds...)
 }
 
+// viewUSPTOXML asks the daemon (via uspto.xml.view) to ensure the requested
+// USPTO XML is present on the server and return a pre-rendered TOML view of
+// it. The TUI never opens a server-side file path locally.
+func (a *App) viewUSPTOXML(number domain.PatentNumber, kind proto.USPTOXMLKind) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	// Use the full-screen pane (like FullText) instead of a popup overlay.
+	return a, tea.Batch(
+		pane.FetchUSPTOXMLViewCmd(a.client, number, kind), // still uses the RPC for content
+	)
+}
+
 // handleUSPTOXMLFetched dismisses the fetch spinner and reports the saved
 // path. We do not hand the file off to the OS opener: xdg-open on a .xml is
 // the system browser on most Linux desktops, which is not what the user
@@ -629,7 +692,166 @@ func (a *App) handleUSPTOXMLFetched(m pane.USPTOXMLFetchedMsg) (tea.Model, tea.C
 	}
 	a.status = a.text.Tf(key, string(m.Kind), m.LocalPath, m.Bytes, m.DownloadCount)
 	a.statusErr = false
+
+	// Open the downloaded USPTO XML file and show it in TOML format!
+	f, err := os.Open(m.LocalPath)
+	if err == nil {
+		defer f.Close()
+
+		// Time the raw XML parse (separate from the subsequent struct→TOML step).
+		parseStart := time.Now()
+		doc, parseErr := uspto.ParseUSPTOGrantXML(f)
+		parseDur := time.Since(parseStart)
+		a.metrics.ObserveDuration("tui.uspto.xml.parse.duration", parseDur, parseErr != nil)
+
+		if parseErr != nil {
+			a.metrics.IncCounter("tui.uspto.xml.parse.error", 1)
+			a.log().Error("uspto xml parse failed (for viewer)",
+				slog.String("patent", m.Number.String()),
+				slog.String("kind", string(m.Kind)),
+				slog.Duration("parse_duration", parseDur),
+				slog.String("error", parseErr.Error()))
+		} else {
+			// Measure the XML struct → TOML conversion (the work done by the
+			// new toml_viewer helpers: json roundtrip + MapToTOML recursion).
+			convStart := time.Now()
+			tomlStr, tomlErr := overlay.StructToTOML(doc)
+			convDur := time.Since(convStart)
+			a.metrics.ObserveDuration("tui.uspto.xml.to_toml.duration", convDur, tomlErr != nil)
+
+			if tomlErr != nil {
+				a.metrics.IncCounter("tui.uspto.xml.to_toml.error", 1)
+				a.log().Error("uspto xml to toml conversion failed",
+					slog.String("patent", m.Number.String()),
+					slog.String("kind", string(m.Kind)),
+					slog.Duration("duration", convDur),
+					slog.String("error", tomlErr.Error()))
+			} else {
+				a.metrics.IncCounter("tui.uspto.xml.to_toml.count", 1)
+
+				title := fmt.Sprintf("%s XML · %s", strings.ToUpper(string(m.Kind)), m.Number.String())
+				a.overlays = append(a.overlays, overlay.NewTOMLViewer(a.theme, title, tomlStr))
+
+				bib := doc.Bibliographic
+				if bib.ApplicationRef.DocumentID.DocNumber == "" && doc.BibliographicApp.ApplicationRef.DocumentID.DocNumber != "" {
+					bib = doc.BibliographicApp
+				}
+				inventorsShort := "-"
+				if len(bib.Inventors) > 0 {
+					first := bib.Inventors[0].Addressbook.LastName
+					if first == "" {
+						first = bib.Inventors[0].Addressbook.OrgName
+					}
+					if len(bib.Inventors) > 1 {
+						inventorsShort = first + " et al."
+					} else {
+						inventorsShort = first
+					}
+				}
+				pubDate := bib.PublicationRef.Date
+				if pubDate == "" {
+					pubDate = "-"
+				}
+				invTitle := strings.TrimSpace(bib.InventionTitle)
+
+				attrs := map[string]any{
+					"kind":             string(m.Kind),
+					"local_path":       m.LocalPath,
+					"bytes":            m.Bytes,
+					"cached":           m.Cached,
+					"title":            invTitle,
+					"publication_date": pubDate,
+					"inventors_short":  inventorsShort,
+					"parse_duration_ms": parseDur.Milliseconds(),
+					"to_toml_duration_ms": convDur.Milliseconds(),
+				}
+				if a.activeProject != nil {
+					attrs["project"] = string(a.activeProject.ID)
+				}
+
+				// Telemetry and activity tracking
+				a.metrics.IncCounter("tui.uspto.xml.viewed_total", 1)
+				a.recordActivity(observability.Record{
+					Action:     observability.ActionUSPTOXMLView,
+					Entity:     "patent",
+					EntityID:   m.Number.String(),
+					Status:     "opened",
+					Attributes: attrs,
+				})
+
+				a.log().Info("uspto xml parsed and viewed in toml format",
+					slog.String("patent", m.Number.String()),
+					slog.String("kind", string(m.Kind)),
+					slog.String("local_path", m.LocalPath),
+					slog.Bool("cached", m.Cached),
+					slog.Duration("to_toml_duration", convDur))
+			}
+		}
+	}
+
 	return a, nil
+}
+
+// handleUSPTOXMLViewReady is the clean daemon-backed path for the raw XML
+// TOML viewer popup. The daemon performed the fetch (if needed), parse, and
+// StructToTOML conversion; we receive the finished TOML string and simply
+// display it. No server-side file paths are ever opened on the client.
+func (a *App) handleUSPTOXMLViewReady(m pane.USPTOXMLViewReadyMsg) (tea.Model, tea.Cmd) {
+	// Dismiss any fetching spinner
+	if len(a.overlays) > 0 {
+		if _, ok := a.overlays[len(a.overlays)-1].(*overlay.USPTOXMLFetchingOverlay); ok {
+			a.overlays = a.overlays[:len(a.overlays)-1]
+		}
+	}
+
+	if m.Err != "" {
+		a.setErr(text.StatusXMLFetchFailed, m.Err)
+		return a, nil
+	}
+
+	if m.TOML == "" {
+		a.setErr(text.StatusGeneric, "daemon returned empty TOML for XML view")
+		return a, nil
+	}
+
+	title := m.Title
+	if title == "" {
+		title = fmt.Sprintf("%s XML · %s", strings.ToUpper(string(m.Kind)), m.Number.String())
+	}
+	if m.ConvertDurationMillis > 0 {
+		title = fmt.Sprintf("%s  ·  %dms", title, m.ConvertDurationMillis)
+	}
+
+	attrs := map[string]any{
+		"kind":                string(m.Kind),
+		"bytes":               m.Bytes,
+		"cached":              m.Cached,
+		"download_count":      m.DownloadCount,
+		"via":                 "uspto.xml.view",
+		"convert_duration_ms": m.ConvertDurationMillis,
+	}
+	if a.activeProject != nil {
+		attrs["project"] = string(a.activeProject.ID)
+	}
+
+	a.metrics.IncCounter("tui.uspto.xml.viewed_total", 1)
+	a.recordActivity(observability.Record{
+		Action:     observability.ActionUSPTOXMLView,
+		Entity:     "patent",
+		EntityID:   m.Number.String(),
+		Status:     "opened",
+		Attributes: attrs,
+	})
+
+	a.log().Info("uspto xml viewed via daemon",
+		slog.String("patent", m.Number.String()),
+		slog.String("kind", string(m.Kind)),
+		slog.Bool("cached", m.Cached),
+		slog.Int64("bytes", m.Bytes),
+		slog.Int64("convert_duration_ms", m.ConvertDurationMillis))
+
+	// Full-screen pane (like FullText), not a popup overlay.
+	return a.pushPane(pane.NewUSPTORawXML(a.client, a.theme, m.Number, string(m.Kind), m.TOML, title))
 }
 
 func (a *App) handleUSPTOXMLBatchTick(m pane.USPTOXMLFetchedMsg) (tea.Model, tea.Cmd) {

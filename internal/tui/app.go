@@ -67,6 +67,11 @@ type pingLoadedMsg struct {
 	err              error
 }
 
+// sourceModeLoadedMsg carries the daemon's active source mode value.
+type sourceModeLoadedMsg struct {
+	mode string
+}
+
 type serviceConnectionLoadedMsg struct {
 	uspto      serviceConnectionState
 	backup     serviceConnectionState
@@ -162,6 +167,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.FetchUSPTOPGPub:            (*App).cmdFetchUSPTOPGPub,
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.FetchUSPTOAssignments:      (*App).cmdFetchUSPTOAssignments,
+	command.ViewUSPTOGrantXML:          (*App).cmdViewUSPTOXML,
 	command.Import:                     (*App).cmdImport,
 	command.SourceMode:     (*App).cmdSourceMode,
 	command.SourceCompare: (*App).cmdSourceCompare,
@@ -222,6 +228,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.OpenBrowserUSPTOGrant: true,
 	command.OpenBrowserUSPTOPGPub: true,
 	command.OpenBrowserGoogle:     true,
+	command.ViewUSPTOGrantXML:     true,
 }
 
 // App is the bubbletea root model.
@@ -278,6 +285,7 @@ type App struct {
 	ollamaAnalyzer   ai.Analyzer
 
 	notesExportDir string
+	sourceMode     string
 }
 
 // xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
@@ -476,6 +484,7 @@ func (a *App) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		a.panes[0].Init(),
 		a.fetchPing(),
+		a.fetchSourceMode(),
 		a.checkServiceConnections(),
 		func() tea.Msg {
 			return pane.ServiceStatusChangedMsg{
@@ -667,6 +676,21 @@ func (a *App) fetchPing() tea.Cmd {
 	}
 }
 
+// fetchSourceMode asks the daemon which source mode it is running in.
+func (a *App) fetchSourceMode() tea.Cmd {
+	if a.client == nil {
+		return nil
+	}
+	client := a.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		defer cancel()
+		var res proto.SourceModeResult
+		_ = client.Call(ctx, proto.MethodSourceModeGet, nil, &res)
+		return sourceModeLoadedMsg{mode: res.Mode}
+	}
+}
+
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
@@ -844,7 +868,30 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.popOverlay()
 		return a, nil
 
+	case overlay.LoadingCloseMsg:
+		if len(a.overlays) > 0 {
+			a.popOverlay()
+		}
+		var cmd tea.Cmd
+		if a.activeProject != nil && a.client != nil && m.Patent != "" {
+			number, err := domain.ParsePatentNumber(m.Patent)
+			if err == nil {
+				cmd = tea.Batch(
+					pane.AddToProjectCmd(a.client, a.activeProject.ID, number),
+					a.refreshPanes(),
+				)
+			}
+		}
+		if cmd == nil {
+			cmd = a.refreshPanes()
+		}
+		return a, cmd
+
+
 	case overlay.LoadingCompareSourcesMsg:
+		if len(a.overlays) > 0 {
+			a.popOverlay()
+		}
 		number, err := domain.ParsePatentNumber(m.Patent)
 		if err != nil {
 			a.setErr(text.StatusInvalidPatentNumber, err.Error())
@@ -867,9 +914,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
+		var projectID domain.ProjectID
+		if a.activeProject != nil {
+			projectID = a.activeProject.ID
+		}
+
 		params := proto.SourceResolveDiffsParams{
-			Number: m.Patent,
-			Diffs:  m.Diffs,
+			Number:  m.Patent,
+			Diffs:   m.Diffs,
+			Project: projectID,
 		}
 		var res proto.SourceResolveDiffsResult
 		resolveErr := a.client.Call(ctx, proto.MethodSourceResolveDiffs, params, &res)
@@ -895,7 +948,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			},
 		})
 
-		a.setStatus(text.StatusGeneric, "Source comparison reconciled (choices persisted).")
+		successMsg := fmt.Sprintf("Reconciliation complete! Saved %d reconciled fields.", res.Resolved)
+		if a.activeProject != nil {
+			successMsg += fmt.Sprintf(" Added %s as a member of project '%s'.", m.Patent, a.activeProject.Name)
+		}
+		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, successMsg))
+
+		a.setStatus(text.StatusGeneric, successMsg)
 
 		a.log().Info("source comparison resolved",
 			slog.String("patent", m.Patent.String()),
@@ -934,6 +993,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case pane.USPTOXMLFetchedMsg:
 		return a.handleUSPTOXMLFetched(m)
+	case pane.USPTOXMLViewReadyMsg:
+		return a.handleUSPTOXMLViewReady(m)
 	case overlay.USPTOCandidateSelectMsg:
 		if len(a.overlays) > 0 {
 			a.overlays = a.overlays[:len(a.overlays)-1]
@@ -956,6 +1017,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case pane.StatusMsg:
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
+		if m.Key == text.StatusUsage && len(m.Args) > 0 {
+			if str, ok := m.Args[0].(string); ok && strings.HasPrefix(str, "source mode: ") {
+				a.sourceMode = strings.TrimPrefix(str, "source mode: ")
+			}
+		}
 		if m.Key == text.StatusAddAlreadyExists {
 			errMessage := a.text.Tf(m.Key, m.Args...)
 			a.overlays = append(a.overlays, overlay.NewErrorOverlay(a.theme, errMessage))
@@ -1121,6 +1187,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ActiveBackup: a.activeBackupString(),
 			ActiveDaemon: a.activeDaemonString(),
 		})
+	case sourceModeLoadedMsg:
+		a.sourceMode = m.mode
+		return a, nil
 	case serviceConnectionLoadedMsg:
 		a.usptoConnection = m.uspto
 		a.backupConnection = m.backup

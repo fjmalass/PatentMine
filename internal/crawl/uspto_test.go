@@ -69,6 +69,10 @@ func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
 	if res.Patent.Source != domain.SourceUSPTO {
 		t.Errorf("source = %q, want uspto", res.Patent.Source)
 	}
+	expectedURL := "https://patents.google.com/patent/US16123456/en"
+	if res.Patent.SourceURL != expectedURL {
+		t.Errorf("source URL = %q, want %q", res.Patent.SourceURL, expectedURL)
+	}
 	if res.Patent.ApplicationDate.Year() != 2016 {
 		t.Errorf("application date = %v, want 2016", res.Patent.ApplicationDate)
 	}

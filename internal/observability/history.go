@@ -99,7 +99,8 @@ func IsHistoryFeedAction(action string) bool {
 		ActionNotesExport,
 		ActionNotesSave,
 		ActionNotesDelete,
-		ActionUIClearCache:
+		ActionUIClearCache,
+		ActionUSPTOXMLView:
 		return true
 	default:
 		return false

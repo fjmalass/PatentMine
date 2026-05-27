@@ -81,6 +81,7 @@ const (
 	FetchUSPTOPGPub       ID = "patent.fetch-uspto-pgpub"
 	FetchUSPTOGrant       ID = "patent.fetch-uspto-grant"
 	FetchUSPTOAssignments ID = "patent.fetch-uspto-assignments"
+	ViewUSPTOGrantXML     ID = "uspto.patent.grant.view" // view the raw fetched grant XML in the formatted TOML popup (goes through the daemon)
 
 	// Tagging. Both act on the selected patent within the active project.
 	Tag   ID = "patent.tag"
@@ -160,7 +161,7 @@ const (
 )
 
 // listScopes are the scopes that behave as scrollable lists.
-var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText, ScopeNotes, ScopeOrphans}
+var listScopes = []Scope{ScopeCatalog, ScopeCitations, ScopeFamily, ScopeProjects, ScopeDetail, ScopeIDS, ScopeFullText, ScopeUSPTOXML, ScopeNotes, ScopeOrphans}
 
 // patentScopes are the scopes where a patent is selected and can be acted on.
 var patentScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}
@@ -263,6 +264,7 @@ func Default() (*Registry, error) {
 		Command{ID: FetchUSPTOPGPub, Name: "fetch.uspto.pgpub", Aliases: []string{"fetch-pgpub", "pgpub.fetch"}, Usage: ":fetch.uspto.pgpub", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: FetchUSPTOGrant, Name: "fetch.uspto.grant", Aliases: []string{"fetch-grant", "grant.fetch"}, Usage: ":fetch.uspto.grant", Kind: KindEngine, Method: proto.MethodUSPTOFetchXML, Scopes: patentScopes},
 		Command{ID: FetchUSPTOAssignments, Name: "fetch.uspto.assignments", Aliases: []string{"fetch-assignments", "assignments.fetch", "chain.fetch"}, Usage: ":fetch.uspto.assignments", Kind: KindEngine, Method: proto.MethodUSPTOFetchAssignments, Scopes: patentScopes},
+		Command{ID: ViewUSPTOGrantXML, Name: "uspto.patent.grant.view", Aliases: []string{"uspto.grant.view", "grant.view", "patent.grant.view", "view.grant", "xml.view", "view.xml"}, Usage: ":uspto.patent.grant.view [PATENT]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: PatentDelete, Name: "delete", Aliases: []string{"delete-patent"}, Usage: ":delete", Kind: KindEngine, Method: proto.MethodPatentDelete, Scopes: patentScopes},
 		Command{ID: ClearPatentCache, Name: "patent.clear_cache", Aliases: []string{"clear-cache", "clear.cache", "patent.clear-cache"}, Usage: ":patent.clear_cache [PATENT ...]", Kind: KindEngine, Method: proto.MethodPatentClearCache, Scopes: patentScopes},
 		Command{ID: Tag, Name: "tag", Aliases: []string{"tag-patent"}, Usage: ":tag <name>", Kind: KindEngine, Method: proto.MethodTagPatent, Scopes: patentScopes},

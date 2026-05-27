@@ -63,6 +63,11 @@ func (a *App) renderScreenHeader(focused pane.Pane, width int) string {
 		project := a.activeProject.Name + " [" + string(a.activeProject.ID) + "]"
 		b.WriteString(a.theme.Row.Render(project))
 	}
+	if a.sourceMode != "" {
+		b.WriteString(" ")
+		b.WriteString(a.theme.Header.Render("· "))
+		b.WriteString(a.theme.Row.Render("SourceMode: " + a.sourceMode))
+	}
 	b.WriteString(" ")
 	b.WriteString(a.theme.Header.Render("· "))
 	b.WriteString(a.theme.Row.Bold(true).Render(focused.Title()))

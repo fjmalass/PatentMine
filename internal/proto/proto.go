@@ -80,6 +80,7 @@ const (
 	MethodTableViewDelete           Method = "table_view.delete"
 	MethodUSPTOFetchXML             Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody            Method = "uspto.grant_body"
+	MethodUSPTOXMLView              Method = "uspto.xml.view" // returns human-readable TOML rendering of the raw grant/pgpub XML (no client-side file assumption)
 	MethodUSPTOLookup               Method = "uspto.lookup"
 	MethodUSPTOFetchAssignments     Method = "uspto.fetch_assignments"
 	MethodUSPTOAssignmentList       Method = "uspto.assignment.list"
@@ -130,6 +131,29 @@ type USPTOFetchXMLResult struct {
 	DownloadCount int64  `json:"download_count"`
 }
 
+// USPTOXMLViewParams selects which raw XML document the caller wants rendered
+// as human-readable TOML for the in-TUI viewer popup.
+type USPTOXMLViewParams struct {
+	Number domain.PatentNumber `json:"number"`
+	Kind   USPTOXMLKind        `json:"kind"`
+}
+
+// USPTOXMLViewResult carries a pre-rendered TOML view of the USPTO grant or
+// pgpub XML. The heavy lifting (fetch-if-needed on the server, parse, and the
+// StructToTOML conversion with body stripping) happens on the daemon so the
+// TUI client never needs a local file path.
+type USPTOXMLViewResult struct {
+	TOML                  string `json:"toml"`
+	Title                 string `json:"title,omitempty"`
+	Kind                  string `json:"kind"`
+	Bytes                 int64  `json:"bytes"` // size of the original XML on disk
+	Cached                bool   `json:"cached"`
+	DownloadCount         int64  `json:"download_count"`
+	// ConvertDurationMillis is the time spent on the server parsing the XML
+	// and running StructToTOML (the actual "xml to toml" conversion cost).
+	ConvertDurationMillis int64 `json:"convert_duration_millis"`
+}
+
 // USPTOFetchAssignmentsParams names the patent whose recorded assignment
 // chain should be fetched from the USPTO Patent Assignment Search API.
 type USPTOFetchAssignmentsParams struct {
@@ -160,8 +184,9 @@ type USPTOAssignmentListResult struct {
 // comparison overlay. The engine will apply ChosenValue to patent fields and
 // stamp reconciled metadata on the diffs (Option A).
 type SourceResolveDiffsParams struct {
-	Number domain.PatentNumber `json:"number"`
-	Diffs  []domain.SourceDiff `json:"diffs"`
+	Number  domain.PatentNumber `json:"number"`
+	Diffs   []domain.SourceDiff `json:"diffs"`
+	Project domain.ProjectID    `json:"project,omitempty"`
 }
 
 // SourceResolveDiffsResult reports the outcome of reconciliation.

@@ -313,7 +313,7 @@ func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
 // SourceDiff rows as reconciled (ReconciledAt/By/Choice + final Chosen) for
 // provenance. This makes the overlay choices durable while keeping the
 // patent table as the single "current" view and source_* tables for audit.
-func (e *Engine) ResolveSourceDiffs(ctx context.Context, patentNum domain.PatentNumber, diffs []domain.SourceDiff) error {
+func (e *Engine) ResolveSourceDiffs(ctx context.Context, patentNum domain.PatentNumber, project domain.ProjectID, diffs []domain.SourceDiff) error {
 	var err error
 	defer e.observeDuration("engine.source.resolve_diffs", time.Now(), &err)
 
@@ -322,6 +322,21 @@ func (e *Engine) ResolveSourceDiffs(ctx context.Context, patentNum domain.Patent
 	}
 	if len(diffs) == 0 {
 		return nil
+	}
+
+	if project != "" {
+		if _, exists := e.existingMembership(ctx, project, patentNum); !exists {
+			after := domain.Membership{
+				Project:     project,
+				Patent:      patentNum,
+				ReviewState: domain.ReviewStateUnknown,
+				AddedAt:     time.Now().UTC(),
+			}
+			if err := e.repo.AddMembership(ctx, after); err != nil {
+				return fmt.Errorf("engine: resolve diffs: add membership: %w", err)
+			}
+			e.announceChange()
+		}
 	}
 
 	p, err := e.repo.Patent(ctx, patentNum)

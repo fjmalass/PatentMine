@@ -55,6 +55,9 @@ const (
 	ActionSourceCompareOpen = "source.compare.open"
 	ActionSourceDiffsLoad   = "source.diffs.load"
 	ActionSourceResolveDiffs = "source.resolve_diffs"
+
+	// USPTO XML TOML formatted view action
+	ActionUSPTOXMLView = "patent.uspto.xml.view"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -100,4 +103,5 @@ var AllActions = []string{
 	ActionSourceDiffsLoad,
 	ActionSourceResolveDiffs,
 	ActionUIClearCache,
+	ActionUSPTOXMLView,
 }

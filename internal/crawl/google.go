@@ -310,6 +310,7 @@ func cleanClassification(s string) string {
 		}
 	}
 	s = strings.Trim(s, " /:-")
+	s = strings.ToUpper(s)
 	if len(s) < 3 || len(s) > 25 {
 		return ""
 	}

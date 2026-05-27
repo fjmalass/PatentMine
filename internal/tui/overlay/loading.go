@@ -26,6 +26,10 @@ type LoadingCompareSourcesMsg struct {
 	Patent string
 }
 
+type LoadingCloseMsg struct {
+	Patent string
+}
+
 // Loading is a modal overlay that shows a throbber, progress bar, and ETA
 // while one or more background daemon jobs (like crawls) are running.
 // Single-job and multi-job modes are both supported.
@@ -126,7 +130,11 @@ func (l *Loading) canCompare() bool {
 	if l.rootPatent == "" {
 		return false
 	}
-	sources := l.recordSources[l.rootPatent]
+	var sources []string
+	sources = append(sources, l.recordSources[l.rootPatent]...)
+	if l.recordResolved != "" {
+		sources = append(sources, l.recordSources[l.recordResolved]...)
+	}
 	seen := map[string]bool{}
 	for _, s := range sources {
 		seen[canonicalProvider(s)] = true
@@ -154,6 +162,36 @@ func (l *Loading) Handles() []command.ID {
 	return nil
 }
 
+func (l *Loading) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if msg.String() == "ctrl+c" {
+		return l, tea.Quit, true
+	}
+	if !l.finished {
+		return l, nil, false
+	}
+	switch msg.String() {
+	case "esc", "enter", "q":
+		patent := l.rootPatent
+		if l.recordResolved != "" {
+			patent = l.recordResolved
+		}
+		return l, func() tea.Msg {
+			return LoadingCloseMsg{
+				Patent: patent,
+			}
+		}, true
+	case "c", "C":
+		if l.canCompare() {
+			patent := l.rootPatent
+			if l.recordResolved != "" {
+				patent = l.recordResolved
+			}
+			return l, func() tea.Msg { return LoadingCompareSourcesMsg{Patent: patent} }, true
+		}
+	}
+	return l, nil, false
+}
+
 // matchJob reports whether an event belongs to one of the tracked jobs.
 func (l *Loading) matchJob(jobID string) bool {
 	return slices.Contains(l.jobIDs, jobID)
@@ -161,24 +199,6 @@ func (l *Loading) matchJob(jobID string) bool {
 
 func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	switch m := msg.(type) {
-	case tea.KeyMsg:
-		if m.String() == "ctrl+c" {
-			return l, tea.Quit
-		}
-		if l.finished {
-			switch m.String() {
-			case "esc", "enter", "q":
-				return l, func() tea.Msg { return CloseOverlayMsg{} }
-			case "c", "C":
-				if l.canCompare() {
-					patent := l.rootPatent
-					return l, tea.Batch(
-						func() tea.Msg { return CloseOverlayMsg{} },
-						func() tea.Msg { return LoadingCompareSourcesMsg{Patent: patent} },
-					)
-				}
-			}
-		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		l.spinner, cmd = l.spinner.Update(m)
@@ -495,6 +515,9 @@ func (l *Loading) providerStatus(provider domain.Source, contributed bool) (stri
 		(mode == domain.SourceModeGoogleOnly && provider == domain.SourceUSPTO)
 	if skipped {
 		return "skipped (mode=" + string(mode) + ")", l.theme.Dim
+	}
+	if mode == domain.SourceModeCompare {
+		return "not loaded", l.theme.Warn
 	}
 	return "no result", l.theme.Dim
 }

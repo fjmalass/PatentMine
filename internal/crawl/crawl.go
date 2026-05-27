@@ -472,6 +472,17 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 		sourceSet[snap.Source] = true
 		sourcesOut = append(sourcesOut, snap.Source)
 	}
+	if len(sourcesOut) == 0 {
+		if snaps, err := c.repo.ListSourceSnapshots(ctx, recordNumber); err == nil {
+			for _, snap := range snaps {
+				if snap.Source == "" || sourceSet[snap.Source] {
+					continue
+				}
+				sourceSet[snap.Source] = true
+				sourcesOut = append(sourcesOut, snap.Source)
+			}
+		}
+	}
 	if len(sourcesOut) == 0 && patent.Source != "" {
 		sourcesOut = append(sourcesOut, string(patent.Source))
 	}

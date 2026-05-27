@@ -92,6 +92,18 @@ func TestParseClassification(t *testing.T) {
 				Code:   "STCF",
 			},
 		},
+		{
+			rawCode: "g06f 17/30",
+			expected: Classification{
+				System:    "CPC",
+				Code:      "G06F 17/30",
+				Section:   "G",
+				Class:     "06",
+				Subclass:  "F",
+				MainGroup: "17",
+				Subgroup:  "30",
+			},
+		},
 	}
 
 	for _, tc := range tests {

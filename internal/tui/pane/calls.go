@@ -605,3 +605,44 @@ func FetchUSPTOXMLInteractiveCmd(client *rpc.Client, number domain.PatentNumber,
 	}
 }
 
+// USPTOXMLViewReadyMsg is delivered when the daemon has prepared a TOML
+// rendering of a raw USPTO XML document (grant or pgpub). The App uses it to
+// open the TOMLViewer overlay without ever touching a server-side file path
+// on the client machine.
+type USPTOXMLViewReadyMsg struct {
+	Number                domain.PatentNumber
+	Kind                  proto.USPTOXMLKind
+	TOML                  string
+	Title                 string
+	Bytes                 int64
+	Cached                bool
+	DownloadCount         int64
+	ConvertDurationMillis int64 // time the daemon spent on parse + StructToTOML
+	Err                   string
+}
+
+// FetchUSPTOXMLViewCmd asks the daemon to ensure the XML exists on the server
+// and return a ready-to-display TOML rendering. This is the preferred path
+// for the interactive "view raw XML in popup" feature.
+func FetchUSPTOXMLViewCmd(client *rpc.Client, number domain.PatentNumber, kind proto.USPTOXMLKind) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.USPTOXMLViewResult
+		if err := client.Call(ctx, proto.MethodUSPTOXMLView,
+			proto.USPTOXMLViewParams{Number: number, Kind: kind}, &res); err != nil {
+			return USPTOXMLViewReadyMsg{Number: number, Kind: kind, Err: err.Error()}
+		}
+		return USPTOXMLViewReadyMsg{
+			Number:                number,
+			Kind:                  kind,
+			TOML:                  res.TOML,
+			Title:                 res.Title,
+			Bytes:                 res.Bytes,
+			Cached:                res.Cached,
+			DownloadCount:         res.DownloadCount,
+			ConvertDurationMillis: res.ConvertDurationMillis,
+		}
+	}
+}
+

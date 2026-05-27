@@ -35,6 +35,28 @@ func TestHistoryFilterActionDetails(t *testing.T) {
 	}
 }
 
+func TestHistoryUSPTOXMLViewDetails(t *testing.T) {
+	icon, details := historyIconAndDetails(render.NewTheme(), observability.Record{
+		Action:   observability.ActionUSPTOXMLView,
+		Entity:   "patent",
+		EntityID: "US10000000B2",
+		Status:   "opened",
+		Attributes: map[string]any{
+			"kind":             "grant",
+			"title":            "Method of anti-gravity",
+			"publication_date": "2026-05-27",
+			"inventors_short":  "Einstein et al.",
+		},
+	})
+	if icon != render.NewTheme().Glyphs.HistFulltext {
+		t.Fatalf("unexpected icon: %q", icon)
+	}
+	expected := "View USPTO GRANT: US10000000B2 [Einstein et al.] [2026-05-27] Method of anti-gravity"
+	if details != expected {
+		t.Fatalf("xml details = %q, want %q", details, expected)
+	}
+}
+
 func TestHistoryIDSSaveDetailsShowStatusTransition(t *testing.T) {
 	_, details := historyIconAndDetails(render.NewTheme(), observability.Record{
 		Action:   observability.ActionIDSEntrySave,

@@ -267,6 +267,18 @@ func Default() *Keymaps {
 		"ctrl+u": command.NavPageUp,
 	})
 
+	// Lean layer for the raw USPTO XML TOML viewer pane.
+	// Only binds what USPTORawXML currently actually handles (navigation + visual yank + our custom ; jump).
+	usptoXML := NewLayer("uspto-xml", false).
+		BindAll(listMotions()).
+		BindAll(map[string]command.ID{
+			"V": command.SelectVisual,
+			"y": command.CopyYank,
+			"Y": command.CopyYankMeta,
+			// ";" is handled via raw HandleKey for the custom per-window
+			// inline [a][b] jump highlight style (not the global JumpMode overlay).
+		})
+
 	return &Keymaps{
 		base: base,
 		scopes: map[command.Scope]*Layer{
@@ -279,6 +291,7 @@ func Default() *Keymaps {
 			command.ScopeFullText:  fullText,
 			command.ScopeNotes:     notes,
 			command.ScopeOverlay:   overlay,
+			command.ScopeUSPTOXML:  usptoXML,
 		},
 	}
 }

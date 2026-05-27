@@ -239,6 +239,7 @@ func PaneHandlers() map[command.Scope][]command.ID {
 		NewIDSDetail(nil, theme, domain.PatentNumber{}, ""),
 		NewProjects(nil, theme, "", "", "", ""),
 		NewFullText(nil, theme, domain.PatentNumber{}, "", nil),
+		NewUSPTORawXML(nil, theme, domain.PatentNumber{}, "", "", "USPTORawXML test"),
 		NewAllNotes(nil, theme, nil),
 		NewOrphans(nil, theme),
 	}

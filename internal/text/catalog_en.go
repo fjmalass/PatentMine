@@ -253,6 +253,7 @@ var cmdStrings = map[string][2]string{
 	"patent.fetch-uspto-pgpub":       {"Fetch PGPub XML", "Download the pre-grant publication XML for the selected patent from the USPTO bulk dataset."},
 	"patent.fetch-uspto-grant":       {"Fetch Grant XML", "Download the grant XML for the selected patent from the USPTO bulk dataset."},
 	"patent.fetch-uspto-assignments": {"Fetch Assignment chain", "Pull the full chain of recorded assignments for the selected patent from the USPTO Patent Assignment Search API."},
+	"uspto.patent.grant.view":        {"View raw Grant XML", "Show the raw fetched USPTO grant XML in a nicely formatted TOML popup (the daemon does the parse + rendering; the client never touches server file paths)."},
 	"patent.tag":                 {"Tag patent", "Tag the selected patent within the active project; an unknown name creates the tag."},
 	"patent.untag":               {"Untag patent", "Remove a tag from the selected patent within the active project."},
 	"crawl.family":               {"Crawl family", "Recursively crawl the selected patent's family graph (parents and children)."},

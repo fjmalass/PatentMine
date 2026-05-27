@@ -63,6 +63,7 @@ type MetricsOverlay struct {
 	current   proto.MetricsSnapshot
 	history   []proto.MetricsSnapshot
 	handlers  map[command.ID]cmdHandler
+	localOnly bool // true when operating purely on the TUI process's own metrics
 }
 
 type metricsSection struct {
@@ -86,8 +87,10 @@ type metricsRenderLine struct {
 }
 
 // NewMetricsOverlay opens a metrics dashboard overlay. localMetrics is the
-// TUI process's own metrics sink; it is pushed to the daemon before each
-// fetch so the overlay shows combined engine + TUI metrics.
+// TUI process's own metrics sink. When a daemon client is present the overlay
+// pushes the local snapshot on each refresh and shows the merged (daemon + TUI)
+// view. When no client is available it falls back to showing only the live
+// local TUI metrics (so "M" always lets you inspect TUI-side instrumentation).
 func NewMetricsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, localMetrics *observability.Metrics) (*MetricsOverlay, tea.Cmd) {
 	o := &MetricsOverlay{
 		client:       client,
@@ -95,6 +98,7 @@ func NewMetricsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Cat
 		catalog:      catalog,
 		tab:          metricsTabTimings,
 		localMetrics: localMetrics,
+		localOnly:    client == nil,
 	}
 	o.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(repeat int) tea.Cmd { o.moveSelection(max(repeat, 1)); return nil },
@@ -102,14 +106,28 @@ func NewMetricsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Cat
 		command.NavPageDown: func(int) tea.Cmd { o.moveSelection(metricsPageStep); return nil },
 		command.NavPageUp:   func(int) tea.Cmd { o.moveSelection(-metricsPageStep); return nil },
 	}
+
+	// Seed with local TUI metrics immediately so the view is useful even
+	// without a daemon connection (pure "M shows TUI metrics" experience).
+	if localMetrics != nil {
+		o.current = snapshotToProto(localMetrics.Snapshot())
+		o.current.Timestamp = time.Now().UTC()
+	}
+
 	if client == nil {
-		o.err = fmt.Errorf("daemon connection unavailable")
+		// Local-only mode: no polling, but still fully interactive for the
+		// in-process TUI metrics we are instrumenting.
 		return o, nil
 	}
 	return o, o.refreshNow()
 }
 
-func (o *MetricsOverlay) Title() string { return "Daemon Metrics" }
+func (o *MetricsOverlay) Title() string {
+	if o.localOnly {
+		return "TUI Metrics (local)"
+	}
+	return "Metrics (TUI + Daemon)"
+}
 
 func (o *MetricsOverlay) Handles() []command.ID { return handlerIDs(o.handlers) }
 
@@ -156,12 +174,12 @@ func (o *MetricsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			o.history = appendMetricsHistory(o.history, m.snapshot)
 			o.clampSelection()
 		}
-		if o.client == nil {
+		if o.localOnly || o.client == nil {
 			return o, nil
 		}
 		return o, o.waitRefresh()
 	case metricsRefreshTickMsg:
-		if o.loading || o.client == nil {
+		if o.loading || o.localOnly || o.client == nil {
 			return o, nil
 		}
 		return o, o.refreshNow()
@@ -185,7 +203,13 @@ func (o *MetricsOverlay) View(maxW, maxH int) string {
 	sections := o.sectionsForTab(o.tab)
 	if len(sections) == 0 {
 		if o.loading {
-			lines = append(lines, o.theme.MutedItalic.Render("Loading daemon metrics..."))
+			msg := "Loading metrics..."
+			if o.localOnly {
+				msg = "Loading local TUI metrics..."
+			}
+			lines = append(lines, o.theme.MutedItalic.Render(msg))
+		} else if o.localOnly {
+			lines = append(lines, o.theme.MutedItalic.Render("No TUI metrics recorded yet. Start using the interface to emit tui.* counters/timings."))
 		} else {
 			lines = append(lines, o.theme.MutedItalic.Render("No metrics recorded yet."))
 		}
@@ -210,7 +234,11 @@ func (o *MetricsOverlay) View(maxW, maxH int) string {
 		}
 		lines = append(lines, o.theme.Header.Render(text))
 	}
-	lines = append(lines, o.theme.Dim.Render("[tab/shift+tab or l/h] switch tabs  [j/k] move  [r] refresh  [q/Esc] close"))
+	footer := "[tab/shift+tab or l/h] switch tabs  [j/k] move  [r] refresh  [q/Esc] close"
+	if o.localOnly {
+		footer = "[tab/shift+tab or l/h] switch tabs  [j/k] move  [r] re-sample local  [q/Esc] close"
+	}
+	lines = append(lines, o.theme.Dim.Render(footer))
 	return fitOverlayLines(lines, maxH)
 }
 
@@ -249,6 +277,19 @@ func (o *MetricsOverlay) refreshNow() tea.Cmd {
 	o.loading = true
 	o.requestID++
 	requestID := o.requestID
+
+	if o.localOnly || o.client == nil {
+		// Pure local TUI metrics mode — just snapshot what we have in-process.
+		return func() tea.Msg {
+			var snap proto.MetricsSnapshot
+			if o.localMetrics != nil {
+				snap = snapshotToProto(o.localMetrics.Snapshot())
+				snap.Timestamp = time.Now().UTC()
+			}
+			return metricsLoadedMsg{requestID: requestID, snapshot: snap, err: nil}
+		}
+	}
+
 	client := o.client
 	var localSnap *proto.MetricsSnapshot
 	if o.localMetrics != nil {
@@ -300,6 +341,17 @@ func (o *MetricsOverlay) waitRefresh() tea.Cmd {
 }
 
 func (o *MetricsOverlay) statusLine() string {
+	if o.localOnly {
+		if o.current.Timestamp.IsZero() {
+			return "showing local TUI metrics only (no daemon)"
+		}
+		status := fmt.Sprintf("local TUI  |  updated %s  |  [r] refresh", o.current.Timestamp.Local().Format("15:04:05"))
+		if o.loading {
+			status += "  |  refreshing..."
+		}
+		return status
+	}
+
 	if o.current.Timestamp.IsZero() {
 		if o.loading {
 			return fmt.Sprintf("polling daemon every %s", metricsRefreshInterval)

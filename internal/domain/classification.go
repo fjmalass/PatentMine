@@ -38,8 +38,9 @@ func ParseClassification(rawCode string) Classification {
 	if unicode.IsDigit(rune(code[0])) {
 		return parseUSPC(code)
 	}
-	if cpcCodeRE.MatchString(strings.ReplaceAll(code, " ", "")) {
-		return parseCPC(code)
+	codeUpper := strings.ToUpper(code)
+	if cpcCodeRE.MatchString(strings.ReplaceAll(codeUpper, " ", "")) {
+		return parseCPC(codeUpper)
 	}
 	return Classification{System: "Other", Code: code}
 }
