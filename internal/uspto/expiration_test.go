@@ -257,6 +257,51 @@ func TestFetchTerminalDisclaimerDate(t *testing.T) {
 	}
 }
 
+func TestFetchTerminalDisclaimerDate_Extended(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	defer func() { http.DefaultTransport = originalTransport }()
+
+	http.DefaultTransport = &mockRoundTripper{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+			}
+			resp.Header.Set("Content-Type", "application/json")
+			resp.Body = io.NopCloser(strings.NewReader(`{
+				"documentBag": [
+					{
+						"documentCode": "DIST.E.FILE",
+						"documentCodeDescriptionText": "Terminal Disclaimer",
+						"officialDate": "2022-08-10"
+					},
+					{
+						"documentCode": "DIST",
+						"documentCodeDescriptionText": "Terminal Disclaimer",
+						"mailRoomDate": "2022-08-11"
+					}
+				]
+			}`))
+			return resp, nil
+		},
+	}
+
+	ctx := context.Background()
+	tdDate, found, err := FetchTerminalDisclaimerDate(ctx, "16123456", "my-secret-key", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !found {
+		t.Errorf("expected terminal disclaimer to be found")
+	}
+
+	expectedDate := time.Date(2022, 8, 10, 0, 0, 0, 0, time.UTC)
+	if !tdDate.Equal(expectedDate) {
+		t.Errorf("expected terminal disclaimer date %v, got %v", expectedDate, tdDate)
+	}
+}
+
 func TestComputeEarliestTermFilingDate(t *testing.T) {
 	mockRepo := &mockRepository{
 		continuities: map[string][]domain.USPTOContinuity{

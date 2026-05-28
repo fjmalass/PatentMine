@@ -1131,6 +1131,10 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	app.EarliestTermFilingDate = earliestTermFilingDateStr
 	app.ComputedExpirationDate = computedExpStr
 
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	app.FetchedAt = nowStr
+	app.LastIngestionDateTime = nowStr
+
 	pRec := patentRec
 	if pErr != nil {
 		pRec = domain.Patent{

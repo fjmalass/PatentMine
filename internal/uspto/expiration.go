@@ -131,6 +131,23 @@ func FetchPTADays(ctx context.Context, appNum string, apiKey string, logger *slo
 	return 0, nil
 }
 
+const (
+	DocCodeTerminalDisclaimerDIST      = "DIST"
+	DocCodeTerminalDisclaimerDISTEFile = "DIST.E.FILE"
+	DocCodeTerminalDisclaimerDISC      = "DISC"
+	DocCodeTerminalDisclaimerTRMD      = "TRMD"
+	DocCodeTerminalDisclaimerDISE      = "DIS.E"
+)
+
+// terminalDisclaimerCodes defines the dictionary of USPTO document codes representing terminal disclaimers.
+var terminalDisclaimerCodes = map[string]bool{
+	DocCodeTerminalDisclaimerDIST:      true,
+	DocCodeTerminalDisclaimerDISTEFile: true,
+	DocCodeTerminalDisclaimerDISC:      true,
+	DocCodeTerminalDisclaimerTRMD:      true,
+	DocCodeTerminalDisclaimerDISE:      true,
+}
+
 // FetchTerminalDisclaimerDate calls the USPTO Documents API and checks for terminal disclaimers.
 // Returns the date of the earliest terminal disclaimer, whether a disclaimer was found, and error.
 // Includes metrics and telemetry tracing.
@@ -186,6 +203,8 @@ func FetchTerminalDisclaimerDate(ctx context.Context, appNum string, apiKey stri
 			MailDate                    string `json:"mailDate"`
 			FilingDate                  string `json:"filingDate"`
 			DocumentDate                string `json:"documentDate"`
+			OfficialDate                string `json:"officialDate"`
+			MailRoomDate                string `json:"mailRoomDate"`
 		} `json:"documentBag"`
 	}
 
@@ -200,13 +219,12 @@ func FetchTerminalDisclaimerDate(ctx context.Context, appNum string, apiKey stri
 		desc := strings.ToLower(doc.DocumentCodeDescriptionText)
 
 		// Check if it's a terminal disclaimer
-		isTD := code == "DIST" || code == "DISC" || code == "TRMD" || code == "DIS.E" ||
-			strings.Contains(desc, "terminal disclaimer")
+		isTD := terminalDisclaimerCodes[code] || strings.Contains(desc, "terminal disclaimer")
 
 		if isTD {
 			found = true
-			// Try to parse the date from MailDate, then FilingDate, then DocumentDate
-			for _, dateStr := range []string{doc.MailDate, doc.FilingDate, doc.DocumentDate} {
+			// Try to parse the date from MailDate, OfficialDate, MailRoomDate, FilingDate, then DocumentDate
+			for _, dateStr := range []string{doc.MailDate, doc.OfficialDate, doc.MailRoomDate, doc.FilingDate, doc.DocumentDate} {
 				if t, err := parseUSPTODate(dateStr); err == nil && !t.IsZero() {
 					if earliestDate.IsZero() || t.Before(earliestDate) {
 						earliestDate = t
@@ -222,26 +240,34 @@ func FetchTerminalDisclaimerDate(ctx context.Context, appNum string, apiKey stri
 
 // ComputeEarliestTermFilingDate finds the earliest term filing date under 35 U.S.C. 154
 // by recursively walking the non-provisional parent continuity chain.
+// Returns the earliest filing date, the count of recursively walked non-provisional parent relationships, and error.
 func ComputeEarliestTermFilingDate(
 	ctx context.Context,
 	repo store.Repository,
 	appNum string,
 	filingDate time.Time,
 	logger *slog.Logger,
-) (time.Time, error) {
+) (time.Time, int, error) {
 	startTime := time.Now()
 	visited := make(map[string]bool)
 	earliest, err := walkContinuityChain(ctx, repo, appNum, filingDate, visited)
 	dur := time.Since(startTime)
+	
+	count := len(visited) - 1
+	if count < 0 {
+		count = 0
+	}
+
 	if logger != nil {
 		logger.Debug("continuity walk completed",
 			slog.String("app_num", appNum),
 			slog.Duration("duration", dur),
 			slog.String("earliest_date", earliest.Format("2006-01-02")),
+			slog.Int("continuity_count", count),
 			slog.Bool("success", err == nil),
 		)
 	}
-	return earliest, err
+	return earliest, count, err
 }
 
 func walkContinuityChain(
@@ -256,6 +282,7 @@ func walkContinuityChain(
 		return currentFilingDate, nil
 	}
 	visited[appNum] = true
+	defer delete(visited, appNum)
 
 	// Query continuities for this appNum
 	continuities, err := repo.USPTOContinuities(ctx, appNum)

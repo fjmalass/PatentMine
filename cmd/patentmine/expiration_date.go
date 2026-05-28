@@ -15,6 +15,8 @@ import (
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
+	"patentmine/internal/store"
+	"patentmine/internal/store/sqlite"
 	"patentmine/internal/uspto"
 )
 
@@ -23,6 +25,7 @@ const expirationDateUsage = `usage:
 
 options:
   -source string   data source: uspto, google, or both (default "both")
+  -refresh         force refresh application metadata from USPTO
 `
 
 func runExpirationDate(args []string) int {
@@ -31,7 +34,9 @@ func runExpirationDate(args []string) int {
 	fs.Usage = func() { fmt.Fprint(fs.Output(), expirationDateUsage) }
 
 	var sourceFlag string
+	var refreshFlag bool
 	fs.StringVar(&sourceFlag, "source", "both", "data source: uspto, google, or both")
+	fs.BoolVar(&refreshFlag, "refresh", false, "force refresh application metadata from USPTO")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -111,15 +116,68 @@ func runExpirationDate(args []string) int {
 	}
 	patentType := uspto.DeterminePatentType(pn, appTypeLabel, appTypeCategory, pn.Kind)
 
-	expirationDate := uspto.PatentExpiration(patentType, filingDate, grantDate, time.Time{}, ptaDays, 0, tdDate)
+	var earliestTermFilingDate time.Time
+	var repo *sqlite.Repo
+
+	if patentType == "utility" || patentType == "plant" {
+		fmt.Fprintln(os.Stderr, "Warning: Walking the continuity chain recursively requires local database access. Conducting a database search...")
+		repo, err = sqlite.Open(ctx, string(cfg.DBPath))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to open database for continuity search: %v\n", err)
+		} else {
+			defer repo.Close()
+			earliestTermFilingDate, err = uspto.ComputeEarliestTermFilingDate(ctx, repo, appNum, filingDate, nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to compute earliest term filing date: %v\n", err)
+			}
+		}
+	}
+
+	expirationDate := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, 0, tdDate)
 
 	tdDateStr := ""
 	if hasTD && !tdDate.IsZero() {
 		tdDateStr = tdDate.Format("2006-01-02")
 	}
+	earliestTermFilingDateStr := ""
+	if !earliestTermFilingDate.IsZero() {
+		earliestTermFilingDateStr = earliestTermFilingDate.Format("2006-01-02")
+	}
 	expirationStr := ""
 	if !expirationDate.IsZero() {
 		expirationStr = expirationDate.Format("2006-01-02")
+	}
+
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+
+	// Save/Overwrite computed expiration in SQLite if database is available
+	if repo != nil {
+		app := domain.USPTOApplication{
+			ApplicationNumber:             appNum,
+			RecordNumber:                  pn,
+			InventionTitle:                title,
+			FilingDate:                    filingDateStr,
+			ApplicationTypeLabel:          appTypeLabel,
+			ApplicationTypeCategory:       appTypeCategory,
+			FirstInventorName:             inventors,
+			FetchedAt:                     nowStr,
+			LastIngestionDateTime:         nowStr,
+			PatentTermAdjustmentDays:      ptaDays,
+			TerminalDisclaimerDate:        tdDateStr,
+			EarliestTermFilingDate:        earliestTermFilingDateStr,
+			ComputedExpirationDate:        expirationStr,
+		}
+		batch := store.NodeBatch{
+			Patent: domain.Patent{
+				Number:     pn,
+				FetchState: domain.FetchCached,
+				Source:     domain.SourceUSPTO,
+			},
+			USPTOApplication: &app,
+		}
+		if saveErr := repo.SaveNode(ctx, batch); saveErr == nil {
+			fmt.Fprintln(os.Stderr, "Persisted computed expiration to database.")
+		}
 	}
 
 	res := proto.USPTOExpirationCalculateResult{
@@ -129,9 +187,11 @@ func runExpirationDate(args []string) int {
 		Inventors:                inventors,
 		FilingDate:               filingDateStr,
 		GrantDate:                grantDateStr,
+		EarliestTermFilingDate:   earliestTermFilingDateStr,
 		PatentTermAdjustmentDays: ptaDays,
 		TerminalDisclaimerDate:   tdDateStr,
 		ComputedExpirationDate:   expirationStr,
+		ComputedAt:               nowStr,
 	}
 
 	printResult(res, sourceFlag)
@@ -301,6 +361,16 @@ func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
 		fmt.Printf("Patent Term Extension (PTE):   %d days\n", res.PatentTermExtensionDays)
 		fmt.Printf("Terminal Disclaimer Date:      %s\n", formatStr(res.TerminalDisclaimerDate))
 		fmt.Printf("Computed Expiration Date:      %s\n", formatStr(res.ComputedExpirationDate))
+
+		computedOn := "None"
+		if res.ComputedAt != "" {
+			if t, err := time.Parse(time.RFC3339, res.ComputedAt); err == nil {
+				computedOn = t.Local().Format("2006-01-02 15:04:05")
+			} else {
+				computedOn = res.ComputedAt
+			}
+		}
+		fmt.Printf("Computed On:                   %s\n", computedOn)
 	}
 
 	if showGoogle {

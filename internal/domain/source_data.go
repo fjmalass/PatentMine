@@ -60,6 +60,7 @@ type USPTOApplication struct {
 	TerminalDisclaimerDate        string `json:"terminal_disclaimer_date,omitempty"`
 	EarliestTermFilingDate        string `json:"earliest_term_filing_date,omitempty"`
 	ComputedExpirationDate        string `json:"computed_expiration_date,omitempty"`
+	ContinuityChainCount          int    `json:"continuity_chain_count,omitempty"`
 }
 
 // USPTOGrantSummary is the single-row data extracted from a us-patent-grant

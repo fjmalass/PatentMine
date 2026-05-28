@@ -1453,5 +1453,6 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		TerminalDisclaimerDate:   app.TerminalDisclaimerDate,
 		ComputedExpirationDate:   app.ComputedExpirationDate,
 		GoogleExpirationDate:     googleExpStr,
+		ComputedAt:               app.FetchedAt,
 	}, nil
 }

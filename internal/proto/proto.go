@@ -232,6 +232,7 @@ type USPTOExpirationCalculateResult struct {
 	TerminalDisclaimerDate   string `json:"terminal_disclaimer_date"`
 	ComputedExpirationDate   string `json:"computed_expiration_date"`
 	GoogleExpirationDate     string `json:"google_expiration_date"`
+	ComputedAt               string `json:"computed_at,omitempty"`
 }
 
 // EventKind names a server->client push (a JSON-RPC notification).

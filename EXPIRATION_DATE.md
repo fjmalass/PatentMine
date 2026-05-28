@@ -46,7 +46,7 @@ graph TD
     D --> F[Query Live USPTO Documents API]
     D --> G[Traverse continuity chain in local DB]
     E --> H[PTA Days retrieved]
-    F --> I[Search documents for DIST/DISC/TRMD codes]
+    F --> I["Search documents for DIST/DIST.E.FILE/DISC/TRMD/DIS.E codes"]
     I --> J[Parse Terminal Disclaimer Date]
     G --> K[Find oldest parent non-provisional filing date]
     H & J & K --> L[Run PatentExpiration statutory formula]
@@ -56,8 +56,8 @@ graph TD
 ```
 
 1. **PTA Fetching**: Calls `https://api.uspto.gov/api/v1/patent/applications/{appNum}/patent-term-adjustment` strictly using uppercase header authentication (`X-API-KEY`) to retrieve the exact adjustment days.
-2. **Terminal Disclaimer Detection**: Queries `https://api.uspto.gov/api/v1/patent/applications/{appNum}/documents` to inspect the patent prosecution history. It identifies terminal disclaimer events using document codes (such as `DIST`, `DISC`, or `TRMD`) or text descriptions, extracting the mail date or filing date as the terminal cap date.
-3. **Continuity Traversal**: Recursively climbs the `uspto_continuity` table to build a full ancestor parent tree, resolving the absolute earliest filing date while correctly ignoring provisional applications.
+2. **Terminal Disclaimer Detection**: Queries `https://api.uspto.gov/api/v1/patent/applications/{appNum}/documents` to inspect the patent prosecution history. It identifies terminal disclaimer events using a package-level dictionary of codes (`DIST`, `DIST.E.FILE`, `DISC`, `TRMD`, or `DIS.E`) or text descriptions. It extracts the date using a robust fallback search order across the following keys: `MailDate`, `OfficialDate`, `MailRoomDate`, `FilingDate`, and `DocumentDate`.
+3. **Continuity Traversal**: Recursively climbs the `uspto_continuity` table to build a full ancestor parent tree, resolving the absolute earliest filing date while correctly ignoring provisional applications using a backtracking cycle detection algorithm.
 4. **Google Patents Comparison**: Resolves the parsed expiration date from Google Patents and compares the statutory USPTO date with the Google date, outputting the delta.
 
 ---
@@ -70,6 +70,9 @@ You can compute the expiration date of any patent or application in the database
 ```bash
 # Standard lookup (compares USPTO and Google Patents side-by-side)
 $ makers expiration-date US14558776
+
+# Force refresh application metadata from USPTO live API, recompute, and save to SQLite
+$ makers expiration-date -refresh US14558776
 
 # Query USPTO source and associate the patent with a specific project ID for review
 $ makers expiration-date -project p-1779920831541270511 US14558776
@@ -89,5 +92,14 @@ usage:
 
 options:
   -source string   data source: uspto, google, or both (default "both")
-  -project string  project ID to associate this patent with for later review
+  -refresh         force refresh application metadata from USPTO
 ```
+
+### Database Integration & Continuity Warn
+When computing the expiration date for utility or plant patents, a recursive traversal of domestic priority (parent applications) is conducted to identify the correct earliest term filing date. When running in the CLI, the tool will automatically output a status message indicating local database access:
+```
+Warning: Walking the continuity chain recursively requires local database access. Conducting a database search...
+Persisted computed expiration to database.
+```
+
+The output includes a precise `Computed On` field indicating the exact timestamp (local time) when the calculation was conducted. This computation date is persisted to the database and is rendered inside the TUI overlay as well.

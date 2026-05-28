@@ -9,6 +9,7 @@ Related docs:
 1. [Metrics Guide](./metrics.md)
 2. [Telemetry & Activity Tracking Guide](./ACTIVITY.md)
 3. [USPTO Loading & Source Configuration](./USPTO_CONFIG_LOADING.md)
+4. [U.S. Patent Expiration Date Computation](./EXPIRATION_DATE.md)
 
 ---
 
@@ -527,6 +528,7 @@ Launch CLI operations using the `patentmine` binary:
 * `patentmine api` : Boot the web API server gateway.
 * `patentmine paths` : Output the resolved runtime directories and file paths.
 * `patentmine lookup <number>` : Look up raw USPTO file wrapper metadata by application number, publication number, or patent number.
+* `patentmine expiration-date [-refresh] <number>` : Compute statutory U.S. patent expiration dates using USPTO/Google Patents data, recursively walk the parent continuity tree, and persists the computed results.
 * `patentmine version` : Print the current system build version.
 
 You can also execute lookups from the command line using `cargo make`:
@@ -580,7 +582,7 @@ Rules of thumb:
 * `a` : Link the selected patent to a specific project membership.
 * `f` : Trigger a recursive **Family Crawl** to crawl parents, children, and relations.
 
-* `L` : Lookup current patent details (single-patent metadata lookup).
+* `L` : Open the Patent Expiration Analysis overlay (press `r` / `R` inside the overlay to refresh and recompute the expiration).
 #### D. Catalog Pane Bindings
 * `enter` / `l` : Open the patent detail pane for the selected record.
 * `I` : Open the project's Information Disclosure Statement (IDS) editor.

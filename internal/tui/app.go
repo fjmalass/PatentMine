@@ -767,6 +767,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.PromptCloseMsg:
 		a.popOverlay()
 		return a, nil
+	case overlay.ExpirationRefreshMsg:
+		a.popOverlay()
+		_, cmd := a.openExpirationOverlay(m.Number, true)
+		return a, cmd
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
 		return a.handleTextSubmit(m)

@@ -8,9 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
+	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/tui/render"
 )
+
+// ExpirationRefreshMsg requests a re-computation/refresh of expiration data.
+type ExpirationRefreshMsg struct {
+	Number domain.PatentNumber
+}
 
 // ExpirationOverlay displays the USPTO expiration calculation result in a popup.
 type ExpirationOverlay struct {
@@ -34,6 +40,10 @@ func (o *ExpirationOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.String() {
 	case "esc", "q", "enter":
 		return o, func() tea.Msg { return PromptCloseMsg{} }, true
+	case "r", "R":
+		if pNum, err := domain.ParsePatentNumber(o.result.PatentNumber); err == nil {
+			return o, func() tea.Msg { return ExpirationRefreshMsg{Number: pNum} }, true
+		}
 	}
 	return o, nil, false
 }
@@ -66,6 +76,16 @@ func (o *ExpirationOverlay) View(maxW, maxH int) string {
 	writeField(&b, labelW, "Terminal Disclaimer", r.TerminalDisclaimerDate, maxW)
 	writeField(&b, labelW, "Computed Expiration", r.ComputedExpirationDate, maxW)
 
+	computedOn := "—"
+	if r.ComputedAt != "" {
+		if t, err := time.Parse(time.RFC3339, r.ComputedAt); err == nil {
+			computedOn = t.Local().Format("2006-01-02 15:04:05")
+		} else {
+			computedOn = r.ComputedAt
+		}
+	}
+	writeField(&b, labelW, "Computed On", computedOn, maxW)
+
 	// Google section
 	if r.GoogleExpirationDate != "" {
 		b.WriteString(sep + "\n")
@@ -91,7 +111,7 @@ func (o *ExpirationOverlay) View(maxW, maxH int) string {
 	}
 
 	b.WriteString(sep + "\n")
-	b.WriteString(o.theme.MutedItalic.Render("Press any key to close"))
+	b.WriteString(o.theme.MutedItalic.Render("Press [r] to refresh/recompute, Esc to close"))
 
 	return b.String()
 }
