@@ -103,3 +103,62 @@ Persisted computed expiration to database.
 ```
 
 The output includes a precise `Computed On` field indicating the exact timestamp (local time) when the calculation was conducted. This computation date is persisted to the database and is rendered inside the TUI overlay as well.
+
+---
+
+## 4. Stored Data Schema
+
+The expiration-date computation stores its results in the `uspto_application` table in the local SQLite database (`patentmine.db`). The data is persisted via `store.NodeBatch` → `repo.SaveNode()` which calls the upsert in `internal/store/sqlite/source_data.go:62-124`.
+
+### `uspto_application` — Expiration-Related Columns
+
+| Column | Type | Source | Description |
+|--------|------|--------|-------------|
+| `application_number` | TEXT PK | USPTO ODP search API | Resolved application number |
+| `record_id` | TEXT | patent table FK | Links to `patent.record_id` |
+| `filing_date` | TEXT | USPTO ODP search API | Filing date of the application (YYYY-MM-DD) |
+| `application_type_label` | TEXT | USPTO ODP search API | e.g. "Utility Patent", "Design Patent" |
+| `application_type_category` | TEXT | USPTO ODP search API | e.g. "UTILITY", "DESIGN" |
+| `patent_term_adjustment_days` | INTEGER | USPTO PTA API (live) | Patent Term Adjustment days (35 U.S.C. § 154(b)) |
+| `patent_term_extension_days` | INTEGER | USPTO/other | Patent Term Extension days (35 U.S.C. § 156) |
+| `terminal_disclaimer_date` | TEXT | USPTO Documents API (live) | Earliest terminal disclaimer date (YYYY-MM-DD) |
+| `earliest_term_filing_date` | TEXT | Computed via continuity chain walk | Oldest non-provisional parent filing date (YYYY-MM-DD) |
+| `computed_expiration_date` | TEXT | Computed via `PatentExpiration` formula | Final computed expiration date (YYYY-MM-DD) |
+| `last_ingestion_datetime` | TEXT | Current timestamp | When the record was last updated |
+| `fetched_at` | TEXT | Current timestamp | When data was fetched from USPTO |
+
+### `uspto_continuity` — Parent-Child Relationship Chain
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `application_number` | TEXT | Child application number |
+| `parent_application_number_text` | TEXT | Parent application number |
+| `child_application_number_text` | TEXT | Child application number text |
+| `parent_application_filing_date` | TEXT | Parent's filing date |
+| `claim_parentage_type_code` | TEXT | Relationship type code (e.g. "CON", "DIV", "CIP") |
+| `claim_parentage_type_description_text` | TEXT | Relationship description |
+| `parent_record_id` | TEXT | FK to `patent.record_id` for parent |
+| `child_record_id` | TEXT | FK to `patent.record_id` for child |
+
+Populated by the USPTO crawl/enrichment pipeline (`internal/crawl/uspto.go`). Queried by `ComputeEarliestTermFilingDate` to walk the non-provisional parent chain.
+
+### Expiration Flow — What Gets Stored on Each Run
+
+```
+Run without -refresh:
+  ┌─ DB cache hit? → Use cached application_number, filing_date, type
+  └─ DB cache miss? → Fetch live from USPTO ODP search API
+                      ↓
+  Fetch PTA (live) ──────────┐
+  Fetch TD date (live) ──────┤
+  Walk continuity chain (DB) ─┤
+  Compute PatentExpiration ───┘
+                      ↓
+  Save to uspto_application:
+    patent_term_adjustment_days, terminal_disclaimer_date,
+    earliest_term_filing_date, computed_expiration_date
+
+Run with -refresh:
+  Skip DB cache → always fetch application_number, filing_date, etc. from USPTO live API
+  Then same PTA/TD/computation/save flow as above
+```

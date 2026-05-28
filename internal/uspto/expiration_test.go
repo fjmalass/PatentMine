@@ -331,7 +331,7 @@ func TestComputeEarliestTermFilingDate(t *testing.T) {
 
 	ctx := context.Background()
 	filingDate := time.Date(2022, 11, 30, 0, 0, 0, 0, time.UTC)
-	earliest, err := ComputeEarliestTermFilingDate(ctx, mockRepo, "17123456", filingDate, nil)
+	earliest, _, err := ComputeEarliestTermFilingDate(ctx, mockRepo, "17123456", filingDate, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestComputeEarliestTermFilingDate_Circular(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	earliest, err := ComputeEarliestTermFilingDate(ctx, mockRepo, "APP1", time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC), nil)
+	earliest, _, err := ComputeEarliestTermFilingDate(ctx, mockRepo, "APP1", time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

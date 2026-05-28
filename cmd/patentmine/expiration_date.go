@@ -79,16 +79,43 @@ func runExpirationDate(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	fmt.Fprintf(os.Stderr, "Querying live USPTO API for: %s\n", pn.String())
-
-	// Step 1: Resolve patent/application number via USPTO ODP search API
-	appNum, filingDateStr, grantDateStr, title, inventors, appTypeLabel, appTypeCategory, err := lookupApplication(ctx, pn, apiKey)
+	// Open database early for cache read and continuity walking
+	repo, err := sqlite.Open(ctx, string(cfg.DBPath))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: failed to resolve application: %v\n", err)
-		return 1
+		fmt.Fprintf(os.Stderr, "Warning: Failed to open database: %v\n", err)
+	}
+	if repo != nil {
+		defer repo.Close()
 	}
 
-	fmt.Fprintf(os.Stderr, "Resolved application: %s (filed %s)\n", appNum, filingDateStr)
+	var appNum, filingDateStr, grantDateStr, title, inventors, appTypeLabel, appTypeCategory string
+	var cachedExpirationDate string
+
+	// Step 1: Resolve patent/application number — read cache or hit live USPTO API
+	if !refreshFlag && repo != nil {
+		cached, cErr := repo.USPTOApplication(ctx, pn)
+		if cErr == nil {
+			appNum = cached.ApplicationNumber
+			filingDateStr = cached.FilingDate
+			grantDateStr = uspto.GrantDateFromStatus(cached.ApplicationStatusText, cached.ApplicationStatusDate)
+			title = cached.InventionTitle
+			inventors = cached.FirstInventorName
+			appTypeLabel = cached.ApplicationTypeLabel
+			appTypeCategory = cached.ApplicationTypeCategory
+			cachedExpirationDate = cached.ComputedExpirationDate
+			fmt.Fprintf(os.Stderr, "Using cached application data for: %s (filed %s)\n", appNum, filingDateStr)
+		}
+	}
+
+	if appNum == "" {
+		fmt.Fprintf(os.Stderr, "Querying live USPTO API for: %s\n", pn.String())
+		appNum, filingDateStr, grantDateStr, title, inventors, appTypeLabel, appTypeCategory, err = lookupApplication(ctx, pn, apiKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: failed to resolve application: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "Resolved application: %s (filed %s)\n", appNum, filingDateStr)
+	}
 	if grantDateStr != "" {
 		fmt.Fprintf(os.Stderr, "Grant date: %s\n", grantDateStr)
 	}
@@ -117,19 +144,16 @@ func runExpirationDate(args []string) int {
 	patentType := uspto.DeterminePatentType(pn, appTypeLabel, appTypeCategory, pn.Kind)
 
 	var earliestTermFilingDate time.Time
-	var repo *sqlite.Repo
 
 	if patentType == "utility" || patentType == "plant" {
-		fmt.Fprintln(os.Stderr, "Warning: Walking the continuity chain recursively requires local database access. Conducting a database search...")
-		repo, err = sqlite.Open(ctx, string(cfg.DBPath))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to open database for continuity search: %v\n", err)
-		} else {
-			defer repo.Close()
-			earliestTermFilingDate, err = uspto.ComputeEarliestTermFilingDate(ctx, repo, appNum, filingDate, nil)
+		if repo != nil {
+			fmt.Fprintln(os.Stderr, "Walking the continuity chain to find earliest term filing date...")
+			earliestTermFilingDate, _, err = uspto.ComputeEarliestTermFilingDate(ctx, repo, appNum, filingDate, nil)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to compute earliest term filing date: %v\n", err)
 			}
+		} else {
+			fmt.Fprintln(os.Stderr, "Warning: No database available; skipping continuity chain walk.")
 		}
 	}
 
@@ -149,6 +173,11 @@ func runExpirationDate(args []string) int {
 	}
 
 	nowStr := time.Now().UTC().Format(time.RFC3339)
+
+	// Validate cached vs freshly-computed expiration date
+	if cachedExpirationDate != "" && expirationStr != "" && cachedExpirationDate != expirationStr {
+		fmt.Fprintf(os.Stderr, "Warning: Cached expiration (%s) differs from freshly computed (%s)\n", cachedExpirationDate, expirationStr)
+	}
 
 	// Save/Overwrite computed expiration in SQLite if database is available
 	if repo != nil {

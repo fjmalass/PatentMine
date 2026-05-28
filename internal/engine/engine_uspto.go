@@ -1077,7 +1077,7 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 
 	// 3. Compute earliest term filing date by walking the continuity chain
 	filingDate := parseUSPTODateHelper(app.FilingDate)
-	earliestTermFilingDate, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
+	earliestTermFilingDate, _, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
 	if err != nil {
 		e.log(ctx, slog.LevelWarn, "failed to compute earliest term filing date", slog.String("app_num", appNum), slog.String("error", err.Error()))
 	}

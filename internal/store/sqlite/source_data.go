@@ -54,9 +54,27 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		if app.FetchedAt == "" {
 			app.FetchedAt = now
 		}
-		for _, table := range []string{"uspto_party", "uspto_event", "uspto_continuity", "uspto_foreign_priority", "uspto_assignment"} {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE application_number = ?`, app.ApplicationNumber); err != nil {
-				return fmt.Errorf("store/sqlite: clear %s: %w", table, err)
+		// Only clear child tables when the batch provides replacement data.
+		// This preserves continuity, party, event, and foreign priority data
+		// already in the database when saving partial updates (e.g. expiration-date).
+		if len(batch.USPTOParties) > 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM uspto_party WHERE application_number = ?`, app.ApplicationNumber); err != nil {
+				return fmt.Errorf("store/sqlite: clear uspto_party: %w", err)
+			}
+		}
+		if len(batch.USPTOEvents) > 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM uspto_event WHERE application_number = ?`, app.ApplicationNumber); err != nil {
+				return fmt.Errorf("store/sqlite: clear uspto_event: %w", err)
+			}
+		}
+		if len(batch.USPTOContinuities) > 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM uspto_continuity WHERE application_number = ?`, app.ApplicationNumber); err != nil {
+				return fmt.Errorf("store/sqlite: clear uspto_continuity: %w", err)
+			}
+		}
+		if len(batch.USPTOForeignPriority) > 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM uspto_foreign_priority WHERE application_number = ?`, app.ApplicationNumber); err != nil {
+				return fmt.Errorf("store/sqlite: clear uspto_foreign_priority: %w", err)
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `
