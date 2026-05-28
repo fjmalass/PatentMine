@@ -190,14 +190,23 @@ func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	var number domain.PatentNumber
-	if len(inv.args) > 0 {
-		var err error
-		number, err = domain.ParsePatentNumber(inv.args[0])
-		if err != nil {
-			a.setErr(text.StatusInvalidPatentNumber, err.Error())
-			return a, nil
+	refresh := false
+	for _, arg := range inv.args {
+		switch arg {
+		case "refresh", "--refresh":
+			refresh = true
+		default:
+			if number.IsZero() {
+				var err error
+				number, err = domain.ParsePatentNumber(arg)
+				if err != nil {
+					a.setErr(text.StatusInvalidPatentNumber, err.Error())
+					return a, nil
+				}
+			}
 		}
-	} else {
+	}
+	if number.IsZero() {
 		var ok bool
 		number, ok = a.focusedPane().Selection()
 		if !ok || number.IsZero() {
@@ -205,10 +214,10 @@ func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 	}
-	return a.openExpirationOverlay(number)
+	return a.openExpirationOverlay(number, refresh)
 }
 
-func (a *App) openExpirationOverlay(number domain.PatentNumber) (tea.Model, tea.Cmd) {
+func (a *App) openExpirationOverlay(number domain.PatentNumber, refresh bool) (tea.Model, tea.Cmd) {
 	if a.client == nil {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
@@ -217,7 +226,7 @@ func (a *App) openExpirationOverlay(number domain.PatentNumber) (tea.Model, tea.
 	defer cancel()
 
 	var result proto.USPTOExpirationCalculateResult
-	err := a.client.Call(ctx, proto.MethodUSPTOExpirationCalculate, proto.USPTOExpirationCalculateParams{Number: number}, &result)
+	err := a.client.Call(ctx, proto.MethodUSPTOExpirationCalculate, proto.USPTOExpirationCalculateParams{Number: number, Refresh: refresh}, &result)
 	if err != nil {
 		a.setErr(text.StatusGeneric, "expiration calculation failed: "+err.Error())
 		return a, nil

@@ -314,6 +314,28 @@ func isProvisional(parentApp, code, desc string) bool {
 	return false
 }
 
+// GrantDateFromStatus returns the application status date when the status
+// text indicates a granted patent, or the empty string otherwise.
+func GrantDateFromStatus(statusText, statusDate string) string {
+	st := strings.ToLower(strings.TrimSpace(statusText))
+	sd := strings.TrimSpace(statusDate)
+	if (strings.Contains(st, "patent") || strings.Contains(st, "grant")) && sd != "" {
+		return sd
+	}
+	return ""
+}
+
+// ParseGrantDateFromStatus returns the application status date parsed as a
+// time.Time when the status text indicates a granted patent, or a zero
+// time.Time when the status does not indicate a grant.
+func ParseGrantDateFromStatus(statusText, statusDate string) (time.Time, error) {
+	s := GrantDateFromStatus(statusText, statusDate)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("not a granted patent")
+	}
+	return parseUSPTODate(s)
+}
+
 func parseUSPTODate(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

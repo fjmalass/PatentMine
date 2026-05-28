@@ -216,6 +216,7 @@ type USPTOLookupResult struct {
 type USPTOExpirationCalculateParams struct {
 	Number    domain.PatentNumber `json:"number"`
 	ProjectID string              `json:"project_id"`
+	Refresh   bool                `json:"refresh,omitempty"`
 }
 
 type USPTOExpirationCalculateResult struct {

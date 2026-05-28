@@ -227,11 +227,8 @@ func lookupApplication(ctx context.Context, n domain.PatentNumber, apiKey string
 
 	// Extract grant date: prefer ApplicationStatusDate for granted patents,
 	// fall back to GrantDocumentMetaData.FileCreateDateTime
-	statusText := strings.ToLower(strings.TrimSpace(meta.ApplicationStatusText))
-	metaGrantDate := strings.TrimSpace(meta.ApplicationStatusDate)
-	if (strings.Contains(statusText, "patent") || strings.Contains(statusText, "grant")) && metaGrantDate != "" {
-		grantDate = metaGrantDate
-	} else if w.GrantDocumentMetaData != nil {
+	grantDate = uspto.GrantDateFromStatus(meta.ApplicationStatusText, meta.ApplicationStatusDate)
+	if grantDate == "" && w.GrantDocumentMetaData != nil {
 		grantDate = w.GrantDocumentMetaData.FileCreateDateTime
 	}
 

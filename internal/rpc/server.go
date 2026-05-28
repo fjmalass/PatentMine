@@ -19,6 +19,7 @@ import (
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
+	"patentmine/internal/uspto"
 	appversion "patentmine/internal/version"
 )
 
@@ -1398,7 +1399,7 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		return nil, err
 	}
 
-	app, err := s.engine.ComputeAndStoreUSPTOExpiration(ctx, p.Number)
+	app, err := s.engine.ComputeAndStoreUSPTOExpiration(ctx, p.Number, p.Refresh)
 	if err != nil {
 		return nil, err
 	}
@@ -1431,6 +1432,12 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		if !patentRec.GrantDate.IsZero() {
 			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
 		}
+	}
+	// Fall back to ApplicationStatusDate for the grant date when the patent
+	// record does not store one but the USPTO application status indicates
+	// a granted patent (e.g. "Patented Case").
+	if grantDateStr == "" {
+		grantDateStr = uspto.GrantDateFromStatus(app.ApplicationStatusText, app.ApplicationStatusDate)
 	}
 
 	return proto.USPTOExpirationCalculateResult{

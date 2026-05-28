@@ -976,7 +976,7 @@ func (e *Engine) ClearPatentCache(ctx context.Context, patents []domain.PatentNu
 
 // ComputeAndStoreUSPTOExpiration computes the statutory patent expiration date from the USPTO source,
 // stores it in the uspto_application table, and writes comparison logs with Google Patents.
-func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.PatentNumber) (app domain.USPTOApplication, err error) {
+func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.PatentNumber, refresh bool) (app domain.USPTOApplication, err error) {
 	start := time.Now()
 	defer func() {
 		dur := time.Since(start)
@@ -1041,6 +1041,22 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 		}
 	}
 
+	// When refresh is requested, re-fetch application metadata from the USPTO
+	// ODP API even when a stored copy exists, then save the fresh data.
+	if refresh && err == nil {
+		fresh, apiErr := e.resolveUSPTOApplicationFromAPI(ctx, n)
+		if apiErr == nil {
+			fresh.RecordNumber = app.RecordNumber
+			fresh.PGPubXMLURL = app.PGPubXMLURL
+			fresh.PGPubXMLName = app.PGPubXMLName
+			fresh.PatentGrantXMLURL = app.PatentGrantXMLURL
+			fresh.PatentGrantXMLName = app.PatentGrantXMLName
+			batch := store.NodeBatch{Patent: domain.Patent{Number: n, FetchState: domain.FetchCached, Source: domain.SourceUSPTO}, USPTOApplication: &fresh}
+			_ = e.repo.SaveNode(ctx, batch)
+			app = fresh
+		}
+	}
+
 	appNum := app.ApplicationNumber
 	apiKey := strings.TrimSpace(e.usptoAPIKey)
 
@@ -1073,11 +1089,18 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	}
 	patentType := uspto.DeterminePatentType(n, app.ApplicationTypeLabel, app.ApplicationTypeCategory, grantKind)
 
-	// 5. Get GrantDate
+	// 5. Get GrantDate — fall back to ApplicationStatusDate when the patent
+	//    record does not have a stored grant date but the USPTO application
+	//    status text indicates a granted patent.
 	var grantDate time.Time
 	patentRec, pErr := e.repo.Patent(ctx, n)
-	if pErr == nil {
+	if pErr == nil && !patentRec.GrantDate.IsZero() {
 		grantDate = patentRec.GrantDate
+	}
+	if grantDate.IsZero() {
+		if t, err := uspto.ParseGrantDateFromStatus(app.ApplicationStatusText, app.ApplicationStatusDate); err == nil {
+			grantDate = t
+		}
 	}
 
 	// 6. Compute statutory expiration
