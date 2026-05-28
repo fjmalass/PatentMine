@@ -2,20 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
+	"patentmine/internal/engine"
 	"patentmine/internal/proto"
-	"patentmine/internal/store"
+	"patentmine/internal/rpc"
 	"patentmine/internal/store/sqlite"
 	"patentmine/internal/uspto"
 )
@@ -66,6 +64,26 @@ func runExpirationDate(args []string) int {
 		return 1
 	}
 
+	// Try daemon socket first for consistent behavior
+	if client, dErr := rpc.Dial(string(cfg.SocketPath)); dErr == nil {
+		defer client.Close()
+		fmt.Fprintln(os.Stderr, "[Connected to active daemon, executing expiration calculation via RPC]")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		var res proto.USPTOExpirationCalculateResult
+		if err := client.Call(ctx, proto.MethodUSPTOExpirationCalculate,
+			proto.USPTOExpirationCalculateParams{Number: pn, Refresh: refreshFlag}, &res); err != nil {
+			fmt.Fprintf(os.Stderr, "patentmine expiration-date: daemon RPC failed: %v\n", err)
+			return 1
+		}
+
+		printResult(res, sourceFlag)
+		return 0
+	}
+
+	// Fall back to standalone mode — use the engine directly (same logic as daemon)
 	apiKey := strings.TrimSpace(cfg.USPTOAPIKey)
 	if apiKey == "" {
 		fmt.Fprintln(os.Stderr, "patentmine expiration-date: USPTO API key not configured (set PATENTMINE_USPTO_API_KEY)")
@@ -76,293 +94,73 @@ func runExpirationDate(args []string) int {
 		apiKey = resolved
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Open database early for cache read and continuity walking
 	repo, err := sqlite.Open(ctx, string(cfg.DBPath))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to open database: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to open database: %v\n", err)
+		return 1
 	}
-	if repo != nil {
-		defer repo.Close()
+	defer repo.Close()
+
+	eng := engine.New(ctx, repo, nil,
+		engine.WithUSPTOAPIKey(apiKey),
+		engine.WithLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))),
+	)
+	defer eng.Close()
+
+	// Use the same ComputeAndStoreUSPTOExpiration pipeline as the daemon
+	app, err := eng.ComputeAndStoreUSPTOExpiration(ctx, pn, refreshFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to compute expiration: %v\n", err)
+		return 1
 	}
 
-	var appNum, filingDateStr, grantDateStr, title, inventors, appTypeLabel, appTypeCategory string
-	var cachedExpirationDate string
-
-	// Step 1: Resolve patent/application number — read cache or hit live USPTO API
-	if !refreshFlag && repo != nil {
-		cached, cErr := repo.USPTOApplication(ctx, pn)
-		if cErr == nil {
-			appNum = cached.ApplicationNumber
-			filingDateStr = cached.FilingDate
-			grantDateStr = uspto.GrantDateFromStatus(cached.ApplicationStatusText, cached.ApplicationStatusDate)
-			title = cached.InventionTitle
-			inventors = cached.FirstInventorName
-			appTypeLabel = cached.ApplicationTypeLabel
-			appTypeCategory = cached.ApplicationTypeCategory
-			cachedExpirationDate = cached.ComputedExpirationDate
-			fmt.Fprintf(os.Stderr, "Using cached application data for: %s (filed %s)\n", appNum, filingDateStr)
+	// Build result proto (mirrors server.go:usptoExpirationCalculate)
+	var googleExpStr, grantDateStr, invTitle, inventors string
+	if patentRec, pErr := repo.Patent(ctx, pn); pErr == nil {
+		invTitle = patentRec.Title
+		var invs []string
+		for _, inv := range patentRec.Inventors {
+			invs = append(invs, string(inv))
+		}
+		inventors = strings.Join(invs, ", ")
+		if !patentRec.ExpirationDate.IsZero() {
+			googleExpStr = patentRec.ExpirationDate.Format("2006-01-02")
+		}
+		if !patentRec.GrantDate.IsZero() {
+			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
 		}
 	}
-
-	if appNum == "" {
-		fmt.Fprintf(os.Stderr, "Querying live USPTO API for: %s\n", pn.String())
-		appNum, filingDateStr, grantDateStr, title, inventors, appTypeLabel, appTypeCategory, err = lookupApplication(ctx, pn, apiKey)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: failed to resolve application: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(os.Stderr, "Resolved application: %s (filed %s)\n", appNum, filingDateStr)
+	if invTitle == "" {
+		invTitle = app.InventionTitle
 	}
-	if grantDateStr != "" {
-		fmt.Fprintf(os.Stderr, "Grant date: %s\n", grantDateStr)
+	if inventors == "" {
+		inventors = app.FirstInventorName
 	}
-	if inventors != "" {
-		fmt.Fprintf(os.Stderr, "Inventors: %s\n", inventors)
-	}
-
-	// Step 2: Fetch PTA days
-	ptaDays, _ := uspto.FetchPTADays(ctx, appNum, apiKey, nil)
-	if ptaDays > 0 {
-		fmt.Fprintf(os.Stderr, "PTA days: %d\n", ptaDays)
-	}
-
-	// Step 3: Fetch Terminal Disclaimer date
-	tdDate, hasTD, _ := uspto.FetchTerminalDisclaimerDate(ctx, appNum, apiKey, nil)
-	if hasTD && !tdDate.IsZero() {
-		fmt.Fprintf(os.Stderr, "Terminal disclaimer: %s\n", tdDate.Format("2006-01-02"))
-	}
-
-	// Step 4: Compute expiration
-	filingDate, _ := time.Parse("2006-01-02", filingDateStr)
-	var grantDate time.Time
-	if grantDateStr != "" {
-		grantDate, _ = time.Parse("2006-01-02", grantDateStr)
-	}
-	patentType := uspto.DeterminePatentType(pn, appTypeLabel, appTypeCategory, pn.Kind)
-
-	var earliestTermFilingDate time.Time
-
-	if patentType == "utility" || patentType == "plant" {
-		if repo != nil {
-			fmt.Fprintln(os.Stderr, "Walking the continuity chain to find earliest term filing date...")
-			earliestTermFilingDate, _, err = uspto.ComputeEarliestTermFilingDate(ctx, repo, appNum, filingDate, nil)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Failed to compute earliest term filing date: %v\n", err)
-			}
-		} else {
-			fmt.Fprintln(os.Stderr, "Warning: No database available; skipping continuity chain walk.")
-		}
-	}
-
-	expirationDate := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, 0, tdDate)
-
-	tdDateStr := ""
-	if hasTD && !tdDate.IsZero() {
-		tdDateStr = tdDate.Format("2006-01-02")
-	}
-	earliestTermFilingDateStr := ""
-	if !earliestTermFilingDate.IsZero() {
-		earliestTermFilingDateStr = earliestTermFilingDate.Format("2006-01-02")
-	}
-	expirationStr := ""
-	if !expirationDate.IsZero() {
-		expirationStr = expirationDate.Format("2006-01-02")
-	}
-
-	nowStr := time.Now().UTC().Format(time.RFC3339)
-
-	// Validate cached vs freshly-computed expiration date
-	if cachedExpirationDate != "" && expirationStr != "" && cachedExpirationDate != expirationStr {
-		fmt.Fprintf(os.Stderr, "Warning: Cached expiration (%s) differs from freshly computed (%s)\n", cachedExpirationDate, expirationStr)
-	}
-
-	// Save/Overwrite computed expiration in SQLite if database is available
-	if repo != nil {
-		app := domain.USPTOApplication{
-			ApplicationNumber:             appNum,
-			RecordNumber:                  pn,
-			InventionTitle:                title,
-			FilingDate:                    filingDateStr,
-			ApplicationTypeLabel:          appTypeLabel,
-			ApplicationTypeCategory:       appTypeCategory,
-			FirstInventorName:             inventors,
-			FetchedAt:                     nowStr,
-			LastIngestionDateTime:         nowStr,
-			PatentTermAdjustmentDays:      ptaDays,
-			TerminalDisclaimerDate:        tdDateStr,
-			EarliestTermFilingDate:        earliestTermFilingDateStr,
-			ComputedExpirationDate:        expirationStr,
-		}
-		batch := store.NodeBatch{
-			Patent: domain.Patent{
-				Number:     pn,
-				FetchState: domain.FetchCached,
-				Source:     domain.SourceUSPTO,
-			},
-			USPTOApplication: &app,
-		}
-		if saveErr := repo.SaveNode(ctx, batch); saveErr == nil {
-			fmt.Fprintln(os.Stderr, "Persisted computed expiration to database.")
-		}
+	if grantDateStr == "" {
+		grantDateStr = uspto.GrantDateFromStatus(app.ApplicationStatusText, app.ApplicationStatusDate)
 	}
 
 	res := proto.USPTOExpirationCalculateResult{
-		ApplicationNumber:        appNum,
+		ApplicationNumber:        app.ApplicationNumber,
 		PatentNumber:             pn.String(),
-		Title:                    title,
+		Title:                    invTitle,
 		Inventors:                inventors,
-		FilingDate:               filingDateStr,
+		FilingDate:               app.FilingDate,
 		GrantDate:                grantDateStr,
-		EarliestTermFilingDate:   earliestTermFilingDateStr,
-		PatentTermAdjustmentDays: ptaDays,
-		TerminalDisclaimerDate:   tdDateStr,
-		ComputedExpirationDate:   expirationStr,
-		ComputedAt:               nowStr,
+		EarliestTermFilingDate:   app.EarliestTermFilingDate,
+		PatentTermAdjustmentDays: app.PatentTermAdjustmentDays,
+		PatentTermExtensionDays:  app.PatentTermExtension,
+		TerminalDisclaimerDate:   app.TerminalDisclaimerDate,
+		ComputedExpirationDate:   app.ComputedExpirationDate,
+		GoogleExpirationDate:     googleExpStr,
+		ComputedAt:               app.FetchedAt,
 	}
 
 	printResult(res, sourceFlag)
 	return 0
-}
-
-// lookupApplication resolves a patent/application number to its application
-// number, filing date, title, and type info via the USPTO ODP search API.
-func lookupApplication(ctx context.Context, n domain.PatentNumber, apiKey string) (appNum, filingDate, grantDate, title, inventors, appTypeLabel, appTypeCategory string, err error) {
-	serial := strings.TrimSpace(n.Serial)
-	if serial == "" {
-		return "", "", "", "", "", "", "", fmt.Errorf("empty patent number")
-	}
-
-	norm := n.Normalized()
-	var query string
-	if norm != "" && norm != serial {
-		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
-			serial, serial, serial, serial, norm, serial)
-	} else {
-		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
-			serial, serial, serial, serial, serial)
-	}
-
-	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return "", "", "", "", "", "", "", err
-	}
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("Accept", "application/json")
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", "", "", "", "", "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return "", "", "", "", "", "", "", err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", "", "", "", "", "", fmt.Errorf("USPTO search API returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var searchResp struct {
-		Count                    int `json:"count"`
-		PatentFileWrapperDataBag []struct {
-			ApplicationNumberText string `json:"applicationNumberText"`
-			ApplicationMetaData   struct {
-				InventionTitle            string `json:"inventionTitle"`
-				FilingDate                string `json:"filingDate"`
-				ApplicationTypeLabelName  string `json:"applicationTypeLabelName"`
-				ApplicationTypeCategory   string `json:"applicationTypeCategory"`
-				FirstInventorName         string `json:"firstInventorName"`
-				ApplicationStatusCode     any    `json:"applicationStatusCode"`
-				ApplicationStatusText     string `json:"applicationStatusDescriptionText"`
-				ApplicationStatusDate     string `json:"applicationStatusDate"`
-				InventorBag              []struct {
-					InventorNameText string `json:"inventorNameText"`
-					FirstName        string `json:"firstName"`
-					MiddleName       string `json:"middleName"`
-					LastName         string `json:"lastName"`
-					NameSuffix       string `json:"nameSuffix"`
-				} `json:"inventorBag"`
-			} `json:"applicationMetaData"`
-			GrantDocumentMetaData *struct {
-				FileCreateDateTime string `json:"fileCreateDateTime"`
-			} `json:"grantDocumentMetaData"`
-		} `json:"patentFileWrapperDataBag"`
-	}
-	if err := json.Unmarshal(body, &searchResp); err != nil {
-		return "", "", "", "", "", "", "", fmt.Errorf("parse USPTO response: %w", err)
-	}
-	if searchResp.Count == 0 || len(searchResp.PatentFileWrapperDataBag) == 0 {
-		return "", "", "", "", "", "", "", fmt.Errorf("no results found for %s", n.String())
-	}
-
-	w := searchResp.PatentFileWrapperDataBag[0]
-	appNum = strings.TrimSpace(w.ApplicationNumberText)
-	if appNum == "" {
-		return "", "", "", "", "", "", "", fmt.Errorf("empty application number in response")
-	}
-
-	meta := w.ApplicationMetaData
-
-	filingDate = meta.FilingDate
-	title = strings.TrimSpace(meta.InventionTitle)
-	appTypeLabel = meta.ApplicationTypeLabelName
-	appTypeCategory = meta.ApplicationTypeCategory
-
-	// Extract grant date: prefer ApplicationStatusDate for granted patents,
-	// fall back to GrantDocumentMetaData.FileCreateDateTime
-	grantDate = uspto.GrantDateFromStatus(meta.ApplicationStatusText, meta.ApplicationStatusDate)
-	if grantDate == "" && w.GrantDocumentMetaData != nil {
-		grantDate = w.GrantDocumentMetaData.FileCreateDateTime
-	}
-
-	// Extract inventors from inventorBag, fall back to FirstInventorName
-	var invs []string
-	for _, inv := range meta.InventorBag {
-		name := strings.TrimSpace(inv.InventorNameText)
-		if name == "" {
-			parts := strings.TrimSpace(strings.Join([]string{inv.FirstName, inv.MiddleName, inv.LastName, inv.NameSuffix}, " "))
-			if parts != "" {
-				name = parts
-			}
-		}
-		if name != "" {
-			invs = append(invs, name)
-		}
-	}
-	if len(invs) == 0 && strings.TrimSpace(meta.FirstInventorName) != "" {
-		invs = append(invs, strings.TrimSpace(meta.FirstInventorName))
-	}
-	inventors = strings.Join(invs, "; ")
-
-	// Normalize filing date to YYYY-MM-DD
-	if t, err := time.Parse("2006-01-02", filingDate); err == nil {
-		filingDate = t.Format("2006-01-02")
-	} else if t, err := time.Parse("20060102", filingDate); err == nil {
-		filingDate = t.Format("2006-01-02")
-	} else if t, err := time.Parse("01-02-2006", filingDate); err == nil {
-		filingDate = t.Format("2006-01-02")
-	}
-
-	// Normalize grant date to YYYY-MM-DD
-	if grantDate != "" {
-		if t, err := time.Parse("2006-01-02", grantDate); err == nil {
-			grantDate = t.Format("2006-01-02")
-		} else if t, err := time.Parse("20060102", grantDate); err == nil {
-			grantDate = t.Format("2006-01-02")
-		} else if t, err := time.Parse(time.RFC3339, grantDate); err == nil {
-			grantDate = t.Format("2006-01-02")
-		} else if len(grantDate) >= 10 {
-			grantDate = grantDate[:10]
-		}
-	}
-
-	return appNum, filingDate, grantDate, title, inventors, appTypeLabel, appTypeCategory, nil
 }
 
 func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
@@ -407,18 +205,10 @@ func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
 		fmt.Printf("Parsed Expiration Date:        %s\n", formatStr(res.GoogleExpirationDate))
 	}
 
-	if showUSPTO && showGoogle && res.ComputedExpirationDate != "" && res.GoogleExpirationDate != "" {
-		fmt.Println("\n--- Comparison ---")
-		tUSPTO, errU := time.Parse("2006-01-02", res.ComputedExpirationDate)
-		tGoogle, errG := time.Parse("2006-01-02", res.GoogleExpirationDate)
-		if errU == nil && errG == nil {
-			diff := tUSPTO.Sub(tGoogle)
-			days := int(diff.Hours() / 24)
-			if days == 0 {
-				fmt.Println("Comparison Result:             Computed USPTO date matches Google date.")
-			} else {
-				fmt.Printf("Difference (USPTO - Google):   %d days\n", days)
-			}
+	if showUSPTO && showGoogle {
+		if line := res.ComparisonLine(); line != "" {
+			fmt.Println("\n--- Comparison ---")
+			fmt.Printf("Comparison Result:             %s\n", line)
 		}
 	}
 	fmt.Println("=======================================================")

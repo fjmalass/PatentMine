@@ -1433,6 +1433,12 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
 		}
 	}
+	if title == "" {
+		title = app.InventionTitle
+	}
+	if inventors == "" {
+		inventors = app.FirstInventorName
+	}
 	// Fall back to ApplicationStatusDate for the grant date when the patent
 	// record does not store one but the USPTO application status indicates
 	// a granted patent (e.g. "Patented Case").

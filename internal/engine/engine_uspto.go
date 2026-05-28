@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1051,9 +1052,23 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 			fresh.PGPubXMLName = app.PGPubXMLName
 			fresh.PatentGrantXMLURL = app.PatentGrantXMLURL
 			fresh.PatentGrantXMLName = app.PatentGrantXMLName
+			// Preserve PTE — the ODP API never includes it; it only comes from grant XML ingestion.
+			fresh.PatentTermExtension = app.PatentTermExtension
 			batch := store.NodeBatch{Patent: domain.Patent{Number: n, FetchState: domain.FetchCached, Source: domain.SourceUSPTO}, USPTOApplication: &fresh}
 			_ = e.repo.SaveNode(ctx, batch)
 			app = fresh
+		}
+	}
+
+	// If PTE is still 0 and a grant XML URL is available, try to download the grant
+	// XML and extract the patent term extension days. The ODP application search
+	// API never returns PTE — it comes exclusively from the grant XML.
+	if app.PatentTermExtension == 0 && strings.TrimSpace(app.PatentGrantXMLURL) != "" && strings.TrimSpace(e.usptoAPIKey) != "" {
+		if pte, fetchErr := fetchPTEFromGrantURL(ctx, app.PatentGrantXMLURL, e.usptoAPIKey); fetchErr == nil && pte > 0 {
+			app.PatentTermExtension = pte
+			e.log(ctx, slog.LevelInfo, "extracted PTE from grant XML",
+				slog.String("app_num", app.ApplicationNumber),
+				slog.Int("pte", pte))
 		}
 	}
 
@@ -1104,12 +1119,7 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	}
 
 	// 6. Compute statutory expiration
-	pteDays := app.PatentTermExtension
-	if pteDays == 0 {
-		pteDays = app.PatentTermExtension
-	}
-
-	computedExp := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, pteDays, tdDate)
+	computedExp := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, app.PatentTermExtension, tdDate)
 
 	// 7. Store computed expiration fields back in uspto_application table
 	tdDateStr := ""
@@ -1126,7 +1136,6 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	}
 
 	app.PatentTermAdjustmentDays = ptaDays
-	app.PatentTermExtension = pteDays
 	app.TerminalDisclaimerDate = tdDateStr
 	app.EarliestTermFilingDate = earliestTermFilingDateStr
 	app.ComputedExpirationDate = computedExpStr
@@ -1315,4 +1324,50 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 	}
 
 	return app, nil
+}
+
+// fetchPTEFromGrantURL downloads a USPTO grant XML and extracts the
+// us-term-extension days (PTE). Returns 0 when the element is absent or empty.
+func fetchPTEFromGrantURL(ctx context.Context, grantURL, apiKey string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, grantURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("engine: create grant xml request: %w", err)
+	}
+	req.Header.Set("x-api-key", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("engine: fetch grant xml: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return 0, fmt.Errorf("engine: read grant xml body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("engine: grant xml http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	// Extract <us-term-extension>NNN</us-term-extension> via string search.
+	s := string(body)
+	tag := "<us-term-extension>"
+	start := strings.Index(s, tag)
+	if start == -1 {
+		return 0, nil // element absent — not an error
+	}
+	start += len(tag)
+	end := strings.Index(s[start:], "</us-term-extension>")
+	if end == -1 {
+		return 0, nil // unclosed — treat as absent
+	}
+	val := strings.TrimSpace(s[start : start+end])
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("engine: parse term extension %q: %w", val, err)
+	}
+	return n, nil
 }

@@ -94,20 +94,9 @@ func (o *ExpirationOverlay) View(maxW, maxH int) string {
 	}
 
 	// Comparison
-	if r.ComputedExpirationDate != "" && r.GoogleExpirationDate != "" {
+	if line := r.ComparisonLine(); line != "" {
 		b.WriteString(sep + "\n")
-		tUSPTO, errU := time.Parse("2006-01-02", r.ComputedExpirationDate)
-		tGoogle, errG := time.Parse("2006-01-02", r.GoogleExpirationDate)
-		if errU == nil && errG == nil {
-			diff := int(tUSPTO.Sub(tGoogle).Hours() / 24)
-			var line string
-			if diff == 0 {
-				line = "USPTO date matches Google date"
-			} else {
-				line = fmt.Sprintf("USPTO - Google = %d days", diff)
-			}
-			b.WriteString(o.theme.Header.Render("Comparison: ") + line + "\n")
-		}
+		b.WriteString(o.theme.Header.Render("Comparison: ") + line + "\n")
 	}
 
 	b.WriteString(sep + "\n")

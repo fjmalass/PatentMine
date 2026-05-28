@@ -5,6 +5,7 @@ package proto
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"patentmine/internal/domain"
@@ -233,6 +234,25 @@ type USPTOExpirationCalculateResult struct {
 	ComputedExpirationDate   string `json:"computed_expiration_date"`
 	GoogleExpirationDate     string `json:"google_expiration_date"`
 	ComputedAt               string `json:"computed_at,omitempty"`
+}
+
+// ComparisonLine returns a single-line match/diff string comparing the
+// computed USPTO expiration date with the Google Patents expiration date.
+// Returns "" when either date is empty or unparseable.
+func (r USPTOExpirationCalculateResult) ComparisonLine() string {
+	if r.ComputedExpirationDate == "" || r.GoogleExpirationDate == "" {
+		return ""
+	}
+	tUSPTO, errU := time.Parse("2006-01-02", r.ComputedExpirationDate)
+	tGoogle, errG := time.Parse("2006-01-02", r.GoogleExpirationDate)
+	if errU != nil || errG != nil {
+		return ""
+	}
+	diff := int(tUSPTO.Sub(tGoogle).Hours() / 24)
+	if diff == 0 {
+		return "✅ Computed USPTO date matches Google date."
+	}
+	return fmt.Sprintf("❌ Difference (USPTO - Google): %d days", diff)
 }
 
 // EventKind names a server->client push (a JSON-RPC notification).
