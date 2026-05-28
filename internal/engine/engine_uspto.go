@@ -1075,7 +1075,14 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	appNum := app.ApplicationNumber
 	apiKey := strings.TrimSpace(e.usptoAPIKey)
 
-	// 2. Fetch live PTA and Documents (Terminal Disclaimers) if apiKey is present
+	// 2. Compute earliest term filing date by walking the continuity chain
+	filingDate := parseUSPTODateHelper(app.FilingDate)
+	earliestTermFilingDate, _, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
+	if err != nil {
+		e.log(ctx, slog.LevelWarn, "failed to compute earliest term filing date", slog.String("app_num", appNum), slog.String("error", err.Error()))
+	}
+
+	// 3. Fetch live PTA and Documents (Terminal Disclaimers) if apiKey is present
 	var ptaDays int
 	var tdDate time.Time
 	var hasTD bool
@@ -1090,11 +1097,20 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 		}
 	}
 
-	// 3. Compute earliest term filing date by walking the continuity chain
-	filingDate := parseUSPTODateHelper(app.FilingDate)
-	earliestTermFilingDate, _, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
-	if err != nil {
-		e.log(ctx, slog.LevelWarn, "failed to compute earliest term filing date", slog.String("app_num", appNum), slog.String("error", err.Error()))
+	// Determine if we have parents (continuity)
+	hasParents := !earliestTermFilingDate.IsZero() && !filingDate.IsZero() && earliestTermFilingDate != filingDate
+
+	// Determine what to show for terminal disclaimer
+	var tdDateStr string
+	if !tdDate.IsZero() {
+		// We found a terminal disclaimer
+		tdDateStr = tdDate.Format("2006-01-02")
+	} else if hasParents {
+		// We have parents but no terminal disclaimer found -> ERROR
+		tdDateStr = "ERROR"
+	} else {
+		// No parents -> Not Applicable
+		tdDateStr = "Not Applicable"
 	}
 
 	// 4. Determine patent type
@@ -1119,13 +1135,13 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	}
 
 	// 6. Compute statutory expiration
-	computedExp := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, app.PatentTermExtension, tdDate)
+	var tdDateForCalc time.Time
+	if !tdDate.IsZero() {
+		tdDateForCalc = tdDate
+	}
+	computedExp := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, app.PatentTermExtension, tdDateForCalc)
 
 	// 7. Store computed expiration fields back in uspto_application table
-	tdDateStr := ""
-	if !tdDate.IsZero() {
-		tdDateStr = tdDate.Format("2006-01-02")
-	}
 	earliestTermFilingDateStr := ""
 	if !earliestTermFilingDate.IsZero() {
 		earliestTermFilingDateStr = earliestTermFilingDate.Format("2006-01-02")
