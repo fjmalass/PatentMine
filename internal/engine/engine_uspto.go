@@ -1023,12 +1023,18 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 			// Reload to check if successfully ingested from local XML cache
 			app, err = e.repo.USPTOApplication(ctx, n)
 			if err != nil {
-				// Try to resolve or do lookup first
-				_, err = e.USPTOLookup(ctx, n)
-				if err == nil {
-					app, err = e.repo.USPTOApplication(ctx, n)
+				// Try a synchronous USPTO/ODP crawl/lookup to fetch, parse, and persist metadata
+				if e.crawl != nil {
+					job := e.crawl(n, 0, domain.CrawlProfileAll, false, domain.SourceUSPTO)
+					_ = job.Run(ctx, "sync-uspto-lookup", func(proto.Event) {})
 				}
+				// Retry loading the USPTOApplication after crawl
+				app, err = e.repo.USPTOApplication(ctx, n)
 			}
+		}
+		// Third fallback: direct USPTO ODP API call when store and crawl both fail
+		if err != nil {
+			app, err = e.resolveUSPTOApplicationFromAPI(ctx, n)
 		}
 		if err != nil {
 			return domain.USPTOApplication{}, fmt.Errorf("engine: failed to resolve USPTO application: %w", err)
@@ -1145,6 +1151,140 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 			p.ExpirationSource = "uspto"
 			_ = e.repo.SavePatent(ctx, p)
 		}
+	}
+
+	return app, nil
+}
+
+// stringify converts an arbitrary value to its trimmed string form, mirroring
+// the same helper in crawl/uspto.go.
+func stringify(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(x)
+	case float64:
+		return fmt.Sprintf("%.0f", x)
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	default:
+		return strings.TrimSpace(fmt.Sprint(x))
+	}
+}
+
+// resolveUSPTOApplicationFromAPI fetches the USPTO application metadata directly from the
+// USPTO ODP API when the local store has no record. This allows expiration-date and similar
+// commands to work without pre-existing store data.
+func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.PatentNumber) (app domain.USPTOApplication, err error) {
+	raw, apiErr := e.USPTOLookup(ctx, n)
+	if apiErr != nil {
+		return domain.USPTOApplication{}, apiErr
+	}
+
+	var resp struct {
+		Count                    int              `json:"count"`
+		PatentFileWrapperDataBag []struct {
+			ApplicationNumberText string `json:"applicationNumberText"`
+			ApplicationMetaData   struct {
+				InventionTitle            string `json:"inventionTitle"`
+				FilingDate                string `json:"filingDate"`
+				EffectiveFilingDate       string `json:"effectiveFilingDate"`
+				ApplicationTypeCode       string `json:"applicationTypeCode"`
+				ApplicationTypeLabelName  string `json:"applicationTypeLabelName"`
+				ApplicationTypeCategory   string `json:"applicationTypeCategory"`
+				FirstInventorName         string `json:"firstInventorName"`
+				FirstApplicantName        string `json:"firstApplicantName"`
+				ApplicationStatusCode     any    `json:"applicationStatusCode"`
+				ApplicationStatusText     string `json:"applicationStatusDescriptionText"`
+				ApplicationStatusDate     string `json:"applicationStatusDate"`
+				GroupArtUnitNumber        string `json:"groupArtUnitNumber"`
+				ExaminerNameText          string `json:"examinerNameText"`
+				DocketNumber              string `json:"docketNumber"`
+				CustomerNumber            any    `json:"customerNumber"`
+				ApplicationConfirmationNumber any `json:"applicationConfirmationNumber"`
+				FirstInventorToFileIndicator string `json:"firstInventorToFileIndicator"`
+				NationalStageIndicator    bool   `json:"nationalStageIndicator"`
+				USPCSymbolText            string `json:"uspcSymbolText"`
+				Class                     string `json:"class"`
+				Subclass                  string `json:"subclass"`
+			} `json:"applicationMetaData"`
+			GrantDocumentMetaData *struct {
+				FileLocationURI string `json:"fileLocationURI"`
+				XMLFileName     string `json:"xmlFileName"`
+			} `json:"grantDocumentMetaData"`
+			PGPubDocumentMetaData *struct {
+				FileLocationURI string `json:"fileLocationURI"`
+				XMLFileName     string `json:"xmlFileName"`
+			} `json:"pgpubDocumentMetaData"`
+		} `json:"patentFileWrapperDataBag"`
+	}
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		return domain.USPTOApplication{}, fmt.Errorf("engine: parse uspto lookup response: %w", err)
+	}
+	if resp.Count == 0 || len(resp.PatentFileWrapperDataBag) == 0 {
+		return domain.USPTOApplication{}, store.ErrNotFound
+	}
+
+	w := resp.PatentFileWrapperDataBag[0]
+	appNum := strings.TrimSpace(w.ApplicationNumberText)
+	if appNum == "" {
+		return domain.USPTOApplication{}, store.ErrNotFound
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	app = domain.USPTOApplication{
+		ApplicationNumber:             appNum,
+		RecordNumber:                  n,
+		InventionTitle:                strings.TrimSpace(w.ApplicationMetaData.InventionTitle),
+		FilingDate:                    w.ApplicationMetaData.FilingDate,
+		EffectiveFilingDate:           w.ApplicationMetaData.EffectiveFilingDate,
+		ApplicationStatusCode:         stringify(w.ApplicationMetaData.ApplicationStatusCode),
+		ApplicationStatusText:         strings.TrimSpace(w.ApplicationMetaData.ApplicationStatusText),
+		ApplicationStatusDate:         w.ApplicationMetaData.ApplicationStatusDate,
+		ApplicationTypeCode:           w.ApplicationMetaData.ApplicationTypeCode,
+		ApplicationTypeLabel:          w.ApplicationMetaData.ApplicationTypeLabelName,
+		ApplicationTypeCategory:       w.ApplicationMetaData.ApplicationTypeCategory,
+		FirstInventorToFile:           strings.EqualFold(w.ApplicationMetaData.FirstInventorToFileIndicator, "Y"),
+		NationalStage:                 w.ApplicationMetaData.NationalStageIndicator,
+		FirstInventorName:             w.ApplicationMetaData.FirstInventorName,
+		FirstApplicantName:            w.ApplicationMetaData.FirstApplicantName,
+		CustomerNumber:                stringify(w.ApplicationMetaData.CustomerNumber),
+		GroupArtUnitNumber:            w.ApplicationMetaData.GroupArtUnitNumber,
+		ExaminerName:                  w.ApplicationMetaData.ExaminerNameText,
+		DocketNumber:                  w.ApplicationMetaData.DocketNumber,
+		ApplicationConfirmationNumber: stringify(w.ApplicationMetaData.ApplicationConfirmationNumber),
+		USPCSymbolText:                w.ApplicationMetaData.USPCSymbolText,
+		USPCClass:                     w.ApplicationMetaData.Class,
+		USPCSubclass:                  w.ApplicationMetaData.Subclass,
+		LastIngestionDateTime:         now,
+		FetchedAt:                     now,
+	}
+	if w.GrantDocumentMetaData != nil {
+		app.PatentGrantXMLURL = w.GrantDocumentMetaData.FileLocationURI
+		app.PatentGrantXMLName = w.GrantDocumentMetaData.XMLFileName
+	}
+	if w.PGPubDocumentMetaData != nil {
+		app.PGPubXMLURL = w.PGPubDocumentMetaData.FileLocationURI
+		app.PGPubXMLName = w.PGPubDocumentMetaData.XMLFileName
+	}
+
+	// Persist the fetched application data so subsequent lookups hit the store
+	batch := store.NodeBatch{
+		Patent: domain.Patent{
+			Number:     n,
+			FetchState: domain.FetchCached,
+			Source:     domain.SourceUSPTO,
+		},
+		USPTOApplication: &app,
+	}
+	if saveErr := e.repo.SaveNode(ctx, batch); saveErr != nil {
+		e.log(ctx, slog.LevelWarn, "failed to persist fetched USPTO application",
+			slog.String("number", n.String()),
+			slog.String("error", saveErr.Error()))
 	}
 
 	return app, nil

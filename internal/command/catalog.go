@@ -117,7 +117,8 @@ const (
 	LookupPatent   ID = "patent.lookup"
 	Import         ID = "patent.import"
 	SourceMode     ID = "source.mode"
-	SourceCompare  ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
+	SourceCompare         ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
+	PatentExpirationDate  ID = "patent.expiration-date"
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -292,6 +293,7 @@ func Default() (*Registry, error) {
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
 		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode", "google.mode", "google-mode"}, Usage: ":source.mode [compare|uspto-first|uspto-only|google-only]", Kind: KindView},
 		Command{ID: SourceCompare, Name: "source.compare", Aliases: []string{"compare", "compare-sources"}, Usage: ":source.compare", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: PatentExpirationDate, Name: "patent.expiration-date", Aliases: []string{"expiration-date", "expiration", "exp"}, Usage: ":patent.expiration-date", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: CrawlCancel, Kind: KindEngine, Method: proto.MethodCrawlCancel},
 
 		// --- full text viewer (view) ---

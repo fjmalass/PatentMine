@@ -264,6 +264,7 @@ var cmdStrings = map[string][2]string{
 	"patent.import":                  {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"source.mode":                    {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
 	"source.compare":                 {"Compare sources", "Review and reconcile differences between data sources (e.g. USPTO vs Google) for the current patent. Opens the split comparison overlay (default choice = USPTO)."},
+	"patent.expiration-date":         {"Patent expiration analysis", "Compute and display USPTO expiration date compared to Google Patents expiration date for the selected patent."},
 	"crawl.cancel":                   {"Cancel crawl", "Cancel a running crawl job."},
 	"project.create":                 {"Create project", "Create a new project."},
 	"project.activate":               {"Use project", "Make the selected project the active project for patent actions."},

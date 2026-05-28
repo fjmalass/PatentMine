@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -11,7 +15,6 @@ import (
 	"patentmine/internal/config"
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
-	"patentmine/internal/rpc"
 	"patentmine/internal/uspto"
 )
 
@@ -20,7 +23,6 @@ const expirationDateUsage = `usage:
 
 options:
   -source string   data source: uspto, google, or both (default "both")
-  -project string  project ID to associate this patent with for later review
 `
 
 func runExpirationDate(args []string) int {
@@ -30,9 +32,6 @@ func runExpirationDate(args []string) int {
 
 	var sourceFlag string
 	fs.StringVar(&sourceFlag, "source", "both", "data source: uspto, google, or both")
-
-	var projectFlag string
-	fs.StringVar(&projectFlag, "project", "", "project ID to associate this patent with for later review")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -62,35 +61,6 @@ func runExpirationDate(args []string) int {
 		return 1
 	}
 
-	// Try daemon socket first (hybrid client logic)
-	client, rpcErr := rpc.Dial(string(cfg.SocketPath))
-	if rpcErr == nil {
-		defer client.Close()
-		fmt.Fprintln(os.Stderr, "[Notice: Connected to active daemon, executing expiration-date via RPC]")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		var res proto.USPTOExpirationCalculateResult
-		err = client.Call(ctx, proto.MethodUSPTOExpirationCalculate, proto.USPTOExpirationCalculateParams{
-			Number:    pn,
-			ProjectID: projectFlag,
-		}, &res)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "daemon RPC calculate failed: %v\n", err)
-			return 1
-		}
-
-		printResult(res, sourceFlag)
-		if projectFlag != "" {
-			fmt.Fprintf(os.Stderr, "[Notice: Successfully associated patent %s with project %s]\n", pn.String(), projectFlag)
-		}
-		return 0
-	}
-
-	fmt.Fprintf(os.Stderr, "[Notice: Daemon offline (dial error: %v), running in standalone mode]\n", rpcErr)
-	if projectFlag != "" {
-		fmt.Fprintf(os.Stderr, "Warning: daemon offline, cannot save/associate patent to project %s\n", projectFlag)
-	}
 	apiKey := strings.TrimSpace(cfg.USPTOAPIKey)
 	if apiKey == "" {
 		fmt.Fprintln(os.Stderr, "patentmine expiration-date: USPTO API key not configured (set PATENTMINE_USPTO_API_KEY)")
@@ -104,51 +74,209 @@ func runExpirationDate(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// In standalone mode, we construct the info manually or perform lookup.
-	// Since we are standalone, let's use the local store repository if we can open it!
-	dbPath := string(cfg.DBPath)
-	if dbPath == "" {
-		fmt.Fprintln(os.Stderr, "error: DB path not configured")
+	fmt.Fprintf(os.Stderr, "Querying live USPTO API for: %s\n", pn.String())
+
+	// Step 1: Resolve patent/application number via USPTO ODP search API
+	appNum, filingDateStr, grantDateStr, title, inventors, appTypeLabel, appTypeCategory, err := lookupApplication(ctx, pn, apiKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to resolve application: %v\n", err)
 		return 1
 	}
 
-	// Open local database for continuities
-	// Import statement check: package sqlite is inside internal/store/sqlite.
-	// Let's use the actual DB repository to fetch continuity details.
-	// But wait! If we are standalone, opening sqlite is simple if we use store.Open or store package.
-	// Actually, wait! The simplest and safest hybrid client standalone mode is:
-	// We can let the user know they need the daemon running for continuity recursive traversal,
-	// or we can perform live lookup via USPTO PTA and Documents APIs and resolve it!
-	// Yes! In standalone mode, we can fetch PTA and Documents directly from the live API.
-	// Let's do that!
-	fmt.Fprintf(os.Stderr, "Querying live USPTO API for application/patent: %s\n", pn.String())
-	appNum := pn.Serial
-	ptaDays, err := uspto.FetchPTADays(ctx, appNum, apiKey, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to fetch PTA: %v\n", err)
+	fmt.Fprintf(os.Stderr, "Resolved application: %s (filed %s)\n", appNum, filingDateStr)
+	if grantDateStr != "" {
+		fmt.Fprintf(os.Stderr, "Grant date: %s\n", grantDateStr)
+	}
+	if inventors != "" {
+		fmt.Fprintf(os.Stderr, "Inventors: %s\n", inventors)
 	}
 
-	tdDate, hasTD, err := uspto.FetchTerminalDisclaimerDate(ctx, appNum, apiKey, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to fetch documents/TD: %v\n", err)
+	// Step 2: Fetch PTA days
+	ptaDays, _ := uspto.FetchPTADays(ctx, appNum, apiKey, nil)
+	if ptaDays > 0 {
+		fmt.Fprintf(os.Stderr, "PTA days: %d\n", ptaDays)
 	}
+
+	// Step 3: Fetch Terminal Disclaimer date
+	tdDate, hasTD, _ := uspto.FetchTerminalDisclaimerDate(ctx, appNum, apiKey, nil)
+	if hasTD && !tdDate.IsZero() {
+		fmt.Fprintf(os.Stderr, "Terminal disclaimer: %s\n", tdDate.Format("2006-01-02"))
+	}
+
+	// Step 4: Compute expiration
+	filingDate, _ := time.Parse("2006-01-02", filingDateStr)
+	var grantDate time.Time
+	if grantDateStr != "" {
+		grantDate, _ = time.Parse("2006-01-02", grantDateStr)
+	}
+	patentType := uspto.DeterminePatentType(pn, appTypeLabel, appTypeCategory, pn.Kind)
+
+	expirationDate := uspto.PatentExpiration(patentType, filingDate, grantDate, time.Time{}, ptaDays, 0, tdDate)
 
 	tdDateStr := ""
 	if hasTD && !tdDate.IsZero() {
 		tdDateStr = tdDate.Format("2006-01-02")
 	}
+	expirationStr := ""
+	if !expirationDate.IsZero() {
+		expirationStr = expirationDate.Format("2006-01-02")
+	}
 
-	// For standalone mode, we do a basic estimation since we don't have continuity traversal easily available.
-	// We output the fetched PTA and TD date!
 	res := proto.USPTOExpirationCalculateResult{
 		ApplicationNumber:        appNum,
 		PatentNumber:             pn.String(),
+		Title:                    title,
+		Inventors:                inventors,
+		FilingDate:               filingDateStr,
+		GrantDate:                grantDateStr,
 		PatentTermAdjustmentDays: ptaDays,
 		TerminalDisclaimerDate:   tdDateStr,
+		ComputedExpirationDate:   expirationStr,
 	}
 
 	printResult(res, sourceFlag)
 	return 0
+}
+
+// lookupApplication resolves a patent/application number to its application
+// number, filing date, title, and type info via the USPTO ODP search API.
+func lookupApplication(ctx context.Context, n domain.PatentNumber, apiKey string) (appNum, filingDate, grantDate, title, inventors, appTypeLabel, appTypeCategory string, err error) {
+	serial := strings.TrimSpace(n.Serial)
+	if serial == "" {
+		return "", "", "", "", "", "", "", fmt.Errorf("empty patent number")
+	}
+
+	norm := n.Normalized()
+	var query string
+	if norm != "" && norm != serial {
+		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
+			serial, serial, serial, serial, norm, serial)
+	} else {
+		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
+			serial, serial, serial, serial, serial)
+	}
+
+	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", "", "", "", "", "", "", err
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", "", "", "", "", "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return "", "", "", "", "", "", "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", "", "", "", "", "", "", fmt.Errorf("USPTO search API returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var searchResp struct {
+		Count                    int `json:"count"`
+		PatentFileWrapperDataBag []struct {
+			ApplicationNumberText string `json:"applicationNumberText"`
+			ApplicationMetaData   struct {
+				InventionTitle            string `json:"inventionTitle"`
+				FilingDate                string `json:"filingDate"`
+				ApplicationTypeLabelName  string `json:"applicationTypeLabelName"`
+				ApplicationTypeCategory   string `json:"applicationTypeCategory"`
+				FirstInventorName         string `json:"firstInventorName"`
+				ApplicationStatusCode     any    `json:"applicationStatusCode"`
+				ApplicationStatusText     string `json:"applicationStatusDescriptionText"`
+				ApplicationStatusDate     string `json:"applicationStatusDate"`
+				InventorBag              []struct {
+					InventorNameText string `json:"inventorNameText"`
+					FirstName        string `json:"firstName"`
+					MiddleName       string `json:"middleName"`
+					LastName         string `json:"lastName"`
+					NameSuffix       string `json:"nameSuffix"`
+				} `json:"inventorBag"`
+			} `json:"applicationMetaData"`
+			GrantDocumentMetaData *struct {
+				FileCreateDateTime string `json:"fileCreateDateTime"`
+			} `json:"grantDocumentMetaData"`
+		} `json:"patentFileWrapperDataBag"`
+	}
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", "", "", "", "", "", "", fmt.Errorf("parse USPTO response: %w", err)
+	}
+	if searchResp.Count == 0 || len(searchResp.PatentFileWrapperDataBag) == 0 {
+		return "", "", "", "", "", "", "", fmt.Errorf("no results found for %s", n.String())
+	}
+
+	w := searchResp.PatentFileWrapperDataBag[0]
+	appNum = strings.TrimSpace(w.ApplicationNumberText)
+	if appNum == "" {
+		return "", "", "", "", "", "", "", fmt.Errorf("empty application number in response")
+	}
+
+	meta := w.ApplicationMetaData
+
+	filingDate = meta.FilingDate
+	title = strings.TrimSpace(meta.InventionTitle)
+	appTypeLabel = meta.ApplicationTypeLabelName
+	appTypeCategory = meta.ApplicationTypeCategory
+
+	// Extract grant date: prefer ApplicationStatusDate for granted patents,
+	// fall back to GrantDocumentMetaData.FileCreateDateTime
+	statusText := strings.ToLower(strings.TrimSpace(meta.ApplicationStatusText))
+	metaGrantDate := strings.TrimSpace(meta.ApplicationStatusDate)
+	if (strings.Contains(statusText, "patent") || strings.Contains(statusText, "grant")) && metaGrantDate != "" {
+		grantDate = metaGrantDate
+	} else if w.GrantDocumentMetaData != nil {
+		grantDate = w.GrantDocumentMetaData.FileCreateDateTime
+	}
+
+	// Extract inventors from inventorBag, fall back to FirstInventorName
+	var invs []string
+	for _, inv := range meta.InventorBag {
+		name := strings.TrimSpace(inv.InventorNameText)
+		if name == "" {
+			parts := strings.TrimSpace(strings.Join([]string{inv.FirstName, inv.MiddleName, inv.LastName, inv.NameSuffix}, " "))
+			if parts != "" {
+				name = parts
+			}
+		}
+		if name != "" {
+			invs = append(invs, name)
+		}
+	}
+	if len(invs) == 0 && strings.TrimSpace(meta.FirstInventorName) != "" {
+		invs = append(invs, strings.TrimSpace(meta.FirstInventorName))
+	}
+	inventors = strings.Join(invs, "; ")
+
+	// Normalize filing date to YYYY-MM-DD
+	if t, err := time.Parse("2006-01-02", filingDate); err == nil {
+		filingDate = t.Format("2006-01-02")
+	} else if t, err := time.Parse("20060102", filingDate); err == nil {
+		filingDate = t.Format("2006-01-02")
+	} else if t, err := time.Parse("01-02-2006", filingDate); err == nil {
+		filingDate = t.Format("2006-01-02")
+	}
+
+	// Normalize grant date to YYYY-MM-DD
+	if grantDate != "" {
+		if t, err := time.Parse("2006-01-02", grantDate); err == nil {
+			grantDate = t.Format("2006-01-02")
+		} else if t, err := time.Parse("20060102", grantDate); err == nil {
+			grantDate = t.Format("2006-01-02")
+		} else if t, err := time.Parse(time.RFC3339, grantDate); err == nil {
+			grantDate = t.Format("2006-01-02")
+		} else if len(grantDate) >= 10 {
+			grantDate = grantDate[:10]
+		}
+	}
+
+	return appNum, filingDate, grantDate, title, inventors, appTypeLabel, appTypeCategory, nil
 }
 
 func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {

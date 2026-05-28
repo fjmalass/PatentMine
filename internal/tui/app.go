@@ -203,6 +203,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenActivity:               (*App).cmdOpenActivity,
 	command.OpenAllNotes:               (*App).cmdOpenAllNotes,
 	command.OpenOrphans:                (*App).cmdOpenOrphans,
+	command.PatentExpirationDate:       (*App).cmdPatentExpirationDate,
 }
 
 // typedAcceptsArgs lists the commands whose typed form takes arguments. Every
@@ -227,8 +228,9 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.OpenBrowserUSPTO:      true,
 	command.OpenBrowserUSPTOGrant: true,
 	command.OpenBrowserUSPTOPGPub: true,
-	command.OpenBrowserGoogle:     true,
-	command.ViewUSPTOGrantXML:     true,
+	command.OpenBrowserGoogle:        true,
+	command.ViewUSPTOGrantXML:        true,
+	command.PatentExpirationDate:     true,
 }
 
 // App is the bubbletea root model.

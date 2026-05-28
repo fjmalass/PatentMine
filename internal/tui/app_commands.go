@@ -180,6 +180,61 @@ func (a *App) openSourceCompare(number domain.PatentNumber) (tea.Model, tea.Cmd)
 	return a, nil
 }
 
+func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	var number domain.PatentNumber
+	if len(inv.args) > 0 {
+		var err error
+		number, err = domain.ParsePatentNumber(inv.args[0])
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+	} else {
+		var ok bool
+		number, ok = a.focusedPane().Selection()
+		if !ok || number.IsZero() {
+			a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
+			return a, nil
+		}
+	}
+	return a.openExpirationOverlay(number)
+}
+
+func (a *App) openExpirationOverlay(number domain.PatentNumber) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var result proto.USPTOExpirationCalculateResult
+	err := a.client.Call(ctx, proto.MethodUSPTOExpirationCalculate, proto.USPTOExpirationCalculateParams{Number: number}, &result)
+	if err != nil {
+		a.setErr(text.StatusGeneric, "expiration calculation failed: "+err.Error())
+		return a, nil
+	}
+
+	o := overlay.NewExpirationOverlay(a.theme, result)
+	a.overlays = append(a.overlays, o)
+	a.setStatus(text.StatusGeneric, fmt.Sprintf("Expiration analysis — %s", number))
+
+	a.log().Info("expiration overlay opened",
+		slog.String("patent", number.String()),
+		slog.String("computed", result.ComputedExpirationDate),
+		slog.String("google", result.GoogleExpirationDate))
+
+	return a, nil
+}
+
 func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text, a.metrics)
 	a.overlays = append(a.overlays, o)

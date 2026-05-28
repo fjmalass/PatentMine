@@ -1,0 +1,108 @@
+package overlay
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"patentmine/internal/command"
+	"patentmine/internal/proto"
+	"patentmine/internal/tui/render"
+)
+
+// ExpirationOverlay displays the USPTO expiration calculation result in a popup.
+type ExpirationOverlay struct {
+	theme  render.Theme
+	result proto.USPTOExpirationCalculateResult
+}
+
+var _ Overlay = (*ExpirationOverlay)(nil)
+
+func NewExpirationOverlay(theme render.Theme, result proto.USPTOExpirationCalculateResult) *ExpirationOverlay {
+	return &ExpirationOverlay{theme: theme, result: result}
+}
+
+func (o *ExpirationOverlay) Title() string { return "Patent Expiration Analysis" }
+
+func (o *ExpirationOverlay) Command(command.ID, int) (Overlay, tea.Cmd) { return o, nil }
+
+func (o *ExpirationOverlay) Handles() []command.ID { return nil }
+
+func (o *ExpirationOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	switch msg.String() {
+	case "esc", "q", "enter":
+		return o, func() tea.Msg { return PromptCloseMsg{} }, true
+	}
+	return o, nil, false
+}
+
+func (o *ExpirationOverlay) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, 70, 55, 54, 22)
+}
+
+func (o *ExpirationOverlay) View(maxW, maxH int) string {
+	r := o.result
+	sep := strings.Repeat("─", maxW)
+	labelW := 30
+
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "%s  %s\n", o.theme.Title.Render("Patent:"), r.PatentNumber)
+	fmt.Fprintf(&b, "%s  %s\n", o.theme.Title.Render("Application:"), r.ApplicationNumber)
+	if r.Title != "" {
+		fmt.Fprintf(&b, "%s  %s\n", o.theme.Title.Render("Title:"), r.Title)
+	}
+	b.WriteString(sep + "\n")
+
+	// USPTO section
+	b.WriteString(o.theme.Header.Render("USPTO Data") + "\n")
+	writeField(&b, labelW, "Filing Date", r.FilingDate, maxW)
+	writeField(&b, labelW, "Grant Date", r.GrantDate, maxW)
+	writeField(&b, labelW, "Earliest Filing Date", r.EarliestTermFilingDate, maxW)
+	writeField(&b, labelW, "PTA", fmt.Sprintf("%d days", r.PatentTermAdjustmentDays), maxW)
+	writeField(&b, labelW, "PTE", fmt.Sprintf("%d days", r.PatentTermExtensionDays), maxW)
+	writeField(&b, labelW, "Terminal Disclaimer", r.TerminalDisclaimerDate, maxW)
+	writeField(&b, labelW, "Computed Expiration", r.ComputedExpirationDate, maxW)
+
+	// Google section
+	if r.GoogleExpirationDate != "" {
+		b.WriteString(sep + "\n")
+		b.WriteString(o.theme.Header.Render("Google Patents Data") + "\n")
+		writeField(&b, labelW, "Parsed Expiration", r.GoogleExpirationDate, maxW)
+	}
+
+	// Comparison
+	if r.ComputedExpirationDate != "" && r.GoogleExpirationDate != "" {
+		b.WriteString(sep + "\n")
+		tUSPTO, errU := time.Parse("2006-01-02", r.ComputedExpirationDate)
+		tGoogle, errG := time.Parse("2006-01-02", r.GoogleExpirationDate)
+		if errU == nil && errG == nil {
+			diff := int(tUSPTO.Sub(tGoogle).Hours() / 24)
+			var line string
+			if diff == 0 {
+				line = "USPTO date matches Google date"
+			} else {
+				line = fmt.Sprintf("USPTO - Google = %d days", diff)
+			}
+			b.WriteString(o.theme.Header.Render("Comparison: ") + line + "\n")
+		}
+	}
+
+	b.WriteString(sep + "\n")
+	b.WriteString(o.theme.MutedItalic.Render("Press any key to close"))
+
+	return b.String()
+}
+
+func writeField(b *strings.Builder, labelW int, label, value string, maxW int) {
+	if value == "" {
+		value = "—"
+	}
+	line := render.Pad(label, labelW) + value
+	if len(line) > maxW {
+		line = line[:maxW]
+	}
+	b.WriteString(line + "\n")
+}

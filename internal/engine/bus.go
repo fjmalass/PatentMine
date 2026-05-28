@@ -78,20 +78,28 @@ func (b *Bus) Publish(ev proto.Event) {
 	b.mu.Unlock()
 
 	for _, ch := range chans {
+		b.sendOrDrop(ch, ev, metrics)
+	}
+}
+
+// sendOrDrop tries to send ev on ch inside a recover so that an unsubscribe /
+// channel-close racing between Publish's channel-copy and the send cannot
+// panic.  When the buffer is full the oldest event is drained first.
+func (b *Bus) sendOrDrop(ch chan proto.Event, ev proto.Event, metrics *observability.Metrics) {
+	defer func() { recover() }()
+	select {
+	case ch <- ev:
+	default:
+		if metrics != nil {
+			metrics.IncCounter("engine.bus.drop_total", 1)
+		}
+		select {
+		case <-ch:
+		default:
+		}
 		select {
 		case ch <- ev:
 		default:
-			if metrics != nil {
-				metrics.IncCounter("engine.bus.drop_total", 1)
-			}
-			select {
-			case <-ch:
-			default:
-			}
-			select {
-			case ch <- ev:
-			default:
-			}
 		}
 	}
 }
