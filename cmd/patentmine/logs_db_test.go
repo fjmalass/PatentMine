@@ -192,6 +192,7 @@ func TestDBCommands(t *testing.T) {
 
 // Minimal io copy helpers to avoid external imports in test
 type ioDiscard struct{}
+
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
 func ioCopy(dst ioDiscard, src ioReader) (written int64, err error) {

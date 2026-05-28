@@ -21,9 +21,9 @@ const usptoAssignmentSearchURL = "https://api.uspto.gov/api/v1/patent/assignment
 // usptoAssignmentResponse is the search-response envelope. Field shapes mirror
 // the patent search response to stay consistent with the rest of the package.
 type usptoAssignmentResponse struct {
-	Count                  int                       `json:"count"`
-	RequestIdentifier      string                    `json:"requestIdentifier"`
-	PatentAssignmentBag    []usptoAssignmentDataItem `json:"patentAssignmentBag"`
+	Count               int                       `json:"count"`
+	RequestIdentifier   string                    `json:"requestIdentifier"`
+	PatentAssignmentBag []usptoAssignmentDataItem `json:"patentAssignmentBag"`
 }
 
 // usptoAssignmentDataItem is one recorded assignment plus its parties. Field

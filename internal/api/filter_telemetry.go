@@ -164,10 +164,10 @@ func (s *Server) observeTableQuery(r *http.Request, telemetry tableQueryTelemetr
 	}
 	if s.activity != nil && telemetry.Complexity > 0 {
 		_ = s.activity.Record(r.Context(), observability.Record{
-			Action:   observability.ActionTableFilterApply,
-			Entity:   "table_filter",
-			EntityID: string(telemetry.TableType),
-			Status:   "requested",
+			Action:     observability.ActionTableFilterApply,
+			Entity:     "table_filter",
+			EntityID:   string(telemetry.TableType),
+			Status:     "requested",
 			Attributes: attrs,
 		})
 	}
@@ -188,10 +188,10 @@ func (s *Server) observeTableView(r *http.Request, action string, view domain.Sa
 			status = "committed"
 		}
 		_ = s.activity.Record(r.Context(), observability.Record{
-			Action:   action,
-			Entity:   "table_view",
-			EntityID: view.ID,
-			Status:   status,
+			Action:     action,
+			Entity:     "table_view",
+			EntityID:   view.ID,
+			Status:     status,
 			Attributes: attrs,
 		})
 	}

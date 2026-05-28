@@ -95,9 +95,41 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 
 	patent.FirstClaim = clean(googleText(doc.Selection, "section[itemprop='claims'] .claim", ".claims .claim"))
 	patent.SourceURL = googlePatentURL(number)
-	// Google does not state a definitive expiration; estimate it as 20 years
-	// from the earliest of publication or grant.
-	if base := firstNonZeroTime(patent.PublicationDate, patent.GrantDate); !base.IsZero() {
+	// Try to find the exact "Anticipated expiration" or "Adjusted expiration" date from the events in the document
+	var anticipatedExpiration time.Time
+	doc.Find("span[itemprop='type'], span[itemprop='title']").Each(func(_ int, s *goquery.Selection) {
+		text := strings.ToLower(strings.TrimSpace(s.Text()))
+		if strings.Contains(text, "anticipated expiration") || strings.Contains(text, "adjusted expiration") || text == "expiration" {
+			parent := s.Parent()
+			if dateStr, ok := parent.Find("time[itemprop='date']").First().Attr("datetime"); ok {
+				if t := parseGoogleDate(dateStr); !t.IsZero() {
+					anticipatedExpiration = t
+				}
+			}
+			if anticipatedExpiration.IsZero() {
+				if dateStr := parent.Find("time").First().Text(); dateStr != "" {
+					if t := parseGoogleDate(dateStr); !t.IsZero() {
+						anticipatedExpiration = t
+					}
+				}
+			}
+		}
+	})
+
+	if anticipatedExpiration.IsZero() {
+		if t := googleAttrDate(doc, "time[itemprop='anticipatedExpiration']"); !t.IsZero() {
+			anticipatedExpiration = t
+		}
+	}
+
+	if !anticipatedExpiration.IsZero() {
+		patent.ExpirationDate = anticipatedExpiration
+		patent.ExpirationSource = "anticipated"
+	} else if !patent.ApplicationDate.IsZero() {
+		// Standard U.S. term rule: 20 years from ApplicationDate (FilingDate)
+		patent.ExpirationDate = patent.ApplicationDate.AddDate(20, 0, 0)
+		patent.ExpirationSource = domain.ExpirationEstimated
+	} else if base := firstNonZeroTime(patent.PublicationDate, patent.GrantDate); !base.IsZero() {
 		patent.ExpirationDate = base.AddDate(20, 0, 0)
 		patent.ExpirationSource = domain.ExpirationEstimated
 	}

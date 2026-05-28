@@ -706,4 +706,3 @@ func ReportProgress(ctx context.Context, msg string) {
 		report(msg)
 	}
 }
-

@@ -47,7 +47,6 @@ func (l *Layer) Unbind(sequence string) *Layer {
 	return l
 }
 
-
 // Bindings returns a copy of the layer's sequence-to-command map.
 func (l *Layer) Bindings() map[string]command.ID {
 	return maps.Clone(l.bindings)

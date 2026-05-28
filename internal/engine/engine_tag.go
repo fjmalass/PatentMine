@@ -178,11 +178,11 @@ func (e *Engine) TagPatentStrict(ctx context.Context, project domain.ProjectID, 
 			attrs["mutation_group_id"] = mutationGroupID
 		}
 		e.recordActivity(ctx, observability.Record{
-			Action:   observability.ActionPatentTagAssign,
-			Entity:   "patent_tag",
-			EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
-			Status:   "committed",
-			After:    map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID, "assigned_at": assignedAt.UTC().Format(time.RFC3339)},
+			Action:     observability.ActionPatentTagAssign,
+			Entity:     "patent_tag",
+			EntityID:   string(project) + "/" + record.String() + "/" + matchedTag.Name,
+			Status:     "committed",
+			After:      map[string]any{"tag_name": matchedTag.Name, "tag_id": matchedTag.ID, "assigned_at": assignedAt.UTC().Format(time.RFC3339)},
 			Attributes: attrs,
 		})
 	}
@@ -292,10 +292,10 @@ func (e *Engine) UntagPatentStrict(ctx context.Context, project domain.ProjectID
 			attrs["mutation_group_id"] = mutationGroupID
 		}
 		rec := observability.Record{
-			Action:   observability.ActionPatentTagRemove,
-			Entity:   "patent_tag",
-			EntityID: string(project) + "/" + record.String() + "/" + matchedTag.Name,
-			Status:   "committed",
+			Action:     observability.ActionPatentTagRemove,
+			Entity:     "patent_tag",
+			EntityID:   string(project) + "/" + record.String() + "/" + matchedTag.Name,
+			Status:     "committed",
 			Attributes: attrs,
 		}
 		if t, ok := beforeStates[record]; ok {

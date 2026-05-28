@@ -46,7 +46,7 @@ const (
 	ScopeIDS       Scope = "ids"       // one patent's IDS entry editor
 	ScopeProjects  Scope = "projects"  // the project list
 	ScopeFullText  Scope = "fulltext"  // full claims text viewer
-	ScopeUSPTOXML  Scope = "uspto-xml"  // raw USPTO grant/pgpub XML rendered as TOML (full-screen viewer)
+	ScopeUSPTOXML  Scope = "uspto-xml" // raw USPTO grant/pgpub XML rendered as TOML (full-screen viewer)
 	ScopeNotes     Scope = "notes"     // all-notes listing for a project
 	ScopeOrphans   Scope = "orphans"   // database-wide list of patents with no membership
 	ScopeOverlay   Scope = "overlay"   // a modal overlay is focused

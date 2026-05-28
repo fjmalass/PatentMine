@@ -307,6 +307,19 @@ func (e *Engine) recordXMLAccess(ctx context.Context, prior domain.USPTOXMLDownl
 	}, nil
 }
 
+func parseUSPTODateHelper(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, format := range []string{"2006-01-02", "20060102", "01-02-2006"} {
+		if t, err := time.Parse(format, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 // ingestUSPTOXML opens the saved XML, parses it, and persists the parsed
 // bundle. It is best-effort from the caller's perspective: failures are
 // logged but do not fail the fetch — the XML file itself is still on disk.
@@ -386,28 +399,100 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 		return fmt.Errorf("engine: save citation graph: %w", graphErr)
 	}
 
-	// Best-effort enrichment: if this patent record has no classifications yet
-	// (common for pure-USPTO source or USPTOOnly mode), lift the IPCR/CPC codes
-	// we just parsed from the grant/pgpub XML. They are already normalized by
-	// the Code() helpers + the store reader to the same compact form Google
-	// uses (e.g. "G06F21/14"), so filters, detail view, K overlay, FTS etc.
-	// will all see them immediately.
-	if len(bundle.Classifications) > 0 {
-		if codes, cerr := e.repo.USPTOGrantClassifications(ctx, applicationNumber, string(kind)); cerr == nil && len(codes) > 0 {
-			if p, perr := e.repo.Patent(ctx, n); perr == nil && len(p.Classifications) == 0 {
+	// Best-effort enrichment: if this patent record has no classifications or other fields yet
+	// (common for pure-USPTO source or USPTOOnly mode), lift the parsed metadata we just got.
+	if p, perr := e.repo.Patent(ctx, n); perr == nil {
+		changed := false
+		if len(p.Classifications) == 0 && len(bundle.Classifications) > 0 {
+			if codes, cerr := e.repo.USPTOGrantClassifications(ctx, applicationNumber, string(kind)); cerr == nil && len(codes) > 0 {
 				p.Classifications = codes
-				if serr := e.repo.SavePatent(ctx, p); serr == nil {
-					e.incCounter("uspto.xml.ingest.classifications_backfilled", int64(len(codes)))
-					e.log(ctx, slog.LevelInfo, "uspto xml classifications backfilled to patent",
-						slog.String("patent", n.Normalized()),
-						slog.Int("count", len(codes)))
-
-					// Also upgrade any still-unreconciled source_diff rows for
-					// "classifications" so that the Source Comparison overlay (which
-					// the user is often looking at) will now show the real USPTO
-					// values from the XML instead of the empty snapshot from crawl time.
-					_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "classifications", strings.Join(codes, ";"))
+				changed = true
+				e.incCounter("uspto.xml.ingest.classifications_backfilled", int64(len(codes)))
+				_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "classifications", strings.Join(codes, ";"))
+			}
+		}
+		if p.Title == "" && bundle.Summary.InventionTitle != "" {
+			p.Title = bundle.Summary.InventionTitle
+			changed = true
+			_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "title", bundle.Summary.InventionTitle)
+		}
+		if p.Abstract == "" && bundle.Body.AbstractText != "" {
+			p.Abstract = bundle.Body.AbstractText
+			changed = true
+			_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "abstract", bundle.Body.AbstractText)
+		}
+		if p.FirstClaim == "" && len(bundle.Body.Claims) > 0 {
+			p.FirstClaim = bundle.Body.Claims[0].Text
+			changed = true
+			_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "first_claim", bundle.Body.Claims[0].Text)
+		}
+		if p.ApplicationDate.IsZero() && bundle.Summary.FilingDate != "" {
+			if t := parseUSPTODateHelper(bundle.Summary.FilingDate); !t.IsZero() {
+				p.ApplicationDate = t
+				changed = true
+				_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "application_date", t.Format("2006-01-02"))
+			}
+		}
+		pubDateStr := bundle.Summary.GrantDate
+		if p.PublicationDate.IsZero() && pubDateStr != "" {
+			if t := parseUSPTODateHelper(pubDateStr); !t.IsZero() {
+				p.PublicationDate = t
+				changed = true
+				_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "publication_date", t.Format("2006-01-02"))
+			}
+		}
+		if p.GrantDate.IsZero() && string(kind) == string(proto.USPTOXMLKindGrant) && pubDateStr != "" {
+			if t := parseUSPTODateHelper(pubDateStr); !t.IsZero() {
+				p.GrantDate = t
+				changed = true
+				_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "grant_date", t.Format("2006-01-02"))
+			}
+		}
+		if p.Assignee == "" {
+			var assigneeName string
+			for _, party := range bundle.Parties {
+				if party.Role == "assignee" {
+					if party.OrgName != "" {
+						assigneeName = party.OrgName
+					} else {
+						assigneeName = strings.TrimSpace(party.FirstName + " " + party.LastName)
+					}
+					break
 				}
+			}
+			if assigneeName != "" {
+				p.Assignee = assigneeName
+				changed = true
+				_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "assignee", assigneeName)
+			}
+		}
+		if len(p.Inventors) == 0 {
+			var inventors []domain.Inventor
+			var inventorNames []string
+			for _, party := range bundle.Parties {
+				if party.Role == "inventor" {
+					name := strings.TrimSpace(party.FirstName + " " + party.LastName)
+					if name != "" {
+						inventors = append(inventors, domain.Inventor(name))
+						inventorNames = append(inventorNames, name)
+					}
+				}
+			}
+			if len(inventors) > 0 {
+				p.Inventors = inventors
+				changed = true
+				_ = e.repo.UpdateUnreconciledSourceDiffUSPTOValue(ctx, n, "inventors", strings.Join(inventorNames, ";"))
+			}
+		}
+
+		if changed {
+			if serr := e.repo.SavePatent(ctx, p); serr == nil {
+				e.log(ctx, slog.LevelInfo, "uspto xml metadata enriched and saved to patent table",
+					slog.String("patent", n.Normalized()))
+			} else {
+				e.log(ctx, slog.LevelError, "failed to save enriched patent record",
+					slog.String("patent", n.Normalized()),
+					slog.String("error", serr.Error()))
 			}
 		}
 	}
@@ -889,3 +974,178 @@ func (e *Engine) ClearPatentCache(ctx context.Context, patents []domain.PatentNu
 	return cleared, bytesSaved, opErr
 }
 
+// ComputeAndStoreUSPTOExpiration computes the statutory patent expiration date from the USPTO source,
+// stores it in the uspto_application table, and writes comparison logs with Google Patents.
+func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.PatentNumber) (app domain.USPTOApplication, err error) {
+	start := time.Now()
+	defer func() {
+		dur := time.Since(start)
+		if e.metrics != nil {
+			e.metrics.ObserveDuration("engine.uspto.compute_expiration", dur, err != nil)
+			e.metrics.IncCounter("engine.uspto.compute_expiration.count", 1)
+		}
+	}()
+
+	// 1. Fetch/load the USPTOApplication from store
+	app, err = e.repo.USPTOApplication(ctx, n)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Try to check if a local XML file exists in patentsDir first and ingest it
+			if e.patentsDir != "" {
+				pattern := filepath.Join(e.patentsDir, "*_"+n.Serial+".xml")
+				matches, _ := filepath.Glob(pattern)
+				if len(matches) > 0 {
+					localPath := matches[0]
+					baseName := filepath.Base(localPath)
+					parts := strings.Split(baseName, "_")
+					if len(parts) == 2 {
+						appNum := parts[0]
+						pRec := domain.Patent{
+							Number:     n,
+							FetchState: domain.FetchCached,
+							Source:     domain.SourceUSPTO,
+						}
+						appRec := domain.USPTOApplication{
+							ApplicationNumber: appNum,
+							RecordNumber:      n,
+						}
+						batch := store.NodeBatch{
+							Patent:           pRec,
+							USPTOApplication: &appRec,
+						}
+						if sErr := e.repo.SaveNode(ctx, batch); sErr == nil {
+							_ = e.ingestUSPTOXML(ctx, n, proto.USPTOXMLKindGrant, appNum, localPath)
+						}
+					}
+				}
+			}
+
+			// Reload to check if successfully ingested from local XML cache
+			app, err = e.repo.USPTOApplication(ctx, n)
+			if err != nil {
+				// Try to resolve or do lookup first
+				_, err = e.USPTOLookup(ctx, n)
+				if err == nil {
+					app, err = e.repo.USPTOApplication(ctx, n)
+				}
+			}
+		}
+		if err != nil {
+			return domain.USPTOApplication{}, fmt.Errorf("engine: failed to resolve USPTO application: %w", err)
+		}
+	}
+
+	appNum := app.ApplicationNumber
+	apiKey := strings.TrimSpace(e.usptoAPIKey)
+
+	// 2. Fetch live PTA and Documents (Terminal Disclaimers) if apiKey is present
+	var ptaDays int
+	var tdDate time.Time
+	var hasTD bool
+	if apiKey != "" {
+		ptaDays, err = uspto.FetchPTADays(ctx, appNum, apiKey, e.logger)
+		if err != nil {
+			e.log(ctx, slog.LevelWarn, "failed to fetch PTA days from live USPTO API", slog.String("app_num", appNum), slog.String("error", err.Error()))
+		}
+		tdDate, hasTD, err = uspto.FetchTerminalDisclaimerDate(ctx, appNum, apiKey, e.logger)
+		if err != nil {
+			e.log(ctx, slog.LevelWarn, "failed to fetch terminal disclaimers from live USPTO API", slog.String("app_num", appNum), slog.String("error", err.Error()))
+		}
+	}
+
+	// 3. Compute earliest term filing date by walking the continuity chain
+	filingDate := parseUSPTODateHelper(app.FilingDate)
+	earliestTermFilingDate, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
+	if err != nil {
+		e.log(ctx, slog.LevelWarn, "failed to compute earliest term filing date", slog.String("app_num", appNum), slog.String("error", err.Error()))
+	}
+
+	// 4. Determine patent type
+	grantKind := app.PatentGrantXMLName
+	if grantKind == "" {
+		grantKind = n.Kind
+	}
+	patentType := uspto.DeterminePatentType(n, app.ApplicationTypeLabel, app.ApplicationTypeCategory, grantKind)
+
+	// 5. Get GrantDate
+	var grantDate time.Time
+	patentRec, pErr := e.repo.Patent(ctx, n)
+	if pErr == nil {
+		grantDate = patentRec.GrantDate
+	}
+
+	// 6. Compute statutory expiration
+	pteDays := app.PatentTermExtension
+	if pteDays == 0 {
+		pteDays = app.PatentTermExtension
+	}
+
+	computedExp := uspto.PatentExpiration(patentType, filingDate, grantDate, earliestTermFilingDate, ptaDays, pteDays, tdDate)
+
+	// 7. Store computed expiration fields back in uspto_application table
+	tdDateStr := ""
+	if !tdDate.IsZero() {
+		tdDateStr = tdDate.Format("2006-01-02")
+	}
+	earliestTermFilingDateStr := ""
+	if !earliestTermFilingDate.IsZero() {
+		earliestTermFilingDateStr = earliestTermFilingDate.Format("2006-01-02")
+	}
+	computedExpStr := ""
+	if !computedExp.IsZero() {
+		computedExpStr = computedExp.Format("2006-01-02")
+	}
+
+	app.PatentTermAdjustmentDays = ptaDays
+	app.PatentTermExtension = pteDays
+	app.TerminalDisclaimerDate = tdDateStr
+	app.EarliestTermFilingDate = earliestTermFilingDateStr
+	app.ComputedExpirationDate = computedExpStr
+
+	pRec := patentRec
+	if pErr != nil {
+		pRec = domain.Patent{
+			Number:     n,
+			FetchState: domain.FetchCached,
+			Source:     domain.SourceUSPTO,
+		}
+	}
+	batch := store.NodeBatch{
+		Patent:           pRec,
+		USPTOApplication: &app,
+	}
+	if err := e.repo.SaveNode(ctx, batch); err != nil {
+		e.log(ctx, slog.LevelError, "failed to save computed expiration to database", slog.String("app_num", appNum), slog.String("error", err.Error()))
+	}
+
+	// 8. Fetch current Patent record to compare and/or update its ExpirationDate if needed
+	p, err := e.repo.Patent(ctx, n)
+	if err == nil {
+		var googleExp time.Time
+		if p.Source == domain.SourceGoogle {
+			googleExp = p.ExpirationDate
+		} else {
+			googleExp = p.ExpirationDate
+		}
+
+		if !googleExp.IsZero() && !computedExp.IsZero() {
+			diffDays := int(computedExp.Sub(googleExp).Hours() / 24)
+			e.log(ctx, slog.LevelInfo, "patent expiration comparison",
+				slog.String("number", n.String()),
+				slog.String("computed_uspto_date", computedExpStr),
+				slog.String("google_date", googleExp.Format("2006-01-02")),
+				slog.Int("diff_days", diffDays),
+				slog.Bool("has_terminal_disclaimer", hasTD),
+			)
+		}
+
+		// Update the patent's own expiration date and source if it's a USPTO patent
+		if p.Source == domain.SourceUSPTO && !computedExp.IsZero() {
+			p.ExpirationDate = computedExp
+			p.ExpirationSource = "uspto"
+			_ = e.repo.SavePatent(ctx, p)
+		}
+	}
+
+	return app, nil
+}

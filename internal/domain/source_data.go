@@ -55,16 +55,22 @@ type USPTOApplication struct {
 	PGPubXMLName                  string `json:"pgpub_xml_name,omitempty"`
 	PatentGrantXMLURL             string `json:"patent_grant_xml_url,omitempty"`
 	PatentGrantXMLName            string `json:"patent_grant_xml_name,omitempty"`
+	PatentTermAdjustmentDays      int    `json:"patent_term_adjustment_days,omitempty"`
+	PatentTermExtension           int    `json:"patent_term_extension_days,omitempty"`
+	TerminalDisclaimerDate        string `json:"terminal_disclaimer_date,omitempty"`
+	EarliestTermFilingDate        string `json:"earliest_term_filing_date,omitempty"`
+	ComputedExpirationDate        string `json:"computed_expiration_date,omitempty"`
 }
 
 // USPTOGrantSummary is the single-row data extracted from a us-patent-grant
 // XML envelope: counts, examiner, attorney, term, dates.
 type USPTOGrantSummary struct {
-	ApplicationNumber       string `json:"application_number"`
-	ApplicationSeriesCode   string `json:"application_series_code,omitempty"`
-	InventionTitle          string `json:"invention_title,omitempty"`
-	GrantDocNumber          string `json:"grant_doc_number,omitempty"`
-	GrantKind               string `json:"grant_kind,omitempty"`
+	ApplicationNumber     string   `json:"application_number"`
+	FilingDate            string   `json:"filing_date,omitempty"`
+	ApplicationSeriesCode string   `json:"application_series_code,omitempty"`
+	InventionTitle        string   `json:"invention_title,omitempty"`
+	GrantDocNumber        string   `json:"grant_doc_number,omitempty"`
+	GrantKind             string   `json:"grant_kind,omitempty"`
 	GrantDate             string   `json:"grant_date,omitempty"`
 	GrantDTDVersion       string   `json:"grant_dtd_version,omitempty"`
 	GrantStatus           string   `json:"grant_status,omitempty"`
@@ -101,7 +107,7 @@ type USPTOGrantBody struct {
 	AbstractText      string            `json:"abstract_text,omitempty"`
 	AbstractXML       string            `json:"abstract_xml,omitempty"`
 	DescriptionText   string            `json:"description_text,omitempty"`
-	DescriptionXML   string            `json:"description_xml,omitempty"`
+	DescriptionXML    string            `json:"description_xml,omitempty"`
 	ClaimStatement    string            `json:"claim_statement,omitempty"`
 	ClaimsText        string            `json:"claims_text,omitempty"`
 	Claims            []USPTOGrantClaim `json:"claims,omitempty"`
@@ -406,17 +412,17 @@ var ReconciliableFields = []ReconciliableField{
 // The small getters/setters below centralize the string conversion logic
 // that used to be duplicated between crawl/source.go and engine/engine.go.
 
-func getTitle(p *Patent) string        { return p.Title }
-func setTitle(p *Patent, v string)     { p.Title = v }
+func getTitle(p *Patent) string    { return p.Title }
+func setTitle(p *Patent, v string) { p.Title = v }
 
-func getAbstract(p *Patent) string     { return p.Abstract }
-func setAbstract(p *Patent, v string)  { p.Abstract = v }
+func getAbstract(p *Patent) string    { return p.Abstract }
+func setAbstract(p *Patent, v string) { p.Abstract = v }
 
-func getAssignee(p *Patent) string     { return p.Assignee }
-func setAssignee(p *Patent, v string)  { p.Assignee = v }
+func getAssignee(p *Patent) string    { return p.Assignee }
+func setAssignee(p *Patent, v string) { p.Assignee = v }
 
-func getFirstClaim(p *Patent) string   { return p.FirstClaim }
-func setFirstClaim(p *Patent, v string){ p.FirstClaim = v }
+func getFirstClaim(p *Patent) string    { return p.FirstClaim }
+func setFirstClaim(p *Patent, v string) { p.FirstClaim = v }
 
 func getInventors(p *Patent) string {
 	return inventorsString(p.Inventors)
@@ -485,4 +491,3 @@ func dateString(t time.Time) string {
 	}
 	return t.UTC().Format("2006-01-02")
 }
-

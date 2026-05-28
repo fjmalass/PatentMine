@@ -28,6 +28,7 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 
 	summary := domain.USPTOGrantSummary{
 		ApplicationNumber:     applicationNumber,
+		FilingDate:            strings.TrimSpace(bib.ApplicationRef.DocumentID.Date),
 		ApplicationSeriesCode: strings.TrimSpace(bib.ApplicationSeriesCode),
 		InventionTitle:        strings.TrimSpace(bib.InventionTitle),
 		GrantDocNumber:        bib.PublicationRef.DocNumber,

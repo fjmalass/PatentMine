@@ -242,11 +242,11 @@ func (e *Engine) DeletePatents(ctx context.Context, patents []domain.PatentNumbe
 			attrs["batch_id"] = batchID
 		}
 		e.recordActivity(ctx, observability.Record{
-			Action:   observability.ActionPatentSoftDelete,
-			Entity:   "patent",
-			EntityID: record.String(),
-			Status:   "committed",
-			Before:   snapshots[i],
+			Action:     observability.ActionPatentSoftDelete,
+			Entity:     "patent",
+			EntityID:   record.String(),
+			Status:     "committed",
+			Before:     snapshots[i],
 			Attributes: attrs,
 		})
 	}
@@ -320,11 +320,11 @@ func (e *Engine) RestorePatent(ctx context.Context, snapshot PatentSnapshot, sof
 	e.log(ctx, slog.LevelInfo, "patent restored", slog.String("number", snapshot.Patent.Number.String()), slog.Bool("soft", soft))
 
 	e.recordActivity(ctx, observability.Record{
-		Action:   observability.ActionPatentRestore,
-		Entity:   "patent",
-		EntityID: snapshot.Patent.Number.String(),
-		Status:   "committed",
-		After:    snapshot.Patent,
+		Action:     observability.ActionPatentRestore,
+		Entity:     "patent",
+		EntityID:   snapshot.Patent.Number.String(),
+		Status:     "committed",
+		After:      snapshot.Patent,
 		Attributes: map[string]any{"soft": soft},
 	})
 

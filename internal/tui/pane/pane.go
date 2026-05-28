@@ -61,9 +61,9 @@ type MultiSelector interface {
 
 // ActivityFocus is the replayable thing the user is currently looking at.
 type ActivityFocus struct {
-	Entity   string
-	EntityID string
-	Label    string
+	Entity     string
+	EntityID   string
+	Label      string
 	Attributes map[string]any
 }
 

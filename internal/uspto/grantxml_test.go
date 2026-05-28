@@ -392,4 +392,3 @@ func TestClassificationCodeMatchesGoogleFormat(t *testing.T) {
 		t.Errorf("CPC G06F9/30 = %q", got)
 	}
 }
-

@@ -43,17 +43,17 @@ const (
 	ActionIDSExportPDF          = "ids.export.pdf"
 	ActionSourceModeSet         = "config.source_mode.set"
 	// CLI management operations (for observability of backup/clean of patents XML cache, logs, etc.)
-	ActionCLIPatentsList   = "cli.patents.list"
+	ActionCLIPatentsList    = "cli.patents.list"
 	ActionCLIPatentsArchive = "cli.patents.archive"
 	ActionCLIPatentsClean   = "cli.patents.clean"
 
 	// Resolution / crawl failure paths (for the compare-mode + grant number issues)
-	ActionCrawlRootNotFound     = "crawl.root_not_found"
-	ActionUSPTOCandidateSearch  = "uspto.candidate.search"
+	ActionCrawlRootNotFound    = "crawl.root_not_found"
+	ActionUSPTOCandidateSearch = "uspto.candidate.search"
 
 	// Source comparison / reconciliation (Option A persistence of overlay choices)
-	ActionSourceCompareOpen = "source.compare.open"
-	ActionSourceDiffsLoad   = "source.diffs.load"
+	ActionSourceCompareOpen  = "source.compare.open"
+	ActionSourceDiffsLoad    = "source.diffs.load"
 	ActionSourceResolveDiffs = "source.resolve_diffs"
 
 	// USPTO XML TOML formatted view action

@@ -1,7 +1,7 @@
 package render
 
 // AssignKey greedily assigns a unique shortcut key for a label.
-// It prioritizes characters present in the label, falling back to 
+// It prioritizes characters present in the label, falling back to
 // the first free letter, and then the first free digit.
 // If prioritizeDigits is true, digits are tried before letters (perfect for claims: Claim 1, Claim 2, etc.).
 func AssignKey(label string, used map[rune]bool, prioritizeDigits bool) rune {

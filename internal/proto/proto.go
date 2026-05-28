@@ -84,6 +84,7 @@ const (
 	MethodUSPTOLookup               Method = "uspto.lookup"
 	MethodUSPTOFetchAssignments     Method = "uspto.fetch_assignments"
 	MethodUSPTOAssignmentList       Method = "uspto.assignment.list"
+	MethodUSPTOExpirationCalculate  Method = "uspto.expiration.calculate"
 
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
@@ -101,8 +102,8 @@ type USPTOGrantBodyParams struct {
 // USPTOGrantBodyResult carries the body parsed from XML, when one has been
 // ingested. Present is false when nothing has been parsed for this patent.
 type USPTOGrantBodyResult struct {
-	Present bool                   `json:"present"`
-	Body    domain.USPTOGrantBody  `json:"body,omitempty"`
+	Present bool                  `json:"present"`
+	Body    domain.USPTOGrantBody `json:"body,omitempty"`
 }
 
 // USPTOXMLKind selects which XML document to fetch for a USPTO application.
@@ -143,12 +144,12 @@ type USPTOXMLViewParams struct {
 // StructToTOML conversion with body stripping) happens on the daemon so the
 // TUI client never needs a local file path.
 type USPTOXMLViewResult struct {
-	TOML                  string `json:"toml"`
-	Title                 string `json:"title,omitempty"`
-	Kind                  string `json:"kind"`
-	Bytes                 int64  `json:"bytes"` // size of the original XML on disk
-	Cached                bool   `json:"cached"`
-	DownloadCount         int64  `json:"download_count"`
+	TOML          string `json:"toml"`
+	Title         string `json:"title,omitempty"`
+	Kind          string `json:"kind"`
+	Bytes         int64  `json:"bytes"` // size of the original XML on disk
+	Cached        bool   `json:"cached"`
+	DownloadCount int64  `json:"download_count"`
 	// ConvertDurationMillis is the time spent on the server parsing the XML
 	// and running StructToTOML (the actual "xml to toml" conversion cost).
 	ConvertDurationMillis int64 `json:"convert_duration_millis"`
@@ -212,13 +213,33 @@ type USPTOLookupResult struct {
 	RawJSON string `json:"raw_json"`
 }
 
+type USPTOExpirationCalculateParams struct {
+	Number    domain.PatentNumber `json:"number"`
+	ProjectID string              `json:"project_id"`
+}
+
+type USPTOExpirationCalculateResult struct {
+	ApplicationNumber        string `json:"application_number"`
+	PatentNumber             string `json:"patent_number"`
+	Title                    string `json:"title,omitempty"`
+	Inventors                string `json:"inventors,omitempty"`
+	FilingDate               string `json:"filing_date"`
+	GrantDate                string `json:"grant_date"`
+	EarliestTermFilingDate   string `json:"earliest_term_filing_date"`
+	PatentTermAdjustmentDays int    `json:"patent_term_adjustment_days"`
+	PatentTermExtensionDays  int    `json:"patent_term_extension_days"`
+	TerminalDisclaimerDate   string `json:"terminal_disclaimer_date"`
+	ComputedExpirationDate   string `json:"computed_expiration_date"`
+	GoogleExpirationDate     string `json:"google_expiration_date"`
+}
+
 // EventKind names a server->client push (a JSON-RPC notification).
 type EventKind string
 
 const (
-	EventCrawlProgress       EventKind = "crawl.progress"
-	EventCrawlDone           EventKind = "crawl.done"
-	EventDBChanged           EventKind = "db.changed"
+	EventCrawlProgress        EventKind = "crawl.progress"
+	EventCrawlDone            EventKind = "crawl.done"
+	EventDBChanged            EventKind = "db.changed"
 	EventMembershipAutoAssign EventKind = "membership.auto_assign"
 )
 

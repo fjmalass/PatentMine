@@ -152,19 +152,19 @@ type Metrics struct {
 // Record is one semantic activity event. It is written as JSONL so future
 // replay, undo/redo, or export tooling can stream it efficiently.
 type Record struct {
-	ID        string         `json:"id"`
-	Timestamp time.Time      `json:"timestamp"`
-	Date      string         `json:"date"`
-	Component string         `json:"component"`
-	Action    string         `json:"action"`
-	Entity    string         `json:"entity"`
-	EntityID  string         `json:"entity_id,omitempty"`
-	Status    string         `json:"status"`
-	TraceID   string         `json:"trace_id,omitempty"`
-	SpanID    string         `json:"span_id,omitempty"`
-	Before    any            `json:"before,omitempty"`
-	After     any            `json:"after,omitempty"`
-	Attributes  map[string]any `json:"attributes,omitempty"`
+	ID         string         `json:"id"`
+	Timestamp  time.Time      `json:"timestamp"`
+	Date       string         `json:"date"`
+	Component  string         `json:"component"`
+	Action     string         `json:"action"`
+	Entity     string         `json:"entity"`
+	EntityID   string         `json:"entity_id,omitempty"`
+	Status     string         `json:"status"`
+	TraceID    string         `json:"trace_id,omitempty"`
+	SpanID     string         `json:"span_id,omitempty"`
+	Before     any            `json:"before,omitempty"`
+	After      any            `json:"after,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 // Recorder appends JSONL activity events to a file.

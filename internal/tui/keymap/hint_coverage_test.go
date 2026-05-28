@@ -111,10 +111,10 @@ var hintCoverageExempt = map[command.ID]bool{
 	command.OpenSearch: true, command.OpenCommand: true,
 	command.HistoryBack: true, command.HistoryForward: true,
 	command.OpenHistory: true, command.OpenActivity: true,
-	command.OpenAllNotes: true, // shown selectively in scopes that need it.
-	command.OpenMetrics:  true,
+	command.OpenAllNotes:   true, // shown selectively in scopes that need it.
+	command.OpenMetrics:    true,
 	command.OpenPatentNote: true, // shown selectively in scopes that need it.
-	command.Help: true, command.Quit: true, command.SettingsAI: true,
+	command.Help:           true, command.Quit: true, command.SettingsAI: true,
 
 	// Catalog-only highlights and fold/unfold — pane chrome reveals them.
 	command.HighlightFamily: true, command.HighlightCitations: true,
@@ -122,7 +122,7 @@ var hintCoverageExempt = map[command.ID]bool{
 
 	// Detail-pane jump + AI — surfaced in the detail header.
 	command.JumpMode: true, command.AIAnalyze: true,
-	command.OpenFullText: true,
+	command.OpenFullText:    true,
 	command.FetchUSPTOGrant: true,
 
 	// IDS pane editing keys — the edit chrome marks them inline.
@@ -142,19 +142,19 @@ var hintCoverageExempt = map[command.ID]bool{
 	command.FamilyExportMermaid: true,
 
 	// Quick scope-jump keys handled by their target scope's footer.
-	command.OpenIDS:         true,
-	command.OpenProjects:    true,
-	command.OpenFamilyGraph: true,
-	command.OpenBrowser:     true,
-	command.OpenCitations:   true,
-	command.OpenCitedBy:     true,
-	command.OpenParents:     true,
-	command.OpenChildren:    true,
-	command.OpenDetail:      true,
-	command.OpenInventors:   true,
-	command.OpenInventorsDirect: true,
-	command.OpenAssignees:       true,
-	command.OpenClassificationStats: true,
+	command.OpenIDS:                   true,
+	command.OpenProjects:              true,
+	command.OpenFamilyGraph:           true,
+	command.OpenBrowser:               true,
+	command.OpenCitations:             true,
+	command.OpenCitedBy:               true,
+	command.OpenParents:               true,
+	command.OpenChildren:              true,
+	command.OpenDetail:                true,
+	command.OpenInventors:             true,
+	command.OpenInventorsDirect:       true,
+	command.OpenAssignees:             true,
+	command.OpenClassificationStats:   true,
 	command.OpenPatentClassifications: true,
 
 	// Patent actions — shown collectively under HintProjectActions.

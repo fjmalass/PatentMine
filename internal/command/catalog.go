@@ -70,14 +70,14 @@ const (
 
 	// Patent review-state changes. All four map to one proto method; the
 	// target state is the difference the dispatcher supplies.
-	MarkActive      ID = "patent.mark-active"
-	MarkUnderReview ID = "patent.mark-under-review"
-	MarkIgnored     ID = "patent.mark-ignored"
-	MarkDeleted     ID = "patent.mark-deleted"
-	AddToProject    ID = "patent.add-to-project"
-	AddUSPTO        ID = "patent.add-uspto"
-	AddGoogle       ID = "patent.add-google"
-	AddRelated      ID = "patent.add-related" // add the citations/parents/children of the current selection that are still stubs or lack membership in the active project
+	MarkActive            ID = "patent.mark-active"
+	MarkUnderReview       ID = "patent.mark-under-review"
+	MarkIgnored           ID = "patent.mark-ignored"
+	MarkDeleted           ID = "patent.mark-deleted"
+	AddToProject          ID = "patent.add-to-project"
+	AddUSPTO              ID = "patent.add-uspto"
+	AddGoogle             ID = "patent.add-google"
+	AddRelated            ID = "patent.add-related" // add the citations/parents/children of the current selection that are still stubs or lack membership in the active project
 	FetchUSPTOPGPub       ID = "patent.fetch-uspto-pgpub"
 	FetchUSPTOGrant       ID = "patent.fetch-uspto-grant"
 	FetchUSPTOAssignments ID = "patent.fetch-uspto-assignments"
@@ -103,7 +103,7 @@ const (
 
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
-	
+
 	// ClearPatentCache clears the parsed XML bodies cache.
 	ClearPatentCache ID = "patent.clear-cache"
 

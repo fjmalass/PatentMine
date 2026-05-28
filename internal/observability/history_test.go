@@ -51,11 +51,11 @@ func TestReadHistoryFeedIncludesIDSSaveRecord(t *testing.T) {
 	t.Cleanup(func() { _ = rt.Close() })
 
 	rec := Record{
-		ID:       "2026-05-25-1779702888891050258-10",
-		Action:   ActionIDSEntrySave,
-		Entity:   "ids_entry",
-		EntityID: "p-1779646755967531735/US20080011946A1",
-		Status:   "committed",
+		ID:         "2026-05-25-1779702888891050258-10",
+		Action:     ActionIDSEntrySave,
+		Entity:     "ids_entry",
+		EntityID:   "p-1779646755967531735/US20080011946A1",
+		Status:     "committed",
 		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	}
 	if err := rt.Activity.Record(context.Background(), rec); err != nil {

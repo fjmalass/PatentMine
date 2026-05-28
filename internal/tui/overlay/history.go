@@ -192,13 +192,13 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString(renderSubtable(subtableParams{
-		Theme:           h.theme,
-		Columns:         cols,
-		Page:            &h.page,
-		Total:           n,
-		PageSize:        pageSize,
-		FocusActive:     true,
-		VisualMode:      h.page.VisualMode(),
+		Theme:       h.theme,
+		Columns:     cols,
+		Page:        &h.page,
+		Total:       n,
+		PageSize:    pageSize,
+		FocusActive: true,
+		VisualMode:  h.page.VisualMode(),
 		IsRowSelected: func(absIdx int) bool {
 			return h.page.IsRowSelected(absIdx)
 		},

@@ -49,7 +49,7 @@ func NewTextArea(theme render.Theme, catalog *text.Catalog, purpose Purpose, tit
 		line:    line,
 		column:  column,
 	}
-	}
+}
 
 func (t *TextArea) Title() string { return t.catalog.T(t.title) }
 

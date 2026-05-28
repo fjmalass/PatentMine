@@ -334,7 +334,6 @@ func TestTagTaxonomyRESTAPI(t *testing.T) {
 
 // Helpers
 
-
 func doRequest(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	var r *http.Request

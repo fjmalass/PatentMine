@@ -119,6 +119,7 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	// created before it was removed. The URL is derived from uspto_application
 	// at call time so the column is dead weight; an ALTER DROP COLUMN is safe.
 	_ = r.dropUSPTOXMLDownloadSourceURL(ctx)
+	_ = r.ensureExpirationColumns(ctx)
 
 	return nil
 }
@@ -155,6 +156,28 @@ func (r *Repo) ensureReconciledColumns(ctx context.Context) error {
 			if !strings.Contains(msg, "duplicate column") && !strings.Contains(msg, "already exists") {
 				// Unexpected; surface for diagnostics but do not fail startup.
 				return fmt.Errorf("ensure reconciled columns: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+// ensureExpirationColumns adds patent_term_adjustment_days, patent_term_extension_days,
+// earliest_term_filing_date, terminal_disclaimer_date, and computed_expiration_date
+// to uspto_application if they do not exist. Idempotent and non-fatal.
+func (r *Repo) ensureExpirationColumns(ctx context.Context) error {
+	stmts := []string{
+		`ALTER TABLE uspto_application ADD COLUMN patent_term_adjustment_days INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE uspto_application ADD COLUMN patent_term_extension_days INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE uspto_application ADD COLUMN terminal_disclaimer_date TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE uspto_application ADD COLUMN earliest_term_filing_date TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE uspto_application ADD COLUMN computed_expiration_date TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			msg := err.Error()
+			if !strings.Contains(msg, "duplicate column") && !strings.Contains(msg, "already exists") {
+				return fmt.Errorf("ensure expiration columns: %w", err)
 			}
 		}
 	}

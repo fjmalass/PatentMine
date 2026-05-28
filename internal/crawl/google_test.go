@@ -99,9 +99,9 @@ func TestParseGoogleExtractsClaimAndExpiration(t *testing.T) {
 	if res.Patent.SourceURL != "https://patents.google.com/patent/US10000000B2/en" {
 		t.Errorf("source URL = %q", res.Patent.SourceURL)
 	}
-	// Publication 2018 + 20 years.
-	if res.Patent.ExpirationDate.Year() != 2038 {
-		t.Errorf("expiration date = %v, want 2038", res.Patent.ExpirationDate)
+	// ApplicationDate 2016 + 20 years.
+	if res.Patent.ExpirationDate.Year() != 2036 {
+		t.Errorf("expiration date = %v, want 2036", res.Patent.ExpirationDate)
 	}
 	if res.Patent.ExpirationSource != domain.ExpirationEstimated {
 		t.Errorf("expiration source = %q, want estimated", res.Patent.ExpirationSource)

@@ -14,15 +14,15 @@ import (
 
 // Input is everything Export needs to render an IDS bundle.
 type Input struct {
-	Project          domain.Project
-	Entries          []Entry
-	CumulativeCount  int    // total applicant-provided items so far (incl. these), for the fee tier
-	FeeAmount        string // optional: charge dollar amount on 08c
-	DepositAccount   string // optional: deposit account number on 08c
-	SignerName       string // optional: printed signer name
-	SignerSignature  string // optional: /signature/ text
-	SignerRegNumber  string // optional: practitioner registration number
-	GeneratedAt      time.Time
+	Project         domain.Project
+	Entries         []Entry
+	CumulativeCount int    // total applicant-provided items so far (incl. these), for the fee tier
+	FeeAmount       string // optional: charge dollar amount on 08c
+	DepositAccount  string // optional: deposit account number on 08c
+	SignerName      string // optional: printed signer name
+	SignerSignature string // optional: /signature/ text
+	SignerRegNumber string // optional: practitioner registration number
+	GeneratedAt     time.Time
 }
 
 // Result describes the files written for one IDS rendering.

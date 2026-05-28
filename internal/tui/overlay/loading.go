@@ -60,8 +60,8 @@ type Loading struct {
 	// membershipsAdded is the count of depth-1 neighbor stubs that received
 	// project membership through the engine's auto-assign goroutine. Populated
 	// when the EventMembershipAutoAssign event arrives.
-	membershipsAdded   int
-	membershipsKnown   bool // set once the auto-assign event lands
+	membershipsAdded int
+	membershipsKnown bool // set once the auto-assign event lands
 
 	// Per-job progress; keyed by job ID so progress events from concurrent
 	// jobs are aggregated independently.
@@ -77,9 +77,9 @@ type Loading struct {
 	stubSet       map[string]bool
 	recordSources map[string][]string // recordNumber → ordered unique source names
 
-	spinner     spinner.Model
-	finished    bool // true when all jobs are done; overlay stays open until user dismisses
-	finishedAt  time.Time
+	spinner    spinner.Model
+	finished   bool // true when all jobs are done; overlay stays open until user dismisses
+	finishedAt time.Time
 
 	startTime time.Time
 	lastTime  time.Time
@@ -100,18 +100,18 @@ func NewLoading(theme render.Theme, jobIDs []string, title string, isLookup ...b
 		lk = isLookup[0]
 	}
 	return &Loading{
-		theme:      theme,
-		jobIDs:     jobIDs,
-		title:      title,
-		isLookup:   lk,
-		message:    "Starting…",
-		progresses: make(map[string]proto.CrawlProgress, len(jobIDs)),
+		theme:         theme,
+		jobIDs:        jobIDs,
+		title:         title,
+		isLookup:      lk,
+		message:       "Starting…",
+		progresses:    make(map[string]proto.CrawlProgress, len(jobIDs)),
 		savedSet:      make(map[string]bool),
 		stubSet:       make(map[string]bool),
 		recordSources: make(map[string][]string),
-		spinner:    s,
-		startTime:  time.Now(),
-		lastTime:   time.Now(),
+		spinner:       s,
+		startTime:     time.Now(),
+		lastTime:      time.Now(),
 	}
 }
 
@@ -166,7 +166,6 @@ func (l *Loading) OverlaySize(termW, termH int) (int, int) {
 	// Single-job case still gets more space than the old hard 22-line cap.
 	return PctSize(termW, termH, 60, 48, 38, 12)
 }
-
 
 func (l *Loading) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if l.finished && (id == command.CloseOverlay || id == command.Back) {

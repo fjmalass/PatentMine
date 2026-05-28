@@ -41,8 +41,8 @@ type TOMLViewer struct {
 	handlers map[command.ID]cmdHandler
 
 	// Search state
-	searchInput  string
-	searchActive bool   // true while the user is typing the query
+	searchInput   string
+	searchActive  bool  // true while the user is typing the query
 	searchMatches []int // absolute line indices matching the current query
 	searchCur     int   // index into searchMatches for current match
 
@@ -467,5 +467,3 @@ func stripForHighlight(s string) string {
 func StructToTOML(val any) (string, error) {
 	return uspto.StructToTOML(val)
 }
-
-

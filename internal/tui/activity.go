@@ -59,10 +59,10 @@ func (a *App) handleFocusDwell(m focusDwellMsg) tea.Cmd {
 	attrs["label"] = focus.Label
 	attrs["duration_ms"] = duration.Milliseconds()
 	return a.recordActivity(observability.Record{
-		Action:   observability.ActionUIFocus,
-		Entity:   focus.Entity,
-		EntityID: focus.EntityID,
-		Status:   "observed",
+		Action:     observability.ActionUIFocus,
+		Entity:     focus.Entity,
+		EntityID:   focus.EntityID,
+		Status:     "observed",
 		Attributes: attrs,
 	})
 }
@@ -76,9 +76,9 @@ func (a *App) currentActivityFocus() (pane.ActivityFocus, bool) {
 		return pane.ActivityFocus{}, false
 	}
 	return pane.ActivityFocus{
-		Entity:   "patent",
-		EntityID: number.String(),
-		Label:    a.focusedPane().Title(),
+		Entity:     "patent",
+		EntityID:   number.String(),
+		Label:      a.focusedPane().Title(),
 		Attributes: map[string]any{"scope": string(a.focusedPane().Scope())},
 	}, true
 }
@@ -98,10 +98,10 @@ func (a *App) recordTypedActivity(id command.ID, args []string) tea.Cmd {
 		attrs["filter"] = entityID
 	}
 	return a.recordActivity(observability.Record{
-		Action:   action,
-		Entity:   entity,
-		EntityID: entityID,
-		Status:   "requested",
+		Action:     action,
+		Entity:     entity,
+		EntityID:   entityID,
+		Status:     "requested",
 		Attributes: attrs,
 	})
 }
@@ -140,7 +140,7 @@ func (a *App) recordReplayHistory(rec observability.Record) tea.Cmd {
 			Entity:            rec.Entity,
 			EntityID:          rec.EntityID,
 			Status:            rec.Status,
-			Attributes:          attrs,
+			Attributes:        attrs,
 		}
 		if err := observability.AppendReplayHistory(logsDir, entry, replayHistoryCap); err != nil {
 			logger.Warn("replay history record failed", slog.String("activity_id", rec.ID), slog.String("error", err.Error()))

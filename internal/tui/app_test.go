@@ -646,10 +646,10 @@ func TestHistoryFeedGroupKeyKeepsIDSStatusTransitions(t *testing.T) {
 
 func TestHistoryFeedGroupKeyKeepsDistinctIDSSaveRecords(t *testing.T) {
 	base := observability.Record{
-		Action:   observability.ActionIDSEntrySave,
-		Entity:   "ids_entry",
-		EntityID: "project/US11611785B2",
-		Status:   "committed",
+		Action:     observability.ActionIDSEntrySave,
+		Entity:     "ids_entry",
+		EntityID:   "project/US11611785B2",
+		Status:     "committed",
 		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	}
 	first := base
@@ -947,4 +947,3 @@ func TestAppStatusAlreadyExistsWarnAndPopup(t *testing.T) {
 		t.Fatalf("expected overlay view to contain %q, got view:\n%s", expectedStatus, view)
 	}
 }
-

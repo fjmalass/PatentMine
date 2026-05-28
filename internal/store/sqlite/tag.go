@@ -99,7 +99,6 @@ func (r *Repo) TagByName(ctx context.Context, project domain.ProjectID, name str
 	return t, nil
 }
 
-
 // TagPatents assigns a tag to multiple patents in a single transaction.
 func (r *Repo) TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) (err error) {
 	defer r.observeDuration("tag_patents", time.Now(), &err)

@@ -523,12 +523,12 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				slog.String("requested", record.String()))
 
 			e.recordActivity(ctx, observability.Record{
-				Action:   observability.ActionMembershipAdd,
-				Entity:   "membership",
-				EntityID: string(project) + "/" + record.String(),
-				Status:   "committed",
-				Before:   domain.Membership{},
-				After:    m,
+				Action:     observability.ActionMembershipAdd,
+				Entity:     "membership",
+				EntityID:   string(project) + "/" + record.String(),
+				Status:     "committed",
+				Before:     domain.Membership{},
+				After:      m,
 				Attributes: map[string]any{"requested_number": record.String()},
 			})
 
@@ -606,10 +606,10 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				attrs["mutation_group_id"] = mutationGroupID
 			}
 			rec := observability.Record{
-				Action:   observability.ActionMembershipSetState,
-				Entity:   "membership",
-				EntityID: string(project) + "/" + record.String(),
-				Status:   "committed",
+				Action:     observability.ActionMembershipSetState,
+				Entity:     "membership",
+				EntityID:   string(project) + "/" + record.String(),
+				Status:     "committed",
 				Attributes: attrs,
 			}
 			after := current

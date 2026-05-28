@@ -12,7 +12,7 @@ func TestReviewStateTransitions(t *testing.T) {
 			{ReviewStateUnknown, ReviewStateUnderReview, true},
 			{ReviewStateUnderReview, ReviewStateActive, true},
 			{ReviewStateActive, ReviewStateIgnored, true},
-			{ReviewStateActive, ReviewStateActive, true}, // no-op allowed
+			{ReviewStateActive, ReviewStateActive, true},  // no-op allowed
 			{ReviewStateDeleted, ReviewStateActive, true}, // undelete
 			{ReviewStateDeleted, ReviewStateIgnored, true},
 			{ReviewStateDeleted, ReviewStateUnderReview, true},

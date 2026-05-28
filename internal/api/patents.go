@@ -129,10 +129,10 @@ func (s *Server) handlePatentGet(w http.ResponseWriter, r *http.Request) {
 				attrs["duration_ms"] = durationMS
 			}
 			_ = s.activity.Record(r.Context(), observability.Record{
-				Action:   observability.ActionUIFocus,
-				Entity:   "patent",
-				EntityID: number.String(),
-				Status:   "observed",
+				Action:     observability.ActionUIFocus,
+				Entity:     "patent",
+				EntityID:   number.String(),
+				Status:     "observed",
 				Attributes: attrs,
 			})
 		}

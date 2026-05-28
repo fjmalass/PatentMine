@@ -130,6 +130,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodUSPTOLookup:               s.usptoLookup,
 		proto.MethodUSPTOFetchAssignments:     s.usptoFetchAssignments,
 		proto.MethodUSPTOAssignmentList:       s.usptoAssignmentList,
+		proto.MethodUSPTOExpirationCalculate:  s.usptoExpirationCalculate,
 		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:           s.sourceDiffsList,
 	}
@@ -1388,5 +1389,62 @@ func (s *Server) usptoAssignmentList(ctx context.Context, raw json.RawMessage) (
 	return proto.USPTOAssignmentListResult{
 		ApplicationNumber: app.ApplicationNumber,
 		Assignments:       assignments,
+	}, nil
+}
+
+func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOExpirationCalculateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	app, err := s.engine.ComputeAndStoreUSPTOExpiration(ctx, p.Number)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.ProjectID != "" {
+		_, addErr := s.engine.AddToProjectFromSource(ctx, domain.ProjectID(p.ProjectID), p.Number, domain.SourceUSPTO, "")
+		if addErr != nil {
+			s.Logger().Warn("failed to auto-add patent to project during expiration calculation",
+				slog.String("project_id", p.ProjectID),
+				slog.String("patent", p.Number.String()),
+				slog.String("error", addErr.Error()),
+			)
+		}
+	}
+
+	var googleExpStr, grantDateStr string
+	var title, inventors string
+	patentRec, err := s.engine.Patent(ctx, p.Number)
+	if err == nil {
+		title = patentRec.Title
+		var invs []string
+		for _, inv := range patentRec.Inventors {
+			invs = append(invs, string(inv))
+		}
+		inventors = strings.Join(invs, ", ")
+
+		if !patentRec.ExpirationDate.IsZero() {
+			googleExpStr = patentRec.ExpirationDate.Format("2006-01-02")
+		}
+		if !patentRec.GrantDate.IsZero() {
+			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
+		}
+	}
+
+	return proto.USPTOExpirationCalculateResult{
+		ApplicationNumber:        app.ApplicationNumber,
+		PatentNumber:             p.Number.String(),
+		Title:                    title,
+		Inventors:                inventors,
+		FilingDate:               app.FilingDate,
+		GrantDate:                grantDateStr,
+		EarliestTermFilingDate:   app.EarliestTermFilingDate,
+		PatentTermAdjustmentDays: app.PatentTermAdjustmentDays,
+		PatentTermExtensionDays:  app.PatentTermExtension,
+		TerminalDisclaimerDate:   app.TerminalDisclaimerDate,
+		ComputedExpirationDate:   app.ComputedExpirationDate,
+		GoogleExpirationDate:     googleExpStr,
 	}, nil
 }

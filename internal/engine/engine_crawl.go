@@ -55,11 +55,11 @@ func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 		}
 	}
 	e.recordActivity(ctx, observability.Record{
-		Action:   observability.ActionCrawlStart,
-		Entity:   "job",
-		EntityID: string(id),
-		Status:   "queued",
-		After:    map[string]any{"job_id": string(id), "root": root.String(), "depth": depth, "force": force, "source": string(source), "source_mode": sourceMode},
+		Action:     observability.ActionCrawlStart,
+		Entity:     "job",
+		EntityID:   string(id),
+		Status:     "queued",
+		After:      map[string]any{"job_id": string(id), "root": root.String(), "depth": depth, "force": force, "source": string(source), "source_mode": sourceMode},
 		Attributes: map[string]any{"source": string(source), "source_mode": sourceMode, "profile": string(profile)},
 	})
 	return id, nil
@@ -100,12 +100,12 @@ func (e *Engine) SetSourceMode(ctx context.Context, mode string) (result proto.S
 	e.observeSourceMode(after)
 	e.log(ctx, slog.LevelInfo, "source mode changed", slog.String("before", before), slog.String("after", after))
 	e.recordActivity(ctx, observability.Record{
-		Action:   observability.ActionSourceModeSet,
-		Entity:   "config",
-		EntityID: "source_mode",
-		Status:   "committed",
-		Before:   map[string]any{"mode": before},
-		After:    map[string]any{"mode": after},
+		Action:     observability.ActionSourceModeSet,
+		Entity:     "config",
+		EntityID:   "source_mode",
+		Status:     "committed",
+		Before:     map[string]any{"mode": before},
+		After:      map[string]any{"mode": after},
 		Attributes: map[string]any{"mode": after},
 	})
 	return proto.SourceModeResult{Mode: after}, nil

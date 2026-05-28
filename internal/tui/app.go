@@ -169,8 +169,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.FetchUSPTOAssignments:      (*App).cmdFetchUSPTOAssignments,
 	command.ViewUSPTOGrantXML:          (*App).cmdViewUSPTOXML,
 	command.Import:                     (*App).cmdImport,
-	command.SourceMode:     (*App).cmdSourceMode,
-	command.SourceCompare: (*App).cmdSourceCompare,
+	command.SourceMode:                 (*App).cmdSourceMode,
+	command.SourceCompare:              (*App).cmdSourceCompare,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
 	command.MarkActive:                 (*App).cmdMarkActive,
 	command.MarkUnderReview:            (*App).cmdMarkUnderReview,
@@ -886,7 +886,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = a.refreshPanes()
 		}
 		return a, cmd
-
 
 	case overlay.LoadingCompareSourcesMsg:
 		if len(a.overlays) > 0 {

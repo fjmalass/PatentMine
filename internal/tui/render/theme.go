@@ -106,12 +106,12 @@ const (
 	// so that cursor+mark+" " produces a predictable prefix width (currently 3 columns).
 	// The mark glyph is deliberately chosen to be single-width to avoid right-edge
 	// misalignment on marked rows in tables.
-	glyphRowCursor  = ">" // cursor row in focused table
+	glyphRowCursor   = ">" // cursor row in focused table
 	glyphRowNoCursor = " " // not the cursor row
-	glyphRowActive  = "*" // active/current item mark (e.g. active project), passed via MarkGlyph
-	glyphRowMark    = "◆" // marked/flagged row (single display width for aligned table right edges)
-	glyphRowChosen  = "✓" // override for confirmed-selection rows
-	glyphRowNoMark  = " " // placeholder when row has no mark
+	glyphRowActive   = "*" // active/current item mark (e.g. active project), passed via MarkGlyph
+	glyphRowMark     = "◆" // marked/flagged row (single display width for aligned table right edges)
+	glyphRowChosen   = "✓" // override for confirmed-selection rows
+	glyphRowNoMark   = " " // placeholder when row has no mark
 
 	glyphCheckboxChecked   = "✅"
 	glyphCheckboxUnchecked = "☐"
@@ -255,12 +255,12 @@ type ThemeGlyphs struct {
 	HistColType     string
 
 	// Table row prefix glyphs. table.go composes cursor+mark+" " = 3-char prefix.
-	RowCursor  string // cursor row in focused table, e.g. ">"
+	RowCursor   string // cursor row in focused table, e.g. ">"
 	RowNoCursor string // non-cursor row placeholder
-	RowActive  string // active/current item mark passed via MarkGlyph, e.g. "*"
-	RowMark    string // flagged/marked row indicator, e.g. "◆" (must be single display width)
-	RowChosen  string // confirmed-selection indicator, e.g. "✓" (caller override)
-	RowNoMark  string // no-mark placeholder, same display width
+	RowActive   string // active/current item mark passed via MarkGlyph, e.g. "*"
+	RowMark     string // flagged/marked row indicator, e.g. "◆" (must be single display width)
+	RowChosen   string // confirmed-selection indicator, e.g. "✓" (caller override)
+	RowNoMark   string // no-mark placeholder, same display width
 }
 
 // NewTheme builds the default theme.
@@ -448,12 +448,12 @@ func NewTheme() Theme {
 			HistTagRemove:   glyphHistTagRemove,
 			HistColType:     glyphHistColType,
 
-			RowCursor:  glyphRowCursor,
+			RowCursor:   glyphRowCursor,
 			RowNoCursor: glyphRowNoCursor,
-			RowActive:  glyphRowActive,
-			RowMark:    glyphRowMark,
-			RowChosen:  glyphRowChosen,
-			RowNoMark:  glyphRowNoMark,
+			RowActive:   glyphRowActive,
+			RowMark:     glyphRowMark,
+			RowChosen:   glyphRowChosen,
+			RowNoMark:   glyphRowNoMark,
 		},
 	}
 }

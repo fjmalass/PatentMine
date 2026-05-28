@@ -80,16 +80,16 @@ type usptoDocumentMeta struct {
 }
 
 type usptoWrapperData struct {
-	ApplicationNumberText string                `json:"applicationNumberText"`
-	ApplicationMetaData   usptoApplicationMeta  `json:"applicationMetaData"`
-	CPCClassificationBag  []string              `json:"cpcClassificationBag"`
-	EventDataBag          []usptoEventData      `json:"eventDataBag"`
-	ParentContinuityBag   []usptoContinuity     `json:"parentContinuityBag"`
-	ForeignPriorityBag    []usptoForeign        `json:"foreignPriorityBag"`
-	RecordAttorney        usptoRecordAttorney   `json:"recordAttorney"`
-	LastIngestionDateTime string                `json:"lastIngestionDateTime"`
-	GrantDocumentMetaData *usptoDocumentMeta    `json:"grantDocumentMetaData"`
-	PGPubDocumentMetaData *usptoDocumentMeta    `json:"pgpubDocumentMetaData"`
+	ApplicationNumberText string               `json:"applicationNumberText"`
+	ApplicationMetaData   usptoApplicationMeta `json:"applicationMetaData"`
+	CPCClassificationBag  []string             `json:"cpcClassificationBag"`
+	EventDataBag          []usptoEventData     `json:"eventDataBag"`
+	ParentContinuityBag   []usptoContinuity    `json:"parentContinuityBag"`
+	ForeignPriorityBag    []usptoForeign       `json:"foreignPriorityBag"`
+	RecordAttorney        usptoRecordAttorney  `json:"recordAttorney"`
+	LastIngestionDateTime string               `json:"lastIngestionDateTime"`
+	GrantDocumentMetaData *usptoDocumentMeta   `json:"grantDocumentMetaData"`
+	PGPubDocumentMetaData *usptoDocumentMeta   `json:"pgpubDocumentMetaData"`
 }
 
 type usptoApplicationMeta struct {
@@ -276,10 +276,30 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		PublicationCategoryJSON:       rawJSONOrDefault(w.ApplicationMetaData.PublicationCategoryBag, "[]"),
 		LastIngestionDateTime:         w.LastIngestionDateTime,
 		FetchedAt:                     nowText,
-		PGPubXMLURL:                   func() string { if w.PGPubDocumentMetaData != nil { return w.PGPubDocumentMetaData.FileLocationURI }; return "" }(),
-		PGPubXMLName:                  func() string { if w.PGPubDocumentMetaData != nil { return w.PGPubDocumentMetaData.XMLFileName }; return "" }(),
-		PatentGrantXMLURL:             func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.FileLocationURI }; return "" }(),
-		PatentGrantXMLName:            func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.XMLFileName }; return "" }(),
+		PGPubXMLURL: func() string {
+			if w.PGPubDocumentMetaData != nil {
+				return w.PGPubDocumentMetaData.FileLocationURI
+			}
+			return ""
+		}(),
+		PGPubXMLName: func() string {
+			if w.PGPubDocumentMetaData != nil {
+				return w.PGPubDocumentMetaData.XMLFileName
+			}
+			return ""
+		}(),
+		PatentGrantXMLURL: func() string {
+			if w.GrantDocumentMetaData != nil {
+				return w.GrantDocumentMetaData.FileLocationURI
+			}
+			return ""
+		}(),
+		PatentGrantXMLName: func() string {
+			if w.GrantDocumentMetaData != nil {
+				return w.GrantDocumentMetaData.XMLFileName
+			}
+			return ""
+		}(),
 	}
 	res.USPTOParties = usptoParties(appNumber, w)
 	res.USPTOEvents = usptoEvents(appNumber, w.EventDataBag)
@@ -518,9 +538,14 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 				DocumentNumber: pubNum.Normalized(),
 				Country:        "US",
 				Kind:           pubNum.Kind,
-				Dated:          func() string { if w.PGPubDocumentMetaData != nil { return w.PGPubDocumentMetaData.FileCreateDateTime }; return "" }(),
-				Source:         string(domain.SourceUSPTO),
-				Confidence:     100,
+				Dated: func() string {
+					if w.PGPubDocumentMetaData != nil {
+						return w.PGPubDocumentMetaData.FileCreateDateTime
+					}
+					return ""
+				}(),
+				Source:     string(domain.SourceUSPTO),
+				Confidence: 100,
 			})
 		}
 	}
@@ -556,9 +581,14 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 					DocumentNumber: grantNum.Normalized(),
 					Country:        "US",
 					Kind:           grantNum.Kind,
-					Dated:          func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.FileCreateDateTime }; return "" }(),
-					Source:         string(domain.SourceUSPTO),
-					Confidence:     100,
+					Dated: func() string {
+						if w.GrantDocumentMetaData != nil {
+							return w.GrantDocumentMetaData.FileCreateDateTime
+						}
+						return ""
+					}(),
+					Source:     string(domain.SourceUSPTO),
+					Confidence: 100,
 				})
 			}
 		}

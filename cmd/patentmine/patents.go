@@ -139,9 +139,9 @@ func runPatentsList(cfg config.Config, args []string, telemetry *observability.R
 			slog.Duration("duration", dur))
 		if telemetry.Activity != nil {
 			_ = telemetry.Activity.Record(context.Background(), observability.Record{
-				Action:   observability.ActionCLIPatentsList,
-				Entity:   "patents",
-				Status:   "ok",
+				Action: observability.ActionCLIPatentsList,
+				Entity: "patents",
+				Status: "ok",
 				Attributes: map[string]any{
 					"dir":         dir,
 					"file_count":  len(entries),
@@ -198,9 +198,9 @@ func runPatentsClean(cfg config.Config, args []string, telemetry *observability.
 			slog.Duration("duration", dur))
 		if telemetry.Activity != nil {
 			_ = telemetry.Activity.Record(context.Background(), observability.Record{
-				Action:   observability.ActionCLIPatentsClean,
-				Entity:   "patents",
-				Status:   "ok",
+				Action: observability.ActionCLIPatentsClean,
+				Entity: "patents",
+				Status: "ok",
 				Attributes: map[string]any{
 					"dir":           dir,
 					"removed_count": removed,
@@ -318,9 +318,9 @@ func runPatentsArchive(cfg config.Config, args []string, telemetry *observabilit
 
 		if telemetry.Activity != nil {
 			_ = telemetry.Activity.Record(context.Background(), observability.Record{
-				Action:   observability.ActionCLIPatentsArchive,
-				Entity:   "patents",
-				Status:   "ok",
+				Action: observability.ActionCLIPatentsArchive,
+				Entity: "patents",
+				Status: "ok",
 				Attributes: map[string]any{
 					"dir":               patentsDir,
 					"archive_path":      destPath,

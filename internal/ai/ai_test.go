@@ -187,4 +187,3 @@ func TestRedactedRoundTripper(t *testing.T) {
 		t.Errorf("ScrubURL did not scrub the key parameter: %s", scrubbed)
 	}
 }
-

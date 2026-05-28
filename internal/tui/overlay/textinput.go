@@ -26,7 +26,10 @@ type TextInput struct {
 
 	vimMode   bool
 	vimInsert bool
-	undos     []struct{ value string; cursor int }
+	undos     []struct {
+		value  string
+		cursor int
+	}
 }
 
 // NewTextInput builds a text-entry overlay. title and caption are catalog keys;
@@ -274,7 +277,10 @@ func (t *TextInput) moveTextWordBackward() {
 }
 
 func (t *TextInput) saveTextUndo() {
-	t.undos = append(t.undos, struct{ value string; cursor int }{t.value, t.cursor})
+	t.undos = append(t.undos, struct {
+		value  string
+		cursor int
+	}{t.value, t.cursor})
 	if len(t.undos) > 100 {
 		t.undos = t.undos[1:]
 	}

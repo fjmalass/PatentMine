@@ -15,10 +15,10 @@ const subBuffer = 64
 // blocks: a slow subscriber drops its oldest event so it cannot stall the
 // engine or other subscribers.
 type Bus struct {
-	mu     sync.Mutex
-	subs   map[int]chan proto.Event
-	nextID int
-	closed bool
+	mu      sync.Mutex
+	subs    map[int]chan proto.Event
+	nextID  int
+	closed  bool
 	metrics *observability.Metrics
 }
 

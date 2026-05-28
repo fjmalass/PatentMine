@@ -469,8 +469,8 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 			VisualMode:      o.patentsPage.VisualMode(),
 			ForceExactWidth: true,
 			TargetWidth:     targetW,
-			IsRowCursor: func(rowIdx int) bool { return focusPatents && startPat+rowIdx == patCursor },
-			IsRowSelected: func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) },
+			IsRowCursor:     func(rowIdx int) bool { return focusPatents && startPat+rowIdx == patCursor },
+			IsRowSelected:   func(rowIdx int) bool { return o.patentsPage.IsRowSelected(startPat + rowIdx) },
 			IsRowMarked: func(rowIdx int) bool {
 				absIdx := startPat + rowIdx
 				return absIdx >= 0 && absIdx < len(o.patents) && o.patents[absIdx].Number == o.patent.Number

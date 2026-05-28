@@ -790,14 +790,14 @@ func (a *App) handleUSPTOXMLFetched(m pane.USPTOXMLFetchedMsg) (tea.Model, tea.C
 				invTitle := strings.TrimSpace(bib.InventionTitle)
 
 				attrs := map[string]any{
-					"kind":             string(m.Kind),
-					"local_path":       m.LocalPath,
-					"bytes":            m.Bytes,
-					"cached":           m.Cached,
-					"title":            invTitle,
-					"publication_date": pubDate,
-					"inventors_short":  inventorsShort,
-					"parse_duration_ms": parseDur.Milliseconds(),
+					"kind":                string(m.Kind),
+					"local_path":          m.LocalPath,
+					"bytes":               m.Bytes,
+					"cached":              m.Cached,
+					"title":               invTitle,
+					"publication_date":    pubDate,
+					"inventors_short":     inventorsShort,
+					"parse_duration_ms":   parseDur.Milliseconds(),
 					"to_toml_duration_ms": convDur.Milliseconds(),
 				}
 				if a.activeProject != nil {
@@ -1218,8 +1218,6 @@ func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
 		a.theme, a.text, overlay.PurposeCreateProject, text.NewProjectTitle, text.NewProjectCaption))
 	return a, nil
 }
-
-
 
 // cmdImport fetches a patent by number — optionally forcing past the file
 // cache — or loads a fixture file when the argument is a path.

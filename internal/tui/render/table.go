@@ -19,11 +19,11 @@ type TableParams struct {
 	Theme         Theme
 	Columns       []TableColumn
 	RowCount      int
-	FocusedColIdx int          // focused sort column index (-1 if none, disables col highlight)
-	ActiveSort    string       // active database sorting key
-	SortAscending bool         // ascending sort order
-	FocusActive   bool         // whether this table has active input focus (col highlight)
-	VisualMode    bool         // whether visual mode is active
+	FocusedColIdx int                   // focused sort column index (-1 if none, disables col highlight)
+	ActiveSort    string                // active database sorting key
+	SortAscending bool                  // ascending sort order
+	FocusActive   bool                  // whether this table has active input focus (col highlight)
+	VisualMode    bool                  // whether visual mode is active
 	IsRowCursor   func(rowIdx int) bool // returns whether a row is under the cursor
 	IsRowSelected func(rowIdx int) bool // returns whether a row is highlighted as selected/visual
 	IsRowMarked   func(rowIdx int) bool // returns whether a row is permanently marked (e.g. source item)

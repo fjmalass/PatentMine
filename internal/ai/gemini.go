@@ -58,7 +58,7 @@ type geminiResponse struct {
 	} `json:"candidates"`
 }
 
-// AnalyzePatent formats a patent's bibliographic data, abstract, first claim, 
+// AnalyzePatent formats a patent's bibliographic data, abstract, first claim,
 // and optional notes/prompts, evaluates them, and retrieves a detailed AI analysis.
 func (g *GeminiAnalyzer) AnalyzePatent(ctx context.Context, patent domain.Patent, prompt string) (string, error) {
 	if g.apiKey == "" {

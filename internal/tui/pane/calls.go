@@ -645,4 +645,3 @@ func FetchUSPTOXMLViewCmd(client *rpc.Client, number domain.PatentNumber, kind p
 		}
 	}
 }
-

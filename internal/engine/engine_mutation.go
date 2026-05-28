@@ -17,7 +17,7 @@ func (e *Engine) saveMutationGroup(ctx context.Context, project domain.ProjectID
 		Action:            action,
 		CreatedAt:         time.Now().UTC(),
 		SelectionSnapshot: append([]domain.PatentNumber(nil), patents...),
-		Attributes:          attrs,
+		Attributes:        attrs,
 	}, items); err != nil {
 		e.log(ctx, slog.LevelWarn, "save mutation group failed",
 			slog.String("action", action),

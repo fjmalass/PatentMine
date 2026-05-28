@@ -142,10 +142,10 @@ func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 				attrs["project_name"] = a.activeProject.Name
 			}
 			recCmd = a.recordActivity(observability.Record{
-				Action:   observability.ActionUIFocus,
-				Entity:   "patent",
-				EntityID: num.String(),
-				Status:   "requested",
+				Action:     observability.ActionUIFocus,
+				Entity:     "patent",
+				EntityID:   num.String(),
+				Status:     "requested",
 				Attributes: attrs,
 			})
 		}

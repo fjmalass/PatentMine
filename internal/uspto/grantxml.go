@@ -20,13 +20,13 @@ var Metrics *observability.Metrics
 // publications. Field names mirror the XML element names so the mapping back
 // to the source is obvious. Sections absent from a given XML stay zero.
 type USPTOGrantXML struct {
-	Lang             string `xml:"lang,attr"`
-	DTDVersion       string `xml:"dtd-version,attr"`
-	File             string `xml:"file,attr"`
-	Status           string `xml:"status,attr"`
-	Country          string `xml:"country,attr"`
-	DateProduced     string `xml:"date-produced,attr"`
-	DatePublished    string `xml:"date-publ,attr"`
+	Lang          string `xml:"lang,attr"`
+	DTDVersion    string `xml:"dtd-version,attr"`
+	File          string `xml:"file,attr"`
+	Status        string `xml:"status,attr"`
+	Country       string `xml:"country,attr"`
+	DateProduced  string `xml:"date-produced,attr"`
+	DatePublished string `xml:"date-publ,attr"`
 	// Two bibliographic fields: grant XML uses <us-bibliographic-data-grant>,
 	// pgpub XML uses <us-bibliographic-data-application>. The decoder only
 	// populates the field whose tag matches the element it sees, so for any
@@ -45,32 +45,32 @@ type USPTOGrantXML struct {
 // application). The XMLName is intentionally absent so the same struct can be
 // targeted by both root element tags above.
 type USPTOGrantBibliographic struct {
-	PublicationRef          USPTOGrantDocRef               `xml:"publication-reference>document-id"`
-	ApplicationRef          USPTOGrantApplicationRef       `xml:"application-reference"`
-	ApplicationSeriesCode   string                         `xml:"us-application-series-code"`
-	TermExtensionDays       string                         `xml:"us-term-of-grant>us-term-extension"`
-	IPCRClassifications     []USPTOGrantIPCR               `xml:"classifications-ipcr>classification-ipcr"`
-	MainCPC                 []USPTOGrantCPC                `xml:"classifications-cpc>main-cpc>classification-cpc"`
-	FurtherCPC              []USPTOGrantCPC                `xml:"classifications-cpc>further-cpc>classification-cpc"`
-	InventionTitle          string                         `xml:"invention-title"`
-	ReferencesCited         []USPTOGrantCitation           `xml:"us-references-cited>us-citation"`
-	NumberOfClaims          string                         `xml:"number-of-claims"`
-	ExemplaryClaim          string                         `xml:"us-exemplary-claim"`
-	FieldOfClassification   []string                       `xml:"us-field-of-classification-search>classification-cpc-text"`
-	NumberOfDrawingSheets   string                         `xml:"figures>number-of-drawing-sheets"`
-	NumberOfFigures         string                         `xml:"figures>number-of-figures"`
-	Continuations           []USPTOGrantRelation           `xml:"us-related-documents>continuation>relation"`
-	Continuations2          []USPTOGrantRelation           `xml:"us-related-documents>continuation-in-part>relation"`
-	Divisions               []USPTOGrantRelation           `xml:"us-related-documents>division>relation"`
-	Reissues                []USPTOGrantRelation           `xml:"us-related-documents>reissue>relation"`
-	ProvisionalApplications []USPTOGrantDocRef             `xml:"us-related-documents>us-provisional-application>document-id"`
-	RelatedPublications     []USPTOGrantDocRef             `xml:"us-related-documents>related-publication>document-id"`
-	Applicants              []USPTOGrantParty              `xml:"us-parties>us-applicants>us-applicant"`
-	Inventors               []USPTOGrantParty              `xml:"us-parties>inventors>inventor"`
-	Agents                  []USPTOGrantAgent              `xml:"us-parties>agents>agent"`
-	Assignees               []USPTOGrantAssignee           `xml:"assignees>assignee"`
-	PrimaryExaminer         USPTOGrantExaminer             `xml:"examiners>primary-examiner"`
-	AssistantExaminers      []USPTOGrantExaminer           `xml:"examiners>assistant-examiner"`
+	PublicationRef          USPTOGrantDocRef         `xml:"publication-reference>document-id"`
+	ApplicationRef          USPTOGrantApplicationRef `xml:"application-reference"`
+	ApplicationSeriesCode   string                   `xml:"us-application-series-code"`
+	TermExtensionDays       string                   `xml:"us-term-of-grant>us-term-extension"`
+	IPCRClassifications     []USPTOGrantIPCR         `xml:"classifications-ipcr>classification-ipcr"`
+	MainCPC                 []USPTOGrantCPC          `xml:"classifications-cpc>main-cpc>classification-cpc"`
+	FurtherCPC              []USPTOGrantCPC          `xml:"classifications-cpc>further-cpc>classification-cpc"`
+	InventionTitle          string                   `xml:"invention-title"`
+	ReferencesCited         []USPTOGrantCitation     `xml:"us-references-cited>us-citation"`
+	NumberOfClaims          string                   `xml:"number-of-claims"`
+	ExemplaryClaim          string                   `xml:"us-exemplary-claim"`
+	FieldOfClassification   []string                 `xml:"us-field-of-classification-search>classification-cpc-text"`
+	NumberOfDrawingSheets   string                   `xml:"figures>number-of-drawing-sheets"`
+	NumberOfFigures         string                   `xml:"figures>number-of-figures"`
+	Continuations           []USPTOGrantRelation     `xml:"us-related-documents>continuation>relation"`
+	Continuations2          []USPTOGrantRelation     `xml:"us-related-documents>continuation-in-part>relation"`
+	Divisions               []USPTOGrantRelation     `xml:"us-related-documents>division>relation"`
+	Reissues                []USPTOGrantRelation     `xml:"us-related-documents>reissue>relation"`
+	ProvisionalApplications []USPTOGrantDocRef       `xml:"us-related-documents>us-provisional-application>document-id"`
+	RelatedPublications     []USPTOGrantDocRef       `xml:"us-related-documents>related-publication>document-id"`
+	Applicants              []USPTOGrantParty        `xml:"us-parties>us-applicants>us-applicant"`
+	Inventors               []USPTOGrantParty        `xml:"us-parties>inventors>inventor"`
+	Agents                  []USPTOGrantAgent        `xml:"us-parties>agents>agent"`
+	Assignees               []USPTOGrantAssignee     `xml:"assignees>assignee"`
+	PrimaryExaminer         USPTOGrantExaminer       `xml:"examiners>primary-examiner"`
+	AssistantExaminers      []USPTOGrantExaminer     `xml:"examiners>assistant-examiner"`
 }
 
 type USPTOGrantApplicationRef struct {
@@ -140,7 +140,7 @@ func (c USPTOGrantIPCR) Code() string {
 }
 
 type USPTOGrantCitation struct {
-	PatCit                struct {
+	PatCit struct {
 		Num        string           `xml:"num,attr"`
 		DocumentID USPTOGrantDocRef `xml:"document-id"`
 	} `xml:"patcit"`
@@ -158,8 +158,8 @@ type USPTOGrantCitation struct {
 
 type USPTOGrantRelation struct {
 	ParentDoc struct {
-		DocumentID    USPTOGrantDocRef `xml:"document-id"`
-		ParentGrant   USPTOGrantDocRef `xml:"parent-grant-document>document-id"`
+		DocumentID  USPTOGrantDocRef `xml:"document-id"`
+		ParentGrant USPTOGrantDocRef `xml:"parent-grant-document>document-id"`
 	} `xml:"parent-doc"`
 	ChildDoc struct {
 		DocumentID USPTOGrantDocRef `xml:"document-id"`
@@ -167,9 +167,9 @@ type USPTOGrantRelation struct {
 }
 
 type USPTOGrantParty struct {
-	Sequence    string `xml:"sequence,attr"`
-	Designation string `xml:"designation,attr"`
-	AppType     string `xml:"app-type,attr"`
+	Sequence    string                `xml:"sequence,attr"`
+	Designation string                `xml:"designation,attr"`
+	AppType     string                `xml:"app-type,attr"`
 	Addressbook USPTOGrantAddressbook `xml:"addressbook"`
 	Residence   struct {
 		Country string `xml:"country"`
@@ -177,8 +177,8 @@ type USPTOGrantParty struct {
 }
 
 type USPTOGrantAgent struct {
-	Sequence    string `xml:"sequence,attr"`
-	RepType     string `xml:"rep-type,attr"`
+	Sequence    string                `xml:"sequence,attr"`
+	RepType     string                `xml:"rep-type,attr"`
 	Addressbook USPTOGrantAddressbook `xml:"addressbook"`
 }
 
@@ -236,13 +236,13 @@ type USPTOGrantFigure struct {
 	ID  string `xml:"id,attr"`
 	Num string `xml:"num,attr"`
 	Img struct {
-		ID         string `xml:"id,attr"`
-		Height     string `xml:"he,attr"`
-		Width      string `xml:"wi,attr"`
-		File       string `xml:"file,attr"`
-		Alt        string `xml:"alt,attr"`
-		Content    string `xml:"img-content,attr"`
-		Format     string `xml:"img-format,attr"`
+		ID      string `xml:"id,attr"`
+		Height  string `xml:"he,attr"`
+		Width   string `xml:"wi,attr"`
+		File    string `xml:"file,attr"`
+		Alt     string `xml:"alt,attr"`
+		Content string `xml:"img-content,attr"`
+		Format  string `xml:"img-format,attr"`
 	} `xml:"img"`
 }
 

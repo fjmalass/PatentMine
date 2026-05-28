@@ -53,6 +53,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 	// NULL-IF-empty pattern), otherwise let the XML overwrite.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE uspto_application SET
+			filing_date = COALESCE(NULLIF(?, ''), filing_date),
 			invention_title = COALESCE(NULLIF(?, ''), invention_title),
 			application_series_code = COALESCE(NULLIF(?, ''), application_series_code),
 			grant_doc_number = ?,
@@ -64,6 +65,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 			grant_file_name = ?,
 			grant_lang = ?,
 			term_extension_days = ?,
+			patent_term_extension_days = ?,
 			number_of_claims = ?,
 			exemplary_claim = ?,
 			number_of_drawing_sheets = ?,
@@ -77,12 +79,13 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 			field_of_search_json = ?,
 			grant_parsed_at = ?
 		WHERE application_number = ?`,
+		ingest.Summary.FilingDate,
 		ingest.Summary.InventionTitle,
 		ingest.Summary.ApplicationSeriesCode,
 		ingest.Summary.GrantDocNumber, ingest.Summary.GrantKind, ingest.Summary.GrantDate,
 		ingest.Summary.GrantDTDVersion, ingest.Summary.GrantStatus, ingest.Summary.GrantDateProduced,
 		ingest.Summary.GrantFileName, ingest.Summary.GrantLang,
-		ingest.Summary.TermExtensionDays, ingest.Summary.NumberOfClaims, ingest.Summary.ExemplaryClaim,
+		ingest.Summary.TermExtensionDays, ingest.Summary.TermExtensionDays, ingest.Summary.NumberOfClaims, ingest.Summary.ExemplaryClaim,
 		ingest.Summary.NumberOfDrawingSheets, ingest.Summary.NumberOfFigures,
 		ingest.Summary.PrimaryExaminerFirst, ingest.Summary.PrimaryExaminerLast, ingest.Summary.PrimaryExaminerDept,
 		string(assistantsJSON),
@@ -433,4 +436,3 @@ func (r *Repo) USPTOGrantClassifications(ctx context.Context, applicationNumber,
 	}
 	return out, nil
 }
-

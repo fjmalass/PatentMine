@@ -37,9 +37,9 @@ type SourceComparisonResolveMsg struct {
 }
 
 type SourceComparisonOverlay struct {
-	theme   render.Theme
-	patent  domain.PatentNumber
-	diffs   []domain.SourceDiff
+	theme  render.Theme
+	patent domain.PatentNumber
+	diffs  []domain.SourceDiff
 
 	cursor int // which diff row is focused
 }

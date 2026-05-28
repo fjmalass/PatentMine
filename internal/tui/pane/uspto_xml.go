@@ -84,8 +84,8 @@ func NewUSPTORawXML(
 }
 
 func (v *USPTORawXML) Scope() command.Scope { return command.ScopeUSPTOXML }
-func (v *USPTORawXML) Title() string         { return v.title }
-func (v *USPTORawXML) Init() tea.Cmd         { return nil }
+func (v *USPTORawXML) Title() string        { return v.title }
+func (v *USPTORawXML) Init() tea.Cmd        { return nil }
 
 func (v *USPTORawXML) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if h, ok := v.handlers[id]; ok {
@@ -339,8 +339,18 @@ func (v *USPTORawXML) yankSelection() tea.Cmd {
 }
 
 // Small utilities (duplicated locally for self-containment in this pane for now)
-func max(a, b int) int { if a > b { return a }; return b }
-func min(a, b int) int { if a < b { return a }; return b }
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 func usptoMatchLabel(n int) string {
 	if n == 1 {

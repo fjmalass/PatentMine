@@ -88,4 +88,3 @@ func TestPatentFilterParseDefaultAlias(t *testing.T) {
 		t.Fatalf("filter Expression = %q, want fetch_state:cached", f.Expression)
 	}
 }
-

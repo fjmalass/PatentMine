@@ -110,7 +110,7 @@ func TestReadActivityRecordsHandlesCorruptedLines(t *testing.T) {
 
 func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
 	logsDir := t.TempDir()
-	
+
 	// Set LogRetainDays package variable dynamically
 	originalDays := LogRetainDays
 	originalSize := LogMaxSizeBytes
@@ -118,22 +118,22 @@ func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
 		LogRetainDays = originalDays
 		LogMaxSizeBytes = originalSize
 	})
-	
+
 	LogRetainDays = 3
 	LogMaxSizeBytes = 200 // Very small limit so it triggers size pruning
 
 	now := time.Now()
-	
+
 	// Create some mock activity files
 	dates := []string{
 		now.AddDate(0, 0, -5).Format(dateLayout), // older than 3 days cutoff
 		now.AddDate(0, 0, -2).Format(dateLayout), // within 3 days
 		now.AddDate(0, 0, -1).Format(dateLayout), // within 3 days
-		now.Format(dateLayout),                  // today
+		now.Format(dateLayout),                   // today
 	}
 
 	payload := "some dummy content that exceeds size limit\n" // ~40 bytes
-	
+
 	for _, d := range dates {
 		path := filepath.Join(logsDir, "activity-"+d+".jsonl")
 		if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
@@ -168,7 +168,7 @@ func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
 	// Let's now reduce LogMaxSizeBytes to 50 bytes.
 	// Now only one file can be kept! Since dates[3] is the newest, it should survive, and the older ones should be pruned oldest-first.
 	LogMaxSizeBytes = 50
-	
+
 	// Write more files to trigger size pruning
 	for _, d := range dates[1:] {
 		path := filepath.Join(logsDir, "activity-"+d+".jsonl")
@@ -210,4 +210,3 @@ func TestAdaptiveSizeAndConfigurablePruning(t *testing.T) {
 		t.Errorf("expected dates[2] to be size-pruned")
 	}
 }
-

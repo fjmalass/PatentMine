@@ -80,12 +80,12 @@ func TestExport_EndToEnd(t *testing.T) {
 	tmp := t.TempDir()
 	in := Input{
 		Project: domain.Project{
-			ID:                   "p-test",
-			Name:                 "Test",
-			ApplicationNumber:    "16/123,456",
-			FilingDate:           time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-			Inventors:            []string{"Doe, Jane", "Roe, Richard"},
-			ArtUnit:              "2628",
+			ID:                "p-test",
+			Name:              "Test",
+			ApplicationNumber: "16/123,456",
+			FilingDate:        time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+			Inventors:         []string{"Doe, Jane", "Roe, Richard"},
+			ArtUnit:           "2628",
 			Examiners: []domain.ProjectExaminer{
 				{Name: "Smith, J.", RecordedAt: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)},
 				{Name: "Lee, K.", RecordedAt: time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)},

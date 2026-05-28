@@ -36,8 +36,8 @@ const (
 // Analyzer defines the technical contract for performing AI-driven patent
 // analysis, summary generation, or note evaluations.
 type Analyzer interface {
-	// AnalyzePatent takes a patent and optional custom instruction/prompt, 
-	// evaluating key bibliographic details, abstract, first claim and notes, 
+	// AnalyzePatent takes a patent and optional custom instruction/prompt,
+	// evaluating key bibliographic details, abstract, first claim and notes,
 	// returning a detailed AI text summary or report.
 	AnalyzePatent(ctx context.Context, patent domain.Patent, prompt string) (string, error)
 

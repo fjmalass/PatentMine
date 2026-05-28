@@ -114,7 +114,8 @@ func handleSubtableMotionKey(page *render.Paginator, msg tea.KeyMsg, vimCount *i
 
 // TableRowPrefixWidth is the display width of the prefix that RenderTable
 // always adds in front of every data row:
-//   cursor glyph + mark glyph + one space.
+//
+//	cursor glyph + mark glyph + one space.
 const TableRowPrefixWidth = 3
 
 // TableInterColumnGaps is the number of single-space separators that

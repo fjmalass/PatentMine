@@ -608,7 +608,6 @@ func (f *FullText) jumpKey(label string) rune {
 	return f.jump.JumpKey(label)
 }
 
-
 // --- Helpers ---
 
 // patentMeta builds the patent attrs header for clipboard export.
