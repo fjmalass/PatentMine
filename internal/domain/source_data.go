@@ -61,6 +61,9 @@ type USPTOApplication struct {
 	EarliestTermFilingDate        string `json:"earliest_term_filing_date,omitempty"`
 	ComputedExpirationDate        string `json:"computed_expiration_date,omitempty"`
 	ContinuityChainCount          int    `json:"continuity_chain_count,omitempty"`
+	// EarliestTermAppNum is the application number that contributed the earliest term filing date.
+	// Transient: set during computation, not persisted to the database.
+	EarliestTermAppNum string `json:"earliest_term_app_num,omitempty"`
 }
 
 // USPTOGrantSummary is the single-row data extracted from a us-patent-grant

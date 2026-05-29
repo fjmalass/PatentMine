@@ -159,6 +159,16 @@ func runExpirationDate(args []string) int {
 		ComputedAt:               app.FetchedAt,
 	}
 
+	// Populate earliest-term parent info when the filing date comes from a parent patent.
+	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
+		res.EarliestTermAppNum = app.EarliestTermAppNum
+		if parentApp, pErr := eng.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); pErr == nil {
+			res.EarliestTermPatentNumber = parentApp.RecordNumber.String()
+			res.EarliestTermTitle = parentApp.InventionTitle
+			res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
+		}
+	}
+
 	printResult(res, sourceFlag)
 	return 0
 }
@@ -184,6 +194,19 @@ func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
 		fmt.Printf("Filing Date:                   %s\n", formatStr(res.FilingDate))
 		fmt.Printf("Grant Date:                    %s\n", formatStr(res.GrantDate))
 		fmt.Printf("Earliest Term Filing Date:     %s\n", formatStr(res.EarliestTermFilingDate))
+		if res.EarliestTermAppNum != "" {
+			if res.EarliestTermPatentNumber != "" {
+				fmt.Printf("  ↳ Source Patent Number:        %s\n", res.EarliestTermPatentNumber)
+				if res.EarliestTermGrantDate != "" {
+					fmt.Printf("  ↳ Source Issue Date:           %s\n", res.EarliestTermGrantDate)
+				}
+				if res.EarliestTermTitle != "" {
+					fmt.Printf("  ↳ Source Title:                %s\n", res.EarliestTermTitle)
+				}
+			} else {
+				fmt.Printf("  ↳ Source Application:          %s\n", res.EarliestTermAppNum)
+			}
+		}
 		fmt.Printf("Patent Term Adjustment (PTA):  %d days\n", res.PatentTermAdjustmentDays)
 		fmt.Printf("Patent Term Extension (PTE):   %d days\n", res.PatentTermExtensionDays)
 		fmt.Printf("Terminal Disclaimer Date:      %s\n", formatStr(res.TerminalDisclaimerDate))

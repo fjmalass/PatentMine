@@ -71,6 +71,20 @@ func (o *ExpirationOverlay) View(maxW, maxH int) string {
 	writeField(&b, labelW, "Filing Date", r.FilingDate, maxW)
 	writeField(&b, labelW, "Grant Date", r.GrantDate, maxW)
 	writeField(&b, labelW, "Earliest Filing Date", r.EarliestTermFilingDate, maxW)
+	if r.EarliestTermAppNum != "" {
+		src := r.EarliestTermAppNum
+		if r.EarliestTermPatentNumber != "" {
+			src = r.EarliestTermPatentNumber
+		}
+		line := fmt.Sprintf("↳ %s", src)
+		if r.EarliestTermGrantDate != "" {
+			line += "  issued " + r.EarliestTermGrantDate
+		}
+		writeField(&b, labelW, "  Source Patent", line, maxW)
+		if r.EarliestTermTitle != "" {
+			writeField(&b, labelW, "  Source Title", r.EarliestTermTitle, maxW)
+		}
+	}
 	writeField(&b, labelW, "PTA", fmt.Sprintf("%d days", r.PatentTermAdjustmentDays), maxW)
 	writeField(&b, labelW, "PTE", fmt.Sprintf("%d days", r.PatentTermExtensionDays), maxW)
 	writeField(&b, labelW, "Terminal Disclaimer", r.TerminalDisclaimerDate, maxW)

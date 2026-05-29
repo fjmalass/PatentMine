@@ -238,36 +238,49 @@ func FetchTerminalDisclaimerDate(ctx context.Context, appNum string, apiKey stri
 	return earliestDate, found, nil
 }
 
+// ContinuityWalkStats summarizes a continuity chain walk for telemetry.
+type ContinuityWalkStats struct {
+	// MaxDepth is the deepest recursion level reached (0 = no parents found).
+	MaxDepth int
+	// TotalSteps is the total number of recursive calls made, including revisits
+	// that were short-circuited by cycle detection.
+	TotalSteps int
+	// UniqueApps is the number of distinct application numbers processed.
+	UniqueApps int
+	// EarliestApp is the normalized application number that contributed the
+	// earliest term filing date. Equals the root appNum when no parent is earlier.
+	EarliestApp string
+}
+
 // ComputeEarliestTermFilingDate finds the earliest term filing date under 35 U.S.C. 154
 // by recursively walking the non-provisional parent continuity chain.
-// Returns the earliest filing date, the count of recursively walked non-provisional parent relationships, and error.
+// Returns the earliest filing date, walk telemetry stats, and error.
 func ComputeEarliestTermFilingDate(
 	ctx context.Context,
 	repo store.Repository,
 	appNum string,
 	filingDate time.Time,
 	logger *slog.Logger,
-) (time.Time, int, error) {
+) (time.Time, ContinuityWalkStats, error) {
 	startTime := time.Now()
-	visited := make(map[string]bool)
-	earliest, err := walkContinuityChain(ctx, repo, appNum, filingDate, visited)
+	visited := make(map[string]bool) // cycle detection: marks nodes currently on the DFS stack
+	seen := make(map[string]bool)    // telemetry: all-time unique app numbers encountered
+	stats := ContinuityWalkStats{EarliestApp: normalizeAppNum(appNum)}
+	earliest, err := walkContinuityChain(ctx, repo, appNum, filingDate, visited, seen, 0, &stats, logger)
 	dur := time.Since(startTime)
-	
-	count := len(visited) - 1
-	if count < 0 {
-		count = 0
-	}
 
 	if logger != nil {
-		logger.Debug("continuity walk completed",
+		logger.Info("continuity walk completed",
 			slog.String("app_num", appNum),
 			slog.Duration("duration", dur),
 			slog.String("earliest_date", earliest.Format("2006-01-02")),
-			slog.Int("continuity_count", count),
+			slog.Int("max_depth", stats.MaxDepth),
+			slog.Int("total_steps", stats.TotalSteps),
+			slog.Int("unique_apps", stats.UniqueApps),
 			slog.Bool("success", err == nil),
 		)
 	}
-	return earliest, count, err
+	return earliest, stats, err
 }
 
 func walkContinuityChain(
@@ -276,11 +289,32 @@ func walkContinuityChain(
 	appNum string,
 	currentFilingDate time.Time,
 	visited map[string]bool,
+	seen map[string]bool,
+	depth int,
+	stats *ContinuityWalkStats,
+	logger *slog.Logger,
 ) (time.Time, error) {
 	appNum = normalizeAppNum(appNum)
 	if appNum == "" || visited[appNum] {
 		return currentFilingDate, nil
 	}
+
+	stats.TotalSteps++
+	if depth > stats.MaxDepth {
+		stats.MaxDepth = depth
+	}
+	if !seen[appNum] {
+		seen[appNum] = true
+		stats.UniqueApps++
+	}
+
+	if logger != nil {
+		logger.Debug("continuity walk step",
+			slog.String("app", appNum),
+			slog.Int("depth", depth),
+		)
+	}
+
 	visited[appNum] = true
 	defer delete(visited, appNum)
 
@@ -311,10 +345,12 @@ func walkContinuityChain(
 
 		if earliest.IsZero() || parentFilingDate.Before(earliest) {
 			earliest = parentFilingDate
+			stats.EarliestApp = parentApp
 		}
 
-		// Recursively walk parent
-		parentEarliest, err := walkContinuityChain(ctx, repo, parentApp, parentFilingDate, visited)
+		// Recursively walk parent; deeper calls update stats.EarliestApp via shared pointer
+		// when they find a date earlier than this one.
+		parentEarliest, err := walkContinuityChain(ctx, repo, parentApp, parentFilingDate, visited, seen, depth+1, stats, logger)
 		if err == nil && !parentEarliest.IsZero() && (earliest.IsZero() || parentEarliest.Before(earliest)) {
 			earliest = parentEarliest
 		}

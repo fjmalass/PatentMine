@@ -228,6 +228,14 @@ type USPTOExpirationCalculateResult struct {
 	FilingDate               string `json:"filing_date"`
 	GrantDate                string `json:"grant_date"`
 	EarliestTermFilingDate   string `json:"earliest_term_filing_date"`
+	// EarliestTermAppNum is the application number that owns the earliest term filing date.
+	// Empty when it equals ApplicationNumber (no continuity walk needed).
+	EarliestTermAppNum       string `json:"earliest_term_app_num,omitempty"`
+	// EarliestTermPatentNumber, EarliestTermGrantDate, EarliestTermTitle describe the
+	// parent patent that contributed the earliest filing date, when known from the store.
+	EarliestTermPatentNumber string `json:"earliest_term_patent_number,omitempty"`
+	EarliestTermGrantDate    string `json:"earliest_term_grant_date,omitempty"`
+	EarliestTermTitle        string `json:"earliest_term_title,omitempty"`
 	PatentTermAdjustmentDays int    `json:"patent_term_adjustment_days"`
 	PatentTermExtensionDays  int    `json:"patent_term_extension_days"`
 	TerminalDisclaimerDate   string `json:"terminal_disclaimer_date"`

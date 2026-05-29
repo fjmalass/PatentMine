@@ -1075,11 +1075,62 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	appNum := app.ApplicationNumber
 	apiKey := strings.TrimSpace(e.usptoAPIKey)
 
-	// 2. Compute earliest term filing date by walking the continuity chain
+	// 2. Compute earliest term filing date by walking the continuity chain.
+	// First run DB-only to establish a baseline, then enrich from the USPTO API
+	// if continuity data is absent, and re-run to detect any change.
 	filingDate := parseUSPTODateHelper(app.FilingDate)
-	earliestTermFilingDate, _, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
+
+	dbEarliest, dbStats, err := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
 	if err != nil {
-		e.log(ctx, slog.LevelWarn, "failed to compute earliest term filing date", slog.String("app_num", appNum), slog.String("error", err.Error()))
+		e.log(ctx, slog.LevelWarn, "failed to compute earliest term filing date (db)", slog.String("app_num", appNum), slog.String("error", err.Error()))
+	}
+
+	earliestTermFilingDate := dbEarliest
+	walkStats := dbStats
+
+	// API enrichment: only on explicit refresh to avoid adding latency to normal calls.
+	if refresh {
+		fetchedCount, fetchErr := e.fetchMissingContinuities(ctx, n, app)
+		if fetchErr != nil {
+			e.log(ctx, slog.LevelWarn, "failed to fetch missing continuities from USPTO API", slog.String("app_num", appNum), slog.String("error", fetchErr.Error()))
+		}
+		if fetchedCount > 0 {
+			apiEarliest, apiStats, apiErr := uspto.ComputeEarliestTermFilingDate(ctx, e.repo, appNum, filingDate, e.logger)
+			if apiErr == nil {
+				changed := !apiEarliest.Equal(dbEarliest)
+				e.log(ctx, slog.LevelInfo, "continuity walk comparison: db vs api-enriched",
+					slog.String("app_num", appNum),
+					slog.String("db_earliest", dbEarliest.Format("2006-01-02")),
+					slog.String("api_earliest", apiEarliest.Format("2006-01-02")),
+					slog.Int("db_unique_apps", dbStats.UniqueApps),
+					slog.Int("api_unique_apps", apiStats.UniqueApps),
+					slog.Int("continuities_fetched", fetchedCount),
+					slog.Bool("date_changed", changed),
+				)
+				if changed {
+					e.incCounter("uspto.expiration.continuity.date_corrected_by_api", 1)
+				}
+				earliestTermFilingDate = apiEarliest
+				walkStats = apiStats
+			}
+		}
+	}
+
+	e.incCounter("uspto.expiration.continuity.total_steps", int64(walkStats.TotalSteps))
+	e.incCounter("uspto.expiration.continuity.unique_apps", int64(walkStats.UniqueApps))
+	e.setGauge("uspto.expiration.continuity.max_depth", int64(walkStats.MaxDepth))
+	app.EarliestTermAppNum = walkStats.EarliestApp
+
+	// On refresh, prefetch and cache the parent application that contributed the earliest
+	// filing date so that subsequent non-refresh calls can resolve its patent number and title.
+	if refresh && app.EarliestTermAppNum != "" && app.EarliestTermAppNum != appNum {
+		if _, dbErr := e.repo.USPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); dbErr != nil {
+			parentN := domain.PatentNumber{Serial: app.EarliestTermAppNum}
+			if _, apiErr := e.resolveUSPTOApplicationFromAPI(ctx, parentN); apiErr != nil {
+				e.log(ctx, slog.LevelDebug, "could not prefetch parent application metadata",
+					slog.String("parent_app", app.EarliestTermAppNum), slog.String("error", apiErr.Error()))
+			}
+		}
 	}
 
 	// 3. Fetch live PTA and Documents (Terminal Disclaimers) if apiKey is present
@@ -1103,13 +1154,14 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	// Determine what to show for terminal disclaimer
 	var tdDateStr string
 	if !tdDate.IsZero() {
-		// We found a terminal disclaimer
 		tdDateStr = tdDate.Format("2006-01-02")
+	} else if apiKey == "" {
+		// API not queried — cannot determine presence or absence
+		tdDateStr = "Not Applicable"
 	} else if hasParents {
-		// We have parents but no terminal disclaimer found -> ERROR
-		tdDateStr = "ERROR"
+		// API queried, no TD found, but patent has a continuity chain — explicitly checked, none found
+		tdDateStr = "None"
 	} else {
-		// No parents -> Not Applicable
 		tdDateStr = "Not Applicable"
 	}
 
@@ -1263,6 +1315,7 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 				USPCSymbolText            string `json:"uspcSymbolText"`
 				Class                     string `json:"class"`
 				Subclass                  string `json:"subclass"`
+				PatentNumberText          string `json:"patentNumberText"`
 			} `json:"applicationMetaData"`
 			GrantDocumentMetaData *struct {
 				FileLocationURI string `json:"fileLocationURI"`
@@ -1287,10 +1340,21 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 		return domain.USPTOApplication{}, store.ErrNotFound
 	}
 
+	// Resolve the granted patent number from the API response when available.
+	// The input n may be an application-style PatentNumber; patentNumberText gives the actual grant.
+	patentRecordNum := n
+	if ptxt := strings.TrimSpace(w.ApplicationMetaData.PatentNumberText); ptxt != "" {
+		if parsed, pErr := domain.ParsePatentNumber(ptxt); pErr == nil {
+			patentRecordNum = parsed
+		} else if parsed, pErr := domain.ParsePatentNumber("US" + ptxt + "B1"); pErr == nil {
+			patentRecordNum = parsed
+		}
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	app = domain.USPTOApplication{
 		ApplicationNumber:             appNum,
-		RecordNumber:                  n,
+		RecordNumber:                  patentRecordNum,
 		InventionTitle:                strings.TrimSpace(w.ApplicationMetaData.InventionTitle),
 		FilingDate:                    w.ApplicationMetaData.FilingDate,
 		EffectiveFilingDate:           w.ApplicationMetaData.EffectiveFilingDate,
@@ -1327,7 +1391,7 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 	// Persist the fetched application data so subsequent lookups hit the store
 	batch := store.NodeBatch{
 		Patent: domain.Patent{
-			Number:     n,
+			Number:     patentRecordNum,
 			FetchState: domain.FetchCached,
 			Source:     domain.SourceUSPTO,
 		},
@@ -1335,11 +1399,122 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 	}
 	if saveErr := e.repo.SaveNode(ctx, batch); saveErr != nil {
 		e.log(ctx, slog.LevelWarn, "failed to persist fetched USPTO application",
-			slog.String("number", n.String()),
+			slog.String("number", patentRecordNum.String()),
 			slog.String("error", saveErr.Error()))
 	}
 
 	return app, nil
+}
+
+// USPTOApplicationOrFetch returns USPTO application data for the given application number string.
+// Checks the local store first. If absent and an API key is configured, fetches from the
+// USPTO ODP API and caches the result so subsequent calls hit the store.
+func (e *Engine) USPTOApplicationOrFetch(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
+	if app, err := e.repo.USPTOApplicationByAppNum(ctx, appNum); err == nil {
+		return app, nil
+	}
+	if strings.TrimSpace(e.usptoAPIKey) == "" {
+		return domain.USPTOApplication{}, store.ErrNotFound
+	}
+	return e.resolveUSPTOApplicationFromAPI(ctx, domain.PatentNumber{Serial: appNum})
+}
+
+// fetchMissingContinuities checks the store for continuity records for the given
+// application. If none exist and an API key is configured, it fetches parent
+// continuity data from the USPTO ODP API and persists the results so that
+// subsequent DB-based walks benefit from the enriched data.
+//
+// Returns the number of continuity rows fetched from the API.
+// Returns 0 if the store already had data or no API key is configured.
+func (e *Engine) fetchMissingContinuities(ctx context.Context, n domain.PatentNumber, app domain.USPTOApplication) (int, error) {
+	appNum := app.ApplicationNumber
+
+	existing, err := e.repo.USPTOContinuities(ctx, appNum)
+	if err == nil && len(existing) > 0 {
+		e.log(ctx, slog.LevelDebug, "continuity data present in store, skipping API fetch",
+			slog.String("app_num", appNum),
+			slog.Int("count", len(existing)))
+		return 0, nil
+	}
+
+	apiKey := strings.TrimSpace(e.usptoAPIKey)
+	if apiKey == "" {
+		return 0, nil
+	}
+
+	e.log(ctx, slog.LevelDebug, "continuity data absent from store, fetching from USPTO API",
+		slog.String("app_num", appNum))
+
+	raw, err := e.USPTOLookup(ctx, n)
+	if err != nil {
+		return 0, fmt.Errorf("engine: fetch continuities from USPTO API: %w", err)
+	}
+
+	var resp struct {
+		Count                    int `json:"count"`
+		PatentFileWrapperDataBag []struct {
+			ApplicationNumberText string `json:"applicationNumberText"`
+			ParentContinuityBag   []struct {
+				ParentApplicationNumberText        string `json:"parentApplicationNumberText"`
+				ChildApplicationNumberText         string `json:"childApplicationNumberText"`
+				ParentApplicationFilingDate        string `json:"parentApplicationFilingDate"`
+				ParentApplicationStatusCode        any    `json:"parentApplicationStatusCode"`
+				ParentApplicationStatusDescription string `json:"parentApplicationStatusDescriptionText"`
+				ClaimParentageTypeCode             string `json:"claimParentageTypeCode"`
+				ClaimParentageTypeDescriptionText  string `json:"claimParentageTypeCodeDescriptionText"`
+			} `json:"parentContinuityBag"`
+		} `json:"patentFileWrapperDataBag"`
+	}
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		return 0, fmt.Errorf("engine: parse continuities response: %w", err)
+	}
+	if resp.Count == 0 || len(resp.PatentFileWrapperDataBag) == 0 {
+		return 0, nil
+	}
+
+	w := resp.PatentFileWrapperDataBag[0]
+	if len(w.ParentContinuityBag) == 0 {
+		e.log(ctx, slog.LevelDebug, "USPTO API returned no continuity records",
+			slog.String("app_num", appNum))
+		return 0, nil
+	}
+
+	continuities := make([]domain.USPTOContinuity, 0, len(w.ParentContinuityBag))
+	for i, c := range w.ParentContinuityBag {
+		continuities = append(continuities, domain.USPTOContinuity{
+			ApplicationNumber:                 appNum,
+			Ordinal:                           i,
+			ParentApplicationNumberText:       c.ParentApplicationNumberText,
+			ChildApplicationNumberText:        c.ChildApplicationNumberText,
+			ParentApplicationFilingDate:       c.ParentApplicationFilingDate,
+			ParentApplicationStatusCode:       stringify(c.ParentApplicationStatusCode),
+			ParentApplicationStatusText:       c.ParentApplicationStatusDescription,
+			ClaimParentageTypeCode:            c.ClaimParentageTypeCode,
+			ClaimParentageTypeDescriptionText: c.ClaimParentageTypeDescriptionText,
+		})
+	}
+
+	batch := store.NodeBatch{
+		Patent: domain.Patent{
+			Number:     n,
+			FetchState: domain.FetchCached,
+			Source:     domain.SourceUSPTO,
+		},
+		USPTOApplication:  &app,
+		USPTOContinuities: continuities,
+	}
+	if saveErr := e.repo.SaveNode(ctx, batch); saveErr != nil {
+		e.log(ctx, slog.LevelWarn, "failed to persist fetched continuities",
+			slog.String("app_num", appNum),
+			slog.String("error", saveErr.Error()))
+	} else {
+		e.log(ctx, slog.LevelInfo, "fetched and stored continuities from USPTO API",
+			slog.String("app_num", appNum),
+			slog.Int("count", len(continuities)))
+		e.incCounter("uspto.expiration.continuity.api_fetched", int64(len(continuities)))
+	}
+
+	return len(continuities), nil
 }
 
 // fetchPTEFromGrantURL downloads a USPTO grant XML and extracts the

@@ -1446,7 +1446,7 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		grantDateStr = uspto.GrantDateFromStatus(app.ApplicationStatusText, app.ApplicationStatusDate)
 	}
 
-	return proto.USPTOExpirationCalculateResult{
+	res := proto.USPTOExpirationCalculateResult{
 		ApplicationNumber:        app.ApplicationNumber,
 		PatentNumber:             p.Number.String(),
 		Title:                    title,
@@ -1460,5 +1460,17 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		ComputedExpirationDate:   app.ComputedExpirationDate,
 		GoogleExpirationDate:     googleExpStr,
 		ComputedAt:               app.FetchedAt,
-	}, nil
+	}
+
+	// Populate earliest-term parent info when the earliest filing date comes from a parent patent.
+	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
+		res.EarliestTermAppNum = app.EarliestTermAppNum
+		if parentApp, err := s.engine.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); err == nil {
+			res.EarliestTermPatentNumber = parentApp.RecordNumber.String()
+			res.EarliestTermTitle = parentApp.InventionTitle
+			res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
+		}
+	}
+
+	return res, nil
 }

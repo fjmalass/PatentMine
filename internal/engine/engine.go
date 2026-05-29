@@ -273,6 +273,12 @@ func (e *Engine) USPTOApplication(ctx context.Context, n domain.PatentNumber) (d
 	return e.repo.USPTOApplication(ctx, n)
 }
 
+// USPTOApplicationByAppNum returns the saved USPTO application for a given application number
+// string (e.g. "15070913"), or ErrNotFound.
+func (e *Engine) USPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
+	return e.repo.USPTOApplicationByAppNum(ctx, appNum)
+}
+
 func (e *Engine) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	logger := observability.WithContextAttrs(ctx, e.logger)
 	args := make([]any, 0, len(attrs))
@@ -296,6 +302,13 @@ func (e *Engine) incCounter(name string, delta int64) {
 		return
 	}
 	e.metrics.IncCounter(name, delta)
+}
+
+func (e *Engine) setGauge(name string, value int64) {
+	if e.metrics == nil {
+		return
+	}
+	e.metrics.SetGauge(name, value)
 }
 
 func (e *Engine) observeDuration(name string, start time.Time, errp *error) {

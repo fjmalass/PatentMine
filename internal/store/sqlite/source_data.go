@@ -326,6 +326,57 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 	return app, nil
 }
 
+// USPTOApplicationByAppNum returns the saved USPTO application attrs for a given application
+// number string (e.g. "15070913"), or ErrNotFound.
+func (r *Repo) USPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
+	row := r.reader.QueryRowContext(ctx, `
+		SELECT u.application_number, p.number, u.invention_title, u.filing_date, u.effective_filing_date,
+			   u.application_status_code, u.application_status_text, u.application_status_date,
+			   u.application_type_code, u.application_type_label, u.application_type_category,
+			   u.first_inventor_to_file, u.national_stage, u.first_inventor_name, u.first_applicant_name,
+			   u.customer_number, u.group_art_unit_number, u.examiner_name, u.docket_number,
+			   u.application_confirmation_number, u.uspc_symbol_text, u.uspc_class, u.uspc_subclass,
+			   u.small_entity_status, u.business_entity_status, u.publication_category_json,
+			   u.last_ingestion_datetime, u.fetched_at, u.pgpub_xml_url, u.pgpub_xml_name, u.patent_grant_xml_url, u.patent_grant_xml_name,
+			   u.patent_term_adjustment_days, u.patent_term_extension_days, u.terminal_disclaimer_date, u.earliest_term_filing_date, u.computed_expiration_date
+		FROM uspto_application u JOIN patent p ON p.record_id = u.record_id
+		WHERE u.application_number = ?`, appNum)
+
+	var app domain.USPTOApplication
+	var recordNumStr string
+	var firstInventorToFile, nationalStage, smallEntityStatus int
+
+	err := row.Scan(
+		&app.ApplicationNumber, &recordNumStr, &app.InventionTitle, &app.FilingDate, &app.EffectiveFilingDate,
+		&app.ApplicationStatusCode, &app.ApplicationStatusText, &app.ApplicationStatusDate,
+		&app.ApplicationTypeCode, &app.ApplicationTypeLabel, &app.ApplicationTypeCategory,
+		&firstInventorToFile, &nationalStage, &app.FirstInventorName, &app.FirstApplicantName,
+		&app.CustomerNumber, &app.GroupArtUnitNumber, &app.ExaminerName, &app.DocketNumber,
+		&app.ApplicationConfirmationNumber, &app.USPCSymbolText, &app.USPCClass, &app.USPCSubclass,
+		&smallEntityStatus, &app.BusinessEntityStatus, &app.PublicationCategoryJSON,
+		&app.LastIngestionDateTime, &app.FetchedAt,
+		&app.PGPubXMLURL, &app.PGPubXMLName, &app.PatentGrantXMLURL, &app.PatentGrantXMLName,
+		&app.PatentTermAdjustmentDays, &app.PatentTermExtension, &app.TerminalDisclaimerDate,
+		&app.EarliestTermFilingDate, &app.ComputedExpirationDate,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.USPTOApplication{}, store.ErrNotFound
+		}
+		return domain.USPTOApplication{}, fmt.Errorf("store/sqlite: query uspto application by app num: %w", err)
+	}
+
+	app.FirstInventorToFile = firstInventorToFile != 0
+	app.NationalStage = nationalStage != 0
+	app.SmallEntityStatus = smallEntityStatus != 0
+
+	if parsed, err := domain.ParsePatentNumber(recordNumStr); err == nil {
+		app.RecordNumber = parsed
+	}
+
+	return app, nil
+}
+
 // USPTOXMLDownload returns the per-document download record, or ErrNotFound.
 func (r *Repo) USPTOXMLDownload(ctx context.Context, applicationNumber, kind string) (domain.USPTOXMLDownload, error) {
 	row := r.reader.QueryRowContext(ctx, `

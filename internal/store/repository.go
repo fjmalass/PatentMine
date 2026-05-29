@@ -112,6 +112,9 @@ type Repository interface {
 	Patent(ctx context.Context, n domain.PatentNumber) (domain.Patent, error)
 	// USPTOApplication returns the saved USPTO application attrs for a patent record, or ErrNotFound.
 	USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error)
+	// USPTOApplicationByAppNum returns the saved USPTO application attrs for a given application
+	// number string (e.g. "15070913"), or ErrNotFound.
+	USPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error)
 	// USPTOContinuities returns the stored continuity chain for an application.
 	USPTOContinuities(ctx context.Context, appNum string) ([]domain.USPTOContinuity, error)
 	// USPTOXMLDownload returns the per-document download record, or ErrNotFound
