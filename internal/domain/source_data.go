@@ -323,6 +323,13 @@ type USPTOContinuity struct {
 	ChildRecordNumber                 PatentNumber `json:"child_record_number,omitempty"`
 }
 
+// Parentage is the claim-parentage type linking a child application to one of
+// its parents: the raw USPTO code and the description text it supplied.
+type Parentage struct {
+	Code        string `json:"code"`
+	Description string `json:"description,omitempty"`
+}
+
 type USPTOForeignPriority struct {
 	ApplicationNumber        string       `json:"application_number"`
 	Ordinal                  int          `json:"ordinal"`

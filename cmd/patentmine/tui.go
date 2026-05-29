@@ -80,6 +80,7 @@ func runTUI(args []string) int {
 		tui.WithUSPTOKey(cfg.USPTOAPIKey),
 		tui.WithBackupConfig(cfg.BackupConfigured(), cfg.BackupRcloneRemote, cfg.BackupBucket),
 		tui.WithNotesExportDir(exportDir),
+		tui.WithFamilyExportDir(string(cfg.PatentsDir)),
 		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))
 	if err != nil {
 		telemetry.Logger.Error("build tui failed", slog.String("error", err.Error()))

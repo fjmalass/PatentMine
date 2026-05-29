@@ -221,7 +221,7 @@ func (a *App) openFamilyGraph(depth int, countries []string) (tea.Model, tea.Cmd
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()))
+	return a.pushPane(pane.NewFamilyGraph(a.client, a.theme, number, depth, countries).WithLogger(a.log()).WithMetrics(a.metrics).WithExportDir(a.familyExportDir))
 }
 
 func (a *App) activateProject() (tea.Model, tea.Cmd) {
@@ -572,7 +572,7 @@ func (a *App) navigateHistory(number domain.PatentNumber) (tea.Model, tea.Cmd) {
 	case *pane.Citations:
 		nextPane = pane.NewCitations(a.client, a.theme, number, p.Kind()).WithLogger(a.log())
 	case *pane.FamilyGraph:
-		nextPane = pane.NewFamilyGraph(a.client, a.theme, number, p.Depth(), p.Countries()).WithLogger(a.log())
+		nextPane = pane.NewFamilyGraph(a.client, a.theme, number, p.Depth(), p.Countries()).WithLogger(a.log()).WithMetrics(a.metrics).WithExportDir(a.familyExportDir)
 	default:
 		bound := a.keymaps.BoundLetters(command.ScopeDetail)
 		nextPane = pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log())

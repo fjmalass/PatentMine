@@ -51,6 +51,7 @@ const (
 	overlayMaxHeight = 22
 	overlayMargin    = 4 // free space kept around the box
 	overlayChrome    = 4 // border (2) + horizontal padding (2)
+	overlayHPadding  = 2 // theme.Box horizontal padding (Padding(0,1)) in columns
 )
 
 // busEventMsg carries a daemon event into the bubbletea update loop.
@@ -286,8 +287,9 @@ type App struct {
 	geminiAnalyzer   ai.Analyzer
 	ollamaAnalyzer   ai.Analyzer
 
-	notesExportDir string
-	sourceMode     string
+	notesExportDir  string
+	familyExportDir string
+	sourceMode      string
 }
 
 // xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
@@ -436,6 +438,12 @@ func WithActivityMinDuration(d time.Duration) Option {
 // Empty string falls back to the user's home directory.
 func WithNotesExportDir(dir string) Option {
 	return func(a *App) { a.notesExportDir = dir }
+}
+
+// WithFamilyExportDir sets the directory for exported family-graph Mermaid/DOT
+// files (the patents cache dir, ~/.config/patentmine/patents).
+func WithFamilyExportDir(dir string) Option {
+	return func(a *App) { a.familyExportDir = dir }
 }
 
 // log returns the App's structured logger, or the process default when no

@@ -17,6 +17,13 @@ import (
 const (
 	promptShortcutW = 18
 	promptNameW     = 22
+
+	// Popup sizing. The command popup takes a generous share of the terminal so
+	// the command list is comfortable to scan, clamped to sensible minimums.
+	promptWidthPct  = 80
+	promptHeightPct = 80
+	promptMinWidth  = 90
+	promptMinHeight = 24
 )
 
 type promptEntry struct {
@@ -66,6 +73,12 @@ func (p *Prompt) Title() string {
 
 func (p *Prompt) SourceScope() command.Scope { return p.scope }
 
+// OverlaySize implements DynamicSize so the command popup is larger than the
+// default overlay box, giving the command list more room.
+func (p *Prompt) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, promptWidthPct, promptHeightPct, promptMinWidth, promptMinHeight)
+}
+
 func (p *Prompt) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if handler, ok := p.handlers[id]; ok {
 		return p, handler(repeat)
@@ -81,11 +94,7 @@ func (p *Prompt) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	case tea.KeyEsc:
 		return p, func() tea.Msg { return PromptCloseMsg{} }, true
 	case tea.KeyEnter:
-		input := p.submitInput()
-		if input == "" {
-			return p, nil, true
-		}
-		return p, func() tea.Msg { return PromptSubmitMsg{Input: input} }, true
+		return p.onEnter()
 	case tea.KeyBackspace:
 		if p.cursor == 0 {
 			return p, nil, true
@@ -140,6 +149,72 @@ func (p *Prompt) View(maxW, maxH int) string {
 	b.WriteString("\n\n")
 	b.WriteString(p.footerLine(maxW))
 	return b.String()
+}
+
+// onEnter resolves the Enter key. In palette mode it launches the highlighted
+// command. In direct (:) mode it runs a fully-typed command line as-is,
+// otherwise it acts on the highlighted entry: a command that still needs
+// arguments is prefilled into the input (autocomplete) rather than executed,
+// while an argument-free command runs immediately.
+func (p *Prompt) onEnter() (Overlay, tea.Cmd, bool) {
+	if p.mode == PromptPalette {
+		input := p.submitInput()
+		if input == "" {
+			return p, nil, true
+		}
+		return p, submitPrompt(input), true
+	}
+
+	// Direct (:) mode.
+	if p.queryHasTypedArgs() {
+		if trimmed := strings.TrimSpace(p.query); trimmed != "" {
+			return p, submitPrompt(trimmed), true
+		}
+		return p, nil, true
+	}
+	if sel, ok := p.selected(); ok {
+		trimmed := strings.TrimSpace(p.query)
+		// First Enter on an argument-taking command drops its name into the
+		// input and waits for arguments; pressing Enter again (name already
+		// filled) runs it with whatever has been typed.
+		if commandTakesArgs(sel.command) && trimmed != sel.command.Name {
+			p.prefill(sel.command.Name)
+			return p, nil, true
+		}
+		return p, submitPrompt(sel.command.Name), true
+	}
+	if trimmed := strings.TrimSpace(p.query); trimmed != "" {
+		return p, submitPrompt(trimmed), true
+	}
+	return p, nil, true
+}
+
+func submitPrompt(input string) tea.Cmd {
+	return func() tea.Msg { return PromptSubmitMsg{Input: input} }
+}
+
+// queryHasTypedArgs reports whether the user has typed an argument after a
+// command name — a space followed by non-space content. A bare trailing space
+// (left by autocomplete) does not count.
+func (p *Prompt) queryHasTypedArgs() bool {
+	q := strings.TrimLeft(p.query, " ")
+	i := strings.IndexByte(q, ' ')
+	return i >= 0 && strings.TrimSpace(q[i+1:]) != ""
+}
+
+// prefill replaces the query with a command name and a trailing space, leaving
+// the cursor at the end so the user can type arguments.
+func (p *Prompt) prefill(name string) {
+	p.query = name + " "
+	p.cursor = len([]rune(p.query))
+	p.error = ""
+	p.filter()
+}
+
+// commandTakesArgs reports whether a command's usage declares arguments beyond
+// the bare ":name" token, e.g. ":browse [PATENT ...]".
+func commandTakesArgs(c command.Command) bool {
+	return len(strings.Fields(c.Usage)) > 1
 }
 
 func (p *Prompt) submitInput() string {

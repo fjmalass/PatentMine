@@ -613,3 +613,52 @@ func (r *Repo) USPTOContinuities(ctx context.Context, appNum string) ([]domain.U
 	}
 	return list, nil
 }
+
+// ParentageForChild returns the claim-parentage type relating each stored parent
+// to the given child patent, keyed by the parent's patent number. It joins the
+// child's continuity rows to the parent patent record by record id, falling back
+// to matching the parent application number when the stored record id is empty.
+func (r *Repo) ParentageForChild(ctx context.Context, child domain.PatentNumber) (map[domain.PatentNumber]domain.Parentage, error) {
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT pp.number,
+		       cont.claim_parentage_type_code,
+		       cont.claim_parentage_type_description_text
+		FROM uspto_continuity cont
+		JOIN uspto_application ua ON ua.application_number = cont.application_number
+		JOIN patent root ON root.record_id = ua.record_id
+		JOIN patent pp ON pp.record_id = cont.parent_record_id
+		WHERE root.number = ? AND cont.parent_record_id != ''
+		UNION
+		SELECT pp.number,
+		       cont.claim_parentage_type_code,
+		       cont.claim_parentage_type_description_text
+		FROM uspto_continuity cont
+		JOIN uspto_application ua ON ua.application_number = cont.application_number
+		JOIN patent root ON root.record_id = ua.record_id
+		JOIN uspto_application pua ON pua.application_number = cont.parent_application_number_text
+		JOIN patent pp ON pp.record_id = pua.record_id
+		WHERE root.number = ? AND cont.parent_record_id = ''`,
+		child.Normalized(), child.Normalized())
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query parentage for child: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[domain.PatentNumber]domain.Parentage)
+	for rows.Next() {
+		var number string
+		var p domain.Parentage
+		if err := rows.Scan(&number, &p.Code, &p.Description); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan parentage: %w", err)
+		}
+		parsed, perr := domain.ParsePatentNumber(number)
+		if perr != nil {
+			continue
+		}
+		out[parsed] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: parentage rows: %w", err)
+	}
+	return out, nil
+}

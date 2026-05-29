@@ -1260,6 +1260,59 @@ func TestBackupTelemetry(t *testing.T) {
 	}
 }
 
+func TestParentageForChild(t *testing.T) {
+	tempDB := filepath.Join(t.TempDir(), "parentage.db")
+	repo, err := Open(context.Background(), tempDB)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	ctx := context.Background()
+	child := domain.MustParsePatentNumber("US17812078")
+	parent := domain.MustParsePatentNumber("US10000000")
+
+	// Parent patent must exist as a record so parent_record_id resolves.
+	if err := repo.SaveNode(ctx, store.NodeBatch{
+		Patent: domain.Patent{Number: parent, Title: "Parent", FetchState: domain.FetchStub, Source: domain.SourceUSPTO},
+	}); err != nil {
+		t.Fatalf("SaveNode parent: %v", err)
+	}
+
+	// Child patent + its USPTO application + a continuity row linking to the parent.
+	childBatch := store.NodeBatch{
+		Patent: domain.Patent{Number: child, Title: "Child", FetchState: domain.FetchStub, Source: domain.SourceUSPTO},
+		USPTOApplication: &domain.USPTOApplication{
+			ApplicationNumber: "17812078",
+			RecordNumber:      child,
+		},
+		USPTOContinuities: []domain.USPTOContinuity{{
+			ApplicationNumber:                 "17812078",
+			Ordinal:                           0,
+			ParentApplicationNumberText:       "15000000",
+			ChildApplicationNumberText:        "17812078",
+			ClaimParentageTypeCode:            "CON",
+			ClaimParentageTypeDescriptionText: "Continuation of",
+			ParentRecordNumber:                parent,
+		}},
+	}
+	if err := repo.SaveNode(ctx, childBatch); err != nil {
+		t.Fatalf("SaveNode child: %v", err)
+	}
+
+	got, err := repo.ParentageForChild(ctx, child)
+	if err != nil {
+		t.Fatalf("ParentageForChild: %v", err)
+	}
+	p, ok := got[parent]
+	if !ok {
+		t.Fatalf("ParentageForChild missing parent %s; got %v", parent, got)
+	}
+	if p.Code != "CON" || p.Description != "Continuation of" {
+		t.Errorf("parentage = %+v, want {CON, Continuation of}", p)
+	}
+}
+
 func TestUSPTOApplicationStoreRoundTrip(t *testing.T) {
 	tempDB := filepath.Join(t.TempDir(), "uspto.db")
 	repo, err := Open(context.Background(), tempDB)

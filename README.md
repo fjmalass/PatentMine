@@ -10,6 +10,7 @@ Related docs:
 2. [Telemetry & Activity Tracking Guide](./ACTIVITY.md)
 3. [USPTO Loading & Source Configuration](./USPTO_CONFIG_LOADING.md)
 4. [U.S. Patent Expiration Date Computation](./EXPIRATION_DATE.md)
+5. [Patent Continuity, Parentage & Family-Graph Export](./CONTINUITY.md)
 
 ---
 
@@ -513,6 +514,14 @@ When you enter a patent identifier, PatentMine searches across multiple USPTO id
 - `publicationNumberText` / `publicationNumber`, for publication numbers such as `20230021336` or `US20230021336A1`.
 
 If the broad search returns multiple possible wrappers, the TUI opens the `USPTOCandidatePicker` overlay. Navigate with `up` / `down` or `j` / `k`, then press `Enter` to choose the correct application. PatentMine then re-submits the load using that exact application number.
+
+### 8.6 Continuity, parentage & family-graph export
+
+USPTO-loaded records carry **typed continuity** — each parent link has a claim-parentage code such as `CON` (Continuation), `CIP`, `DIV`, or `PRO` (Provisional). The Parents view (`p`) shows the code in a `REL` column, with the full phrase on the status line. Google-loaded edges show the parent/child link but **not** the typed code (only USPTO supplies it).
+
+The family-graph view (`f` / `g f`) lays the parent/child graph out depth-first, marks cycles/shared parents with a `↩` back-reference, and exports to **Mermaid (`.mmd`) and Graphviz (`.dot`)** via `y`. Files are written to `~/.config/patentmine/patents/<ROOT>_<timestamp>.{mmd,dot}` and the Mermaid source is also copied to the clipboard. DFS-layout and export timings appear under the `M` metrics overlay.
+
+For the source comparison (USPTO vs. Google), the `REL` lookup table, cycle handling, export locations, and metric names, see [`CONTINUITY.md`](./CONTINUITY.md).
 
 ---
 

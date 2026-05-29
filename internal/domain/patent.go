@@ -156,6 +156,11 @@ type PatentRow struct {
 	CitationsCount  int          `json:"citations_count,omitempty"`
 	CitedByCount    int          `json:"cited_by_count,omitempty"`
 	ParentsCount    int          `json:"parents_count,omitempty"`
+	// ParentageCode and ParentageLabel describe how this row relates to the
+	// patent whose Parents view it appears in (e.g. "CON" / "Continuation of").
+	// Only populated for parent-relation listings.
+	ParentageCode  string `json:"parentage_code,omitempty"`
+	ParentageLabel string `json:"parentage_label,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.

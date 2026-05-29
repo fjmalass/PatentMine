@@ -4,11 +4,79 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"patentmine/internal/command"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/render"
 )
+
+// enterInput presses Enter and returns the PromptSubmitMsg input, or "" when
+// Enter did not submit (e.g. autocomplete prefill).
+func enterInput(t *testing.T, p *Prompt) string {
+	t.Helper()
+	_, cmd, handled := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled {
+		t.Fatal("Enter not handled")
+	}
+	if cmd == nil {
+		return ""
+	}
+	msg := cmd()
+	sub, ok := msg.(PromptSubmitMsg)
+	if !ok {
+		return ""
+	}
+	return sub.Input
+}
+
+func TestPromptDirectEnterExecutesArgFreeSelection(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	p := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
+	p.query = "metrics"
+	p.filter()
+	if got := enterInput(t, p); got != "metrics" {
+		t.Fatalf("Enter on arg-free selection submitted %q, want metrics", got)
+	}
+}
+
+func TestPromptDirectEnterAutocompletesArgCommand(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	p := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
+	// Partial name selects the arg-taking "browse" command.
+	p.query = "brow"
+	p.filter()
+	if got := enterInput(t, p); got != "" {
+		t.Fatalf("first Enter on arg command should autocomplete, not submit; got %q", got)
+	}
+	if p.query != "browse " {
+		t.Fatalf("autocomplete query = %q, want %q", p.query, "browse ")
+	}
+	// Second Enter (name filled, no args) runs it bare.
+	if got := enterInput(t, p); got != "browse" {
+		t.Fatalf("second Enter submitted %q, want browse", got)
+	}
+}
+
+func TestPromptDirectEnterRunsTypedArgs(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	p := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
+	p.query = "browse US123"
+	p.filter()
+	if got := enterInput(t, p); got != "browse US123" {
+		t.Fatalf("Enter with typed args submitted %q, want %q", got, "browse US123")
+	}
+}
 
 func TestPromptRanksExactAndPrefixMatchesFirst(t *testing.T) {
 	reg, err := command.Default()

@@ -11,6 +11,7 @@ import (
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
+	"patentmine/internal/uspto"
 )
 
 // StartFamilyCrawl enqueues a family-graph crawl and returns its job id. A
@@ -155,8 +156,56 @@ func (e *Engine) Relations(ctx context.Context, q store.PatentQuery) (out []doma
 	if err != nil {
 		return nil, 0, err
 	}
+	if q.RelationKind == domain.RelationParent {
+		e.attachParentage(ctx, q.Relation, out)
+	}
 	total, err = e.repo.CountPatents(ctx, q)
 	return out, total, err
+}
+
+// attachParentage labels each parent row with the claim-parentage type relating
+// it to the child patent, and records timing plus counts grouped by relationship
+// category (continuation / CIP / division / provisional / national-stage /
+// reissue / other). Failures are non-fatal: the listing is still returned, just
+// without parentage labels.
+func (e *Engine) attachParentage(ctx context.Context, child domain.PatentNumber, rows []domain.PatentRow) {
+	start := time.Now()
+	var err error
+	defer e.observeDuration("engine.relations.parentage", start, &err)
+
+	parentage, err := e.repo.ParentageForChild(ctx, child)
+	if err != nil {
+		e.log(ctx, slog.LevelWarn, "failed to load claim parentage for parents view",
+			slog.String("child", child.String()), slog.String("error", err.Error()))
+		return
+	}
+
+	counts := map[string]int{}
+	for i := range rows {
+		p, ok := parentage[rows[i].Number]
+		if !ok {
+			continue
+		}
+		rows[i].ParentageCode = p.Code
+		rows[i].ParentageLabel = uspto.ParentageLabel(p.Code, p.Description)
+		counts[uspto.ParentageCategory(p.Code, p.Description)]++
+	}
+
+	for category, n := range counts {
+		e.incCounter("engine.parents."+category, int64(n))
+	}
+	e.setGauge("engine.parents.total", int64(len(rows)))
+	e.log(ctx, slog.LevelInfo, "loaded continuity parents",
+		slog.String("child", child.String()),
+		slog.Int("total", len(rows)),
+		slog.Int("continuation", counts[uspto.ParentageContinuation]),
+		slog.Int("continuation_in_part", counts[uspto.ParentageContinuationInPart]),
+		slog.Int("division", counts[uspto.ParentageDivision]),
+		slog.Int("provisional", counts[uspto.ParentageProvisional]),
+		slog.Int("national_stage", counts[uspto.ParentageNationalStage]),
+		slog.Int("reissue", counts[uspto.ParentageReissue]),
+		slog.Int("other", counts[uspto.ParentageOther]),
+		slog.Duration("duration", time.Since(start)))
 }
 
 // ExportIDS builds an Information Disclosure Statement for the curated IDS

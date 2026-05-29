@@ -13,6 +13,7 @@ const (
 	PatentColumnCitations      PatentTableColumnKey = "citations"
 	PatentColumnCitedBy        PatentTableColumnKey = "cited_by"
 	PatentColumnParents        PatentTableColumnKey = "parents"
+	PatentColumnParentage      PatentTableColumnKey = "parentage"
 	PatentColumnTags           PatentTableColumnKey = PatentTableColumnKey(SortByTags)
 	PatentColumnIDS            PatentTableColumnKey = PatentTableColumnKey(SortByIDS)
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)

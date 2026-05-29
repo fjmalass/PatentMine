@@ -218,7 +218,12 @@ func (a *App) compositeOverlay(screen string) string {
 	}
 	content = strings.Join(contentLines, "\n")
 
-	box := a.theme.Box.Width(innerWidth).Height(boxHeight - 2).Render(content)
+	// lipgloss treats Width as the content area *including* horizontal padding,
+	// so to give the text exactly innerWidth columns we add the box padding back.
+	// Without this, a content line padded to innerWidth (e.g. a full-width
+	// selected row whose trailing spaces carry a background and so can't be
+	// trimmed) overflows by the padding width and wraps onto the next line.
+	box := a.theme.Box.Width(innerWidth + overlayHPadding).Height(boxHeight - 2).Render(content)
 
 	dimmed := render.Dim(screen)
 

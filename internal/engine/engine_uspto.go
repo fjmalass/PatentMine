@@ -1137,14 +1137,15 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	var ptaDays int
 	var tdDate time.Time
 	var hasTD bool
+	var tdErr error
 	if apiKey != "" {
 		ptaDays, err = uspto.FetchPTADays(ctx, appNum, apiKey, e.logger)
 		if err != nil {
 			e.log(ctx, slog.LevelWarn, "failed to fetch PTA days from live USPTO API", slog.String("app_num", appNum), slog.String("error", err.Error()))
 		}
-		tdDate, hasTD, err = uspto.FetchTerminalDisclaimerDate(ctx, appNum, apiKey, e.logger)
-		if err != nil {
-			e.log(ctx, slog.LevelWarn, "failed to fetch terminal disclaimers from live USPTO API", slog.String("app_num", appNum), slog.String("error", err.Error()))
+		tdDate, hasTD, tdErr = uspto.FetchTerminalDisclaimerDate(ctx, appNum, apiKey, e.logger)
+		if tdErr != nil {
+			e.log(ctx, slog.LevelWarn, "failed to fetch terminal disclaimers from live USPTO API", slog.String("app_num", appNum), slog.String("error", tdErr.Error()))
 		}
 	}
 
@@ -1153,15 +1154,19 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 
 	// Determine what to show for terminal disclaimer
 	var tdDateStr string
-	if !tdDate.IsZero() {
+	switch {
+	case !tdDate.IsZero():
 		tdDateStr = tdDate.Format("2006-01-02")
-	} else if apiKey == "" {
-		// API not queried — cannot determine presence or absence
-		tdDateStr = "Not Applicable"
-	} else if hasParents {
-		// API queried, no TD found, but patent has a continuity chain — explicitly checked, none found
+	case apiKey == "":
+		// No API key configured — USPTO was never contacted.
+		tdDateStr = "USPTO Not Reachable"
+	case tdErr != nil:
+		// API key present but the Documents call failed (auth, network, rate limit).
+		tdDateStr = "USPTO Not Reachable"
+	case hasParents:
+		// API queried, no TD found, but patent has a continuity chain — explicitly checked, none found.
 		tdDateStr = "None"
-	} else {
+	default:
 		tdDateStr = "Not Applicable"
 	}
 

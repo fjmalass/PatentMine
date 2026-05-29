@@ -1,12 +1,15 @@
 package pane
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/tui/render"
 )
@@ -102,7 +105,7 @@ func TestCitationsAppliesReviewStateChangeImmediately(t *testing.T) {
 	}
 }
 
-func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
+func TestFamilyGraphViewDFSOrderAndNav(t *testing.T) {
 	root := domain.MustParsePatentNumber("US0000001B2")
 	parent := domain.MustParsePatentNumber("EP0000002A1")
 	child := domain.MustParsePatentNumber("JP0000003A1")
@@ -118,7 +121,7 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.jumpToFirstNode()
 
 	out := g.View(120, 12)
-	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "🦴  Child", "y: copy Mermaid"} {
+	for _, want := range []string{"up:EP0000002A1", "dn:US0000001B2", "🦴  Child", "y: export Mermaid+DOT"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("family graph view missing %q\n%s", want, out)
 		}
@@ -188,6 +191,71 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("mermaid export missing %q\n%s", want, out)
 		}
+	}
+	// Cross/back edge should be styled.
+	if !strings.Contains(out, "linkStyle 1 stroke:"+mermaidCycleColor) {
+		t.Fatalf("mermaid export missing cycle linkStyle\n%s", out)
+	}
+}
+
+func TestFamilyGraphDFSNestingBackRefAndExport(t *testing.T) {
+	root := domain.MustParsePatentNumber("US0000001B2")
+	parent := domain.MustParsePatentNumber("EP0000002A1")
+	child := domain.MustParsePatentNumber("JP0000003A1")
+	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
+	g.loading = false
+	g.metrics = observability.NewMetrics()
+	g.exportDir = t.TempDir()
+	g.nodes = []proto.FamilyGraphNode{
+		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent", FetchState: domain.FetchCached}, Depth: 1},
+		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root", FetchState: domain.FetchCached}, Depth: 0},
+		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchStub}, Depth: 1},
+	}
+	// parent -> root -> child, plus a back edge child -> parent forming a cycle.
+	g.edges = []proto.FamilyGraphEdge{
+		{Parent: parent, Child: root},
+		{Parent: root, Child: child},
+		{Parent: child, Child: parent, Inconsistent: true},
+	}
+	g.rebuildRows()
+	g.page.SetTotal(len(g.rows))
+	g.jumpToFirstNode()
+
+	// DFS forest starts at the in-degree-0 ancestor (parent), nests root then
+	// child, and emits a back-reference when the cycle re-reaches parent.
+	if g.rows[0].kind != familyGraphRowNode || g.rows[0].node.Patent.Number != parent {
+		t.Fatalf("first DFS row = %+v, want parent node", g.rows[0])
+	}
+	var sawBackRef bool
+	for _, r := range g.rows {
+		if r.kind == familyGraphRowBackRef {
+			sawBackRef = true
+		}
+	}
+	if !sawBackRef {
+		t.Fatalf("expected a back-reference row for the cycle; rows=%+v", g.rows)
+	}
+
+	// Export writes both files into the export dir.
+	g.exportGraph()
+	entries, err := os.ReadDir(g.exportDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	var mmd, dot int
+	for _, e := range entries {
+		switch filepath.Ext(e.Name()) {
+		case ".mmd":
+			mmd++
+		case ".dot":
+			dot++
+		}
+	}
+	if mmd != 1 || dot != 1 {
+		t.Fatalf("export produced mmd=%d dot=%d, want 1 each (entries=%v)", mmd, dot, entries)
+	}
+	if snap := g.metrics.Snapshot(); snap.Counters["tui.family.export.ok"] != 1 {
+		t.Fatalf("export.ok counter = %d, want 1", snap.Counters["tui.family.export.ok"])
 	}
 }
 

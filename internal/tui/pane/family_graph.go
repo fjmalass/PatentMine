@@ -3,13 +3,18 @@ package pane
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
@@ -27,6 +32,7 @@ type familyGraphRowKind uint8
 const (
 	familyGraphRowHeader familyGraphRowKind = iota
 	familyGraphRowNode
+	familyGraphRowBackRef // a child already shown elsewhere (cycle / shared parent)
 )
 
 const familyGraphMaxDepthHint = 6
@@ -71,10 +77,20 @@ type FamilyGraph struct {
 	hidden       int
 	inconsistent int
 	logger       *slog.Logger
+	metrics      *observability.Metrics
+	exportDir    string
 }
 
 // WithLogger attaches a logger so the pane can persist RPC errors.
 func (g *FamilyGraph) WithLogger(l *slog.Logger) *FamilyGraph { g.logger = l; return g }
+
+// WithMetrics attaches the TUI-local metrics sink so DFS layout and export
+// timings surface under the "M" metrics overlay.
+func (g *FamilyGraph) WithMetrics(m *observability.Metrics) *FamilyGraph { g.metrics = m; return g }
+
+// WithExportDir sets the directory that exported Mermaid/DOT files are written
+// to (the patents cache dir, ~/.config/patentmine/patents).
+func (g *FamilyGraph) WithExportDir(dir string) *FamilyGraph { g.exportDir = dir; return g }
 
 func (g *FamilyGraph) log() *slog.Logger {
 	if g.logger != nil {
@@ -114,7 +130,7 @@ func NewFamilyGraph(client *rpc.Client, theme render.Theme, root domain.PatentNu
 			}
 			return nil
 		},
-		command.FamilyExportMermaid: func(Invocation) tea.Cmd { return g.copyMermaid() },
+		command.FamilyExportMermaid: func(Invocation) tea.Cmd { return g.exportGraph() },
 		command.FamilyDepthMore:     func(Invocation) tea.Cmd { return g.adjustDepth(1) },
 		command.FamilyDepthLess:     func(Invocation) tea.Cmd { return g.adjustDepth(-1) },
 		command.CrawlFamily:         func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileFamily) },
@@ -401,19 +417,95 @@ func (g *FamilyGraph) summaryLine(w int) string {
 }
 
 func (g *FamilyGraph) filterLine(w int) string {
+	hint := " depth: use [ ] or -/+  ·  y: export Mermaid+DOT  ·  legend: R=root M=merge B=branch X=cross-edge " + g.theme.Glyphs.FamilyCycle + "=cycle"
 	if len(g.countries) == 0 {
-		return g.theme.Dim.Render(render.Truncate(" depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+		return g.theme.Dim.Render(render.Truncate(hint, w))
 	}
-	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  ·  depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  · "+hint, w))
 }
 
-func (g *FamilyGraph) copyMermaid() tea.Cmd {
+// exportGraph writes the family graph to Mermaid (.mmd) and Graphviz (.dot)
+// files in the patents export directory, named <root>_<timestamp>, and also
+// copies the Mermaid source to the clipboard. Generation and write timings plus
+// node/back-edge counts are recorded to the TUI metrics sink so they appear in
+// the "M" overlay.
+func (g *FamilyGraph) exportGraph() tea.Cmd {
 	if len(g.nodes) == 0 {
-		return status(text.StatusNoPatentSelected, false, "family graph is empty")
+		return status(text.StatusFamilyExportFailed, true, "family graph is empty")
 	}
-	out := g.mermaidGraph()
-	return func() tea.Msg { return CopyToClipboardMsg{Text: out} }
+	if strings.TrimSpace(g.exportDir) == "" {
+		return status(text.StatusFamilyExportFailed, true, "no export directory configured")
+	}
+
+	mStart := time.Now()
+	mermaid := g.mermaidGraph()
+	g.observe("tui.family.mermaid_gen", mStart)
+
+	dStart := time.Now()
+	dot := g.dotGraph()
+	g.observe("tui.family.dot_gen", dStart)
+
+	stamp := time.Now().Format("20060102-150405")
+	base := fmt.Sprintf("%s_%s", g.root.String(), stamp)
+	mmdPath := filepath.Join(g.exportDir, base+".mmd")
+	dotPath := filepath.Join(g.exportDir, base+".dot")
+
+	wStart := time.Now()
+	for _, f := range []struct{ path, content string }{{mmdPath, mermaid}, {dotPath, dot}} {
+		if err := g.writeExport(f.path, f.content); err != nil {
+			g.inc("tui.family.export.error", 1)
+			g.log().Error("family graph export failed", slog.String("path", f.path), slog.String("error", err.Error()))
+			return status(text.StatusFamilyExportFailed, true, err.Error())
+		}
+	}
+	g.observe("tui.family.export_write", wStart)
+	g.inc("tui.family.export.ok", 1)
+	g.metricsGauge("tui.family.export.nodes", int64(len(g.nodes)))
+	g.metricsGauge("tui.family.export.back_edges", int64(g.crossEdges))
+	g.log().Info("family graph exported",
+		slog.String("mermaid", mmdPath),
+		slog.String("dot", dotPath),
+		slog.Int("nodes", len(g.nodes)),
+		slog.Int("back_edges", g.crossEdges))
+
+	return tea.Batch(
+		func() tea.Msg { return CopyToClipboardMsg{Text: mermaid} },
+		status(text.StatusFamilyExportDone, false, len(g.nodes), mmdPath),
+	)
 }
+
+func (g *FamilyGraph) writeExport(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+func (g *FamilyGraph) observe(name string, start time.Time) {
+	if g.metrics != nil {
+		g.metrics.ObserveDuration(name, time.Since(start), false)
+	}
+}
+
+func (g *FamilyGraph) inc(name string, n int64) {
+	if g.metrics != nil {
+		g.metrics.IncCounter(name, n)
+	}
+}
+
+func (g *FamilyGraph) metricsGauge(name string, v int64) {
+	if g.metrics != nil {
+		g.metrics.SetGauge(name, v)
+	}
+}
+
+// mermaid styling constants. Kept here (not in code paths) so the colors are
+// declared once and the export functions stay declarative.
+const (
+	mermaidRootClass  = "root"
+	mermaidCycleColor = "#d9534f" // cross/back edges (cycles, inconsistent depth)
+	mermaidRootFill   = "#cde4ff"
+)
 
 func (g *FamilyGraph) mermaidGraph() string {
 	var b strings.Builder
@@ -425,21 +517,71 @@ func (g *FamilyGraph) mermaidGraph() string {
 			shapeOpen, shapeClose = "((\"", "\"))"
 		}
 		fmt.Fprintf(&b, "  %s%s%s%s\n", id, shapeOpen, mermaidNodeText(node), shapeClose)
+		if node.Patent.Number == g.root {
+			fmt.Fprintf(&b, "  class %s %s\n", id, mermaidRootClass)
+		}
 	}
-	for _, edge := range g.edges {
-		parentLabel := mermaidNodeID(edge.Parent)
-		childLabel := mermaidNodeID(edge.Child)
+	var cycleEdges []int
+	for i, edge := range g.edges {
 		arrow := " --> "
 		if edge.Inconsistent {
 			arrow = " -.-> "
+			cycleEdges = append(cycleEdges, i)
 		}
-		b.WriteString("  ")
-		b.WriteString(parentLabel)
-		b.WriteString(arrow)
-		b.WriteString(childLabel)
-		b.WriteByte('\n')
+		fmt.Fprintf(&b, "  %s%s%s\n", mermaidNodeID(edge.Parent), arrow, mermaidNodeID(edge.Child))
+	}
+	fmt.Fprintf(&b, "  classDef %s fill:%s,stroke:#333,stroke-width:2px;\n", mermaidRootClass, mermaidRootFill)
+	for _, i := range cycleEdges {
+		fmt.Fprintf(&b, "  linkStyle %d stroke:%s,stroke-dasharray:4;\n", i, mermaidCycleColor)
 	}
 	return b.String()
+}
+
+// dotGraph renders the same family graph as Graphviz DOT, with cross/back edges
+// drawn dashed and red so cycles are visible in a laid-out render.
+func (g *FamilyGraph) dotGraph() string {
+	var b strings.Builder
+	b.WriteString("digraph family {\n")
+	b.WriteString("  rankdir=TB;\n")
+	b.WriteString("  node [shape=box, style=rounded];\n")
+	for _, node := range g.nodes {
+		id := dotNodeID(node.Patent.Number)
+		attrs := fmt.Sprintf("label=\"%s\"", dotNodeLabel(node))
+		if node.Patent.Number == g.root {
+			attrs += fmt.Sprintf(", shape=doublecircle, style=filled, fillcolor=\"%s\"", mermaidRootFill)
+		}
+		fmt.Fprintf(&b, "  %s [%s];\n", id, attrs)
+	}
+	for _, edge := range g.edges {
+		attrs := ""
+		if edge.Inconsistent {
+			attrs = fmt.Sprintf(" [style=dashed, color=\"%s\"]", mermaidCycleColor)
+		}
+		fmt.Fprintf(&b, "  %s -> %s%s;\n", dotNodeID(edge.Parent), dotNodeID(edge.Child), attrs)
+	}
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func dotNodeID(number domain.PatentNumber) string {
+	return "\"" + mermaidNodeID(number) + "\""
+}
+
+// dotNodeLabel builds a Graphviz label (number on the first line, truncated
+// title on the second) with DOT-special characters escaped.
+func dotNodeLabel(node proto.FamilyGraphNode) string {
+	number := node.Patent.DisplayNumber
+	if number.IsZero() {
+		number = node.Patent.Number
+	}
+	label := number.String()
+	if title := strings.TrimSpace(node.Patent.Title); title != "" {
+		if len(title) > 48 {
+			title = strings.TrimSpace(title[:45]) + "..."
+		}
+		label += `\n` + title
+	}
+	return strings.NewReplacer(`"`, `\"`).Replace(label)
 }
 
 func mermaidNodeText(node proto.FamilyGraphNode) string {
@@ -474,19 +616,23 @@ func mermaidEscape(text string) string {
 }
 
 func (g *FamilyGraph) renderRow(row familyGraphRow, w int) string {
-	if row.kind == familyGraphRowHeader {
+	switch row.kind {
+	case familyGraphRowHeader:
 		if strings.TrimSpace(row.label) == "" {
 			return ""
 		}
 		return g.theme.Header.Render(render.Truncate(row.label, w))
+	case familyGraphRowBackRef:
+		line := fmt.Sprintf("  %s %s %s", depthGlyph(row.depth), g.theme.Glyphs.FamilyCycle, row.label)
+		return g.theme.Warn.Render(render.Truncate(line, w))
 	}
 	if row.node == nil {
 		return ""
 	}
-	return g.renderNodeLine(*row.node, w)
+	return g.renderNodeLine(*row.node, row.depth, w)
 }
 
-func (g *FamilyGraph) renderNodeLine(node proto.FamilyGraphNode, w int) string {
+func (g *FamilyGraph) renderNodeLine(node proto.FamilyGraphNode, depth, w int) string {
 	number := node.Patent.DisplayNumber
 	if number.IsZero() {
 		number = node.Patent.Number
@@ -498,7 +644,7 @@ func (g *FamilyGraph) renderNodeLine(node proto.FamilyGraphNode, w int) string {
 		title = "(stub)"
 	}
 	line := fmt.Sprintf("  %s %-4s %-7s %-15s %-2s  up:%-12s  dn:%-12s  %s  %s",
-		depthGlyph(node.Depth),
+		depthGlyph(depth),
 		g.nodeLabel(node.Patent.Number),
 		badgeText(g.nodeBadges(node)),
 		number.String(),
@@ -544,25 +690,99 @@ func depthGlyph(depth int) string {
 }
 
 func (g *FamilyGraph) rebuildRows() {
+	start := time.Now()
 	g.rebuildGraphIndex()
-	rows := make([]familyGraphRow, 0, len(g.nodes)+g.depth+1)
-	lastDepth := -1
-	for i := range g.nodes {
-		node := &g.nodes[i]
-		if node.Depth != lastDepth {
-			if len(rows) > 0 {
-				rows = append(rows, familyGraphRow{kind: familyGraphRowHeader, label: ""})
-			}
-			rows = append(rows, familyGraphRow{
-				kind:  familyGraphRowHeader,
-				depth: node.Depth,
-				label: g.depthHeader(*node),
-			})
-			lastDepth = node.Depth
-		}
-		rows = append(rows, familyGraphRow{kind: familyGraphRowNode, depth: node.Depth, node: node})
+	g.rows = g.dfsRows()
+	if g.metrics != nil {
+		g.metrics.ObserveDuration("tui.family.dfs_layout", time.Since(start), false)
+		g.metrics.SetGauge("tui.family.dfs_nodes", int64(len(g.nodes)))
+		g.metrics.SetGauge("tui.family.dfs_back_edges", int64(g.crossEdges))
 	}
-	g.rows = rows
+}
+
+// dfsRows lays the graph out as a depth-first forest: each genealogical line is
+// fully expanded before its siblings, with indentation reflecting DFS nesting.
+// Because the family graph is a DAG that may contain cycles or shared parents,
+// a node reached a second time is emitted as a back-reference row instead of
+// being expanded again — this both shows the linkage and guarantees termination.
+func (g *FamilyGraph) dfsRows() []familyGraphRow {
+	nodeByNum := make(map[domain.PatentNumber]*proto.FamilyGraphNode, len(g.nodes))
+	for i := range g.nodes {
+		nodeByNum[g.nodes[i].Patent.Number] = &g.nodes[i]
+	}
+
+	children := make(map[domain.PatentNumber][]domain.PatentNumber, len(g.nodes))
+	indeg := make(map[domain.PatentNumber]int, len(g.nodes))
+	for i := range g.nodes {
+		indeg[g.nodes[i].Patent.Number] = 0
+	}
+	for _, e := range g.edges {
+		if nodeByNum[e.Parent] == nil || nodeByNum[e.Child] == nil {
+			continue
+		}
+		children[e.Parent] = append(children[e.Parent], e.Child)
+		indeg[e.Child]++
+	}
+	for k := range children {
+		slices.SortFunc(children[k], func(a, b domain.PatentNumber) int {
+			return strings.Compare(g.nodeLabel(a), g.nodeLabel(b))
+		})
+	}
+
+	// Roots are the oldest ancestors (no in-set parent); the focus patent sorts
+	// first so its line leads, then by engine BFS depth and stable label.
+	var roots []domain.PatentNumber
+	for i := range g.nodes {
+		if indeg[g.nodes[i].Patent.Number] == 0 {
+			roots = append(roots, g.nodes[i].Patent.Number)
+		}
+	}
+	slices.SortFunc(roots, func(a, b domain.PatentNumber) int {
+		switch {
+		case a == g.root:
+			return -1
+		case b == g.root:
+			return 1
+		}
+		if da, db := g.nodeDepth(a), g.nodeDepth(b); da != db {
+			return da - db
+		}
+		return strings.Compare(g.nodeLabel(a), g.nodeLabel(b))
+	})
+
+	visited := make(map[domain.PatentNumber]bool, len(g.nodes))
+	rows := make([]familyGraphRow, 0, len(g.nodes)+g.crossEdges)
+	var visit func(num domain.PatentNumber, depth int)
+	visit = func(num domain.PatentNumber, depth int) {
+		node := nodeByNum[num]
+		if node == nil {
+			return
+		}
+		if visited[num] {
+			rows = append(rows, familyGraphRow{kind: familyGraphRowBackRef, depth: depth, label: g.backRefLabel(num)})
+			return
+		}
+		visited[num] = true
+		rows = append(rows, familyGraphRow{kind: familyGraphRowNode, depth: depth, node: node})
+		for _, c := range children[num] {
+			visit(c, depth+1)
+		}
+	}
+	for _, r := range roots {
+		visit(r, 0)
+	}
+	// Nodes only reachable through a cycle (no indegree-0 entry) still get shown.
+	for i := range g.nodes {
+		if !visited[g.nodes[i].Patent.Number] {
+			visit(g.nodes[i].Patent.Number, 0)
+		}
+	}
+	return rows
+}
+
+// backRefLabel describes a node that has already been shown earlier in the DFS.
+func (g *FamilyGraph) backRefLabel(num domain.PatentNumber) string {
+	return fmt.Sprintf("%s %s  (shown above)", g.nodeLabel(num), num.String())
 }
 
 func (g *FamilyGraph) depthHeader(node proto.FamilyGraphNode) string {

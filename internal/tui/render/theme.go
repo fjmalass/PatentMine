@@ -63,6 +63,7 @@ const (
 	glyphFamilyNone    = " "
 	glyphFamilyLoading = "…"
 	glyphFamilyAnchor  = "•"
+	glyphFamilyCycle   = "↩" // back-reference to an already-shown node (cycle/cross-edge)
 
 	glyphCitationCites   = "→"
 	glyphCitationCitedBy = "←"
@@ -204,6 +205,7 @@ type ThemeGlyphs struct {
 	FamilyNone    string
 	FamilyLoading string
 	FamilyAnchor  string
+	FamilyCycle   string
 
 	CitationCites   string
 	CitationCitedBy string
@@ -398,6 +400,7 @@ func NewTheme() Theme {
 			FamilyNone:    glyphFamilyNone,
 			FamilyLoading: glyphFamilyLoading,
 			FamilyAnchor:  glyphFamilyAnchor,
+			FamilyCycle:   glyphFamilyCycle,
 
 			CitationCites:   glyphCitationCites,
 			CitationCitedBy: glyphCitationCitedBy,

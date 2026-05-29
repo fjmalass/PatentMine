@@ -22,12 +22,17 @@ const (
 	colCitations      = 5
 	colCitedBy        = 5
 	colParents        = 7
+	colParentage      = 5
 	colTags           = 10
 	colIDS            = 8
 	colState          = 10
 	headerRows        = 2
 	defaultPageSize   = 10
 )
+
+// headerParentage is the column heading for the claim-parentage code shown in
+// the Parents view (full phrase appears in the status line on focus).
+const headerParentage = "REL"
 
 // tableCol is one table column descriptor.
 type tableCol struct {
@@ -138,6 +143,13 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		}
 	}
 
+	// The parentage column is opt-in: it appears only when the caller's schema
+	// includes it (the Parents view), never in the catalog. Append it before the
+	// flex-width computation so the Title column shrinks to make room.
+	if _, ok := lookup[domain.PatentColumnParentage]; ok {
+		cols = append(cols, column(domain.PatentColumnParentage, colParentage))
+	}
+
 	fixedW := 0
 	for _, col := range cols {
 		fixedW += col.width
@@ -208,6 +220,8 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 		return strconv.Itoa(row.CitedByCount)
 	case domain.PatentColumnParents:
 		return strconv.Itoa(row.ParentsCount)
+	case domain.PatentColumnParentage:
+		return row.ParentageCode
 	case domain.PatentColumnTags:
 		return formatTags(row.Tags)
 	case domain.PatentColumnIDS:

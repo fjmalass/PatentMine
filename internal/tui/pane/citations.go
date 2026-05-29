@@ -308,6 +308,16 @@ func (c *Citations) currentCols() []tableCol {
 	if len(schema) == 0 || c.columnsProject != projectID {
 		schema = domain.PatentTableColumns(projectID)
 	}
+	if c.kind == domain.RelationParent {
+		// Copy before appending so we never mutate the cached c.columns backing array.
+		withParentage := make([]domain.PatentTableColumn, len(schema), len(schema)+1)
+		copy(withParentage, schema)
+		schema = append(withParentage, domain.PatentTableColumn{
+			Key:   domain.PatentColumnParentage,
+			Label: headerParentage,
+			Width: colParentage,
+		})
+	}
 	return patentTableColumns(max(c.lastWidth, 80), schema)
 }
 
@@ -741,8 +751,17 @@ func (c *Citations) View(w, h int) string {
 
 	var b strings.Builder
 	filterSummary := ""
-	if c.filter.IsActive() && !c.find.active {
+	switch {
+	case c.filter.IsActive() && !c.find.active:
 		filterSummary = c.theme.Info.Render("filters: " + strings.Join(c.filter.Labels(), " · "))
+	case c.kind == domain.RelationParent:
+		// Show the focused parent's full claim-parentage phrase (the table only
+		// has room for the code).
+		if cur := c.page.Cursor() - c.loadedBase; cur >= 0 && cur < len(c.patents) {
+			if label := c.patents[cur].ParentageLabel; label != "" {
+				filterSummary = c.theme.Info.Render(label)
+			}
+		}
 	}
 	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
 	b.WriteByte('\n')
