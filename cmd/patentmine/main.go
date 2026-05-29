@@ -23,6 +23,7 @@ usage:
   patentmine check-connectivity check configured external service connectivity
   patentmine lookup             look up a patent by USPTO application number
   patentmine expiration-date    compute and compare estimated patent expiration dates
+  patentmine uspto-citations    parse and save citations from a USPTO grant/pgpub XML file
   patentmine version            print the build version
 `
 
@@ -60,6 +61,8 @@ func run(args []string) int {
 		return runLookup(args[1:])
 	case "expiration-date":
 		return runExpirationDate(args[1:])
+	case "uspto-citations":
+		return runCitations(args[1:])
 	case "version":
 		fmt.Println(appversion.String())
 		return 0

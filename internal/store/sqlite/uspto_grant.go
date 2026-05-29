@@ -219,6 +219,76 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 	return nil
 }
 
+// SaveUSPTOCitations writes only the references-cited rows for one document,
+// independent of a full grant ingest. It is the persistence half of the
+// standalone citation loader.
+//
+// The citation rows have a foreign key onto uspto_application, which in turn
+// references patent. So the loader can run on a raw XML file whose patent has
+// never been crawled, this ensures a stub patent record and a minimal
+// application row exist first (both are no-ops when the rows already exist, so
+// a previously ingested patent keeps its richer data). The citation rows are a
+// full replacement for the (application, kind) pair. Returns rows written.
+func (r *Repo) SaveUSPTOCitations(ctx context.Context, appNum string, record domain.PatentNumber, kind string, citations []domain.USPTOGrantCitation) (int, error) {
+	appNum = strings.TrimSpace(appNum)
+	if appNum == "" {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: missing application number")
+	}
+	if kind == "" {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: missing kind")
+	}
+	if record.IsZero() {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: missing record number")
+	}
+
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Ensure the citing patent record exists (insert-or-ignore keeps any
+	// existing record intact) so the application FK can resolve its record_id.
+	stub := domain.Patent{Number: record, DisplayNumber: record, FetchState: domain.FetchStub}
+	args, argErr := patentUpsertArgs(stub)
+	if argErr != nil {
+		return 0, argErr
+	}
+	if _, err := tx.ExecContext(ctx, patentInsertOrIgnoreSQL, args...); err != nil {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: ensure patent %s: %w", record, err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO uspto_application (application_number, record_id, fetched_at)
+		VALUES (?, (SELECT record_id FROM patent WHERE number = ?), ?)
+		ON CONFLICT(application_number) DO NOTHING`,
+		appNum, record.Normalized(), time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: ensure application %s: %w", appNum, err)
+	}
+
+	if err := replaceChildRows(ctx, tx, "uspto_grant_citation", appNum, kind); err != nil {
+		return 0, err
+	}
+	for _, c := range citations {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO uspto_grant_citation
+			    (application_number, kind, ordinal, citation_num, citation_type, category,
+			     cited_country, cited_doc_number, cited_kind, cited_date, cited_name,
+			     cpc_text, national_country, national_class, npl_text)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			appNum, kind, c.Ordinal, c.CitationNum, c.CitationType, c.Category,
+			c.CitedCountry, c.CitedDocNumber, c.CitedKind, c.CitedDate, c.CitedName,
+			c.CPCText, c.NationalCountry, c.NationalClass, c.NPLText,
+		); err != nil {
+			return 0, fmt.Errorf("store/sqlite: save uspto citation %d: %w", c.Ordinal, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("store/sqlite: save uspto citations: commit: %w", err)
+	}
+	return len(citations), nil
+}
+
 // replaceChildRows clears any prior rows for (application_number, kind) on a
 // child table so the subsequent inserts are a full replacement.
 func replaceChildRows(ctx context.Context, tx *sql.Tx, table, app, kind string) error {

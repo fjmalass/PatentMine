@@ -388,6 +388,26 @@ func GrantDateFromStatus(statusText, statusDate string) string {
 	return ""
 }
 
+// EarliestTermSource decides how an earliest-term parent application should be
+// presented to a user. A parent only counts as a granted patent when its
+// status text says it granted AND its record number is a real grant number
+// rather than the application-number fallback that USPTOApplication.RecordNumber
+// carries when no grant exists. When the parent has not granted, both return
+// values are empty so callers fall back to showing the application number
+// instead of misrepresenting the application index as a granted patent.
+func EarliestTermSource(parent domain.USPTOApplication) (patentNumber, grantDate string) {
+	grantDate = GrantDateFromStatus(parent.ApplicationStatusText, parent.ApplicationStatusDate)
+	if grantDate == "" {
+		return "", ""
+	}
+	rec := parent.RecordNumber.String()
+	if rec == "" || parent.RecordNumber.Serial == strings.TrimSpace(parent.ApplicationNumber) {
+		// RecordNumber is the application-index fallback, not a grant number.
+		return "", ""
+	}
+	return rec, grantDate
+}
+
 // ParseGrantDateFromStatus returns the application status date parsed as a
 // time.Time when the status text indicates a granted patent, or a zero
 // time.Time when the status does not indicate a grant.

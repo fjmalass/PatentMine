@@ -104,29 +104,7 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 
 	citations := make([]domain.USPTOGrantCitation, 0, len(bib.ReferencesCited))
 	for i, c := range bib.ReferencesCited {
-		ct := domain.USPTOGrantCitation{
-			ApplicationNumber: applicationNumber,
-			Kind:              kind,
-			Ordinal:           i,
-			Category:          c.Category,
-			CPCText:           c.ClassificationCPCText,
-			NationalCountry:   c.ClassificationNational.Country,
-			NationalClass:     c.ClassificationNational.MainClassification,
-		}
-		if c.PatCit.DocumentID.DocNumber != "" {
-			ct.CitationType = "patent"
-			ct.CitationNum = c.PatCit.Num
-			ct.CitedCountry = c.PatCit.DocumentID.Country
-			ct.CitedDocNumber = c.PatCit.DocumentID.DocNumber
-			ct.CitedKind = c.PatCit.DocumentID.Kind
-			ct.CitedDate = c.PatCit.DocumentID.Date
-			ct.CitedName = c.PatCit.DocumentID.Name
-		} else {
-			ct.CitationType = "npl"
-			ct.CitationNum = c.NPLCit.Num
-			ct.NPLText = collapseSpaces(c.NPLCit.OtherCite)
-		}
-		citations = append(citations, ct)
+		citations = append(citations, citationToDomain(c, applicationNumber, kind, i))
 	}
 
 	var classifications []domain.USPTOGrantClassification

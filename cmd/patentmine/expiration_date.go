@@ -163,9 +163,8 @@ func runExpirationDate(args []string) int {
 	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
 		res.EarliestTermAppNum = app.EarliestTermAppNum
 		if parentApp, pErr := eng.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); pErr == nil {
-			res.EarliestTermPatentNumber = parentApp.RecordNumber.String()
+			res.EarliestTermPatentNumber, res.EarliestTermGrantDate = uspto.EarliestTermSource(parentApp)
 			res.EarliestTermTitle = parentApp.InventionTitle
-			res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
 		}
 	}
 

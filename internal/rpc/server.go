@@ -1496,9 +1496,8 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
 		res.EarliestTermAppNum = app.EarliestTermAppNum
 		if parentApp, err := s.engine.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); err == nil {
-			res.EarliestTermPatentNumber = parentApp.RecordNumber.String()
+			res.EarliestTermPatentNumber, res.EarliestTermGrantDate = uspto.EarliestTermSource(parentApp)
 			res.EarliestTermTitle = parentApp.InventionTitle
-			res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
 		}
 	}
 

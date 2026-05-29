@@ -12,6 +12,61 @@ import (
 	"patentmine/internal/store"
 )
 
+func TestEarliestTermSource(t *testing.T) {
+	grantedPatent, _ := domain.ParsePatentNumber("US7034695B2")
+	tests := []struct {
+		name        string
+		parent      domain.USPTOApplication
+		wantPatent  string
+		wantGranted string
+	}{
+		{
+			name: "granted parent reports patent number and issue date",
+			parent: domain.USPTOApplication{
+				ApplicationNumber:     "09123456",
+				RecordNumber:          grantedPatent,
+				ApplicationStatusText: "Patented Case",
+				ApplicationStatusDate: "2006-04-25",
+			},
+			wantPatent:  grantedPatent.String(),
+			wantGranted: "2006-04-25",
+		},
+		{
+			name: "ungranted parent reports nothing so caller shows the application",
+			parent: domain.USPTOApplication{
+				ApplicationNumber:     "09123456",
+				RecordNumber:          domain.PatentNumber{Serial: "09123456"},
+				ApplicationStatusText: "Abandoned",
+				ApplicationStatusDate: "2004-01-01",
+			},
+			wantPatent:  "",
+			wantGranted: "",
+		},
+		{
+			name: "granted status but record is the application-index fallback is suppressed",
+			parent: domain.USPTOApplication{
+				ApplicationNumber:     "09123456",
+				RecordNumber:          domain.PatentNumber{Serial: "09123456"},
+				ApplicationStatusText: "Patented Case",
+				ApplicationStatusDate: "2006-04-25",
+			},
+			wantPatent:  "",
+			wantGranted: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPatent, gotGranted := EarliestTermSource(tt.parent)
+			if gotPatent != tt.wantPatent {
+				t.Errorf("patent number = %q, want %q", gotPatent, tt.wantPatent)
+			}
+			if gotGranted != tt.wantGranted {
+				t.Errorf("grant date = %q, want %q", gotGranted, tt.wantGranted)
+			}
+		})
+	}
+}
+
 type mockRoundTripper struct {
 	roundTrip func(req *http.Request) (*http.Response, error)
 }

@@ -544,6 +544,14 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 	return nil
 }
 
+// SaveCitationGraph turns parsed citations into RelationCites edges (and cited
+// patent stubs) owned by record, returning the number of edges written. It
+// exposes the internal citation-graph builder for the standalone citation
+// loader; the full grant ingest calls the unexported form directly.
+func (e *Engine) SaveCitationGraph(ctx context.Context, record domain.PatentNumber, citations []domain.USPTOGrantCitation) (int, error) {
+	return e.saveUSPTOCitationGraph(ctx, record, citations)
+}
+
 func (e *Engine) saveUSPTOCitationGraph(ctx context.Context, record domain.PatentNumber, citations []domain.USPTOGrantCitation) (int, error) {
 	if record.IsZero() || len(citations) == 0 {
 		return 0, nil
