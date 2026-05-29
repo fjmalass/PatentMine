@@ -884,11 +884,6 @@ func (e *Engine) FetchUSPTOAssignments(ctx context.Context, n domain.PatentNumbe
 
 // USPTOLookup queries the USPTO ODP API using the configured API key and returns the raw JSON response as a string.
 func (e *Engine) USPTOLookup(ctx context.Context, number domain.PatentNumber) (string, error) {
-	apiKey := strings.TrimSpace(e.usptoAPIKey)
-	if apiKey == "" {
-		return "", fmt.Errorf("engine: USPTO API key not configured")
-	}
-
 	serial := strings.TrimSpace(number.Serial)
 	if serial == "" {
 		return "", fmt.Errorf("engine: empty application number")
@@ -903,6 +898,30 @@ func (e *Engine) USPTOLookup(ctx context.Context, number domain.PatentNumber) (s
 	} else {
 		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
 			serial, serial, serial, serial, serial)
+	}
+
+	return e.usptoSearchRaw(ctx, query)
+}
+
+// usptoLookupByAppNum searches the USPTO ODP API strictly by application number.
+// Unlike USPTOLookup it does not OR-in patentNumberText/publicationNumberText, so
+// an application serial that collides digit-for-digit with an unrelated grant
+// number (e.g. application 10/269,843 vs patent 10,269,843) resolves to the real
+// application rather than the coincidental patent.
+func (e *Engine) usptoLookupByAppNum(ctx context.Context, appNum string) (string, error) {
+	appNum = strings.TrimSpace(appNum)
+	if appNum == "" {
+		return "", fmt.Errorf("engine: empty application number")
+	}
+	return e.usptoSearchRaw(ctx, "applicationNumberText:"+appNum)
+}
+
+// usptoSearchRaw runs one USPTO ODP applications search and returns the raw JSON
+// body. Callers supply the fully-formed query string.
+func (e *Engine) usptoSearchRaw(ctx context.Context, query string) (string, error) {
+	apiKey := strings.TrimSpace(e.usptoAPIKey)
+	if apiKey == "" {
+		return "", fmt.Errorf("engine: USPTO API key not configured")
 	}
 
 	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
@@ -1133,8 +1152,7 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	// filing date so that subsequent non-refresh calls can resolve its patent number and title.
 	if refresh && app.EarliestTermAppNum != "" && app.EarliestTermAppNum != appNum {
 		if _, dbErr := e.repo.USPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); dbErr != nil {
-			parentN := domain.PatentNumber{Serial: app.EarliestTermAppNum}
-			if _, apiErr := e.resolveUSPTOApplicationFromAPI(ctx, parentN); apiErr != nil {
+			if _, apiErr := e.resolveUSPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); apiErr != nil {
 				e.log(ctx, slog.LevelDebug, "could not prefetch parent application metadata",
 					slog.String("parent_app", app.EarliestTermAppNum), slog.String("error", apiErr.Error()))
 			}
@@ -1301,34 +1319,73 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 	if apiErr != nil {
 		return domain.USPTOApplication{}, apiErr
 	}
+	return e.parseAndStoreUSPTOApplication(ctx, raw, n)
+}
 
+// grantNumberFromXMLName extracts the grant number from a USPTO grant XML file
+// name of the form "<appNum>_<grantNum>.xml" (e.g. "10269843_06915216.xml" →
+// "6915216"). Returns "" when the name does not match or the grant token is not
+// all digits. Leading zeros are stripped.
+func grantNumberFromXMLName(name string) string {
+	base := strings.TrimSuffix(strings.TrimSpace(name), ".xml")
+	_, grant, ok := strings.Cut(base, "_")
+	if !ok {
+		return ""
+	}
+	grant = strings.TrimLeft(grant, "0")
+	if grant == "" {
+		return ""
+	}
+	for _, r := range grant {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return grant
+}
+
+// resolveUSPTOApplicationByAppNum fetches USPTO application data strictly by
+// application number, avoiding the patent-number collision that the OR-query in
+// resolveUSPTOApplicationFromAPI can hit (see usptoLookupByAppNum).
+func (e *Engine) resolveUSPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
+	raw, apiErr := e.usptoLookupByAppNum(ctx, appNum)
+	if apiErr != nil {
+		return domain.USPTOApplication{}, apiErr
+	}
+	return e.parseAndStoreUSPTOApplication(ctx, raw, domain.PatentNumber{Serial: appNum})
+}
+
+// parseAndStoreUSPTOApplication decodes a USPTO ODP applications-search response
+// into a USPTOApplication and persists it. fallbackNum supplies the record
+// number when the response omits a granted patent number.
+func (e *Engine) parseAndStoreUSPTOApplication(ctx context.Context, raw string, fallbackNum domain.PatentNumber) (app domain.USPTOApplication, err error) {
 	var resp struct {
-		Count                    int              `json:"count"`
+		Count                    int `json:"count"`
 		PatentFileWrapperDataBag []struct {
 			ApplicationNumberText string `json:"applicationNumberText"`
 			ApplicationMetaData   struct {
-				InventionTitle            string `json:"inventionTitle"`
-				FilingDate                string `json:"filingDate"`
-				EffectiveFilingDate       string `json:"effectiveFilingDate"`
-				ApplicationTypeCode       string `json:"applicationTypeCode"`
-				ApplicationTypeLabelName  string `json:"applicationTypeLabelName"`
-				ApplicationTypeCategory   string `json:"applicationTypeCategory"`
-				FirstInventorName         string `json:"firstInventorName"`
-				FirstApplicantName        string `json:"firstApplicantName"`
-				ApplicationStatusCode     any    `json:"applicationStatusCode"`
-				ApplicationStatusText     string `json:"applicationStatusDescriptionText"`
-				ApplicationStatusDate     string `json:"applicationStatusDate"`
-				GroupArtUnitNumber        string `json:"groupArtUnitNumber"`
-				ExaminerNameText          string `json:"examinerNameText"`
-				DocketNumber              string `json:"docketNumber"`
-				CustomerNumber            any    `json:"customerNumber"`
-				ApplicationConfirmationNumber any `json:"applicationConfirmationNumber"`
-				FirstInventorToFileIndicator string `json:"firstInventorToFileIndicator"`
-				NationalStageIndicator    bool   `json:"nationalStageIndicator"`
-				USPCSymbolText            string `json:"uspcSymbolText"`
-				Class                     string `json:"class"`
-				Subclass                  string `json:"subclass"`
-				PatentNumberText          string `json:"patentNumberText"`
+				InventionTitle                string `json:"inventionTitle"`
+				FilingDate                    string `json:"filingDate"`
+				EffectiveFilingDate           string `json:"effectiveFilingDate"`
+				ApplicationTypeCode           string `json:"applicationTypeCode"`
+				ApplicationTypeLabelName      string `json:"applicationTypeLabelName"`
+				ApplicationTypeCategory       string `json:"applicationTypeCategory"`
+				FirstInventorName             string `json:"firstInventorName"`
+				FirstApplicantName            string `json:"firstApplicantName"`
+				ApplicationStatusCode         any    `json:"applicationStatusCode"`
+				ApplicationStatusText         string `json:"applicationStatusDescriptionText"`
+				ApplicationStatusDate         string `json:"applicationStatusDate"`
+				GroupArtUnitNumber            string `json:"groupArtUnitNumber"`
+				ExaminerNameText              string `json:"examinerNameText"`
+				DocketNumber                  string `json:"docketNumber"`
+				CustomerNumber                any    `json:"customerNumber"`
+				ApplicationConfirmationNumber any    `json:"applicationConfirmationNumber"`
+				FirstInventorToFileIndicator  string `json:"firstInventorToFileIndicator"`
+				NationalStageIndicator        bool   `json:"nationalStageIndicator"`
+				USPCSymbolText                string `json:"uspcSymbolText"`
+				Class                         string `json:"class"`
+				Subclass                      string `json:"subclass"`
+				PatentNumberText              string `json:"patentNumberText"`
 			} `json:"applicationMetaData"`
 			GrantDocumentMetaData *struct {
 				FileLocationURI string `json:"fileLocationURI"`
@@ -1354,9 +1411,15 @@ func (e *Engine) resolveUSPTOApplicationFromAPI(ctx context.Context, n domain.Pa
 	}
 
 	// Resolve the granted patent number from the API response when available.
-	// The input n may be an application-style PatentNumber; patentNumberText gives the actual grant.
-	patentRecordNum := n
-	if ptxt := strings.TrimSpace(w.ApplicationMetaData.PatentNumberText); ptxt != "" {
+	// fallbackNum may be an application-style PatentNumber; patentNumberText gives
+	// the actual grant. Older grants omit patentNumberText, so fall back to the
+	// grant XML file name, which is "<appNum>_<grantNum>.xml".
+	ptxt := strings.TrimSpace(w.ApplicationMetaData.PatentNumberText)
+	if ptxt == "" && w.GrantDocumentMetaData != nil {
+		ptxt = grantNumberFromXMLName(w.GrantDocumentMetaData.XMLFileName)
+	}
+	patentRecordNum := fallbackNum
+	if ptxt != "" {
 		if parsed, pErr := domain.ParsePatentNumber(ptxt); pErr == nil {
 			patentRecordNum = parsed
 		} else if parsed, pErr := domain.ParsePatentNumber("US" + ptxt + "B1"); pErr == nil {
@@ -1429,7 +1492,18 @@ func (e *Engine) USPTOApplicationOrFetch(ctx context.Context, appNum string) (do
 	if strings.TrimSpace(e.usptoAPIKey) == "" {
 		return domain.USPTOApplication{}, store.ErrNotFound
 	}
-	return e.resolveUSPTOApplicationFromAPI(ctx, domain.PatentNumber{Serial: appNum})
+	return e.resolveUSPTOApplicationByAppNum(ctx, appNum)
+}
+
+// RefreshUSPTOApplicationByAppNum fetches application metadata fresh from the
+// USPTO API strictly by application number, bypassing the store, and persists
+// the enriched record. Use it to backfill data a cached stub is missing (e.g.
+// the granted patent number of an earliest-term parent).
+func (e *Engine) RefreshUSPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
+	if strings.TrimSpace(e.usptoAPIKey) == "" {
+		return domain.USPTOApplication{}, store.ErrNotFound
+	}
+	return e.resolveUSPTOApplicationByAppNum(ctx, appNum)
 }
 
 // fetchMissingContinuities checks the store for continuity records for the given

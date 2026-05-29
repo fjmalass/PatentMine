@@ -16,6 +16,7 @@ import (
 	"patentmine/internal/rpc"
 	"patentmine/internal/store/sqlite"
 	"patentmine/internal/uspto"
+	"patentmine/internal/version"
 )
 
 const expirationDateUsage = `usage:
@@ -67,7 +68,7 @@ func runExpirationDate(args []string) int {
 	// Try daemon socket first for consistent behavior
 	if client, dErr := rpc.Dial(string(cfg.SocketPath)); dErr == nil {
 		defer client.Close()
-		fmt.Fprintln(os.Stderr, "[Connected to active daemon, executing expiration calculation via RPC]")
+		reportDaemonVersion(client)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -163,13 +164,43 @@ func runExpirationDate(args []string) int {
 	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
 		res.EarliestTermAppNum = app.EarliestTermAppNum
 		if parentApp, pErr := eng.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); pErr == nil {
-			res.EarliestTermPatentNumber, res.EarliestTermGrantDate = uspto.EarliestTermSource(parentApp)
+			grantNum, grantDate := uspto.EarliestTermSource(parentApp)
+			if grantNum == "" {
+				if fresh, ferr := eng.RefreshUSPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); ferr == nil {
+					parentApp = fresh
+					grantNum, grantDate = uspto.EarliestTermSource(parentApp)
+				}
+			}
+			res.EarliestTermPatentNumber = grantNum
+			res.EarliestTermGrantDate = grantDate
+			if res.EarliestTermGrantDate == "" {
+				res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
+			}
 			res.EarliestTermTitle = parentApp.InventionTitle
+			res.EarliestTermInventors = parentApp.FirstInventorName
 		}
 	}
 
 	printResult(res, sourceFlag)
 	return 0
+}
+
+// reportDaemonVersion pings the daemon and prints its build version, warning
+// when it differs from this CLI's version — a mismatch means the daemon is
+// running older code and must be restarted to pick up recent changes.
+func reportDaemonVersion(client *rpc.Client) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var pong proto.PingResult
+	if err := client.Call(ctx, proto.MethodPing, nil, &pong); err != nil {
+		fmt.Fprintln(os.Stderr, "[Connected to active daemon (version unknown), executing expiration calculation via RPC]")
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[Connected to active daemon — version: %s]\n", pong.Version)
+	if cli := version.String(); pong.Version != cli {
+		fmt.Fprintf(os.Stderr, "[WARNING: CLI version %q differs from daemon %q — run `cargo make restart-daemon` to load the latest code]\n", cli, pong.Version)
+	}
 }
 
 func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
@@ -194,16 +225,18 @@ func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
 		fmt.Printf("Grant Date:                    %s\n", formatStr(res.GrantDate))
 		fmt.Printf("Earliest Term Filing Date:     %s\n", formatStr(res.EarliestTermFilingDate))
 		if res.EarliestTermAppNum != "" {
+			fmt.Printf("  ↳ Source Application:          %s\n", res.EarliestTermAppNum)
 			if res.EarliestTermPatentNumber != "" {
-				fmt.Printf("  ↳ Source Patent Number:        %s\n", res.EarliestTermPatentNumber)
-				if res.EarliestTermGrantDate != "" {
-					fmt.Printf("  ↳ Source Issue Date:           %s\n", res.EarliestTermGrantDate)
-				}
-				if res.EarliestTermTitle != "" {
-					fmt.Printf("  ↳ Source Title:                %s\n", res.EarliestTermTitle)
-				}
-			} else {
-				fmt.Printf("  ↳ Source Application:          %s\n", res.EarliestTermAppNum)
+				fmt.Printf("  ↳ Source Grant:                %s\n", res.EarliestTermPatentNumber)
+			}
+			if res.EarliestTermGrantDate != "" {
+				fmt.Printf("  ↳ Source Grant Date:           %s\n", res.EarliestTermGrantDate)
+			}
+			if res.EarliestTermInventors != "" {
+				fmt.Printf("  ↳ Source Inventors:            %s\n", res.EarliestTermInventors)
+			}
+			if res.EarliestTermTitle != "" {
+				fmt.Printf("  ↳ Source Title:                %s\n", res.EarliestTermTitle)
 			}
 		}
 		fmt.Printf("Patent Term Adjustment (PTA):  %d days\n", res.PatentTermAdjustmentDays)

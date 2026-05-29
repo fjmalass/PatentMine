@@ -25,11 +25,11 @@ const (
 // runAPI starts the web API. Like the TUI it is a thin client that forwards to
 // the daemon; it holds no database of its own.
 func runAPI(args []string) int {
-	flags := flag.NewFlagSet("api", flag.ContinueOnError)
+	flags := flag.NewFlagSet("start-api", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	addrFlag := flags.String("addr", "", "HTTP listen address")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: patentmine api [--addr host:port]")
+		fmt.Fprintln(flags.Output(), "usage: patentmine start-api [--addr host:port]")
 	}
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -56,11 +56,17 @@ func runAPI(args []string) int {
 	defer func() { _ = telemetry.Close() }()
 	telemetry.Logger.InfoContext(ctx, "api starting", slog.String("socket_path", string(cfg.SocketPath)))
 
+	if err := writePIDFile(cfg.APIPIDPath); err != nil {
+		telemetry.Logger.ErrorContext(ctx, "write api pid file failed", slog.String("pid_path", string(cfg.APIPIDPath)), slog.String("error", err.Error()))
+		return fail(err)
+	}
+	defer func() { _ = os.Remove(string(cfg.APIPIDPath)) }()
+
 	client, err := rpc.Dial(string(cfg.SocketPath))
 	if err != nil {
 		telemetry.Logger.ErrorContext(ctx, "dial daemon failed", slog.String("socket_path", string(cfg.SocketPath)), slog.String("error", err.Error()))
 		fmt.Fprintf(os.Stderr, "patentmine: cannot reach the daemon at %s\n", cfg.SocketPath)
-		fmt.Fprintln(os.Stderr, "start it first in another terminal:  patentmine serve")
+		fmt.Fprintln(os.Stderr, "start it first in another terminal:  patentmine start-server")
 		return 1
 	}
 	defer func() { _ = client.Close() }()

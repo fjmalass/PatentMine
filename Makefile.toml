@@ -124,14 +124,14 @@ go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity rclone-b2 $CARGO_MAKE
 description = "Start the engine daemon in the foreground."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} serve
+go run -ldflags "$PM_LDFLAGS" ${BINARY} start-server
 '''
 
 [tasks.stop-daemon]
 description = "Stop the engine daemon if it is running."
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} stop
+go run -ldflags "$PM_LDFLAGS" ${BINARY} stop-server
 '''
 
 [tasks.start-daemon]
@@ -144,7 +144,7 @@ logs_dir="$(echo "$paths" | awk -F= '/^LOGS=/{print $2}')"
 date_tag="$(date +%F)"
 stdout_log="$logs_dir/daemon-stdout-$date_tag.log"
 echo "starting patentmine daemon $PM_VERSION"
-nohup go run -ldflags "$PM_LDFLAGS" ${BINARY} serve >> "$stdout_log" 2>&1 &
+nohup go run -ldflags "$PM_LDFLAGS" ${BINARY} start-server >> "$stdout_log" 2>&1 &
 for _ in $(seq 1 50); do
   if [ -S "$socket" ]; then
     echo "patentmine daemon started ($socket)"
@@ -161,9 +161,31 @@ echo "check stdout log: $stdout_log"
 exit 1
 '''
 
+[tasks.force-stop-daemon]
+description = "Stop the daemon, escalating to SIGKILL and clearing stale socket/pid if it will not exit."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+paths="$(go run -ldflags "$PM_LDFLAGS" ${BINARY} paths)"
+socket="$(echo "$paths" | awk -F= '/^SOCKET=/{print $2}')"
+pid_file="$(echo "$paths" | awk -F= '/^PID=/{print $2}')"
+# Graceful stop first; ignore failure so we always reach the force path.
+go run -ldflags "$PM_LDFLAGS" ${BINARY} stop-server || true
+# Force-kill any process still recorded in the pid file.
+if [ -f "$pid_file" ]; then
+  pid="$(cat "$pid_file" 2>/dev/null)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    echo "daemon pid $pid still alive after stop; sending SIGKILL"
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+fi
+# Clear stale runtime artifacts so start-daemon can bind a fresh socket.
+rm -f "$socket" "$pid_file"
+echo "daemon force-stopped; cleared socket and pid file"
+'''
+
 [tasks.restart-daemon]
-description = "Restart the engine daemon in the background."
-dependencies = ["stop-daemon", "start-daemon"]
+description = "Force-stop and restart the engine daemon in the background, rebuilt from current source."
+dependencies = ["force-stop-daemon", "start-daemon"]
 script = '''
 eval "$PM_VERSION_SCRIPT"
 echo "restarted patentmine daemon $PM_VERSION"
@@ -269,7 +291,7 @@ description = "Restart the daemon, then launch the terminal UI."
 dependencies = ["restart-daemon"]
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} tui
+go run -ldflags "$PM_LDFLAGS" ${BINARY} start-tui
 '''
 
 [tasks.run-api]
@@ -278,7 +300,7 @@ dependencies = ["stop-api", "restart-daemon"]
 script = '''
 eval "$PM_VERSION_SCRIPT"
 api_addr="${PATENTMINE_API_ADDR:-${API_ADDR}}"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} api --addr "$api_addr"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} start-api --addr "$api_addr"
 '''
 
 [tasks.start-api]
@@ -325,7 +347,7 @@ if [ -n "$live_pid" ]; then
 fi
 
 echo "starting patentmine API on http://$api_addr"
-nohup go run -ldflags "$PM_LDFLAGS" ${BINARY} api --addr "$api_addr" >> "$stdout_log" 2>&1 &
+nohup go run -ldflags "$PM_LDFLAGS" ${BINARY} start-api --addr "$api_addr" >> "$stdout_log" 2>&1 &
 echo $! > "$api_pid"
 
 for _ in $(seq 1 50); do
@@ -432,7 +454,7 @@ description = "Start daemon and web API in the background, then launch the TUI."
 dependencies = ["start-api"]
 script = '''
 eval "$PM_VERSION_SCRIPT"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} tui
+go run -ldflags "$PM_LDFLAGS" ${BINARY} start-tui
 '''
 
 [tasks.smoke-api]
@@ -452,7 +474,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "starting temporary API server on http://$api_addr"
-go run -ldflags "$PM_LDFLAGS" ${BINARY} api --addr "$api_addr" > "$api_log" 2>&1 &
+go run -ldflags "$PM_LDFLAGS" ${BINARY} start-api --addr "$api_addr" > "$api_log" 2>&1 &
 api_pid=$!
 
 for _ in $(seq 1 50); do

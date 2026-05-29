@@ -237,6 +237,7 @@ type USPTOExpirationCalculateResult struct {
 	EarliestTermPatentNumber string `json:"earliest_term_patent_number,omitempty"`
 	EarliestTermGrantDate    string `json:"earliest_term_grant_date,omitempty"`
 	EarliestTermTitle        string `json:"earliest_term_title,omitempty"`
+	EarliestTermInventors    string `json:"earliest_term_inventors,omitempty"`
 	PatentTermAdjustmentDays int    `json:"patent_term_adjustment_days"`
 	PatentTermExtensionDays  int    `json:"patent_term_extension_days"`
 	TerminalDisclaimerDate   string `json:"terminal_disclaimer_date"`

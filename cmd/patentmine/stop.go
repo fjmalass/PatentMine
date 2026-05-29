@@ -1,6 +1,7 @@
-// Command patentmine daemon stop control. This file implements the `stop`
-// subcommand, which reads the daemon pid file, signals the running process,
-// waits for shutdown, and records control-plane logs for that lifecycle action.
+// Command patentmine lifecycle stop control. This file implements the
+// stop-server, stop-api, and stop-tui subcommands, which read the matching pid
+// file, signal the running process, wait for shutdown, and record control-plane
+// logs for that lifecycle action.
 package main
 
 import (
@@ -24,19 +25,45 @@ func runStop(_ []string) int {
 	if err != nil {
 		return fail(err)
 	}
+	return stopService(cfg, cfg.PIDPath, "daemon")
+}
+
+// runStopAPI stops the background web API server, if one is recorded in the pid file.
+func runStopAPI(_ []string) int {
+	cfg, err := config.Load()
+	if err != nil {
+		return fail(err)
+	}
+	return stopService(cfg, cfg.APIPIDPath, "API")
+}
+
+// runStopTUI stops the terminal UI, if one is recorded in the pid file.
+func runStopTUI(_ []string) int {
+	cfg, err := config.Load()
+	if err != nil {
+		return fail(err)
+	}
+	return stopService(cfg, cfg.TUIPIDPath, "TUI")
+}
+
+// stopService signals the process recorded in pidPath and waits for it to clear
+// the file. label names the service for human-facing output and logs. Each
+// start-* subcommand removes its own pid file on exit, so a cleared file is the
+// signal that shutdown finished.
+func stopService(cfg config.Config, pidPath config.Path, label string) int {
 	telemetry, err := openObservability(cfg, "control")
 	if err != nil {
 		return fail(err)
 	}
 	defer func() { _ = telemetry.Close() }()
-	pid, err := readPIDFile(cfg.PIDPath)
+	pid, err := readPIDFile(pidPath)
 	if errors.Is(err, os.ErrNotExist) {
-		telemetry.Logger.Info("stop requested but daemon not running")
-		fmt.Println("patentmine daemon is not running")
+		telemetry.Logger.Info("stop requested but service not running", slog.String("service", label))
+		fmt.Printf("patentmine %s is not running\n", label)
 		return 0
 	}
 	if err != nil {
-		telemetry.Logger.Error("read pid file failed", slog.String("pid_path", string(cfg.PIDPath)), slog.String("error", err.Error()))
+		telemetry.Logger.Error("read pid file failed", slog.String("service", label), slog.String("pid_path", string(pidPath)), slog.String("error", err.Error()))
 		return fail(err)
 	}
 	proc, err := os.FindProcess(pid)
@@ -45,25 +72,25 @@ func runStop(_ []string) int {
 	}
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
-			_ = os.Remove(string(cfg.PIDPath))
-			telemetry.Logger.Info("stale pid file removed", slog.Int("pid", pid), slog.String("pid_path", string(cfg.PIDPath)))
-			fmt.Println("patentmine daemon is not running")
+			_ = os.Remove(string(pidPath))
+			telemetry.Logger.Info("stale pid file removed", slog.String("service", label), slog.Int("pid", pid), slog.String("pid_path", string(pidPath)))
+			fmt.Printf("patentmine %s is not running\n", label)
 			return 0
 		}
-		telemetry.Logger.Error("signal daemon failed", slog.Int("pid", pid), slog.String("error", err.Error()))
+		telemetry.Logger.Error("signal service failed", slog.String("service", label), slog.Int("pid", pid), slog.String("error", err.Error()))
 		return fail(err)
 	}
-	telemetry.Logger.Info("daemon stop signaled", slog.Int("pid", pid))
+	telemetry.Logger.Info("stop signaled", slog.String("service", label), slog.Int("pid", pid))
 	deadline := time.Now().Add(stopTimeout)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(string(cfg.PIDPath)); errors.Is(err, os.ErrNotExist) {
-			telemetry.Logger.Info("daemon stopped", slog.Int("pid", pid))
-			fmt.Println("patentmine daemon stopped")
+		if _, err := os.Stat(string(pidPath)); errors.Is(err, os.ErrNotExist) {
+			telemetry.Logger.Info("service stopped", slog.String("service", label), slog.Int("pid", pid))
+			fmt.Printf("patentmine %s stopped\n", label)
 			return 0
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fail(fmt.Errorf("timeout waiting for daemon pid file %s to clear", cfg.PIDPath))
+	return fail(fmt.Errorf("timeout waiting for %s pid file %s to clear", label, pidPath))
 }
 
 func readPIDFile(path config.Path) (int, error) {

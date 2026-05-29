@@ -72,17 +72,21 @@ func (o *ExpirationOverlay) View(maxW, maxH int) string {
 	writeField(&b, labelW, "Grant Date", r.GrantDate, maxW)
 	writeField(&b, labelW, "Earliest Filing Date", r.EarliestTermFilingDate, maxW)
 	if r.EarliestTermAppNum != "" {
-		src := r.EarliestTermAppNum
+		writeField(&b, labelW, "  Source Application", "↳ "+r.EarliestTermAppNum, maxW)
 		if r.EarliestTermPatentNumber != "" {
-			src = r.EarliestTermPatentNumber
+			grant := r.EarliestTermPatentNumber
+			if r.EarliestTermGrantDate != "" {
+				grant += "  issued " + r.EarliestTermGrantDate
+			}
+			writeField(&b, labelW, "  Source Grant", "↳ "+grant, maxW)
+		} else if r.EarliestTermGrantDate != "" {
+			writeField(&b, labelW, "  Source Grant Date", "↳ "+r.EarliestTermGrantDate, maxW)
 		}
-		line := fmt.Sprintf("↳ %s", src)
-		if r.EarliestTermGrantDate != "" {
-			line += "  issued " + r.EarliestTermGrantDate
+		if r.EarliestTermInventors != "" {
+			writeField(&b, labelW, "  Source Inventors", "↳ "+r.EarliestTermInventors, maxW)
 		}
-		writeField(&b, labelW, "  Source Patent", line, maxW)
 		if r.EarliestTermTitle != "" {
-			writeField(&b, labelW, "  Source Title", r.EarliestTermTitle, maxW)
+			writeField(&b, labelW, "  Source Title", "↳ "+r.EarliestTermTitle, maxW)
 		}
 	}
 	writeField(&b, labelW, "PTA", fmt.Sprintf("%d days", r.PatentTermAdjustmentDays), maxW)

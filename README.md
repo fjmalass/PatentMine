@@ -531,10 +531,12 @@ For complete operational visibility, the command-line interface subcommands and 
 
 ### CLI Subcommands
 Launch CLI operations using the `patentmine` binary:
-* `patentmine serve` : Start the high-performance engine daemon (binds database and orchestrates Unix sockets).
-* `patentmine stop` : Send a termination signal to stop the running daemon.
-* `patentmine tui` : Launch the interactive Terminal User Interface thin client.
-* `patentmine api` : Boot the web API server gateway.
+* `patentmine start-server` : Start the high-performance engine daemon (binds database and orchestrates Unix sockets).
+* `patentmine stop-server` : Send a termination signal to stop the running daemon.
+* `patentmine start-tui` : Launch the interactive Terminal User Interface thin client.
+* `patentmine stop-tui` : Stop a running TUI (signals it to quit; useful when it runs in another terminal).
+* `patentmine start-api` : Boot the web API server gateway.
+* `patentmine stop-api` : Stop the running web API server.
 * `patentmine paths` : Output the resolved runtime directories and file paths.
 * `patentmine lookup <number>` : Look up raw USPTO file wrapper metadata by application number, publication number, or patent number.
 * `patentmine expiration-date [-refresh] <number>` : Compute statutory U.S. patent expiration dates using USPTO/Google Patents data, recursively walk the parent continuity tree, and persists the computed results.
@@ -557,7 +559,7 @@ PatentMine intentionally keeps two prompt styles because they do different jobs:
 | `:` | Command/action prompt. Use it when you want PatentMine to do something: load, browse, fetch XML, change source mode, export, tag, open panes. | `:add.uspto 17730671`, `:browse.uspto.grant`, `:source.mode uspto-first`, `:fetch.uspto.grant` |
 | `/` | Search/filter prompt. Use it when you want to find, narrow, or highlight what is already on screen. | `/ widget sensor`, `/ class:G06F*`, `/ inventor:"Ada Lovelace"` |
 
-This follows the Vim convention: `:` is for commands, `/` is for searching. It also matches modern command palettes because the `:` overlay filters command names as you type, so typing `:browse` shows browse-related commands before you run one.
+This follows the Vim convention: `:` is for commands, `/` is for searching. It also matches modern command palettes because the `:` overlay filters command names as you type, so typing `:browse` shows browse-related commands before you run one. In the `:` prompt, `Tab` autocompletes the highlighted command (leaving a trailing space when it takes arguments) and `Enter` runs whatever is typed; aliases run as typed, so `:expiration-date` works the same as `:patent.expiration-date`.
 
 Rules of thumb:
 

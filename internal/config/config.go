@@ -28,6 +28,8 @@ const (
 	logsDirName    = "logs"
 	patentsDirName = "patents"
 	pidFileName    = "patentmine.pid"
+	apiPIDFileName = "patentmine-api.pid"
+	tuiPIDFileName = "patentmine-tui.pid"
 	socketFileName = "patentmine.sock"
 	dirPerm        = 0o755
 )
@@ -46,6 +48,8 @@ type Config struct {
 	LogsDir            Path              // Runtime logs and activity directory.
 	PatentsDir         Path              // Local cache for USPTO grant XML files (and ZIP extracts) used by lookup, engine, and file source.
 	PIDPath            Path              // Daemon pid file.
+	APIPIDPath         Path              // Web API server pid file.
+	TUIPIDPath         Path              // Terminal UI pid file.
 	SocketPath         Path              // Unix domain socket for the daemon.
 	USPTOAPIKey        string            // USPTO Open Data Portal API Key.
 	SourceMode         domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
@@ -313,6 +317,8 @@ func Load() (Config, error) {
 		LogsDir:            Path(logsDir),
 		PatentsDir:         Path(patentsDir),
 		PIDPath:            Path(filepath.Join(home, pidFileName)),
+		APIPIDPath:         Path(filepath.Join(home, apiPIDFileName)),
+		TUIPIDPath:         Path(filepath.Join(home, tuiPIDFileName)),
 		SocketPath:         Path(filepath.Join(home, socketFileName)),
 		USPTOAPIKey:        usptoKey,
 		SourceMode:         sourceMode,

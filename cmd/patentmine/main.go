@@ -12,10 +12,12 @@ import (
 const usageText = `patentmine — patent tracking
 
 usage:
-  patentmine serve              start the engine daemon
-  patentmine stop               stop the engine daemon
-  patentmine tui                launch the terminal UI
-  patentmine api                start the web API server (use --addr host:port)
+  patentmine start-server       start the engine daemon
+  patentmine stop-server        stop the engine daemon
+  patentmine start-tui          launch the terminal UI
+  patentmine stop-tui           stop a running terminal UI
+  patentmine start-api          start the web API server (use --addr host:port)
+  patentmine stop-api           stop the web API server
   patentmine paths              print resolved runtime paths
   patentmine logs               manage log and activity files (list, archive, ship)
   patentmine db                 manage database tasks (backup, vacuum, status)
@@ -39,14 +41,18 @@ func run(args []string) int {
 		return 2
 	}
 	switch args[0] {
-	case "serve":
+	case "start-server":
 		return runServe(args[1:])
-	case "stop":
+	case "stop-server":
 		return runStop(args[1:])
-	case "tui":
+	case "start-tui":
 		return runTUI(args[1:])
-	case "api":
+	case "stop-tui":
+		return runStopTUI(args[1:])
+	case "start-api":
 		return runAPI(args[1:])
+	case "stop-api":
+		return runStopAPI(args[1:])
 	case "paths":
 		return runPaths(args[1:])
 	case "logs":

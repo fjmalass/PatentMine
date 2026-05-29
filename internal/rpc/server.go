@@ -1496,8 +1496,25 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
 		res.EarliestTermAppNum = app.EarliestTermAppNum
 		if parentApp, err := s.engine.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); err == nil {
-			res.EarliestTermPatentNumber, res.EarliestTermGrantDate = uspto.EarliestTermSource(parentApp)
+			grantNum, grantDate := uspto.EarliestTermSource(parentApp)
+			// A cached parent stub may carry the application status but not the
+			// granted patent number; fetch fresh by application number to backfill
+			// it (and the inventor) before reporting.
+			if grantNum == "" {
+				if fresh, ferr := s.engine.RefreshUSPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); ferr == nil {
+					parentApp = fresh
+					grantNum, grantDate = uspto.EarliestTermSource(parentApp)
+				}
+			}
+			res.EarliestTermPatentNumber = grantNum
+			res.EarliestTermGrantDate = grantDate
+			// Even when the granted patent number is unknown, the parent's grant
+			// date can still be derived from its application status.
+			if res.EarliestTermGrantDate == "" {
+				res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
+			}
 			res.EarliestTermTitle = parentApp.InventionTitle
+			res.EarliestTermInventors = parentApp.FirstInventorName
 		}
 	}
 
