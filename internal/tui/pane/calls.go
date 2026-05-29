@@ -80,7 +80,7 @@ func CrawlCmd(client *rpc.Client, number domain.PatentNumber, depth int, profile
 		err := client.Call(ctx, proto.MethodCrawlFamily,
 			proto.CrawlFamilyParams{Root: number, Depth: depth, Profile: profile, Force: force, Source: source}, &res)
 		if err != nil {
-			return StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{err.Error()}, Error: true}
+			return StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{fmt.Sprintf("[%s] %s", number.String(), err.Error())}, Error: true}
 		}
 		return StatusMsg{Key: text.StatusCrawlStarted, Args: []any{number.String(), res.JobID, depth}}
 	}
@@ -116,7 +116,7 @@ func MultiCrawlCmd(client *rpc.Client, numbers []domain.PatentNumber, depth int,
 		for range numbers {
 			r := <-ch
 			if r.err != nil {
-				failErrs = append(failErrs, r.err.Error())
+				failErrs = append(failErrs, fmt.Sprintf("[%s] %s", r.number.String(), r.err.Error()))
 			} else {
 				jobIDs = append(jobIDs, r.jobID)
 			}
@@ -169,7 +169,7 @@ func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, num
 		var res proto.MembershipAddResult
 		if err := client.Call(ctx, proto.MethodMembershipAdd,
 			proto.MembershipParams{Project: project, Patent: number, Source: source}, &res); err != nil {
-			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
+			return StatusMsg{Key: text.StatusAddFailed, Args: []any{fmt.Sprintf("[%s] %s", number.String(), err.Error())}, Error: true}
 		}
 		if res.AlreadyExisted {
 			return StatusMsg{Key: text.StatusAddAlreadyExists, Args: []any{number.String(), string(project)}, Error: true}
@@ -207,7 +207,7 @@ func AddToProjectWithCandidateCmd(client *rpc.Client, project domain.ProjectID, 
 				Source:            domain.SourceUSPTO,
 				ApplicationNumber: candidate.ApplicationNumber,
 			}, &res); err != nil {
-			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
+			return StatusMsg{Key: text.StatusAddFailed, Args: []any{fmt.Sprintf("[%s] %s", appNum.String(), err.Error())}, Error: true}
 		}
 		if res.AlreadyExisted {
 			return StatusMsg{Key: text.StatusAddAlreadyExists, Args: []any{appNum.String(), string(project)}, Error: true}

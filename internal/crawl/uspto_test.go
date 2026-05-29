@@ -181,6 +181,22 @@ func TestMatchingUSPTOWrapperScoring(t *testing.T) {
 	if matched2.ApplicationNumberText != "11714053" {
 		t.Errorf("matched application %q, want 11714053 (Wrapper A)", matched2.ApplicationNumberText)
 	}
+
+	// 3. Search for Publication US20090222331A1 (serial 20090222331, StagePublication)
+	wC := usptoWrapperData{
+		ApplicationNumberText: "12388910",
+	}
+	wC.ApplicationMetaData.PublicationNumber = "US20090222331A1"
+
+	bags3 := []usptoWrapperData{wC}
+	pubNum := domain.MustParsePatentNumber("US20090222331A1")
+	matched3, ok := matchingUSPTOWrapper(pubNum, bags3)
+	if !ok {
+		t.Fatalf("matchingUSPTOWrapper failed to match publication US20090222331A1")
+	}
+	if matched3.ApplicationNumberText != "12388910" {
+		t.Errorf("matched application %q, want 12388910 (Wrapper C)", matched3.ApplicationNumberText)
+	}
 }
 
 func TestUSPTORateLimitScalesWithSourceMode(t *testing.T) {

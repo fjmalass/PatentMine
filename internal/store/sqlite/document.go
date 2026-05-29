@@ -80,8 +80,16 @@ func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (record
 	var recordNumber string
 	err = r.reader.QueryRowContext(ctx,
 		`SELECT p.number FROM document d JOIN patent p ON p.record_id = d.record_id
-		 WHERE d.number = ?`, number.Normalized()).
-		Scan(&recordNumber)
+		 WHERE d.number = ? OR (d.country = ? AND d.serial = ? AND (d.kind = ? OR d.kind = '' OR ? = ''))
+		 ORDER BY (d.kind = ?) DESC
+		 LIMIT 1`,
+		number.Normalized(),
+		number.Country,
+		number.Serial,
+		number.Kind,
+		number.Kind,
+		number.Kind,
+	).Scan(&recordNumber)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.PatentNumber{}, store.ErrNotFound
 	}

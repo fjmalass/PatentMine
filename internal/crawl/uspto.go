@@ -131,6 +131,7 @@ type usptoApplicationMeta struct {
 	PatentNumberText              string           `json:"patentNumberText"`
 	PatentNumber                  string           `json:"patentNumber"`
 	PublicationNumber             string           `json:"publicationNumber"`
+	EarliestPublicationNumber     string           `json:"earliestPublicationNumber"`
 }
 
 type usptoEntity struct {
@@ -449,7 +450,8 @@ func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (
 		score := 0
 		matchesApp := sameDigits(w.ApplicationNumberText, serial)
 		matchesGrant := sameDigits(w.ApplicationMetaData.PatentNumber, serial) || sameDigits(w.ApplicationMetaData.PatentNumberText, serial)
-		matchesPub := sameDigits(w.ApplicationMetaData.PublicationNumber, serial)
+		matchesPub := sameDigits(w.ApplicationMetaData.PublicationNumber, serial) ||
+			sameDigits(w.ApplicationMetaData.EarliestPublicationNumber, serial)
 
 		if !matchesApp && !matchesGrant && !matchesPub {
 			continue
@@ -542,20 +544,36 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 
 	var candidates []domain.USPTOCandidate
 	for _, w := range wrapperResp.PatentFileWrapperDataBag {
+		pub := w.ApplicationMetaData.PublicationNumber
+		if pub == "" {
+			pub = w.ApplicationMetaData.EarliestPublicationNumber
+		}
 		candidates = append(candidates, domain.USPTOCandidate{
 			ApplicationNumber: w.ApplicationNumberText,
 			Title:             w.ApplicationMetaData.InventionTitle,
 			FilingDate:        w.ApplicationMetaData.FilingDate,
 			FirstInventorName: w.ApplicationMetaData.FirstInventorName,
 			GrantNumber:       w.ApplicationMetaData.PatentNumberText,
-			PublicationNumber: w.ApplicationMetaData.PublicationNumber,
+			PublicationNumber: pub,
 		})
 	}
 	return candidates, nil
 }
 
 func sameDigits(a, b string) bool {
-	return strings.TrimLeft(onlyDigits(a), "0") == strings.TrimLeft(onlyDigits(b), "0")
+	aClean := a
+	if p, err := domain.ParsePatentNumber(a); err == nil {
+		aClean = p.Serial
+	} else {
+		aClean = onlyDigits(a)
+	}
+	bClean := b
+	if p, err := domain.ParsePatentNumber(b); err == nil {
+		bClean = p.Serial
+	} else {
+		bClean = onlyDigits(b)
+	}
+	return strings.TrimLeft(aClean, "0") == strings.TrimLeft(bClean, "0")
 }
 
 func onlyDigits(s string) string {
@@ -624,8 +642,10 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 	var docs []domain.Document
 	var ids []domain.AuthorityIdentifier
 
-	// Extract publication number if present
 	pubStr := strings.TrimSpace(w.ApplicationMetaData.PublicationNumber)
+	if pubStr == "" {
+		pubStr = strings.TrimSpace(w.ApplicationMetaData.EarliestPublicationNumber)
+	}
 	if pubStr != "" {
 		if !strings.HasPrefix(strings.ToUpper(pubStr), "US") {
 			pubStr = "US" + pubStr
@@ -640,11 +660,15 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 				Stage:  domain.StagePublication,
 				Dated:  pubDate,
 			})
+			rawPub := w.ApplicationMetaData.PublicationNumber
+			if rawPub == "" {
+				rawPub = w.ApplicationMetaData.EarliestPublicationNumber
+			}
 			ids = append(ids, domain.AuthorityIdentifier{
 				Authority:      "US",
 				IdentifierType: "publication",
 				Identifier:     pubNum.Normalized(),
-				RawIdentifier:  w.ApplicationMetaData.PublicationNumber,
+				RawIdentifier:  rawPub,
 				RecordNumber:   recordNumber,
 				DocumentNumber: pubNum.Normalized(),
 				Country:        "US",

@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"context"
+	"fmt"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
@@ -34,7 +35,7 @@ func NewFamilyJobFromSource(crawler *Crawler, root domain.PatentNumber, depth in
 				return crawler.CrawlFromSource(ctx, root, depth, profile, source, force, emit)
 			}
 		}
-		return run(ctx, root, depth, profile, force, func(p Progress) {
+		err := run(ctx, root, depth, profile, force, func(p Progress) {
 			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
 				JobID:           string(id),
 				CrawledCount:    p.CrawledCount,
@@ -53,6 +54,10 @@ func NewFamilyJobFromSource(crawler *Crawler, root domain.PatentNumber, depth in
 				Mode:            p.Mode,
 			}))
 		})
+		if err != nil {
+			return fmt.Errorf("[%s] %w", root.String(), err)
+		}
+		return nil
 	})
 }
 

@@ -888,20 +888,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(a.overlays) > 0 {
 			a.popOverlay()
 		}
-		var cmd tea.Cmd
-		if a.activeProject != nil && a.client != nil && m.Patent != "" {
-			number, err := domain.ParsePatentNumber(m.Patent)
-			if err == nil {
-				cmd = tea.Batch(
-					pane.AddToProjectCmd(a.client, a.activeProject.ID, number),
-					a.refreshPanes(),
-				)
-			}
-		}
-		if cmd == nil {
-			cmd = a.refreshPanes()
-		}
-		return a, cmd
+		return a, a.refreshPanes()
 
 	case overlay.LoadingCompareSourcesMsg:
 		if len(a.overlays) > 0 {
