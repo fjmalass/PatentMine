@@ -1,6 +1,7 @@
 package crawl
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,6 +25,6 @@ func NewJustiaSource() Source {
 
 // parseJustia extracts a patent and its family edges from a Justia Patents
 // page. Implementing the HTML parser is the work that makes this provider live.
-func parseJustia(domain.PatentNumber, []byte) (Result, error) {
+func parseJustia(ctx context.Context, number domain.PatentNumber, body []byte) (Result, error) {
 	return Result{}, fmt.Errorf("crawl/justia: response parser not yet implemented")
 }

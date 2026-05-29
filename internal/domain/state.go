@@ -95,8 +95,8 @@ func (s ReviewState) CanTransitionTo(target ReviewState, fetch FetchState) bool 
 		return false
 	}
 	if fetch == FetchStub {
-		// If fetch state is stub, only unknown reviewState is possible.
-		return target == ReviewStateUnknown
+		// If fetch state is stub, only unknown or under_review reviewState is possible.
+		return target == ReviewStateUnknown || target == ReviewStateUnderReview
 	}
 	// Otherwise, we can transition to/from any valid ReviewState.
 	return true

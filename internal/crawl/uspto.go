@@ -1,6 +1,8 @@
 package crawl
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/uspto"
 )
 
 // USPTOMinInterval keeps requests to the USPTO ODP API polite.
@@ -26,9 +29,10 @@ func UpdateUSPTOMinInterval(d time.Duration) {
 
 // NewUSPTOSource builds a Source backed by the USPTO Patent File Wrapper API.
 func NewUSPTOSource(apiKey string) Source {
+	client := &http.Client{Timeout: httpTimeout}
 	return &httpSource{
 		name:    domain.SourceUSPTO,
-		client:  &http.Client{Timeout: httpTimeout},
+		client:  client,
 		limiter: newLimiter(USPTOMinInterval),
 		urlFor: func(n domain.PatentNumber) string {
 			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(usptoQuery(n))
@@ -41,7 +45,7 @@ func NewUSPTOSource(apiKey string) Source {
 			h.Set("Accept", "application/json")
 			return h
 		},
-		parse: parseUSPTO,
+		parse: makeParseUSPTO(apiKey, client),
 	}
 }
 
@@ -185,147 +189,249 @@ type usptoAttorney struct {
 	TelecommunicationAddressBag    json.RawMessage `json:"telecommunicationAddressBag"`
 }
 
-func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
-	var resp usptoFileWrapperResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return Result{}, fmt.Errorf("crawl/uspto: decode response: %w", err)
-	}
-	if len(resp.PatentFileWrapperDataBag) == 0 {
-		return Result{}, ErrUSPTOApplicationNotFound
-	}
+func makeParseUSPTO(apiKey string, client *http.Client) parseFunc {
+	return func(ctx context.Context, number domain.PatentNumber, body []byte) (Result, error) {
+		var resp usptoFileWrapperResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return Result{}, fmt.Errorf("crawl/uspto: decode response: %w", err)
+		}
+		if len(resp.PatentFileWrapperDataBag) == 0 {
+			return Result{}, ErrUSPTOApplicationNotFound
+		}
 
-	w, ok := matchingUSPTOWrapper(number, resp.PatentFileWrapperDataBag)
-	if !ok {
-		return Result{}, ErrUSPTOApplicationNotFound
-	}
-	appNumber := strings.TrimSpace(w.ApplicationNumberText)
-	if appNumber == "" {
-		return Result{}, ErrUSPTOApplicationNotFound
-	}
+		w, ok := matchingUSPTOWrapper(number, resp.PatentFileWrapperDataBag)
+		if !ok {
+			return Result{}, ErrUSPTOApplicationNotFound
+		}
+		appNumber := strings.TrimSpace(w.ApplicationNumberText)
+		if appNumber == "" {
+			return Result{}, ErrUSPTOApplicationNotFound
+		}
 
-	recordNumber, err := domain.ParsePatentNumber("US" + appNumber)
+		recordNumber, err := domain.ParsePatentNumber("US" + appNumber)
+		if err != nil {
+			recordNumber = number
+		}
+		filingDate := parseISODate(w.ApplicationMetaData.FilingDate)
+		now := time.Now().UTC()
+		nowText := encodeRFC3339(now)
+
+		inventors := usptoInventors(w.ApplicationMetaData)
+		assignees := usptoApplicants(w.ApplicationMetaData)
+		patent := domain.Patent{
+			Number:          recordNumber,
+			DisplayNumber:   recordNumber,
+			Title:           strings.TrimSpace(w.ApplicationMetaData.InventionTitle),
+			Assignee:        strings.Join(assignees, "; "),
+			Inventors:       inventors,
+			Classifications: usptoClassifications(w.ApplicationMetaData, w.CPCClassificationBag),
+			FetchState:      domain.FetchCached,
+			Source:          domain.SourceUSPTO,
+			FetchedAt:       now,
+			ApplicationDate: filingDate,
+			SourceURL:       googlePatentURL(recordNumber),
+		}
+
+		res := Result{
+			Patent: patent,
+			Documents: []domain.Document{{
+				Number: recordNumber,
+				Stage:  domain.StageApplication,
+				Dated:  filingDate,
+			}},
+			AuthorityIdentifiers: []domain.AuthorityIdentifier{{
+				Authority:      "US",
+				IdentifierType: "application",
+				Identifier:     appNumber,
+				RawIdentifier:  w.ApplicationNumberText,
+				RecordNumber:   recordNumber,
+				DocumentNumber: recordNumber.Normalized(),
+				Country:        "US",
+				Dated:          w.ApplicationMetaData.FilingDate,
+				Source:         string(domain.SourceUSPTO),
+				Confidence:     100,
+			}},
+		}
+
+		extraDocs, extraIds := extractAdditionalUSPTODocuments(recordNumber, w)
+		res.Documents = append(res.Documents, extraDocs...)
+		res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
+
+		res.USPTOApplication = &domain.USPTOApplication{
+			ApplicationNumber:             appNumber,
+			RecordNumber:                  recordNumber,
+			InventionTitle:                patent.Title,
+			FilingDate:                    w.ApplicationMetaData.FilingDate,
+			EffectiveFilingDate:           w.ApplicationMetaData.EffectiveFilingDate,
+			ApplicationStatusCode:         stringify(w.ApplicationMetaData.ApplicationStatusCode),
+			ApplicationStatusText:         strings.TrimSpace(w.ApplicationMetaData.ApplicationStatusDescription),
+			ApplicationStatusDate:         w.ApplicationMetaData.ApplicationStatusDate,
+			ApplicationTypeCode:           w.ApplicationMetaData.ApplicationTypeCode,
+			ApplicationTypeLabel:          w.ApplicationMetaData.ApplicationTypeLabelName,
+			ApplicationTypeCategory:       w.ApplicationMetaData.ApplicationTypeCategory,
+			FirstInventorToFile:           strings.EqualFold(w.ApplicationMetaData.FirstInventorToFileIndicator, "Y"),
+			NationalStage:                 w.ApplicationMetaData.NationalStageIndicator,
+			FirstInventorName:             w.ApplicationMetaData.FirstInventorName,
+			FirstApplicantName:            w.ApplicationMetaData.FirstApplicantName,
+			CustomerNumber:                stringify(w.ApplicationMetaData.CustomerNumber),
+			GroupArtUnitNumber:            w.ApplicationMetaData.GroupArtUnitNumber,
+			ExaminerName:                  w.ApplicationMetaData.ExaminerNameText,
+			DocketNumber:                  w.ApplicationMetaData.DocketNumber,
+			ApplicationConfirmationNumber: stringify(w.ApplicationMetaData.ApplicationConfirmationNumber),
+			USPCSymbolText:                w.ApplicationMetaData.USPCSymbolText,
+			USPCClass:                     w.ApplicationMetaData.Class,
+			USPCSubclass:                  w.ApplicationMetaData.Subclass,
+			SmallEntityStatus:             w.ApplicationMetaData.EntityStatusData.SmallEntityStatusIndicator,
+			BusinessEntityStatus:          w.ApplicationMetaData.EntityStatusData.BusinessEntityStatusCategory,
+			PublicationCategoryJSON:       rawJSONOrDefault(w.ApplicationMetaData.PublicationCategoryBag, "[]"),
+			LastIngestionDateTime:         w.LastIngestionDateTime,
+			FetchedAt:                     nowText,
+			PGPubXMLURL: func() string {
+				if w.PGPubDocumentMetaData != nil {
+					return w.PGPubDocumentMetaData.FileLocationURI
+				}
+				return ""
+			}(),
+			PGPubXMLName: func() string {
+				if w.PGPubDocumentMetaData != nil {
+					return w.PGPubDocumentMetaData.XMLFileName
+				}
+				return ""
+			}(),
+			PatentGrantXMLURL: func() string {
+				if w.GrantDocumentMetaData != nil {
+					return w.GrantDocumentMetaData.FileLocationURI
+				}
+				return ""
+			}(),
+			PatentGrantXMLName: func() string {
+				if w.GrantDocumentMetaData != nil {
+					return w.GrantDocumentMetaData.XMLFileName
+				}
+				return ""
+			}(),
+		}
+		res.USPTOParties = usptoParties(appNumber, w)
+		res.USPTOEvents = usptoEvents(appNumber, w.EventDataBag)
+		res.USPTOContinuities = usptoContinuities(appNumber, recordNumber, w.ParentContinuityBag)
+		res.USPTOForeignPriority = usptoForeignPriorities(appNumber, w.ForeignPriorityBag)
+		res.SourceSnapshots = []domain.SourceSnapshot{{
+			ID:             snapshotID(string(domain.SourceUSPTO), appNumber, body),
+			PatentNumber:   recordNumber,
+			Source:         "uspto_file_wrapper",
+			SourceRecordID: appNumber,
+			SourceURL:      patent.SourceURL,
+			FetchedAt:      nowText,
+			PayloadKind:    "json",
+			PayloadHash:    payloadHash(body),
+			ResponseBytes:  int64(len(body)),
+			HTTPStatus:     http.StatusOK,
+			SummaryJSON:    `{"parser":"file_wrapper"}`,
+		}}
+		res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, identifiersFromUSPTO(recordNumber, appNumber, w)...)
+		res.Relations = append(res.Relations, relationsFromUSPTOContinuity(recordNumber, w.ParentContinuityBag)...)
+
+		// Automatically fetch and parse citations from USPTO XML if available!
+		xmlURL := ""
+		if w.GrantDocumentMetaData != nil && w.GrantDocumentMetaData.FileLocationURI != "" {
+			xmlURL = w.GrantDocumentMetaData.FileLocationURI
+		} else if w.PGPubDocumentMetaData != nil && w.PGPubDocumentMetaData.FileLocationURI != "" {
+			xmlURL = w.PGPubDocumentMetaData.FileLocationURI
+		}
+
+		if xmlURL != "" {
+			req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, xmlURL, nil)
+			if rerr == nil {
+				if strings.TrimSpace(apiKey) != "" {
+					req.Header.Set("x-api-key", apiKey)
+				}
+				req.Header.Set("Accept", "*/*")
+				resp, derr := client.Do(req)
+				if derr == nil {
+					defer resp.Body.Close()
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						xmlData, rerr := io.ReadAll(resp.Body)
+						if rerr == nil {
+							var rawCites []domain.USPTOGrantCitation
+							if strings.HasSuffix(strings.ToLower(xmlURL), ".zip") {
+								rawCites, _ = extractAndParseCitationsFromZip(xmlData)
+							} else {
+								parsed, _ := uspto.ParseCitations(bytes.NewReader(xmlData))
+								rawCites = parsed.Citations
+							}
+							for _, c := range rawCites {
+								cited, ok := patentNumberFromUSPTOCitation(c)
+								if ok && !cited.IsZero() && cited.Normalized() != recordNumber.Normalized() {
+									res.Relations = append(res.Relations, domain.Relation{
+										From:   recordNumber,
+										To:     cited,
+										Kind:   domain.RelationCites,
+										Source: domain.SourceUSPTO,
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		return res, nil
+	}
+}
+
+func patentNumberFromUSPTOCitation(c domain.USPTOGrantCitation) (domain.PatentNumber, bool) {
+	if c.CitationType != "" && !strings.EqualFold(c.CitationType, "patent") {
+		return domain.PatentNumber{}, false
+	}
+	doc := strings.TrimSpace(c.CitedDocNumber)
+	if doc == "" {
+		return domain.PatentNumber{}, false
+	}
+	country := strings.ToUpper(strings.TrimSpace(c.CitedCountry))
+	kind := strings.ToUpper(strings.TrimSpace(c.CitedKind))
+
+	for _, raw := range []string{
+		country + doc + kind,
+		country + doc,
+		doc + kind,
+		doc,
+	} {
+		n, err := domain.ParsePatentNumber(raw)
+		if err != nil {
+			continue
+		}
+		if n.Country == "" {
+			n.Country = country
+		}
+		if n.Kind == "" {
+			n.Kind = kind
+		}
+		return n, true
+	}
+	return domain.PatentNumber{}, false
+}
+
+func extractAndParseCitationsFromZip(zipBytes []byte) ([]domain.USPTOGrantCitation, error) {
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		recordNumber = number
+		return nil, err
 	}
-	filingDate := parseISODate(w.ApplicationMetaData.FilingDate)
-	now := time.Now().UTC()
-	nowText := encodeRFC3339(now)
-
-	inventors := usptoInventors(w.ApplicationMetaData)
-	assignees := usptoApplicants(w.ApplicationMetaData)
-	patent := domain.Patent{
-		Number:          recordNumber,
-		DisplayNumber:   recordNumber,
-		Title:           strings.TrimSpace(w.ApplicationMetaData.InventionTitle),
-		Assignee:        strings.Join(assignees, "; "),
-		Inventors:       inventors,
-		Classifications: usptoClassifications(w.ApplicationMetaData, w.CPCClassificationBag),
-		FetchState:      domain.FetchCached,
-		Source:          domain.SourceUSPTO,
-		FetchedAt:       now,
-		ApplicationDate: filingDate,
-		SourceURL:       googlePatentURL(recordNumber),
+	for _, f := range zr.File {
+		if strings.HasSuffix(strings.ToLower(f.Name), ".xml") {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer rc.Close()
+			res, err := uspto.ParseCitations(rc)
+			if err != nil {
+				return nil, err
+			}
+			return res.Citations, nil
+		}
 	}
-
-	res := Result{
-		Patent: patent,
-		Documents: []domain.Document{{
-			Number: recordNumber,
-			Stage:  domain.StageApplication,
-			Dated:  filingDate,
-		}},
-		AuthorityIdentifiers: []domain.AuthorityIdentifier{{
-			Authority:      "US",
-			IdentifierType: "application",
-			Identifier:     appNumber,
-			RawIdentifier:  w.ApplicationNumberText,
-			RecordNumber:   recordNumber,
-			DocumentNumber: recordNumber.Normalized(),
-			Country:        "US",
-			Dated:          w.ApplicationMetaData.FilingDate,
-			Source:         string(domain.SourceUSPTO),
-			Confidence:     100,
-		}},
-	}
-
-	extraDocs, extraIds := extractAdditionalUSPTODocuments(recordNumber, w)
-	res.Documents = append(res.Documents, extraDocs...)
-	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
-
-	res.USPTOApplication = &domain.USPTOApplication{
-		ApplicationNumber:             appNumber,
-		RecordNumber:                  recordNumber,
-		InventionTitle:                patent.Title,
-		FilingDate:                    w.ApplicationMetaData.FilingDate,
-		EffectiveFilingDate:           w.ApplicationMetaData.EffectiveFilingDate,
-		ApplicationStatusCode:         stringify(w.ApplicationMetaData.ApplicationStatusCode),
-		ApplicationStatusText:         strings.TrimSpace(w.ApplicationMetaData.ApplicationStatusDescription),
-		ApplicationStatusDate:         w.ApplicationMetaData.ApplicationStatusDate,
-		ApplicationTypeCode:           w.ApplicationMetaData.ApplicationTypeCode,
-		ApplicationTypeLabel:          w.ApplicationMetaData.ApplicationTypeLabelName,
-		ApplicationTypeCategory:       w.ApplicationMetaData.ApplicationTypeCategory,
-		FirstInventorToFile:           strings.EqualFold(w.ApplicationMetaData.FirstInventorToFileIndicator, "Y"),
-		NationalStage:                 w.ApplicationMetaData.NationalStageIndicator,
-		FirstInventorName:             w.ApplicationMetaData.FirstInventorName,
-		FirstApplicantName:            w.ApplicationMetaData.FirstApplicantName,
-		CustomerNumber:                stringify(w.ApplicationMetaData.CustomerNumber),
-		GroupArtUnitNumber:            w.ApplicationMetaData.GroupArtUnitNumber,
-		ExaminerName:                  w.ApplicationMetaData.ExaminerNameText,
-		DocketNumber:                  w.ApplicationMetaData.DocketNumber,
-		ApplicationConfirmationNumber: stringify(w.ApplicationMetaData.ApplicationConfirmationNumber),
-		USPCSymbolText:                w.ApplicationMetaData.USPCSymbolText,
-		USPCClass:                     w.ApplicationMetaData.Class,
-		USPCSubclass:                  w.ApplicationMetaData.Subclass,
-		SmallEntityStatus:             w.ApplicationMetaData.EntityStatusData.SmallEntityStatusIndicator,
-		BusinessEntityStatus:          w.ApplicationMetaData.EntityStatusData.BusinessEntityStatusCategory,
-		PublicationCategoryJSON:       rawJSONOrDefault(w.ApplicationMetaData.PublicationCategoryBag, "[]"),
-		LastIngestionDateTime:         w.LastIngestionDateTime,
-		FetchedAt:                     nowText,
-		PGPubXMLURL: func() string {
-			if w.PGPubDocumentMetaData != nil {
-				return w.PGPubDocumentMetaData.FileLocationURI
-			}
-			return ""
-		}(),
-		PGPubXMLName: func() string {
-			if w.PGPubDocumentMetaData != nil {
-				return w.PGPubDocumentMetaData.XMLFileName
-			}
-			return ""
-		}(),
-		PatentGrantXMLURL: func() string {
-			if w.GrantDocumentMetaData != nil {
-				return w.GrantDocumentMetaData.FileLocationURI
-			}
-			return ""
-		}(),
-		PatentGrantXMLName: func() string {
-			if w.GrantDocumentMetaData != nil {
-				return w.GrantDocumentMetaData.XMLFileName
-			}
-			return ""
-		}(),
-	}
-	res.USPTOParties = usptoParties(appNumber, w)
-	res.USPTOEvents = usptoEvents(appNumber, w.EventDataBag)
-	res.USPTOContinuities = usptoContinuities(appNumber, recordNumber, w.ParentContinuityBag)
-	res.USPTOForeignPriority = usptoForeignPriorities(appNumber, w.ForeignPriorityBag)
-	res.SourceSnapshots = []domain.SourceSnapshot{{
-		ID:             snapshotID(string(domain.SourceUSPTO), appNumber, body),
-		PatentNumber:   recordNumber,
-		Source:         "uspto_file_wrapper",
-		SourceRecordID: appNumber,
-		SourceURL:      patent.SourceURL,
-		FetchedAt:      nowText,
-		PayloadKind:    "json",
-		PayloadHash:    payloadHash(body),
-		ResponseBytes:  int64(len(body)),
-		HTTPStatus:     http.StatusOK,
-		SummaryJSON:    `{"parser":"file_wrapper"}`,
-	}}
-	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, identifiersFromUSPTO(recordNumber, appNumber, w)...)
-	res.Relations = append(res.Relations, relationsFromUSPTOContinuity(recordNumber, w.ParentContinuityBag)...)
-	return res, nil
+	return nil, fmt.Errorf("zip contained no xml file")
 }
 
 func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (usptoWrapperData, bool) {

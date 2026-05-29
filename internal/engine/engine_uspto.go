@@ -72,9 +72,6 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 	}
 
 	apiKey := strings.TrimSpace(e.usptoAPIKey)
-	if apiKey == "" {
-		return proto.USPTOFetchXMLResult{}, errors.New("engine: USPTO API key not configured")
-	}
 
 	if err := os.MkdirAll(e.patentsDir, 0o755); err != nil {
 		return proto.USPTOFetchXMLResult{}, fmt.Errorf("engine: create patents dir: %w", err)
@@ -86,7 +83,9 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 	if err != nil {
 		return proto.USPTOFetchXMLResult{}, err
 	}
-	req.Header.Set("x-api-key", apiKey)
+	if apiKey != "" {
+		req.Header.Set("x-api-key", apiKey)
+	}
 	req.Header.Set("Accept", "*/*")
 
 	resp, err := http.DefaultClient.Do(req)

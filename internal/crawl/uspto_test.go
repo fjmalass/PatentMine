@@ -1,7 +1,9 @@
 package crawl
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -54,8 +56,9 @@ const usptoSampleResponse = `{
 }`
 
 func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
+	parseUSPTO := makeParseUSPTO("", &http.Client{})
 	number := domain.MustParsePatentNumber("US16123456")
-	res, err := parseUSPTO(number, []byte(usptoSampleResponse))
+	res, err := parseUSPTO(context.Background(), number, []byte(usptoSampleResponse))
 	if err != nil {
 		t.Fatalf("parseUSPTO: %v", err)
 	}
@@ -136,8 +139,9 @@ func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
 }
 
 func TestParseUSPTOEmptyResultIsNotAvailable(t *testing.T) {
+	parseUSPTO := makeParseUSPTO("", &http.Client{})
 	number := domain.MustParsePatentNumber("US10000000B2")
-	_, err := parseUSPTO(number, []byte(`{"count":0,"patentFileWrapperDataBag":[]}`))
+	_, err := parseUSPTO(context.Background(), number, []byte(`{"count":0,"patentFileWrapperDataBag":[]}`))
 	if !errors.Is(err, ErrNotAvailable) {
 		t.Fatalf("parseUSPTO on an empty result = %v, want ErrNotAvailable", err)
 	}

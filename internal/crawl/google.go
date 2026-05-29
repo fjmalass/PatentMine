@@ -72,7 +72,7 @@ var googleDateLayouts = []string{"2006-01-02", "2006/01/02"}
 // bibliographic fields come from the page's itemprop microdata (with meta-tag
 // fallbacks); citation and family edges come from the page body, so a fetched
 // patent's Citations / Cited-by / family views populate.
-func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
+func parseGoogle(ctx context.Context, number domain.PatentNumber, body []byte) (Result, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return Result{}, fmt.Errorf("crawl/google: parse HTML: %w", err)

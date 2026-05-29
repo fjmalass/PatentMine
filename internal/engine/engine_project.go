@@ -308,7 +308,7 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 		m := domain.Membership{
 			Project:     project,
 			Patent:      neighborRecord,
-			ReviewState: domain.ReviewStateUnknown,
+			ReviewState: domain.ReviewStateUnderReview,
 			AddedAt:     time.Now().UTC(),
 		}
 		if err := e.repo.AddMembership(ctx, m); err != nil {
@@ -380,7 +380,7 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 				m := domain.Membership{
 					Project:     project,
 					Patent:      neighbor,
-					ReviewState: domain.ReviewStateUnknown,
+					ReviewState: domain.ReviewStateUnderReview,
 					AddedAt:     time.Now().UTC(),
 				}
 				if err := e.repo.AddMembership(ctx, m); err != nil {
@@ -501,7 +501,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 	for _, record := range records {
 		current, err := e.repo.Membership(ctx, project, record)
 		if errors.Is(err, store.ErrNotFound) {
-			initialState := domain.ReviewStateUnknown
+			initialState := domain.ReviewStateUnderReview
 
 			m := domain.Membership{
 				Project:     project,

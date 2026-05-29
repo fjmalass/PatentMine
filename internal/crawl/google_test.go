@@ -1,6 +1,7 @@
 package crawl
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -39,7 +40,7 @@ const googleSamplePage = `<!doctype html><html><head>
 
 func TestParseGoogleExtractsBibliographicFields(t *testing.T) {
 	number := domain.MustParsePatentNumber("US10000000B2")
-	res, err := parseGoogle(number, []byte(googleSamplePage))
+	res, err := parseGoogle(context.Background(), number, []byte(googleSamplePage))
 	if err != nil {
 		t.Fatalf("parseGoogle: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestParseGoogleExtractsBibliographicFields(t *testing.T) {
 
 func TestParseGoogleExtractsCitationsAndFamily(t *testing.T) {
 	number := domain.MustParsePatentNumber("US10000000B2")
-	res, err := parseGoogle(number, []byte(googleSamplePage))
+	res, err := parseGoogle(context.Background(), number, []byte(googleSamplePage))
 	if err != nil {
 		t.Fatalf("parseGoogle: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestParseGoogleExtractsCitationsAndFamily(t *testing.T) {
 
 func TestParseGoogleExtractsClaimAndExpiration(t *testing.T) {
 	number := domain.MustParsePatentNumber("US10000000B2")
-	res, err := parseGoogle(number, []byte(googleSamplePage))
+	res, err := parseGoogle(context.Background(), number, []byte(googleSamplePage))
 	if err != nil {
 		t.Fatalf("parseGoogle: %v", err)
 	}
@@ -162,8 +163,8 @@ func TestParseDescriptionAbsentReturnsEmpty(t *testing.T) {
 }
 
 func TestParseGoogleUnknownPageIsNotAvailable(t *testing.T) {
-	number := domain.MustParsePatentNumber("US10000000B2")
-	_, err := parseGoogle(number, []byte("<html><head></head><body>nothing here</body></html>"))
+	number := domain.MustParsePatentNumber("US7561063B2")
+	_, err := parseGoogle(context.Background(), number, []byte("<html><head></head><body>nothing here</body></html>"))
 	if !errors.Is(err, ErrNotAvailable) {
 		t.Fatalf("parseGoogle on a non-patent page = %v, want ErrNotAvailable", err)
 	}
@@ -178,8 +179,8 @@ func TestParseGoogleExtractsMetaTags(t *testing.T) {
 <span itemprop="title">Meta title</span>
 </body></html>`
 
-	number := domain.MustParsePatentNumber("US11714053B2")
-	res, err := parseGoogle(number, []byte(googleMetaPage))
+	number := domain.MustParsePatentNumber("US7561063B2")
+	res, err := parseGoogle(context.Background(), number, []byte(googleMetaPage))
 	if err != nil {
 		t.Fatalf("parseGoogle: %v", err)
 	}

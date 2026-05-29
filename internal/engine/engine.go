@@ -342,7 +342,7 @@ func (e *Engine) ResolveSourceDiffs(ctx context.Context, patentNum domain.Patent
 			after := domain.Membership{
 				Project:     project,
 				Patent:      patentNum,
-				ReviewState: domain.ReviewStateUnknown,
+				ReviewState: domain.ReviewStateUnderReview,
 				AddedAt:     time.Now().UTC(),
 			}
 			if err := e.repo.AddMembership(ctx, after); err != nil {

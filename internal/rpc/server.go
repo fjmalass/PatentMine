@@ -703,25 +703,6 @@ func (s *Server) crawlFamily(ctx context.Context, raw json.RawMessage) (any, err
 	}
 
 	src := p.Source
-	if src == "" {
-		// When no explicit source was requested on the wire, apply strict
-		// source.mode policies so multi-select "L" (and other generic crawls)
-		// do not silently fall back to Google or perform cross-provider
-		// enrichment / diffing.
-		//
-		// We use a switch over the canonical constants (not literals) to keep
-		// this non-brittle. For compare / uspto-first / unknown / empty we
-		// deliberately fall through (src stays "") so the normal registry
-		// logic (with its current mode) applies.
-		m := s.engine.SourceMode()
-		switch m.Mode {
-		case string(domain.SourceModeUSPTOOnly):
-			src = domain.SourceUSPTO
-		case string(domain.SourceModeGoogleOnly):
-			src = domain.SourceGoogle
-		}
-	}
-
 	var id engine.JobID
 	if src != "" {
 		id, err = s.engine.StartFamilyCrawlFromSource(ctx, p.Root, p.Depth, p.Profile, src, p.Force)

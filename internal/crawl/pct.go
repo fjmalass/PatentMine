@@ -1,6 +1,7 @@
 package crawl
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,6 +25,6 @@ func NewPCTSource() Source {
 
 // parsePCT extracts a patent and its family edges from a PATENTSCOPE response.
 // Implementing the parser is the work that makes this provider live.
-func parsePCT(domain.PatentNumber, []byte) (Result, error) {
+func parsePCT(ctx context.Context, number domain.PatentNumber, body []byte) (Result, error) {
 	return Result{}, fmt.Errorf("crawl/pct: response parser not yet implemented")
 }

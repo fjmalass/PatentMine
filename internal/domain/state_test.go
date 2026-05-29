@@ -27,14 +27,14 @@ func TestReviewStateTransitions(t *testing.T) {
 		}
 	})
 
-	t.Run("stub patent only allows unknown review state", func(t *testing.T) {
+	t.Run("stub patent only allows unknown or under_review review state", func(t *testing.T) {
 		cases := []struct {
 			from ReviewState
 			to   ReviewState
 			want bool
 		}{
 			{ReviewStateUnknown, ReviewStateUnknown, true}, // no-op
-			{ReviewStateUnknown, ReviewStateUnderReview, false},
+			{ReviewStateUnknown, ReviewStateUnderReview, true},
 			{ReviewStateUnknown, ReviewStateActive, false},
 			{ReviewStateUnknown, ReviewStateIgnored, false},
 			{ReviewStateUnknown, ReviewStateDeleted, false},

@@ -360,7 +360,7 @@ func TestEngineSetReviewStateKeepsUserStateAfterAutoFetchFailure(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	patent := domain.MustParsePatentNumber("US9999999B2")
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateUnderReview); err == nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent}, domain.ReviewStateActive); err == nil {
 		t.Fatal("expected SetReviewState to fail for a stub patent")
 	}
 }

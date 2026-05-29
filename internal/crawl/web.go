@@ -19,7 +19,7 @@ const (
 )
 
 // parseFunc turns a provider's raw response body into a Result.
-type parseFunc func(number domain.PatentNumber, body []byte) (Result, error)
+type parseFunc func(ctx context.Context, number domain.PatentNumber, body []byte) (Result, error)
 
 // httpSource is the shared scaffold for web-based sources. It owns the polite
 // rate limiting, request building, and status handling; each provider supplies
@@ -113,7 +113,7 @@ func (s *httpSource) Fetch(ctx context.Context, number domain.PatentNumber) (Res
 		return Result{}, fmt.Errorf("crawl/%s: read body: %w", s.name, err)
 	}
 	s.observeHTTP(number, time.Since(requestStart), resp.StatusCode, requestBytes, responseHeaderBytes+int64(len(body)), false, nil)
-	return s.parse(number, body)
+	return s.parse(ctx, number, body)
 }
 
 func (s *httpSource) observeDelay(d time.Duration, failed bool) {
