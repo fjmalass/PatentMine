@@ -11,6 +11,22 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v0.5.1] — 2026-05-29
+
+### Added
+- Patent expiration now reports the earliest-term parent: Source Application, Grant number, Grant date, Inventors, and Title (CLI and TUI overlay). Grant number falls back to parsing the USPTO grant XML file name when the API omits it.
+- CLI prints the connected daemon's version and warns on a CLI/daemon version mismatch.
+
+### Changed
+- Lifecycle CLI subcommands renamed to `start-server`/`stop-server`, `start-api`/`stop-api`, `start-tui`/`stop-tui` (each writes/clears a pid file). Added `force-stop-daemon` and a forceful `restart-daemon`.
+- `:` command prompt: `Tab` autocompletes the highlighted command, `Enter` runs typed input, and aliases run as typed. Wider command popup with an aliases column.
+
+### Fixed
+- Expiration: earliest-term parent was resolved via an OR query that let an application serial collide with an unrelated grant number; parents are now looked up strictly by application number.
+- `:expiration` is available from the catalog/citations/family panes, not only detail.
+
+---
+
 ## [v0.5.0] — 2026-05-27
 
 ### Database
