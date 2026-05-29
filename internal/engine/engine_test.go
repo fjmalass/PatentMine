@@ -627,8 +627,8 @@ func TestEngineReviewStateOf(t *testing.T) {
 		t.Fatalf("AddToProject: %v", err)
 	}
 	state, ok, err := eng.ReviewStateOf(ctx, project.ID, patent.Number)
-	if err != nil || !ok || state != domain.ReviewStateUnknown {
-		t.Fatalf("ReviewStateOf = (%q, %v, %v), want (stub, true, nil)", state, ok, err)
+	if err != nil || !ok || state != domain.ReviewStateUnderReview {
+		t.Fatalf("ReviewStateOf = (%q, %v, %v), want (under_review, true, nil)", state, ok, err)
 	}
 	// With no project named the call is a quiet no-op.
 	if _, ok, err := eng.ReviewStateOf(ctx, "", patent.Number); err != nil || ok {
@@ -687,11 +687,11 @@ func TestEngineSinglePatentNoopsRecordMetricsWithoutChangeEvents(t *testing.T) {
 	}
 	expectDBChanged(t, events, "tag removal")
 
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateActive); err != nil {
 		t.Fatalf("SetReviewState: %v", err)
 	}
 	expectDBChanged(t, events, "review state change")
-	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(ctx, project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateActive); err != nil {
 		t.Fatalf("SetReviewState repeat: %v", err)
 	}
 	expectNoDBChanged(t, events, "repeat review state")

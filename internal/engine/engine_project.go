@@ -190,7 +190,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	after := domain.Membership{
 		Project:     project,
 		Patent:      record,
-		ReviewState: domain.ReviewStateUnknown,
+		ReviewState: domain.ReviewStateUnderReview,
 		AddedAt:     time.Now().UTC(),
 	}
 	if err := e.repo.AddMembership(ctx, after); err != nil {
@@ -456,7 +456,7 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 			},
 		})
 		membership, err := e.repo.Membership(ctx, project, record)
-		if err == nil && membership.ReviewState != domain.ReviewStateUnknown {
+		if err == nil && membership.ReviewState != domain.ReviewStateUnknown && membership.ReviewState != domain.ReviewStateUnderReview {
 			return
 		}
 		if stubCreated {

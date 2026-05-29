@@ -51,7 +51,7 @@ func TestEngineWritesSemanticActivityRecords(t *testing.T) {
 	if _, err := eng.AddToProject(context.Background(), project.ID, patent.Number); err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
-	if err := eng.SetReviewState(context.Background(), project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateUnderReview); err != nil {
+	if err := eng.SetReviewState(context.Background(), project.ID, []domain.PatentNumber{patent.Number}, domain.ReviewStateActive); err != nil {
 		t.Fatalf("SetReviewState: %v", err)
 	}
 	if _, err := eng.SaveIDSEntry(context.Background(), domain.IDSEntry{
