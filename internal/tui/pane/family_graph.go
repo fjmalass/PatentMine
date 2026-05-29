@@ -14,6 +14,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/export/familygraph"
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
@@ -437,12 +438,14 @@ func (g *FamilyGraph) exportGraph() tea.Cmd {
 		return status(text.StatusFamilyExportFailed, true, "no export directory configured")
 	}
 
+	res := proto.FamilyGraphResult{Root: g.root, Nodes: g.nodes, Edges: g.edges}
+
 	mStart := time.Now()
-	mermaid := g.mermaidGraph()
+	mermaid := familygraph.Mermaid(res)
 	g.observe("tui.family.mermaid_gen", mStart)
 
 	dStart := time.Now()
-	dot := g.dotGraph()
+	dot := familygraph.DOT(res)
 	g.observe("tui.family.dot_gen", dStart)
 
 	stamp := time.Now().Format("20060102-150405")
@@ -497,122 +500,6 @@ func (g *FamilyGraph) metricsGauge(name string, v int64) {
 	if g.metrics != nil {
 		g.metrics.SetGauge(name, v)
 	}
-}
-
-// mermaid styling constants. Kept here (not in code paths) so the colors are
-// declared once and the export functions stay declarative.
-const (
-	mermaidRootClass  = "root"
-	mermaidCycleColor = "#d9534f" // cross/back edges (cycles, inconsistent depth)
-	mermaidRootFill   = "#cde4ff"
-)
-
-func (g *FamilyGraph) mermaidGraph() string {
-	var b strings.Builder
-	b.WriteString("flowchart TD\n")
-	for _, node := range g.nodes {
-		id := mermaidNodeID(node.Patent.Number)
-		shapeOpen, shapeClose := "[\"", "\"]"
-		if node.Patent.Number == g.root {
-			shapeOpen, shapeClose = "((\"", "\"))"
-		}
-		fmt.Fprintf(&b, "  %s%s%s%s\n", id, shapeOpen, mermaidNodeText(node), shapeClose)
-		if node.Patent.Number == g.root {
-			fmt.Fprintf(&b, "  class %s %s\n", id, mermaidRootClass)
-		}
-	}
-	var cycleEdges []int
-	for i, edge := range g.edges {
-		arrow := " --> "
-		if edge.Inconsistent {
-			arrow = " -.-> "
-			cycleEdges = append(cycleEdges, i)
-		}
-		fmt.Fprintf(&b, "  %s%s%s\n", mermaidNodeID(edge.Parent), arrow, mermaidNodeID(edge.Child))
-	}
-	fmt.Fprintf(&b, "  classDef %s fill:%s,stroke:#333,stroke-width:2px;\n", mermaidRootClass, mermaidRootFill)
-	for _, i := range cycleEdges {
-		fmt.Fprintf(&b, "  linkStyle %d stroke:%s,stroke-dasharray:4;\n", i, mermaidCycleColor)
-	}
-	return b.String()
-}
-
-// dotGraph renders the same family graph as Graphviz DOT, with cross/back edges
-// drawn dashed and red so cycles are visible in a laid-out render.
-func (g *FamilyGraph) dotGraph() string {
-	var b strings.Builder
-	b.WriteString("digraph family {\n")
-	b.WriteString("  rankdir=TB;\n")
-	b.WriteString("  node [shape=box, style=rounded];\n")
-	for _, node := range g.nodes {
-		id := dotNodeID(node.Patent.Number)
-		attrs := fmt.Sprintf("label=\"%s\"", dotNodeLabel(node))
-		if node.Patent.Number == g.root {
-			attrs += fmt.Sprintf(", shape=doublecircle, style=filled, fillcolor=\"%s\"", mermaidRootFill)
-		}
-		fmt.Fprintf(&b, "  %s [%s];\n", id, attrs)
-	}
-	for _, edge := range g.edges {
-		attrs := ""
-		if edge.Inconsistent {
-			attrs = fmt.Sprintf(" [style=dashed, color=\"%s\"]", mermaidCycleColor)
-		}
-		fmt.Fprintf(&b, "  %s -> %s%s;\n", dotNodeID(edge.Parent), dotNodeID(edge.Child), attrs)
-	}
-	b.WriteString("}\n")
-	return b.String()
-}
-
-func dotNodeID(number domain.PatentNumber) string {
-	return "\"" + mermaidNodeID(number) + "\""
-}
-
-// dotNodeLabel builds a Graphviz label (number on the first line, truncated
-// title on the second) with DOT-special characters escaped.
-func dotNodeLabel(node proto.FamilyGraphNode) string {
-	number := node.Patent.DisplayNumber
-	if number.IsZero() {
-		number = node.Patent.Number
-	}
-	label := number.String()
-	if title := strings.TrimSpace(node.Patent.Title); title != "" {
-		if len(title) > 48 {
-			title = strings.TrimSpace(title[:45]) + "..."
-		}
-		label += `\n` + title
-	}
-	return strings.NewReplacer(`"`, `\"`).Replace(label)
-}
-
-func mermaidNodeText(node proto.FamilyGraphNode) string {
-	number := node.Patent.DisplayNumber
-	if number.IsZero() {
-		number = node.Patent.Number
-	}
-	title := strings.TrimSpace(node.Patent.Title)
-	if title == "" {
-		return mermaidEscape(number.String())
-	}
-	if len(title) > 48 {
-		title = strings.TrimSpace(title[:45]) + "..."
-	}
-	return mermaidEscape(number.String() + "<br/>" + title)
-}
-
-func mermaidNodeID(number domain.PatentNumber) string {
-	parts := []string{strings.ToLower(number.Country), strings.ToLower(number.Serial)}
-	if number.Kind != "" {
-		parts = append(parts, strings.ToLower(number.Kind))
-	}
-	return "p_" + strings.Join(parts, "_")
-}
-
-func mermaidEscape(text string) string {
-	replacer := strings.NewReplacer(
-		`\\`, `\\\\`,
-		`"`, `\\"`,
-	)
-	return replacer.Replace(text)
 }
 
 func (g *FamilyGraph) renderRow(row familyGraphRow, w int) string {

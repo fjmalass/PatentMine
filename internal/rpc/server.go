@@ -24,7 +24,14 @@ import (
 )
 
 const slowRPCMethod = 150 * time.Millisecond
-const slowTagSortRPC = 150 * time.Millisecond
+const slowSortWarnRPC = 150 * time.Millisecond
+
+// Sort labels for the relations sorts that get dedicated telemetry. Named so
+// the metric names built from them never appear as bare strings.
+const (
+	sortLabelTags      = "tags"
+	sortLabelParentage = "parentage"
+)
 
 // ErrBadParams marks a request whose params failed to decode.
 var ErrBadParams = errors.New("rpc: bad params")
@@ -91,6 +98,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodImportFile:                s.importFile,
 		proto.MethodRelations:                 s.relations,
 		proto.MethodFamilyGraph:               s.familyGraph,
+		proto.MethodFamilyGraphExport:         s.familyGraphExport,
 		proto.MethodIDSExport:                 s.idsExport,
 		proto.MethodIDSPDFExport:              s.idsPDFExport,
 		proto.MethodIDSPDFPreview:             s.idsPDFPreview,
@@ -433,7 +441,7 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 				metrics.SetGauge("rpc.method.patent.list.sort_tags.limit", int64(p.Limit))
 				metrics.SetGauge("rpc.method.patent.list.sort_tags.offset", int64(p.Offset))
 			}
-			if d >= slowTagSortRPC {
+			if d >= slowSortWarnRPC {
 				s.Logger().Warn("slow patent list tag sort",
 					slog.String("project", string(p.Project)),
 					slog.Int("limit", p.Limit),
@@ -778,29 +786,11 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		}
 		return nil, fmt.Errorf("%w: unsupported patent relations sort %q", ErrBadParams, p.SortColumn)
 	}
-	var tagSortStart time.Time
-	if p.SortColumn == domain.SortByTags {
-		tagSortStart = time.Now()
-		if metrics := s.engineMetrics(); metrics != nil {
-			metrics.IncCounter("patent_relations.sort_tags_total", 1)
-		}
-		defer func() {
-			d := time.Since(tagSortStart)
-			if metrics := s.engineMetrics(); metrics != nil {
-				metrics.ObserveDuration("rpc.method.patent.relations.sort_tags", d, err != nil)
-				metrics.SetGauge("rpc.method.patent.relations.sort_tags.limit", int64(p.Limit))
-				metrics.SetGauge("rpc.method.patent.relations.sort_tags.offset", int64(p.Offset))
-			}
-			if d >= slowTagSortRPC {
-				s.Logger().Warn("slow patent relations tag sort",
-					slog.String("project", string(p.Project)),
-					slog.String("kind", string(p.Kind)),
-					slog.Int("limit", p.Limit),
-					slog.Int("offset", p.Offset),
-					slog.Int64("duration_ms", d.Milliseconds()),
-					slog.Bool("failed", err != nil))
-			}
-		}()
+	switch p.SortColumn {
+	case domain.SortByTags:
+		defer s.observeRelationsSort(sortLabelTags, p, &err)()
+	case domain.SortByParentage:
+		defer s.observeRelationsSort(sortLabelParentage, p, &err)()
 	}
 	q := store.PatentQuery{
 		Relation:       p.Number,
@@ -824,12 +814,52 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 	return proto.RelationsResult{Patents: patents, Total: total}, nil
 }
 
+// observeRelationsSort instruments a relations sort that warrants dedicated
+// telemetry (tags, parentage — the joined/aggregated sorts that can get slow).
+// It increments the request counter immediately and returns a closure to defer
+// that records the duration, page bounds, and a slow-sort warning. Metric names
+// are built from the named label, so no bare metric string appears here.
+func (s *Server) observeRelationsSort(label string, p proto.RelationsParams, errp *error) func() {
+	start := time.Now()
+	base := "rpc.method.patent.relations.sort_" + label
+	if metrics := s.engineMetrics(); metrics != nil {
+		metrics.IncCounter("patent_relations.sort_"+label+"_total", 1)
+	}
+	return func() {
+		d := time.Since(start)
+		failed := errp != nil && *errp != nil
+		if metrics := s.engineMetrics(); metrics != nil {
+			metrics.ObserveDuration(base, d, failed)
+			metrics.SetGauge(base+".limit", int64(p.Limit))
+			metrics.SetGauge(base+".offset", int64(p.Offset))
+		}
+		if d >= slowSortWarnRPC {
+			s.Logger().Warn("slow patent relations sort",
+				slog.String("sort", label),
+				slog.String("project", string(p.Project)),
+				slog.String("kind", string(p.Kind)),
+				slog.Int("limit", p.Limit),
+				slog.Int("offset", p.Offset),
+				slog.Int64("duration_ms", d.Milliseconds()),
+				slog.Bool("failed", failed))
+		}
+	}
+}
+
 func (s *Server) familyGraph(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.FamilyGraphParams](raw)
 	if err != nil {
 		return nil, err
 	}
 	return s.engine.FamilyGraph(ctx, p)
+}
+
+func (s *Server) familyGraphExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.FamilyExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.FamilyGraphExport(ctx, p)
 }
 
 func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error) {

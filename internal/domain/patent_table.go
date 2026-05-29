@@ -13,7 +13,7 @@ const (
 	PatentColumnCitations      PatentTableColumnKey = "citations"
 	PatentColumnCitedBy        PatentTableColumnKey = "cited_by"
 	PatentColumnParents        PatentTableColumnKey = "parents"
-	PatentColumnParentage      PatentTableColumnKey = "parentage"
+	PatentColumnParentage      PatentTableColumnKey = PatentTableColumnKey(SortByParentage)
 	PatentColumnTags           PatentTableColumnKey = PatentTableColumnKey(SortByTags)
 	PatentColumnIDS            PatentTableColumnKey = PatentTableColumnKey(SortByIDS)
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)
@@ -68,6 +68,13 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 // given sort key for the given project context.
 func PatentTableAllowsSort(projectID ProjectID, sort SortColumn) bool {
 	if sort == "" {
+		return true
+	}
+	// Parentage (the REL code) is a relations-only column shown in the Parents
+	// view, so it is not part of the default schema above; allow sorting on it
+	// explicitly. In non-parents contexts the sort key resolves to empty for
+	// every row, leaving order stable.
+	if sort == SortByParentage {
 		return true
 	}
 	for _, col := range PatentTableColumns(projectID) {

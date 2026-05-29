@@ -3,12 +3,14 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/export/familygraph"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
 )
@@ -228,6 +230,47 @@ func (e *Engine) FamilyGraph(ctx context.Context, p proto.FamilyGraphParams) (ou
 		Truncated:          truncated,
 		HiddenByCountry:    hiddenByCountry,
 		InconsistencyCount: inconsistent,
+	}, nil
+}
+
+// FamilyGraphExport builds the bounded family DAG and renders it to a diagram
+// (Mermaid or Graphviz DOT). Rendering lives on the daemon so the TUI and the
+// REST API emit identical output from the same graph data.
+func (e *Engine) FamilyGraphExport(ctx context.Context, p proto.FamilyExportParams) (out proto.FamilyExportResult, err error) {
+	defer e.observeDuration("engine.family_graph_export", time.Now(), &err)
+
+	graph, err := e.FamilyGraph(ctx, p.FamilyGraphParams)
+	if err != nil {
+		return proto.FamilyExportResult{}, err
+	}
+
+	format := p.Format
+	var content string
+	switch format {
+	case "", proto.FamilyExportMermaid:
+		format = proto.FamilyExportMermaid
+		content = familygraph.Mermaid(graph)
+	case proto.FamilyExportDOT:
+		content = familygraph.DOT(graph)
+	default:
+		return proto.FamilyExportResult{}, fmt.Errorf("engine: unknown family export format %q", p.Format)
+	}
+
+	e.log(ctx, slog.LevelInfo, "family graph exported",
+		slog.String("root", graph.Root.String()),
+		slog.String("format", format),
+		slog.Int("nodes", len(graph.Nodes)),
+		slog.Int("back_edges", graph.InconsistencyCount))
+	e.incCounter("engine.family_export."+format, 1)
+	e.setGauge("engine.family_export.nodes", int64(len(graph.Nodes)))
+	e.setGauge("engine.family_export.back_edges", int64(graph.InconsistencyCount))
+
+	return proto.FamilyExportResult{
+		Root:      graph.Root,
+		Format:    format,
+		Content:   content,
+		Nodes:     len(graph.Nodes),
+		BackEdges: graph.InconsistencyCount,
 	}, nil
 }
 

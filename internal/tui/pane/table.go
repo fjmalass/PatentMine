@@ -34,6 +34,10 @@ const (
 // the Parents view (full phrase appears in the status line on focus).
 const headerParentage = "REL"
 
+// parentageColumnIndex is where the REL column is inserted in the Parents view:
+// third, right after # (0) and NUMBER (1), before TITLE.
+const parentageColumnIndex = 2
+
 // tableCol is one table column descriptor.
 type tableCol struct {
 	key      domain.PatentTableColumnKey

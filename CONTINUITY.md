@@ -58,6 +58,12 @@ The engine records, per Parents load:
 - `engine.parents.total` gauge.
 - A `"loaded continuity parents"` log line with per-category counts.
 
+Sorting the Parents view by the `REL` column (server-side SQL; see §3's note that parentage is a relations-only sort) is instrumented like the tag sort:
+
+- `store.sqlite.list_patents.sort_parentage` — query timing, with `_total` counter and `.limit` / `.offset` gauges.
+- `rpc.method.patent.relations.sort_parentage` — RPC-method timing, with `patent_relations.sort_parentage_total` counter and `.limit` / `.offset` gauges.
+- A `"slow patent relations sort"` warning (`sort=parentage`) when a sort exceeds the slow threshold.
+
 ---
 
 ## 4. Family graph: DFS layout & cycles
@@ -97,11 +103,38 @@ Files are written to the patents directory — by default:
 
 Render the files with any Mermaid tool (e.g. the Mermaid Live Editor, or VS Code's Mermaid preview) or Graphviz (`dot -Tsvg US12945822_20260529-141500.dot -o family.svg`).
 
-### Observability (visible under the `M` overlay)
+### Where the diagram is generated
+
+The Mermaid/DOT source is produced by `internal/export/familygraph` (`Mermaid`, `DOT`) — pure functions over a `proto.FamilyGraphResult`. The **daemon** owns generation: the engine method `FamilyGraphExport` walks the family graph and renders it, so the TUI export, the RPC method `patent.family_graph.export`, and the REST API all emit byte-identical output.
+
+### REST API
+
+The daemon serves the same diagrams over HTTP, so a browser, `curl`, or a render service can fetch them without the TUI:
+
+```
+GET /patents/{number}/family.mmd   →  text/plain        (Mermaid flowchart TD)
+GET /patents/{number}/family.dot   →  text/vnd.graphviz (Graphviz digraph)
+```
+
+Both accept the same bounds as the JSON family endpoint: `?depth=`, `?max_nodes=` (alias `?limit=`), and repeated `?country=` filters. Example:
+
+```
+curl 'http://127.0.0.1:8088/patents/US12945822/family.mmd?depth=3' -o family.mmd
+dot -Tsvg <(curl -s 'http://127.0.0.1:8088/patents/US12945822/family.dot') -o family.svg
+```
+
+### Observability
+TUI export (visible under the `M` overlay):
 - `tui.family.mermaid_gen`, `tui.family.dot_gen`, `tui.family.export_write` — generation and write timings.
 - `tui.family.export.ok` / `tui.family.export.error` — counters.
 - `tui.family.export.nodes` / `tui.family.export.back_edges` — gauges.
 - A `"family graph exported"` log line with both paths and node/back-edge counts.
+
+Daemon export (TUI, RPC, and REST all route through it):
+- `engine.family_graph_export` — render timing (success/failure split).
+- `engine.family_export.mermaid` / `engine.family_export.dot` — per-format counters.
+- `engine.family_export.nodes` / `engine.family_export.back_edges` — gauges.
+- A `"family graph exported"` log line with the root, format, and node/back-edge counts.
 
 ---
 
@@ -113,5 +146,8 @@ Render the files with any Mermaid tool (e.g. the Mermaid Live Editor, or VS Code
 | Continuity storage | `internal/store/sqlite/source_data.go` | `uspto_continuity` table; `USPTOContinuities`, `ParentageForChild` |
 | Parents attach + metrics | `internal/engine/engine_crawl.go` | `Relations` → `attachParentage` |
 | Parents `REL` column | `internal/tui/pane/table.go`, `internal/tui/pane/citations.go` | `PatentColumnParentage` |
-| Family graph DFS + export | `internal/tui/pane/family_graph.go` | `dfsRows`, `mermaidGraph`, `dotGraph`, `exportGraph` |
-| Family graph traversal | `internal/engine/engine_family_graph.go` | `FamilyGraph` (cycle-safe walk) |
+| Family graph DFS + TUI export | `internal/tui/pane/family_graph.go` | `dfsRows`, `exportGraph` (writes files, calls shared renderer) |
+| Mermaid/DOT renderers (shared) | `internal/export/familygraph/render.go` | `Mermaid`, `DOT` — pure over `proto.FamilyGraphResult` |
+| Family graph traversal + daemon export | `internal/engine/engine_family_graph.go` | `FamilyGraph` (cycle-safe walk), `FamilyGraphExport` |
+| Family export RPC method | `internal/rpc/server.go`, `internal/proto/proto.go` | `patent.family_graph.export`, `FamilyExportParams/Result` |
+| Family export REST routes | `internal/api/routes.go`, `internal/api/patents.go` | `GET /patents/{number}/family.mmd`, `.dot` |

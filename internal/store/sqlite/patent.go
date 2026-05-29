@@ -270,10 +270,9 @@ func (r *Repo) PatentByRecordID(ctx context.Context, id domain.RecordID) (patent
 // ListPatents returns one page of lightweight listing rows matching q.
 func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []domain.PatentRow, err error) {
 	defer r.observeDuration("list_patents", time.Now(), &err)
-	var tagSortStart time.Time
-	if q.SortColumn == domain.SortByTags {
-		tagSortStart = time.Now()
-		defer func() { r.observeTagSortDuration(tagSortStart, &err, len(out), q) }()
+	if label, ok := sortMetricLabel(q.SortColumn); ok {
+		sortStart := time.Now()
+		defer func() { r.observeSortDuration(label, sortStart, &err, q) }()
 	}
 	cols, colArgs := patentRowColumns(q.Project)
 	where, whereArgs, err := patentFilter(q)
@@ -357,16 +356,31 @@ func (r *Repo) ListOrphanPatents(ctx context.Context, limit, offset int) (out []
 	return out, total, nil
 }
 
-func (r *Repo) observeTagSortDuration(start time.Time, errp *error, rows int, q store.PatentQuery) {
+// sortMetricLabel reports whether a sort column warrants dedicated timing (the
+// non-trivial sorts that join or aggregate and can get slow), and the label
+// used to build its metric names. Labels come from here so no bare metric-name
+// string is spelled at the emit sites.
+func sortMetricLabel(c domain.SortColumn) (string, bool) {
+	switch c {
+	case domain.SortByTags:
+		return "tags", true
+	case domain.SortByParentage:
+		return "parentage", true
+	default:
+		return "", false
+	}
+}
+
+func (r *Repo) observeSortDuration(label string, start time.Time, errp *error, q store.PatentQuery) {
 	if r.metrics == nil {
 		return
 	}
 	failed := errp != nil && *errp != nil
-	r.metrics.IncCounter("store.sqlite.list_patents.sort_tags_total", 1)
-	r.metrics.ObserveDuration("store.sqlite.list_patents.sort_tags", time.Since(start), failed)
-	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.limit", int64(q.Limit))
-	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.offset", int64(q.Offset))
-	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.rows", int64(rows))
+	base := "store.sqlite.list_patents.sort_" + label
+	r.metrics.IncCounter(base+"_total", 1)
+	r.metrics.ObserveDuration(base, time.Since(start), failed)
+	r.metrics.SetGauge(base+".limit", int64(q.Limit))
+	r.metrics.SetGauge(base+".offset", int64(q.Offset))
 }
 
 // attachTags fills the Tags field of every row in one query. It replaces a
@@ -519,6 +533,21 @@ func patentSortExpr(q store.PatentQuery) (string, []any, error) {
 			`)), '') ` + dir, []any{string(q.Project)}, nil
 	case domain.SortByClassification:
 		return "json_extract(p.classifications, '$[0]') " + dir, nil, nil
+	case domain.SortByParentage:
+		// Sort by the claim-parentage code relating each parent row to the focus
+		// patent (q.Relation is the child). Mirrors ParentageForChild's two ways
+		// of matching a parent: by stored record id, else by parent application
+		// number. Rows with no continuity row sort as empty. Number breaks ties
+		// so equal codes keep a stable page order.
+		return `COALESCE((SELECT uc.claim_parentage_type_code ` +
+			`FROM uspto_continuity uc ` +
+			`JOIN uspto_application ua ON ua.application_number = uc.application_number ` +
+			`JOIN patent root ON root.record_id = ua.record_id ` +
+			`LEFT JOIN uspto_application pua ON pua.application_number = uc.parent_application_number_text ` +
+			`WHERE root.number = ? AND (` +
+			`(uc.parent_record_id <> '' AND uc.parent_record_id = p.record_id) OR ` +
+			`(uc.parent_record_id = '' AND pua.record_id = p.record_id)) LIMIT 1), '') ` + dir +
+			`, p.number ASC`, []any{q.Relation.Normalized()}, nil
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported sort column %q", q.SortColumn)
 	}

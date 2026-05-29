@@ -17,6 +17,7 @@ const (
 	SortByIDS            SortColumn = "ids"
 	SortByTags           SortColumn = "tags"
 	SortByClassification SortColumn = "classification"
+	SortByParentage      SortColumn = "parentage"
 
 	// UI-only sort keys used by the per-patent classification overlay. They
 	// never travel over RPC — the overlay sorts its in-memory rows directly.

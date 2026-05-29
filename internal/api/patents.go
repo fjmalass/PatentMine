@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"patentmine/internal/domain"
@@ -62,6 +64,46 @@ func (s *Server) handleFamilyGraph(w http.ResponseWriter, r *http.Request) {
 			MaxNodes:  maxNodes,
 			Countries: q["country"],
 		}, &res)
+}
+
+// handleFamilyExport renders a patent's family DAG to a Mermaid (.mmd) or
+// Graphviz DOT (.dot) diagram. The format is taken from the request path
+// suffix; the daemon does the rendering, so this output matches the TUI export.
+func (s *Server) handleFamilyExport(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	format := proto.FamilyExportMermaid
+	contentType := "text/plain; charset=utf-8"
+	if strings.HasSuffix(r.URL.Path, ".dot") {
+		format = proto.FamilyExportDOT
+		contentType = "text/vnd.graphviz; charset=utf-8"
+	}
+	q := r.URL.Query()
+	depth, _ := strconv.Atoi(q.Get("depth"))
+	maxNodes, _ := strconv.Atoi(firstNonEmpty(q.Get("max_nodes"), q.Get("limit")))
+
+	ctx, cancel := context.WithTimeout(r.Context(), apiCallTimeout)
+	defer cancel()
+	var res proto.FamilyExportResult
+	if err := s.client.Call(ctx, proto.MethodFamilyGraphExport,
+		proto.FamilyExportParams{
+			FamilyGraphParams: proto.FamilyGraphParams{
+				Root:      number,
+				Depth:     depth,
+				MaxNodes:  maxNodes,
+				Countries: q["country"],
+			},
+			Format: format,
+		}, &res); err != nil {
+		writeError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(res.Content))
 }
 
 // handleOrphanList returns patents that have no membership in any project.

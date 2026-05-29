@@ -45,6 +45,7 @@ const (
 	MethodImportFile                Method = "import.file"
 	MethodRelations                 Method = "patent.relations"
 	MethodFamilyGraph               Method = "patent.family_graph"
+	MethodFamilyGraphExport         Method = "patent.family_graph.export"
 	MethodIDSExport                 Method = "ids.export"
 	MethodIDSPDFExport              Method = "ids.export.pdf"
 	MethodIDSPDFPreview             Method = "ids.export.pdf.preview"
@@ -221,16 +222,16 @@ type USPTOExpirationCalculateParams struct {
 }
 
 type USPTOExpirationCalculateResult struct {
-	ApplicationNumber        string `json:"application_number"`
-	PatentNumber             string `json:"patent_number"`
-	Title                    string `json:"title,omitempty"`
-	Inventors                string `json:"inventors,omitempty"`
-	FilingDate               string `json:"filing_date"`
-	GrantDate                string `json:"grant_date"`
-	EarliestTermFilingDate   string `json:"earliest_term_filing_date"`
+	ApplicationNumber      string `json:"application_number"`
+	PatentNumber           string `json:"patent_number"`
+	Title                  string `json:"title,omitempty"`
+	Inventors              string `json:"inventors,omitempty"`
+	FilingDate             string `json:"filing_date"`
+	GrantDate              string `json:"grant_date"`
+	EarliestTermFilingDate string `json:"earliest_term_filing_date"`
 	// EarliestTermAppNum is the application number that owns the earliest term filing date.
 	// Empty when it equals ApplicationNumber (no continuity walk needed).
-	EarliestTermAppNum       string `json:"earliest_term_app_num,omitempty"`
+	EarliestTermAppNum string `json:"earliest_term_app_num,omitempty"`
 	// EarliestTermPatentNumber, EarliestTermGrantDate, EarliestTermTitle describe the
 	// parent patent that contributed the earliest filing date, when known from the store.
 	EarliestTermPatentNumber string `json:"earliest_term_patent_number,omitempty"`
@@ -656,6 +657,31 @@ type FamilyGraphResult struct {
 	Truncated          bool                `json:"truncated,omitempty"`
 	HiddenByCountry    int                 `json:"hidden_by_country,omitempty"`
 	InconsistencyCount int                 `json:"inconsistency_count,omitempty"`
+}
+
+// Family-graph export diagram formats. Named so no bare "mermaid"/"dot" string
+// appears in the engine, RPC, or HTTP routing logic.
+const (
+	FamilyExportMermaid = "mermaid"
+	FamilyExportDOT     = "dot"
+)
+
+// FamilyExportParams selects a bounded family DAG (same bounds as
+// FamilyGraphParams) and a diagram format to render it to. The daemon renders;
+// callers (TUI, REST API) only forward and consume the result.
+type FamilyExportParams struct {
+	FamilyGraphParams
+	Format string `json:"format,omitempty"` // FamilyExportMermaid (default) | FamilyExportDOT
+}
+
+// FamilyExportResult carries the rendered diagram source plus the counts the
+// caller surfaces in status lines and observability.
+type FamilyExportResult struct {
+	Root      domain.PatentNumber `json:"root"`
+	Format    string              `json:"format"`
+	Content   string              `json:"content"`
+	Nodes     int                 `json:"nodes"`
+	BackEdges int                 `json:"back_edges"`
 }
 
 // IDSExportParams selects the project to build an Information Disclosure

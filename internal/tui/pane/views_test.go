@@ -165,39 +165,6 @@ func TestFamilyGraphViewDFSOrderAndNav(t *testing.T) {
 	}
 }
 
-func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
-	parent := domain.MustParsePatentNumber("EP0000002A1")
-	child := domain.MustParsePatentNumber("JP0000003A1")
-	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
-	g.loading = false
-	g.nodes = []proto.FamilyGraphNode{
-		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root patent", FetchState: domain.FetchCached}, Depth: 0},
-		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent patent", FetchState: domain.FetchCached}, Depth: 1},
-		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "", FetchState: domain.FetchStub}, Depth: 1},
-	}
-	g.edges = []proto.FamilyGraphEdge{{Parent: parent, Child: root}, {Parent: root, Child: child, Inconsistent: true}}
-	g.rebuildRows()
-
-	out := g.mermaidGraph()
-	for _, want := range []string{
-		"flowchart TD",
-		"p_us_0000001_b2((\"US0000001B2<br/>Root patent\"))",
-		"p_ep_0000002_a1[\"EP0000002A1<br/>Parent patent\"]",
-		"p_jp_0000003_a1[\"JP0000003A1\"]",
-		"p_ep_0000002_a1 --> p_us_0000001_b2",
-		"p_us_0000001_b2 -.-> p_jp_0000003_a1",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("mermaid export missing %q\n%s", want, out)
-		}
-	}
-	// Cross/back edge should be styled.
-	if !strings.Contains(out, "linkStyle 1 stroke:"+mermaidCycleColor) {
-		t.Fatalf("mermaid export missing cycle linkStyle\n%s", out)
-	}
-}
-
 func TestFamilyGraphDFSNestingBackRefAndExport(t *testing.T) {
 	root := domain.MustParsePatentNumber("US0000001B2")
 	parent := domain.MustParsePatentNumber("EP0000002A1")

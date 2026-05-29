@@ -309,14 +309,22 @@ func (c *Citations) currentCols() []tableCol {
 		schema = domain.PatentTableColumns(projectID)
 	}
 	if c.kind == domain.RelationParent {
-		// Copy before appending so we never mutate the cached c.columns backing array.
-		withParentage := make([]domain.PatentTableColumn, len(schema), len(schema)+1)
-		copy(withParentage, schema)
-		schema = append(withParentage, domain.PatentTableColumn{
-			Key:   domain.PatentColumnParentage,
-			Label: headerParentage,
-			Width: colParentage,
-		})
+		relCol := domain.PatentTableColumn{
+			Key:      domain.PatentColumnParentage,
+			Label:    headerParentage,
+			SortKey:  domain.SortByParentage,
+			Sortable: true,
+			Width:    colParentage,
+		}
+		// REL sits third, right after NUMBER (index 1) and before TITLE, so the
+		// parentage code reads next to the patent it qualifies. Insert into a
+		// copy so we never mutate the cached c.columns backing array.
+		at := min(parentageColumnIndex, len(schema))
+		withParentage := make([]domain.PatentTableColumn, 0, len(schema)+1)
+		withParentage = append(withParentage, schema[:at]...)
+		withParentage = append(withParentage, relCol)
+		withParentage = append(withParentage, schema[at:]...)
+		schema = withParentage
 	}
 	return patentTableColumns(max(c.lastWidth, 80), schema)
 }

@@ -1313,6 +1313,115 @@ func TestParentageForChild(t *testing.T) {
 	}
 }
 
+func TestListPatentsSortByParentage(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	child := domain.MustParsePatentNumber("US17812078")
+	parentCON := domain.MustParsePatentNumber("US10000000")
+	parentDIV := domain.MustParsePatentNumber("US10000001")
+
+	for _, p := range []domain.PatentNumber{parentCON, parentDIV} {
+		if err := repo.SaveNode(ctx, store.NodeBatch{
+			Patent: domain.Patent{Number: p, Title: "Parent", FetchState: domain.FetchStub, Source: domain.SourceUSPTO},
+		}); err != nil {
+			t.Fatalf("SaveNode parent %s: %v", p, err)
+		}
+	}
+
+	childBatch := store.NodeBatch{
+		Patent: domain.Patent{Number: child, Title: "Child", FetchState: domain.FetchStub, Source: domain.SourceUSPTO},
+		USPTOApplication: &domain.USPTOApplication{
+			ApplicationNumber: "17812078",
+			RecordNumber:      child,
+		},
+		USPTOContinuities: []domain.USPTOContinuity{
+			{ApplicationNumber: "17812078", Ordinal: 0, ChildApplicationNumberText: "17812078",
+				ClaimParentageTypeCode: "DIV", ClaimParentageTypeDescriptionText: "Division of", ParentRecordNumber: parentDIV},
+			{ApplicationNumber: "17812078", Ordinal: 1, ChildApplicationNumberText: "17812078",
+				ClaimParentageTypeCode: "CON", ClaimParentageTypeDescriptionText: "Continuation of", ParentRecordNumber: parentCON},
+		},
+		Relations: []domain.Relation{
+			{From: child, To: parentCON, Kind: domain.RelationParent},
+			{From: child, To: parentDIV, Kind: domain.RelationParent},
+		},
+	}
+	if err := repo.SaveNode(ctx, childBatch); err != nil {
+		t.Fatalf("SaveNode child: %v", err)
+	}
+
+	q := store.PatentQuery{Relation: child, RelationKind: domain.RelationParent, SortColumn: domain.SortByParentage, SortAscending: true}
+	asc, err := repo.ListPatents(ctx, q)
+	if err != nil {
+		t.Fatalf("ListPatents parentage asc: %v", err)
+	}
+	if len(asc) != 2 || asc[0].Number != parentCON || asc[1].Number != parentDIV {
+		t.Fatalf("parentage asc order = %v, want [CON=%s, DIV=%s]", asc, parentCON, parentDIV)
+	}
+
+	q.SortAscending = false
+	desc, err := repo.ListPatents(ctx, q)
+	if err != nil {
+		t.Fatalf("ListPatents parentage desc: %v", err)
+	}
+	if len(desc) != 2 || desc[0].Number != parentDIV || desc[1].Number != parentCON {
+		t.Fatalf("parentage desc order = %v, want [DIV=%s, CON=%s]", desc, parentDIV, parentCON)
+	}
+}
+
+func TestListPatentsSortByParentageMetrics(t *testing.T) {
+	repo, metrics := openTestRepoWithMetrics(t)
+	ctx := context.Background()
+
+	child := domain.MustParsePatentNumber("US17812078")
+	parentCON := domain.MustParsePatentNumber("US10000000")
+	parentDIV := domain.MustParsePatentNumber("US10000001")
+	for _, p := range []domain.PatentNumber{parentCON, parentDIV} {
+		if err := repo.SaveNode(ctx, store.NodeBatch{
+			Patent: domain.Patent{Number: p, Title: "Parent", FetchState: domain.FetchStub, Source: domain.SourceUSPTO},
+		}); err != nil {
+			t.Fatalf("SaveNode parent %s: %v", p, err)
+		}
+	}
+	if err := repo.SaveNode(ctx, store.NodeBatch{
+		Patent:           domain.Patent{Number: child, Title: "Child", FetchState: domain.FetchStub, Source: domain.SourceUSPTO},
+		USPTOApplication: &domain.USPTOApplication{ApplicationNumber: "17812078", RecordNumber: child},
+		USPTOContinuities: []domain.USPTOContinuity{
+			{ApplicationNumber: "17812078", Ordinal: 0, ChildApplicationNumberText: "17812078",
+				ClaimParentageTypeCode: "DIV", ClaimParentageTypeDescriptionText: "Division of", ParentRecordNumber: parentDIV},
+			{ApplicationNumber: "17812078", Ordinal: 1, ChildApplicationNumberText: "17812078",
+				ClaimParentageTypeCode: "CON", ClaimParentageTypeDescriptionText: "Continuation of", ParentRecordNumber: parentCON},
+		},
+		Relations: []domain.Relation{
+			{From: child, To: parentCON, Kind: domain.RelationParent},
+			{From: child, To: parentDIV, Kind: domain.RelationParent},
+		},
+	}); err != nil {
+		t.Fatalf("SaveNode child: %v", err)
+	}
+
+	if _, err := repo.ListPatents(ctx, store.PatentQuery{
+		Relation: child, RelationKind: domain.RelationParent,
+		SortColumn: domain.SortByParentage, SortAscending: true, Limit: 2, Offset: 1,
+	}); err != nil {
+		t.Fatalf("ListPatents sort parentage: %v", err)
+	}
+
+	snap := metrics.Snapshot()
+	if snap.Counters["store.sqlite.list_patents.sort_parentage_total"] != 1 {
+		t.Fatalf("sort_parentage_total = %d, want 1", snap.Counters["store.sqlite.list_patents.sort_parentage_total"])
+	}
+	if snap.Timings["store.sqlite.list_patents.sort_parentage"].Count != 1 {
+		t.Fatalf("sort_parentage timing = %+v, want count 1", snap.Timings["store.sqlite.list_patents.sort_parentage"])
+	}
+	if snap.Gauges["store.sqlite.list_patents.sort_parentage.limit"] != 2 {
+		t.Fatalf("sort_parentage limit gauge = %d, want 2", snap.Gauges["store.sqlite.list_patents.sort_parentage.limit"])
+	}
+	if snap.Gauges["store.sqlite.list_patents.sort_parentage.offset"] != 1 {
+		t.Fatalf("sort_parentage offset gauge = %d, want 1", snap.Gauges["store.sqlite.list_patents.sort_parentage.offset"])
+	}
+}
+
 func TestUSPTOApplicationStoreRoundTrip(t *testing.T) {
 	tempDB := filepath.Join(t.TempDir(), "uspto.db")
 	repo, err := Open(context.Background(), tempDB)
