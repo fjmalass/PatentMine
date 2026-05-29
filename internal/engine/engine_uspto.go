@@ -790,8 +790,13 @@ func extractZipXML(body io.Reader, patentsDir string) (string, int64, error) {
 // back to the pre-grant publication XML otherwise. Runs in its own goroutine
 // — failures are logged but never propagated, since this is a courtesy on
 // top of a successful add.
-func (e *Engine) autoFetchUSPTOXMLAfterCrawl(record domain.PatentNumber, id JobID) {
-	ch, unsub := e.pool.bus.Subscribe()
+//
+// The caller must Subscribe to the bus and pass the channel/unsub in *before*
+// submitting the crawl job: a cached or otherwise fast crawl can publish its
+// CrawlDone from a worker goroutine before this function would otherwise have
+// registered, and Bus.Publish only delivers to already-registered subscribers.
+// Subscribing first closes that race.
+func (e *Engine) autoFetchUSPTOXMLAfterCrawl(record domain.PatentNumber, id JobID, ch <-chan proto.Event, unsub func()) {
 	defer unsub()
 	for ev := range ch {
 		if proto.EventKind(ev.Method) != proto.EventCrawlDone {

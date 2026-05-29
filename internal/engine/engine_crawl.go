@@ -37,8 +37,14 @@ func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 	if root.IsZero() {
 		return "", errors.New("engine: crawl root must not be empty")
 	}
+	// Subscribe before submitting: a cached/fast crawl can publish CrawlDone
+	// from its worker before the auto-fetch goroutine would otherwise register,
+	// and Bus.Publish only reaches already-registered subscribers. Subscribing
+	// here, before the job is enqueued, guarantees the event is observed.
+	autoFetchCh, autoFetchUnsub := e.pool.bus.Subscribe()
 	id, err = e.pool.submit(e.crawl(root, depth, profile, force, source))
 	if err != nil {
+		autoFetchUnsub()
 		e.log(ctx, slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("source", string(source)), slog.String("error", err.Error()))
 		return "", err
 	}
@@ -46,7 +52,7 @@ func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 	// when the resolved Patent.Source is USPTO. This makes :lookup carry
 	// the same XML ingestion as :add.uspto whenever the live registry
 	// chose USPTO (or was forced to it) for the root.
-	go e.autoFetchUSPTOXMLAfterCrawl(root, id)
+	go e.autoFetchUSPTOXMLAfterCrawl(root, id, autoFetchCh, autoFetchUnsub)
 	sourceMode := e.currentSourceMode()
 	e.log(ctx, slog.LevelInfo, "crawl enqueued", slog.String("job_id", string(id)), slog.String("root", root.String()), slog.Int("depth", depth), slog.String("source", string(source)), slog.String("source_mode", sourceMode), slog.Bool("force", force))
 	if e.metrics != nil {

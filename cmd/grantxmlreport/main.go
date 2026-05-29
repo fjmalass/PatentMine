@@ -93,8 +93,9 @@ func report(d *uspto.USPTOGrantXML, path string) {
 	header("Title")
 	pf("Invention title", d.Bibliographic.InventionTitle)
 
-	header(fmt.Sprintf("Citations (%d)", len(d.Bibliographic.ReferencesCited)))
-	for i, c := range d.Bibliographic.ReferencesCited {
+	refsCited := d.Bibliographic.ReferencesCited()
+	header(fmt.Sprintf("Citations (%d)", len(refsCited)))
+	for i, c := range refsCited {
 		num := c.PatCit.Num
 		if num == "" {
 			num = c.NPLCit.Num
@@ -108,7 +109,7 @@ func report(d *uspto.USPTOGrantXML, path string) {
 			pf(fmt.Sprintf("[%s] %s NPL", num, c.Category), collapse(c.NPLCit.OtherCite))
 		}
 		if i >= 6 {
-			fmt.Printf("  ... %d more citations\n", len(d.Bibliographic.ReferencesCited)-i-1)
+			fmt.Printf("  ... %d more citations\n", len(refsCited)-i-1)
 			break
 		}
 	}

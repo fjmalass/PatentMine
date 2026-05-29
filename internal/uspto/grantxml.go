@@ -45,32 +45,48 @@ type USPTOGrantXML struct {
 // application). The XMLName is intentionally absent so the same struct can be
 // targeted by both root element tags above.
 type USPTOGrantBibliographic struct {
-	PublicationRef          USPTOGrantDocRef         `xml:"publication-reference>document-id"`
-	ApplicationRef          USPTOGrantApplicationRef `xml:"application-reference"`
-	ApplicationSeriesCode   string                   `xml:"us-application-series-code"`
-	TermExtensionDays       string                   `xml:"us-term-of-grant>us-term-extension"`
-	IPCRClassifications     []USPTOGrantIPCR         `xml:"classifications-ipcr>classification-ipcr"`
-	MainCPC                 []USPTOGrantCPC          `xml:"classifications-cpc>main-cpc>classification-cpc"`
-	FurtherCPC              []USPTOGrantCPC          `xml:"classifications-cpc>further-cpc>classification-cpc"`
-	InventionTitle          string                   `xml:"invention-title"`
-	ReferencesCited         []USPTOGrantCitation     `xml:"us-references-cited>us-citation"`
-	NumberOfClaims          string                   `xml:"number-of-claims"`
-	ExemplaryClaim          string                   `xml:"us-exemplary-claim"`
-	FieldOfClassification   []string                 `xml:"us-field-of-classification-search>classification-cpc-text"`
-	NumberOfDrawingSheets   string                   `xml:"figures>number-of-drawing-sheets"`
-	NumberOfFigures         string                   `xml:"figures>number-of-figures"`
-	Continuations           []USPTOGrantRelation     `xml:"us-related-documents>continuation>relation"`
-	Continuations2          []USPTOGrantRelation     `xml:"us-related-documents>continuation-in-part>relation"`
-	Divisions               []USPTOGrantRelation     `xml:"us-related-documents>division>relation"`
-	Reissues                []USPTOGrantRelation     `xml:"us-related-documents>reissue>relation"`
-	ProvisionalApplications []USPTOGrantDocRef       `xml:"us-related-documents>us-provisional-application>document-id"`
-	RelatedPublications     []USPTOGrantDocRef       `xml:"us-related-documents>related-publication>document-id"`
-	Applicants              []USPTOGrantParty        `xml:"us-parties>us-applicants>us-applicant"`
-	Inventors               []USPTOGrantParty        `xml:"us-parties>inventors>inventor"`
-	Agents                  []USPTOGrantAgent        `xml:"us-parties>agents>agent"`
-	Assignees               []USPTOGrantAssignee     `xml:"assignees>assignee"`
-	PrimaryExaminer         USPTOGrantExaminer       `xml:"examiners>primary-examiner"`
-	AssistantExaminers      []USPTOGrantExaminer     `xml:"examiners>assistant-examiner"`
+	PublicationRef        USPTOGrantDocRef         `xml:"publication-reference>document-id"`
+	ApplicationRef        USPTOGrantApplicationRef `xml:"application-reference"`
+	ApplicationSeriesCode string                   `xml:"us-application-series-code"`
+	TermExtensionDays     string                   `xml:"us-term-of-grant>us-term-extension"`
+	IPCRClassifications   []USPTOGrantIPCR         `xml:"classifications-ipcr>classification-ipcr"`
+	MainCPC               []USPTOGrantCPC          `xml:"classifications-cpc>main-cpc>classification-cpc"`
+	FurtherCPC            []USPTOGrantCPC          `xml:"classifications-cpc>further-cpc>classification-cpc"`
+	InventionTitle        string                   `xml:"invention-title"`
+	// The references-cited block changed element names across DTD versions:
+	// pre-2013 grants use <references-cited>/<citation>, later grants use
+	// <us-references-cited>/<us-citation>. Decode both and merge via
+	// ReferencesCited() so the full ingest matches the standalone citation
+	// loader (citations.go) on the entire archive, not just recent files.
+	ReferencesCitedNew      []USPTOGrantCitation `xml:"us-references-cited>us-citation"`
+	ReferencesCitedOld      []USPTOGrantCitation `xml:"references-cited>citation"`
+	NumberOfClaims          string               `xml:"number-of-claims"`
+	ExemplaryClaim          string               `xml:"us-exemplary-claim"`
+	FieldOfClassification   []string             `xml:"us-field-of-classification-search>classification-cpc-text"`
+	NumberOfDrawingSheets   string               `xml:"figures>number-of-drawing-sheets"`
+	NumberOfFigures         string               `xml:"figures>number-of-figures"`
+	Continuations           []USPTOGrantRelation `xml:"us-related-documents>continuation>relation"`
+	Continuations2          []USPTOGrantRelation `xml:"us-related-documents>continuation-in-part>relation"`
+	Divisions               []USPTOGrantRelation `xml:"us-related-documents>division>relation"`
+	Reissues                []USPTOGrantRelation `xml:"us-related-documents>reissue>relation"`
+	ProvisionalApplications []USPTOGrantDocRef   `xml:"us-related-documents>us-provisional-application>document-id"`
+	RelatedPublications     []USPTOGrantDocRef   `xml:"us-related-documents>related-publication>document-id"`
+	Applicants              []USPTOGrantParty    `xml:"us-parties>us-applicants>us-applicant"`
+	Inventors               []USPTOGrantParty    `xml:"us-parties>inventors>inventor"`
+	Agents                  []USPTOGrantAgent    `xml:"us-parties>agents>agent"`
+	Assignees               []USPTOGrantAssignee `xml:"assignees>assignee"`
+	PrimaryExaminer         USPTOGrantExaminer   `xml:"examiners>primary-examiner"`
+	AssistantExaminers      []USPTOGrantExaminer `xml:"examiners>assistant-examiner"`
+}
+
+// ReferencesCited returns the citation rows regardless of which DTD version the
+// grant XML used. Newer <us-citation> entries take precedence when present;
+// otherwise the legacy <citation> entries are returned.
+func (b USPTOGrantBibliographic) ReferencesCited() []USPTOGrantCitation {
+	if len(b.ReferencesCitedNew) > 0 {
+		return b.ReferencesCitedNew
+	}
+	return b.ReferencesCitedOld
 }
 
 type USPTOGrantApplicationRef struct {

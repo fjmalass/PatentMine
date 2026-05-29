@@ -102,8 +102,9 @@ func USPTOGrantToIngest(doc *USPTOGrantXML, applicationNumber, kind string) doma
 		})
 	}
 
-	citations := make([]domain.USPTOGrantCitation, 0, len(bib.ReferencesCited))
-	for i, c := range bib.ReferencesCited {
+	refsCited := bib.ReferencesCited()
+	citations := make([]domain.USPTOGrantCitation, 0, len(refsCited))
+	for i, c := range refsCited {
 		citations = append(citations, citationToDomain(c, applicationNumber, kind, i))
 	}
 
