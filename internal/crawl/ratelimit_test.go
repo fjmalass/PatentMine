@@ -46,3 +46,18 @@ func TestLimiterRespectsContext(t *testing.T) {
 		t.Fatal("wait on a cancelled context should return an error")
 	}
 }
+
+func TestLimiterSetInterval(t *testing.T) {
+	l := newLimiter(100 * time.Millisecond)
+	l.SetInterval(time.Millisecond)
+
+	start := time.Now()
+	for range 10 {
+		if err := l.wait(context.Background()); err != nil {
+			t.Fatalf("wait: %v", err)
+		}
+	}
+	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+		t.Fatalf("dynamically shortened interval still took %v", elapsed)
+	}
+}

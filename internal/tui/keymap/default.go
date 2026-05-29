@@ -97,7 +97,6 @@ func viewActions() map[string]command.ID {
 // Default returns the shipped keymap.
 func Default() *Keymaps {
 	base := NewLayer("global", false).BindAll(map[string]command.ID{
-		"ctrl+c":     command.Quit,
 		"Q":          command.Quit,
 		"?":          command.Help,
 		"M":          command.OpenMetrics,

@@ -55,6 +55,13 @@ func (s *httpSource) WithMetrics(metrics *observability.Metrics) { s.metrics = m
 // WithLogger attaches structured request logging for this HTTP source.
 func (s *httpSource) WithLogger(logger *slog.Logger) { s.logger = logger }
 
+// SetInterval updates the request-spacing interval dynamically.
+func (s *httpSource) SetInterval(d time.Duration) {
+	if s.limiter != nil {
+		s.limiter.SetInterval(d)
+	}
+}
+
 // Fetch implements Source: it rate-limits, performs the GET, maps the status,
 // and delegates body parsing to the provider's parseFunc.
 func (s *httpSource) Fetch(ctx context.Context, number domain.PatentNumber) (Result, error) {

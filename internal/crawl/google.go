@@ -20,8 +20,14 @@ import (
 // Metrics is wired up by the engine to track google crawl full text parsing telemetry.
 var Metrics *observability.Metrics
 
-// googleMinInterval keeps requests to Google Patents polite.
-const googleMinInterval = 2 * time.Second
+// GoogleMinInterval keeps requests to Google Patents polite.
+var GoogleMinInterval = 3 * time.Second
+
+// UpdateGoogleMinInterval updates both the package variable and the shared limiter.
+func UpdateGoogleMinInterval(d time.Duration) {
+	GoogleMinInterval = d
+	googleLimiter.SetInterval(d)
+}
 
 // googlePatentURLPrefix is the base of a Google Patents patent page URL.
 const googlePatentURLPrefix = "https://patents.google.com/patent/"
@@ -31,7 +37,7 @@ const googlePatentURLPrefix = "https://patents.google.com/patent/"
 // request interval and the timeout/body caps apply to all Google traffic, not
 // just the crawl Source.
 var (
-	googleLimiter = newLimiter(googleMinInterval)
+	googleLimiter = newLimiter(GoogleMinInterval)
 	googleClient  = &http.Client{Timeout: httpTimeout}
 )
 

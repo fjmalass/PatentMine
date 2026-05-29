@@ -75,7 +75,9 @@ type Registry struct {
 
 // NewRegistry builds a Registry from sources, consulted in the given order.
 func NewRegistry(sources ...Source) *Registry {
-	return &Registry{sources: sources, sourceMode: SourceModeCompare}
+	r := &Registry{sources: sources, sourceMode: SourceModeCompare}
+	r.updateSourceIntervals(SourceModeCompare)
+	return r
 }
 
 // WithGoogleComparison enables best-effort Google fetches after a successful
@@ -135,7 +137,41 @@ func (r *Registry) SetSourceMode(mode string) error {
 	r.modeMu.Lock()
 	r.sourceMode = normalized
 	r.modeMu.Unlock()
+
+	r.updateSourceIntervals(normalized)
 	return nil
+}
+
+func (r *Registry) updateSourceIntervals(mode domain.SourceMode) {
+	var usptoInterval time.Duration
+	var googleInterval time.Duration
+
+	largest := USPTOMinInterval
+	if GoogleMinInterval > largest {
+		largest = GoogleMinInterval
+	}
+
+	switch mode {
+	case SourceModeUSPTOOnly:
+		usptoInterval = USPTOMinInterval
+		googleInterval = GoogleMinInterval
+	case SourceModeGoogleOnly:
+		usptoInterval = USPTOMinInterval
+		googleInterval = GoogleMinInterval
+	default: // compare, uspto-first
+		usptoInterval = largest
+		googleInterval = largest
+	}
+
+	for _, s := range r.sources {
+		if setter, ok := s.(interface{ SetInterval(time.Duration) }); ok {
+			if s.Name() == domain.SourceUSPTO {
+				setter.SetInterval(usptoInterval)
+			} else if s.Name() == domain.SourceGoogle {
+				setter.SetInterval(googleInterval)
+			}
+		}
+	}
 }
 
 // SourceMode returns the current normal provider behavior.
@@ -289,6 +325,12 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 		var details []string
 		for _, a := range attempts {
 			if a.err != nil {
+				// A normal cache miss on the local file source is expected and not
+				// a real fetch failure, so skip listing it to keep logs clean and
+				// avoid user confusion in uspto-only/google-only modes.
+				if a.source == string(domain.SourceFile) && errors.Is(a.err, ErrNotAvailable) {
+					continue
+				}
 				details = append(details, fmt.Sprintf("%s: %v (%.2fs)", a.source, a.err, a.dur.Seconds()))
 			}
 		}

@@ -113,6 +113,9 @@ func runServe(_ []string) int {
 
 // buildEngine assembles the ingest pipeline and the engine.
 func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, telemetry *observability.Runtime) (*engine.Engine, error) {
+	crawl.UpdateUSPTOMinInterval(cfg.USPTOMinInterval)
+	crawl.UpdateGoogleMinInterval(cfg.GoogleMinInterval)
+
 	// patentsDir is pre-created by config.Load; no need to MkdirAll here.
 	patentsDir := string(cfg.PatentsDir)
 	sources := []crawl.Source{

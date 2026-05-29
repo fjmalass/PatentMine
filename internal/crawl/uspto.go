@@ -16,15 +16,20 @@ import (
 	"patentmine/internal/domain"
 )
 
-// usptoMinInterval keeps requests to the USPTO ODP API polite.
-const usptoMinInterval = 1 * time.Second
+// USPTOMinInterval keeps requests to the USPTO ODP API polite.
+var USPTOMinInterval = 100 * time.Millisecond
+
+// UpdateUSPTOMinInterval updates the USPTO request interval.
+func UpdateUSPTOMinInterval(d time.Duration) {
+	USPTOMinInterval = d
+}
 
 // NewUSPTOSource builds a Source backed by the USPTO Patent File Wrapper API.
 func NewUSPTOSource(apiKey string) Source {
 	return &httpSource{
 		name:    domain.SourceUSPTO,
 		client:  &http.Client{Timeout: httpTimeout},
-		limiter: newLimiter(usptoMinInterval),
+		limiter: newLimiter(USPTOMinInterval),
 		urlFor: func(n domain.PatentNumber) string {
 			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(usptoQuery(n))
 		},

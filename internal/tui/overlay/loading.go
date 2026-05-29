@@ -182,9 +182,6 @@ func (l *Loading) Handles() []command.ID {
 }
 
 func (l *Loading) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	if msg.String() == "ctrl+c" {
-		return l, tea.Quit, true
-	}
 	if !l.finished {
 		return l, nil, false
 	}

@@ -44,3 +44,10 @@ func (l *limiter) wait(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+
+// SetInterval updates the rate limiting interval dynamically.
+func (l *limiter) SetInterval(interval time.Duration) {
+	l.mu.Lock()
+	l.interval = interval
+	l.mu.Unlock()
+}

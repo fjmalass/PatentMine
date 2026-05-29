@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"patentmine/internal/crawl"
 	"patentmine/internal/domain"
@@ -69,6 +70,8 @@ type Config struct {
 	BackupRcloneRemote string            // rclone remote name used for backup checks.
 	LogRetainDays      int               // Number of days of log/activity files to keep.
 	LogMaxSizeBytes    int64             // Maximum size limit for the logs directory in bytes.
+	USPTOMinInterval     time.Duration     // Request interval to USPTO ODP API in normal mode.
+	GoogleMinInterval    time.Duration     // Request interval to Google Patents API.
 }
 
 // BackupConfigured reports whether backup settings are present. Connectivity is
@@ -311,6 +314,16 @@ func Load() (Config, error) {
 		logMaxSizeBytes = 100 * 1024 * 1024 // Default: 100MB
 	}
 
+	usptoMinInterval := 100 * time.Millisecond
+	if val, err := time.ParseDuration(os.Getenv("PATENTMINE_USPTO_MIN_INTERVAL")); err == nil && val > 0 {
+		usptoMinInterval = val
+	}
+
+	googleMinInterval := 3 * time.Second
+	if val, err := time.ParseDuration(os.Getenv("PATENTMINE_GOOGLE_MIN_INTERVAL")); err == nil && val > 0 {
+		googleMinInterval = val
+	}
+
 	return Config{
 		HomeDir:            Path(home),
 		DBPath:             Path(filepath.Join(home, dbFileName)),
@@ -338,5 +351,7 @@ func Load() (Config, error) {
 		BackupRcloneRemote: backupRcloneRemote,
 		LogRetainDays:      logRetainDays,
 		LogMaxSizeBytes:    logMaxSizeBytes,
+		USPTOMinInterval:   usptoMinInterval,
+		GoogleMinInterval:  googleMinInterval,
 	}, nil
 }

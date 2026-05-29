@@ -49,10 +49,6 @@ func (o *USPTOXMLFetchingOverlay) Handles() []command.ID { return nil }
 // other overlay does; the fetch itself cannot be cancelled from here.
 func (o *USPTOXMLFetchingOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	switch m := msg.(type) {
-	case tea.KeyMsg:
-		if m.String() == "ctrl+c" {
-			return o, tea.Quit
-		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		o.spinner, cmd = o.spinner.Update(m)

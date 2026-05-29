@@ -3,6 +3,7 @@ package crawl
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"patentmine/internal/domain"
 )
@@ -175,5 +176,39 @@ func TestMatchingUSPTOWrapperScoring(t *testing.T) {
 	}
 	if matched2.ApplicationNumberText != "11714053" {
 		t.Errorf("matched application %q, want 11714053 (Wrapper A)", matched2.ApplicationNumberText)
+	}
+}
+
+func TestUSPTORateLimitScalesWithSourceMode(t *testing.T) {
+	// Ensure baseline values are set.
+	USPTOMinInterval = 100 * time.Millisecond
+	GoogleMinInterval = 3 * time.Second
+
+	usptoSrc := NewUSPTOSource("")
+	r := NewRegistry(usptoSrc)
+
+	httpSrc := usptoSrc.(*httpSource)
+
+	largest := GoogleMinInterval
+
+	// Default mode (compare) should use the largest (3s)
+	if got := httpSrc.limiter.interval; got != largest {
+		t.Errorf("default interval = %v, want %v (largest)", got, largest)
+	}
+
+	// Change to uspto-only should select the appropriate time (100ms)
+	if err := r.SetSourceMode(string(SourceModeUSPTOOnly)); err != nil {
+		t.Fatalf("SetSourceMode: %v", err)
+	}
+	if got := httpSrc.limiter.interval; got != USPTOMinInterval {
+		t.Errorf("uspto-only interval = %v, want %v (usptoMinInterval)", got, USPTOMinInterval)
+	}
+
+	// Change back to compare should use the largest again (3s)
+	if err := r.SetSourceMode(string(SourceModeCompare)); err != nil {
+		t.Fatalf("SetSourceMode: %v", err)
+	}
+	if got := httpSrc.limiter.interval; got != largest {
+		t.Errorf("compare interval = %v, want %v (largest)", got, largest)
 	}
 }
