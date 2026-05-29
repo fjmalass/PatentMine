@@ -335,6 +335,41 @@ func (r *Repo) USPTOGrantParties(ctx context.Context, applicationNumber, kind st
 	return out, nil
 }
 
+// USPTOGrantCitations returns the references-cited rows parsed from the XML for
+// one (application_number, kind), in document order. Unlike the family graph
+// (which keeps only resolvable patent→patent edges), these rows preserve the
+// full USPTO fidelity: NPL entries, the examiner/applicant category, cited
+// dates and names, and classifications — none of which Google citations carry.
+func (r *Repo) USPTOGrantCitations(ctx context.Context, applicationNumber, kind string) ([]domain.USPTOGrantCitation, error) {
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT application_number, kind, ordinal, citation_num, citation_type, category,
+		       cited_country, cited_doc_number, cited_kind, cited_date, cited_name,
+		       cpc_text, national_country, national_class, npl_text
+		FROM uspto_grant_citation
+		WHERE application_number = ? AND kind = ?
+		ORDER BY ordinal`, applicationNumber, kind)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query uspto grant citation: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []domain.USPTOGrantCitation
+	for rows.Next() {
+		var c domain.USPTOGrantCitation
+		if err := rows.Scan(
+			&c.ApplicationNumber, &c.Kind, &c.Ordinal, &c.CitationNum, &c.CitationType, &c.Category,
+			&c.CitedCountry, &c.CitedDocNumber, &c.CitedKind, &c.CitedDate, &c.CitedName,
+			&c.CPCText, &c.NationalCountry, &c.NationalClass, &c.NPLText,
+		); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan uspto grant citation: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: iterate uspto grant citation: %w", err)
+	}
+	return out, nil
+}
+
 // USPTOGrantBody returns the body extracted from the XML.
 func (r *Repo) USPTOGrantBody(ctx context.Context, applicationNumber, kind string) (domain.USPTOGrantBody, error) {
 	row := r.reader.QueryRowContext(ctx, `

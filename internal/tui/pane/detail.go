@@ -78,11 +78,25 @@ type detailSourceDiffsMsg struct {
 	err       error
 }
 
+// detailCitationSourceMsg delivers the number of a patent's citations that one
+// crawler observed, for the source-coverage comparison on the Citations line.
+type detailCitationSourceMsg struct {
+	requestID uint64
+	source    domain.Source
+	count     int
+	err       error
+}
+
 // detailRelationKinds are the edge kinds the detail view counts, in display order.
 var detailRelationKinds = []domain.RelationKind{
 	domain.RelationCites, domain.RelationCitedBy,
 	domain.RelationParent, domain.RelationChild,
 }
+
+// detailCitationSources are the crawlers compared on the Citations line. A
+// citation present for both is reported as the overlap; one present for only
+// one source is that source's unique contribution.
+var detailCitationSources = []domain.Source{domain.SourceGoogle, domain.SourceUSPTO}
 
 // Detail shows one patent's full record. The record can be longer than the
 // body area, so the pane scrolls — every navigation binding in the detail
@@ -101,6 +115,7 @@ type Detail struct {
 	patentNote         *domain.PatentNote
 	usptoApp           *domain.USPTOApplication
 	relCounts          map[domain.RelationKind]int
+	citeSourceCounts   map[domain.Source]int
 	hasSourceDiffs     bool
 	jump               *JumpController
 	lineGroups         []detailLineGroup
@@ -162,14 +177,15 @@ func (d *Detail) log() *slog.Logger {
 // detail keymap layers, used to avoid conflicts when assigning jump keys.
 func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumber, project domain.ProjectID, boundLetters []rune) *Detail {
 	d := &Detail{
-		client:    client,
-		theme:     theme,
-		number:    number,
-		project:   project,
-		relCounts: map[domain.RelationKind]int{},
-		page:      render.NewPaginator(10),
-		loading:   true,
-		jump:      NewJumpController(),
+		client:           client,
+		theme:            theme,
+		number:           number,
+		project:          project,
+		relCounts:        map[domain.RelationKind]int{},
+		citeSourceCounts: map[domain.Source]int{},
+		page:             render.NewPaginator(10),
+		loading:          true,
+		jump:             NewJumpController(),
 	}
 	override := func(label string, used map[rune]bool) rune {
 		switch label {
@@ -295,7 +311,45 @@ func (d *Detail) loadRelations() tea.Cmd {
 			return detailRelationCountMsg{requestID: requestID, kind: k, count: res.Total, err: err}
 		})
 	}
+	// Per-source citation totals for the coverage comparison. Each call counts
+	// the citations one crawler observed; the render derives the overlap.
+	for _, src := range detailCitationSources {
+		s := src
+		cmds = append(cmds, func() tea.Msg {
+			ctx, cancel := callContext()
+			defer cancel()
+			var res proto.RelationsResult
+			err := client.Call(ctx, proto.MethodRelations,
+				proto.RelationsParams{Number: number, Kind: domain.RelationCites, Source: s, Limit: 1}, &res)
+			return detailCitationSourceMsg{requestID: requestID, source: s, count: res.Total, err: err}
+		})
+	}
 	return tea.Batch(cmds...)
+}
+
+// citationSourceCoverage renders the per-source split of the citation count,
+// e.g. "(google 30, uspto 38, both 26)". It lets the user compare what each
+// crawler observed and see the overlap. Returns "" until at least one source
+// count has loaded, so a graph with no per-source data shows just the total.
+func (d *Detail) citationSourceCoverage() string {
+	var parts []string
+	sum := 0
+	for _, src := range detailCitationSources {
+		c := d.citeSourceCounts[src]
+		sum += c
+		if c > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", src, c))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	// Inclusion-exclusion: an edge counted by both crawlers appears in each
+	// source total, so the overlap is their sum minus the distinct total.
+	if both := sum - d.relCounts[domain.RelationCites]; both > 0 {
+		parts = append(parts, fmt.Sprintf("both %d", both))
+	}
+	return "(" + strings.Join(parts, ", ") + ")"
 }
 
 // loadSourceDiffs checks (lightweight) whether source comparison diffs exist
@@ -349,11 +403,17 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.patentNote = m.patentNote
 		d.usptoApp = m.usptoApp
 		d.hasSourceDiffs = false // will be set by the async loadSourceDiffs
+		d.citeSourceCounts = map[domain.Source]int{}
 		d.page.Top()
 		d.cachedLines = nil
 	case detailRelationCountMsg:
 		if m.requestID == d.loadID && m.err == nil {
 			d.relCounts[m.kind] = m.count
+			d.cachedLines = nil
+		}
+	case detailCitationSourceMsg:
+		if m.requestID == d.loadID && m.err == nil {
+			d.citeSourceCounts[m.source] = m.count
 			d.cachedLines = nil
 		}
 	case detailSourceDiffsMsg:
@@ -604,6 +664,9 @@ func (d *Detail) body(w int) string {
 	// Family-graph edge counts. The dedicated panes (c/b) list the edges.
 	b.WriteByte('\n')
 	citeVal := fmt.Sprintf("%d", d.relCounts[domain.RelationCites])
+	if cov := d.citationSourceCoverage(); cov != "" {
+		citeVal += " " + cov
+	}
 	d.addAnchor(&b, d.jumpKey(detailLabelCitations), detailLabelCitations, citeVal, false, 0)
 	d.field(&b, w, detailLabelCitations, citeVal)
 

@@ -148,14 +148,21 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 		if rel.From.IsZero() || rel.To.IsZero() || !rel.Kind.Valid() {
 			return fmt.Errorf("store/sqlite: save node: invalid relation %s->%s %q", rel.From, rel.To, rel.Kind)
 		}
+		// The edge's own source wins; fall back to the crawled patent's source
+		// so existing single-source batches keep tagging their edges. source is
+		// part of the primary key, so two crawlers' views of the same edge are
+		// kept as distinct rows rather than overwriting each other.
+		source := rel.Source
+		if source == "" {
+			source = batch.Patent.Source
+		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO relation (from_record_id, to_record_id, kind, source, observed_at)
 			 VALUES ((SELECT record_id FROM patent WHERE number = ?),
 			         (SELECT record_id FROM patent WHERE number = ?), ?,?,?)
-			 ON CONFLICT(from_record_id, to_record_id, kind) DO UPDATE SET
-			 	source=COALESCE(NULLIF(excluded.source, ''), relation.source),
+			 ON CONFLICT(from_record_id, to_record_id, kind, source) DO UPDATE SET
 			 	observed_at=COALESCE(NULLIF(excluded.observed_at, ''), relation.observed_at)`,
-			rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind), string(batch.Patent.Source), encodeTime(time.Now().UTC())); err != nil {
+			rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind), string(source), encodeTime(time.Now().UTC())); err != nil {
 			return fmt.Errorf("store/sqlite: save node relation: %w", err)
 		}
 	}

@@ -621,6 +621,37 @@ type USPTOXMLViewReadyMsg struct {
 	Err                   string
 }
 
+// USPTOCitationsViewReadyMsg delivers the rich references-cited rows the daemon
+// read from a patent's ingested XML, for the citations viewer overlay.
+type USPTOCitationsViewReadyMsg struct {
+	Number    domain.PatentNumber
+	Kind      string
+	Present   bool
+	Citations []domain.USPTOGrantCitation
+	Err       string
+}
+
+// FetchUSPTOCitationsViewCmd asks the daemon for the rich USPTO citation rows
+// (patent + NPL, examiner/applicant) of a patent. Kind is left empty so the
+// engine returns whichever document (grant or pgpub) was ingested.
+func FetchUSPTOCitationsViewCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.USPTOCitationsListResult
+		if err := client.Call(ctx, proto.MethodUSPTOCitationsList,
+			proto.USPTOCitationsListParams{Number: number}, &res); err != nil {
+			return USPTOCitationsViewReadyMsg{Number: number, Err: err.Error()}
+		}
+		return USPTOCitationsViewReadyMsg{
+			Number:    number,
+			Kind:      res.Kind,
+			Present:   res.Present,
+			Citations: res.Citations,
+		}
+	}
+}
+
 // FetchUSPTOXMLViewCmd asks the daemon to ensure the XML exists on the server
 // and return a ready-to-display TOML rendering. This is the preferred path
 // for the interactive "view raw XML in popup" feature.

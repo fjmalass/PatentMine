@@ -135,6 +135,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTableViewDelete:           s.tableViewDelete,
 		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
 		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
+		proto.MethodUSPTOCitationsList:        s.usptoCitationsList,
 		proto.MethodUSPTOXMLView:              s.usptoXMLView,
 		proto.MethodUSPTOLookup:               s.usptoLookup,
 		proto.MethodUSPTOFetchAssignments:     s.usptoFetchAssignments,
@@ -795,6 +796,7 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 	q := store.PatentQuery{
 		Relation:       p.Number,
 		RelationKind:   p.Kind,
+		RelationSource: p.Source,
 		Project:        p.Project,
 		Filter:         p.Filter,
 		ReviewState:    p.ReviewState,
@@ -1353,6 +1355,14 @@ func (s *Server) usptoXMLView(ctx context.Context, raw json.RawMessage) (any, er
 		return nil, err
 	}
 	return s.engine.ViewUSPTOXML(ctx, p.Number, p.Kind)
+}
+
+func (s *Server) usptoCitationsList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOCitationsListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.USPTOGrantCitations(ctx, p.Number, p.Kind)
 }
 
 func (s *Server) sourceResolveDiffs(ctx context.Context, raw json.RawMessage) (any, error) {

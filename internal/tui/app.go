@@ -169,6 +169,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.FetchUSPTOAssignments:      (*App).cmdFetchUSPTOAssignments,
 	command.ViewUSPTOGrantXML:          (*App).cmdViewUSPTOXML,
+	command.ViewUSPTOCitations:         (*App).cmdViewUSPTOCitations,
 	command.Import:                     (*App).cmdImport,
 	command.SourceMode:                 (*App).cmdSourceMode,
 	command.SourceCompare:              (*App).cmdSourceCompare,
@@ -231,6 +232,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.OpenBrowserUSPTOPGPub: true,
 	command.OpenBrowserGoogle:        true,
 	command.ViewUSPTOGrantXML:        true,
+	command.ViewUSPTOCitations:       true,
 	command.PatentExpirationDate:     true,
 }
 
@@ -1008,6 +1010,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleUSPTOXMLFetched(m)
 	case pane.USPTOXMLViewReadyMsg:
 		return a.handleUSPTOXMLViewReady(m)
+	case pane.USPTOCitationsViewReadyMsg:
+		return a.handleUSPTOCitationsViewReady(m)
 	case overlay.USPTOCandidateSelectMsg:
 		if len(a.overlays) > 0 {
 			a.overlays = a.overlays[:len(a.overlays)-1]

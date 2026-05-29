@@ -34,6 +34,10 @@ type PatentQuery struct {
 	// patents having that relation to the given patent number.
 	Relation     domain.PatentNumber
 	RelationKind domain.RelationKind
+	// RelationSource, when set together with Relation+RelationKind, restricts the
+	// edge match to those a single crawler observed (e.g. google or uspto). It
+	// powers the citation source-coverage comparison; empty means any source.
+	RelationSource domain.Source
 	// Search, when set, is a case-insensitive substring match on number/title.
 	Search string
 	// Classification, when set, filters patents by prefix matching of their classifications.
@@ -141,6 +145,11 @@ type Repository interface {
 	// extracted from the XML for one (application_number, kind). An empty
 	// result is returned when no party rows exist (not an error).
 	USPTOGrantParties(ctx context.Context, applicationNumber, kind string) ([]domain.USPTOGrantParty, error)
+	// USPTOGrantCitations returns the references-cited rows parsed from the XML
+	// for one (application_number, kind), in document order. These preserve full
+	// USPTO fidelity (NPL, examiner/applicant category, cited dates/names) that
+	// the patent→patent family graph does not. Empty + nil when none exist.
+	USPTOGrantCitations(ctx context.Context, applicationNumber, kind string) ([]domain.USPTOGrantCitation, error)
 	// USPTOGrantClassifications returns the distinct classification codes
 	// (the full_code column, normalized to compact "G06F21/14" form with no
 	// spaces to match how Google Patents + cleanClassification populate
@@ -189,6 +198,10 @@ type Repository interface {
 	Relations(ctx context.Context, n domain.PatentNumber, kind domain.RelationKind) ([]domain.Relation, error)
 	// AllRelations returns every family-graph edge where n is either the origin (from) or destination (to).
 	AllRelations(ctx context.Context, n domain.PatentNumber) ([]domain.Relation, error)
+	// DeleteRelationsFromSource removes the outgoing edges of one kind that a
+	// single source observed for a record, leaving other sources' edges intact.
+	// It is the clean-reload primitive for one crawler's citations.
+	DeleteRelationsFromSource(ctx context.Context, from domain.PatentNumber, kind domain.RelationKind, source domain.Source) (int64, error)
 
 	// SaveProject inserts or updates a project by its id.
 	SaveProject(ctx context.Context, p domain.Project) error

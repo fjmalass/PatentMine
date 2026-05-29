@@ -265,6 +265,48 @@ func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind
 	return domain.USPTOGrantBody{}, false, nil
 }
 
+// USPTOGrantCitations returns the rich references-cited rows ingested from the
+// patent's grant/pgpub XML. When kind is empty it tries grant first, then
+// pgpub — mirroring USPTOGrantBody — so the caller need not know which document
+// was ingested. Present is false (no error) when no XML has been ingested.
+func (e *Engine) USPTOGrantCitations(ctx context.Context, n domain.PatentNumber, kind proto.USPTOXMLKind) (res proto.USPTOCitationsListResult, err error) {
+	start := time.Now()
+	defer func() {
+		e.observeDuration("uspto.citations.list", start, &err)
+		e.incCounter("uspto.citations.list.count", 1)
+		if err == nil && res.Present {
+			e.incCounter("uspto.citations.list.rows", int64(len(res.Citations)))
+		}
+	}()
+	res.Number = n
+
+	app, appErr := e.repo.USPTOApplication(ctx, n)
+	if appErr != nil {
+		if errors.Is(appErr, store.ErrNotFound) {
+			return res, nil
+		}
+		return res, appErr
+	}
+
+	tryKinds := []proto.USPTOXMLKind{kind}
+	if kind == "" {
+		tryKinds = []proto.USPTOXMLKind{proto.USPTOXMLKindGrant, proto.USPTOXMLKindPGPub}
+	}
+	for _, k := range tryKinds {
+		citations, cErr := e.repo.USPTOGrantCitations(ctx, app.ApplicationNumber, string(k))
+		if cErr != nil {
+			return res, cErr
+		}
+		if len(citations) > 0 {
+			res.Present = true
+			res.Kind = string(k)
+			res.Citations = citations
+			return res, nil
+		}
+	}
+	return res, nil
+}
+
 // recordXMLAccess updates the access timestamp + counter for a cached XML
 // and emits the cache-hit observability signals.
 func (e *Engine) recordXMLAccess(ctx context.Context, prior domain.USPTOXMLDownload, n domain.PatentNumber, kind proto.USPTOXMLKind, cached bool) (proto.USPTOFetchXMLResult, error) {
@@ -556,6 +598,12 @@ func (e *Engine) saveUSPTOCitationGraph(ctx context.Context, record domain.Paten
 	if record.IsZero() || len(citations) == 0 {
 		return 0, nil
 	}
+	// Clean reload: drop this record's prior USPTO-sourced cite edges so a
+	// citation removed upstream does not linger. Google's edges (and any other
+	// source's) for the same record are left untouched.
+	if _, err := e.repo.DeleteRelationsFromSource(ctx, record, domain.RelationCites, domain.SourceUSPTO); err != nil {
+		return 0, err
+	}
 	batch := store.NodeBatch{}
 	seenRelations := map[string]bool{}
 	seenStubs := map[string]bool{}
@@ -594,9 +642,10 @@ func (e *Engine) saveUSPTOCitationGraph(ctx context.Context, record domain.Paten
 		}
 		seenRelations[key] = true
 		batch.Relations = append(batch.Relations, domain.Relation{
-			From: record,
-			To:   citedRecord,
-			Kind: domain.RelationCites,
+			From:   record,
+			To:     citedRecord,
+			Kind:   domain.RelationCites,
+			Source: domain.SourceUSPTO,
 		})
 	}
 

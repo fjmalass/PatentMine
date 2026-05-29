@@ -668,3 +668,110 @@ var migrationGStatements = []string{
 	// Bump schema version so requireSchemaVersion accepts the migrated db.
 	`UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'`,
 }
+
+// migrateI widens the relation primary key to include source, so the same
+// (from, to, kind) edge observed by two crawlers (e.g. google and uspto) is
+// kept as two rows. This lets the graph report which source(s) confirm an edge
+// and lets one source's edges be reloaded without disturbing the other's.
+//
+// Before the change a second source's INSERT collided on the old PK and only
+// updated the source column, silently overwriting the first crawler. The table
+// is rebuilt (like migrateF), so the database is backed up first.
+func (r *Repo) migrateI(ctx context.Context) error {
+	needed, err := r.needsMigrationI(ctx)
+	if err != nil {
+		return err
+	}
+	if !needed {
+		return nil
+	}
+	if err := r.backupBeforeMigration(ctx); err != nil {
+		return fmt.Errorf("store/sqlite: migrate I: backup: %w", err)
+	}
+	return r.runMigrationI(ctx)
+}
+
+// needsMigrationI reports whether the relation table exists but its source
+// column is not yet part of the primary key. PRAGMA table_info reports a
+// non-zero pk position for columns that belong to the primary key.
+func (r *Repo) needsMigrationI(ctx context.Context) (bool, error) {
+	exists, err := r.tableExists(ctx, "relation")
+	if err != nil {
+		return false, fmt.Errorf("store/sqlite: migrate I: detect table: %w", err)
+	}
+	if !exists {
+		return false, nil
+	}
+	rows, err := r.writer.QueryContext(ctx, "PRAGMA table_info(relation)")
+	if err != nil {
+		return false, fmt.Errorf("store/sqlite: migrate I: table info: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typeStr string
+		var dfltVal any
+		if err := rows.Scan(&cid, &name, &typeStr, &notnull, &dfltVal, &pk); err != nil {
+			return false, fmt.Errorf("store/sqlite: migrate I: scan table info: %w", err)
+		}
+		if name == "source" {
+			// pk == 0 means source is not part of the primary key yet.
+			return pk == 0, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// runMigrationI rebuilds relation with the widened primary key on a dedicated
+// connection with foreign keys disabled, inside one transaction.
+func (r *Repo) runMigrationI(ctx context.Context) error {
+	conn, err := r.writer.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate I: connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate I: disable fk: %w", err)
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate I: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, stmt := range migrationIStatements {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate I: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate I: commit: %w", err)
+	}
+	return nil
+}
+
+// migrationIStatements rebuild relation under the *_new naming pattern so the
+// change is atomic. INSERT OR IGNORE tolerates any rows that already collapsed
+// under the old narrower key.
+var migrationIStatements = []string{
+	`CREATE TABLE relation_new_i (
+		from_record_id TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+		to_record_id   TEXT NOT NULL REFERENCES patent (record_id) ON DELETE CASCADE,
+		kind           TEXT NOT NULL,
+		source         TEXT NOT NULL DEFAULT '',
+		source_ref     TEXT NOT NULL DEFAULT '',
+		observed_at    TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (from_record_id, to_record_id, kind, source)
+	)`,
+	`INSERT OR IGNORE INTO relation_new_i
+		(from_record_id, to_record_id, kind, source, source_ref, observed_at)
+	 SELECT from_record_id, to_record_id, kind, source, source_ref, observed_at FROM relation`,
+	`DROP TABLE relation`,
+	`ALTER TABLE relation_new_i RENAME TO relation`,
+	`CREATE INDEX IF NOT EXISTS idx_relation_from_kind ON relation (from_record_id, kind)`,
+	`CREATE INDEX IF NOT EXISTS idx_relation_to_kind ON relation (to_record_id, kind)`,
+	`CREATE INDEX IF NOT EXISTS idx_relation_kind ON relation (kind)`,
+}

@@ -764,6 +764,87 @@ func (a *App) viewUSPTOXML(number domain.PatentNumber, kind proto.USPTOXMLKind) 
 	)
 }
 
+// cmdViewUSPTOCitations opens the rich USPTO references-cited rows (patent +
+// NPL, examiner/applicant) for the selected or named patent in the TOML viewer.
+// Unlike the c/b family-graph panes — which list only resolvable patent→patent
+// edges — this shows the full citation fidelity the graph drops.
+func (a *App) cmdViewUSPTOCitations(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	var number domain.PatentNumber
+	if len(inv.args) > 0 {
+		var err error
+		number, err = domain.ParsePatentNumber(inv.args[0])
+		if err != nil {
+			a.setErr(text.StatusInvalidPatentNumber, err.Error())
+			return a, nil
+		}
+	} else {
+		var ok bool
+		number, ok = a.focusedPane().Selection()
+		if !ok || number.IsZero() {
+			a.setErr(text.StatusNoPatentSelected)
+			return a, nil
+		}
+	}
+	return a, pane.FetchUSPTOCitationsViewCmd(a.client, number)
+}
+
+// handleUSPTOCitationsViewReady renders the fetched rich citation rows as TOML
+// and opens the viewer overlay. An empty result means no XML has been ingested
+// for the patent yet (the rows live in uspto_grant_citation, populated by the
+// grant/pgpub XML ingest).
+func (a *App) handleUSPTOCitationsViewReady(m pane.USPTOCitationsViewReadyMsg) (tea.Model, tea.Cmd) {
+	if m.Err != "" {
+		a.metrics.IncCounter("tui.uspto.citations.view.error", 1)
+		a.setErr(text.StatusGeneric, m.Err)
+		return a, nil
+	}
+	if !m.Present || len(m.Citations) == 0 {
+		a.metrics.IncCounter("tui.uspto.citations.view.empty", 1)
+		a.setErr(text.StatusGeneric, fmt.Sprintf("no USPTO citations ingested for %s — fetch the grant XML first", m.Number.String()))
+		return a, nil
+	}
+
+	view := struct {
+		Patent    string                      `json:"patent"`
+		Kind      string                      `json:"kind"`
+		Count     int                         `json:"count"`
+		Citations []domain.USPTOGrantCitation `json:"citations"`
+	}{
+		Patent:    m.Number.String(),
+		Kind:      m.Kind,
+		Count:     len(m.Citations),
+		Citations: m.Citations,
+	}
+	tomlStr, tomlErr := overlay.StructToTOML(view)
+	if tomlErr != nil {
+		a.metrics.IncCounter("tui.uspto.citations.view.to_toml.error", 1)
+		a.log().Error("uspto citations to toml conversion failed",
+			slog.String("patent", m.Number.String()),
+			slog.String("kind", m.Kind),
+			slog.String("error", tomlErr.Error()))
+		a.setErr(text.StatusGeneric, tomlErr.Error())
+		return a, nil
+	}
+
+	title := fmt.Sprintf("USPTO citations · %s", m.Number.String())
+	if m.Kind != "" {
+		title = fmt.Sprintf("USPTO citations · %s · %s", strings.ToUpper(m.Kind), m.Number.String())
+	}
+	a.overlays = append(a.overlays, overlay.NewTOMLViewer(a.theme, title, tomlStr))
+
+	a.metrics.IncCounter("tui.uspto.citations.viewed_total", 1)
+	a.metrics.IncCounter("tui.uspto.citations.view.rows", int64(len(m.Citations)))
+	a.log().Info("uspto citations viewed",
+		slog.String("patent", m.Number.String()),
+		slog.String("kind", m.Kind),
+		slog.Int("rows", len(m.Citations)))
+	return a, nil
+}
+
 // handleUSPTOXMLFetched dismisses the fetch spinner and reports the saved
 // path. We do not hand the file off to the OS opener: xdg-open on a .xml is
 // the system browser on most Linux desktops, which is not what the user

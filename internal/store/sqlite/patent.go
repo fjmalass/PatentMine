@@ -26,14 +26,17 @@ const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assig
 // included; tags are not selected here — ListPatents fills them for the whole
 // page in one query (see attachTags) rather than a per-row subquery.
 func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
+	// source is part of the relation primary key, so the same edge confirmed by
+	// two crawlers (google + uspto) is two rows. Count DISTINCT edges (endpoints
+	// + kind, ignoring source) so a multi-source citation counts once.
 	relationCounts := `,
-		(SELECT COUNT(1) FROM relation rel WHERE
+		(SELECT COUNT(DISTINCT rel.from_record_id || '>' || rel.to_record_id || ':' || rel.kind) FROM relation rel WHERE
 			(rel.from_record_id = p.record_id AND rel.kind = 'cites') OR
 			(rel.to_record_id = p.record_id AND rel.kind = 'cited_by')),
-		(SELECT COUNT(1) FROM relation rel WHERE
+		(SELECT COUNT(DISTINCT rel.from_record_id || '>' || rel.to_record_id || ':' || rel.kind) FROM relation rel WHERE
 			(rel.from_record_id = p.record_id AND rel.kind = 'cited_by') OR
 			(rel.to_record_id = p.record_id AND rel.kind = 'cites')),
-		(SELECT COUNT(1) FROM relation rel WHERE
+		(SELECT COUNT(DISTINCT rel.from_record_id || '>' || rel.to_record_id || ':' || rel.kind) FROM relation rel WHERE
 			(rel.from_record_id = p.record_id AND rel.kind = 'parent') OR
 			(rel.to_record_id = p.record_id AND rel.kind = 'child'))`
 	if project != "" {
@@ -627,11 +630,23 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 		// by kind K, we check both directions. The relation table holds
 		// record_ids, so the input number is resolved via the patent table.
 		const refFrom = `(SELECT record_id FROM patent WHERE number = ?)`
+		// Optionally restrict to edges a single source observed. source is part
+		// of the relation primary key, so this isolates one crawler's view for
+		// the citation source-coverage comparison.
+		srcFilter := ""
+		if q.RelationSource != "" {
+			srcFilter = " AND rel.source = ?"
+		}
 		conds = append(conds, `EXISTS (SELECT 1 FROM relation rel WHERE `+
-			`(rel.from_record_id = `+refFrom+` AND rel.kind = ? AND rel.to_record_id = p.record_id) OR `+
-			`(rel.to_record_id = `+refFrom+` AND rel.kind = ? AND rel.from_record_id = p.record_id))`)
-		args = append(args, q.Relation.Normalized(), string(q.RelationKind),
-			q.Relation.Normalized(), string(q.RelationKind.Inverse()))
+			`(rel.from_record_id = `+refFrom+` AND rel.kind = ? AND rel.to_record_id = p.record_id`+srcFilter+`) OR `+
+			`(rel.to_record_id = `+refFrom+` AND rel.kind = ? AND rel.from_record_id = p.record_id`+srcFilter+`))`)
+		if q.RelationSource != "" {
+			args = append(args, q.Relation.Normalized(), string(q.RelationKind), string(q.RelationSource),
+				q.Relation.Normalized(), string(q.RelationKind.Inverse()), string(q.RelationSource))
+		} else {
+			args = append(args, q.Relation.Normalized(), string(q.RelationKind),
+				q.Relation.Normalized(), string(q.RelationKind.Inverse()))
+		}
 	}
 
 	if q.Search != "" {
@@ -872,11 +887,11 @@ func (r *Repo) SaveRelation(ctx context.Context, rel domain.Relation) (err error
 		return fmt.Errorf("store/sqlite: invalid relation kind %q", rel.Kind)
 	}
 	_, err = r.writer.ExecContext(ctx,
-		`INSERT INTO relation (from_record_id, to_record_id, kind) VALUES (
+		`INSERT INTO relation (from_record_id, to_record_id, kind, source) VALUES (
 			(SELECT record_id FROM patent WHERE number = ?),
-			(SELECT record_id FROM patent WHERE number = ?), ?)
-		 ON CONFLICT(from_record_id, to_record_id, kind) DO NOTHING`,
-		rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind))
+			(SELECT record_id FROM patent WHERE number = ?), ?, ?)
+		 ON CONFLICT(from_record_id, to_record_id, kind, source) DO NOTHING`,
+		rel.From.Normalized(), rel.To.Normalized(), string(rel.Kind), string(rel.Source))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save relation: %w", err)
 	}
@@ -884,8 +899,12 @@ func (r *Repo) SaveRelation(ctx context.Context, rel domain.Relation) (err error
 }
 
 // relationSelectColumns translates record_id endpoints back to patent.number
-// for the domain.Relation shape returned to callers.
-const relationSelectColumns = `pf.number, pt.number, rel.kind`
+// for the domain.Relation shape returned to callers. SELECT DISTINCT collapses
+// the per-source rows (the same edge observed by google and uspto is two rows
+// in the table) back to one logical edge, so graph builders and crawl checks
+// see each edge once. Per-source detail is exposed separately by
+// RelationSourceBreakdown for the compare view.
+const relationSelectColumns = `DISTINCT pf.number, pt.number, rel.kind`
 
 // Relations returns edges of the given kind originating at n.
 func (r *Repo) Relations(ctx context.Context, n domain.PatentNumber, kind domain.RelationKind) (out []domain.Relation, err error) {
@@ -957,6 +976,25 @@ func (r *Repo) AllRelations(ctx context.Context, n domain.PatentNumber) (out []d
 		return nil, fmt.Errorf("store/sqlite: list all relations: %w", err)
 	}
 	return out, nil
+}
+
+// DeleteRelationsFromSource removes the outgoing edges of one kind that a single
+// source observed for a record, leaving every other source's edges intact. It
+// is the clean-reload primitive: re-ingesting one crawler's citations clears
+// that crawler's stale edges first, so an edge dropped upstream disappears
+// instead of lingering, while the other source's view is untouched. Returns the
+// number of edges removed.
+func (r *Repo) DeleteRelationsFromSource(ctx context.Context, from domain.PatentNumber, kind domain.RelationKind, source domain.Source) (n int64, err error) {
+	defer r.observeDuration("delete_relations_from_source", time.Now(), &err)
+	res, err := r.writer.ExecContext(ctx,
+		`DELETE FROM relation
+		 WHERE from_record_id = (SELECT record_id FROM patent WHERE number = ?)
+		   AND kind = ? AND source = ?`,
+		from.Normalized(), string(kind), string(source))
+	if err != nil {
+		return 0, fmt.Errorf("store/sqlite: delete relations from source: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // PatentInventorStats aggregates database statistics for a set of inventors within a project.

@@ -51,9 +51,13 @@ func ParseRelationKind(s string) (RelationKind, error) {
 	return k, nil
 }
 
-// Relation is one directed edge of the patent family graph.
+// Relation is one directed edge of the patent family graph. Source records
+// which crawl produced the edge (e.g. google, uspto). The graph keeps one edge
+// per (From, To, Kind, Source) so the same citation observed by two sources is
+// stored twice and can be compared or reloaded independently.
 type Relation struct {
-	From PatentNumber `json:"from"`
-	To   PatentNumber `json:"to"`
-	Kind RelationKind `json:"kind"`
+	From   PatentNumber `json:"from"`
+	To     PatentNumber `json:"to"`
+	Kind   RelationKind `json:"kind"`
+	Source Source       `json:"source,omitempty"`
 }

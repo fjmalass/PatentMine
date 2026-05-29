@@ -82,7 +82,8 @@ const (
 	MethodTableViewDelete           Method = "table_view.delete"
 	MethodUSPTOFetchXML             Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody            Method = "uspto.grant_body"
-	MethodUSPTOXMLView              Method = "uspto.xml.view" // returns human-readable TOML rendering of the raw grant/pgpub XML (no client-side file assumption)
+	MethodUSPTOCitationsList        Method = "uspto.citations.list" // rich references-cited rows (patent + NPL, examiner/applicant) from the ingested grant/pgpub XML
+	MethodUSPTOXMLView              Method = "uspto.xml.view"        // returns human-readable TOML rendering of the raw grant/pgpub XML (no client-side file assumption)
 	MethodUSPTOLookup               Method = "uspto.lookup"
 	MethodUSPTOFetchAssignments     Method = "uspto.fetch_assignments"
 	MethodUSPTOAssignmentList       Method = "uspto.assignment.list"
@@ -132,6 +133,25 @@ type USPTOFetchXMLResult struct {
 	Bytes         int64  `json:"bytes"`
 	Cached        bool   `json:"cached"`
 	DownloadCount int64  `json:"download_count"`
+}
+
+// USPTOCitationsListParams selects whose references-cited rows to return. Kind
+// is optional; empty lets the engine try grant then pgpub.
+type USPTOCitationsListParams struct {
+	Number domain.PatentNumber `json:"number"`
+	Kind   USPTOXMLKind        `json:"kind,omitempty"`
+}
+
+// USPTOCitationsListResult carries the rich references-cited rows parsed from
+// the ingested XML: patent and non-patent-literature entries, the
+// examiner/applicant category, cited dates and names — the fidelity the
+// patent→patent family graph deliberately drops. Present is false when no XML
+// has been ingested for the patent.
+type USPTOCitationsListResult struct {
+	Number    domain.PatentNumber         `json:"number"`
+	Kind      string                      `json:"kind"`
+	Present   bool                        `json:"present"`
+	Citations []domain.USPTOGrantCitation `json:"citations,omitempty"`
 }
 
 // USPTOXMLViewParams selects which raw XML document the caller wants rendered
@@ -604,6 +624,7 @@ type CrawlCancelParams struct {
 type RelationsParams struct {
 	Number         domain.PatentNumber `json:"number"`
 	Kind           domain.RelationKind `json:"kind"`
+	Source         domain.Source       `json:"source,omitempty"`
 	Project        domain.ProjectID    `json:"project,omitempty"`
 	Filter         string              `json:"filter,omitempty"`
 	ReviewState    domain.ReviewState  `json:"review_state,omitempty"`

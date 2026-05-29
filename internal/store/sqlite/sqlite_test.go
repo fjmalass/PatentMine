@@ -193,6 +193,122 @@ func TestRelations(t *testing.T) {
 	}
 }
 
+// TestUSPTOGrantCitationsRoundTrip verifies the rich citation reader returns
+// what the loader wrote, in document order, preserving the fidelity the family
+// graph drops: NPL text and the examiner/applicant category.
+func TestUSPTOGrantCitationsRoundTrip(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	record := domain.MustParsePatentNumber("US0000009B2")
+	const app, kind = "12345678", "grant"
+
+	in := []domain.USPTOGrantCitation{
+		{ApplicationNumber: app, Kind: kind, Ordinal: 0, CitationType: "patent",
+			Category: "cited by examiner", CitedCountry: "US", CitedDocNumber: "7000000",
+			CitedKind: "B2", CitedName: "Smith"},
+		{ApplicationNumber: app, Kind: kind, Ordinal: 1, CitationType: "npl",
+			Category: "cited by applicant", NPLText: "Jones et al., A Survey, 2019"},
+	}
+	n, err := repo.SaveUSPTOCitations(ctx, app, record, kind, in)
+	if err != nil {
+		t.Fatalf("SaveUSPTOCitations: %v", err)
+	}
+	if n != len(in) {
+		t.Fatalf("SaveUSPTOCitations wrote %d, want %d", n, len(in))
+	}
+
+	got, err := repo.USPTOGrantCitations(ctx, app, kind)
+	if err != nil {
+		t.Fatalf("USPTOGrantCitations: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("USPTOGrantCitations = %d rows, want 2", len(got))
+	}
+	if got[0].CitationType != "patent" || got[0].CitedDocNumber != "7000000" || got[0].Category != "cited by examiner" {
+		t.Fatalf("row 0 patent citation not preserved: %+v", got[0])
+	}
+	if got[1].CitationType != "npl" || got[1].NPLText != "Jones et al., A Survey, 2019" {
+		t.Fatalf("row 1 NPL citation not preserved: %+v", got[1])
+	}
+
+	// A different (application, kind) has no rows.
+	none, err := repo.USPTOGrantCitations(ctx, app, "pgpub")
+	if err != nil {
+		t.Fatalf("USPTOGrantCitations other kind: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("expected no pgpub citations, got %d", len(none))
+	}
+}
+
+// TestRelationSourceCoexistence verifies that the same edge observed by two
+// sources is kept as two rows (source is part of the primary key) and that
+// DeleteRelationsFromSource clears one source's edges without touching another.
+func TestRelationSourceCoexistence(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	from := domain.MustParsePatentNumber("US0000001A1")
+	to := domain.MustParsePatentNumber("US0000002A1")
+	if err := repo.SavePatent(ctx, samplePatent("US0000001A1")); err != nil {
+		t.Fatalf("SavePatent from: %v", err)
+	}
+	if err := repo.SavePatent(ctx, samplePatent("US0000002A1")); err != nil {
+		t.Fatalf("SavePatent to: %v", err)
+	}
+
+	google := domain.Relation{From: from, To: to, Kind: domain.RelationCites, Source: domain.SourceGoogle}
+	uspto := domain.Relation{From: from, To: to, Kind: domain.RelationCites, Source: domain.SourceUSPTO}
+	for _, rel := range []domain.Relation{google, uspto} {
+		if err := repo.SaveRelation(ctx, rel); err != nil {
+			t.Fatalf("SaveRelation %s: %v", rel.Source, err)
+		}
+	}
+
+	// Relations collapses the two source rows into one logical edge.
+	got, err := repo.Relations(ctx, from, domain.RelationCites)
+	if err != nil {
+		t.Fatalf("Relations: %v", err)
+	}
+	if len(got) != 1 || !got[0].To.Equal(to) {
+		t.Fatalf("Relations = %+v, want one deduped edge to %v", got, to)
+	}
+
+	// The per-source filter isolates each crawler's view (the compare query).
+	for _, src := range []domain.Source{domain.SourceGoogle, domain.SourceUSPTO} {
+		rows, err := repo.ListPatents(ctx, store.PatentQuery{Relation: from, RelationKind: domain.RelationCites, RelationSource: src})
+		if err != nil {
+			t.Fatalf("ListPatents source %s: %v", src, err)
+		}
+		if len(rows) != 1 || rows[0].Number != to {
+			t.Fatalf("source %s filter = %+v, want the cited patent %v", src, rows, to)
+		}
+	}
+
+	// Reload one source: only its rows are removed; the other source's edge
+	// remains so the logical edge still resolves.
+	n, err := repo.DeleteRelationsFromSource(ctx, from, domain.RelationCites, domain.SourceUSPTO)
+	if err != nil {
+		t.Fatalf("DeleteRelationsFromSource: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("DeleteRelationsFromSource removed %d, want 1", n)
+	}
+	usptoRows, err := repo.ListPatents(ctx, store.PatentQuery{Relation: from, RelationKind: domain.RelationCites, RelationSource: domain.SourceUSPTO})
+	if err != nil {
+		t.Fatalf("ListPatents uspto after delete: %v", err)
+	}
+	if len(usptoRows) != 0 {
+		t.Fatalf("uspto edges should be gone after reload-clear, got %+v", usptoRows)
+	}
+	googleRows, err := repo.ListPatents(ctx, store.PatentQuery{Relation: from, RelationKind: domain.RelationCites, RelationSource: domain.SourceGoogle})
+	if err != nil {
+		t.Fatalf("ListPatents google after delete: %v", err)
+	}
+	if len(googleRows) != 1 {
+		t.Fatalf("google edge should remain, got %+v", googleRows)
+	}
+}
+
 func TestBidirectionalRelations(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()

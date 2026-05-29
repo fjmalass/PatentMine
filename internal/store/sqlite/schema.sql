@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS relation (
     source         TEXT NOT NULL DEFAULT '',
     source_ref     TEXT NOT NULL DEFAULT '',
     observed_at    TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (from_record_id, to_record_id, kind)
+    PRIMARY KEY (from_record_id, to_record_id, kind, source)
 );
 
 CREATE INDEX IF NOT EXISTS idx_relation_from_kind ON relation (from_record_id, kind);
