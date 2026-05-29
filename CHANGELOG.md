@@ -11,6 +11,28 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v0.6.0] — 2026-05-29
+
+### Database
+- **Migration I — relation primary key widened to include source**: The `relation` table's primary key expanded from `(from_record_id, to_record_id, kind)` to `(from_record_id, to_record_id, kind, source)`, so the same citation edge observed by two crawlers (e.g., Google and USPTO) is kept as two distinct rows. This lets the graph report which source(s) confirm an edge and lets one source's edges be reloaded without disturbing the other's. The table is rebuilt atomically with a backup-first migration (like migrateF/G).
+
+### Added
+- **Per-source citation coverage in the detail pane**: The Citations line now reports a source split — e.g., `30 (google 30, uspto 38, both 26)` — letting the user compare what each crawler observed and see the overlap. The comparison covers Google and USPTO sources.
+- **`:uspto.patent.citations.view` command** (aliases `:citations.view`, `:uspto.citations`, `:npl`): Opens a formatted TOML popup showing the full USPTO references-cited rows (patent and non-patent literature, with examiner/applicant category, cited dates, names, and classifications) parsed from the ingested grant/pgpub XML — the full citation detail the family-graph panes drop.
+- **Configurable per-source rate limits**: New config options `USPTOMinInterval` (default 100ms) and `GoogleMinInterval` (default 3s), settable via `PATENTMINE_USPTO_MIN_INTERVAL` and `PATENTMINE_GOOGLE_MIN_INTERVAL` env vars. In multi-source modes (compare, uspto-first), both sources use the larger of the two intervals to avoid thrashing.
+- **Loading at `UnderReview` review state**: Patents with `FetchState == FetchStub` can now transition to `ReviewStateUnderReview` in addition to `ReviewStateUnknown`.
+
+### Changed
+- Rate limits split: USPTO requests are throttled at 100ms (vs. 3s for Google) when in single-source mode (`uspto-only`, `google-only`), significantly speeding up USPTO-only workflows.
+- Relation count in patent listing uses `COUNT(DISTINCT ...)` to avoid double-counting edges confirmed by multiple sources.
+- Error messages in crawl and add-to-project flows now include a `[NUMBER]` prefix for easier identification in batch operations.
+- Auto-fetch after crawl (USPTO XML ingestion) now subscribes to the bus *before* submitting the job, fixing a race where a cached/fast crawl's `CrawlDone` event could be missed.
+- `CtrlC` unbound from quit keymap.
+
+### Fixed
+- USPTO-only mode crawl consistency: major fixes to align USPTO loading behavior with Google's, including corrected fetch-excluding error reporting (file source cache misses are silently skipped rather than logged as failures).
+- USPTO citation parsing in `grantxmlreport` tool: now uses the `ReferencesCited()` accessor method for correct citation enumeration.
+
 ## [v0.5.1] — 2026-05-29
 
 ### Added
