@@ -17,6 +17,7 @@ import (
 const (
 	promptShortcutW = 18
 	promptNameW     = 34
+	promptTitleW    = 30
 
 	// Popup sizing. The command popup takes a generous share of the terminal so
 	// the command list is comfortable to scan, clamped to sensible minimums.
@@ -249,18 +250,23 @@ func (p *Prompt) listView(maxW int) string {
 		return p.theme.Dim.Render(p.catalog.T(text.PromptNoMatch))
 	}
 	var b strings.Builder
-	head := render.Pad("SHORTCUT", promptShortcutW) + " " + render.Pad("COMMAND", promptNameW) + " TITLE"
+	head := render.Pad("SHORTCUT", promptShortcutW) + " " + render.Pad("COMMAND", promptNameW) + " " +
+		render.Pad("TITLE", promptTitleW) + " ALIASES"
 	b.WriteString(p.theme.Header.Render(render.Truncate(head, maxW)))
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		entry := p.shown[i]
-		line := render.Pad(strings.Join(entry.shortcuts, " / "), promptShortcutW) + " " +
+		aliases := strings.Join(entry.command.Aliases, ", ")
+		base := render.Pad(strings.Join(entry.shortcuts, " / "), promptShortcutW) + " " +
 			render.Pad(entry.command.Name, promptNameW) + " " +
-			p.catalog.T(text.CmdTitle(string(entry.command.ID)))
+			render.Pad(p.catalog.T(text.CmdTitle(string(entry.command.ID))), promptTitleW) + " "
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {
-			b.WriteString(p.theme.Selected.Render(render.Pad(render.Truncate(line, maxW), maxW)))
+			// The cursor row carries one highlight across its full width, so its
+			// aliases ride the same style rather than the dim column treatment.
+			b.WriteString(p.theme.Selected.Render(render.Pad(render.Truncate(base+aliases, maxW), maxW)))
 		} else {
+			line := base + p.theme.Dim.Render(aliases)
 			b.WriteString(p.theme.Row.Render(render.Truncate(line, maxW)))
 		}
 	}
