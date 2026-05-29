@@ -16,7 +16,7 @@ import (
 
 const (
 	promptShortcutW = 18
-	promptNameW     = 22
+	promptNameW     = 34
 
 	// Popup sizing. The command popup takes a generous share of the terminal so
 	// the command list is comfortable to scan, clamped to sensible minimums.
@@ -95,6 +95,11 @@ func (p *Prompt) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		return p, func() tea.Msg { return PromptCloseMsg{} }, true
 	case tea.KeyEnter:
 		return p.onEnter()
+	case tea.KeyTab:
+		if p.mode == PromptDirect {
+			p.autocomplete()
+		}
+		return p, nil, true
 	case tea.KeyBackspace:
 		if p.cursor == 0 {
 			return p, nil, true
@@ -152,10 +157,10 @@ func (p *Prompt) View(maxW, maxH int) string {
 }
 
 // onEnter resolves the Enter key. In palette mode it launches the highlighted
-// command. In direct (:) mode it runs a fully-typed command line as-is,
-// otherwise it acts on the highlighted entry: a command that still needs
-// arguments is prefilled into the input (autocomplete) rather than executed,
-// while an argument-free command runs immediately.
+// command. In direct (:) mode it runs the typed command line verbatim — the
+// dispatcher's LookupName resolves both canonical names and aliases, so a line
+// like ":expiration-date" runs as typed. Autocompletion is the Tab key, not
+// Enter; see autocomplete.
 func (p *Prompt) onEnter() (Overlay, tea.Cmd, bool) {
 	if p.mode == PromptPalette {
 		input := p.submitInput()
@@ -165,41 +170,34 @@ func (p *Prompt) onEnter() (Overlay, tea.Cmd, bool) {
 		return p, submitPrompt(input), true
 	}
 
-	// Direct (:) mode.
-	if p.queryHasTypedArgs() {
-		if trimmed := strings.TrimSpace(p.query); trimmed != "" {
-			return p, submitPrompt(trimmed), true
-		}
-		return p, nil, true
-	}
-	if sel, ok := p.selected(); ok {
-		trimmed := strings.TrimSpace(p.query)
-		// First Enter on an argument-taking command drops its name into the
-		// input and waits for arguments; pressing Enter again (name already
-		// filled) runs it with whatever has been typed.
-		if commandTakesArgs(sel.command) && trimmed != sel.command.Name {
-			p.prefill(sel.command.Name)
-			return p, nil, true
-		}
-		return p, submitPrompt(sel.command.Name), true
-	}
+	// Direct (:) mode: run whatever has been typed.
 	if trimmed := strings.TrimSpace(p.query); trimmed != "" {
 		return p, submitPrompt(trimmed), true
 	}
 	return p, nil, true
 }
 
-func submitPrompt(input string) tea.Cmd {
-	return func() tea.Msg { return PromptSubmitMsg{Input: input} }
+// autocomplete fills the input with the highlighted command's canonical name.
+// It is the Tab action in direct (:) mode. A command that takes arguments gets
+// a trailing space so the user can type them; an argument-free command is
+// filled bare and is ready to run on Enter.
+func (p *Prompt) autocomplete() {
+	sel, ok := p.selected()
+	if !ok {
+		return
+	}
+	if commandTakesArgs(sel.command) {
+		p.prefill(sel.command.Name)
+		return
+	}
+	p.query = sel.command.Name
+	p.cursor = len([]rune(p.query))
+	p.error = ""
+	p.filter()
 }
 
-// queryHasTypedArgs reports whether the user has typed an argument after a
-// command name — a space followed by non-space content. A bare trailing space
-// (left by autocomplete) does not count.
-func (p *Prompt) queryHasTypedArgs() bool {
-	q := strings.TrimLeft(p.query, " ")
-	i := strings.IndexByte(q, ' ')
-	return i >= 0 && strings.TrimSpace(q[i+1:]) != ""
+func submitPrompt(input string) tea.Cmd {
+	return func() tea.Msg { return PromptSubmitMsg{Input: input} }
 }
 
 // prefill replaces the query with a command name and a trailing space, leaving

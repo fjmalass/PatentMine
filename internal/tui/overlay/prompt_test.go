@@ -44,7 +44,7 @@ func TestPromptDirectEnterExecutesArgFreeSelection(t *testing.T) {
 	}
 }
 
-func TestPromptDirectEnterAutocompletesArgCommand(t *testing.T) {
+func TestPromptDirectTabAutocompletesArgCommand(t *testing.T) {
 	reg, err := command.Default()
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
@@ -53,15 +53,47 @@ func TestPromptDirectEnterAutocompletesArgCommand(t *testing.T) {
 	// Partial name selects the arg-taking "browse" command.
 	p.query = "brow"
 	p.filter()
-	if got := enterInput(t, p); got != "" {
-		t.Fatalf("first Enter on arg command should autocomplete, not submit; got %q", got)
+	// Tab completes the highlighted arg-taking command, leaving a trailing space.
+	if _, _, handled := p.HandleKey(tea.KeyMsg{Type: tea.KeyTab}); !handled {
+		t.Fatal("Tab not handled")
 	}
 	if p.query != "browse " {
 		t.Fatalf("autocomplete query = %q, want %q", p.query, "browse ")
 	}
-	// Second Enter (name filled, no args) runs it bare.
+	// Enter then runs it with whatever has been typed.
 	if got := enterInput(t, p); got != "browse" {
-		t.Fatalf("second Enter submitted %q, want browse", got)
+		t.Fatalf("Enter after autocomplete submitted %q, want browse", got)
+	}
+}
+
+func TestPromptDirectTabAutocompletesArgFreeCommand(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	p := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
+	p.query = "metr"
+	p.filter()
+	if _, _, handled := p.HandleKey(tea.KeyMsg{Type: tea.KeyTab}); !handled {
+		t.Fatal("Tab not handled")
+	}
+	if p.query != "metrics" {
+		t.Fatalf("autocomplete query = %q, want %q (no trailing space for arg-free)", p.query, "metrics")
+	}
+}
+
+func TestPromptDirectEnterRunsTypedAlias(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	p := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeDetail, PromptDirect)
+	// An alias typed in full runs verbatim; the dispatcher's LookupName resolves
+	// it. Enter must not rewrite it to the highlighted entry's canonical name.
+	p.query = "expiration-date"
+	p.filter()
+	if got := enterInput(t, p); got != "expiration-date" {
+		t.Fatalf("Enter on typed alias submitted %q, want expiration-date", got)
 	}
 }
 

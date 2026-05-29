@@ -204,7 +204,7 @@ func TestAppOpensCommandPaletteAndPrompt(t *testing.T) {
 	if len(app.overlays) != 1 {
 		t.Fatalf("after ':', overlays = %d, want 1", len(app.overlays))
 	}
-	if view := app.View(); !strings.Contains(view, "Command") || !strings.Contains(view, "Type a dot command") {
+	if view := app.View(); !strings.Contains(view, "Command") || !strings.Contains(view, "Type a command") {
 		t.Fatalf("command prompt view missing expected content\n%s", view)
 	}
 }

@@ -448,7 +448,7 @@ var englishNamed = map[Key]string{
 	OverlayCommandsTitle:   "Commands",
 	OverlayCommandTitle:    "Command",
 	PromptFilterHint:       "Filter commands",
-	PromptDirectHint:       "Type a dot command",
+	PromptDirectHint:       "Type a command · tab completes · enter runs",
 	PromptNoMatch:          "no matching commands",
 	PromptRunHint:          "enter runs the selected command · esc closes",
 	HelpSectionGlobal:      "Global",
