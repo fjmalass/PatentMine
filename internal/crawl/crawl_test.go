@@ -186,3 +186,85 @@ func TestFileSourceMissingPatent(t *testing.T) {
 		t.Fatalf("missing file err = %v, want ErrNotAvailable", err)
 	}
 }
+
+type mockSource struct {
+	name    domain.Source
+	fetches []domain.PatentNumber
+	results map[string]Result
+	errs    map[string]error
+}
+
+func (m *mockSource) Name() domain.Source {
+	return m.name
+}
+
+func (m *mockSource) Fetch(ctx context.Context, number domain.PatentNumber) (Result, error) {
+	m.fetches = append(m.fetches, number)
+	if err, ok := m.errs[number.Normalized()]; ok {
+		return Result{}, err
+	}
+	return m.results[number.Normalized()], nil
+}
+
+func TestRegistryCompareWithGoogleFallback(t *testing.T) {
+	appNumber := domain.MustParsePatentNumber("US12345678") // empty kind = StageApplication
+	pubNumber := domain.MustParsePatentNumber("US20261234567A1")
+
+	// USPTO source returns a result containing the application number and the publication document
+	usptoSource := &mockSource{
+		name: domain.SourceUSPTO,
+		results: map[string]Result{
+			appNumber.Normalized(): {
+				Patent: domain.Patent{
+					Number: appNumber,
+				},
+				Documents: []domain.Document{
+					{Number: appNumber, Stage: domain.StageApplication},
+					{Number: pubNumber, Stage: domain.StagePublication},
+				},
+			},
+		},
+	}
+
+	// Google source expects to be fetched with pubNumber, not appNumber!
+	googleSource := &mockSource{
+		name: domain.SourceGoogle,
+		results: map[string]Result{
+			pubNumber.Normalized(): {
+				Patent: domain.Patent{
+					Number: pubNumber,
+				},
+				SourceSnapshots: []domain.SourceSnapshot{
+					{PatentNumber: pubNumber, Source: "google"},
+				},
+			},
+		},
+		errs: map[string]error{
+			appNumber.Normalized(): ErrNotAvailable, // appNumber will fail if fetched directly!
+		},
+	}
+
+	registry := NewRegistry(usptoSource, googleSource)
+	_ = registry.SetSourceMode(string(domain.SourceModeCompare))
+
+	res, err := registry.Fetch(context.Background(), appNumber)
+	if err != nil {
+		t.Fatalf("registry.Fetch failed: %v", err)
+	}
+
+	// Verify that googleSource was fetched with pubNumber, not appNumber!
+	if len(googleSource.fetches) != 1 {
+		t.Fatalf("expected 1 fetch on Google, got %d", len(googleSource.fetches))
+	}
+	if !googleSource.fetches[0].Equal(pubNumber) {
+		t.Errorf("expected Google to be fetched with %s, but got %s", pubNumber, googleSource.fetches[0])
+	}
+
+	// Verify that the merged snapshots reference the original appNumber
+	if len(res.SourceSnapshots) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(res.SourceSnapshots))
+	}
+	if !res.SourceSnapshots[0].PatentNumber.Equal(appNumber) {
+		t.Errorf("expected snapshot PatentNumber to be rewritten to original %s, got %s", appNumber, res.SourceSnapshots[0].PatentNumber)
+	}
+}

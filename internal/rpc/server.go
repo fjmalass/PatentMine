@@ -533,19 +533,23 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	var jobID engine.JobID
 	var candidates []domain.USPTOCandidate
 	var mergeWarning *proto.MergeWarning
+	var autoSelected *domain.USPTOCandidate
+	var alreadyInDB bool
 	if p.Source != "" {
-		fetchStarted, jobID, candidates, mergeWarning, err = s.engine.AddToProjectFromSourceWithOptions(ctx, p.Project, p.Patent, p.Source, p.ApplicationNumber, p.ConfirmMerge)
+		fetchStarted, jobID, candidates, mergeWarning, autoSelected, alreadyInDB, err = s.engine.AddToProjectFromSourceWithOptions(ctx, p.Project, p.Patent, p.Source, p.ApplicationNumber, p.ConfirmMerge)
 	} else {
-		fetchStarted, jobID, candidates, mergeWarning, err = s.engine.AddToProjectWithOptions(ctx, p.Project, p.Patent, p.ConfirmMerge)
+		fetchStarted, jobID, candidates, mergeWarning, autoSelected, alreadyInDB, err = s.engine.AddToProjectWithOptions(ctx, p.Project, p.Patent, p.ConfirmMerge)
 	}
 	if err != nil {
 		return nil, err
 	}
 	return proto.MembershipAddResult{
-		FetchStarted: fetchStarted,
-		JobID:        string(jobID),
-		Candidates:   candidates,
-		MergeWarning: mergeWarning,
+		FetchStarted:          fetchStarted,
+		JobID:                 string(jobID),
+		Candidates:            candidates,
+		MergeWarning:          mergeWarning,
+		AutoSelectedCandidate: autoSelected,
+		AlreadyInDB:           alreadyInDB,
 	}, nil
 }
 

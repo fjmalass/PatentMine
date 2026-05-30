@@ -312,9 +312,25 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		if s.Name() != domain.SourceGoogle {
 			continue
 		}
-		ReportProgress(ctx, fmt.Sprintf("comparing %s with GOOGLE...", number))
+		fetchNumber := number
+		if number.Kind == "" {
+			var fallback domain.PatentNumber
+			for _, doc := range uspto.Documents {
+				if doc.Stage == domain.StageGrant {
+					fallback = doc.Number
+					break
+				}
+				if doc.Stage == domain.StagePublication {
+					fallback = doc.Number
+				}
+			}
+			if !fallback.IsZero() {
+				fetchNumber = fallback
+			}
+		}
+		ReportProgress(ctx, fmt.Sprintf("comparing %s with GOOGLE...", fetchNumber))
 		compStart := time.Now()
-		google, err := s.Fetch(ctx, number)
+		google, err := s.Fetch(ctx, fetchNumber)
 		compDur := time.Since(compStart)
 
 		if r.metrics != nil {
@@ -328,11 +344,17 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		if err != nil {
 			if !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
 				r.log().Warn("google comparison fetch failed",
-					slog.String("number", number.String()),
+					slog.String("number", fetchNumber.String()),
 					slog.String("error", err.Error()),
 					slog.Duration("duration", compDur))
 			}
 			return uspto
+		}
+
+		google.Patent.Number = number
+		google.Patent.DisplayNumber = number
+		for i := range google.SourceSnapshots {
+			google.SourceSnapshots[i].PatentNumber = number
 		}
 
 		if r.metrics != nil {

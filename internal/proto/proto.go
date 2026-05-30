@@ -364,10 +364,12 @@ type MembershipParams struct {
 
 // MembershipAddResult reports the outcome of adding a patent to a project.
 type MembershipAddResult struct {
-	FetchStarted bool                    `json:"fetch_started"`
-	JobID        string                  `json:"job_id,omitempty"`
-	Candidates   []domain.USPTOCandidate `json:"candidates,omitempty"`
-	MergeWarning *MergeWarning           `json:"merge_warning,omitempty"`
+	FetchStarted          bool                    `json:"fetch_started"`
+	JobID                 string                  `json:"job_id,omitempty"`
+	Candidates            []domain.USPTOCandidate `json:"candidates,omitempty"`
+	MergeWarning          *MergeWarning           `json:"merge_warning,omitempty"`
+	AutoSelectedCandidate *domain.USPTOCandidate  `json:"auto_selected_candidate,omitempty"`
+	AlreadyInDB           bool                    `json:"already_in_db,omitempty"`
 }
 
 // AddRelatedParams asks the daemon to grant project membership to every

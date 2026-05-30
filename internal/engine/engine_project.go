@@ -62,28 +62,28 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // fetch was enqueued; false means the caller should prompt the user to fetch
 // manually (e.g. with F).
 func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
-	fetchStarted, jobID, candidates, _, err = e.addToProject(ctx, project, patent, "", "", true)
+	fetchStarted, jobID, candidates, _, _, _, err = e.addToProject(ctx, project, patent, "", "", true)
 	return
 }
 
 // AddToProjectWithOptions is like AddToProject but supports merge warnings.
-func (e *Engine) AddToProjectWithOptions(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, confirmMerge bool) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, mergeWarning *proto.MergeWarning, err error) {
+func (e *Engine) AddToProjectWithOptions(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, confirmMerge bool) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, mergeWarning *proto.MergeWarning, autoSelected *domain.USPTOCandidate, alreadyInDB bool, err error) {
 	return e.addToProject(ctx, project, patent, "", "", confirmMerge)
 }
 
 // AddToProjectFromSource adds a patent and forces a single-patent fetch from
 // the selected provider. It never falls back to another source.
 func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
-	fetchStarted, jobID, candidates, _, err = e.addToProject(ctx, project, patent, source, applicationNumber, true)
+	fetchStarted, jobID, candidates, _, _, _, err = e.addToProject(ctx, project, patent, source, applicationNumber, true)
 	return
 }
 
 // AddToProjectFromSourceWithOptions is like AddToProjectFromSource but supports merge warnings.
-func (e *Engine) AddToProjectFromSourceWithOptions(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string, confirmMerge bool) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, mergeWarning *proto.MergeWarning, err error) {
+func (e *Engine) AddToProjectFromSourceWithOptions(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string, confirmMerge bool) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, mergeWarning *proto.MergeWarning, autoSelected *domain.USPTOCandidate, alreadyInDB bool, err error) {
 	return e.addToProject(ctx, project, patent, source, applicationNumber, confirmMerge)
 }
 
-func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string, confirmMerge bool) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, mergeWarning *proto.MergeWarning, err error) {
+func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string, confirmMerge bool) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, mergeWarning *proto.MergeWarning, autoSelected *domain.USPTOCandidate, alreadyInDB bool, err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 
 	// Proactively check if this patent belongs to an existing record in the project.
@@ -108,7 +108,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 						ExistingRecord: stored.NumberToShow().String(),
 						Message:        msg,
 					}
-					return false, "", nil, mergeWarning, nil
+					return false, "", nil, mergeWarning, nil, false, nil
 				}
 			}
 		}
@@ -162,7 +162,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 					},
 				})
 				if source == domain.SourceUSPTO || mode == "uspto-only" {
-					return false, "", nil, nil, err
+					return false, "", nil, nil, nil, false, err
 				}
 			}
 			if len(candidates) > 1 {
@@ -172,9 +172,10 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 				if e.metrics != nil {
 					e.metrics.IncCounter("engine.add.uspto_candidate.picker_shown", 1)
 				}
-				return false, "", candidates, nil, nil
+				return false, "", candidates, nil, nil, false, nil
 			}
 			if len(candidates) == 1 {
+				autoSelected = &candidates[0]
 				if exact, err2 := domain.ParsePatentNumber("US" + candidates[0].ApplicationNumber); err2 == nil {
 					patent = exact
 				}
@@ -190,8 +191,18 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 
 	record, created, err := e.ensureRecord(ctx, patent)
 	if err != nil {
-		return false, "", nil, nil, err
+		return false, "", nil, nil, nil, false, err
 	}
+
+	alreadyInDB = !created
+	if !created {
+		if p, getErr := e.repo.Patent(ctx, record); getErr == nil {
+			alreadyInDB = p.FetchState == domain.FetchCached
+		} else {
+			alreadyInDB = false
+		}
+	}
+
 	before, exists := e.existingMembership(ctx, project, record)
 	state := domain.ReviewStateUnknown
 	if exists {
@@ -206,7 +217,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	err = e.repo.AddMembership(ctx, after)
 	if err != nil {
 		e.log(ctx, slog.LevelError, "add membership failed", slog.String("project_id", string(project)), slog.String("patent", patent.String()), slog.String("error", err.Error()))
-		return false, "", nil, nil, err
+		return false, "", nil, nil, nil, alreadyInDB, err
 	}
 	e.log(ctx, slog.LevelInfo, "membership added", slog.String("project_id", string(project)), slog.String("record", record.String()), slog.String("requested", patent.String()))
 	if e.metrics != nil {
@@ -242,14 +253,14 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 				_ = e.repo.DeleteMembership(ctx, project, record)
 			}
 			e.announceChange()
-			return false, "", nil, nil, fetchErr
+			return false, "", nil, nil, nil, alreadyInDB, fetchErr
 		}
 		fetchStarted = true
 		if created {
 			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
 		go e.autoAssignDepth1Neighbors(project, record, jobID)
-		return fetchStarted, jobID, nil, nil, nil
+		return fetchStarted, jobID, nil, nil, nil, alreadyInDB, nil
 	}
 	// Any unknown project membership for a stub patent kicks a single-patent
 	// fetch so bibliographic data fills in shortly after the patent is added.
@@ -273,7 +284,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 			go e.autoAssignDepth1Neighbors(project, record, jobID)
 		}
 	}
-	return fetchStarted, jobID, nil, nil, nil
+	return fetchStarted, jobID, nil, nil, nil, alreadyInDB, nil
 }
 
 // AddRelated grants project membership to every family-graph neighbor of

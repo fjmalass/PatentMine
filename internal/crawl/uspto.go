@@ -229,6 +229,14 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		recordNumber = number
 	}
 	filingDate := parseISODate(w.ApplicationMetaData.FilingDate)
+	var pubDate time.Time
+	if w.PGPubDocumentMetaData != nil {
+		pubDate = parseISODate(w.PGPubDocumentMetaData.FileCreateDateTime)
+	}
+	var grantDate time.Time
+	if w.GrantDocumentMetaData != nil {
+		grantDate = parseISODate(w.GrantDocumentMetaData.FileCreateDateTime)
+	}
 	now := time.Now().UTC()
 	nowText := encodeRFC3339(now)
 
@@ -244,6 +252,8 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		Source:          domain.SourceUSPTO,
 		FetchedAt:       now,
 		ApplicationDate: filingDate,
+		PublicationDate: pubDate,
+		GrantDate:       grantDate,
 		SourceURL:       "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape("applicationNumberText:"+appNumber),
 	}
 
@@ -529,6 +539,9 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 
 	// Extract publication number if present
 	pubStr := strings.TrimSpace(w.ApplicationMetaData.PublicationNumber)
+	if w.PGPubDocumentMetaData != nil && strings.TrimSpace(w.PGPubDocumentMetaData.ProductIdentifier) != "" {
+		pubStr = strings.TrimSpace(w.PGPubDocumentMetaData.ProductIdentifier)
+	}
 	if pubStr != "" {
 		if !strings.HasPrefix(strings.ToUpper(pubStr), "US") {
 			pubStr = "US" + pubStr
@@ -547,7 +560,7 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 				Authority:      "US",
 				IdentifierType: "publication",
 				Identifier:     pubNum.Normalized(),
-				RawIdentifier:  w.ApplicationMetaData.PublicationNumber,
+				RawIdentifier:  pubStr,
 				RecordNumber:   recordNumber,
 				DocumentNumber: pubNum.Normalized(),
 				Country:        "US",

@@ -174,6 +174,25 @@ func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, num
 	return AddToProjectFromSourceWithOptionsCmd(client, project, number, source, false)
 }
 
+// AddShowAutoSelectedCandidateMsg is returned when a patent addition auto-selects a single candidate.
+type AddShowAutoSelectedCandidateMsg struct {
+	Project      domain.ProjectID
+	Patent       domain.PatentNumber
+	Source       domain.Source
+	Candidate    domain.USPTOCandidate
+	FetchStarted bool
+	JobID        string
+}
+
+// AddShowAlreadyInDBMsg is returned when the added patent was already in the database (loaded from cache).
+type AddShowAlreadyInDBMsg struct {
+	Project      domain.ProjectID
+	Patent       domain.PatentNumber
+	Source       domain.Source
+	FetchStarted bool
+	JobID        string
+}
+
 // AddToProjectFromSourceWithOptionsCmd links a patent and supports confirm_merge and warning overlay.
 func AddToProjectFromSourceWithOptionsCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, source domain.Source, confirmMerge bool) tea.Cmd {
 	return func() tea.Msg {
@@ -197,8 +216,27 @@ func AddToProjectFromSourceWithOptionsCmd(client *rpc.Client, project domain.Pro
 				MergeWarning: res.MergeWarning,
 			}
 		}
+		if res.AutoSelectedCandidate != nil {
+			return AddShowAutoSelectedCandidateMsg{
+				Project:      project,
+				Patent:       number,
+				Source:       source,
+				Candidate:    *res.AutoSelectedCandidate,
+				FetchStarted: res.FetchStarted,
+				JobID:        res.JobID,
+			}
+		}
 		if len(res.Candidates) > 0 {
 			return AddUSPTOShowCandidatesMsg{Project: project, Patent: number, Candidates: res.Candidates}
+		}
+		if res.AlreadyInDB {
+			return AddShowAlreadyInDBMsg{
+				Project:      project,
+				Patent:       number,
+				Source:       source,
+				FetchStarted: res.FetchStarted,
+				JobID:        res.JobID,
+			}
 		}
 		if !res.FetchStarted {
 			return StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{number.String()}}

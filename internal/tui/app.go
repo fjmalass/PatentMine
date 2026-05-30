@@ -993,6 +993,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.confirmCmd = pane.AddToProjectFromSourceWithOptionsCmd(a.client, m.Project, m.Patent, m.Source, true)
 		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, m.MergeWarning.Message))
 		return a, nil
+	case pane.AddShowAlreadyInDBMsg:
+		msg := fmt.Sprintf("Patent %s is already in the database (loaded from local cache).", m.Patent.String())
+		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
+		var cmd tea.Cmd
+		if !m.FetchStarted {
+			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{m.Patent.String()}} }
+		} else if m.JobID != "" {
+			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusCrawlStarted, Args: []any{m.Patent.String(), m.JobID, 0}} }
+		} else {
+			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAdded, Args: []any{m.Patent.String(), string(m.Project)}} }
+		}
+		return a, cmd
+	case pane.AddShowAutoSelectedCandidateMsg:
+		msg := fmt.Sprintf("Found USPTO patent %s (%s) for %s — automatically mapped.",
+			firstNonEmpty(m.Candidate.GrantNumber, m.Candidate.PublicationNumber, m.Candidate.ApplicationNumber),
+			firstNonEmpty(m.Candidate.Title, "No Title"),
+			m.Patent.String())
+		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
+		var cmd tea.Cmd
+		if !m.FetchStarted {
+			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{m.Patent.String()}} }
+		} else if m.JobID != "" {
+			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusCrawlStarted, Args: []any{m.Patent.String(), m.JobID, 0}} }
+		} else {
+			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAdded, Args: []any{m.Patent.String(), string(m.Project)}} }
+		}
+		return a, cmd
 	case pane.AddUSPTOShowCandidatesMsg:
 		o := overlay.NewUSPTOCandidatePicker(a.theme, m.Project, m.Candidates, m.Patent)
 		a.overlays = append(a.overlays, o)
@@ -1469,4 +1496,13 @@ func (a *App) checkPatentExists(targetIndex int, number domain.PatentNumber) tea
 			err:         err,
 		}
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

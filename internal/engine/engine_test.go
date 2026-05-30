@@ -1655,13 +1655,13 @@ func TestEngineMergeWarning(t *testing.T) {
 	}
 
 	// Add the publication to the project first
-	_, _, _, _, err = eng.AddToProjectWithOptions(ctx, project.ID, pub, false)
+	_, _, _, _, _, _, err = eng.AddToProjectWithOptions(ctx, project.ID, pub, false)
 	if err != nil {
 		t.Fatalf("AddToProject: %v", err)
 	}
 
 	// Adding the grant stage of the same patent without confirming should return a merge warning
-	_, _, _, warning, err := eng.AddToProjectWithOptions(ctx, project.ID, grant, false)
+	_, _, _, warning, _, _, err := eng.AddToProjectWithOptions(ctx, project.ID, grant, false)
 	if err != nil {
 		t.Fatalf("AddToProject grant stage failed: %v", err)
 	}
@@ -1673,7 +1673,7 @@ func TestEngineMergeWarning(t *testing.T) {
 	}
 
 	// Confirming the merge should succeed without warning
-	_, _, _, warning, err = eng.AddToProjectWithOptions(ctx, project.ID, grant, true)
+	_, _, _, warning, _, _, err = eng.AddToProjectWithOptions(ctx, project.ID, grant, true)
 	if err != nil {
 		t.Fatalf("AddToProject with confirmMerge failed: %v", err)
 	}
