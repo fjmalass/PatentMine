@@ -208,6 +208,60 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 		}
 	}
 
+	// Ensure the grant document is registered or updated in the document table
+	// with the complete kind code and the grant date parsed from the ingested XML.
+	var grantNum domain.PatentNumber
+	grantDocNum := strings.TrimSpace(ingest.Summary.GrantDocNumber)
+	if grantDocNum != "" {
+		if !strings.HasPrefix(strings.ToUpper(grantDocNum), "US") {
+			grantDocNum = "US" + grantDocNum
+		}
+		if gn, err := domain.ParsePatentNumber(grantDocNum); err == nil {
+			grantNum = gn
+		}
+	}
+	if grantNum.IsZero() && strings.TrimSpace(ingest.Summary.GrantDocNumber) != "" {
+		grantNum = domain.PatentNumber{
+			Country: "US",
+			Serial:  strings.TrimSpace(ingest.Summary.GrantDocNumber),
+			Kind:    ingest.Summary.GrantKind,
+		}
+	}
+	if !grantNum.IsZero() {
+		var docDate time.Time
+		if len(ingest.Summary.GrantDate) == 8 {
+			if t, err := time.Parse("20060102", ingest.Summary.GrantDate); err == nil {
+				docDate = t
+			}
+		}
+		recordNumber, _ := domain.ParsePatentNumber("US" + app)
+		if !recordNumber.IsZero() {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO document (number, record_number, country, serial, kind, stage, dated)
+				VALUES (?,?,?,?,?,?,?)
+				ON CONFLICT(number) DO UPDATE SET
+					record_number=excluded.record_number, country=excluded.country,
+					serial=excluded.serial, kind=excluded.kind, stage=excluded.stage,
+					dated=excluded.dated`,
+				grantNum.Normalized(), recordNumber.Normalized(),
+				grantNum.Country, grantNum.Serial, grantNum.Kind,
+				string(domain.StageGrant), encodeTime(docDate)); err != nil {
+				return fmt.Errorf("store/sqlite: save uspto grant document: %w", err)
+			}
+
+			// Also update the main patent row's GrantDate, DisplayNumber, and FetchState
+			// to reflect the complete grant number from the XML ingestion.
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE patent SET
+					grant_date = ?,
+					display_number = ?
+				WHERE number = ?`,
+				encodeTime(docDate), grantNum.Normalized(), recordNumber.Normalized()); err != nil {
+				return fmt.Errorf("store/sqlite: update patent grant details: %w", err)
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store/sqlite: save uspto grant: commit: %w", err)
 	}

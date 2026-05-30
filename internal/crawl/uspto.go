@@ -577,37 +577,41 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 	if w.GrantDocumentMetaData != nil {
 		grantDate = parseISODate(w.GrantDocumentMetaData.FileCreateDateTime)
 	}
-	addedGrants := make(map[domain.PatentNumber]bool)
-	for _, rawGrant := range []string{w.ApplicationMetaData.PatentNumber, w.ApplicationMetaData.PatentNumberText} {
-		grantStr := strings.TrimSpace(rawGrant)
+
+	var grantStr string
+	if w.GrantDocumentMetaData != nil && strings.TrimSpace(w.GrantDocumentMetaData.ProductIdentifier) != "" {
+		grantStr = strings.TrimSpace(w.GrantDocumentMetaData.ProductIdentifier)
+	}
+	if grantStr == "" {
+		grantStr = strings.TrimSpace(w.ApplicationMetaData.PatentNumber)
 		if grantStr == "" {
-			continue
+			grantStr = strings.TrimSpace(w.ApplicationMetaData.PatentNumberText)
 		}
+	}
+
+	if grantStr != "" {
 		if !strings.HasPrefix(strings.ToUpper(grantStr), "US") {
 			grantStr = "US" + grantStr
 		}
 		if grantNum, err := domain.ParsePatentNumber(grantStr); err == nil {
-			if !addedGrants[grantNum] {
-				addedGrants[grantNum] = true
-				docs = append(docs, domain.Document{
-					Number: grantNum,
-					Stage:  domain.StageGrant,
-					Dated:  grantDate,
-				})
-				ids = append(ids, domain.AuthorityIdentifier{
-					Authority:      "US",
-					IdentifierType: "grant",
-					Identifier:     grantNum.Normalized(),
-					RawIdentifier:  rawGrant,
-					RecordNumber:   recordNumber,
-					DocumentNumber: grantNum.Normalized(),
-					Country:        "US",
-					Kind:           grantNum.Kind,
-					Dated:          func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.FileCreateDateTime }; return "" }(),
-					Source:         string(domain.SourceUSPTO),
-					Confidence:     100,
-				})
-			}
+			docs = append(docs, domain.Document{
+				Number: grantNum,
+				Stage:  domain.StageGrant,
+				Dated:  grantDate,
+			})
+			ids = append(ids, domain.AuthorityIdentifier{
+				Authority:      "US",
+				IdentifierType: "grant",
+				Identifier:     grantNum.Normalized(),
+				RawIdentifier:  grantStr,
+				RecordNumber:   recordNumber,
+				DocumentNumber: grantNum.Normalized(),
+				Country:        "US",
+				Kind:           grantNum.Kind,
+				Dated:          func() string { if w.GrantDocumentMetaData != nil { return w.GrantDocumentMetaData.FileCreateDateTime }; return "" }(),
+				Source:         string(domain.SourceUSPTO),
+				Confidence:     100,
+			})
 		}
 	}
 
