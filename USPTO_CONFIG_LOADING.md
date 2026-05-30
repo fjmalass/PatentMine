@@ -328,6 +328,35 @@ In the picker, use `up` / `down` or `j` / `k`, then press `Enter` to select the
 correct application. If none is correct, close the overlay and try a more exact
 application, publication, or grant number.
 
+### 3.5 Identifier Matching & Life-Stage Resolution
+
+When searching or adding a patent via the USPTO, the daemon retrieves a candidate ODP wrapper list. Each candidate wrapper (`usptoWrapperData`) contains multiple identifier fields representing the same underlying invention at different stages of its life cycle:
+- `w.ApplicationNumberText` (e.g., `14/283,408`)
+- `w.ApplicationMetaData.PatentNumber` / `w.ApplicationMetaData.PatentNumberText` (e.g., `US11611785B2`)
+- `w.ApplicationMetaData.PublicationNumber` (e.g., `US20220252571A1`)
+
+To reliably identify if a candidate wrapper matches the target `domain.PatentNumber` requested by the user, the crawler uses a unified parsing and matching approach:
+
+1. **Serial-Based Identity Matching (`matchesPatent`)**:
+   - Compares the candidate raw identifiers directly against the target `domain.PatentNumber`.
+   - Uses the unified parser `domain.ParsePatentNumber` to strip separators (such as `/`, `-`, commas, and spaces) and extract the core serial digits.
+   - Compares the normalized serial digits (after stripping leading zeros). This avoids matching failures caused by different prefixes or suffixes (like kind codes `A1` vs `B2`), which represent different stages of the *same* invention record.
+
+2. **Life-Stage Classification**:
+   - The kind codes determine a patent document's exact stage with 100% certainty:
+     - Kind code starts with **`B`** (e.g., `B1`, `B2`) -> **Grant** (100% granted patent).
+     - Kind code starts with **`A`** (e.g., `A1`, `A2`) -> **Pre-grant publication** (published application).
+     - Empty kind code -> **Application** (un-published application serial).
+   - The helper `domain.GuessStage` parses the kind code to assign the correct stage to stub records (e.g., during citation walks). This maps them under their correct stage in the database (e.g. `publication US20100282272A1`) and displays them correctly in the TUI detail pane.
+
+3. **Telemetry & Logs**:
+   - The parsing and matching process is tracked in-process using these telemetry counters on `observability.Metrics`:
+     - `crawl.uspto.matches_patent.calls_total`: Total match attempts.
+     - `crawl.uspto.matches_patent.parse_success_total`: Successful parses through `domain.ParsePatentNumber`.
+     - `crawl.uspto.matches_patent.parse_fallback_total`: Fallbacks to raw digit stripping.
+     - `crawl.uspto.matches_patent.matched_total`: Successful matches.
+   - Structured debug logs (`slog.Debug`) record the raw input, the target patent, the parsed serial, and match success/failure for precise tracing.
+
 ---
 
 ## 4. Manual XML Fetch

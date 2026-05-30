@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 )
 
 const usptoSampleResponse = `{
@@ -167,5 +168,70 @@ func TestMatchingUSPTOWrapperScoring(t *testing.T) {
 	}
 	if matched2.ApplicationNumberText != "11714053" {
 		t.Errorf("matched application %q, want 11714053 (Wrapper A)", matched2.ApplicationNumberText)
+	}
+
+	// 3. Search for Application US20140283408A1
+	wC := usptoWrapperData{
+		ApplicationNumberText: "14283408",
+	}
+	wC.ApplicationMetaData.PublicationNumber = "US20140283408A1"
+	matched3, ok := matchingUSPTOWrapper(domain.MustParsePatentNumber("US20140283408A1"), []usptoWrapperData{wC})
+	if !ok {
+		t.Fatalf("matchingUSPTOWrapper failed to match application US20140283408A1")
+	}
+	if matched3.ApplicationNumberText != "14283408" {
+		t.Errorf("matched application %q, want 14283408 (Wrapper C)", matched3.ApplicationNumberText)
+	}
+
+	// 4. Search for Application with slashes and special formatting
+	wD := usptoWrapperData{
+		ApplicationNumberText: "14/283,408",
+	}
+	wD.ApplicationMetaData.PublicationNumber = "US-2014/0283408-A1"
+	matched4, ok := matchingUSPTOWrapper(domain.MustParsePatentNumber("US20140283408A1"), []usptoWrapperData{wD})
+	if !ok {
+		t.Fatalf("matchingUSPTOWrapper failed to match application with slashes US-2014/0283408-A1")
+	}
+	if matched4.ApplicationNumberText != "14/283,408" {
+		t.Errorf("matched application %q, want 14/283,408 (Wrapper D)", matched4.ApplicationNumberText)
+	}
+}
+
+func TestMatchesPatentTelemetry(t *testing.T) {
+	oldMetrics := Metrics
+	Metrics = observability.NewMetrics()
+	defer func() { Metrics = oldMetrics }()
+
+	t1 := domain.MustParsePatentNumber("US20140283408A1")
+	if !matchesPatent("US20140283408A1", t1) {
+		t.Error("expected US20140283408A1 to match")
+	}
+
+	t2 := domain.MustParsePatentNumber("US11611785B2")
+	if matchesPatent("US20140283408A1", t2) {
+		t.Error("expected US20140283408A1 to not match US11611785B2")
+	}
+
+	t3 := domain.MustParsePatentNumber("US123")
+	if !matchesPatent("abc-123", t3) {
+		t.Error("expected abc-123 to match US123 via fallback")
+	}
+
+	snap := Metrics.Snapshot()
+	
+	if snap.Counters["crawl.uspto.matches_patent.calls_total"] != 3 {
+		t.Errorf("calls_total = %d, want 3", snap.Counters["crawl.uspto.matches_patent.calls_total"])
+	}
+
+	if snap.Counters["crawl.uspto.matches_patent.parse_success_total"] != 2 {
+		t.Errorf("parse_success_total = %d, want 2", snap.Counters["crawl.uspto.matches_patent.parse_success_total"])
+	}
+
+	if snap.Counters["crawl.uspto.matches_patent.parse_fallback_total"] != 1 {
+		t.Errorf("parse_fallback_total = %d, want 1", snap.Counters["crawl.uspto.matches_patent.parse_fallback_total"])
+	}
+
+	if snap.Counters["crawl.uspto.matches_patent.matched_total"] != 2 {
+		t.Errorf("matched_total = %d, want 2", snap.Counters["crawl.uspto.matches_patent.matched_total"])
 	}
 }

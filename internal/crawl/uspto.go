@@ -329,11 +329,6 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 }
 
 func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (usptoWrapperData, bool) {
-	serial := strings.TrimLeft(number.Serial, "0")
-	if serial == "" {
-		serial = number.Serial
-	}
-
 	var bestW usptoWrapperData
 	bestScore := -1
 
@@ -341,9 +336,9 @@ func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (
 
 	for _, w := range bags {
 		score := 0
-		matchesApp := sameDigits(w.ApplicationNumberText, serial)
-		matchesGrant := sameDigits(w.ApplicationMetaData.PatentNumber, serial) || sameDigits(w.ApplicationMetaData.PatentNumberText, serial)
-		matchesPub := sameDigits(w.ApplicationMetaData.PublicationNumber, serial)
+		matchesApp := matchesPatent(w.ApplicationNumberText, number)
+		matchesGrant := matchesPatent(w.ApplicationMetaData.PatentNumber, number) || matchesPatent(w.ApplicationMetaData.PatentNumberText, number)
+		matchesPub := matchesPatent(w.ApplicationMetaData.PublicationNumber, number)
 
 		if !matchesApp && !matchesGrant && !matchesPub {
 			continue
@@ -448,8 +443,44 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 	return candidates, nil
 }
 
-func sameDigits(a, b string) bool {
-	return strings.TrimLeft(onlyDigits(a), "0") == strings.TrimLeft(onlyDigits(b), "0")
+func matchesPatent(raw string, target domain.PatentNumber) bool {
+	parsed, err := domain.ParsePatentNumber(raw)
+	var matched bool
+	var parsedSerial string
+	var parseSuccess bool
+
+	if err == nil {
+		parseSuccess = true
+		parsedSerial = parsed.Serial
+		matched = (strings.TrimLeft(parsed.Serial, "0") == strings.TrimLeft(target.Serial, "0"))
+	} else {
+		// Fallback to naive digit-only stripping if ParsePatentNumber fails
+		parsedSerial = onlyDigits(raw)
+		matched = (strings.TrimLeft(parsedSerial, "0") == strings.TrimLeft(onlyDigits(target.Serial), "0"))
+	}
+
+	// Telemetry/metrics
+	if Metrics != nil {
+		Metrics.IncCounter("crawl.uspto.matches_patent.calls_total", 1)
+		if parseSuccess {
+			Metrics.IncCounter("crawl.uspto.matches_patent.parse_success_total", 1)
+		} else {
+			Metrics.IncCounter("crawl.uspto.matches_patent.parse_fallback_total", 1)
+		}
+		if matched {
+			Metrics.IncCounter("crawl.uspto.matches_patent.matched_total", 1)
+		}
+	}
+
+	// Logging for debugging purposes
+	slog.Debug("matchesPatent comparison",
+		slog.String("raw_input", raw),
+		slog.String("target_number", target.String()),
+		slog.Bool("parse_success", parseSuccess),
+		slog.String("parsed_serial", parsedSerial),
+		slog.Bool("matched", matched))
+
+	return matched
 }
 
 func onlyDigits(s string) string {
