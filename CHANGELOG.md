@@ -11,6 +11,20 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [v0.7.0] — 2026-05-29
+
+### Database
+- **Breaking patent representation without kind suffix**: Rebuilt the database schema to store patents using their kindless form (`Country` + `Serial` only). The `Kind` column is removed from the primary patent record, and all unique constraints, indices, and foreign keys have been updated. This breaking database change simplifies record deduplication and cross-source comparisons (Google vs. USPTO) by standardizing on the kindless identity, avoiding legacy baggage. Legacy database migration logic was removed, incrementing the database schema version.
+
+### Added
+- **Stub patent review state handling**: Newly generated stub patents created during crawls for citations, parents, or cited-by relations are now initialized with the `Unknown` review state rather than inheriting `UnderReview` review state. The primary added/loaded patent correctly transitions to the `UnderReview` review state.
+
+### Fixed
+- **USPTO PGPub citation lookup**: Kindless 11-digit pre-grant publication numbers (e.g., `US20040260504` normalized from citations) are now successfully queried on the USPTO ODP API by automatically generating and checking search criteria with the `"A1"` suffix appended (e.g., `US20040260504A1`).
+- **Cursor lookup fallback**: Pressing `'L'` (lookup patent) on a single citation row when not in visual mode now correctly initiates a lookup for that patent instead of triggering an empty selection error.
+
+---
+
 ## [v0.6.0] — 2026-05-29
 
 ### Database
