@@ -349,7 +349,12 @@ To reliably identify if a candidate wrapper matches the target `domain.PatentNum
      - Empty kind code -> **Application** (un-published application serial).
    - The helper `domain.GuessStage` parses the kind code to assign the correct stage to stub records (e.g., during citation walks). This maps them under their correct stage in the database (e.g. `publication US20100282272A1`) and displays them correctly in the TUI detail pane.
 
-3. **Telemetry & Logs**:
+3. **Proactive Duplicate Stub Prevention & Candidate Mapping**:
+   - **Local Registry Check**: Before calling `ensureRecord` or performing live candidate searches, the engine queries the local `document` registry via `RecordOf`. If the document number matches an already-linked stage, the parent record is reused directly to prevent duplicate stub creation.
+   - **Canonical Resolution**: If the document is not known locally but in a USPTO-preferred mode, ODP candidate lookup maps the requested publication or grant number to its canonical Application ID. A single stub is created under this canonical Application ID rather than separate stubs for each document number.
+   - **Ingestion Self-Healing**: If different stubs (e.g., the publication and the grant) are added concurrently before either background crawl completes, the system self-heals at ingest time. The crawler passes all fetched documents to `resolveRecord`, which automatically detects the co-existing stubs and calls `MergeRecords` to unified-collapse them into a single record.
+
+4. **Telemetry & Logs**:
    - The parsing and matching process is tracked in-process using these telemetry counters on `observability.Metrics`:
      - `crawl.uspto.matches_patent.calls_total`: Total match attempts.
      - `crawl.uspto.matches_patent.parse_success_total`: Successful parses through `domain.ParsePatentNumber`.
@@ -358,6 +363,7 @@ To reliably identify if a candidate wrapper matches the target `domain.PatentNum
    - Structured debug logs (`slog.Debug`) record the raw input, the target patent, the parsed serial, and match success/failure for precise tracing.
 
 ---
+
 
 ## 4. Manual XML Fetch
 

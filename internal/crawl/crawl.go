@@ -544,6 +544,11 @@ func stampSourceDiffs(in []domain.SourceDiff, record domain.PatentNumber) []doma
 // belong to. When they belong to several records, those records are merged and
 // the survivor is returned. A zero number means none of them is known yet.
 func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentNumber) (domain.PatentNumber, error) {
+	log := observability.WithContextAttrs(ctx, c.logger)
+	if log == nil {
+		log = slog.Default()
+	}
+
 	var records []domain.PatentNumber
 	seen := map[domain.PatentNumber]bool{}
 	for _, n := range candidates {
@@ -564,8 +569,14 @@ func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentN
 	}
 	keep := records[0]
 	for _, other := range records[1:] {
+		log.Info("merging duplicate stub patent records",
+			slog.String("keep", keep.String()),
+			slog.String("absorb", other.String()))
 		if err := c.repo.MergeRecords(ctx, keep, other); err != nil {
 			return domain.PatentNumber{}, err
+		}
+		if c.metrics != nil {
+			c.metrics.IncCounter("crawl.merge_records_total", 1)
 		}
 	}
 	return keep, nil

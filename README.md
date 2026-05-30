@@ -111,16 +111,18 @@ sequenceDiagram
 ```
 
 ### Phase 1: Discovery & Stub Creation
-* When a user adds a raw patent number to a project, or when a family crawl discovers a citation edge (`saveRelations` in `crawl.go`), the engine calls `ensureRecord`.
-* The engine queries the `document` table via `RecordOf` to resolve the number. 
-* If the number is unknown, a **Stub Patent** is immediately saved with `FetchState = FetchStub`. A corresponding `Document` is inserted pointing to this stub. This creates a placeholder in the family graph before fetching its metadata.
+* When a user adds a raw patent number to a project, or when a family crawl discovers a citation edge (`saveRelations` in `crawl.go`), the engine initiates resolution.
+* **Proactive Local Check**: The engine first queries the `document` table via `RecordOf` to check if the requested document number is already known to belong to an existing parent record. If found, it reuses the record number directly, avoiding duplicate stub creation.
+* **ODP Candidate Pre-Resolution**: If the number is unknown locally and the mode is USPTO-preferred, the engine performs a candidate lookup on USPTO ODP. If it matches a single application wrapper, the engine maps the requested publication or grant number to its canonical Application ID. If multiple wrappers match, a picker is shown in the TUI.
+* **Stub Placeholder**: If the number remains unknown after checks, a **Stub Patent** is saved under the resolved canonical number (with `FetchState = FetchStub`), and a corresponding `Document` is inserted pointing to this stub. This creates a placeholder in the family graph before fetching its metadata.
 
 ### Phase 2: Crawl & Candidate Resolution
 * When the web crawler retrieves the full patent, it returns a package of metadata plus all associated lifecycle documents (the "candidates").
 * In `resolveRecord` (`crawl.go`), the crawler queries `RecordOf` for each candidate to see which existing stubs are already in the system.
 
-### Phase 3: Deep Record Merging
-* If candidates are mapped to different existing stub records (e.g. one stub was created for the application number from an old citation, and another for the grant number from a project membership), the crawler merges them to eliminate duplicates.
+### Phase 3: Deep Record Merging & Self-Healing
+* If stubs for different stages (such as the publication and the grant) were added concurrently before any crawl completed, they co-exist in the database. 
+* As soon as either fetch completes and is ingested, `resolveRecord` detects both stubs among the fetched candidates and automatically triggers a deep merge.
 * `MergeRecords` runs a complete, ACID-compliant SQLite transaction that:
   1. Repoints all documents from the absorbed record to the survivor canonical record.
   2. Moves all project memberships, skipping duplicates (`UPDATE OR IGNORE`).
@@ -131,6 +133,7 @@ sequenceDiagram
 * Once merged and stored, the patent's `DisplayNumber` is dynamically promoted. 
 * The engine scans all attached documents and selects the highest-stage document (Grant > Publication > Application), falling back to the canonical `Number` if no documents exist.
 * The visual TUI prints the `DisplayNumber` (e.g. `US11611785B2`) in lists, but all background graph walks, edits, and tagging walk the canonical `Number` (`US16123456`).
+
 
 ---
 
