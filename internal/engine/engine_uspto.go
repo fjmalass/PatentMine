@@ -705,11 +705,11 @@ func (e *Engine) USPTOLookup(ctx context.Context, number domain.PatentNumber) (s
 	norm := number.Normalized()
 	var query string
 	if norm != "" && norm != serial {
-		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
-			serial, serial, serial, serial, norm, serial)
+		query = fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q OR %q",
+			serial, serial, serial, norm, serial)
 	} else {
-		query = fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
-			serial, serial, serial, serial, serial)
+		query = fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q",
+			serial, serial, serial, serial)
 	}
 
 	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)

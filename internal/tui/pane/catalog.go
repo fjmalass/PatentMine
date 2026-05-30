@@ -388,30 +388,38 @@ func (c *Catalog) Handles() []command.ID { return handlerIDs(c.handlers) }
 
 // crawlSelected enqueues a crawl or lookup for the selected patent(s).
 func (c *Catalog) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
+	var projectID domain.ProjectID
+	if c.activeProject != nil {
+		projectID = c.activeProject.ID
+	}
 	numbers := c.Selections()
 	if len(numbers) < 2 {
 		n, ok := c.Selection()
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false)
+		return CrawlCmd(c.client, projectID, n, crawlDepth(profile), profile, false)
 	}
-	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false)
+	return MultiCrawlCmd(c.client, projectID, numbers, crawlDepth(profile), profile, false)
 }
 
 // crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
 // a fresh web fetch (bypassing any local cache or existing stub row). This is
 // the only way to turn a near-empty stub left by :add into real data.
 func (c *Catalog) crawlSelectedLookup() tea.Cmd {
+	var projectID domain.ProjectID
+	if c.activeProject != nil {
+		projectID = c.activeProject.ID
+	}
 	numbers := c.Selections()
 	if len(numbers) < 2 {
 		n, ok := c.Selection()
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(c.client, n, lookupDepth, "", true)
+		return CrawlCmd(c.client, projectID, n, lookupDepth, "", true)
 	}
-	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true)
+	return MultiCrawlCmd(c.client, projectID, numbers, lookupDepth, "", true)
 }
 
 // move runs a cursor motion and reloads the page when the visible window

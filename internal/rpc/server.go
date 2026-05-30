@@ -535,7 +535,7 @@ func (s *Server) membershipAdd(ctx context.Context, raw json.RawMessage) (any, e
 	if p.Source != "" {
 		fetchStarted, jobID, candidates, err = s.engine.AddToProjectFromSource(ctx, p.Project, p.Patent, p.Source, p.ApplicationNumber)
 	} else {
-		fetchStarted, jobID, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
+		fetchStarted, jobID, candidates, err = s.engine.AddToProject(ctx, p.Project, p.Patent)
 	}
 	if err != nil {
 		return nil, err
@@ -686,7 +686,7 @@ func (s *Server) crawlFamily(ctx context.Context, raw json.RawMessage) (any, err
 	if err != nil {
 		return nil, err
 	}
-	id, err := s.engine.StartFamilyCrawl(ctx, p.Root, p.Depth, p.Profile, p.Force)
+	id, err := s.engine.StartProjectFamilyCrawl(ctx, p.Project, p.Root, p.Depth, p.Profile, p.Force)
 	if err != nil {
 		return nil, err
 	}

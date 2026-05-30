@@ -250,9 +250,9 @@ func (g *FamilyGraph) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(g.client, n, crawlDepth(profile), profile, false)
+		return CrawlCmd(g.client, g.project, n, crawlDepth(profile), profile, false)
 	}
-	return MultiCrawlCmd(g.client, numbers, crawlDepth(profile), profile, false)
+	return MultiCrawlCmd(g.client, g.project, numbers, crawlDepth(profile), profile, false)
 }
 
 // crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
@@ -265,9 +265,9 @@ func (g *FamilyGraph) crawlSelectedLookup() tea.Cmd {
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(g.client, n, lookupDepth, "", true)
+		return CrawlCmd(g.client, g.project, n, lookupDepth, "", true)
 	}
-	return MultiCrawlCmd(g.client, numbers, lookupDepth, "", true)
+	return MultiCrawlCmd(g.client, g.project, numbers, lookupDepth, "", true)
 }
 
 func (g *FamilyGraph) Update(msg tea.Msg) (Pane, tea.Cmd) {

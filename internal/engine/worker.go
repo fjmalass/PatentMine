@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,6 +52,7 @@ type workerPool struct {
 	mu      sync.Mutex
 	cancels map[JobID]context.CancelFunc
 	metrics *observability.Metrics
+	logger  *slog.Logger
 	closed  bool
 
 	wg sync.WaitGroup
@@ -96,6 +98,11 @@ func (p *workerPool) run(qj queuedJob) {
 	done := proto.CrawlDone{JobID: string(qj.id)}
 	if err != nil {
 		done.Error = err.Error()
+		if p.logger != nil {
+			p.logger.Error("job failed",
+				slog.String("job_id", string(qj.id)),
+				slog.String("error", err.Error()))
+		}
 	}
 	if p.metrics != nil {
 		p.metrics.ObserveDuration("engine.worker.job_run", time.Since(start), err != nil)

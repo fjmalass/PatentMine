@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,7 +63,8 @@ func newRPCBackedTestApp(t *testing.T) *App {
 		})
 	}
 	eng := engine.New(ctx, repo, factory, engine.WithCrawlMaxDepth(4))
-	socket := filepath.Join(t.TempDir(), "tui.sock")
+	socket := filepath.Join("/tmp", fmt.Sprintf("tui-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -725,12 +728,13 @@ func TestIDSCycleStatusCyclesSelectedPatents(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 	for _, number := range numbers {
-		if _, _, err := eng.AddToProject(context.Background(), project.ID, number); err != nil {
+		if _, _, _, err := eng.AddToProject(context.Background(), project.ID, number); err != nil {
 			t.Fatalf("AddToProject: %v", err)
 		}
 	}
 
-	socket := filepath.Join(t.TempDir(), "ids-cycle.sock")
+	socket := filepath.Join("/tmp", fmt.Sprintf("ids-cycle-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("listen: %v", err)

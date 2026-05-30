@@ -363,6 +363,26 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		slog.Int("children", stats.children),
 		slog.Duration("duration", time.Since(start)))
 
+	recNum, err := c.repo.RecordOf(ctx, root)
+	if err != nil {
+		err = fmt.Errorf("crawl: root patent %s record mapping was not found in the repository: %w", root, err)
+		log.Error("crawl failed", slog.String("root", root.String()), slog.String("error", err.Error()))
+		return err
+	}
+	if p, err := c.repo.Patent(ctx, recNum); err == nil {
+		if p.FetchState != domain.FetchCached {
+			log.Warn("crawl root patent remained a stub, promoting to cached", slog.String("root", root.String()), slog.String("resolved", recNum.String()))
+			p.FetchState = domain.FetchCached
+			if serr := c.repo.SaveNode(ctx, store.NodeBatch{Patent: p}); serr != nil {
+				log.Error("crawl failed to promote stub to cached", slog.String("root", root.String()), slog.String("error", serr.Error()))
+			}
+		}
+	} else {
+		err = fmt.Errorf("crawl: root patent %s (resolved to %s) was not found in the repository: %w", root, recNum, err)
+		log.Error("crawl failed", slog.String("root", root.String()), slog.String("error", err.Error()))
+		return err
+	}
+
 	failed = false
 	return nil
 }

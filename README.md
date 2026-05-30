@@ -9,6 +9,7 @@ Related docs:
 1. [Metrics Guide](./metrics.md)
 2. [Telemetry & Activity Tracking Guide](./ACTIVITY.md)
 3. [USPTO Loading & Source Configuration](./USPTO_CONFIG_LOADING.md)
+4. [TUI :add Execution Flow](./TUI_ADD_FLOW.md)
 
 ---
 

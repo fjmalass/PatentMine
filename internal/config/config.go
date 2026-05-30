@@ -232,12 +232,9 @@ func Load() (Config, error) {
 	}
 
 	usptoKey := os.Getenv("PATENTMINE_USPTO_API_KEY")
-	// PATENTMINE_SOURCE_MODE feeds crawl.NormalizeSourceMode so the canonical
-	// names live in one place. An invalid value silently falls back to
-	// compare so a typo doesn't refuse to boot.
 	sourceMode, err := crawl.NormalizeSourceMode(os.Getenv("PATENTMINE_SOURCE_MODE"))
 	if err != nil {
-		sourceMode = crawl.SourceModeCompare
+		return Config{}, fmt.Errorf("config: invalid PATENTMINE_SOURCE_MODE: %w", err)
 	}
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 

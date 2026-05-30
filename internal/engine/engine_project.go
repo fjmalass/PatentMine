@@ -61,9 +61,8 @@ func (e *Engine) CreateProject(ctx context.Context, name string) (project domain
 // ahead of crawling. fetchStarted reports whether an automatic single-patent
 // fetch was enqueued; false means the caller should prompt the user to fetch
 // manually (e.g. with F).
-func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, jobID JobID, err error) {
-	fetchStarted, jobID, _, err = e.addToProject(ctx, project, patent, "", "")
-	return fetchStarted, jobID, err
+func (e *Engine) AddToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
+	return e.addToProject(ctx, project, patent, "", "")
 }
 
 // AddToProjectFromSource adds a patent and forces a single-patent fetch from
@@ -75,7 +74,9 @@ func (e *Engine) AddToProjectFromSource(ctx context.Context, project domain.Proj
 func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber, source domain.Source, applicationNumber string) (fetchStarted bool, jobID JobID, candidates []domain.USPTOCandidate, err error) {
 	defer e.observeDuration("engine.add_to_project", time.Now(), &err)
 
-	if source == domain.SourceUSPTO && e.usptoSearcher != nil {
+	mode := e.currentSourceMode()
+	isUSPTOPreferred := source == domain.SourceUSPTO || (source == "" && (mode == "uspto-only" || mode == "uspto-first" || mode == "compare"))
+	if isUSPTOPreferred && e.usptoSearcher != nil {
 		if applicationNumber != "" {
 			// Candidate already selected by user — skip re-search, use directly.
 			if exact, err2 := domain.ParsePatentNumber("US" + applicationNumber); err2 == nil {
@@ -120,7 +121,9 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 						"duration_ms": searchDur.Milliseconds(),
 					},
 				})
-				return false, "", nil, err
+				if source == domain.SourceUSPTO || mode == "uspto-only" {
+					return false, "", nil, err
+				}
 			}
 			if len(candidates) > 1 {
 				e.log(ctx, slog.LevelInfo, "engine.add.uspto.candidates_found",
@@ -218,7 +221,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 			needsFetch = p.FetchState == domain.FetchStub
 		}
 	}
-	if !exists && state == domain.ReviewStateUnknown && needsFetch && e.crawl != nil {
+	if state == domain.ReviewStateUnknown && needsFetch && e.crawl != nil {
 		var fetchErr error
 		jobID, fetchErr = e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false)
 		if fetchErr != nil {
@@ -397,8 +400,10 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 }
 
 // cleanupIfNotFound watches for the done event of a single-patent fetch job
-// and removes the membership (and stub patent if freshly created) when the
-// root patent was not found.
+// and handles post-crawl progression. If the root patent was not found, it
+// removes the membership (and stub patent if freshly created). If the root
+// patent was successfully crawled, it automatically promotes its project
+// review state from unknown to under_review.
 func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.PatentNumber, stubCreated bool, id JobID) {
 	ch, unsub := e.pool.bus.Subscribe()
 	defer unsub()
@@ -411,7 +416,39 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 			continue
 		}
 		if d.Error == "" {
-			return
+			// Explicitly added root patent successfully loaded: auto-promote
+			// its review state. This does not affect automatically discovered
+			// neighbors (citations/family) which are left as stubs in the
+			// unknown state.
+			ctx := context.Background()
+			if p, err := e.repo.Patent(ctx, record); err == nil && p.FetchState == domain.FetchCached {
+				m, err := e.repo.Membership(ctx, project, record)
+				if errors.Is(err, store.ErrNotFound) {
+					// Recreate the membership since the user explicitly re-fetched it
+					targetState := domain.ReviewStateUnderReview
+					if p.Title == "" {
+						targetState = domain.ReviewStateNeedsTriage
+					}
+					m = domain.Membership{
+						Project:     project,
+						Patent:      record,
+						ReviewState: targetState,
+						AddedAt:     time.Now().UTC(),
+					}
+					if err := e.repo.AddMembership(ctx, m); err == nil {
+						e.announceChange()
+					}
+				} else if err == nil && (m.ReviewState == domain.ReviewStateUnknown || m.ReviewState == domain.ReviewStateDeleted) {
+					targetState := domain.ReviewStateUnderReview
+					if p.Title == "" {
+						targetState = domain.ReviewStateNeedsTriage
+					}
+					if err := e.repo.SetReviewStates(ctx, project, []domain.PatentNumber{record}, targetState); err == nil {
+						e.announceChange()
+					}
+				}
+				return
+			}
 		}
 		ctx := context.Background()
 

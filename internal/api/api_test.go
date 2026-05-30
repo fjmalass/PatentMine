@@ -3,9 +3,11 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,7 +53,8 @@ func testAPIEnv(t *testing.T) apiEnv {
 	}
 	eng := engine.New(ctx, repo, factory, engine.WithCrawlMaxDepth(4))
 
-	socket := filepath.Join(t.TempDir(), "api.sock")
+	socket := filepath.Join("/tmp", fmt.Sprintf("api-%d.sock", time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.Remove(socket) })
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("listen: %v", err)

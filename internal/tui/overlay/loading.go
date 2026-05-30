@@ -294,6 +294,11 @@ func (l *Loading) depthLabel() string {
 	return fmt.Sprintf("  depth %d/%d", current, maxDepth)
 }
 
+// OverlaySize implements DynamicSize so the loading overlay is wider to let error messages and progress bars fit.
+func (l *Loading) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, 80, 50, 80, 16)
+}
+
 func (l *Loading) View(w, h int) string {
 	if l.finished {
 		return l.viewDone(w)
@@ -407,7 +412,9 @@ func (l *Loading) viewDone(w int) string {
 	if len(l.doneErrors) > 0 {
 		b.WriteString("  " + l.theme.Error.Render("Failed") + "\n")
 		for _, e := range l.doneErrors {
-			b.WriteString("  " + render.Truncate(e, w-4) + "\n")
+			for _, line := range wrapText(e, w-4) {
+				b.WriteString("  " + line + "\n")
+			}
 		}
 	} else {
 		totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
@@ -425,8 +432,18 @@ func (l *Loading) viewDone(w int) string {
 		}
 		b.WriteString("  " + summaryStyle.Render(summary) + "\n")
 
+		totalDiscovered := l.sumProgress(func(p proto.CrawlProgress) int { return p.DiscoveredCount })
+		totalCitations := l.sumProgress(func(p proto.CrawlProgress) int { return p.CitationsCount })
+		totalCitedBy := l.sumProgress(func(p proto.CrawlProgress) int { return p.CitedByCount })
+		totalParents := l.sumProgress(func(p proto.CrawlProgress) int { return p.ParentsCount })
+		totalChildren := l.sumProgress(func(p proto.CrawlProgress) int { return p.ChildrenCount })
+		b.WriteString("  " + l.theme.Dim.Render(fmt.Sprintf("found: crawled %d, discovered %d (citations: %d, cited by: %d, parents: %d, children: %d)",
+			totalCrawled, totalDiscovered, totalCitations, totalCitedBy, totalParents, totalChildren)) + "\n")
+
 		if l.rootPatent != "" && l.recordResolved != "" {
 			b.WriteString("  " + l.theme.Dim.Render(fmt.Sprintf("resolved: %s → %s", l.rootPatent, l.recordResolved)) + "\n")
+		} else if l.rootPatent == "" {
+			b.WriteString("  " + l.theme.Dim.Render("promotion: successfully loaded patents automatically promoted to Under Review") + "\n")
 		}
 		if l.sourceMode != "" {
 			b.WriteString("  " + l.theme.Dim.Render("mode: "+l.sourceMode) + "\n")
@@ -593,4 +610,16 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh%dm", h, m)
 	}
 	return fmt.Sprintf("%dm%ds", m, s)
+}
+
+func (l *Loading) Finished() bool {
+	return l.finished
+}
+
+func (l *Loading) DoneErrors() []string {
+	return l.doneErrors
+}
+
+func (l *Loading) RootPatent() string {
+	return l.rootPatent
 }

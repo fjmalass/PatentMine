@@ -324,30 +324,38 @@ func (c *Citations) Handles() []command.ID { return handlerIDs(c.handlers) }
 
 // crawlSelected enqueues a crawl or lookup for the selected neighbour patent(s).
 func (c *Citations) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
+	var projectID domain.ProjectID
+	if c.activeProject != nil {
+		projectID = c.activeProject.ID
+	}
 	numbers := c.Selections()
 	if len(numbers) < 2 {
 		n, ok := c.Selection()
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(c.client, n, crawlDepth(profile), profile, false)
+		return CrawlCmd(c.client, projectID, n, crawlDepth(profile), profile, false)
 	}
-	return MultiCrawlCmd(c.client, numbers, crawlDepth(profile), profile, false)
+	return MultiCrawlCmd(c.client, projectID, numbers, crawlDepth(profile), profile, false)
 }
 
 // crawlSelectedLookup is the explicit re-fetch ("L") path. It always forces
 // a fresh web fetch. This is what makes "press L on a stub" actually pull
 // data instead of repeating the same weak depth-0 path that :add used.
 func (c *Citations) crawlSelectedLookup() tea.Cmd {
+	var projectID domain.ProjectID
+	if c.activeProject != nil {
+		projectID = c.activeProject.ID
+	}
 	numbers := c.Selections()
 	if len(numbers) < 2 {
 		n, ok := c.Selection()
 		if !ok {
 			return status(text.StatusNoPatentSelected, true)
 		}
-		return CrawlCmd(c.client, n, lookupDepth, "", true)
+		return CrawlCmd(c.client, projectID, n, lookupDepth, "", true)
 	}
-	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true)
+	return MultiCrawlCmd(c.client, projectID, numbers, lookupDepth, "", true)
 }
 
 // move runs a cursor motion and reloads the page when the visible window

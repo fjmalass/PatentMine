@@ -192,6 +192,7 @@ func New(ctx context.Context, repo store.Repository, crawl CrawlFactory, opts ..
 	}
 	eng.pool = newWorkerPool(ctx, eng.crawlWorkerCount, bus, nil)
 	eng.pool.metrics = eng.metrics
+	eng.pool.logger = eng.logger
 	eng.bus.metrics = eng.metrics
 	if eng.metrics != nil {
 		uspto.Metrics = eng.metrics

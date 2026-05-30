@@ -482,6 +482,7 @@ type PatentClassificationListParams struct {
 // fetches only the root; a negative depth uses the configured family depth.
 // Force bypasses the local file cache and re-fetches from the web.
 type CrawlFamilyParams struct {
+	Project domain.ProjectID    `json:"project,omitempty"`
 	Root    domain.PatentNumber `json:"root"`
 	Depth   int                 `json:"depth"`
 	Profile domain.CrawlProfile `json:"profile,omitempty"`

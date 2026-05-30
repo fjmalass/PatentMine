@@ -60,12 +60,14 @@ const (
 	ReviewStateIgnored ReviewState = "ignored"
 	// ReviewStateDeleted is a soft delete: the row stays for history and undo.
 	ReviewStateDeleted ReviewState = "deleted"
+	// ReviewStateNeedsTriage marks a patent that could not be fully loaded/cached during crawl, but whose membership has been accepted.
+	ReviewStateNeedsTriage ReviewState = "needs_triage"
 )
 
 // Valid reports whether the ReviewState is a known value.
 func (s ReviewState) Valid() bool {
 	switch s {
-	case ReviewStateUnknown, ReviewStateUnderReview, ReviewStateActive, ReviewStateIgnored, ReviewStateDeleted:
+	case ReviewStateUnknown, ReviewStateUnderReview, ReviewStateActive, ReviewStateIgnored, ReviewStateDeleted, ReviewStateNeedsTriage:
 		return true
 	default:
 		return false
@@ -95,8 +97,8 @@ func (s ReviewState) CanTransitionTo(target ReviewState, fetch FetchState) bool 
 		return false
 	}
 	if fetch == FetchStub {
-		// If fetch state is stub, only unknown reviewState is possible.
-		return target == ReviewStateUnknown
+		// If fetch state is stub, only unknown or needs_triage reviewState is possible.
+		return target == ReviewStateUnknown || target == ReviewStateNeedsTriage
 	}
 	// Otherwise, we can transition to/from any valid ReviewState.
 	return true

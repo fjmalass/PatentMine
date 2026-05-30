@@ -278,6 +278,7 @@ type App struct {
 	ollamaAnalyzer   ai.Analyzer
 
 	notesExportDir string
+	revertPatent   domain.PatentNumber
 }
 
 // xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
@@ -730,10 +731,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmd := a.confirmCmd
 		a.confirmCmd = nil
+		a.revertPatent = domain.PatentNumber{} // Clear the revert target on accept!
 		return a, cmd
 	case overlay.ConfirmRejectMsg:
 		a.popOverlay()
 		a.confirmCmd = nil
+		if !a.revertPatent.IsZero() {
+			pat := a.revertPatent
+			a.revertPatent = domain.PatentNumber{} // Clear the revert target!
+			// Dispatches the SetReviewStateCmd to set the review state of the patent back to unknown
+			return a, pane.SetReviewStateCmd(a.client, a.activeProject.ID, []domain.PatentNumber{pat}, domain.ReviewStateUnknown)
+		}
 		return a, nil
 	case overlay.PromptSubmitMsg:
 		a.popOverlay()
@@ -841,6 +849,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, cmd := a.pushPane(pane.NewDetail(a.client, a.theme, m.Number, project, bound).WithLogger(a.log()))
 		return updated, tea.Batch(cmd, a.recordReplayHistory(m.Record))
 	case overlay.CloseOverlayMsg:
+		if len(a.overlays) > 0 {
+			if l, ok := a.overlays[len(a.overlays)-1].(*overlay.Loading); ok {
+				if l.Finished() && l.RootPatent() != "" && len(l.DoneErrors()) == 0 {
+					root := l.RootPatent()
+					a.popOverlay()
+					if pn, err := domain.ParsePatentNumber(root); err == nil {
+						a.revertPatent = pn
+						stateStr := "Under Review"
+						var project domain.ProjectID
+						if a.activeProject != nil {
+							project = a.activeProject.ID
+						}
+						ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+						var res proto.PatentResult
+						if err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: pn, Project: project}, &res); err == nil {
+							if res.ReviewState == domain.ReviewStateNeedsTriage {
+								stateStr = "Needs Triage"
+							}
+						}
+						cancel()
+						msg := fmt.Sprintf("Patent %s successfully loaded and promoted to %s. Keep this change?", pn.String(), stateStr)
+						a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, msg))
+						return a, nil
+					}
+				}
+			}
+		}
 		a.popOverlay()
 		return a, nil
 

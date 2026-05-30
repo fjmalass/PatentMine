@@ -72,13 +72,13 @@ func crawlDepth(profile domain.CrawlProfile) int {
 // StatusMsg. depth selects how far the family walk explicitly; a negative
 // depth defers to the crawler's configured default. profile selects which
 // family-graph edges to follow. force bypasses the local file cache.
-func CrawlCmd(client *rpc.Client, number domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
+func CrawlCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.CrawlStartResult
 		err := client.Call(ctx, proto.MethodCrawlFamily,
-			proto.CrawlFamilyParams{Root: number, Depth: depth, Profile: profile, Force: force}, &res)
+			proto.CrawlFamilyParams{Project: project, Root: number, Depth: depth, Profile: profile, Force: force}, &res)
 		if err != nil {
 			return StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{err.Error()}, Error: true}
 		}
@@ -89,7 +89,7 @@ func CrawlCmd(client *rpc.Client, number domain.PatentNumber, depth int, profile
 // MultiCrawlCmd starts a crawl or lookup for each number concurrently and
 // returns a single MultiCrawlStartedMsg with all job IDs so the app can show
 // one aggregate overlay for multi-selection.
-func MultiCrawlCmd(client *rpc.Client, numbers []domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
+func MultiCrawlCmd(client *rpc.Client, project domain.ProjectID, numbers []domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) tea.Cmd {
 	return func() tea.Msg {
 		type rpcResult struct {
 			number domain.PatentNumber
@@ -103,7 +103,7 @@ func MultiCrawlCmd(client *rpc.Client, numbers []domain.PatentNumber, depth int,
 				defer cancel()
 				var res proto.CrawlStartResult
 				err := client.Call(ctx, proto.MethodCrawlFamily,
-					proto.CrawlFamilyParams{Root: n, Depth: depth, Profile: profile, Force: force}, &res)
+					proto.CrawlFamilyParams{Project: project, Root: n, Depth: depth, Profile: profile, Force: force}, &res)
 				if err != nil {
 					ch <- rpcResult{number: n, err: err}
 				} else {

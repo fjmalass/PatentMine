@@ -13,10 +13,18 @@ import (
 	"patentmine/internal/store"
 )
 
-// StartFamilyCrawl enqueues a family-graph crawl and returns its job id. A
-// force crawl bypasses the local file cache and re-fetches from the web.
 func (e *Engine) StartFamilyCrawl(ctx context.Context, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
 	return e.startFamilyCrawl(ctx, root, depth, profile, force, "")
+}
+
+// StartProjectFamilyCrawl enqueues a project-scoped crawl and handles post-crawl progression.
+func (e *Engine) StartProjectFamilyCrawl(ctx context.Context, project domain.ProjectID, root domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool) (id JobID, err error) {
+	id, err = e.StartFamilyCrawl(ctx, root, depth, profile, force)
+	if err == nil && project != "" {
+		go e.cleanupIfNotFound(project, root, false, id)
+		go e.autoAssignDepth1Neighbors(project, root, id)
+	}
+	return id, err
 }
 
 // StartFamilyCrawlFromSource enqueues a crawl constrained to one provider.

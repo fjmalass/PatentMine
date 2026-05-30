@@ -86,6 +86,7 @@ const (
 	glyphReviewStateActive      = "✅"
 	glyphReviewStateIgnored     = "⬜"
 	glyphReviewStateDeleted     = "❌"
+	glyphReviewStateNeedsTriage = "🚨"
 
 	glyphIDSEntryNone      = "⭕"
 	glyphIDSEntryPending   = "⏳"
@@ -211,6 +212,7 @@ type ThemeGlyphs struct {
 	ReviewStateActive      string
 	ReviewStateIgnored     string
 	ReviewStateDeleted     string
+	ReviewStateNeedsTriage string
 
 	IDSEntryNone      string
 	IDSEntryPending   string
@@ -405,6 +407,7 @@ func NewTheme() Theme {
 			ReviewStateActive:      glyphReviewStateActive,
 			ReviewStateIgnored:     glyphReviewStateIgnored,
 			ReviewStateDeleted:     glyphReviewStateDeleted,
+			ReviewStateNeedsTriage: glyphReviewStateNeedsTriage,
 
 			IDSEntryNone:      glyphIDSEntryNone,
 			IDSEntryPending:   glyphIDSEntryPending,
@@ -465,6 +468,8 @@ func (t Theme) ReviewStateGlyph(state string) string {
 		return t.Glyphs.ReviewStateIgnored
 	case "deleted":
 		return t.Glyphs.ReviewStateDeleted
+	case "needs_triage":
+		return t.Glyphs.ReviewStateNeedsTriage
 	default:
 		return t.Glyphs.ReviewStateUnknown
 	}

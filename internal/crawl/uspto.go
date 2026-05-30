@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -50,19 +51,27 @@ func usptoQuery(n domain.PatentNumber) string {
 		// Serial is a grant/publication number, not an application number.
 		// Excluding applicationNumberText avoids false positives where an
 		// unrelated application happens to share the same serial digits.
-		if norm != "" && norm != serial {
-			return fmt.Sprintf("patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
-				serial, serial, serial, norm, serial)
+		if strings.HasPrefix(n.Kind, "B") {
+			if norm != "" && norm != serial {
+				return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q OR %q",
+					serial, norm, serial)
+			}
+			return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q",
+				serial, serial)
 		}
-		return fmt.Sprintf("patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
-			serial, serial, serial, serial)
+		if norm != "" && norm != serial {
+			return fmt.Sprintf("applicationMetaData.earliestPublicationNumber:%s OR %q OR %q",
+				serial, norm, serial)
+		}
+		return fmt.Sprintf("applicationMetaData.earliestPublicationNumber:%s OR %q",
+			serial, serial)
 	}
 	if norm != "" && norm != serial {
-		return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
-			serial, serial, serial, serial, norm, serial)
+		return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q OR %q",
+			serial, serial, serial, norm, serial)
 	}
-	return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
-		serial, serial, serial, serial, serial)
+	return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q",
+		serial, serial, serial, serial)
 }
 
 type usptoFileWrapperResponse struct {
@@ -187,8 +196,27 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		return Result{}, ErrUSPTOApplicationNotFound
 	}
 
+	if len(resp.PatentFileWrapperDataBag) > 1 {
+		slog.Warn("crawl/uspto: multiple wrappers returned for serial digits",
+			slog.String("requested", number.String()),
+			slog.Int("count", len(resp.PatentFileWrapperDataBag)),
+			slog.String("detail", formatWrapperDetails(resp.PatentFileWrapperDataBag)))
+		if Metrics != nil {
+			Metrics.IncCounter("crawl.uspto.multiple_candidates_total", 1)
+		}
+	}
+
 	w, ok := matchingUSPTOWrapper(number, resp.PatentFileWrapperDataBag)
 	if !ok {
+		if len(resp.PatentFileWrapperDataBag) > 0 {
+			slog.Warn("crawl/uspto: candidates found but rejected due to low match score (score < 5)",
+				slog.String("requested", number.String()),
+				slog.Int("candidate_count", len(resp.PatentFileWrapperDataBag)),
+				slog.String("detail", formatWrapperDetails(resp.PatentFileWrapperDataBag)))
+			if Metrics != nil {
+				Metrics.IncCounter("crawl.uspto.match_rejected_total", 1)
+			}
+		}
 		return Result{}, ErrUSPTOApplicationNotFound
 	}
 	appNumber := strings.TrimSpace(w.ApplicationNumberText)
@@ -353,7 +381,7 @@ func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (
 		}
 	}
 
-	if bestScore >= 0 {
+	if bestScore >= 5 {
 		return bestW, true
 	}
 	return usptoWrapperData{}, false
@@ -753,4 +781,20 @@ func parseISODate(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+func formatWrapperDetails(bags []usptoWrapperData) string {
+	var details []string
+	for i, w := range bags {
+		details = append(details, fmt.Sprintf(
+			"[%d] AppNum: %q, PatentNum: %q, PatentNumText: %q, PubNum: %q, Title: %q",
+			i,
+			w.ApplicationNumberText,
+			w.ApplicationMetaData.PatentNumber,
+			w.ApplicationMetaData.PatentNumberText,
+			w.ApplicationMetaData.PublicationNumber,
+			w.ApplicationMetaData.InventionTitle,
+		))
+	}
+	return "[" + strings.Join(details, "; ") + "]"
 }
