@@ -637,8 +637,13 @@ func (d *Detail) body(w int) string {
 		d.lineGroups = append(d.lineGroups, detailLineGroup{start: docStart, end: docStart + 1})
 	}
 	for _, doc := range p.Documents {
-		line := "  " + render.Pad(string(doc.Stage), 13) + " " +
-			render.Pad(doc.Number.String(), 20) + " " + dateText(doc.Dated)
+		emoji := d.theme.StageGlyph(string(doc.Stage))
+		label := string(doc.Stage)
+		if len(label) > 0 {
+			label = strings.ToUpper(label[:1]) + label[1:]
+		}
+		line := fmt.Sprintf("  %s %s %s %s", emoji, render.Pad(label, 12),
+			render.Pad(doc.Number.String(), 20), dateText(doc.Dated))
 		b.WriteString(d.theme.Row.Render(render.Truncate(line, w)))
 		b.WriteByte('\n')
 	}
@@ -1114,6 +1119,8 @@ func expirationText(p domain.Patent) string {
 	}
 	return text
 }
+
+
 
 // dateText renders a date, or a dash when it is unset.
 func dateText(t time.Time) string {

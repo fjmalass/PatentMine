@@ -118,6 +118,11 @@ const (
 	glyphServiceFailed    = "🟡"
 	glyphServiceChecking  = "🟡"
 	glyphServiceNoKey     = "🔴"
+
+	glyphStageApplication = "🖋️"
+	glyphStagePublication = "📄"
+	glyphStageGrant       = "🏆"
+	glyphStageUnknown     = "❓"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -235,6 +240,11 @@ type ThemeGlyphs struct {
 	ServiceFailed    string
 	ServiceChecking  string
 	ServiceNoKey     string
+
+	StageApplication string
+	StagePublication string
+	StageGrant       string
+	StageUnknown     string
 
 	HistUnknown     string
 	HistSearch      string
@@ -431,6 +441,11 @@ func NewTheme() Theme {
 			ServiceChecking:  glyphServiceChecking,
 			ServiceNoKey:     glyphServiceNoKey,
 
+			StageApplication: glyphStageApplication,
+			StagePublication: glyphStagePublication,
+			StageGrant:       glyphStageGrant,
+			StageUnknown:     glyphStageUnknown,
+
 			HistUnknown:     glyphHistUnknown,
 			HistSearch:      glyphHistSearch,
 			HistProject:     glyphHistProject,
@@ -504,5 +519,19 @@ func (t Theme) FetchStateGlyph(state string) string {
 		return t.Glyphs.FetchStateUnknown
 	default:
 		return t.Glyphs.FetchStateUnknown
+	}
+}
+
+// StageGlyph returns the glyph corresponding to the patent lifecycle stage.
+func (t Theme) StageGlyph(stage string) string {
+	switch stage {
+	case "application":
+		return t.Glyphs.StageApplication
+	case "publication":
+		return t.Glyphs.StagePublication
+	case "grant":
+		return t.Glyphs.StageGrant
+	default:
+		return t.Glyphs.StageUnknown
 	}
 }
