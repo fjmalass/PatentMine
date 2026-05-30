@@ -66,12 +66,24 @@ func usptoQuery(n domain.PatentNumber) string {
 		return fmt.Sprintf("patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
 			serial, serial, serial, serial)
 	}
-	if norm != "" && norm != serial {
-		return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q",
-			serial, serial, serial, serial, norm, serial)
+
+	// For kindless pre-grant publications (serial format YYYYNNNNNNN, 11 digits),
+	// the USPTO ODP API indexes the publication number with the kind suffix (normally "A1").
+	// Generating candidate fields with "A1" appended ensures the record resolves.
+	var pgpubFields string
+	if len(serial) == 11 && (strings.HasPrefix(serial, "20") || strings.HasPrefix(serial, "19")) {
+		serialA1 := serial + "A1"
+		normA1 := norm + "A1"
+		pgpubFields = fmt.Sprintf(" OR publicationNumberText:%s OR publicationNumber:%s OR %q",
+			serialA1, serialA1, normA1)
 	}
-	return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q",
-		serial, serial, serial, serial, serial)
+
+	if norm != "" && norm != serial {
+		return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q OR %q%s",
+			serial, serial, serial, serial, norm, serial, pgpubFields)
+	}
+	return fmt.Sprintf("applicationNumberText:%s OR patentNumberText:%s OR publicationNumberText:%s OR publicationNumber:%s OR %q%s",
+		serial, serial, serial, serial, serial, pgpubFields)
 }
 
 type usptoFileWrapperResponse struct {
@@ -365,7 +377,7 @@ func makeParseUSPTO(apiKey string, client *http.Client) parseFunc {
 								if ok && !cited.IsZero() && cited.Normalized() != recordNumber.Normalized() {
 									res.Relations = append(res.Relations, domain.Relation{
 										From:   recordNumber,
-										To:     cited,
+										To:     cited.WithoutKind(),
 										Kind:   domain.RelationCites,
 										Source: domain.SourceUSPTO,
 									})

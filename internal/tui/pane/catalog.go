@@ -403,15 +403,31 @@ func (c *Catalog) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 // a fresh web fetch (bypassing any local cache or existing stub row). This is
 // the only way to turn a near-empty stub left by :add into real data.
 func (c *Catalog) crawlSelectedLookup() tea.Cmd {
-	numbers := c.Selections()
-	if len(numbers) < 2 {
-		n, ok := c.Selection()
-		if !ok {
-			return status(text.StatusNoPatentSelected, true)
+	var numbers []domain.PatentNumber
+	if c.visualMode {
+		numbers = c.Selections()
+	} else {
+		if n, ok := c.Selection(); ok {
+			numbers = []domain.PatentNumber{n}
 		}
-		return CrawlCmd(c.client, n, lookupDepth, "", true, "")
 	}
-	return MultiCrawlCmd(c.client, numbers, lookupDepth, "", true, "")
+	if len(numbers) == 0 {
+		return status(text.StatusNoPatentSelected, true)
+	}
+	var crawlCmd tea.Cmd
+	if len(numbers) < 2 {
+		n := numbers[0]
+		crawlCmd = CrawlCmd(c.client, n, lookupDepth, "", true, "")
+	} else {
+		crawlCmd = MultiCrawlCmd(c.client, numbers, lookupDepth, "", true, "")
+	}
+	if c.activeProject != nil {
+		return tea.Batch(
+			crawlCmd,
+			SetReviewStateCmd(c.client, c.activeProject.ID, numbers, domain.ReviewStateUnderReview),
+		)
+	}
+	return crawlCmd
 }
 
 // move runs a cursor motion and reloads the page when the visible window

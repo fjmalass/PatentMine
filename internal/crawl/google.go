@@ -83,9 +83,30 @@ func parseGoogle(ctx context.Context, number domain.PatentNumber, body []byte) (
 		return Result{}, ErrNotAvailable
 	}
 
+	// Try to resolve the canonical kinded number from the page meta tags to restore
+	// the proper stage/kind suffix for display, even if the search input was kindless.
+	canonicalNumber := number
+	doc.Find("meta").Each(func(_ int, s *goquery.Selection) {
+		name, _ := s.Attr("name")
+		content, _ := s.Attr("content")
+		if content == "" {
+			return
+		}
+		if name == "citation_patent_number" || name == "citation_patent_publication_number" {
+			if parsed, err := domain.ParsePatentNumber(content); err == nil {
+				if parsed.Country == number.Country && parsed.Serial == number.Serial && parsed.Kind != "" {
+					canonicalNumber = parsed
+				}
+			}
+		}
+	})
+
+	stage := domain.GuessStage(canonicalNumber)
+	record := canonicalNumber.WithoutKind()
+
 	patent := domain.Patent{
-		Number:          number,
-		DisplayNumber:   number,
+		Number:          record,
+		DisplayNumber:   record,
 		Title:           title,
 		Abstract:        clean(googleText(doc.Selection, "div.abstract", "section[itemprop='abstract']", "meta[name='DC.description']")),
 		Assignee:        clean(googleText(doc.Selection, "dd[itemprop='assigneeOriginal']", "span[itemprop='assigneeOriginal']", "dd[itemprop='assigneeCurrent']")),
@@ -100,7 +121,7 @@ func parseGoogle(ctx context.Context, number domain.PatentNumber, body []byte) (
 	}
 
 	patent.FirstClaim = clean(googleText(doc.Selection, "section[itemprop='claims'] .claim", ".claims .claim"))
-	patent.SourceURL = googlePatentURL(number)
+	patent.SourceURL = googlePatentURL(canonicalNumber)
 	// Try to find the exact "Anticipated expiration" or "Adjusted expiration" date from the events in the document
 	var anticipatedExpiration time.Time
 	doc.Find("span[itemprop='type'], span[itemprop='title']").Each(func(_ int, s *goquery.Selection) {
@@ -141,31 +162,31 @@ func parseGoogle(ctx context.Context, number domain.PatentNumber, body []byte) (
 	}
 
 	document := domain.Document{
-		Number: number,
-		Stage:  domain.GuessStage(number),
+		Number: canonicalNumber,
+		Stage:  stage,
 		Dated:  firstNonZeroTime(patent.GrantDate, patent.PublicationDate, patent.ApplicationDate),
 	}
 	res := Result{
 		Patent:    patent,
 		Documents: []domain.Document{document},
-		Relations: googleRelations(doc, number),
+		Relations: googleRelations(doc, record),
 		AuthorityIdentifiers: []domain.AuthorityIdentifier{{
 			Authority:      "GOOGLE",
-			IdentifierType: string(domain.GuessStage(number)),
-			Identifier:     number.Normalized(),
-			RawIdentifier:  number.Normalized(),
-			RecordNumber:   number,
-			DocumentNumber: number.Normalized(),
-			Country:        number.Country,
-			Kind:           number.Kind,
+			IdentifierType: string(stage),
+			Identifier:     canonicalNumber.Normalized(),
+			RawIdentifier:  canonicalNumber.Normalized(),
+			RecordNumber:   record,
+			DocumentNumber: canonicalNumber.Normalized(),
+			Country:        canonicalNumber.Country,
+			Kind:           canonicalNumber.Kind,
 			Source:         string(domain.SourceGoogle),
 			Confidence:     80,
 		}},
 		SourceSnapshots: []domain.SourceSnapshot{{
-			ID:             snapshotID(string(domain.SourceGoogle), number.Normalized(), body),
-			PatentNumber:   number,
+			ID:             snapshotID(string(domain.SourceGoogle), canonicalNumber.Normalized(), body),
+			PatentNumber:   record,
 			Source:         "google",
-			SourceRecordID: number.Normalized(),
+			SourceRecordID: canonicalNumber.Normalized(),
 			SourceURL:      patent.SourceURL,
 			FetchedAt:      encodeRFC3339(patent.FetchedAt),
 			PayloadKind:    "html",
@@ -175,7 +196,7 @@ func parseGoogle(ctx context.Context, number domain.PatentNumber, body []byte) (
 		}},
 	}
 
-	extraDocs, extraIds := extractAdditionalGoogleDocuments(number, doc)
+	extraDocs, extraIds := extractAdditionalGoogleDocuments(record, doc)
 	res.Documents = append(res.Documents, extraDocs...)
 	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
 
@@ -189,6 +210,7 @@ func googleRelations(doc *goquery.Document, number domain.PatentNumber) []domain
 	var out []domain.Relation
 	seen := map[string]bool{}
 	add := func(to domain.PatentNumber, kind domain.RelationKind) {
+		to = to.WithoutKind()
 		if to.IsZero() || to.Normalized() == number.Normalized() {
 			return
 		}

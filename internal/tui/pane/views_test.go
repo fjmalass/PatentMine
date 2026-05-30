@@ -67,7 +67,7 @@ func TestCitationsPaneSelectsNeighbour(t *testing.T) {
 	}
 
 	out := c.View(testCitationsPaneWidth, testCitationsPaneHeight)
-	for _, want := range []string{"[2/2]", "#", "1    US0000002B2", "Second"} {
+	for _, want := range []string{"[2/2]", "#", "1    US0000002", "Second"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("citations view missing expected content %q\n%s", want, out)
 		}

@@ -62,7 +62,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "🗃️", "🦴"} {
+	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001", "Second", "🗃️", "🦴"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
 		}
@@ -86,7 +86,7 @@ func TestCatalogIndexUsesAbsolutePositionAcrossPages(t *testing.T) {
 	})
 	c = updated.(*Catalog)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"3    US0000003B2", "4    US0000004B2"} {
+	for _, want := range []string{"3    US0000003", "4    US0000004"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog paged view missing %q\n%s", want, out)
 		}

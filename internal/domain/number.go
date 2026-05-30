@@ -85,6 +85,20 @@ func (n PatentNumber) Equal(other PatentNumber) bool {
 	return n == other
 }
 
+// WithoutKind returns the number with the kind code cleared. A record in this
+// system identifies an invention by country+serial; the document stage
+// (pre-grant publication vs grant, "A1" vs "B2") is tracked separately on the
+// Document/stage layer, so dedup and cross-source comparison key on the
+// kindless form. Google supplies a kind code ("US6915216B2") while the USPTO
+// ODP API does not ("US6915216"); normalizing both to the kindless form lets a
+// patent fetched from either source resolve to the same record. Grant and
+// publication serials differ in length, so clearing the kind only merges the
+// same document seen by two sources, never two distinct documents.
+func (n PatentNumber) WithoutKind() PatentNumber {
+	n.Kind = ""
+	return n
+}
+
 // MarshalJSON encodes the number as its normalized string form so the wire
 // protocol and the web API carry a plain "US11611785B2" rather than an object.
 func (n PatentNumber) MarshalJSON() ([]byte, error) {

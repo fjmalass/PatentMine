@@ -442,7 +442,7 @@ func TestOpenBrowserUsesFocusedSelection(t *testing.T) {
 	if !ok || status.Key != text.StatusBrowserOpened {
 		t.Fatalf("browser status = %#v, want StatusBrowserOpened", msg)
 	}
-	if len(opened) != 1 || opened[0] != "https://patents.google.com/patent/US11611785B2" {
+	if len(opened) != 1 || opened[0] != "https://patents.google.com/patent/US11611785" {
 		t.Fatalf("opened URLs = %v", opened)
 	}
 }
@@ -488,7 +488,7 @@ func TestBrowseCommandAcceptsExplicitPatentArgs(t *testing.T) {
 	if !ok || status.Key != text.StatusBrowserOpened {
 		t.Fatalf("browse status = %#v, want StatusBrowserOpened", msg)
 	}
-	if len(opened) != 1 || !strings.Contains(opened[0], "US11611785B2") {
+	if len(opened) != 1 || !strings.Contains(opened[0], "US11611785") {
 		t.Fatalf("opened URLs = %v", opened)
 	}
 }

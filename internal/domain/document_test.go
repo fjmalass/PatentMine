@@ -43,8 +43,8 @@ func TestLatestDocumentPicksFurthestStage(t *testing.T) {
 	if !ok || latest.Stage != StageGrant {
 		t.Fatalf("LatestDocument = %+v ok=%v, want the grant", latest, ok)
 	}
-	if !p.NumberToShow().Equal(grant) {
-		t.Fatalf("NumberToShow = %s, want the grant %s", p.NumberToShow(), grant)
+	if !p.NumberToShow().Equal(grant.WithoutKind()) {
+		t.Fatalf("NumberToShow = %s, want the kindless grant %s", p.NumberToShow(), grant.WithoutKind())
 	}
 }
 

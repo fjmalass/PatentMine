@@ -104,7 +104,7 @@ func TestResolveBrowseURLForcedGoogle(t *testing.T) {
 	if errText != "" {
 		t.Fatalf("google browse error = %q", errText)
 	}
-	if got.URL != "https://patents.google.com/patent/US11921100B2" || got.Provider != "google" {
+	if got.URL != "https://patents.google.com/patent/US11921100" || got.Provider != "google" {
 		t.Fatalf("google browse = %+v", got)
 	}
 }

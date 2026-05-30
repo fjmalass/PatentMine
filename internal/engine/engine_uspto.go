@@ -612,6 +612,7 @@ func (e *Engine) saveUSPTOCitationGraph(ctx context.Context, record domain.Paten
 		if !ok || cited.IsZero() {
 			continue
 		}
+		cited = cited.WithoutKind()
 		if cited == record {
 			continue
 		}

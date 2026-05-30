@@ -251,7 +251,14 @@ func NewDetail(client *rpc.Client, theme render.Theme, number domain.PatentNumbe
 			// Force a fresh fetch when the user explicitly hits L on a stub.
 			// The plain :add / depth-0 path can leave a near-empty stub; L must
 			// actually pull data instead of repeating the same weak lookup.
-			return CrawlCmd(d.client, d.number, lookupDepth, "", true, "")
+			crawlCmd := CrawlCmd(d.client, d.number, lookupDepth, "", true, "")
+			if d.project != "" {
+				return tea.Batch(
+					crawlCmd,
+					SetReviewStateCmd(d.client, d.project, []domain.PatentNumber{d.number}, domain.ReviewStateUnderReview),
+				)
+			}
+			return crawlCmd
 		},
 	}
 	return d

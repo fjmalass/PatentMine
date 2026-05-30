@@ -28,8 +28,8 @@ func TestCrawlUnifiesApplicationAndGrant(t *testing.T) {
 		t.Fatalf("record has %d documents, want 2", len(record.Documents))
 	}
 	// It is shown by the grant number.
-	if !record.DisplayNumber.Equal(grant) {
-		t.Fatalf("display number = %s, want the grant %s", record.DisplayNumber, grant)
+	if !record.DisplayNumber.Equal(grant.WithoutKind()) {
+		t.Fatalf("display number = %s, want the grant %s", record.DisplayNumber, grant.WithoutKind())
 	}
 	// Either number resolves to the one record.
 	for _, n := range []domain.PatentNumber{application, grant} {
@@ -68,8 +68,8 @@ func TestCrawlFoldsGrantIntoExistingApplicationRecord(t *testing.T) {
 	if len(record.Documents) != 2 {
 		t.Fatalf("record has %d documents, want 2 after folding in the grant", len(record.Documents))
 	}
-	if !record.DisplayNumber.Equal(grant) {
-		t.Fatalf("display number = %s, want the grant %s", record.DisplayNumber, grant)
+	if !record.DisplayNumber.Equal(grant.WithoutKind()) {
+		t.Fatalf("display number = %s, want the grant %s", record.DisplayNumber, grant.WithoutKind())
 	}
 	// There is exactly one record — the grant number is not its own separate record,
 	// but gracefully resolves to the parent application record.

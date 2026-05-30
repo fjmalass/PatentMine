@@ -219,8 +219,10 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	})
 	e.announceChange()
 	if source != "" && e.crawl != nil {
+		ch, unsub := e.pool.bus.Subscribe()
 		jobID, fetchErr := e.StartFamilyCrawlFromSource(ctx, record, 0, domain.CrawlProfileAll, source, true)
 		if fetchErr != nil {
+			unsub()
 			e.log(ctx, slog.LevelWarn, "source-specific fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("source", string(source)), slog.String("error", fetchErr.Error()))
 			// Clean up newly created database state on start failure
@@ -235,7 +237,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		if created {
 			go e.cleanupIfNotFound(project, record, created, jobID)
 		}
-		go e.autoAssignDepth1Neighbors(project, record, jobID)
+		go e.autoAssignDepth1Neighbors(project, record, jobID, ch, unsub)
 		return AddToProjectResult{FetchStarted: true, JobID: jobID}, nil
 	}
 	// Any unknown project membership for a stub patent kicks a single-patent
@@ -249,14 +251,16 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		}
 	}
 	if needsFetch && e.crawl != nil {
+		ch, unsub := e.pool.bus.Subscribe()
 		jobID, fetchErr := e.StartFamilyCrawl(ctx, record, 0, domain.CrawlProfileAll, false)
 		if fetchErr != nil {
+			unsub()
 			e.log(ctx, slog.LevelWarn, "auto-fetch on add failed to start",
 				slog.String("record", record.String()), slog.String("error", fetchErr.Error()))
 			return AddToProjectResult{}, nil
 		}
 		go e.cleanupIfNotFound(project, record, created, jobID)
-		go e.autoAssignDepth1Neighbors(project, record, jobID)
+		go e.autoAssignDepth1Neighbors(project, record, jobID, ch, unsub)
 		return AddToProjectResult{FetchStarted: true, JobID: jobID}, nil
 	}
 	return AddToProjectResult{}, nil
@@ -353,8 +357,7 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 // the citation/parent stubs the crawl just discovered get the same membership
 // so they appear in the project right away. Depth-1 only — deeper transitive
 // stubs stay orphan unless the user runs :add.related explicitly.
-func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain.PatentNumber, id JobID) {
-	ch, unsub := e.pool.bus.Subscribe()
+func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain.PatentNumber, id JobID, ch <-chan proto.Event, unsub func()) {
 	defer unsub()
 	rootStr := root.String()
 	added := 0
@@ -380,7 +383,7 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 				m := domain.Membership{
 					Project:     project,
 					Patent:      neighbor,
-					ReviewState: domain.ReviewStateUnderReview,
+					ReviewState: domain.ReviewStateUnknown,
 					AddedAt:     time.Now().UTC(),
 				}
 				if err := e.repo.AddMembership(ctx, m); err != nil {

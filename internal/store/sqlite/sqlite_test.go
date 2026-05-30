@@ -2,9 +2,11 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -391,7 +393,7 @@ func TestProjectAndMembership(t *testing.T) {
 	}
 }
 
-func TestMigrationsAreIdempotent(t *testing.T) {
+func TestSchemaInitializationIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
 	ctx := context.Background()
 
@@ -406,7 +408,7 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	// Reopening must not re-run migrations or lose data.
+	// Reopening must not destructively recreate schema or lose data.
 	repo2, err := Open(ctx, path)
 	if err != nil {
 		t.Fatalf("Open second: %v", err)
@@ -414,6 +416,35 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	defer func() { _ = repo2.Close() }()
 	if _, err := repo2.Patent(ctx, domain.MustParsePatentNumber("US0000001A1")); err != nil {
 		t.Fatalf("data lost after reopen: %v", err)
+	}
+}
+
+func TestOutdatedSchemaVersionRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "outdated.db")
+	ctx := context.Background()
+
+	// Manually create a database with schema version '3'
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+		INSERT INTO schema_meta (key, value) VALUES ('schema_version', '3');
+	`)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("setup outdated schema version: %v", err)
+	}
+	_ = db.Close()
+
+	// Try to Open it using the Repo
+	_, err = Open(ctx, path)
+	if err == nil {
+		t.Fatal("expected Open of outdated schema version to fail, but it succeeded")
+	}
+	if !strings.Contains(err.Error(), "unsupported schema version") || !strings.Contains(err.Error(), "expected 4") {
+		t.Fatalf("expected unsupported schema version error, got: %v", err)
 	}
 }
 

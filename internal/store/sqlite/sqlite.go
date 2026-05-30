@@ -90,14 +90,21 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	if err := r.rejectObsoleteSchema(ctx); err != nil {
 		return err
 	}
-	if err := r.migrateG(ctx); err != nil {
+	// Reject existing databases with unsupported schema versions directly
+	// instead of running migrations, as we are starting fresh with breaking changes.
+	hasMeta, err := r.tableExists(ctx, "schema_meta")
+	if err != nil {
 		return err
 	}
-	if err := r.migrateH(ctx); err != nil {
-		return err
-	}
-	if err := r.migrateI(ctx); err != nil {
-		return err
+	if hasMeta {
+		var version string
+		if err := r.writer.QueryRowContext(ctx,
+			`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
+			return fmt.Errorf("store/sqlite: read schema version: %w", err)
+		}
+		if version != "4" {
+			return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 4. Recreate the database to apply breaking changes", version)
+		}
 	}
 	if _, err := r.writer.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("store/sqlite: init schema: %w", err)
@@ -211,8 +218,8 @@ func (r *Repo) requireSchemaVersion(ctx context.Context) error {
 		`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
 		return fmt.Errorf("store/sqlite: read schema version: %w", err)
 	}
-	if version != "3" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 3", version)
+	if version != "4" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 4", version)
 	}
 	return nil
 }

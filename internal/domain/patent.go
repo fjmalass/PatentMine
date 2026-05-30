@@ -186,11 +186,13 @@ func (p Patent) LatestDocument() (latest Document, ok bool) {
 
 // NumberToShow returns the number the record should be displayed by: its
 // latest document's number, or the record number when it has no documents.
+// The display number is normalized to its kindless form to match the record key
+// and avoid showing kind suffixes (like B2) in presentation views.
 func (p Patent) NumberToShow() PatentNumber {
 	if latest, ok := p.LatestDocument(); ok {
-		return latest.Number
+		return latest.Number.WithoutKind()
 	}
-	return p.Number
+	return p.Number.WithoutKind()
 }
 
 // DocumentFor returns the document of the given stage, if the record has one.

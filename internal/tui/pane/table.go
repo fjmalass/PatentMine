@@ -393,9 +393,9 @@ func tableStateText(row domain.PatentRow, projectID domain.ProjectID) string {
 
 func numberToShowRow(row domain.PatentRow) domain.PatentNumber {
 	if !row.DisplayNumber.IsZero() {
-		return row.DisplayNumber
+		return row.DisplayNumber.WithoutKind()
 	}
-	return row.Number
+	return row.Number.WithoutKind()
 }
 
 // formatInventorsShort returns the first inventor's name, appending "et al."

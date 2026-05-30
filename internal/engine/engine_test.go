@@ -154,7 +154,9 @@ func TestUSPTOCitationGraphCreatesCitationRelations(t *testing.T) {
 		t.Fatalf("created citation relations = %d, want 1", created)
 	}
 
-	cited := domain.MustParsePatentNumber("US7654321B2")
+	// The cited record is keyed kindless: USPTO and Google must resolve the
+	// same cited patent to one record, so the citation graph drops the kind.
+	cited := domain.MustParsePatentNumber("US7654321")
 	rels, err := repo.Relations(ctx, root, domain.RelationCites)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
@@ -1674,3 +1676,102 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		}
 	})
 }
+
+func TestEngineAutoAssignNeighborsUnknown(t *testing.T) {
+	ctx := context.Background()
+	root := domain.MustParsePatentNumber("US11611785B2")
+	stub := domain.MustParsePatentNumber("US11611786B2")
+
+	var eng *Engine
+	var repo *sqlite.Repo
+
+	// Create a crawl job that emits the stub at depth 0
+	mockCrawl := func(rootNum domain.PatentNumber, depth int, profile domain.CrawlProfile, force bool, source domain.Source) Job {
+		return JobFunc(func(ctx context.Context, id JobID, emit func(proto.Event)) error {
+			time.Sleep(50 * time.Millisecond)
+
+			// Save the stub patent first so the membership foreign key check passes
+			stubPatent := domain.Patent{
+				Number:        stub,
+				DisplayNumber: stub,
+				FetchState:    domain.FetchStub,
+			}
+			if err := repo.SavePatent(ctx, stubPatent); err != nil {
+				return err
+			}
+
+			emit(proto.NewEvent(proto.EventCrawlProgress, proto.CrawlProgress{
+				JobID:        string(id),
+				Depth:        0,
+				RecordNumber: rootNum.String(),
+				Stubs:        []string{stub.String()},
+			}))
+			emit(proto.NewEvent(proto.EventCrawlDone, proto.CrawlDone{JobID: string(id)}))
+			return nil
+		})
+	}
+
+	eng, repo = newTestEngine(t, mockCrawl)
+	project, err := eng.CreateProject(ctx, "Test Project")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// We subscribe to events to know when the crawl completes so we can check the database after.
+	events, unsub := eng.Subscribe()
+	defer unsub()
+
+	// Add the main patent. It should trigger crawl and auto-assignment.
+	res, err := eng.AddToProject(ctx, project.ID, root)
+	if err != nil {
+		t.Fatalf("AddToProject: %v", err)
+	}
+	if !res.FetchStarted {
+		t.Fatal("expected fetch to start")
+	}
+
+	// Wait for CrawlDone
+	deadline := time.After(2 * time.Second)
+	var gotDone bool
+	for !gotDone {
+		select {
+		case ev := <-events:
+			if ev.Method == proto.EventCrawlDone {
+				gotDone = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for crawl to finish")
+		}
+	}
+
+	// Allow brief moment for the async autoAssignDepth1Neighbors goroutine to complete its work and write to the database
+	var rootMember, stubMember domain.Membership
+	for i := 0; i < 40; i++ {
+		rootMember, err = repo.Membership(ctx, project.ID, root)
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		stubMember, err = repo.Membership(ctx, project.ID, stub)
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	if err != nil {
+		t.Fatalf("failed to retrieve memberships: %v", err)
+	}
+
+	// The explicitly added main patent should be UnderReview
+	if rootMember.ReviewState != domain.ReviewStateUnderReview {
+		t.Errorf("main patent review state = %q, want %q", rootMember.ReviewState, domain.ReviewStateUnderReview)
+	}
+
+	// The auto-assigned depth-1 neighbor stub should be Unknown
+	if stubMember.ReviewState != domain.ReviewStateUnknown {
+		t.Errorf("auto-assigned stub review state = %q, want %q", stubMember.ReviewState, domain.ReviewStateUnknown)
+	}
+}
+

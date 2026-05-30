@@ -276,15 +276,31 @@ func (g *FamilyGraph) crawlSelected(profile domain.CrawlProfile) tea.Cmd {
 // a fresh web fetch. This is what makes "press L on a stub" actually pull
 // real data instead of repeating the weak lookup that created the stub.
 func (g *FamilyGraph) crawlSelectedLookup() tea.Cmd {
-	numbers := g.Selections()
-	if len(numbers) < 2 {
-		n, ok := g.Selection()
-		if !ok {
-			return status(text.StatusNoPatentSelected, true)
+	var numbers []domain.PatentNumber
+	if g.visualMode {
+		numbers = g.Selections()
+	} else {
+		if n, ok := g.Selection(); ok {
+			numbers = []domain.PatentNumber{n}
 		}
-		return CrawlCmd(g.client, n, lookupDepth, "", true, "")
 	}
-	return MultiCrawlCmd(g.client, numbers, lookupDepth, "", true, "")
+	if len(numbers) == 0 {
+		return status(text.StatusNoPatentSelected, true)
+	}
+	var crawlCmd tea.Cmd
+	if len(numbers) < 2 {
+		n := numbers[0]
+		crawlCmd = CrawlCmd(g.client, n, lookupDepth, "", true, "")
+	} else {
+		crawlCmd = MultiCrawlCmd(g.client, numbers, lookupDepth, "", true, "")
+	}
+	if g.project != "" {
+		return tea.Batch(
+			crawlCmd,
+			SetReviewStateCmd(g.client, g.project, numbers, domain.ReviewStateUnderReview),
+		)
+	}
+	return crawlCmd
 }
 
 func (g *FamilyGraph) Update(msg tea.Msg) (Pane, tea.Cmd) {

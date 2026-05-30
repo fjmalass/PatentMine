@@ -73,8 +73,8 @@ func TestParseGoogleExtractsCitationsAndFamily(t *testing.T) {
 	counts := map[domain.RelationKind]int{}
 	for _, rel := range res.Relations {
 		counts[rel.Kind]++
-		if rel.From.Normalized() != number.Normalized() {
-			t.Errorf("relation From = %s, want the fetched patent", rel.From)
+		if rel.From.Normalized() != number.WithoutKind().Normalized() {
+			t.Errorf("relation From = %s, want the kindless record number", rel.From)
 		}
 	}
 	if counts[domain.RelationCites] != 2 {

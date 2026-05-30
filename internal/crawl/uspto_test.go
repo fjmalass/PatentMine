@@ -232,3 +232,27 @@ func TestUSPTORateLimitScalesWithSourceMode(t *testing.T) {
 		t.Errorf("compare interval = %v, want %v (largest)", got, largest)
 	}
 }
+
+func TestUSPTOQuery(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{
+			in:   "US16123456",
+			want: `applicationNumberText:16123456 OR patentNumberText:16123456 OR publicationNumberText:16123456 OR publicationNumber:16123456 OR "US16123456" OR "16123456"`,
+		},
+		{
+			in:   "US20040260504",
+			want: `applicationNumberText:20040260504 OR patentNumberText:20040260504 OR publicationNumberText:20040260504 OR publicationNumber:20040260504 OR "US20040260504" OR "20040260504" OR publicationNumberText:20040260504A1 OR publicationNumber:20040260504A1 OR "US20040260504A1"`,
+		},
+	}
+
+	for _, tt := range tests {
+		n := domain.MustParsePatentNumber(tt.in)
+		got := usptoQuery(n)
+		if got != tt.want {
+			t.Errorf("usptoQuery(%s) =\n%q\nwant:\n%q", tt.in, got, tt.want)
+		}
+	}
+}
