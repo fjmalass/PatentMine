@@ -207,6 +207,13 @@ eval "$PM_VERSION_SCRIPT"
 go run -ldflags "$PM_LDFLAGS" ${BINARY} db status
 '''
 
+[tasks.database-validate]
+description = "Scan database for duplicate stage patent collisions."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} db validate $CARGO_MAKE_TASK_ARGS
+'''
+
 [tasks.list-logs]
 description = "List all existing log and activity files."
 script = '''

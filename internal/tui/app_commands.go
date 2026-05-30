@@ -38,6 +38,11 @@ func (a *App) cmdOpenCommand(invocation) (tea.Model, tea.Cmd) {
 	return a.openPrompt(overlay.PromptDirect)
 }
 
+type sourceModeChangedMsg struct {
+	mode string
+	err  error
+}
+
 func (a *App) cmdSourceMode(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) > 1 {
 		return a.usageError(command.SourceMode)
@@ -61,9 +66,9 @@ func (a *App) cmdSourceMode(inv invocation) (tea.Model, tea.Cmd) {
 			params = proto.SourceModeParams{Mode: mode}
 		}
 		if err := a.client.Call(ctx, method, params, &res); err != nil {
-			return pane.StatusMsg{Key: text.StatusUsage, Args: []any{err.Error()}, Error: true}
+			return sourceModeChangedMsg{err: err}
 		}
-		return pane.StatusMsg{Key: text.StatusUsage, Args: []any{"source mode: " + res.Mode}}
+		return sourceModeChangedMsg{mode: res.Mode}
 	}
 }
 

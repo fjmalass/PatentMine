@@ -276,7 +276,10 @@ func (e *Engine) USPTOApplication(ctx context.Context, n domain.PatentNumber) (d
 
 func (e *Engine) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	logger := observability.WithContextAttrs(ctx, e.logger)
-	args := make([]any, 0, len(attrs))
+	args := make([]any, 0, len(attrs)+1)
+	if mode := e.currentSourceMode(); mode != "" {
+		args = append(args, slog.String("source_mode", mode))
+	}
 	for _, attr := range attrs {
 		args = append(args, attr)
 	}
@@ -286,6 +289,12 @@ func (e *Engine) log(ctx context.Context, level slog.Level, msg string, attrs ..
 func (e *Engine) recordActivity(ctx context.Context, rec observability.Record) {
 	if e.activities == nil {
 		return
+	}
+	if mode := e.currentSourceMode(); mode != "" {
+		if rec.Attributes == nil {
+			rec.Attributes = make(map[string]any)
+		}
+		rec.Attributes["source_mode"] = mode
 	}
 	if err := e.activities.Record(ctx, rec); err != nil {
 		e.log(ctx, slog.LevelWarn, "activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
@@ -297,6 +306,9 @@ func (e *Engine) incCounter(name string, delta int64) {
 		return
 	}
 	e.metrics.IncCounter(name, delta)
+	if mode := e.currentSourceMode(); mode != "" {
+		e.metrics.IncCounter(name+".source_mode."+mode, delta)
+	}
 }
 
 func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
@@ -304,7 +316,11 @@ func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
 		return
 	}
 	failed := errp != nil && *errp != nil
-	e.metrics.ObserveDuration(name, time.Since(start), failed)
+	d := time.Since(start)
+	e.metrics.ObserveDuration(name, d, failed)
+	if mode := e.currentSourceMode(); mode != "" {
+		e.metrics.ObserveDuration(name+".source_mode."+mode, d, failed)
+	}
 }
 
 // ResolveSourceDiffs applies user reconciliation choices from the source

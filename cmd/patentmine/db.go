@@ -18,6 +18,7 @@ const dbUsage = `usage:
   patentmine db backup [--out=<path>] [--rsync=<dest>]   create a consistent hot backup
   patentmine db vacuum                                   compact database file to reclaim space
   patentmine db status                                   show file size, integrity, and row counts
+  patentmine db validate                                 scan database for collision/merge candidates
 `
 
 func runDB(args []string) int {
@@ -41,6 +42,8 @@ func runDB(args []string) int {
 		return runDBVacuum(cfg, subArgs)
 	case "status":
 		return runDBStatus(cfg, subArgs)
+	case "validate":
+		return runDBValidate(cfg, subArgs)
 	case "help", "-h", "--help":
 		fmt.Print(dbUsage)
 		return 0
@@ -165,5 +168,45 @@ func runDBStatus(cfg config.Config, args []string) int {
 	}
 	fmt.Println(strings.Repeat("=", 55))
 
+	return 0
+}
+
+func runDBValidate(cfg config.Config, args []string) int {
+	fs := flag.NewFlagSet("db validate", flag.ExitOnError)
+	_ = fs.Parse(args)
+
+	ctx := context.Background()
+	fmt.Printf("Opening database %s...\n", cfg.DBPath)
+	repo, err := sqlite.Open(ctx, string(cfg.DBPath))
+	if err != nil {
+		return fail(fmt.Errorf("open sqlite database: %w", err))
+	}
+	defer repo.Close()
+
+	fmt.Println("Scanning database for collision/merge candidates...")
+	collisions, err := repo.CheckCollisions(ctx)
+	if err != nil {
+		return fail(fmt.Errorf("scan collisions: %w", err))
+	}
+
+	if len(collisions) == 0 {
+		fmt.Println("No collision or duplicate-stage patent candidates found.")
+		return 0
+	}
+
+	fmt.Printf("Found %d collision/merge candidate group(s):\n", len(collisions))
+	fmt.Println(strings.Repeat("=", 60))
+	for idx, col := range collisions {
+		fmt.Printf("Group %d: Application Number %s\n", idx+1, col.ApplicationNumber)
+		for i, rec := range col.RecordNumbers {
+			title := "—"
+			if i < len(col.Titles) && col.Titles[i] != "" {
+				title = col.Titles[i]
+			}
+			fmt.Printf("  - %s: %s\n", rec.String(), title)
+		}
+		fmt.Println()
+	}
+	fmt.Println(strings.Repeat("=", 60))
 	return 0
 }

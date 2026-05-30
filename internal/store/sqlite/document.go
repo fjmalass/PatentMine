@@ -141,3 +141,69 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 	}
 	return nil
 }
+
+// CheckCollisions scans the database for collision/merge candidates.
+func (r *Repo) CheckCollisions(ctx context.Context) (out []store.CollisionCandidate, err error) {
+	defer r.observeDuration("check_collisions", time.Now(), &err)
+
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT d.country || d.serial AS app_num, d.record_number, p.title
+		FROM document d
+		JOIN patent p ON d.record_number = p.number
+		WHERE (d.country, d.serial) IN (
+			SELECT country, serial
+			FROM document
+			GROUP BY country, serial
+			HAVING count(distinct record_number) > 1
+		)
+		ORDER BY d.country, d.serial, d.record_number
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: check collisions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	byApp := make(map[string]*store.CollisionCandidate)
+	var order []string
+
+	for rows.Next() {
+		var appNum, recNum, title string
+		if err := rows.Scan(&appNum, &recNum, &title); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan collision candidate: %w", err)
+		}
+		pn, err := domain.ParsePatentNumber(recNum)
+		if err != nil {
+			continue
+		}
+		cand, exists := byApp[appNum]
+		if !exists {
+			cand = &store.CollisionCandidate{
+				ApplicationNumber: appNum,
+			}
+			byApp[appNum] = cand
+			order = append(order, appNum)
+		}
+		// Deduplicate record numbers within the same candidate group
+		found := false
+		for _, existing := range cand.RecordNumbers {
+			if existing.Equal(pn) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cand.RecordNumbers = append(cand.RecordNumbers, pn)
+			cand.Titles = append(cand.Titles, title)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: list collisions: %w", err)
+	}
+
+	out = make([]store.CollisionCandidate, 0, len(order))
+	for _, appNum := range order {
+		out = append(out, *byApp[appNum])
+	}
+	return out, nil
+}

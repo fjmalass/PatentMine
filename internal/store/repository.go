@@ -258,6 +258,16 @@ type Repository interface {
 	// Supports audit and future diff reconstruction.
 	ListSourceSnapshots(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceSnapshot, error)
 
+	// CheckCollisions scans the database for collision/merge candidates.
+	CheckCollisions(ctx context.Context) ([]CollisionCandidate, error)
+
 	// Close releases all database resources.
 	Close() error
+}
+
+// CollisionCandidate represents a duplicate stage patent collision.
+type CollisionCandidate struct {
+	ApplicationNumber string                `json:"application_number"`
+	RecordNumbers     []domain.PatentNumber `json:"record_numbers"`
+	Titles            []string              `json:"titles"`
 }

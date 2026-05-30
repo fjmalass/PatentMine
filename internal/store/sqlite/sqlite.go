@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -156,6 +157,14 @@ func (r *Repo) ensureReconciledColumns(ctx context.Context) error {
 }
 
 func (r *Repo) rejectObsoleteSchema(ctx context.Context) error {
+	if r.path != "" && r.path != ":memory:" {
+		info, err := os.Stat(r.path)
+		if err == nil && info.Size() == 0 {
+			// Brand new, empty 0-byte database file. Proceed directly to schema initialization.
+			return nil
+		}
+	}
+
 	hasMeta, err := r.tableExists(ctx, "schema_meta")
 	if err != nil {
 		return fmt.Errorf("store/sqlite: inspect schema attrs: %w", err)

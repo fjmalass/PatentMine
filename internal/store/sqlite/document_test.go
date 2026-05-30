@@ -165,3 +165,54 @@ func TestMergeRecords(t *testing.T) {
 		t.Errorf("repo.Patent(absorb) = %s, want %s (resolved keep record)", got.Number, keep)
 	}
 }
+
+func TestCheckCollisions(t *testing.T) {
+	repo := openTestRepo(t)
+	defer repo.Close()
+	ctx := context.Background()
+
+	p1 := samplePatent("US8898930B1")
+	p1.Title = "Title A"
+	p2 := samplePatent("US8898930B2")
+	p2.Title = "Title B"
+
+	if err := repo.SavePatent(ctx, p1); err != nil {
+		t.Fatalf("SavePatent p1: %v", err)
+	}
+	if err := repo.SavePatent(ctx, p2); err != nil {
+		t.Fatalf("SavePatent p2: %v", err)
+	}
+
+	d1 := domain.Document{Number: p1.Number, Stage: domain.StagePublication}
+	d2 := domain.Document{Number: p2.Number, Stage: domain.StageGrant}
+
+	if err := repo.SaveDocument(ctx, p1.Number, d1); err != nil {
+		t.Fatalf("SaveDocument d1: %v", err)
+	}
+	if err := repo.SaveDocument(ctx, p2.Number, d2); err != nil {
+		t.Fatalf("SaveDocument d2: %v", err)
+	}
+
+	collisions, err := repo.CheckCollisions(ctx)
+	if err != nil {
+		t.Fatalf("CheckCollisions: %v", err)
+	}
+
+	if len(collisions) != 1 {
+		t.Fatalf("expected 1 collision group, got %d", len(collisions))
+	}
+
+	col := collisions[0]
+	if col.ApplicationNumber != "US8898930" {
+		t.Errorf("expected ApplicationNumber US8898930, got %s", col.ApplicationNumber)
+	}
+
+	if len(col.RecordNumbers) != 2 {
+		t.Fatalf("expected 2 record numbers in collision group, got %d", len(col.RecordNumbers))
+	}
+
+	if !col.RecordNumbers[0].Equal(p1.Number) || !col.RecordNumbers[1].Equal(p2.Number) {
+		t.Errorf("unexpected record numbers in collision group: %v", col.RecordNumbers)
+	}
+}
+

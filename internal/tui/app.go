@@ -64,6 +64,7 @@ type pingLoadedMsg struct {
 	version          string
 	usptoConfigured  bool
 	backupConfigured bool
+	sourceMode       string
 	err              error
 }
 
@@ -279,6 +280,7 @@ type App struct {
 
 	notesExportDir string
 	revertPatent   domain.PatentNumber
+	sourceMode     string
 }
 
 // xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
@@ -432,10 +434,16 @@ func WithNotesExportDir(dir string) Option {
 // log returns the App's structured logger, or the process default when no
 // telemetry runtime was attached.
 func (a *App) log() *slog.Logger {
+	var l *slog.Logger
 	if a.logger != nil {
-		return a.logger
+		l = a.logger
+	} else {
+		l = slog.Default()
 	}
-	return slog.Default()
+	if a.sourceMode != "" {
+		return l.With(slog.String("source_mode", a.sourceMode))
+	}
+	return l
 }
 
 // New builds the App with the splash/project selector as the initial pane. It
@@ -664,7 +672,17 @@ func (a *App) fetchPing() tea.Cmd {
 		defer cancel()
 		var res proto.PingResult
 		err := client.Call(ctx, proto.MethodPing, nil, &res)
-		return pingLoadedMsg{version: res.Version, usptoConfigured: res.USPTOConfigured, backupConfigured: res.BackupConfigured, err: err}
+		var modeRes proto.SourceModeResult
+		if err == nil {
+			_ = client.Call(ctx, proto.MethodSourceModeGet, nil, &modeRes)
+		}
+		return pingLoadedMsg{
+			version:          res.Version,
+			usptoConfigured:  res.USPTOConfigured,
+			backupConfigured: res.BackupConfigured,
+			sourceMode:       modeRes.Mode,
+			err:              err,
+		}
 	}
 }
 
@@ -748,6 +766,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.executeTypedCommand(m.Input)
 	case overlay.PromptCloseMsg:
 		a.popOverlay()
+		return a, nil
+	case sourceModeChangedMsg:
+		if m.err != nil {
+			a.setErr(text.StatusUsage, m.err.Error())
+			return a, nil
+		}
+		a.sourceMode = m.mode
+		a.setStatus(text.StatusUsage, "source mode: "+m.mode)
 		return a, nil
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
@@ -963,6 +989,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("path", m.Path),
 			slog.Int("existing_files", len(m.ExistingFiles)))
 		return a, nil
+	case pane.AddShowMergeWarningMsg:
+		a.confirmCmd = pane.AddToProjectFromSourceWithOptionsCmd(a.client, m.Project, m.Patent, m.Source, true)
+		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, m.MergeWarning.Message))
+		return a, nil
 	case pane.AddUSPTOShowCandidatesMsg:
 		o := overlay.NewUSPTOCandidatePicker(a.theme, m.Project, m.Candidates, m.Patent)
 		a.overlays = append(a.overlays, o)
@@ -1135,6 +1165,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.daemonVersion = m.version
 		a.usptoConfigured = m.usptoConfigured
 		a.backupConfigured = m.backupConfigured
+		a.sourceMode = m.sourceMode
 		if !m.usptoConfigured {
 			a.usptoConnection = serviceNoKey
 		} else if a.usptoConnection == "" || a.usptoConnection == serviceNoKey {

@@ -244,8 +244,9 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 
 		if r.metrics != nil {
 			r.metrics.ObserveDuration("crawl.source."+string(s.Name())+".fetch", d, err != nil)
-			if r.logger != nil && d >= slowSourceFetch {
-				r.logger.Warn("slow crawl source fetch",
+			r.metrics.ObserveDuration("crawl.source."+string(s.Name())+".fetch.source_mode."+string(r.sourceMode), d, err != nil)
+			if d >= slowSourceFetch {
+				r.log().Warn("slow crawl source fetch",
 					slog.String("source", string(s.Name())),
 					slog.String("number", number.String()),
 					slog.Int64("duration_ms", d.Milliseconds()),
@@ -325,8 +326,8 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		}
 
 		if err != nil {
-			if r.logger != nil && !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
-				r.logger.Warn("google comparison fetch failed",
+			if !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
+				r.log().Warn("google comparison fetch failed",
 					slog.String("number", number.String()),
 					slog.String("error", err.Error()),
 					slog.Duration("duration", compDur))
@@ -373,8 +374,8 @@ func (r *Registry) enrichWithUSPTO(ctx context.Context, number domain.PatentNumb
 		}
 
 		if err != nil {
-			if r.logger != nil && !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
-				r.logger.Debug("best-effort USPTO enrichment failed (non-fatal)",
+			if !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
+				r.log().Debug("best-effort USPTO enrichment failed (non-fatal)",
 					slog.String("number", number.String()),
 					slog.String("error", err.Error()),
 					slog.Duration("duration", enrichDur))
@@ -404,12 +405,10 @@ func (r *Registry) enrichWithUSPTO(ctx context.Context, number domain.PatentNumb
 		}
 		primary.SourceDiffs = append(primary.SourceDiffs, diffs...)
 
-		if r.logger != nil {
-			r.logger.Info("best-effort USPTO enrichment succeeded",
-				slog.String("number", number.String()),
-				slog.Duration("duration", enrichDur),
-				slog.Bool("had_application", primary.USPTOApplication != nil))
-		}
+		r.log().Info("best-effort USPTO enrichment succeeded",
+			slog.String("number", number.String()),
+			slog.Duration("duration", enrichDur),
+			slog.Bool("had_application", primary.USPTOApplication != nil))
 
 		return primary
 	}
@@ -465,4 +464,11 @@ func diffSeverity(usptoValue, googleValue string) string {
 		return "warning"
 	}
 	return "conflict"
+}
+
+func (r *Registry) log() *slog.Logger {
+	if r.logger == nil {
+		return slog.Default().With(slog.String("source_mode", string(r.sourceMode)))
+	}
+	return r.logger.With(slog.String("source_mode", string(r.sourceMode)))
 }

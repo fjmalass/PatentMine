@@ -151,11 +151,13 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 	if log == nil {
 		log = slog.Default()
 	}
+	log = log.With(slog.String("source_mode", c.registry.SourceMode()))
 
 	defer func() {
 		if c.metrics != nil {
 			d := time.Since(start)
 			c.metrics.ObserveDuration("crawl.crawler.crawl", d, failed)
+			c.metrics.ObserveDuration("crawl.crawler.crawl.source_mode."+c.registry.SourceMode(), d, failed)
 			if d >= slowCrawlerRun {
 				log.Warn("slow crawl",
 					slog.String("root", root.String()),
@@ -260,6 +262,7 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 		res, err := c.fetchFromSource(ctx, cur.number, force, source)
 		if c.metrics != nil {
 			c.metrics.ObserveDuration("crawl.crawler.fetch", time.Since(fstart), err != nil)
+			c.metrics.ObserveDuration("crawl.crawler.fetch.source_mode."+c.registry.SourceMode(), time.Since(fstart), err != nil)
 		}
 
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

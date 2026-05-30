@@ -345,12 +345,21 @@ type ProjectResult struct {
 	Project domain.Project `json:"project"`
 }
 
+// MergeWarning reports that a patent being added maps to an existing record
+// in the project, representing a merge of different document stages.
+type MergeWarning struct {
+	Requested      string `json:"requested"`
+	ExistingRecord string `json:"existing_record"`
+	Message        string `json:"message"`
+}
+
 // MembershipParams identifies a (project, patent) pair.
 type MembershipParams struct {
 	Project           domain.ProjectID    `json:"project"`
 	Patent            domain.PatentNumber `json:"patent"`
 	Source            domain.Source       `json:"source,omitempty"`
 	ApplicationNumber string              `json:"application_number,omitempty"`
+	ConfirmMerge      bool                `json:"confirm_merge,omitempty"`
 }
 
 // MembershipAddResult reports the outcome of adding a patent to a project.
@@ -358,6 +367,7 @@ type MembershipAddResult struct {
 	FetchStarted bool                    `json:"fetch_started"`
 	JobID        string                  `json:"job_id,omitempty"`
 	Candidates   []domain.USPTOCandidate `json:"candidates,omitempty"`
+	MergeWarning *MergeWarning           `json:"merge_warning,omitempty"`
 }
 
 // AddRelatedParams asks the daemon to grant project membership to every

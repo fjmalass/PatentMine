@@ -81,17 +81,19 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 // handleAddMember adds a patent to a project.
 func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Patent domain.PatentNumber `json:"patent"`
-		Source domain.Source       `json:"source"`
+		Patent       domain.PatentNumber `json:"patent"`
+		Source       domain.Source       `json:"source"`
+		ConfirmMerge bool                `json:"confirm_merge"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
 	params := proto.MembershipParams{
-		Project: domain.ProjectID(r.PathValue("id")),
-		Patent:  body.Patent,
-		Source:  body.Source,
+		Project:      domain.ProjectID(r.PathValue("id")),
+		Patent:       body.Patent,
+		Source:       body.Source,
+		ConfirmMerge: body.ConfirmMerge,
 	}
-	var res proto.Empty
+	var res proto.MembershipAddResult
 	s.call(w, r, proto.MethodMembershipAdd, params, &res)
 }

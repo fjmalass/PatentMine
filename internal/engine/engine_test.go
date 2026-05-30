@@ -1628,3 +1628,57 @@ func TestEngineUSPTOSearchAndErrorPropagation(t *testing.T) {
 		}
 	})
 }
+
+func TestEngineMergeWarning(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	pub := domain.MustParsePatentNumber("US20100282272A1")
+	grant := domain.MustParsePatentNumber("US8898930B2")
+
+	// Save a patent record representing both publication and grant stages of the same invention
+	if err := eng.SavePatent(ctx, domain.Patent{Number: pub, FetchState: domain.FetchCached}); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	for _, d := range []domain.Document{
+		{Number: pub, Stage: domain.StagePublication},
+		{Number: grant, Stage: domain.StageGrant},
+	} {
+		if err := repo.SaveDocument(ctx, pub, d); err != nil {
+			t.Fatalf("SaveDocument: %v", err)
+		}
+	}
+
+	project, err := eng.CreateProject(ctx, "Test Project")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// Add the publication to the project first
+	_, _, _, _, err = eng.AddToProjectWithOptions(ctx, project.ID, pub, false)
+	if err != nil {
+		t.Fatalf("AddToProject: %v", err)
+	}
+
+	// Adding the grant stage of the same patent without confirming should return a merge warning
+	_, _, _, warning, err := eng.AddToProjectWithOptions(ctx, project.ID, grant, false)
+	if err != nil {
+		t.Fatalf("AddToProject grant stage failed: %v", err)
+	}
+	if warning == nil {
+		t.Fatal("expected merge warning when adding duplicate stage patent, got nil")
+	}
+	if warning.Requested != grant.String() {
+		t.Errorf("expected warning.Requested to be %s, got %s", grant, warning.Requested)
+	}
+
+	// Confirming the merge should succeed without warning
+	_, _, _, warning, err = eng.AddToProjectWithOptions(ctx, project.ID, grant, true)
+	if err != nil {
+		t.Fatalf("AddToProject with confirmMerge failed: %v", err)
+	}
+	if warning != nil {
+		t.Errorf("expected no warning when confirmMerge is true, got: %s", warning.Message)
+	}
+}
+

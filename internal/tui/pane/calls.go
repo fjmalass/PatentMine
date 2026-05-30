@@ -161,15 +161,41 @@ func AddToProjectCmd(client *rpc.Client, project domain.ProjectID, number domain
 	return AddToProjectFromSourceCmd(client, project, number, "")
 }
 
+// AddShowMergeWarningMsg is returned when adding a patent triggers a merge warning.
+type AddShowMergeWarningMsg struct {
+	Project      domain.ProjectID
+	Patent       domain.PatentNumber
+	Source       domain.Source
+	MergeWarning *proto.MergeWarning
+}
+
 // AddToProjectFromSourceCmd links a patent and optionally forces a provider-specific fetch.
 func AddToProjectFromSourceCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, source domain.Source) tea.Cmd {
+	return AddToProjectFromSourceWithOptionsCmd(client, project, number, source, false)
+}
+
+// AddToProjectFromSourceWithOptionsCmd links a patent and supports confirm_merge and warning overlay.
+func AddToProjectFromSourceWithOptionsCmd(client *rpc.Client, project domain.ProjectID, number domain.PatentNumber, source domain.Source, confirmMerge bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.MembershipAddResult
 		if err := client.Call(ctx, proto.MethodMembershipAdd,
-			proto.MembershipParams{Project: project, Patent: number, Source: source}, &res); err != nil {
+			proto.MembershipParams{
+				Project:      project,
+				Patent:       number,
+				Source:       source,
+				ConfirmMerge: confirmMerge,
+			}, &res); err != nil {
 			return StatusMsg{Key: text.StatusAddFailed, Args: []any{err.Error()}, Error: true}
+		}
+		if res.MergeWarning != nil {
+			return AddShowMergeWarningMsg{
+				Project:      project,
+				Patent:       number,
+				Source:       source,
+				MergeWarning: res.MergeWarning,
+			}
 		}
 		if len(res.Candidates) > 0 {
 			return AddUSPTOShowCandidatesMsg{Project: project, Patent: number, Candidates: res.Candidates}
