@@ -241,6 +241,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 			"project":          string(project),
 			"source":           string(source),
 			"manual":           true,
+			"provenance":       after.AddedMethod,
 		},
 	})
 	e.announceChange()
@@ -373,6 +374,7 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 				"source":           "add.related",
 				"root":             record.String(),
 				"manual":           true,
+				"provenance":       m.AddedMethod,
 			},
 		})
 		added = append(added, neighborRecord)
@@ -458,6 +460,7 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 						"root":             rootStr,
 						"job_id":           string(id),
 						"manual":           false,
+						"provenance":       m.AddedMethod,
 					},
 				})
 				added++
@@ -628,6 +631,7 @@ func (e *Engine) SetReviewStateWithOptions(ctx context.Context, project domain.P
 				Attributes: map[string]any{
 					"requested_number": record.String(),
 					"manual":           addedMethod == "" || addedMethod == "direct" || addedMethod == "manual",
+					"provenance":       addedMethod,
 				},
 			})
 

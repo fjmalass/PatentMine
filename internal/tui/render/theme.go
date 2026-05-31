@@ -599,3 +599,10 @@ func (t Theme) ProvenanceGlyph(method string) string {
 		return t.Glyphs.ProvOther
 	}
 }
+
+// TablePrefixWidth returns the display cell width of the standard table row prefix
+// (composed of cursor + mark + a trailing space).
+func (t Theme) TablePrefixWidth() int {
+	return StringWidth(t.Glyphs.RowNoCursor + t.Glyphs.RowNoMark + " ")
+}
+

@@ -127,7 +127,8 @@ func (p *USPTOCandidatePicker) View(maxW, maxH int) string {
 	const filingW = 11
 	const patentW = 13
 	const inventorW = 25
-	fixed := 3 + appW + filingW + patentW + inventorW + 4 // prefix (cursor+mark+space) + 4 gaps
+	prefixW := p.theme.TablePrefixWidth()
+	fixed := prefixW + appW + filingW + patentW + inventorW + 4 // prefix + 4 gaps
 	titleW := max(maxW-fixed, 15)
 
 	cols := []render.TableColumn{

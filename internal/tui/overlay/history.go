@@ -138,7 +138,8 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 	const timeW = 8
 	const projW = 12
 	const iconW = 2
-	fixed := 2 + gutterW + timeW + projW + iconW + 4 // prefix + cols + 4 single-space gaps
+	prefixW := h.theme.TablePrefixWidth()
+	fixed := prefixW + gutterW + timeW + projW + iconW + 4 // prefix + cols + 4 single-space gaps
 	detailsW := max(maxW-fixed, 10)
 
 	cols := []render.TableColumn{
@@ -380,7 +381,16 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistNotesExport, "Delete Note: " + pat
 	case observability.ActionMembershipAdd:
 		method := "manual"
-		if isManualVal, ok := rec.Attributes["manual"].(bool); ok {
+		if prov, ok := rec.Attributes["provenance"].(string); ok && prov != "" {
+			switch prov {
+			case "direct", "manual":
+				method = "manual"
+			case "system", "auto.depth1":
+				method = "system"
+			default:
+				method = prov
+			}
+		} else if isManualVal, ok := rec.Attributes["manual"].(bool); ok {
 			if isManualVal {
 				method = "manual"
 			} else {

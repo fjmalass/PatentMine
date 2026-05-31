@@ -99,3 +99,20 @@ func TestHistoryOverlayToggleSort(t *testing.T) {
 		t.Fatalf("sort telemetry msg = %#v", msg)
 	}
 }
+
+func TestHistoryAddMembershipDetailsShowsProvenance(t *testing.T) {
+	_, details := historyIconAndDetails(render.NewTheme(), observability.Record{
+		Action:   observability.ActionMembershipAdd,
+		Entity:   "membership",
+		EntityID: "p-1/US12345678B2",
+		Status:   "committed",
+		Attributes: map[string]any{
+			"requested_number": "US12345678B2",
+			"provenance":       "related",
+		},
+	})
+	if !strings.Contains(details, "Add Patent (related)") {
+		t.Fatalf("expected related provenance, got details: %q", details)
+	}
+}
+

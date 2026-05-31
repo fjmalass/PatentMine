@@ -103,6 +103,57 @@ func section(reg *command.Registry, lines *[]string, theme render.Theme, catalog
 	}
 }
 
+// appendAvailableKeys formats and appends the available (free) keys wrapped nicely to fit
+// within standard overlay widths, preventing truncation and unwanted wrapping.
+func appendAvailableKeys(lines *[]string, theme render.Theme, catalog *text.Catalog, avail []rune) {
+	if len(avail) == 0 {
+		return
+	}
+	prefixStr := "  " + catalog.T(text.HelpSectionAvailable) + ": "
+	prefixWidth := render.StringWidth(prefixStr)
+
+	var keys []string
+	for _, r := range avail {
+		keys = append(keys, string(r))
+	}
+
+	limit := 65
+	firstLinePrefix := "  " + theme.Dim.Render(catalog.T(text.HelpSectionAvailable)+":") + " "
+	subsequentLinePrefix := strings.Repeat(" ", prefixWidth)
+
+	var currentLine strings.Builder
+	currentWidth := prefixWidth
+	prefix := firstLinePrefix
+
+	first := true
+	for _, key := range keys {
+		var item string
+		if first {
+			item = key
+			first = false
+		} else {
+			item = ", " + key
+		}
+
+		itemWidth := len(item)
+		if currentWidth+itemWidth > limit {
+			if currentLine.Len() > 0 {
+				*lines = append(*lines, prefix+theme.HelpKey.Render(currentLine.String()))
+			}
+			prefix = subsequentLinePrefix
+			currentLine.Reset()
+			currentLine.WriteString(key)
+			currentWidth = prefixWidth + len(key)
+		} else {
+			currentLine.WriteString(item)
+			currentWidth += itemWidth
+		}
+	}
+	if currentLine.Len() > 0 {
+		*lines = append(*lines, prefix+theme.HelpKey.Render(currentLine.String()))
+	}
+}
+
 // availableLine renders a "Available keys: h, l, m, …" line for a keymap layer.
 func availableLine(lines *[]string, theme render.Theme, catalog *text.Catalog, layer *keymap.Layer) {
 	if layer == nil {
@@ -110,18 +161,9 @@ func availableLine(lines *[]string, theme render.Theme, catalog *text.Catalog, l
 	}
 	bound := layer.BoundLetters()
 	free := freeLetters(bound)
-	if len(free) == 0 {
-		return
-	}
-	var b strings.Builder
-	for i, r := range free {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(string(r))
-	}
-	*lines = append(*lines, "  "+theme.Dim.Render(catalog.T(text.HelpSectionAvailable)+":")+" "+theme.HelpKey.Render(b.String()))
+	appendAvailableKeys(lines, theme, catalog, free)
 }
+
 
 // freeLetters returns a-z0-9 runes not in bound, sorted.
 func freeLetters(bound []rune) []rune {
@@ -187,16 +229,7 @@ func scopeSection(reg *command.Registry, lines *[]string, theme render.Theme, ca
 	}
 
 	avail := freeLetters(km.BoundLetters(scope))
-	if len(avail) > 0 {
-		var b strings.Builder
-		for i, r := range avail {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			b.WriteString(string(r))
-		}
-		*lines = append(*lines, "  "+theme.Dim.Render(catalog.T(text.HelpSectionAvailable)+":")+" "+theme.HelpKey.Render(b.String()))
-	}
+	appendAvailableKeys(lines, theme, catalog, avail)
 }
 
 // buildHelpLines renders the registry+keymap into styled help lines.

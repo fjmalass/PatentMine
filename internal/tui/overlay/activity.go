@@ -76,7 +76,8 @@ func (a *Activity) View(maxW, maxH int) string {
 	const timeW = 8
 	const compW = 9
 	const actW = 22
-	fixed := 2 + gutterW + timeW + compW + actW + 4 // prefix + cols + 4 single-space gaps
+	prefixW := a.theme.TablePrefixWidth()
+	fixed := prefixW + gutterW + timeW + compW + actW + 4 // prefix + cols + 4 single-space gaps
 	entityW := max(maxW-fixed, 10)
 
 	cols := []render.TableColumn{
