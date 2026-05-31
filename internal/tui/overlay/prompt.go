@@ -16,8 +16,8 @@ import (
 
 const (
 	promptShortcutW = 16
-	promptNameW     = 22
-	promptAliasW    = 26
+	promptNameW     = 27
+	promptAliasW    = 44
 )
 
 type promptEntry struct {
