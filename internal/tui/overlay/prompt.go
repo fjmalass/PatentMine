@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	promptShortcutW = 18
+	promptShortcutW = 16
 	promptNameW     = 22
+	promptAliasW    = 26
 )
 
 type promptEntry struct {
@@ -65,6 +66,14 @@ func (p *Prompt) Title() string {
 }
 
 func (p *Prompt) SourceScope() command.Scope { return p.scope }
+
+// OverlaySize implements the App's DynamicSize interface: the command prompt
+// claims a large canvas (80% of the terminal) so the SHORTCUT / COMMAND /
+// ALIASES / TITLE columns all stay legible. The floor keeps the four columns
+// readable on small terminals.
+func (p *Prompt) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, 80, 80, 60, 12)
+}
 
 func (p *Prompt) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if handler, ok := p.handlers[id]; ok {
@@ -176,19 +185,37 @@ func (p *Prompt) listView(maxW int) string {
 		return p.theme.Dim.Render(p.catalog.T(text.PromptNoMatch))
 	}
 	var b strings.Builder
-	head := render.Pad("SHORTCUT", promptShortcutW) + " " + render.Pad("COMMAND", promptNameW) + " TITLE"
+	head := render.Pad("SHORTCUT", promptShortcutW) + " " +
+		render.Pad("COMMAND", promptNameW) + " " +
+		render.Pad("ALIASES", promptAliasW) + " TITLE"
 	b.WriteString(p.theme.Header.Render(render.Truncate(head, maxW)))
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		entry := p.shown[i]
-		line := render.Pad(strings.Join(entry.shortcuts, " / "), promptShortcutW) + " " +
-			render.Pad(entry.command.Name, promptNameW) + " " +
-			p.catalog.T(text.CmdTitle(string(entry.command.ID)))
+		shortcutCol := render.Pad(strings.Join(entry.shortcuts, " / "), promptShortcutW)
+		nameCol := render.Pad(entry.command.Name, promptNameW)
+		aliasCol := render.Pad(strings.Join(entry.command.Aliases, ", "), promptAliasW)
+		title := p.catalog.T(text.CmdTitle(string(entry.command.ID)))
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {
-			b.WriteString(p.theme.Selected.Render(render.Pad(render.Truncate(line, maxW), maxW)))
+			// Keep the cursor row's full-width highlight: pad the plain line to
+			// maxW, then slice out the ALIASES span and re-style only that span
+			// with a dim foreground over the same selected background, so the
+			// aliases recede without breaking the row's highlight.
+			plain := render.Pad(render.Truncate(shortcutCol+" "+nameCol+" "+aliasCol+" "+title, maxW), maxW)
+			aliasStart := min(promptShortcutW+1+promptNameW+1, maxW)
+			aliasEnd := min(aliasStart+promptAliasW, maxW)
+			selDim := p.theme.Selected.Foreground(p.theme.Dim.GetForeground())
+			b.WriteString(p.theme.Selected.Render(ansi.Cut(plain, 0, aliasStart)) +
+				selDim.Render(ansi.Cut(plain, aliasStart, aliasEnd)) +
+				p.theme.Selected.Render(ansi.Cut(plain, aliasEnd, maxW)))
 		} else {
-			b.WriteString(p.theme.Row.Render(render.Truncate(line, maxW)))
+			// Render the ALIASES column dim so the canonical command name reads
+			// as primary and the alternatives recede.
+			line := p.theme.Row.Render(shortcutCol+" "+nameCol+" ") +
+				p.theme.Dim.Render(aliasCol) +
+				p.theme.Row.Render(" "+title)
+			b.WriteString(render.Truncate(line, maxW))
 		}
 	}
 	return b.String()
@@ -209,6 +236,9 @@ func (p *Prompt) footerLine(maxW int) string {
 	summary := p.catalog.T(text.CmdHelp(string(selected.command.ID)))
 	if p.mode == PromptDirect {
 		summary = p.catalog.T(text.CmdTitle(string(selected.command.ID)))
+	}
+	if len(selected.command.Aliases) > 0 {
+		summary = "aka " + strings.Join(selected.command.Aliases, ", ") + " — " + summary
 	}
 	usage = render.Truncate(usage, maxW)
 	if ansi.StringWidth(usage) >= maxW {

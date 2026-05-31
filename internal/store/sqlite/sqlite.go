@@ -144,6 +144,10 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	// We swallow "duplicate column" errors so old DBs start cleanly.
 	_ = r.ensureReconciledColumns(ctx)
 
+	// Best-effort: ensure the expiration columns exist on uspto_application for
+	// databases created before they were added to schema.sql.
+	_ = r.ensureExpirationColumns(ctx)
+
 	// Best-effort: drop redundant uspto_xml_download.source_url for databases
 	// created before it was removed. The URL is derived from uspto_application
 	// at call time so the column is dead weight; an ALTER DROP COLUMN is safe.
@@ -184,6 +188,28 @@ func (r *Repo) ensureReconciledColumns(ctx context.Context) error {
 			if !strings.Contains(msg, "duplicate column") && !strings.Contains(msg, "already exists") {
 				// Unexpected; surface for diagnostics but do not fail startup.
 				return fmt.Errorf("ensure reconciled columns: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+// ensureExpirationColumns adds the statutory-expiration columns to
+// uspto_application if they are missing on a database created before they were
+// introduced. Non-fatal; "duplicate column" is swallowed.
+func (r *Repo) ensureExpirationColumns(ctx context.Context) error {
+	stmts := []string{
+		`ALTER TABLE uspto_application ADD COLUMN patent_term_adjustment_days INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE uspto_application ADD COLUMN patent_term_extension_days INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE uspto_application ADD COLUMN terminal_disclaimer_date TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE uspto_application ADD COLUMN earliest_term_filing_date TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE uspto_application ADD COLUMN computed_expiration_date TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			msg := err.Error()
+			if !strings.Contains(msg, "duplicate column") && !strings.Contains(msg, "already exists") {
+				return fmt.Errorf("ensure expiration columns: %w", err)
 			}
 		}
 	}

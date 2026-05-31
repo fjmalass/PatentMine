@@ -5,6 +5,7 @@ package proto
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"patentmine/internal/domain"
@@ -83,6 +84,7 @@ const (
 	MethodUSPTOLookup               Method = "uspto.lookup"
 	MethodUSPTOFetchAssignments     Method = "uspto.fetch_assignments"
 	MethodUSPTOAssignmentList       Method = "uspto.assignment.list"
+	MethodUSPTOExpirationCalculate  Method = "uspto.expiration.calculate"
 
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
@@ -154,6 +156,61 @@ type USPTOAssignmentListParams struct {
 type USPTOAssignmentListResult struct {
 	ApplicationNumber string                   `json:"application_number"`
 	Assignments       []domain.USPTOAssignment `json:"assignments"`
+}
+
+// USPTOExpirationCalculateParams names the patent whose statutory U.S.
+// expiration date should be computed (and persisted). Refresh forces a
+// re-fetch of application metadata from the USPTO ODP API.
+type USPTOExpirationCalculateParams struct {
+	Number    domain.PatentNumber `json:"number"`
+	ProjectID string              `json:"project_id"`
+	Refresh   bool                `json:"refresh,omitempty"`
+}
+
+// USPTOExpirationCalculateResult carries the computed expiration alongside the
+// intermediate USPTO inputs and the Google Patents estimate for comparison.
+type USPTOExpirationCalculateResult struct {
+	ApplicationNumber      string `json:"application_number"`
+	PatentNumber           string `json:"patent_number"`
+	Title                  string `json:"title,omitempty"`
+	Inventors              string `json:"inventors,omitempty"`
+	FilingDate             string `json:"filing_date"`
+	GrantDate              string `json:"grant_date"`
+	EarliestTermFilingDate string `json:"earliest_term_filing_date"`
+	// EarliestTermAppNum is the application number that owns the earliest term filing date.
+	// Empty when it equals ApplicationNumber (no continuity walk needed).
+	EarliestTermAppNum string `json:"earliest_term_app_num,omitempty"`
+	// EarliestTermPatentNumber, EarliestTermGrantDate, EarliestTermTitle describe the
+	// parent patent that contributed the earliest filing date, when known from the store.
+	EarliestTermPatentNumber string `json:"earliest_term_patent_number,omitempty"`
+	EarliestTermGrantDate    string `json:"earliest_term_grant_date,omitempty"`
+	EarliestTermTitle        string `json:"earliest_term_title,omitempty"`
+	EarliestTermInventors    string `json:"earliest_term_inventors,omitempty"`
+	PatentTermAdjustmentDays int    `json:"patent_term_adjustment_days"`
+	PatentTermExtensionDays  int    `json:"patent_term_extension_days"`
+	TerminalDisclaimerDate   string `json:"terminal_disclaimer_date"`
+	ComputedExpirationDate   string `json:"computed_expiration_date"`
+	GoogleExpirationDate     string `json:"google_expiration_date"`
+	ComputedAt               string `json:"computed_at,omitempty"`
+}
+
+// ComparisonLine returns a single-line match/diff string comparing the
+// computed USPTO expiration date with the Google Patents expiration date.
+// Returns "" when either date is empty or unparseable.
+func (r USPTOExpirationCalculateResult) ComparisonLine() string {
+	if r.ComputedExpirationDate == "" || r.GoogleExpirationDate == "" {
+		return ""
+	}
+	tUSPTO, errU := time.Parse("2006-01-02", r.ComputedExpirationDate)
+	tGoogle, errG := time.Parse("2006-01-02", r.GoogleExpirationDate)
+	if errU != nil || errG != nil {
+		return ""
+	}
+	diff := int(tUSPTO.Sub(tGoogle).Hours() / 24)
+	if diff == 0 {
+		return "✅ Computed USPTO date matches Google date."
+	}
+	return fmt.Sprintf("❌ Difference (USPTO - Google): %d days", diff)
 }
 
 // SourceResolveDiffsParams carries the patent and the (updated) diffs from the

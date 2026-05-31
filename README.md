@@ -10,6 +10,7 @@ Related docs:
 2. [Telemetry & Activity Tracking Guide](./ACTIVITY.md)
 3. [USPTO Loading & Source Configuration](./USPTO_CONFIG_LOADING.md)
 4. [TUI :add Execution Flow](./TUI_ADD_FLOW.md)
+5. [U.S. Patent Expiration Date Computation](./EXPIRATION_DATE.md)
 
 ---
 
@@ -504,6 +505,7 @@ Use these TUI surfaces after loading a USPTO record:
 | View parsed claims/full text | In Detail, run `:open.fulltext` or use `T`; USPTO XML text is preferred when present. |
 | View patents cited by this patent | Press `c` or run `:open.citations`. USPTO XML patent citations are loaded into the normal citation graph after XML ingest. |
 | View patents that cite this patent | Press `b` or run the cited-by command. This shows relation-graph data already known locally. |
+| Compute the statutory expiration date | Run `:patent.expiration-date` (aliases `:expiration-date`, `:expiration`, `:exp`). Opens the **Patent Expiration Analysis** overlay with the USPTO inputs (filing/grant dates, earliest-term source, PTA, PTE, terminal disclaimer), the computed date, and the Google comparison; press `r` inside to recompute with a live USPTO refresh. See [`EXPIRATION_DATE.md`](./EXPIRATION_DATE.md). |
 
 NPL citations are preserved in the USPTO citation table for downstream use, while patent citations are also normalized into graph edges so the citation pane and citation counts work like Google-loaded citations.
 
@@ -531,11 +533,13 @@ Launch CLI operations using the `patentmine` binary:
 * `patentmine api` : Boot the web API server gateway.
 * `patentmine paths` : Output the resolved runtime directories and file paths.
 * `patentmine lookup <number>` : Look up raw USPTO file wrapper metadata by application number, publication number, or patent number.
+* `patentmine expiration-date [options] <number>` : Compute the statutory U.S. patent expiration date (20-year term from the earliest-term filing date, plus PTA/PTE, capped by any terminal disclaimer), persist it, and compare it against the Google Patents estimate. Options: `-source uspto|google|both` (default `both`), `-refresh` to re-fetch application metadata from the USPTO live API. See [`EXPIRATION_DATE.md`](./EXPIRATION_DATE.md).
 * `patentmine version` : Print the current system build version.
 
 You can also execute lookups from the command line using `cargo make`:
 * **`cargo make check-uspto`**: Verify your API key configuration and USPTO ODP connectivity.
 * **`cargo make lookup <number>`**: Perform a broad search lookup directly from the command line (e.g. `cargo make lookup US20230021336A1`).
+* **`makers expiration-date <number>`**: Compute and compare a patent's estimated expiration date from the command line (e.g. `makers expiration-date US14558776`, or `makers expiration-date -refresh US14558776` to force a live USPTO re-fetch).
 
 ### TUI Keyboard Shortcuts
 

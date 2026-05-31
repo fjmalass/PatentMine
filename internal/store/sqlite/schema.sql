@@ -137,7 +137,13 @@ CREATE TABLE IF NOT EXISTS uspto_application (
     attorney_org                    TEXT NOT NULL DEFAULT '',
     attorney_type                   TEXT NOT NULL DEFAULT '',
     field_of_search_json            TEXT NOT NULL DEFAULT '[]',
-    grant_parsed_at                 TEXT NOT NULL DEFAULT ''
+    grant_parsed_at                 TEXT NOT NULL DEFAULT '',
+    -- Statutory expiration inputs and computed result (uspto.expiration.calculate).
+    patent_term_adjustment_days     INTEGER NOT NULL DEFAULT 0,
+    patent_term_extension_days      INTEGER NOT NULL DEFAULT 0,
+    terminal_disclaimer_date        TEXT NOT NULL DEFAULT '',
+    earliest_term_filing_date       TEXT NOT NULL DEFAULT '',
+    computed_expiration_date        TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_uspto_application_record ON uspto_application (record_number);

@@ -24,6 +24,7 @@ const (
 	OpenIDS                 ID = "view.ids"
 	OpenProjects            ID = "view.projects"
 	OpenAssignees           ID = "view.assignees"
+	PatentExpirationDate    ID = "patent.expiration-date"
 	OpenClassificationStats ID = "view.classification-stats"
 	OpenInventors           ID = "view.inventors"
 	OpenInventorsDirect     ID = "view.inventors.direct"
@@ -201,6 +202,7 @@ func Default() (*Registry, error) {
 		Command{ID: OpenPatentNote, Name: "open.note", Aliases: []string{"patent-note", "project-note"}, Usage: ":open.note", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenIDS, Name: "open.ids", Aliases: []string{"ids"}, Usage: ":open.ids", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily}},
 		Command{ID: OpenAssignees, Name: "open.assignees", Aliases: []string{"assignees"}, Usage: ":open.assignees", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: PatentExpirationDate, Name: "patent.expiration-date", Aliases: []string{"expiration-date", "expiration", "exp"}, Usage: ":patent.expiration-date [number] [refresh]", Kind: KindView, Scopes: patentScopes},
 		Command{ID: OpenClassificationStats, Name: "open.classification-stats", Aliases: []string{"classification-stats", "class-stats"}, Usage: ":open.classification-stats", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: OpenInventors, Name: "open.inventors", Aliases: []string{"inventors"}, Usage: ":open.inventors", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: OpenInventorsDirect, Name: "open.inventors.direct", Aliases: []string{"inventors-direct"}, Usage: ":open.inventors.direct", Kind: KindView, Scopes: []Scope{ScopeDetail}},

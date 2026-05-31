@@ -369,6 +369,65 @@ func (a *App) cmdOpenAssignees(invocation) (tea.Model, tea.Cmd) {
 	return a.openAssignees(p)
 }
 
+func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	var number domain.PatentNumber
+	refresh := false
+	for _, arg := range inv.args {
+		switch arg {
+		case "refresh", "--refresh":
+			refresh = true
+		default:
+			if number.IsZero() {
+				var err error
+				number, err = domain.ParsePatentNumber(arg)
+				if err != nil {
+					a.setErr(text.StatusInvalidPatentNumber, err.Error())
+					return a, nil
+				}
+			}
+		}
+	}
+	if number.IsZero() {
+		var ok bool
+		number, ok = a.focusedPane().Selection()
+		if !ok || number.IsZero() {
+			a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
+			return a, nil
+		}
+	}
+	return a.openExpirationOverlay(number, refresh)
+}
+
+func (a *App) openExpirationOverlay(number domain.PatentNumber, refresh bool) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var result proto.USPTOExpirationCalculateResult
+	err := a.client.Call(ctx, proto.MethodUSPTOExpirationCalculate, proto.USPTOExpirationCalculateParams{Number: number, Refresh: refresh}, &result)
+	if err != nil {
+		a.setErr(text.StatusGeneric, "expiration calculation failed: "+err.Error())
+		return a, nil
+	}
+
+	a.overlays = append(a.overlays, overlay.NewExpirationOverlay(a.theme, result))
+	a.setStatus(text.StatusGeneric, fmt.Sprintf("Expiration analysis — %s", number))
+
+	a.log().Info("expiration overlay opened",
+		slog.String("patent", number.String()),
+		slog.String("computed", result.ComputedExpirationDate),
+		slog.String("google", result.GoogleExpirationDate))
+
+	return a, nil
+}
+
 func (a *App) cmdOpenClassificationStats(invocation) (tea.Model, tea.Cmd) {
 	detail, ok := a.focusedPane().(*pane.Detail)
 	if !ok {

@@ -311,6 +311,13 @@ func (e *Engine) incCounter(name string, delta int64) {
 	}
 }
 
+func (e *Engine) setGauge(name string, value int64) {
+	if e.metrics == nil {
+		return
+	}
+	e.metrics.SetGauge(name, value)
+}
+
 func (e *Engine) observeDuration(name string, start time.Time, errp *error) {
 	if e.metrics == nil {
 		return

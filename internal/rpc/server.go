@@ -19,6 +19,7 @@ import (
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
+	"patentmine/internal/uspto"
 	appversion "patentmine/internal/version"
 )
 
@@ -129,6 +130,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodUSPTOLookup:               s.usptoLookup,
 		proto.MethodUSPTOFetchAssignments:     s.usptoFetchAssignments,
 		proto.MethodUSPTOAssignmentList:       s.usptoAssignmentList,
+		proto.MethodUSPTOExpirationCalculate:  s.usptoExpirationCalculate,
 		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:           s.sourceDiffsList,
 	}
@@ -1343,6 +1345,103 @@ func (s *Server) usptoFetchAssignments(ctx context.Context, raw json.RawMessage)
 		return nil, err
 	}
 	return s.engine.FetchUSPTOAssignments(ctx, p.Number)
+}
+
+func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.USPTOExpirationCalculateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	app, err := s.engine.ComputeAndStoreUSPTOExpiration(ctx, p.Number, p.Refresh)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.ProjectID != "" {
+		if _, _, _, addErr := s.engine.AddToProjectFromSource(ctx, domain.ProjectID(p.ProjectID), p.Number, domain.SourceUSPTO, ""); addErr != nil {
+			s.Logger().Warn("failed to auto-add patent to project during expiration calculation",
+				slog.String("project_id", p.ProjectID),
+				slog.String("patent", p.Number.String()),
+				slog.String("error", addErr.Error()),
+			)
+		}
+	}
+
+	var googleExpStr, grantDateStr string
+	var title, inventors string
+	patentRec, err := s.engine.Patent(ctx, p.Number)
+	if err == nil {
+		title = patentRec.Title
+		var invs []string
+		for _, inv := range patentRec.Inventors {
+			invs = append(invs, string(inv))
+		}
+		inventors = strings.Join(invs, ", ")
+
+		if !patentRec.ExpirationDate.IsZero() {
+			googleExpStr = patentRec.ExpirationDate.Format("2006-01-02")
+		}
+		if !patentRec.GrantDate.IsZero() {
+			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
+		}
+	}
+	if title == "" {
+		title = app.InventionTitle
+	}
+	if inventors == "" {
+		inventors = app.FirstInventorName
+	}
+	// Fall back to ApplicationStatusDate for the grant date when the patent
+	// record does not store one but the USPTO application status indicates
+	// a granted patent (e.g. "Patented Case").
+	if grantDateStr == "" {
+		grantDateStr = uspto.GrantDateFromStatus(app.ApplicationStatusText, app.ApplicationStatusDate)
+	}
+
+	res := proto.USPTOExpirationCalculateResult{
+		ApplicationNumber:        app.ApplicationNumber,
+		PatentNumber:             p.Number.String(),
+		Title:                    title,
+		Inventors:                inventors,
+		FilingDate:               app.FilingDate,
+		GrantDate:                grantDateStr,
+		EarliestTermFilingDate:   app.EarliestTermFilingDate,
+		PatentTermAdjustmentDays: app.PatentTermAdjustmentDays,
+		PatentTermExtensionDays:  app.PatentTermExtension,
+		TerminalDisclaimerDate:   app.TerminalDisclaimerDate,
+		ComputedExpirationDate:   app.ComputedExpirationDate,
+		GoogleExpirationDate:     googleExpStr,
+		ComputedAt:               app.FetchedAt,
+	}
+
+	// Populate earliest-term parent info when the earliest filing date comes from a parent patent.
+	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
+		res.EarliestTermAppNum = app.EarliestTermAppNum
+		if parentApp, err := s.engine.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); err == nil {
+			grantNum, grantDate := uspto.EarliestTermSource(parentApp)
+			// A cached parent stub may carry the application status but not the
+			// granted patent number; fetch fresh by application number to backfill
+			// it (and the inventor) before reporting.
+			if grantNum == "" {
+				if fresh, ferr := s.engine.RefreshUSPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); ferr == nil {
+					parentApp = fresh
+					grantNum, grantDate = uspto.EarliestTermSource(parentApp)
+				}
+			}
+			res.EarliestTermPatentNumber = grantNum
+			res.EarliestTermGrantDate = grantDate
+			// Even when the granted patent number is unknown, the parent's grant
+			// date can still be derived from its application status.
+			if res.EarliestTermGrantDate == "" {
+				res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
+			}
+			res.EarliestTermTitle = parentApp.InventionTitle
+			res.EarliestTermInventors = parentApp.FirstInventorName
+		}
+	}
+
+	return res, nil
 }
 
 func (s *Server) usptoAssignmentList(ctx context.Context, raw json.RawMessage) (any, error) {

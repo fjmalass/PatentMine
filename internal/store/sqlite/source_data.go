@@ -67,8 +67,9 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			 customer_number, group_art_unit_number, examiner_name, docket_number,
 			 application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
 			 small_entity_status, business_entity_status, publication_category_json,
-			 last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			 last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name,
+			 patent_term_adjustment_days, patent_term_extension_days, terminal_disclaimer_date, earliest_term_filing_date, computed_expiration_date)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(application_number) DO UPDATE SET
 				record_number=excluded.record_number,
 				invention_title=excluded.invention_title,
@@ -100,7 +101,12 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 				pgpub_xml_url=excluded.pgpub_xml_url,
 				pgpub_xml_name=excluded.pgpub_xml_name,
 				patent_grant_xml_url=excluded.patent_grant_xml_url,
-				patent_grant_xml_name=excluded.patent_grant_xml_name`,
+				patent_grant_xml_name=excluded.patent_grant_xml_name,
+				patent_term_adjustment_days=excluded.patent_term_adjustment_days,
+				patent_term_extension_days=excluded.patent_term_extension_days,
+				terminal_disclaimer_date=excluded.terminal_disclaimer_date,
+				earliest_term_filing_date=excluded.earliest_term_filing_date,
+				computed_expiration_date=excluded.computed_expiration_date`,
 			app.ApplicationNumber, app.RecordNumber.Normalized(), app.InventionTitle,
 			app.FilingDate, app.EffectiveFilingDate, app.ApplicationStatusCode,
 			app.ApplicationStatusText, app.ApplicationStatusDate, app.ApplicationTypeCode,
@@ -110,7 +116,9 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			app.ApplicationConfirmationNumber, app.USPCSymbolText, app.USPCClass, app.USPCSubclass,
 			boolInt(app.SmallEntityStatus), app.BusinessEntityStatus, defaultJSON(app.PublicationCategoryJSON, "[]"),
 			app.LastIngestionDateTime, app.FetchedAt,
-			app.PGPubXMLURL, app.PGPubXMLName, app.PatentGrantXMLURL, app.PatentGrantXMLName); err != nil {
+			app.PGPubXMLURL, app.PGPubXMLName, app.PatentGrantXMLURL, app.PatentGrantXMLName,
+			app.PatentTermAdjustmentDays, app.PatentTermExtension, app.TerminalDisclaimerDate,
+			app.EarliestTermFilingDate, app.ComputedExpirationDate); err != nil {
 			return fmt.Errorf("store/sqlite: save uspto application: %w", err)
 		}
 	}
@@ -255,7 +263,8 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 			   customer_number, group_art_unit_number, examiner_name, docket_number,
 			   application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
 			   small_entity_status, business_entity_status, publication_category_json,
-			   last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name
+			   last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name,
+			   patent_term_adjustment_days, patent_term_extension_days, terminal_disclaimer_date, earliest_term_filing_date, computed_expiration_date
 		FROM uspto_application
 		WHERE record_number = ?`, n.Normalized())
 
@@ -273,6 +282,8 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 		&smallEntityStatus, &app.BusinessEntityStatus, &app.PublicationCategoryJSON,
 		&app.LastIngestionDateTime, &app.FetchedAt,
 		&app.PGPubXMLURL, &app.PGPubXMLName, &app.PatentGrantXMLURL, &app.PatentGrantXMLName,
+		&app.PatentTermAdjustmentDays, &app.PatentTermExtension, &app.TerminalDisclaimerDate,
+		&app.EarliestTermFilingDate, &app.ComputedExpirationDate,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -290,6 +301,88 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 	}
 
 	return app, nil
+}
+
+// USPTOApplicationByAppNum returns the saved USPTO application keyed by its
+// application number (rather than the owning patent record), or ErrNotFound.
+func (r *Repo) USPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
+	row := r.reader.QueryRowContext(ctx, `
+		SELECT application_number, record_number, invention_title, filing_date, effective_filing_date,
+			   application_status_code, application_status_text, application_status_date,
+			   application_type_code, application_type_label, application_type_category,
+			   first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
+			   customer_number, group_art_unit_number, examiner_name, docket_number,
+			   application_confirmation_number, uspc_symbol_text, uspc_class, uspc_subclass,
+			   small_entity_status, business_entity_status, publication_category_json,
+			   last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name,
+			   patent_term_adjustment_days, patent_term_extension_days, terminal_disclaimer_date, earliest_term_filing_date, computed_expiration_date
+		FROM uspto_application
+		WHERE application_number = ?`, appNum)
+
+	var app domain.USPTOApplication
+	var recordNumStr string
+	var firstInventorToFile, nationalStage, smallEntityStatus int
+
+	err := row.Scan(
+		&app.ApplicationNumber, &recordNumStr, &app.InventionTitle, &app.FilingDate, &app.EffectiveFilingDate,
+		&app.ApplicationStatusCode, &app.ApplicationStatusText, &app.ApplicationStatusDate,
+		&app.ApplicationTypeCode, &app.ApplicationTypeLabel, &app.ApplicationTypeCategory,
+		&firstInventorToFile, &nationalStage, &app.FirstInventorName, &app.FirstApplicantName,
+		&app.CustomerNumber, &app.GroupArtUnitNumber, &app.ExaminerName, &app.DocketNumber,
+		&app.ApplicationConfirmationNumber, &app.USPCSymbolText, &app.USPCClass, &app.USPCSubclass,
+		&smallEntityStatus, &app.BusinessEntityStatus, &app.PublicationCategoryJSON,
+		&app.LastIngestionDateTime, &app.FetchedAt,
+		&app.PGPubXMLURL, &app.PGPubXMLName, &app.PatentGrantXMLURL, &app.PatentGrantXMLName,
+		&app.PatentTermAdjustmentDays, &app.PatentTermExtension, &app.TerminalDisclaimerDate,
+		&app.EarliestTermFilingDate, &app.ComputedExpirationDate,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return domain.USPTOApplication{}, store.ErrNotFound
+		}
+		return domain.USPTOApplication{}, fmt.Errorf("store/sqlite: query uspto application by app num: %w", err)
+	}
+
+	app.FirstInventorToFile = firstInventorToFile != 0
+	app.NationalStage = nationalStage != 0
+	app.SmallEntityStatus = smallEntityStatus != 0
+
+	if parsed, err := domain.ParsePatentNumber(recordNumStr); err == nil {
+		app.RecordNumber = parsed
+	}
+
+	return app, nil
+}
+
+// USPTOContinuities returns the parent/child continuity rows touching appNum,
+// in ordinal order. Used by the expiration computation to walk the term chain.
+func (r *Repo) USPTOContinuities(ctx context.Context, appNum string) ([]domain.USPTOContinuity, error) {
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT application_number, ordinal, parent_application_number_text, child_application_number_text,
+		       parent_application_filing_date, parent_application_status_code, parent_application_status_text,
+		       claim_parentage_type_code, claim_parentage_type_description_text
+		FROM uspto_continuity
+		WHERE application_number = ? OR child_application_number_text = ?
+		ORDER BY ordinal ASC`, appNum, appNum)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: query uspto continuity: %w", err)
+	}
+	defer rows.Close()
+
+	var list []domain.USPTOContinuity
+	for rows.Next() {
+		var c domain.USPTOContinuity
+		err := rows.Scan(
+			&c.ApplicationNumber, &c.Ordinal, &c.ParentApplicationNumberText, &c.ChildApplicationNumberText,
+			&c.ParentApplicationFilingDate, &c.ParentApplicationStatusCode, &c.ParentApplicationStatusText,
+			&c.ClaimParentageTypeCode, &c.ClaimParentageTypeDescriptionText,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan uspto continuity: %w", err)
+		}
+		list = append(list, c)
+	}
+	return list, rows.Err()
 }
 
 // USPTOXMLDownload returns the per-document download record, or ErrNotFound.

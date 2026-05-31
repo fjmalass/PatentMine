@@ -192,6 +192,7 @@ var cmdStrings = map[string][2]string{
 	"view.ai-menu":               {"AI Curation Menu", "Open the AI curation and analysis popup menu."},
 	"view.settings-ai":           {"AI & Search Settings", "Open the AI engines and search crawls configuration settings."},
 	"view.assignees":             {"Open assignee stats", "Open the statistics popup for all assignees, preselecting the current patent's assignee when available."},
+	"patent.expiration-date":     {"Patent expiration analysis", "Compute the statutory U.S. expiration date (filing + 20y, PTA/PTE, terminal disclaimer) and compare it with the Google Patents estimate. Add 'refresh' to re-fetch from the USPTO."},
 	"view.classification-stats":  {"Open classification stats", "Open the statistics popup for all classifications, preselecting the current patent's codes when available."},
 	"view.inventors":             {"Open inventors stats", "Open the statistics popup for the patent's inventors when cursor is on the inventors line."},
 	"view.inventors.direct":      {"Open inventors stats direct", "Open the statistics popup for the patent's inventors directly."},

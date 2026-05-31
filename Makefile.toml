@@ -92,6 +92,13 @@ eval "$PM_VERSION_SCRIPT"
 go run -ldflags "$PM_LDFLAGS" ${BINARY} lookup $CARGO_MAKE_TASK_ARGS
 '''
 
+[tasks.expiration-date]
+description = "Compute and compare estimated patent expiration dates. See EXPIRATION_DATE.md for details."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} expiration-date $CARGO_MAKE_TASK_ARGS
+'''
+
 [tasks.check-b2]
 description = "Check Backblaze B2 access through rclone."
 script = '''

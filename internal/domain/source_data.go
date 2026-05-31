@@ -55,6 +55,15 @@ type USPTOApplication struct {
 	PGPubXMLName                  string `json:"pgpub_xml_name,omitempty"`
 	PatentGrantXMLURL             string `json:"patent_grant_xml_url,omitempty"`
 	PatentGrantXMLName            string `json:"patent_grant_xml_name,omitempty"`
+	PatentTermAdjustmentDays      int    `json:"patent_term_adjustment_days,omitempty"`
+	PatentTermExtension           int    `json:"patent_term_extension_days,omitempty"`
+	TerminalDisclaimerDate        string `json:"terminal_disclaimer_date,omitempty"`
+	EarliestTermFilingDate        string `json:"earliest_term_filing_date,omitempty"`
+	ComputedExpirationDate        string `json:"computed_expiration_date,omitempty"`
+	ContinuityChainCount          int    `json:"continuity_chain_count,omitempty"`
+	// EarliestTermAppNum is the application number that contributed the earliest term filing date.
+	// Transient: set during computation, not persisted to the database.
+	EarliestTermAppNum string `json:"earliest_term_app_num,omitempty"`
 }
 
 // USPTOGrantSummary is the single-row data extracted from a us-patent-grant

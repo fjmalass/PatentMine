@@ -189,6 +189,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.AIAnalyze:                  (*App).cmdAIAnalyze,
 	command.SettingsAI:                 (*App).cmdSettingsAI,
 	command.OpenAssignees:              (*App).cmdOpenAssignees,
+	command.PatentExpirationDate:       (*App).cmdPatentExpirationDate,
 	command.OpenClassificationStats:    (*App).cmdOpenClassificationStats,
 	command.OpenInventors:              (*App).cmdOpenInventors,
 	command.OpenInventorsDirect:        (*App).cmdOpenInventorsDirect,
@@ -767,6 +768,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.PromptCloseMsg:
 		a.popOverlay()
 		return a, nil
+	case overlay.ExpirationRefreshMsg:
+		a.popOverlay()
+		_, cmd := a.openExpirationOverlay(m.Number, true)
+		return a, cmd
 	case sourceModeChangedMsg:
 		if m.err != nil {
 			a.setErr(text.StatusUsage, m.err.Error())
