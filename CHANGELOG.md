@@ -9,12 +9,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [v0.8.1] — 2026-05-30
+## [v0.8.1] — 2026-05-31
+
+**Database schema changed** (v2 → v3). Automatic migration on first run.
 
 ### Fixed
 - `TUI` `command` `help` wrapping rows
+- USPTO provenance tracking: membership records now correctly capture source provider and mode for citation and family-graph promotions
 
-**Database schema changed** (v2 → v3). Automatic migration on first run.
+### Added
+- Reintroduced expiration-date columns (`patent_term_adjustment_days`, `patent_term_extension_days`, `terminal_disclaimer_date`, `earliest_term_filing_date`, `computed_expiration_date`) on `uspto_application` table
+- New `:expiration` command to compute and display patent term expiration based on USPTO statutory inputs
+
+### Changed
+- Renamed CLI commands for consistency (WIP): `:fetch.uspto.grant`/`:fetch.uspto.pgpub` → `:fetch.grant`/`:fetch.pgpub`
+- Cleaned up TUI layout, detail pane spacing, and status bar alignment
 ## [v0.8.0] — 2026-05-30
 
 **Database schema changed** (v2 → v3). Automatic migration on first run.
