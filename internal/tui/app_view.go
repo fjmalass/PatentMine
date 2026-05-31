@@ -213,7 +213,8 @@ func (a *App) compositeOverlay(screen string) string {
 	}
 	content = strings.Join(contentLines, "\n")
 
-	box := a.theme.Box.Width(innerWidth).Height(boxHeight - 2).Render(content)
+	const borderWidth = 2
+	box := a.theme.Box.Width(boxWidth - borderWidth).Height(boxHeight - borderWidth).Render(content)
 
 	dimmed := render.Dim(screen)
 	x, y := render.CenterOffset(a.width, a.height, lipgloss.Width(box), lipgloss.Height(box))
