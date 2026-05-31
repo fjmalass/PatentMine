@@ -10,6 +10,7 @@ import (
 
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
+	"patentmine/internal/store"
 	"patentmine/internal/store/sqlite"
 )
 
@@ -184,6 +185,66 @@ func TestFileSourceMissingPatent(t *testing.T) {
 	_, err := src.Fetch(context.Background(), domain.MustParsePatentNumber("US9999999B2"))
 	if err != ErrNotAvailable {
 		t.Fatalf("missing file err = %v, want ErrNotAvailable", err)
+	}
+}
+
+// TestIngestNodeRestampsSourceDataToResolvedRecord guards the citation-load
+// path: a stub already exists under one number (e.g. a publication number a
+// citation referenced) while the fetched Result is pre-stamped with a different
+// record number (the USPTO path keys off the application number). ingestNode
+// must resolve to the existing stub and rebind every source-data row to it, or
+// the authority_identifier FK insert fails with constraint 787.
+func TestIngestNodeRestampsSourceDataToResolvedRecord(t *testing.T) {
+	repo := openRepo(t)
+	ctx := context.Background()
+	crawler := newFileCrawler(t, repo, CrawlConfig{})
+
+	appNumber := domain.MustParsePatentNumber("US10059406") // empty kind = application
+	pubNumber := domain.MustParsePatentNumber("US20020106191A1")
+
+	// A citation discovered the patent under its publication number, leaving a stub.
+	if err := repo.SaveNode(ctx, store.NodeBatch{
+		Stubs: []store.StubRecord{{Number: pubNumber, Stage: domain.StagePublication}},
+	}); err != nil {
+		t.Fatalf("seed stub: %v", err)
+	}
+
+	// The fetched result is keyed by the application number and pre-stamps its
+	// source data with that number, but carries the publication document.
+	res := Result{
+		Patent: domain.Patent{Number: appNumber, Title: "Widget", FetchState: domain.FetchCached},
+		Documents: []domain.Document{
+			{Number: appNumber, Stage: domain.StageApplication},
+			{Number: pubNumber, Stage: domain.StagePublication},
+		},
+		AuthorityIdentifiers: []domain.AuthorityIdentifier{{
+			Authority: "US", IdentifierType: "application", Identifier: "10059406",
+			RecordNumber: appNumber, Confidence: 100,
+		}},
+		USPTOApplication: &domain.USPTOApplication{ApplicationNumber: "10059406", RecordNumber: appNumber},
+		SourceSnapshots:  []domain.SourceSnapshot{{ID: "snap-1", PatentNumber: appNumber, Source: "uspto_file_wrapper"}},
+	}
+
+	seen := map[domain.PatentNumber]bool{}
+	var queue []node
+	record, _, _, err := crawler.ingestNode(ctx, res, 0, 0, domain.CrawlProfileAll, seen, &queue)
+	if err != nil {
+		t.Fatalf("ingestNode: %v", err)
+	}
+	if !record.Equal(pubNumber) {
+		t.Fatalf("resolved record = %s, want %s (the existing stub)", record, pubNumber)
+	}
+
+	p, err := repo.Patent(ctx, pubNumber)
+	if err != nil {
+		t.Fatalf("patent %s missing: %v", pubNumber, err)
+	}
+	if p.FetchState != domain.FetchCached || p.Title != "Widget" {
+		t.Fatalf("patent state=%s title=%q, want cached/Widget", p.FetchState, p.Title)
+	}
+	// The application number must now resolve to the same record.
+	if rec, err := repo.RecordOf(ctx, appNumber); err != nil || !rec.Equal(pubNumber) {
+		t.Fatalf("RecordOf(%s) = %s, %v; want %s", appNumber, rec, err, pubNumber)
 	}
 }
 

@@ -499,12 +499,16 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 	return recordNumber, stubsOut, sourcesOut, nil
 }
 
+// stampAuthorityIdentifiers binds each identifier to the canonical record that
+// resolveRecord settled on. A parser may have pre-stamped these with a guessed
+// record number (e.g. the USPTO path keys off the application number) that does
+// not match the record the row is ultimately saved under, so the binding is
+// overwritten unconditionally — otherwise the source-data rows reference a
+// patent number that never gets a patent row and the FK insert fails.
 func stampAuthorityIdentifiers(in []domain.AuthorityIdentifier, record domain.PatentNumber) []domain.AuthorityIdentifier {
 	out := make([]domain.AuthorityIdentifier, 0, len(in))
 	for _, ident := range in {
-		if ident.RecordNumber.IsZero() {
-			ident.RecordNumber = record
-		}
+		ident.RecordNumber = record
 		out = append(out, ident)
 	}
 	return out
@@ -515,18 +519,16 @@ func stampUSPTOApplication(app *domain.USPTOApplication, record domain.PatentNum
 		return nil
 	}
 	copy := *app
-	if copy.RecordNumber.IsZero() {
-		copy.RecordNumber = record
-	}
+	copy.RecordNumber = record
 	return &copy
 }
 
 func stampUSPTOContinuities(in []domain.USPTOContinuity, record domain.PatentNumber) []domain.USPTOContinuity {
 	out := make([]domain.USPTOContinuity, 0, len(in))
 	for _, c := range in {
-		if c.ChildRecordNumber.IsZero() {
-			c.ChildRecordNumber = record
-		}
+		// Only the child side names this record; the parent points at a
+		// different record and must be left untouched.
+		c.ChildRecordNumber = record
 		out = append(out, c)
 	}
 	return out
@@ -535,9 +537,7 @@ func stampUSPTOContinuities(in []domain.USPTOContinuity, record domain.PatentNum
 func stampSourceSnapshots(in []domain.SourceSnapshot, record domain.PatentNumber) []domain.SourceSnapshot {
 	out := make([]domain.SourceSnapshot, 0, len(in))
 	for _, snap := range in {
-		if snap.PatentNumber.IsZero() {
-			snap.PatentNumber = record
-		}
+		snap.PatentNumber = record
 		out = append(out, snap)
 	}
 	return out
@@ -546,9 +546,7 @@ func stampSourceSnapshots(in []domain.SourceSnapshot, record domain.PatentNumber
 func stampSourceDiffs(in []domain.SourceDiff, record domain.PatentNumber) []domain.SourceDiff {
 	out := make([]domain.SourceDiff, 0, len(in))
 	for _, diff := range in {
-		if diff.PatentNumber.IsZero() {
-			diff.PatentNumber = record
-		}
+		diff.PatentNumber = record
 		out = append(out, diff)
 	}
 	return out
