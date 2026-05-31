@@ -68,6 +68,29 @@ const (
 // rather than read from an authoritative source.
 const ExpirationEstimated = "estimated"
 
+// Canonical Go time layouts — the single source of truth for every date/time
+// format the app parses, stores, or displays. Always reference one of these
+// rather than repeating a layout literal, so a format is defined in exactly one
+// place. They live in domain (not the TUI theme) because lower layers (crawl,
+// proto, uspto, observability) format dates too and cannot import the theme
+// without an import cycle.
+const (
+	// DateLayout is the ISO date (YYYY-MM-DD) used for patent dates everywhere.
+	DateLayout = "2006-01-02"
+	// DateTimeLayout is the human-readable timestamp (date + wall-clock time)
+	// shown in detail/overlay views and CLI listings.
+	DateTimeLayout = "2006-01-02 15:04:05"
+	// FileTimestampLayout is the compact, filesystem-safe stamp embedded in
+	// backup/archive file names (e.g. patentmine-shutdown-20060102-150405.db).
+	FileTimestampLayout = "20060102-150405"
+	// CompactDateLayout is the no-separator date (YYYYMMDD) some USPTO payloads
+	// use; accepted when parsing external dates.
+	CompactDateLayout = "20060102"
+	// USDateLayout is the US-style date (MM-DD-YYYY) used on USPTO/IDS forms,
+	// both for parsing external input and rendering the IDS PDF.
+	USDateLayout = "01-02-2006"
+)
+
 // Valid reports whether the Source is a known value.
 func (s Source) Valid() bool {
 	switch s {

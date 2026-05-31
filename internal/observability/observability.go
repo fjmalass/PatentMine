@@ -17,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"patentmine/internal/domain"
 )
 
 var recordSeq atomic.Uint64
@@ -36,7 +38,7 @@ func logLevel() slog.Level {
 	}
 }
 
-const dateLayout = "2006-01-02"
+const dateLayout = domain.DateLayout
 
 // MetricNamespace is the first segment of a metric name. Producers and UI
 // renderers share these names so dashboards do not carry their own taxonomy.

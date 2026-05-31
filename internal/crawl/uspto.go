@@ -945,8 +945,11 @@ func encodeRFC3339(t time.Time) string {
 }
 
 func parseISODate(s string) time.Time {
-	s = strings.TrimSpace(s)
-	for _, layout := range []string{"2006-01-02", "2006/01/02", time.RFC3339} {
+	// USPTO dates come as YYYY-MM-DD, the slash variant YYYY/MM/DD, or RFC3339.
+	// Normalizing the separator lets the canonical domain.DateLayout cover the
+	// first two, so there is no second date literal to keep in sync.
+	s = strings.ReplaceAll(strings.TrimSpace(s), "/", "-")
+	for _, layout := range []string{domain.DateLayout, time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t
 		}

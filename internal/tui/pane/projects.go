@@ -244,7 +244,7 @@ func (p *Projects) View(w, h int) string {
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		proj := p.projects[i]
-		line := projectRow(formatViewIndex(i), activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format("2006-01-02"), w)
+		line := projectRow(formatViewIndex(i), activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format(domain.DateLayout), w)
 		rowStyle := tableRowStyle(p.theme, i)
 		if p.splash {
 			marker := "  "
@@ -255,7 +255,7 @@ func (p *Projects) View(w, h int) string {
 			if proj.ID == p.lastProjectID {
 				hint = "last used"
 			}
-			line = splashProjectRow(formatViewIndex(i), marker, proj.Name, string(proj.ID), proj.CreatedAt.Format("2006-01-02"), hint, w)
+			line = splashProjectRow(formatViewIndex(i), marker, proj.Name, string(proj.ID), proj.CreatedAt.Format(domain.DateLayout), hint, w)
 		}
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {

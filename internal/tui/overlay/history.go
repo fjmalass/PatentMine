@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"patentmine/internal/command"
+	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 	"patentmine/internal/tui/render"
 )
@@ -272,7 +273,7 @@ func historyRecordMatches(rec observability.Record, projectNames map[string]stri
 		rec.Status,
 		historyProjectName(rec, projectNames),
 		details,
-		rec.Timestamp.Format("2006-01-02 15:04:05"),
+		rec.Timestamp.Format(domain.DateTimeLayout),
 	}
 	for _, raw := range []any{rec.Attributes, rec.Before, rec.After} {
 		if raw == nil {

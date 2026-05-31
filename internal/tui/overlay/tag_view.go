@@ -267,7 +267,7 @@ func (o *TagTaxonomyOverlay) View(maxW, maxH int) string {
 				prefix = "→ "
 			}
 
-			createdStr := t.CreatedAt.Format("2006-01-02")
+			createdStr := t.CreatedAt.Format(domain.DateLayout)
 			line = fmt.Sprintf("%s%-3d %-20s %-12s", prefix, i+1, t.Name, createdStr)
 
 			if i == o.selected {

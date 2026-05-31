@@ -1032,11 +1032,11 @@ func buildNotesMarkdown(notes []domain.PatentNote, projectName string, sortByDat
 		sortLabel = "patent number"
 	}
 	fmt.Fprintf(&b, "Exported: %s  ·  Sorted by: %s\n\n",
-		time.Now().Format("2006-01-02 15:04:05"), sortLabel)
+		time.Now().Format(domain.DateTimeLayout), sortLabel)
 	b.WriteString(strings.Repeat("─", 72) + "\n\n")
 	for _, note := range notes {
 		fmt.Fprintf(&b, "## %s\n\n_Updated: %s_\n\n",
-			note.Patent.String(), note.UpdatedAt.Format("2006-01-02 15:04:05"))
+			note.Patent.String(), note.UpdatedAt.Format(domain.DateTimeLayout))
 		b.WriteString(note.Markdown)
 		b.WriteString("\n\n" + strings.Repeat("─", 72) + "\n\n")
 	}
@@ -1393,7 +1393,7 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		inventors = strings.Join(invs, ", ")
 
 		if !patentRec.GrantDate.IsZero() {
-			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
+			grantDateStr = patentRec.GrantDate.Format(domain.DateLayout)
 		}
 	}
 	// The "Google estimate" comparison value comes from Google's own source_bib
@@ -1402,7 +1402,7 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 	if bibs, bibErr := s.engine.SourceBibs(ctx, p.Number); bibErr == nil {
 		for _, bib := range bibs {
 			if bib.Source == domain.SourceGoogle && !bib.ExpirationDate.IsZero() {
-				googleExpStr = bib.ExpirationDate.Format("2006-01-02")
+				googleExpStr = bib.ExpirationDate.Format(domain.DateLayout)
 				break
 			}
 		}

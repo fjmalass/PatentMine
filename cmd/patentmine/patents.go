@@ -20,6 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"patentmine/internal/config"
+	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 )
 
@@ -114,7 +115,7 @@ func runPatentsList(cfg config.Config, args []string, telemetry *observability.R
 			sz = info.Size()
 			totalBytes += sz
 			szStr = fmt.Sprintf("%.2f", float64(sz)/1024.0)
-			modStr = info.ModTime().Local().Format("2006-01-02 15:04:05")
+			modStr = info.ModTime().Local().Format(domain.DateTimeLayout)
 		} else {
 			szStr = "?"
 			modStr = "?"
@@ -139,9 +140,9 @@ func runPatentsList(cfg config.Config, args []string, telemetry *observability.R
 			slog.Duration("duration", dur))
 		if telemetry.Activity != nil {
 			_ = telemetry.Activity.Record(context.Background(), observability.Record{
-				Action:   observability.ActionCLIPatentsList,
-				Entity:   "patents",
-				Status:   "ok",
+				Action: observability.ActionCLIPatentsList,
+				Entity: "patents",
+				Status: "ok",
 				Attributes: map[string]any{
 					"dir":         dir,
 					"file_count":  len(entries),
@@ -198,9 +199,9 @@ func runPatentsClean(cfg config.Config, args []string, telemetry *observability.
 			slog.Duration("duration", dur))
 		if telemetry.Activity != nil {
 			_ = telemetry.Activity.Record(context.Background(), observability.Record{
-				Action:   observability.ActionCLIPatentsClean,
-				Entity:   "patents",
-				Status:   "ok",
+				Action: observability.ActionCLIPatentsClean,
+				Entity: "patents",
+				Status: "ok",
 				Attributes: map[string]any{
 					"dir":           dir,
 					"removed_count": removed,
@@ -256,7 +257,7 @@ func runPatentsArchive(cfg config.Config, args []string, telemetry *observabilit
 		if err := os.MkdirAll(backupsDir, 0755); err != nil {
 			return fail(fmt.Errorf("create backups directory: %w", err))
 		}
-		archiveName := fmt.Sprintf("patents-backup-%s.tar.gz", time.Now().Format("20060102-150405"))
+		archiveName := fmt.Sprintf("patents-backup-%s.tar.gz", time.Now().Format(domain.FileTimestampLayout))
 		destPath = filepath.Join(backupsDir, archiveName)
 	}
 
@@ -318,9 +319,9 @@ func runPatentsArchive(cfg config.Config, args []string, telemetry *observabilit
 
 		if telemetry.Activity != nil {
 			_ = telemetry.Activity.Record(context.Background(), observability.Record{
-				Action:   observability.ActionCLIPatentsArchive,
-				Entity:   "patents",
-				Status:   "ok",
+				Action: observability.ActionCLIPatentsArchive,
+				Entity: "patents",
+				Status: "ok",
 				Attributes: map[string]any{
 					"dir":               patentsDir,
 					"archive_path":      destPath,

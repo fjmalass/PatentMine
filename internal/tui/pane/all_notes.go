@@ -175,7 +175,7 @@ func (a *AllNotes) exportMD() tea.Cmd {
 			}
 			dir = home
 		}
-		dateStr := time.Now().Format("2006-01-02")
+		dateStr := time.Now().Format(domain.DateLayout)
 		safeName := strings.NewReplacer(" ", "-", "/", "-", "\\", "-").Replace(projectName)
 		filename := fmt.Sprintf("patentmine-notes-%s-%s.md", safeName, dateStr)
 		path := filepath.Join(dir, filename)
@@ -337,7 +337,7 @@ func notesRow(idx string, note domain.PatentNote, w int) string {
 	const numW = 6
 	const dateW = 12
 	patentStr := note.Patent.String()
-	dateStr := note.UpdatedAt.Format("2006-01-02")
+	dateStr := note.UpdatedAt.Format(domain.DateLayout)
 	snippet := firstLine(strings.TrimSpace(note.Markdown))
 	snippetMax := w - numW - len(patentStr) - dateW - 6
 	if snippetMax < 0 {

@@ -25,7 +25,7 @@ func parseUSPTODateHelper(s string) time.Time {
 	if s == "" {
 		return time.Time{}
 	}
-	for _, format := range []string{"2006-01-02", "20060102", "01-02-2006"} {
+	for _, format := range []string{domain.DateLayout, domain.CompactDateLayout, domain.USDateLayout} {
 		if t, err := time.Parse(format, s); err == nil {
 			return t
 		}
@@ -215,8 +215,8 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 				changed := !apiEarliest.Equal(dbEarliest)
 				e.log(ctx, slog.LevelInfo, "continuity walk comparison: db vs api-enriched",
 					slog.String("app_num", appNum),
-					slog.String("db_earliest", dbEarliest.Format("2006-01-02")),
-					slog.String("api_earliest", apiEarliest.Format("2006-01-02")),
+					slog.String("db_earliest", dbEarliest.Format(domain.DateLayout)),
+					slog.String("api_earliest", apiEarliest.Format(domain.DateLayout)),
 					slog.Int("db_unique_apps", dbStats.UniqueApps),
 					slog.Int("api_unique_apps", apiStats.UniqueApps),
 					slog.Int("continuities_fetched", fetchedCount),
@@ -270,7 +270,7 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	var tdDateStr string
 	switch {
 	case !tdDate.IsZero():
-		tdDateStr = tdDate.Format("2006-01-02")
+		tdDateStr = tdDate.Format(domain.DateLayout)
 	case apiKey == "":
 		// No API key configured — USPTO was never contacted.
 		tdDateStr = "USPTO Not Reachable"
@@ -315,11 +315,11 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 	// 7. Store computed expiration fields back in uspto_application table
 	earliestTermFilingDateStr := ""
 	if !earliestTermFilingDate.IsZero() {
-		earliestTermFilingDateStr = earliestTermFilingDate.Format("2006-01-02")
+		earliestTermFilingDateStr = earliestTermFilingDate.Format(domain.DateLayout)
 	}
 	computedExpStr := ""
 	if !computedExp.IsZero() {
-		computedExpStr = computedExp.Format("2006-01-02")
+		computedExpStr = computedExp.Format(domain.DateLayout)
 	}
 
 	app.PatentTermAdjustmentDays = ptaDays
@@ -362,7 +362,7 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 			e.log(ctx, slog.LevelInfo, "patent expiration comparison",
 				slog.String("number", n.String()),
 				slog.String("computed_uspto_date", computedExpStr),
-				slog.String("google_date", googleExp.Format("2006-01-02")),
+				slog.String("google_date", googleExp.Format(domain.DateLayout)),
 				slog.Int("diff_days", diffDays),
 				slog.Bool("has_terminal_disclaimer", hasTD),
 			)
@@ -377,9 +377,9 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 		// or empty source and would otherwise never reflect the computed date. The
 		// Google +20yr estimate, when present, is preserved in the source_bib
 		// Google row for side-by-side comparison.
-		if !computedExp.IsZero() && (!p.ExpirationDate.Equal(computedExp) || p.ExpirationSource != "uspto") {
+		if !computedExp.IsZero() && (!p.ExpirationDate.Equal(computedExp) || p.ExpirationSource != string(domain.SourceUSPTO)) {
 			p.ExpirationDate = computedExp
-			p.ExpirationSource = "uspto"
+			p.ExpirationSource = string(domain.SourceUSPTO)
 			_ = e.repo.SavePatent(ctx, p)
 		}
 	}

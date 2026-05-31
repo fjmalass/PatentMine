@@ -71,7 +71,7 @@ func (o *OllamaAnalyzer) AnalyzePatent(ctx context.Context, patent domain.Patent
 		sb.WriteString(fmt.Sprintf("Inventors: %s\n", strings.Join(invs, ", ")))
 	}
 	if !patent.GrantDate.IsZero() {
-		sb.WriteString(fmt.Sprintf("Grant Date: %s\n", patent.GrantDate.Format("2006-01-02")))
+		sb.WriteString(fmt.Sprintf("Grant Date: %s\n", patent.GrantDate.Format(domain.DateLayout)))
 	}
 	sb.WriteString(fmt.Sprintf("\nAbstract:\n%s\n", patent.Abstract))
 	if patent.FirstClaim != "" {

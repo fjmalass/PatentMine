@@ -18,7 +18,7 @@ import (
 )
 
 // detailDateLayout formats dates in the detail view.
-const detailDateLayout = "2006-01-02"
+const detailDateLayout = domain.DateLayout
 
 const detailClassificationLimit = 24
 
@@ -427,7 +427,7 @@ func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
 		"inventors_short": formatInventorsShort(d.patent.Inventors),
 	}
 	if !d.patent.PublicationDate.IsZero() {
-		attrs["publication_date"] = d.patent.PublicationDate.Format("2006-01-02")
+		attrs["publication_date"] = d.patent.PublicationDate.Format(domain.DateLayout)
 	}
 	if d.project != "" {
 		attrs["project"] = d.project
@@ -1179,7 +1179,7 @@ func detailDateTimeText(t time.Time) string {
 	if t.IsZero() {
 		return "—"
 	}
-	return t.Format("2006-01-02 15:04:05")
+	return t.Format(domain.DateTimeLayout)
 }
 
 func (d *Detail) Patent() domain.Patent           { return d.patent }

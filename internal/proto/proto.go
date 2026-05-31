@@ -204,8 +204,8 @@ func (r USPTOExpirationCalculateResult) ComparisonLine() string {
 	if r.ComputedExpirationDate == "" || r.GoogleExpirationDate == "" {
 		return ""
 	}
-	tUSPTO, errU := time.Parse("2006-01-02", r.ComputedExpirationDate)
-	tGoogle, errG := time.Parse("2006-01-02", r.GoogleExpirationDate)
+	tUSPTO, errU := time.Parse(domain.DateLayout, r.ComputedExpirationDate)
+	tGoogle, errG := time.Parse(domain.DateLayout, r.GoogleExpirationDate)
 	if errU != nil || errG != nil {
 		return ""
 	}

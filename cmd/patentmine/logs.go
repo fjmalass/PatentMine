@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"patentmine/internal/config"
+	"patentmine/internal/domain"
 )
 
 const logsUsage = `usage:
@@ -89,7 +90,7 @@ func runLogsList(cfg config.Config, args []string) int {
 		var modStr string
 		if err == nil {
 			szStr = fmt.Sprintf("%.2f", float64(info.Size())/1024.0)
-			modStr = info.ModTime().Local().Format("2006-01-02 15:04:05")
+			modStr = info.ModTime().Local().Format(domain.DateTimeLayout)
 		} else {
 			szStr = "unknown"
 			modStr = "unknown"
@@ -116,7 +117,7 @@ func runLogsArchive(cfg config.Config, args []string) int {
 
 	now := time.Now()
 	cutoff := now.AddDate(0, 0, -*keepDays)
-	cutoffDateStr := cutoff.Format("2006-01-02")
+	cutoffDateStr := cutoff.Format(domain.DateLayout)
 
 	var filesToArchive []string
 	for _, entry := range entries {
@@ -149,7 +150,7 @@ func runLogsArchive(cfg config.Config, args []string) int {
 		return fail(fmt.Errorf("create backups directory: %w", err))
 	}
 
-	archiveName := fmt.Sprintf("logs-backup-%s.tar.gz", time.Now().Format("20060102-150405"))
+	archiveName := fmt.Sprintf("logs-backup-%s.tar.gz", time.Now().Format(domain.FileTimestampLayout))
 	archivePath := filepath.Join(backupsDir, archiveName)
 
 	fmt.Printf("Archiving %d log files to %s...\n", len(filesToArchive), archivePath)

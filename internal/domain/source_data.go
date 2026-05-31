@@ -487,21 +487,21 @@ func setInventors(p *Patent, v string) {
 
 func getApplicationDate(p *Patent) string { return dateString(p.ApplicationDate) }
 func setApplicationDate(p *Patent, v string) {
-	if t, err := time.Parse("2006-01-02", v); err == nil {
+	if t, err := time.Parse(DateLayout, v); err == nil {
 		p.ApplicationDate = t
 	}
 }
 
 func getPublicationDate(p *Patent) string { return dateString(p.PublicationDate) }
 func setPublicationDate(p *Patent, v string) {
-	if t, err := time.Parse("2006-01-02", v); err == nil {
+	if t, err := time.Parse(DateLayout, v); err == nil {
 		p.PublicationDate = t
 	}
 }
 
 func getGrantDate(p *Patent) string { return dateString(p.GrantDate) }
 func setGrantDate(p *Patent, v string) {
-	if t, err := time.Parse("2006-01-02", v); err == nil {
+	if t, err := time.Parse(DateLayout, v); err == nil {
 		p.GrantDate = t
 	}
 }
@@ -536,6 +536,6 @@ func dateString(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.UTC().Format("2006-01-02")
+	return t.UTC().Format(DateLayout)
 }
 

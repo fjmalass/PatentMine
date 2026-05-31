@@ -19,7 +19,7 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-const patentNoteTimeLayout = "2006-01-02 15:04:05"
+const patentNoteTimeLayout = domain.DateTimeLayout
 const patentNoteTimeBracket = "[" + patentNoteTimeLayout + "]"
 const patentNotePageRows = 10
 

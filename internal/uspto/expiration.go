@@ -165,7 +165,7 @@ func FetchTerminalDisclaimerDate(ctx context.Context, appNum string, apiKey stri
 				slog.String("app_num", appNum),
 				slog.Duration("duration", dur),
 				slog.Bool("found_td", found),
-				slog.String("td_date", tdDate.Format("2006-01-02")),
+				slog.String("td_date", tdDate.Format(domain.DateLayout)),
 				slog.Bool("success", err == nil),
 			)
 		}
@@ -273,7 +273,7 @@ func ComputeEarliestTermFilingDate(
 		logger.Info("continuity walk completed",
 			slog.String("app_num", appNum),
 			slog.Duration("duration", dur),
-			slog.String("earliest_date", earliest.Format("2006-01-02")),
+			slog.String("earliest_date", earliest.Format(domain.DateLayout)),
 			slog.Int("max_depth", stats.MaxDepth),
 			slog.Int("total_steps", stats.TotalSteps),
 			slog.Int("unique_apps", stats.UniqueApps),
@@ -425,15 +425,15 @@ func parseUSPTODate(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("empty date string")
 	}
 	// Try YYYY-MM-DD
-	if t, err := time.Parse("2006-01-02", s); err == nil {
+	if t, err := time.Parse(domain.DateLayout, s); err == nil {
 		return t, nil
 	}
 	// Try YYYYMMDD
-	if t, err := time.Parse("20060102", s); err == nil {
+	if t, err := time.Parse(domain.CompactDateLayout, s); err == nil {
 		return t, nil
 	}
 	// Try MM-DD-YYYY
-	if t, err := time.Parse("01-02-2006", s); err == nil {
+	if t, err := time.Parse(domain.USDateLayout, s); err == nil {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("unknown date format: %q", s)

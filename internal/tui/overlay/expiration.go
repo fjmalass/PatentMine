@@ -97,7 +97,7 @@ func (o *ExpirationOverlay) View(maxW, maxH int) string {
 	computedOn := "—"
 	if r.ComputedAt != "" {
 		if t, err := time.Parse(time.RFC3339, r.ComputedAt); err == nil {
-			computedOn = t.Local().Format("2006-01-02 15:04:05")
+			computedOn = t.Local().Format(domain.DateTimeLayout)
 		} else {
 			computedOn = r.ComputedAt
 		}

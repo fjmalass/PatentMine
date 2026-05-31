@@ -572,7 +572,7 @@ func ListPatentTagsCmd(client *rpc.Client, project domain.ProjectID, number doma
 		for _, t := range res.Tags {
 			var assignedStr string
 			if !t.AssignedAt.IsZero() {
-				assignedStr = " (assigned " + t.AssignedAt.Format("2006-01-02 15:04:05") + ")"
+				assignedStr = " (assigned " + t.AssignedAt.Format(domain.DateTimeLayout) + ")"
 			}
 			tagStrings = append(tagStrings, t.Name+assignedStr)
 		}

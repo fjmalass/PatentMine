@@ -14,7 +14,7 @@ import (
 )
 
 // dateLayout is the date format used in local patent files.
-const dateLayout = "2006-01-02"
+const dateLayout = domain.DateLayout
 
 // fileDocument is the JSON shape of one life-stage document.
 type fileDocument struct {

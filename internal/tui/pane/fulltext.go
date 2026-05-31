@@ -323,10 +323,10 @@ func (f *FullText) render(w int) {
 		add(f.theme.Row.Render("  Assignee: "+f.patent.Assignee), "")
 	}
 	if !f.patent.PublicationDate.IsZero() {
-		add(f.theme.Row.Render("  Publication: "+f.patent.PublicationDate.Format("2006-01-02")), "")
+		add(f.theme.Row.Render("  Publication: "+f.patent.PublicationDate.Format(domain.DateLayout)), "")
 	}
 	if !f.patent.ExpirationDate.IsZero() {
-		expText := f.patent.ExpirationDate.Format("2006-01-02")
+		expText := f.patent.ExpirationDate.Format(domain.DateLayout)
 		if f.patent.ExpirationSource != "" {
 			expText += " (" + f.patent.ExpirationSource + ")"
 		}
@@ -634,21 +634,21 @@ func patentMeta(p domain.Patent, number domain.PatentNumber) string {
 		if doc.Stage == domain.StageApplication {
 			dateStr := ""
 			if !doc.Dated.IsZero() {
-				dateStr = " (" + doc.Dated.Format("2006-01-02") + ")"
+				dateStr = " (" + doc.Dated.Format(domain.DateLayout) + ")"
 			}
 			b.WriteString(fmt.Sprintf("Application #: %s%s\n", doc.Number.String(), dateStr))
 			break
 		}
 	}
 	if !p.PublicationDate.IsZero() {
-		b.WriteString(fmt.Sprintf("Publication:  %s\n", p.PublicationDate.Format("2006-01-02")))
+		b.WriteString(fmt.Sprintf("Publication:  %s\n", p.PublicationDate.Format(domain.DateLayout)))
 	}
 	if !p.ExpirationDate.IsZero() {
 		src := ""
 		if p.ExpirationSource != "" {
 			src = " (" + p.ExpirationSource + ")"
 		}
-		b.WriteString(fmt.Sprintf("Expiration:   %s%s\n", p.ExpirationDate.Format("2006-01-02"), src))
+		b.WriteString(fmt.Sprintf("Expiration:   %s%s\n", p.ExpirationDate.Format(domain.DateLayout), src))
 	}
 	b.WriteString(sep + "\n")
 	return b.String()

@@ -52,7 +52,7 @@ func NewIDSHeader(theme render.Theme, project domain.Project) *IDSHeader {
 	o.values[ihFieldName] = project.Name
 	o.values[ihFieldApp] = project.ApplicationNumber
 	if !project.FilingDate.IsZero() {
-		o.values[ihFieldFiling] = project.FilingDate.Format("2006-01-02")
+		o.values[ihFieldFiling] = project.FilingDate.Format(domain.DateLayout)
 	}
 	o.values[ihFieldInventors] = project.JoinInventors()
 	o.values[ihFieldArtUnit] = project.ArtUnit
@@ -107,7 +107,7 @@ func (o *IDSHeader) submit() tea.Cmd {
 	updated.ArtUnit = strings.TrimSpace(o.values[ihFieldArtUnit])
 	updated.AttorneyDocketNumber = strings.TrimSpace(o.values[ihFieldDocket])
 	if v := strings.TrimSpace(o.values[ihFieldFiling]); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
+		if t, err := time.Parse(domain.DateLayout, v); err == nil {
 			updated.FilingDate = t
 		}
 	} else {
@@ -148,7 +148,7 @@ func (o *IDSHeader) View(maxW, _ int) string {
 			fmt.Sprintf("Examiner history (%d entries, oldest first):", n), maxW)))
 		b.WriteByte('\n')
 		for _, ex := range o.source.Examiners {
-			line := fmt.Sprintf("  · %s  —  %s", ex.RecordedAt.Format("2006-01-02"), ex.Name)
+			line := fmt.Sprintf("  · %s  —  %s", ex.RecordedAt.Format(domain.DateLayout), ex.Name)
 			b.WriteString(o.theme.Dim.Render(render.Truncate(line, maxW)))
 			b.WriteByte('\n')
 		}

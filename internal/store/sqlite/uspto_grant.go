@@ -230,7 +230,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 	if !grantNum.IsZero() {
 		var docDate time.Time
 		if len(ingest.Summary.GrantDate) == 8 {
-			if t, err := time.Parse("20060102", ingest.Summary.GrantDate); err == nil {
+			if t, err := time.Parse(domain.CompactDateLayout, ingest.Summary.GrantDate); err == nil {
 				docDate = t
 			}
 		}

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
+
+	"patentmine/internal/domain"
 )
 
 // textValue is one filled text field in pdfcpu's form JSON.
@@ -68,7 +70,7 @@ func formatDate(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.Format("01-02-2006")
+	return t.Format(domain.USDateLayout)
 }
 
 // docCellUS builds the "Document Number-Kind Code" cell for a US patent row.

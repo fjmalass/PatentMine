@@ -92,7 +92,7 @@ func runServe(_ []string) int {
 	// Perform clean shutdown database backup using a fresh context with timeout
 	backupsDir := filepath.Join(string(cfg.HomeDir), "backups")
 	_ = os.MkdirAll(backupsDir, 0755)
-	shutdownBackupName := fmt.Sprintf("patentmine-shutdown-%s.db", time.Now().Format("20060102-150405"))
+	shutdownBackupName := fmt.Sprintf("patentmine-shutdown-%s.db", time.Now().Format(domain.FileTimestampLayout))
 	shutdownBackupPath := filepath.Join(backupsDir, shutdownBackupName)
 
 	backupCtx, backupCancel := context.WithTimeout(context.Background(), 15*time.Second)

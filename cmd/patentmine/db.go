@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"patentmine/internal/config"
+	"patentmine/internal/domain"
 	"patentmine/internal/store/sqlite"
 )
 
@@ -66,7 +67,7 @@ func runDBBackup(cfg config.Config, args []string) int {
 		if err := os.MkdirAll(backupsDir, 0755); err != nil {
 			return fail(fmt.Errorf("create backups directory: %w", err))
 		}
-		backupName := fmt.Sprintf("patentmine-%s.db", time.Now().Format("20060102-150405"))
+		backupName := fmt.Sprintf("patentmine-%s.db", time.Now().Format(domain.FileTimestampLayout))
 		destPath = filepath.Join(backupsDir, backupName)
 	}
 

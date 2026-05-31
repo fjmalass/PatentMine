@@ -103,8 +103,6 @@ var (
 	googlePatentIDRe = regexp.MustCompile(`(?i)\b[A-Z]{2,}[0-9][A-Z0-9]*\b`)
 )
 
-// googleDateLayouts are the date forms seen on Google Patents.
-var googleDateLayouts = []string{"2006-01-02", "2006/01/02"}
 
 // parseGoogle extracts a patent's record from a Google Patents HTML page. The
 // bibliographic fields come from the page's itemprop microdata (with meta-tag
@@ -416,13 +414,14 @@ func googlePatentNumberFromURL(rawURL string) string {
 	return strings.TrimSpace(m[1])
 }
 
-// parseGoogleDate parses a date in any layout Google uses, or the zero time.
+// parseGoogleDate parses a Google Patents date, or the zero time. Google
+// presents dates as YYYY-MM-DD or YYYY/MM/DD; normalizing the separator lets the
+// single canonical domain.DateLayout parse both, so there is no second layout
+// literal to keep in sync.
 func parseGoogleDate(s string) time.Time {
-	s = strings.TrimSpace(s)
-	for _, layout := range googleDateLayouts {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t
-		}
+	s = strings.ReplaceAll(strings.TrimSpace(s), "/", "-")
+	if t, err := time.Parse(domain.DateLayout, s); err == nil {
+		return t
 	}
 	return time.Time{}
 }

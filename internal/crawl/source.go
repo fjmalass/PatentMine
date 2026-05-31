@@ -500,7 +500,7 @@ func dateString(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.UTC().Format("2006-01-02")
+	return t.UTC().Format(domain.DateLayout)
 }
 
 func diffSeverity(usptoValue, googleValue string) string {

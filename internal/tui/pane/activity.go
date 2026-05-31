@@ -15,7 +15,7 @@ func patentRowActivity(scope, title string, row domain.PatentRow, project domain
 		"inventors_short":  formatInventorsShort(row.Inventors),
 	}
 	if !row.PublicationDate.IsZero() {
-		attrs["publication_date"] = row.PublicationDate.Format("2006-01-02")
+		attrs["publication_date"] = row.PublicationDate.Format(domain.DateLayout)
 	}
 	if project != "" {
 		attrs["project"] = project

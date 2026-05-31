@@ -57,7 +57,7 @@ func Export(ctx context.Context, in Input, baseDir string, obs *observability.Ru
 	sheets := Paginate(us, foreign)
 	totalSheets := len(sheets)
 
-	stamp := in.GeneratedAt.Format("20060102-150405")
+	stamp := in.GeneratedAt.Format(domain.FileTimestampLayout)
 	dir := filepath.Join(baseDir, sanitizeID(string(in.Project.ID)), "ids-"+stamp)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		failed = true

@@ -372,7 +372,7 @@ func parseDateInput(raw string) (time.Time, error) {
 	if v == "" {
 		return time.Time{}, nil
 	}
-	return time.Parse("2006-01-02", v)
+	return time.Parse(domain.DateLayout, v)
 }
 
 // formatDateInput renders a time as YYYY-MM-DD for the edit overlay; empty for
@@ -381,7 +381,7 @@ func formatDateInput(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.UTC().Format("2006-01-02")
+	return t.UTC().Format(domain.DateLayout)
 }
 
 // formatDate renders a date as YYYY-MM-DD or "-" when zero.
@@ -389,7 +389,7 @@ func formatDate(t time.Time) string {
 	if t.IsZero() {
 		return "-"
 	}
-	return t.Format("2006-01-02")
+	return t.Format(domain.DateLayout)
 }
 
 func orDash(s string) string {

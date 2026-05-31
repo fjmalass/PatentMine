@@ -128,10 +128,10 @@ func runExpirationDate(args []string) int {
 		}
 		inventors = strings.Join(invs, ", ")
 		if !patentRec.ExpirationDate.IsZero() {
-			googleExpStr = patentRec.ExpirationDate.Format("2006-01-02")
+			googleExpStr = patentRec.ExpirationDate.Format(domain.DateLayout)
 		}
 		if !patentRec.GrantDate.IsZero() {
-			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
+			grantDateStr = patentRec.GrantDate.Format(domain.DateLayout)
 		}
 	}
 	if invTitle == "" {
@@ -247,7 +247,7 @@ func printResult(res proto.USPTOExpirationCalculateResult, sourceMode string) {
 		computedOn := "None"
 		if res.ComputedAt != "" {
 			if t, err := time.Parse(time.RFC3339, res.ComputedAt); err == nil {
-				computedOn = t.Local().Format("2006-01-02 15:04:05")
+				computedOn = t.Local().Format(domain.DateTimeLayout)
 			} else {
 				computedOn = res.ComputedAt
 			}
