@@ -125,6 +125,67 @@ func TestUSPTOCitationGraphCreatesCitationRelations(t *testing.T) {
 	}
 }
 
+// TestUSPTOCitationGraphStampsNeighborProvenance verifies that citation edges
+// ingested from the grant XML promote the cited stubs into every project the
+// citing patent belongs to with "neighbors" provenance — the same provenance a
+// Google-crawled citation receives via autoAssignDepth1Neighbors. Without this
+// the stub would have no membership and render as a generic "loading" stub.
+func TestUSPTOCitationGraphStampsNeighborProvenance(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+
+	root := domain.MustParsePatentNumber("US17730671")
+	if err := repo.SavePatent(ctx, domain.Patent{
+		Number:        root,
+		DisplayNumber: root,
+		FetchState:    domain.FetchCached,
+		Source:        domain.SourceUSPTO,
+	}); err != nil {
+		t.Fatalf("SavePatent root: %v", err)
+	}
+
+	project, err := eng.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      root,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedMethod: "direct",
+	}); err != nil {
+		t.Fatalf("AddMembership root: %v", err)
+	}
+
+	if _, err := eng.saveUSPTOCitationGraph(ctx, root, []domain.USPTOGrantCitation{
+		{CitationType: "patent", CitedCountry: "US", CitedDocNumber: "7654321", CitedKind: "B2"},
+	}); err != nil {
+		t.Fatalf("saveUSPTOCitationGraph: %v", err)
+	}
+
+	cited := domain.MustParsePatentNumber("US7654321B2")
+	m, err := repo.Membership(ctx, project.ID, cited)
+	if err != nil {
+		t.Fatalf("cited patent did not gain project membership: %v", err)
+	}
+	if m.AddedMethod != "neighbors" {
+		t.Fatalf("cited membership provenance = %q, want %q", m.AddedMethod, "neighbors")
+	}
+	if m.ParentPatentNumber != root {
+		t.Fatalf("cited membership parent = %s, want %s", m.ParentPatentNumber, root)
+	}
+
+	// The citing patent keeps its own "direct" provenance — stamping only
+	// touches neighbors, never the root.
+	rootMembership, err := repo.Membership(ctx, project.ID, root)
+	if err != nil {
+		t.Fatalf("root membership: %v", err)
+	}
+	if rootMembership.AddedMethod != "direct" {
+		t.Fatalf("root membership provenance = %q, want %q", rootMembership.AddedMethod, "direct")
+	}
+}
+
 // TestEngineAddToProjectAutoFetchesNewStub checks that adding a never-seen
 // patent enqueues a single-patent fetch (depth 0) so the record fills in.
 func TestEngineAddToProjectAutoFetchesNewStub(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,48 +16,124 @@ import (
 	"time"
 
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 )
 
 // usptoMinInterval keeps requests to the USPTO ODP API polite.
 const usptoMinInterval = 1 * time.Second
 
+type usptoSource struct {
+	strictSource *httpSource
+	broadSource  *httpSource
+	apiKey       string
+}
+
+func (s *usptoSource) Name() domain.Source {
+	return domain.SourceUSPTO
+}
+
+func (s *usptoSource) Fetch(ctx context.Context, number domain.PatentNumber) (Result, error) {
+	res, err := s.strictSource.Fetch(ctx, number)
+	if err == nil {
+		return res, nil
+	}
+
+	if errors.Is(err, ErrUSPTOApplicationNotFound) || errors.Is(err, ErrNotAvailable) {
+		slog.Info("crawl/uspto: strict query failed, attempting broad query fallback",
+			slog.String("raw_number", number.String()),
+			slog.String("error", err.Error()))
+		return s.broadSource.Fetch(ctx, number)
+	}
+
+	return Result{}, err
+}
+
+func (s *usptoSource) WithMetrics(metrics *observability.Metrics) {
+	s.strictSource.WithMetrics(metrics)
+	s.broadSource.WithMetrics(metrics)
+}
+
+func (s *usptoSource) WithLogger(logger *slog.Logger) {
+	s.strictSource.WithLogger(logger)
+	s.broadSource.WithLogger(logger)
+}
+
 // NewUSPTOSource builds a Source backed by the USPTO Patent File Wrapper API.
 func NewUSPTOSource(apiKey string) Source {
-	return &httpSource{
+	limiter := newLimiter(usptoMinInterval)
+	client := &http.Client{Timeout: httpTimeout}
+	headers := func() http.Header {
+		h := make(http.Header)
+		if strings.TrimSpace(apiKey) != "" {
+			h.Set("x-api-key", apiKey)
+		}
+		h.Set("Accept", "application/json")
+		return h
+	}
+
+	strict := &httpSource{
 		name:    domain.SourceUSPTO,
-		client:  &http.Client{Timeout: httpTimeout},
-		limiter: newLimiter(usptoMinInterval),
+		client:  client,
+		limiter: limiter,
 		urlFor: func(n domain.PatentNumber) string {
-			q := usptoQuery(n)
-			slog.Info("crawl/uspto: query formulation",
+			q := usptoStrictQuery(n)
+			slog.Info("crawl/uspto: query formulation (strict)",
 				slog.String("raw_number", n.String()),
 				slog.String("serial", n.Serial),
 				slog.String("kind", n.Kind),
 				slog.String("query", q))
 			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(q)
 		},
-		headers: func() http.Header {
-			h := make(http.Header)
-			if strings.TrimSpace(apiKey) != "" {
-				h.Set("x-api-key", apiKey)
-			}
-			h.Set("Accept", "application/json")
-			return h
+		headers: headers,
+		parse:   parseUSPTO,
+	}
+
+	broad := &httpSource{
+		name:    domain.SourceUSPTO,
+		client:  client,
+		limiter: limiter,
+		urlFor: func(n domain.PatentNumber) string {
+			q := usptoBroadQuery(n)
+			slog.Info("crawl/uspto: query formulation (broad)",
+				slog.String("raw_number", n.String()),
+				slog.String("serial", n.Serial),
+				slog.String("kind", n.Kind),
+				slog.String("query", q))
+			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(q)
 		},
-		parse: parseUSPTO,
+		headers: headers,
+		parse:   parseUSPTO,
+	}
+
+	return &usptoSource{
+		strictSource: strict,
+		broadSource:  broad,
+		apiKey:       apiKey,
 	}
 }
 
-func usptoQuery(n domain.PatentNumber) string {
+func usptoStrictQuery(n domain.PatentNumber) string {
+	serial := strings.TrimSpace(n.Serial)
+	if serial == "" {
+		return ""
+	}
+	if n.Kind != "" {
+		if strings.HasPrefix(n.Kind, "B") {
+			return fmt.Sprintf("applicationMetaData.patentNumber:%s", serial)
+		}
+		return fmt.Sprintf("applicationMetaData.publicationNumber:%s", serial)
+	}
+	return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s",
+		serial, serial, serial)
+}
+
+func usptoBroadQuery(n domain.PatentNumber) string {
 	serial := strings.TrimSpace(n.Serial)
 	if serial == "" {
 		return ""
 	}
 	norm := n.Normalized()
 	if n.Kind != "" {
-		// Serial is a grant/publication number, not an application number.
-		// Excluding applicationNumberText avoids false positives where an
-		// unrelated application happens to share the same serial digits.
 		if strings.HasPrefix(n.Kind, "B") {
 			if norm != "" && norm != serial {
 				return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q OR %q",
@@ -415,14 +492,35 @@ func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (
 	return usptoWrapperData{}, false
 }
 
-// SearchUSPTO queries the USPTO ODP API using a broad query across multiple fields
-// and returns candidate lightweight attrs rows.
+// SearchUSPTO queries the USPTO ODP API using a strict query, falling back to a broad query
+// across multiple fields only if no candidates are found, and returns candidate lightweight rows.
 func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
 	serial := strings.TrimSpace(number.Serial)
 	if serial == "" {
 		return nil, nil
 	}
-	query := usptoQuery(number)
+
+	// 1. Try strict search
+	candidates, err := searchUSPTOWithQuery(ctx, apiKey, number, usptoStrictQuery(number))
+	if err == nil && len(candidates) > 0 {
+		return candidates, nil
+	}
+
+	// 2. Try broad fallback search
+	slog.Info("crawl/uspto: SearchUSPTO strict query yielded no candidates, attempting broad fallback",
+		slog.String("raw_number", number.String()))
+
+	candidates, err = searchUSPTOWithQuery(ctx, apiKey, number, usptoBroadQuery(number))
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, ErrUSPTOApplicationNotFound
+	}
+	return candidates, nil
+}
+
+func searchUSPTOWithQuery(ctx context.Context, apiKey string, number domain.PatentNumber, query string) ([]domain.USPTOCandidate, error) {
 	slog.Info("crawl/uspto: SearchUSPTO query formulation",
 		slog.String("raw_number", number.String()),
 		slog.String("serial", number.Serial),
@@ -461,10 +559,6 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 	var wrapperResp usptoFileWrapperResponse
 	if err := json.Unmarshal(body, &wrapperResp); err != nil {
 		return nil, err
-	}
-
-	if len(wrapperResp.PatentFileWrapperDataBag) == 0 {
-		return nil, ErrUSPTOApplicationNotFound
 	}
 
 	var candidates []domain.USPTOCandidate

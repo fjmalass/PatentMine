@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -40,6 +41,48 @@ func googlePatentURL(n domain.PatentNumber) string {
 	return googlePatentURLPrefix + n.Normalized() + "/en"
 }
 
+// googleUserAgent is a current desktop-browser User-Agent. Google Patents
+// serves an anti-bot CAPTCHA interstitial to requests carrying Go's default
+// "Go-http-client" User-Agent, so every path that talks to Google must present
+// a browser-like fingerprint to be served real patent pages.
+const googleUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// googleBrowserHeaders returns the request headers that make crawl traffic look
+// like an ordinary browser, so Google Patents serves patent pages instead of a
+// CAPTCHA wall. Shared by the bibliographic Source and FetchFullText.
+func googleBrowserHeaders() http.Header {
+	h := make(http.Header)
+	h.Set("User-Agent", googleUserAgent)
+	h.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	h.Set("Accept-Language", "en-US,en;q=0.9")
+	return h
+}
+
+// googleBlockTitleMarkers are phrases that appear in the <title> of Google's
+// anti-bot / CAPTCHA interstitial, which is served with a 200 status and would
+// otherwise be mistaken for a patent page. They are multi-word so a legitimate
+// patent title cannot trip them.
+var googleBlockTitleMarkers = []string{
+	"unusual traffic",
+	"not a robot",
+	"confirm you are",
+	"before you continue",
+	"our systems have detected",
+}
+
+// googleBlocked reports whether the page is Google's anti-bot / CAPTCHA
+// interstitial rather than a patent record. It checks the title for known
+// challenge phrases and the body for a reCAPTCHA / "/sorry/" challenge form.
+func googleBlocked(doc *goquery.Document, title string) bool {
+	lower := strings.ToLower(title)
+	for _, marker := range googleBlockTitleMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return doc.Find("form#captcha-form, #recaptcha, .g-recaptcha, div#recaptcha").Length() > 0
+}
+
 // NewGoogleSource builds a Source backed by Google Patents. It shares the
 // package-level limiter and client so it cannot outpace FetchFullText.
 func NewGoogleSource() Source {
@@ -48,6 +91,7 @@ func NewGoogleSource() Source {
 		client:  googleClient,
 		limiter: googleLimiter,
 		urlFor:  googlePatentURL,
+		headers: googleBrowserHeaders,
 		parse:   parseGoogle,
 	}
 }
@@ -72,6 +116,20 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 		return Result{}, fmt.Errorf("crawl/google: parse HTML: %w", err)
 	}
 	title := clean(googleText(doc.Selection, "span[itemprop='title']", "meta[name='DC.title']", "title"))
+	if googleBlocked(doc, title) {
+		// Anti-bot / CAPTCHA interstitial served with a 200 status. Its title
+		// is non-empty, so without this guard it would be parsed as a blank
+		// "successful" patent and overwrite the stored record. Return a
+		// distinct error (wrapping ErrNotAvailable) so the crawler falls
+		// through and the block can be surfaced as a warning.
+		if Metrics != nil {
+			Metrics.IncCounter("crawl.google.blocked_total", 1)
+		}
+		slog.Warn("crawl/google: anti-bot/CAPTCHA interstitial served instead of patent page",
+			slog.String("number", number.String()),
+			slog.String("title", title))
+		return Result{}, ErrGoogleBlocked
+	}
 	if title == "" {
 		// Not a parseable patent page — let the registry fall through.
 		return Result{}, ErrNotAvailable
@@ -468,6 +526,7 @@ func FetchFullText(ctx context.Context, number domain.PatentNumber) (*domain.Ful
 	if err != nil {
 		return nil, fmt.Errorf("crawl/google: build full-text request: %w", err)
 	}
+	req.Header = googleBrowserHeaders()
 	resp, err := googleClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("crawl/google: fetch full text: %w", err)

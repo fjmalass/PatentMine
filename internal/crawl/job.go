@@ -51,6 +51,7 @@ func NewFamilyJobFromSource(crawler *Crawler, root domain.PatentNumber, depth in
 				Stubs:           p.Stubs,
 				Sources:         p.Sources,
 				Mode:            p.Mode,
+				Warnings:        p.Warnings,
 			}))
 		})
 	})

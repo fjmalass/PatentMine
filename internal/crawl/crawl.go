@@ -37,6 +37,7 @@ type Progress struct {
 	Stubs           []string // Numbers freshly stubbed in this event, if any.
 	Sources         []string // Providers (uspto, google, ...) that contributed snapshots for RecordNumber.
 	Mode            string   // Source-mode policy in effect during this crawl.
+	Warnings        []string // Non-fatal warnings (e.g. a source was blocked) raised this event; the UI keeps them visible even when the crawl succeeds.
 }
 
 // CrawlConfig bounds a crawl.
@@ -244,6 +245,16 @@ func (c *Crawler) crawl(ctx context.Context, root domain.PatentNumber, maxDepth 
 			Depth:           curDepth,
 			MaxDepth:        depthLimit,
 			Message:         msg,
+		})
+	})
+	ctx = WithWarningReporter(ctx, func(msg string) {
+		report(Progress{
+			CrawledCount:    ingested,
+			DiscoveredCount: len(seen),
+			PendingCount:    len(queue),
+			Depth:           curDepth,
+			MaxDepth:        depthLimit,
+			Warnings:        []string{msg},
 		})
 	})
 
@@ -662,6 +673,23 @@ func WithProgressReporter(ctx context.Context, report func(string)) context.Cont
 
 func ReportProgress(ctx context.Context, msg string) {
 	if report, ok := ctx.Value(progressReporterKey{}).(func(string)); ok {
+		report(msg)
+	}
+}
+
+type warningReporterKey struct{}
+
+// WithWarningReporter attaches a sink for non-fatal crawl warnings (e.g. a
+// source served an anti-bot page). Unlike progress messages, which are
+// transient and overwritten each tick, warnings are meant to persist in the UI
+// even when the crawl ultimately succeeds via another source.
+func WithWarningReporter(ctx context.Context, report func(string)) context.Context {
+	return context.WithValue(ctx, warningReporterKey{}, report)
+}
+
+// ReportWarning surfaces a non-fatal warning to any attached warning reporter.
+func ReportWarning(ctx context.Context, msg string) {
+	if report, ok := ctx.Value(warningReporterKey{}).(func(string)); ok {
 		report(msg)
 	}
 }

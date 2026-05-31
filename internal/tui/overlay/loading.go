@@ -65,6 +65,13 @@ type Loading struct {
 	doneCount  int // number of jobs that have finished
 	doneErrors []string
 
+	// Non-fatal warnings accumulated across progress events (e.g. Google was
+	// anti-bot blocked but USPTO satisfied the crawl). Kept distinct from
+	// doneErrors so a succeeded-with-warnings crawl is not shown as "Failed".
+	// Ordered by first-seen and deduped.
+	warnings []string
+	warnSet  map[string]bool
+
 	// Numbers seen across all progress events for this job set; ordered by
 	// first-seen and deduped so the done view can list them.
 	savedNumbers  []string
@@ -105,6 +112,7 @@ func NewLoading(theme render.Theme, jobIDs []string, title string, isLookup ...b
 		savedSet:      make(map[string]bool),
 		stubSet:       make(map[string]bool),
 		recordSources: make(map[string][]string),
+		warnSet:       make(map[string]bool),
 		spinner:    s,
 		startTime:  time.Now(),
 		lastTime:   time.Now(),
@@ -219,6 +227,12 @@ func (l *Loading) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 					if !l.stubSet[s] {
 						l.stubSet[s] = true
 						l.stubNumbers = append(l.stubNumbers, s)
+					}
+				}
+				for _, warning := range p.Warnings {
+					if warning != "" && !l.warnSet[warning] {
+						l.warnSet[warning] = true
+						l.warnings = append(l.warnings, warning)
 					}
 				}
 
@@ -465,6 +479,14 @@ func (l *Loading) viewDone(w int) string {
 		} else if l.isLookup {
 			b.WriteString("  " + l.theme.Dim.Render("Navigate to the patent in your catalog to see the loaded data.") + "\n")
 			b.WriteString("  " + l.theme.Dim.Render("Press L on any stub patent to re-fetch its data.") + "\n")
+		}
+	}
+	if len(l.warnings) > 0 {
+		b.WriteString("  " + l.theme.Warn.Render("Warnings") + "\n")
+		for _, warning := range l.warnings {
+			for _, line := range wrapText(warning, w-4) {
+				b.WriteString("  " + l.theme.Warn.Render(line) + "\n")
+			}
 		}
 	}
 	b.WriteByte('\n')

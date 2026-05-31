@@ -337,6 +337,23 @@ func (r *Repo) SetReviewStates(ctx context.Context, project domain.ProjectID, pa
 	return nil
 }
 
+// PromotePatentMemberships changes review states from one to another for a patent across all projects.
+func (r *Repo) PromotePatentMemberships(ctx context.Context, patent domain.PatentNumber, from, to domain.ReviewState) (err error) {
+	defer r.observeDuration("promote_patent_memberships", time.Now(), &err)
+	if !from.Valid() || !to.Valid() {
+		return fmt.Errorf("store/sqlite: invalid review state %q or %q", from, to)
+	}
+	_, err = r.writer.ExecContext(ctx, `
+		UPDATE membership
+		SET state = ?
+		WHERE patent_number = ? AND state = ?`,
+		string(to), patent.Normalized(), string(from))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: promote patent memberships: %w", err)
+	}
+	return nil
+}
+
 // DeleteMembership permanently removes a patent from a project.
 func (r *Repo) DeleteMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (err error) {
 	defer r.observeDuration("delete_membership", time.Now(), &err)
@@ -397,6 +414,29 @@ func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out [
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: list memberships: %w", err)
+	}
+	return out, nil
+}
+
+// ProjectsForPatent returns the IDs of every project the patent belongs to.
+func (r *Repo) ProjectsForPatent(ctx context.Context, patent domain.PatentNumber) (out []domain.ProjectID, err error) {
+	defer r.observeDuration("projects_for_patent", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT project_id FROM membership WHERE patent_number = ? ORDER BY project_id`,
+		patent.Normalized())
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: projects for patent: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan project id: %w", err)
+		}
+		out = append(out, domain.ProjectID(id))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: projects for patent: %w", err)
 	}
 	return out, nil
 }

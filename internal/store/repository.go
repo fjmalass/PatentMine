@@ -186,10 +186,14 @@ type Repository interface {
 	Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.Membership, error)
 	// SetReviewStates changes multiple memberships' states in a transaction, or returns ErrNotFound.
 	SetReviewStates(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) error
+	// PromotePatentMemberships changes review states from one to another for a patent across all projects.
+	PromotePatentMemberships(ctx context.Context, patent domain.PatentNumber, from, to domain.ReviewState) error
 	// DeleteMembership permanently removes a patent from a project. No-op if not a member.
 	DeleteMembership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) error
 	// Memberships returns every membership of a project.
 	Memberships(ctx context.Context, project domain.ProjectID) ([]domain.Membership, error)
+	// ProjectsForPatent returns the IDs of every project the patent belongs to.
+	ProjectsForPatent(ctx context.Context, patent domain.PatentNumber) ([]domain.ProjectID, error)
 
 	// CreateTag returns the project's tag of the given name, creating it when
 	// the project does not have it yet. The name is matched as stored.

@@ -292,6 +292,73 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 	return fetchStarted, jobID, nil, nil, nil, alreadyInDB, nil
 }
 
+// neighborMethod maps a family-graph edge kind to the membership provenance
+// recorded when a neighbor is promoted into a project. Parent/child edges are
+// "related"; citation edges (and anything else) are "neighbors". These are the
+// only two methods the TUI renders with their own provenance glyph rather than
+// the generic "loading" stub label (see pane.shouldShowStubAsLoading). Every
+// path that discovers family edges — AddRelated, the crawl-progress watcher,
+// and the grant-XML citation graph — derives provenance through here so they
+// cannot drift apart.
+func neighborMethod(kind domain.RelationKind) string {
+	switch kind {
+	case domain.RelationParent, domain.RelationChild:
+		return "related"
+	default:
+		return "neighbors"
+	}
+}
+
+// stampNeighborProvenance grants project membership (with kind-derived
+// provenance) to every neighbor reached from root by rels, in each project
+// root already belongs to. It is the ingest-time companion of AddRelated and
+// autoAssignDepth1Neighbors: whichever path persists family edges — the crawl
+// progress stream or the on-demand grant-XML citation graph — records the same
+// provenance, so a discovered stub never falls back to the generic "loading"
+// label. Best-effort: the edges are already persisted, so a stamping failure
+// is logged, not propagated.
+func (e *Engine) stampNeighborProvenance(ctx context.Context, root domain.PatentNumber, rels []domain.Relation) {
+	if root.IsZero() || len(rels) == 0 {
+		return
+	}
+	projects, err := e.repo.ProjectsForPatent(ctx, root)
+	if err != nil {
+		e.log(ctx, slog.LevelWarn, "stamp neighbor provenance: projects lookup failed",
+			slog.String("root", root.String()), slog.String("error", err.Error()))
+		return
+	}
+	if len(projects) == 0 {
+		return
+	}
+	mode := e.currentSourceMode()
+	for _, project := range projects {
+		for _, rel := range rels {
+			neighbor := rel.To
+			if neighbor.IsZero() || neighbor == root {
+				continue
+			}
+			if _, exists := e.existingMembership(ctx, project, neighbor); exists {
+				continue
+			}
+			m := domain.Membership{
+				Project:            project,
+				Patent:             neighbor,
+				ReviewState:        domain.ReviewStateUnknown,
+				AddedAt:            time.Now().UTC(),
+				AddedMethod:        neighborMethod(rel.Kind),
+				ParentPatentNumber: root,
+				SourceMode:         mode,
+			}
+			if err := e.repo.AddMembership(ctx, m); err != nil {
+				e.log(ctx, slog.LevelWarn, "stamp neighbor provenance: membership insert failed",
+					slog.String("project_id", string(project)),
+					slog.String("neighbor", neighbor.String()),
+					slog.String("error", err.Error()))
+			}
+		}
+	}
+}
+
 // AddRelated grants project membership to every family-graph neighbor of
 // patent that does not yet have one. It is the explicit "promote the stubs
 // the lookup discovered" operation: the caller has chosen which patent's
@@ -313,25 +380,15 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 	seen := map[domain.PatentNumber]bool{record: true}
 	for _, rel := range rels {
 		var neighbor domain.PatentNumber
-		var method string
 		switch record {
 		case rel.From:
 			neighbor = rel.To
-			if rel.Kind == "parent" || rel.Kind == "child" {
-				method = "related"
-			} else {
-				method = "neighbors"
-			}
 		case rel.To:
 			neighbor = rel.From
-			if rel.Kind == "parent" || rel.Kind == "child" {
-				method = "related"
-			} else {
-				method = "neighbors"
-			}
 		default:
 			continue
 		}
+		method := neighborMethod(rel.Kind)
 		if seen[neighbor] {
 			continue
 		}
@@ -427,9 +484,7 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 				method := "neighbors"
 				for _, rel := range rels {
 					if (rel.From == root && rel.To == neighbor) || (rel.To == root && rel.From == neighbor) {
-						if rel.Kind == "parent" || rel.Kind == "child" {
-							method = "related"
-						}
+						method = neighborMethod(rel.Kind)
 						break
 					}
 				}

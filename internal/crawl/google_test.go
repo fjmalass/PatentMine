@@ -169,6 +169,30 @@ func TestParseGoogleUnknownPageIsNotAvailable(t *testing.T) {
 	}
 }
 
+func TestParseGoogleCaptchaDetection(t *testing.T) {
+	number := domain.MustParsePatentNumber("US10000000B2")
+	pages := map[string]string{
+		"title phrase": `<html><head><title>Before you continue to Google</title></head>` +
+			`<body><p>Our systems have detected unusual traffic.</p></body></html>`,
+		"recaptcha form": `<html><head><title>Some Patent Title</title></head>` +
+			`<body><form id="captcha-form"><div class="g-recaptcha"></div></form></body></html>`,
+	}
+	for name, page := range pages {
+		t.Run(name, func(t *testing.T) {
+			_, err := parseGoogle(number, []byte(page))
+			// A CAPTCHA page has a non-empty title; without detection it would
+			// parse as a blank "successful" patent and overwrite the record.
+			if !errors.Is(err, ErrGoogleBlocked) {
+				t.Fatalf("parseGoogle on a CAPTCHA page = %v, want ErrGoogleBlocked", err)
+			}
+			// It must also satisfy ErrNotAvailable so the crawler falls through.
+			if !errors.Is(err, ErrNotAvailable) {
+				t.Fatalf("ErrGoogleBlocked must wrap ErrNotAvailable; got %v", err)
+			}
+		})
+	}
+}
+
 func TestParseGoogleExtractsMetaTags(t *testing.T) {
 	googleMetaPage := `<!doctype html><html><head>
 <meta name="DC.title" content="Meta title"/>

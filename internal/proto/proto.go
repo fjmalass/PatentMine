@@ -832,6 +832,7 @@ type CrawlProgress struct {
 	Stubs           []string `json:"stubs,omitempty"`         // Numbers freshly stubbed in this event, if any.
 	Sources         []string `json:"sources,omitempty"`       // Providers (uspto, google, ...) that contributed snapshots for RecordNumber.
 	Mode            string   `json:"mode,omitempty"`          // Source-mode policy in effect (compare, uspto-first, uspto-only, google-only).
+	Warnings        []string `json:"warnings,omitempty"`      // Non-fatal warnings (e.g. a source was anti-bot blocked) raised this event.
 }
 
 // MembershipAutoAssign reports the result of the engine's depth-1 auto-assign

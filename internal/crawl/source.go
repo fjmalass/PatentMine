@@ -37,6 +37,14 @@ var (
 	ErrUSPTOGrantDocumentNotFound = errors.New("crawl/uspto: grant document meta not present (only application or pre-grant data available)")
 )
 
+// ErrGoogleBlocked indicates Google Patents served an anti-bot / CAPTCHA
+// interstitial (typically with a 200 status) instead of a patent page. It
+// wraps ErrNotAvailable so the crawler falls through to other sources rather
+// than overwriting a stored record with the blank CAPTCHA page. Callers that
+// want to surface the block as a non-fatal warning (e.g. in compare mode,
+// where USPTO still satisfies the crawl) test for it with errors.Is.
+var ErrGoogleBlocked = fmt.Errorf("crawl/google: blocked by anti-bot/CAPTCHA interstitial: %w", ErrNotAvailable)
+
 // Result is one patent fetched from a Source: the record's bibliographic data,
 // its life-stage documents (application, publication, grant), and the
 // family-graph edges discovered alongside it.
@@ -271,6 +279,12 @@ func (r *Registry) FetchExcluding(ctx context.Context, number domain.PatentNumbe
 			return Result{}, ctx.Err()
 		}
 		if errors.Is(err, ErrNotAvailable) {
+			if errors.Is(err, ErrGoogleBlocked) {
+				if r.metrics != nil {
+					r.metrics.IncCounter("crawl.source.google.blocked_total", 1)
+				}
+				ReportWarning(ctx, fmt.Sprintf("Google Patents blocked the request for %s (anti-bot/CAPTCHA).", number))
+			}
 			if r.metrics != nil {
 				r.metrics.IncCounter("crawl.source."+string(s.Name())+".not_available_total", 1)
 			}
@@ -342,6 +356,12 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		}
 
 		if err != nil {
+			if errors.Is(err, ErrGoogleBlocked) {
+				if r.metrics != nil {
+					r.metrics.IncCounter("crawl.source.google.blocked_total", 1)
+				}
+				ReportWarning(ctx, fmt.Sprintf("Google Patents blocked the request for %s (anti-bot/CAPTCHA); kept USPTO data only.", fetchNumber))
+			}
 			if !errors.Is(err, ErrNotAvailable) && ctx.Err() == nil {
 				r.log().Warn("google comparison fetch failed",
 					slog.String("number", fetchNumber.String()),

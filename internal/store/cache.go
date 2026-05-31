@@ -193,6 +193,14 @@ func (c *Cache) SetReviewStates(ctx context.Context, project domain.ProjectID, p
 	return nil
 }
 
+func (c *Cache) PromotePatentMemberships(ctx context.Context, patent domain.PatentNumber, from, to domain.ReviewState) error {
+	if err := c.Repository.PromotePatentMemberships(ctx, patent, from, to); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
 func (c *Cache) TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) error {
 	if err := c.Repository.TagPatents(ctx, tagID, patents, assignedAt); err != nil {
 		return err

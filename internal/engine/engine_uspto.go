@@ -365,6 +365,58 @@ func (e *Engine) ingestUSPTOXML(ctx context.Context, n domain.PatentNumber, kind
 			"claims_chars":       len(bundle.Body.ClaimsText),
 		},
 	})
+
+	if p, err := e.repo.Patent(ctx, n); err == nil {
+		updated := false
+		if p.Title == "" && bundle.Summary.InventionTitle != "" {
+			p.Title = bundle.Summary.InventionTitle
+			updated = true
+		}
+		if p.Abstract == "" && bundle.Body.AbstractText != "" {
+			p.Abstract = bundle.Body.AbstractText
+			updated = true
+		}
+		if len(p.Inventors) == 0 {
+			var inventors []domain.Inventor
+			for _, party := range bundle.Parties {
+				if party.Role == "inventor" {
+					name := strings.TrimSpace(strings.Join([]string{party.FirstName, party.LastName}, " "))
+					if name != "" {
+						inventors = append(inventors, domain.Inventor(name))
+					}
+				}
+			}
+			if len(inventors) > 0 {
+				p.Inventors = inventors
+				updated = true
+			}
+		}
+		if p.Assignee == "" {
+			var assignees []string
+			for _, party := range bundle.Parties {
+				if party.Role == "assignee" {
+					name := party.OrgName
+					if name == "" {
+						name = strings.TrimSpace(strings.Join([]string{party.FirstName, party.LastName}, " "))
+					}
+					if name != "" {
+						assignees = append(assignees, name)
+					}
+				}
+			}
+			if len(assignees) > 0 {
+				p.Assignee = strings.Join(assignees, "; ")
+				updated = true
+			}
+		}
+		if updated {
+			if saveErr := e.repo.SavePatent(ctx, p); saveErr == nil {
+				e.log(ctx, slog.LevelInfo, "updated patent bibliographic details from xml ingestion",
+					slog.String("patent", n.Normalized()))
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -422,6 +474,12 @@ func (e *Engine) saveUSPTOCitationGraph(ctx context.Context, record domain.Paten
 	if err := e.repo.SaveNode(ctx, batch); err != nil {
 		return 0, err
 	}
+	// Citation edges arrive here from the on-demand grant-XML ingest, outside
+	// the crawl-progress stream that autoAssignDepth1Neighbors watches. Stamp
+	// neighbor provenance through the shared path so cited stubs get the same
+	// "neighbors" membership a Google-crawled citation would, instead of
+	// rendering as a generic "loading" stub.
+	e.stampNeighborProvenance(ctx, record, batch.Relations)
 	return len(batch.Relations), nil
 }
 
@@ -598,6 +656,14 @@ func (e *Engine) autoFetchUSPTOXMLAfterCrawl(record domain.PatentNumber, id JobI
 			return
 		}
 		e.incCounter("uspto.auto_fetch_xml.ok", 1)
+
+		if p, err := e.repo.Patent(ctx, record); err == nil && p.Title != "" {
+			for _, from := range []domain.ReviewState{domain.ReviewStateNeedsTriage, domain.ReviewStateUnknown} {
+				if perr := e.repo.PromotePatentMemberships(ctx, record, from, domain.ReviewStateUnderReview); perr == nil {
+					e.announceChange()
+				}
+			}
+		}
 		return
 	}
 }
