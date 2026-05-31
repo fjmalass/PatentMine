@@ -43,6 +43,16 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 		return proto.USPTOFetchXMLResult{}, fmt.Errorf("engine: load uspto application: %w", err)
 	}
 
+	// Empty kind means "auto": prefer the granted XML when its URL is on
+	// record, else fall back to the pre-grant publication. Mirrors the
+	// kind selection the auto-fetch-after-add path already uses.
+	if kind == "" {
+		kind = pickAutoFetchKind(app)
+		if kind == "" {
+			return proto.USPTOFetchXMLResult{}, fmt.Errorf("engine: no grant or pgpub XML url for %s", n.Normalized())
+		}
+	}
+
 	downloadURL, xmlName := xmlTarget(app, kind)
 	if downloadURL == "" {
 		return proto.USPTOFetchXMLResult{}, fmt.Errorf("engine: no %s XML url for %s", kind, n.Normalized())

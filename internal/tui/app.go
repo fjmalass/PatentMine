@@ -160,6 +160,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.AddUSPTO:                   (*App).cmdAddUSPTO,
 	command.AddGoogle:                  (*App).cmdAddGoogle,
 	command.AddRelated:                 (*App).cmdAddRelated,
+	command.FetchUSPTO:                 (*App).cmdFetchUSPTO,
 	command.FetchUSPTOPGPub:            (*App).cmdFetchUSPTOPGPub,
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.FetchUSPTOAssignments:      (*App).cmdFetchUSPTOAssignments,

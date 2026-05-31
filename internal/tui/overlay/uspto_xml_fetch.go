@@ -86,6 +86,9 @@ func kindLabel(k proto.USPTOXMLKind) string {
 		return "PGPub"
 	case proto.USPTOXMLKindGrant:
 		return "Grant"
+	case "":
+		// Auto kind: the engine resolves grant-vs-pgpub server-side.
+		return "USPTO"
 	}
 	return string(k)
 }

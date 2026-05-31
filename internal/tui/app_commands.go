@@ -579,6 +579,13 @@ func (a *App) cmdAddRelated(inv invocation) (tea.Model, tea.Cmd) {
 	})
 }
 
+// cmdFetchUSPTO fetches the best available USPTO XML for the selection: an
+// empty kind tells the engine to prefer the grant and fall back to the
+// pre-grant publication when no grant body is on record.
+func (a *App) cmdFetchUSPTO(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdFetchUSPTOXML(inv, "", command.FetchUSPTO)
+}
+
 func (a *App) cmdFetchUSPTOPGPub(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdFetchUSPTOXML(inv, proto.USPTOXMLKindPGPub, command.FetchUSPTOPGPub)
 }
