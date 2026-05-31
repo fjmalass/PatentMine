@@ -72,6 +72,30 @@ func (r *Repo) Documents(ctx context.Context, recordNumber domain.PatentNumber) 
 	return out, nil
 }
 
+// rowQuerier is satisfied by *sql.DB and *sql.Tx, letting helpers run on either
+// the shared reader/writer or inside a transaction.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// recordID resolves a record's surrogate id from its canonical number. Source-
+// derived tables (record_alias, source_bib, uspto_application, source_snapshot,
+// source_diff) key off this stable id rather than the number, so their rows can
+// never reference a number that has no record row — the foreign-key class of bug
+// that motivated the surrogate. Returns store.ErrNotFound when no record has the
+// number yet.
+func recordID(ctx context.Context, q rowQuerier, number domain.PatentNumber) (string, error) {
+	var id string
+	err := q.QueryRowContext(ctx, `SELECT id FROM record WHERE number = ?`, number.Normalized()).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", store.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("store/sqlite: record id of %s: %w", number, err)
+	}
+	return id, nil
+}
+
 // RecordOf returns the record number a document number belongs to, or
 // store.ErrNotFound when the number is unknown.
 func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (record domain.PatentNumber, err error) {
@@ -129,7 +153,7 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 		{`UPDATE OR IGNORE relation SET to_number = ? WHERE to_number = ?`, []any{k, a}},
 		{`DELETE FROM relation WHERE from_number = ? OR to_number = ?`, []any{a, a}},
 		{`DELETE FROM relation WHERE from_number = to_number`, nil},
-		{`DELETE FROM patent WHERE number = ?`, []any{a}},
+		{`DELETE FROM record WHERE number = ?`, []any{a}},
 	}
 	for _, s := range steps {
 		if err := exec(s.query, s.args...); err != nil {
@@ -149,7 +173,7 @@ func (r *Repo) CheckCollisions(ctx context.Context) (out []store.CollisionCandid
 	rows, err := r.reader.QueryContext(ctx, `
 		SELECT d.country || d.serial AS app_num, d.record_number, p.title
 		FROM document d
-		JOIN patent p ON d.record_number = p.number
+		JOIN record p ON d.record_number = p.number
 		WHERE (d.country, d.serial) IN (
 			SELECT country, serial
 			FROM document

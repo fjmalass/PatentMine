@@ -89,6 +89,9 @@ const (
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
 	MethodSourceDiffsList    Method = "source.diffs.list"
+	// MethodSourceBibsList loads each source's full bibliographic snapshot for
+	// the all-fields side-by-side comparison view.
+	MethodSourceBibsList Method = "source.bibs.list"
 )
 
 // USPTOGrantBodyParams identifies the (patent, kind) whose parsed body should
@@ -234,6 +237,16 @@ type SourceDiffsListParams struct {
 
 type SourceDiffsListResult struct {
 	Diffs []domain.SourceDiff `json:"diffs"`
+}
+
+// SourceBibsListParams / Result load each source's full bibliographic snapshot
+// for the all-fields side-by-side comparison view.
+type SourceBibsListParams struct {
+	Number domain.PatentNumber `json:"number"`
+}
+
+type SourceBibsListResult struct {
+	Bibs []domain.SourceBib `json:"bibs"`
 }
 
 type USPTOLookupParams struct {

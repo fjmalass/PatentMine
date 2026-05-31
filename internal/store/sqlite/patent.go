@@ -77,7 +77,7 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 // every dependent row.
 func (r *Repo) DeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
 	defer r.observeDuration("delete_patent", time.Now(), &err)
-	res, err := r.writer.ExecContext(ctx, `DELETE FROM patent WHERE number = ?`, n.Normalized())
+	res, err := r.writer.ExecContext(ctx, `DELETE FROM record WHERE number = ?`, n.Normalized())
 	if err != nil {
 		return fmt.Errorf("store/sqlite: delete patent %s: %w", n, err)
 	}
@@ -90,7 +90,7 @@ func (r *Repo) DeletePatent(ctx context.Context, n domain.PatentNumber) (err err
 // patentDemoteSQL clears the bibliographic columns of a patent row and sets
 // fetch_state to "stub". Identity columns (country/serial/kind/display_number)
 // are preserved so the row remains a valid stub referenced by surviving edges.
-const patentDemoteSQL = `UPDATE patent SET
+const patentDemoteSQL = `UPDATE record SET
 	title='', abstract='', assignee='', inventors='[]',
 	fetch_state=?, source='',
 	application_date=?, publication_date=?, grant_date=?, fetched_at=?,
@@ -134,7 +134,7 @@ func (r *Repo) softDeletePatents(ctx context.Context, patents []domain.PatentNum
 	for _, p := range patents {
 		key := p.Normalized()
 		var exists int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM patent WHERE number = ?`, key).Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM record WHERE number = ?`, key).Scan(&exists); err != nil {
 			return fmt.Errorf("store/sqlite: soft delete check %s: %w", p, err)
 		}
 		if exists == 0 {
@@ -168,7 +168,7 @@ func (r *Repo) softDeletePatents(ctx context.Context, patents []domain.PatentNum
 		if inbound > 0 {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM patent WHERE number = ?`, key); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM record WHERE number = ?`, key); err != nil {
 			return fmt.Errorf("store/sqlite: soft delete orphan purge %s: %w", p, err)
 		}
 		orphanPurged++
@@ -201,7 +201,7 @@ func (r *Repo) DeletePatents(ctx context.Context, patents []domain.PatentNumber)
 		}
 	}()
 
-	stmt, err := tx.PrepareContext(ctx, `DELETE FROM patent WHERE number = ?`)
+	stmt, err := tx.PrepareContext(ctx, `DELETE FROM record WHERE number = ?`)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: delete patents prepare: %w", err)
 	}
@@ -230,7 +230,7 @@ func (r *Repo) Patent(ctx context.Context, n domain.PatentNumber) (patent domain
 		n = recNum
 	}
 	row := r.reader.QueryRowContext(ctx,
-		`SELECT `+patentColumns+` FROM patent p WHERE p.number = ?`, n.Normalized())
+		`SELECT `+patentColumns+` FROM record p WHERE p.number = ?`, n.Normalized())
 	p, err := scanPatent(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Patent{}, store.ErrNotFound
@@ -272,7 +272,7 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 	if limit <= 0 {
 		limit = store.DefaultPageSize
 	}
-	query := `SELECT ` + cols + ` FROM patent p` + where +
+	query := `SELECT ` + cols + ` FROM record p` + where +
 		` ORDER BY ` + orderBy + ` LIMIT ? OFFSET ?`
 	args := append(colArgs, whereArgs...)
 	args = append(args, orderArgs...)
@@ -323,11 +323,11 @@ func (r *Repo) ListOrphanPatents(ctx context.Context, limit, offset int) (out []
 	}
 	const orphanWhere = `WHERE NOT EXISTS (SELECT 1 FROM membership m WHERE m.patent_number = p.number)`
 	if err := r.reader.QueryRowContext(ctx,
-		`SELECT COUNT(1) FROM patent p `+orphanWhere).Scan(&total); err != nil {
+		`SELECT COUNT(1) FROM record p `+orphanWhere).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store/sqlite: count orphan patents: %w", err)
 	}
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT `+cols+` FROM patent p `+orphanWhere+
+		`SELECT `+cols+` FROM record p `+orphanWhere+
 			` ORDER BY p.fetched_at DESC, p.number ASC LIMIT ? OFFSET ?`,
 		limit, offset)
 	if err != nil {
@@ -562,7 +562,7 @@ func (r *Repo) CountPatents(ctx context.Context, q store.PatentQuery) (count int
 	}
 	var n int
 	if err := r.reader.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM patent p`+where, args...).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM record p`+where, args...).Scan(&n); err != nil {
 		return 0, fmt.Errorf("store/sqlite: count patents: %w", err)
 	}
 	return n, nil
@@ -637,7 +637,7 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 		// Number stays a substring LIKE so a partial patent number still
 		// matches mid-token; title and abstract go through the FTS5 index.
 		conds = append(conds, "(p.number LIKE ? OR p.rowid IN "+
-			"(SELECT rowid FROM patent_fts WHERE patent_fts MATCH ?))")
+			"(SELECT rowid FROM record_fts WHERE record_fts MATCH ?))")
 		args = append(args, "%"+q.Search+"%", ftsQuery(q.Search))
 	}
 
@@ -724,7 +724,7 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 	case filterexpr.FieldClass:
 		return `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE UPPER(json_each.value) LIKE ? ESCAPE '\')`, []any{classificationLikePattern(term.Class.Raw, term.Class.Wildcard)}, nil
 	case filterexpr.FieldSearch:
-		return `(p.number LIKE ? OR p.rowid IN (SELECT rowid FROM patent_fts WHERE patent_fts MATCH ?))`, []any{"%" + term.Value + "%", ftsQuery(term.Value)}, nil
+		return `(p.number LIKE ? OR p.rowid IN (SELECT rowid FROM record_fts WHERE record_fts MATCH ?))`, []any{"%" + term.Value + "%", ftsQuery(term.Value)}, nil
 	case filterexpr.FieldInventor:
 		if term.Inventor.Wildcard {
 			return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\')`, []any{wildcardLikePattern(term.Inventor.Raw, false)}, nil
@@ -977,7 +977,7 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 		}
 
 		query := `SELECT p.number, COALESCE(m.state, '') AS state, COALESCE(t.name, '') AS tag_name
-			FROM patent p
+			FROM record p
 			LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
 			LEFT JOIN patent_tag pt ON pt.patent_number = p.number
 			LEFT JOIN tag t ON t.id = pt.tag_id AND t.project_id = ?
@@ -1029,7 +1029,7 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID) (out []domain.AssigneeStats, err error) {
 	defer r.observeDuration("patent_assignee_stats", time.Now(), &err)
 	query := `SELECT p.assignee, p.number, COALESCE(m.state, ''), COALESCE(t.name, '')
-		FROM patent p
+		FROM record p
 		LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
 		LEFT JOIN patent_tag pt ON pt.patent_number = p.number
 		LEFT JOIN tag t ON t.id = pt.tag_id AND t.project_id = ?
@@ -1093,7 +1093,7 @@ func (r *Repo) PatentClassificationStats(ctx context.Context, project domain.Pro
 	defer r.observeDuration("patent_classification_stats", time.Now(), &err)
 	query := `SELECT json_each.value, p.number, COALESCE(m.state, ''), COALESCE(t.name, ''),
 		COALESCE(cd.system, ''), COALESCE(cd.description, '')
-		FROM patent p
+		FROM record p
 		JOIN json_each(p.classifications)
 		LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
 		LEFT JOIN patent_tag pt ON pt.patent_number = p.number

@@ -81,6 +81,9 @@ type NodeBatch struct {
 	USPTOForeignPriority []domain.USPTOForeignPriority
 	SourceSnapshots      []domain.SourceSnapshot
 	SourceDiffs          []domain.SourceDiff
+	// SourceBibs holds each source's bibliographic snapshot for this record, the
+	// substrate for side-by-side source comparison.
+	SourceBibs []domain.SourceBib
 }
 
 // Repository is the persistence contract. Every method takes a context so the
@@ -267,6 +270,10 @@ type Repository interface {
 	// ListSourceSnapshots returns fetch provenance snapshots for a patent (newest first).
 	// Supports audit and future diff reconstruction.
 	ListSourceSnapshots(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceSnapshot, error)
+
+	// SourceBibs returns each source's bibliographic snapshot for a record, for
+	// side-by-side comparison ("see both versions"). Ordered by source.
+	SourceBibs(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceBib, error)
 
 	// CheckCollisions scans the database for collision/merge candidates.
 	CheckCollisions(ctx context.Context) ([]CollisionCandidate, error)

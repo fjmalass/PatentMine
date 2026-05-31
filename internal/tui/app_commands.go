@@ -137,6 +137,46 @@ func (a *App) openSourceCompare(number domain.PatentNumber) (tea.Model, tea.Cmd)
 	return a, nil
 }
 
+// cmdSourceBibs opens the read-only all-fields side-by-side source view for the
+// focused patent.
+func (a *App) cmdSourceBibs(inv invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	number, ok := a.focusedPane().Selection()
+	if !ok || number.IsZero() {
+		a.setErr(text.StatusGeneric, "no patent selected (focus a detail pane first)")
+		return a, nil
+	}
+	return a.openSourceBibs(number)
+}
+
+// openSourceBibs loads every source's bibliographic snapshot for number and
+// opens the all-fields comparison overlay.
+func (a *App) openSourceBibs(number domain.PatentNumber) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var res proto.SourceBibsListResult
+	if err := a.client.Call(ctx, proto.MethodSourceBibsList, proto.SourceBibsListParams{Number: number}, &res); err != nil {
+		a.setErr(text.StatusGeneric, "load source bibs failed: "+err.Error())
+		return a, nil
+	}
+
+	o := overlay.NewSourceBibsOverlay(a.theme, number, res.Bibs)
+	a.overlays = append(a.overlays, o)
+	a.setStatus(text.StatusGeneric, fmt.Sprintf("Source bibliography — %s (%d sources)", number, len(res.Bibs)))
+	a.log().Info("source bibliography opened",
+		slog.String("patent", number.String()),
+		slog.Int("source_count", len(res.Bibs)))
+	return a, nil
+}
+
 func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 	o, cmd := overlay.NewMetricsOverlay(a.client, a.theme, a.text, a.metrics)
 	a.overlays = append(a.overlays, o)

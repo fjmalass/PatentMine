@@ -133,6 +133,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodUSPTOExpirationCalculate:  s.usptoExpirationCalculate,
 		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:           s.sourceDiffsList,
+		proto.MethodSourceBibsList:            s.sourceBibsList,
 	}
 	return s
 }
@@ -1327,6 +1328,18 @@ func (s *Server) sourceDiffsList(ctx context.Context, raw json.RawMessage) (any,
 	return proto.SourceDiffsListResult{Diffs: diffs}, nil
 }
 
+func (s *Server) sourceBibsList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.SourceBibsListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	bibs, err := s.engine.SourceBibs(ctx, p.Number)
+	if err != nil {
+		return nil, err
+	}
+	return proto.SourceBibsListResult{Bibs: bibs}, nil
+}
+
 func (s *Server) usptoLookup(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.USPTOLookupParams](raw)
 	if err != nil {
@@ -1379,11 +1392,19 @@ func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessa
 		}
 		inventors = strings.Join(invs, ", ")
 
-		if !patentRec.ExpirationDate.IsZero() {
-			googleExpStr = patentRec.ExpirationDate.Format("2006-01-02")
-		}
 		if !patentRec.GrantDate.IsZero() {
 			grantDateStr = patentRec.GrantDate.Format("2006-01-02")
+		}
+	}
+	// The "Google estimate" comparison value comes from Google's own source_bib
+	// row, not the record projection — the projection now holds the authoritative
+	// USPTO computed date after ComputeAndStoreUSPTOExpiration runs above.
+	if bibs, bibErr := s.engine.SourceBibs(ctx, p.Number); bibErr == nil {
+		for _, bib := range bibs {
+			if bib.Source == domain.SourceGoogle && !bib.ExpirationDate.IsZero() {
+				googleExpStr = bib.ExpirationDate.Format("2006-01-02")
+				break
+			}
 		}
 	}
 	if title == "" {

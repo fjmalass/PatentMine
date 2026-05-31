@@ -445,6 +445,7 @@ func (c *Crawler) ingestNode(ctx context.Context, res Result, depth, depthLimit 
 		USPTOForeignPriority: res.USPTOForeignPriority,
 		SourceSnapshots:      stampSourceSnapshots(res.SourceSnapshots, recordNumber),
 		SourceDiffs:          stampSourceDiffs(res.SourceDiffs, recordNumber),
+		SourceBibs:           stampSourceBibs(res.SourceBibs, recordNumber),
 	}
 	stubbed := map[domain.PatentNumber]bool{}
 
@@ -548,6 +549,15 @@ func stampSourceDiffs(in []domain.SourceDiff, record domain.PatentNumber) []doma
 	for _, diff := range in {
 		diff.PatentNumber = record
 		out = append(out, diff)
+	}
+	return out
+}
+
+func stampSourceBibs(in []domain.SourceBib, record domain.PatentNumber) []domain.SourceBib {
+	out := make([]domain.SourceBib, 0, len(in))
+	for _, bib := range in {
+		bib.RecordNumber = record
+		out = append(out, bib)
 	}
 	return out
 }

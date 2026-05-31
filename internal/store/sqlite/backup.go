@@ -114,7 +114,7 @@ func (r *Repo) Status(ctx context.Context) (*DBStatus, error) {
 	}
 
 	// Query counts for primary tables
-	tables := []string{"patent", "document", "patent_relation", "project", "membership", "patent_tag", "patent_note"}
+	tables := []string{"record", "document", "relation", "project", "membership", "patent_tag", "project_patent_note", "source_bib"}
 	for _, tbl := range tables {
 		var count int
 		query := fmt.Sprintf("SELECT count(*) FROM %s", tbl)

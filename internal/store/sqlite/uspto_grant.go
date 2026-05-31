@@ -252,7 +252,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 			// Also update the main patent row's GrantDate, DisplayNumber, and FetchState
 			// to reflect the complete grant number from the XML ingestion.
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE patent SET
+				UPDATE record SET
 					grant_date = ?,
 					display_number = ?
 				WHERE number = ?`,

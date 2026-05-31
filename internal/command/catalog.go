@@ -119,6 +119,7 @@ const (
 	Import         ID = "patent.import"
 	SourceMode     ID = "source.mode"
 	SourceCompare  ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
+	SourceBibs     ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -294,6 +295,7 @@ func Default() (*Registry, error) {
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
 		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode"}, Usage: ":source.mode <compare|uspto-first|uspto-only|google-only>", Kind: KindView},
 		Command{ID: SourceCompare, Name: "source.compare", Aliases: []string{"compare", "compare-sources"}, Usage: ":source.compare", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: SourceBibs, Name: "source.bibs", Aliases: []string{"sources", "both"}, Usage: ":source.bibs", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: CrawlCancel, Kind: KindEngine, Method: proto.MethodCrawlCancel},
 
 		// --- full text viewer (view) ---

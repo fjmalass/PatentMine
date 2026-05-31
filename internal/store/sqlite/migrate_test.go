@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"patentmine/internal/domain"
 )
 
 // legacySchemaSQL is the pre-migration-F shape: a standalone project_ids table,
@@ -63,6 +65,119 @@ func writeLegacyDB(t *testing.T, path string) {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("seed legacy db: %v", err)
 		}
+	}
+}
+
+// v3SchemaSQL is a faithful subset of the schema_version=3 shape: the patent
+// table with its full column set, the corpus/user tables that FK patent(number),
+// and a couple of re-fetchable source tables. Enough to exercise the real
+// v3→v4 upgrade through Open().
+const v3SchemaSQL = `
+CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO schema_meta VALUES ('schema_version','3');
+CREATE TABLE patent (
+	number TEXT PRIMARY KEY, country TEXT NOT NULL DEFAULT '', serial TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL DEFAULT '', display_number TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+	abstract TEXT NOT NULL DEFAULT '', assignee TEXT NOT NULL DEFAULT '', inventors TEXT NOT NULL DEFAULT '[]',
+	fetch_state TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', application_date TEXT NOT NULL DEFAULT '',
+	publication_date TEXT NOT NULL DEFAULT '', grant_date TEXT NOT NULL DEFAULT '', fetched_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT '', first_claim TEXT NOT NULL DEFAULT '', expiration_date TEXT NOT NULL DEFAULT '',
+	expiration_source TEXT NOT NULL DEFAULT '', source_url TEXT NOT NULL DEFAULT '',
+	classifications TEXT NOT NULL DEFAULT '[]', classifications_text TEXT NOT NULL DEFAULT '');
+CREATE TABLE document (number TEXT PRIMARY KEY, record_number TEXT NOT NULL REFERENCES patent(number) ON DELETE CASCADE,
+	country TEXT DEFAULT '', serial TEXT DEFAULT '', kind TEXT DEFAULT '', stage TEXT NOT NULL,
+	dated TEXT DEFAULT '', source TEXT DEFAULT '', source_ref TEXT DEFAULT '');
+CREATE TABLE relation (from_number TEXT NOT NULL REFERENCES patent(number) ON DELETE CASCADE,
+	to_number TEXT NOT NULL REFERENCES patent(number) ON DELETE CASCADE, kind TEXT NOT NULL,
+	source TEXT DEFAULT '', source_ref TEXT DEFAULT '', observed_at TEXT DEFAULT '',
+	PRIMARY KEY (from_number, to_number, kind));
+CREATE TABLE project (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL,
+	application_number TEXT DEFAULT '', filing_date TEXT DEFAULT '', art_unit TEXT DEFAULT '', attorney_docket_number TEXT DEFAULT '');
+CREATE TABLE membership (project_id TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+	patent_number TEXT NOT NULL REFERENCES patent(number) ON DELETE CASCADE, state TEXT NOT NULL, added_at TEXT NOT NULL,
+	ids_kind_code TEXT DEFAULT '', ids_in_full INTEGER DEFAULT 0, ids_relevant_passages TEXT DEFAULT '',
+	ids_notes TEXT DEFAULT '', ids_status TEXT DEFAULT '', ids_added_at TEXT DEFAULT '', ids_submitted_at TEXT DEFAULT '',
+	PRIMARY KEY (project_id, patent_number));
+CREATE TABLE authority_identifier (authority TEXT NOT NULL, identifier_type TEXT NOT NULL, identifier TEXT NOT NULL,
+	raw_identifier TEXT DEFAULT '', record_number TEXT NOT NULL REFERENCES patent(number) ON DELETE CASCADE,
+	document_number TEXT DEFAULT '', country TEXT DEFAULT '', kind TEXT DEFAULT '', dated TEXT DEFAULT '',
+	source TEXT DEFAULT '', confidence INTEGER DEFAULT 100, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+	PRIMARY KEY (authority, identifier_type, identifier));
+CREATE VIRTUAL TABLE patent_fts USING fts5(title, abstract, classifications_text, content='patent', content_rowid='rowid');
+CREATE TRIGGER patent_fts_insert AFTER INSERT ON patent BEGIN
+	INSERT INTO patent_fts(rowid,title,abstract,classifications_text) VALUES(new.rowid,new.title,new.abstract,new.classifications_text); END;
+`
+
+// TestMigrateV3ToV4PreservesData opens a v3 database through the real Open()
+// path and asserts the upgrade preserves the corpus and user data, assigns
+// surrogate ids, recreates the source tables at the new shape, and leaves the
+// database with sound foreign keys.
+func TestMigrateV3ToV4PreservesData(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v3.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v3 db: %v", err)
+	}
+	for _, stmt := range []string{
+		v3SchemaSQL,
+		`INSERT INTO patent (number,fetch_state,title) VALUES ('US20020106191A1','stub','Pub'),('US7000001B2','cached','Grant')`,
+		`INSERT INTO document (number,record_number,stage) VALUES ('US20020106191A1','US20020106191A1','publication'),('US7000001B2','US7000001B2','grant')`,
+		`INSERT INTO relation (from_number,to_number,kind) VALUES ('US7000001B2','US20020106191A1','cites')`,
+		`INSERT INTO project VALUES ('p1','Proj','t','','','','')`,
+		`INSERT INTO membership (project_id,patent_number,state,added_at,ids_notes) VALUES ('p1','US20020106191A1','under_review','t','keep me')`,
+		`INSERT INTO authority_identifier (authority,identifier_type,identifier,record_number,created_at,updated_at) VALUES ('US','publication','20020106191','US20020106191A1','t','t')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v3: %v\n%s", err, stmt)
+		}
+	}
+	_ = db.Close()
+
+	repo, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (migrate v3→v4): %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	count := func(q string) int {
+		var n int
+		if err := repo.reader.QueryRowContext(ctx, q).Scan(&n); err != nil {
+			t.Fatalf("count %q: %v", q, err)
+		}
+		return n
+	}
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 4 {
+		t.Fatalf("schema_version = %d, want 4", v)
+	}
+	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
+		t.Fatalf("records = %d, want 2", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM record WHERE id != ''`); n != 2 {
+		t.Fatalf("records with surrogate id = %d, want 2", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM membership WHERE ids_notes='keep me'`); n != 1 {
+		t.Fatalf("curated membership preserved = %d, want 1", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM relation`); n != 1 {
+		t.Fatalf("relations preserved = %d, want 1", n)
+	}
+	// New-shape source tables exist (recreated empty by schema.sql).
+	if n := count(`SELECT COUNT(*) FROM source_bib`); n != 0 {
+		t.Fatalf("source_bib rows = %d, want 0", n)
+	}
+	// The corpus resolves through the surrogate and FK integrity holds.
+	if _, err := repo.Patent(ctx, domain.MustParsePatentNumber("US7000001B2")); err != nil {
+		t.Fatalf("Patent after migrate: %v", err)
+	}
+	rows, err := repo.reader.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		t.Fatalf("fk check: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Next() {
+		t.Fatalf("foreign_key_check reported violations after migration")
 	}
 }
 

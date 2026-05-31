@@ -150,6 +150,125 @@ var migrationFStatements = []string{
 	`DROP TABLE project_ids`,
 }
 
+// migrate runs the version-chain structural migrations BEFORE schema.sql is
+// (re)applied, so a rename-based upgrade is not blocked by schema.sql having
+// already created the new-shape tables. A fresh database (no schema_meta yet)
+// is left for schema.sql to create at the current version.
+func (r *Repo) migrate(ctx context.Context) error {
+	hasMeta, err := r.tableExists(ctx, "schema_meta")
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate: detect schema_meta: %w", err)
+	}
+	if !hasMeta {
+		return nil // brand-new database; schema.sql writes the current version
+	}
+	var version string
+	if err := r.writer.QueryRowContext(ctx,
+		`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
+		return fmt.Errorf("store/sqlite: migrate: read version: %w", err)
+	}
+	if version == "2" {
+		if err := r.migrateV2ToV3(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v2 to v3: %w", err)
+		}
+		version = "3"
+	}
+	if version == "3" {
+		if err := r.migrateV3ToV4(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v3 to v4: %w", err)
+		}
+		version = "4"
+	}
+	if version != "4" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 4", version)
+	}
+	return nil
+}
+
+// migrateV3ToV4 introduces the surrogate record id. It is rename-based and
+// data-preserving for the corpus and user data: `patent` is renamed to `record`
+// with a stable `id` (UUID-like) added; its canonical `number` column keeps its
+// name, and SQLite rewrites the child foreign keys
+// (document/relation/membership/…) to reference record(number) automatically.
+// The re-fetchable source/derived tables (uspto_*, source_*,
+// authority_identifier) are dropped so schema.sql recreates them at the new
+// record_id shape. Runs with foreign keys disabled (rename + drop), after a
+// backup, in one transaction.
+func (r *Repo) migrateV3ToV4(ctx context.Context) error {
+	if err := r.backupBeforeMigration(ctx); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v3 to v4: backup: %w", err)
+	}
+	conn, err := r.writer.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v3 to v4: connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v3 to v4: disable fk: %w", err)
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v3 to v4: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, stmt := range migrationV3ToV4Statements {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v3 to v4: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v3 to v4: commit: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v3 to v4: re-enable fk: %w", err)
+	}
+	return nil
+}
+
+// migrationV3ToV4Statements: drop the old FTS first (so the patent→record rename
+// does not rewrite its triggers), drop the re-fetchable source/derived tables,
+// then rename patent→record adding the surrogate id. schema.sql recreates the
+// dropped tables (and record_fts) at the new shape; syncFTS repopulates the
+// index.
+var migrationV3ToV4Statements = []string{
+	`DROP TRIGGER IF EXISTS patent_fts_insert`,
+	`DROP TRIGGER IF EXISTS patent_fts_delete`,
+	`DROP TRIGGER IF EXISTS patent_fts_update`,
+	`DROP TABLE IF EXISTS patent_fts`,
+
+	`DROP TABLE IF EXISTS uspto_assignment_party`,
+	`DROP TABLE IF EXISTS uspto_assignment`,
+	`DROP TABLE IF EXISTS uspto_party`,
+	`DROP TABLE IF EXISTS uspto_event`,
+	`DROP TABLE IF EXISTS uspto_continuity`,
+	`DROP TABLE IF EXISTS uspto_foreign_priority`,
+	`DROP TABLE IF EXISTS uspto_grant_body`,
+	`DROP TABLE IF EXISTS uspto_drawing`,
+	`DROP TABLE IF EXISTS uspto_grant_citation`,
+	`DROP TABLE IF EXISTS uspto_grant_classification`,
+	`DROP TABLE IF EXISTS uspto_grant_relation`,
+	`DROP TABLE IF EXISTS uspto_grant_party`,
+	`DROP TABLE IF EXISTS uspto_xml_download`,
+	`DROP TABLE IF EXISTS uspto_document`,
+	`DROP TABLE IF EXISTS uspto_application`,
+	`DROP TABLE IF EXISTS authority_identifier`,
+	`DROP TABLE IF EXISTS source_snapshot`,
+	`DROP TABLE IF EXISTS source_diff`,
+
+	// Add the surrogate id, then rename patent→record. SQLite rewrites the child
+	// FK references (document/relation/membership/membership_provenance/
+	// project_patent_note/patent_tag/mutation_item) to record(number). The
+	// canonical `number` column keeps its name, so no child data changes.
+	`ALTER TABLE patent ADD COLUMN id TEXT NOT NULL DEFAULT ''`,
+	`UPDATE patent SET id = lower(hex(randomblob(16))) WHERE id = ''`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_record_id ON patent (id)`,
+	`ALTER TABLE patent RENAME TO record`,
+
+	`UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'`,
+}
+
 // migrateV2ToV3 upgrades a v2 database to v3 by creating the membership_provenance
 // table and backfilling existing memberships.
 func (r *Repo) migrateV2ToV3(ctx context.Context) error {

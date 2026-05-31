@@ -165,6 +165,10 @@ var hintCoverageExempt = map[command.ID]bool{
 	// hint inside the detail pane + the working command (g c / :source-compare)
 	// provide the discoverability; we don't want it in the global header footer.
 	command.SourceCompare: true,
+	// Source bibliography is the read-only all-fields companion to source.compare,
+	// discoverable via g b / :source.bibs and the detail-pane affordance; kept out
+	// of the global footer for the same reason.
+	command.SourceBibs: true,
 }
 
 // stubRegistry returns a command.Registry that contains every shipped command

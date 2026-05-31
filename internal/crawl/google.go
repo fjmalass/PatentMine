@@ -198,6 +198,7 @@ func parseGoogle(number domain.PatentNumber, body []byte) (Result, error) {
 	extraDocs, extraIds := extractAdditionalGoogleDocuments(number, doc)
 	res.Documents = append(res.Documents, extraDocs...)
 	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
+	res.SourceBibs = []domain.SourceBib{domain.SourceBibFromPatent(patent)}
 
 	return res, nil
 }

@@ -167,6 +167,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.Import:                     (*App).cmdImport,
 	command.SourceMode:     (*App).cmdSourceMode,
 	command.SourceCompare: (*App).cmdSourceCompare,
+	command.SourceBibs:    (*App).cmdSourceBibs,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
 	command.MarkActive:                 (*App).cmdMarkActive,
 	command.MarkUnderReview:            (*App).cmdMarkUnderReview,

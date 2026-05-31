@@ -368,8 +368,16 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 			)
 		}
 
-		// Update the patent's own expiration date and source if it's a USPTO patent
-		if p.Source == domain.SourceUSPTO && !computedExp.IsZero() {
+		// Stamp the computed USPTO statutory expiration onto the record projection
+		// (the value the detail panel renders) whenever we actually computed one.
+		// This runs on an explicit :patent.expiration-date request, which has
+		// already fetched the USPTO application data, so the computed date is the
+		// authoritative expiration regardless of which source first populated the
+		// record — many records (citation stubs, Google-primary) have a non-USPTO
+		// or empty source and would otherwise never reflect the computed date. The
+		// Google +20yr estimate, when present, is preserved in the source_bib
+		// Google row for side-by-side comparison.
+		if !computedExp.IsZero() && (!p.ExpirationDate.Equal(computedExp) || p.ExpirationSource != "uspto") {
 			p.ExpirationDate = computedExp
 			p.ExpirationSource = "uspto"
 			_ = e.repo.SavePatent(ctx, p)

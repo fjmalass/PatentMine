@@ -154,6 +154,7 @@ func Default() *Keymaps {
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
 			"g c":   command.SourceCompare, // conditional source comparison (Option A)
+			"g b":   command.SourceBibs,    // all-fields side-by-side of every source
 			".":     command.FetchUSPTOGrant,
 		})
 

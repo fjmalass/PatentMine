@@ -1564,3 +1564,58 @@ func TestUSPTOApplicationStoreRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSourceBibsRoundTrip verifies that a record can hold one source_bib row per
+// source and that SourceBibs reads both back — the substrate for "see both
+// versions". It also confirms re-saving the same source upserts in place.
+func TestSourceBibsRoundTrip(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	n := domain.MustParsePatentNumber("US7000001B2")
+
+	patent := domain.Patent{Number: n, Title: "Reconciled Title", FetchState: domain.FetchCached, Source: domain.SourceUSPTO}
+	batch := store.NodeBatch{
+		Patent: patent,
+		SourceBibs: []domain.SourceBib{
+			{RecordNumber: n, Source: domain.SourceUSPTO, Title: "USPTO Title", Assignee: "Acme", Inventors: []domain.Inventor{"Ada Lovelace"}},
+			{RecordNumber: n, Source: domain.SourceGoogle, Title: "Google Title", Assignee: "Acme Corp"},
+		},
+	}
+	if err := repo.SaveNode(ctx, batch); err != nil {
+		t.Fatalf("SaveNode: %v", err)
+	}
+
+	bibs, err := repo.SourceBibs(ctx, n)
+	if err != nil {
+		t.Fatalf("SourceBibs: %v", err)
+	}
+	if len(bibs) != 2 {
+		t.Fatalf("got %d source bibs, want 2", len(bibs))
+	}
+	bySource := map[domain.Source]domain.SourceBib{}
+	for _, b := range bibs {
+		bySource[b.Source] = b
+	}
+	if bySource[domain.SourceUSPTO].Title != "USPTO Title" {
+		t.Errorf("uspto title = %q, want USPTO Title", bySource[domain.SourceUSPTO].Title)
+	}
+	if bySource[domain.SourceGoogle].Title != "Google Title" {
+		t.Errorf("google title = %q, want Google Title", bySource[domain.SourceGoogle].Title)
+	}
+	if got := bySource[domain.SourceUSPTO].Inventors; len(got) != 1 || got[0] != "Ada Lovelace" {
+		t.Errorf("uspto inventors = %v, want [Ada Lovelace]", got)
+	}
+
+	// Re-saving the USPTO source upserts in place (still two rows, new title).
+	batch.SourceBibs = []domain.SourceBib{{RecordNumber: n, Source: domain.SourceUSPTO, Title: "USPTO Title v2"}}
+	if err := repo.SaveNode(ctx, batch); err != nil {
+		t.Fatalf("SaveNode upsert: %v", err)
+	}
+	bibs, err = repo.SourceBibs(ctx, n)
+	if err != nil {
+		t.Fatalf("SourceBibs after upsert: %v", err)
+	}
+	if len(bibs) != 2 {
+		t.Fatalf("after upsert got %d source bibs, want 2", len(bibs))
+	}
+}
+

@@ -60,6 +60,9 @@ type Result struct {
 	USPTOForeignPriority []domain.USPTOForeignPriority
 	SourceSnapshots      []domain.SourceSnapshot
 	SourceDiffs          []domain.SourceDiff
+	// SourceBibs carries each contributing source's bibliographic snapshot. A
+	// single-source fetch holds one; compare mode holds both (USPTO and Google).
+	SourceBibs []domain.SourceBib
 }
 
 // Source fetches a single patent from one provider.
@@ -382,6 +385,7 @@ func (r *Registry) compareWithGoogle(ctx context.Context, number domain.PatentNu
 		}
 
 		uspto.SourceSnapshots = append(uspto.SourceSnapshots, google.SourceSnapshots...)
+		uspto.SourceBibs = append(uspto.SourceBibs, google.SourceBibs...)
 		uspto.SourceDiffs = append(uspto.SourceDiffs, comparePatentFields(uspto.Patent, google.Patent)...)
 		return uspto
 	}
@@ -437,6 +441,7 @@ func (r *Registry) enrichWithUSPTO(ctx context.Context, number domain.PatentNumb
 
 		// Also bring in any source snapshots from the enrichment for auditability.
 		primary.SourceSnapshots = append(primary.SourceSnapshots, uspto.SourceSnapshots...)
+		primary.SourceBibs = append(primary.SourceBibs, uspto.SourceBibs...)
 
 		// Generate diffs (Google as primary vs this USPTO enrichment).
 		// Default choice = USPTO per user preference for the comparison UI.

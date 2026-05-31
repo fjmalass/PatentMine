@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -14,6 +15,25 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 	now := encodeTime(time.Now().UTC())
 	record := batch.Patent.Number
 
+	// Source-derived rows key off the record's surrogate id, resolved here from
+	// the (already canonical) record number. idOf memoizes the lookup since every
+	// row in a batch belongs to the same record. Resolving the id from the saved
+	// record — rather than trusting a parser-stamped number — is what makes these
+	// writes immune to the number-mismatch foreign-key bug.
+	idCache := map[string]string{}
+	idOf := func(n domain.PatentNumber) (string, error) {
+		key := n.Normalized()
+		if id, ok := idCache[key]; ok {
+			return id, nil
+		}
+		id, err := recordID(ctx, tx, n)
+		if err != nil {
+			return "", err
+		}
+		idCache[key] = id
+		return id, nil
+	}
+
 	for _, ident := range batch.AuthorityIdentifiers {
 		if ident.RecordNumber.IsZero() {
 			ident.RecordNumber = record
@@ -24,14 +44,18 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		if ident.Confidence == 0 {
 			ident.Confidence = 100
 		}
+		recID, err := idOf(ident.RecordNumber)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save authority identifier: resolve record %s: %w", ident.RecordNumber, err)
+		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO authority_identifier
-			(authority, identifier_type, identifier, raw_identifier, record_number, document_number,
+			INSERT INTO record_alias
+			(authority, identifier_type, identifier, raw_identifier, record_id, document_number,
 			 country, kind, dated, source, confidence, created_at, updated_at)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(authority, identifier_type, identifier) DO UPDATE SET
 				raw_identifier=excluded.raw_identifier,
-				record_number=excluded.record_number,
+				record_id=excluded.record_id,
 				document_number=excluded.document_number,
 				country=excluded.country,
 				kind=excluded.kind,
@@ -40,7 +64,7 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 				confidence=excluded.confidence,
 				updated_at=excluded.updated_at`,
 			ident.Authority, ident.IdentifierType, ident.Identifier, ident.RawIdentifier,
-			ident.RecordNumber.Normalized(), ident.DocumentNumber, ident.Country, ident.Kind,
+			recID, ident.DocumentNumber, ident.Country, ident.Kind,
 			ident.Dated, ident.Source, ident.Confidence, now, now); err != nil {
 			return fmt.Errorf("store/sqlite: save authority identifier: %w", err)
 		}
@@ -53,6 +77,10 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		if app.FetchedAt == "" {
 			app.FetchedAt = now
 		}
+		appRecID, err := idOf(app.RecordNumber)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save uspto application: resolve record %s: %w", app.RecordNumber, err)
+		}
 		for _, table := range []string{"uspto_party", "uspto_event", "uspto_continuity", "uspto_foreign_priority", "uspto_assignment"} {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE application_number = ?`, app.ApplicationNumber); err != nil {
 				return fmt.Errorf("store/sqlite: clear %s: %w", table, err)
@@ -60,7 +88,7 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO uspto_application
-			(application_number, record_number, invention_title, filing_date, effective_filing_date,
+			(application_number, record_id, invention_title, filing_date, effective_filing_date,
 			 application_status_code, application_status_text, application_status_date,
 			 application_type_code, application_type_label, application_type_category,
 			 first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
@@ -71,7 +99,7 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 			 patent_term_adjustment_days, patent_term_extension_days, terminal_disclaimer_date, earliest_term_filing_date, computed_expiration_date)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(application_number) DO UPDATE SET
-				record_number=excluded.record_number,
+				record_id=excluded.record_id,
 				invention_title=excluded.invention_title,
 				filing_date=excluded.filing_date,
 				effective_filing_date=excluded.effective_filing_date,
@@ -107,7 +135,7 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 				terminal_disclaimer_date=excluded.terminal_disclaimer_date,
 				earliest_term_filing_date=excluded.earliest_term_filing_date,
 				computed_expiration_date=excluded.computed_expiration_date`,
-			app.ApplicationNumber, app.RecordNumber.Normalized(), app.InventionTitle,
+			app.ApplicationNumber, appRecID, app.InventionTitle,
 			app.FilingDate, app.EffectiveFilingDate, app.ApplicationStatusCode,
 			app.ApplicationStatusText, app.ApplicationStatusDate, app.ApplicationTypeCode,
 			app.ApplicationTypeLabel, app.ApplicationTypeCategory, boolInt(app.FirstInventorToFile),
@@ -192,13 +220,17 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		if snap.FetchedAt == "" {
 			snap.FetchedAt = now
 		}
+		snapRecID, err := idOf(snap.PatentNumber)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save source snapshot: resolve record %s: %w", snap.PatentNumber, err)
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO source_snapshot
-			(id, patent_number, source, source_record_id, source_url, fetched_at, payload_kind,
+			(id, record_id, source, source_record_id, source_url, fetched_at, payload_kind,
 			 payload_hash, payload_path, response_bytes, http_status, etag, last_modified, summary_json)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET summary_json=excluded.summary_json`,
-			snap.ID, snap.PatentNumber.Normalized(), snap.Source, snap.SourceRecordID,
+			snap.ID, snapRecID, snap.Source, snap.SourceRecordID,
 			snap.SourceURL, snap.FetchedAt, snap.PayloadKind, snap.PayloadHash, snap.PayloadPath,
 			snap.ResponseBytes, snap.HTTPStatus, snap.ETag, snap.LastModified, defaultJSON(snap.SummaryJSON, "{}")); err != nil {
 			return fmt.Errorf("store/sqlite: save source snapshot: %w", err)
@@ -212,9 +244,13 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 		if diff.RecordedAt == "" {
 			diff.RecordedAt = now
 		}
+		diffRecID, err := idOf(diff.PatentNumber)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save source diff: resolve record %s: %w", diff.PatentNumber, err)
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO source_diff
-			(id, patent_number, field_path, uspto_value, google_value, chosen_value, chosen_source,
+			(id, record_id, field_path, uspto_value, google_value, chosen_value, chosen_source,
 			 severity, recorded_at, uspto_snapshot_id, google_snapshot_id,
 			 reconciled_at, reconciled_by, reconciled_choice)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -228,11 +264,54 @@ func (r *Repo) saveSourceData(ctx context.Context, tx *sql.Tx, batch store.NodeB
 				reconciled_at=excluded.reconciled_at,
 				reconciled_by=excluded.reconciled_by,
 				reconciled_choice=excluded.reconciled_choice`,
-			diff.ID, diff.PatentNumber.Normalized(), diff.FieldPath, diff.USPTOValue,
+			diff.ID, diffRecID, diff.FieldPath, diff.USPTOValue,
 			diff.GoogleValue, diff.ChosenValue, diff.ChosenSource, diff.Severity,
 			diff.RecordedAt, diff.USPTOSnapshotID, diff.GoogleSnapshotID,
 			diff.ReconciledAt, diff.ReconciledBy, diff.ReconciledChoice); err != nil {
 			return fmt.Errorf("store/sqlite: save source diff: %w", err)
+		}
+	}
+
+	for _, bib := range batch.SourceBibs {
+		if bib.Source == "" {
+			continue
+		}
+		num := bib.RecordNumber
+		if num.IsZero() {
+			num = record
+		}
+		bibRecID, err := idOf(num)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save source bib: resolve record %s: %w", num, err)
+		}
+		inventors, err := json.Marshal(bib.Inventors)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save source bib: encode inventors: %w", err)
+		}
+		classifications, err := json.Marshal(bib.Classifications)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: save source bib: encode classifications: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO source_bib
+			(record_id, source, title, abstract, assignee, inventors_json,
+			 application_date, publication_date, grant_date, first_claim,
+			 classifications_json, classifications_text, expiration_date,
+			 expiration_source, source_url, fetched_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(record_id, source) DO UPDATE SET
+				title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
+				inventors_json=excluded.inventors_json, application_date=excluded.application_date,
+				publication_date=excluded.publication_date, grant_date=excluded.grant_date,
+				first_claim=excluded.first_claim, classifications_json=excluded.classifications_json,
+				classifications_text=excluded.classifications_text, expiration_date=excluded.expiration_date,
+				expiration_source=excluded.expiration_source, source_url=excluded.source_url,
+				fetched_at=excluded.fetched_at`,
+			bibRecID, string(bib.Source), bib.Title, bib.Abstract, bib.Assignee, string(inventors),
+			encodeTime(bib.ApplicationDate), encodeTime(bib.PublicationDate), encodeTime(bib.GrantDate),
+			bib.FirstClaim, string(classifications), classificationsText(bib.Classifications),
+			encodeTime(bib.ExpirationDate), bib.ExpirationSource, bib.SourceURL, encodeTime(bib.FetchedAt)); err != nil {
+			return fmt.Errorf("store/sqlite: save source bib: %w", err)
 		}
 	}
 
@@ -256,7 +335,7 @@ func defaultJSON(s, fallback string) string {
 // USPTOApplication returns the saved USPTO application attrs for a patent record, or ErrNotFound.
 func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
 	row := r.reader.QueryRowContext(ctx, `
-		SELECT application_number, record_number, invention_title, filing_date, effective_filing_date,
+		SELECT application_number, (SELECT number FROM record WHERE id = uspto_application.record_id), invention_title, filing_date, effective_filing_date,
 			   application_status_code, application_status_text, application_status_date,
 			   application_type_code, application_type_label, application_type_category,
 			   first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
@@ -266,7 +345,7 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 			   last_ingestion_datetime, fetched_at, pgpub_xml_url, pgpub_xml_name, patent_grant_xml_url, patent_grant_xml_name,
 			   patent_term_adjustment_days, patent_term_extension_days, terminal_disclaimer_date, earliest_term_filing_date, computed_expiration_date
 		FROM uspto_application
-		WHERE record_number = ?`, n.Normalized())
+		WHERE record_id = (SELECT id FROM record WHERE number = ?)`, n.Normalized())
 
 	var app domain.USPTOApplication
 	var recordNumStr string
@@ -307,7 +386,7 @@ func (r *Repo) USPTOApplication(ctx context.Context, n domain.PatentNumber) (dom
 // application number (rather than the owning patent record), or ErrNotFound.
 func (r *Repo) USPTOApplicationByAppNum(ctx context.Context, appNum string) (domain.USPTOApplication, error) {
 	row := r.reader.QueryRowContext(ctx, `
-		SELECT application_number, record_number, invention_title, filing_date, effective_filing_date,
+		SELECT application_number, (SELECT number FROM record WHERE id = uspto_application.record_id), invention_title, filing_date, effective_filing_date,
 			   application_status_code, application_status_text, application_status_date,
 			   application_type_code, application_type_label, application_type_category,
 			   first_inventor_to_file, national_stage, first_inventor_name, first_applicant_name,
@@ -436,13 +515,13 @@ func (r *Repo) ListSourceDiffs(ctx context.Context, patent domain.PatentNumber) 
 		return nil, nil
 	}
 	rows, err := r.reader.QueryContext(ctx, `
-		SELECT id, patent_number, field_path,
+		SELECT id, (SELECT number FROM record WHERE id = source_diff.record_id), field_path,
 		       uspto_value, google_value, chosen_value, chosen_source,
 		       severity, recorded_at,
 		       uspto_snapshot_id, google_snapshot_id,
 		       reconciled_at, reconciled_by, reconciled_choice
 		FROM source_diff
-		WHERE patent_number = ?
+		WHERE record_id = (SELECT id FROM record WHERE number = ?)
 		ORDER BY recorded_at DESC, id ASC`, patent.Normalized())
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list source diffs: %w", err)
@@ -479,11 +558,11 @@ func (r *Repo) ListSourceSnapshots(ctx context.Context, patent domain.PatentNumb
 		return nil, nil
 	}
 	rows, err := r.reader.QueryContext(ctx, `
-		SELECT id, patent_number, source, source_record_id, source_url, fetched_at,
+		SELECT id, (SELECT number FROM record WHERE id = source_snapshot.record_id), source, source_record_id, source_url, fetched_at,
 		       payload_kind, payload_hash, payload_path, response_bytes, http_status,
 		       etag, last_modified, summary_json
 		FROM source_snapshot
-		WHERE patent_number = ?
+		WHERE record_id = (SELECT id FROM record WHERE number = ?)
 		ORDER BY fetched_at DESC, id ASC`, patent.Normalized())
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list source snapshots: %w", err)
@@ -510,6 +589,55 @@ func (r *Repo) ListSourceSnapshots(ctx context.Context, patent domain.PatentNumb
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: iterate source snapshots: %w", err)
+	}
+	return out, nil
+}
+
+// SourceBibs returns each source's bibliographic snapshot for a record, keyed by
+// the record's canonical number and ordered by source. This is the read side of
+// "see both versions": callers diff the rows (e.g. with the engine's field
+// comparison) to render USPTO vs Google side by side.
+func (r *Repo) SourceBibs(ctx context.Context, patent domain.PatentNumber) ([]domain.SourceBib, error) {
+	if patent.IsZero() {
+		return nil, nil
+	}
+	rows, err := r.reader.QueryContext(ctx, `
+		SELECT source, title, abstract, assignee, inventors_json,
+		       application_date, publication_date, grant_date, first_claim,
+		       classifications_json, expiration_date, expiration_source, source_url, fetched_at
+		FROM source_bib
+		WHERE record_id = (SELECT id FROM record WHERE number = ?)
+		ORDER BY source`, patent.Normalized())
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list source bibs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.SourceBib
+	for rows.Next() {
+		var b domain.SourceBib
+		var source, inventorsJSON, classJSON string
+		var appDate, pubDate, grantDate, expDate, fetchedAt string
+		if err := rows.Scan(
+			&source, &b.Title, &b.Abstract, &b.Assignee, &inventorsJSON,
+			&appDate, &pubDate, &grantDate, &b.FirstClaim,
+			&classJSON, &expDate, &b.ExpirationSource, &b.SourceURL, &fetchedAt,
+		); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan source bib: %w", err)
+		}
+		b.RecordNumber = patent
+		b.Source = domain.Source(source)
+		_ = json.Unmarshal([]byte(inventorsJSON), &b.Inventors)
+		_ = json.Unmarshal([]byte(classJSON), &b.Classifications)
+		b.ApplicationDate, _ = decodeTime(appDate)
+		b.PublicationDate, _ = decodeTime(pubDate)
+		b.GrantDate, _ = decodeTime(grantDate)
+		b.ExpirationDate, _ = decodeTime(expDate)
+		b.FetchedAt, _ = decodeTime(fetchedAt)
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store/sqlite: iterate source bibs: %w", err)
 	}
 	return out, nil
 }

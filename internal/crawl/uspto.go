@@ -435,6 +435,7 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 	}}
 	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, identifiersFromUSPTO(recordNumber, appNumber, w)...)
 	res.Relations = append(res.Relations, relationsFromUSPTOContinuity(recordNumber, w.ParentContinuityBag)...)
+	res.SourceBibs = []domain.SourceBib{domain.SourceBibFromPatent(patent)}
 	return res, nil
 }
 

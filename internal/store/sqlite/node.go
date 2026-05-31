@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"patentmine/internal/domain"
 	"patentmine/internal/store"
 )
@@ -16,11 +18,11 @@ import (
 // patentUpsertSQL inserts or updates a full patent record. It is shared by
 // SavePatent and SaveNode so the two paths can never drift apart.
 const patentUpsertSQL = `
-	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
+	INSERT INTO record (id, number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
 		grant_date, fetched_at, updated_at, display_number,
 		first_claim, expiration_date, expiration_source, source_url, classifications, classifications_text)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO UPDATE SET
 		country=excluded.country, serial=excluded.serial, kind=excluded.kind,
 		title=excluded.title, abstract=excluded.abstract, assignee=excluded.assignee,
@@ -56,7 +58,11 @@ func patentUpsertArgs(p domain.Patent) ([]any, error) {
 	if display.IsZero() {
 		display = p.Number
 	}
+	// A fresh surrogate id is supplied for the INSERT case; on ON CONFLICT(number)
+	// the existing row keeps its id (the DO UPDATE clause never sets id), so this
+	// value is simply ignored when the record already exists.
 	return []any{
+		uuid.NewString(),
 		p.Number.Normalized(), p.Number.Country, p.Number.Serial, p.Number.Kind,
 		p.Title, p.Abstract, p.Assignee, string(inventors),
 		string(p.FetchState), string(p.Source),
@@ -171,11 +177,11 @@ func (r *Repo) SaveNode(ctx context.Context, batch store.NodeBatch) (err error) 
 
 // patentInsertOrIgnoreSQL inserts a patent only when its number is new.
 const patentInsertOrIgnoreSQL = `
-	INSERT INTO patent (number, country, serial, kind, title, abstract, assignee,
+	INSERT INTO record (id, number, country, serial, kind, title, abstract, assignee,
 		inventors, fetch_state, source, application_date, publication_date,
 		grant_date, fetched_at, updated_at, display_number,
 		first_claim, expiration_date, expiration_source, source_url, classifications, classifications_text)
-	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(number) DO NOTHING`
 
 // documentInsertOrIgnoreSQL inserts a document only when its number is new.

@@ -5,6 +5,51 @@ import (
 	"time"
 )
 
+// SourceBib is one source's view of a record's comparable bibliographic fields.
+// The record projection holds the reconciled/chosen values shown on display;
+// these rows preserve what each source (USPTO, Google) reported so the two can
+// be shown side by side and reconciled. One row per (record, source).
+type SourceBib struct {
+	RecordNumber     PatentNumber `json:"record_number"`
+	Source           Source       `json:"source"`
+	Title            string       `json:"title"`
+	Abstract         string       `json:"abstract"`
+	Assignee         string       `json:"assignee"`
+	Inventors        []Inventor   `json:"inventors"`
+	ApplicationDate  time.Time    `json:"application_date"`
+	PublicationDate  time.Time    `json:"publication_date"`
+	GrantDate        time.Time    `json:"grant_date"`
+	FirstClaim       string       `json:"first_claim,omitempty"`
+	Classifications  []string     `json:"classifications"`
+	ExpirationDate   time.Time    `json:"expiration_date"`
+	ExpirationSource string       `json:"expiration_source,omitempty"`
+	SourceURL        string       `json:"source_url,omitempty"`
+	FetchedAt        time.Time    `json:"fetched_at"`
+}
+
+// SourceBibFromPatent snapshots a freshly parsed Patent as that source's
+// bibliographic contribution. The Source field on the patent identifies which
+// provider produced it.
+func SourceBibFromPatent(p Patent) SourceBib {
+	return SourceBib{
+		RecordNumber:     p.Number,
+		Source:           p.Source,
+		Title:            p.Title,
+		Abstract:         p.Abstract,
+		Assignee:         p.Assignee,
+		Inventors:        p.Inventors,
+		ApplicationDate:  p.ApplicationDate,
+		PublicationDate:  p.PublicationDate,
+		GrantDate:        p.GrantDate,
+		FirstClaim:       p.FirstClaim,
+		Classifications:  p.Classifications,
+		ExpirationDate:   p.ExpirationDate,
+		ExpirationSource: p.ExpirationSource,
+		SourceURL:        p.SourceURL,
+		FetchedAt:        p.FetchedAt,
+	}
+}
+
 // AuthorityIdentifier maps source-specific identifiers (USPTO application
 // numbers, PCT applications, foreign priorities, Google IDs) onto a Patent row.
 type AuthorityIdentifier struct {

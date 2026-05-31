@@ -441,3 +441,18 @@ func (e *Engine) ListSourceDiffs(ctx context.Context, n domain.PatentNumber) ([]
 	}
 	return diffs, err
 }
+
+// SourceBibs is a thin pass-through for TUI / RPC: each source's full
+// bibliographic snapshot of a record, for side-by-side "see both versions"
+// display. Unlike ListSourceDiffs (only differing fields), this returns the
+// complete per-source view.
+func (e *Engine) SourceBibs(ctx context.Context, n domain.PatentNumber) ([]domain.SourceBib, error) {
+	bibs, err := e.repo.SourceBibs(ctx, n)
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.source.bibs.list_total", 1)
+		if err != nil {
+			e.metrics.IncCounter("engine.source.bibs.list_error_total", 1)
+		}
+	}
+	return bibs, err
+}
