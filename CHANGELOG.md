@@ -9,6 +9,22 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.9.0] — 2026-05-31
+
+**Major database update.** Automatic migration on first run.
+
+### Added
+- **Record Identifiers**: new `rec.id` unique identifier replacing ambiguous name/record/patent references across the codebase
+- **Date Format Centralization**: canonical date/time layout constants (`DateLayout`, `DateTimeLayout`, `FileTimestampLayout`, `CompactDateLayout`, `USDateLayout`) in `internal/domain/patent.go` — single source of truth for every date format the app parses, stores, or displays
+- New `:source.bibs` overlay for browsing bibliographic source data
+- New `source_data` table and domain model for structured source metadata
+- Unit tests for migration and SQLite store
+
+### Changed
+- Database schema overhaul: new `node` / `source_data` tables replace scattered record-keeping, with updated `patent`, `document`, and `uspto_grant` tables aligned to the `rec.id` model
+- All date/time formatting across crawl, proto, uspto, observability, and TUI layers now uses centralized constants instead of repeated layout literals
+- Source data domain types extended with comparison fields and document metadata
+
 ## [v0.8.1] — 2026-05-31
 
 **Database schema changed** (v2 → v3). Automatic migration on first run.
