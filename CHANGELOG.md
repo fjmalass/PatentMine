@@ -9,6 +9,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.8.1] — 2026-05-30
+
+### Fixed
+- `TUI` `command` `help` wrapping rows
+
+**Database schema changed** (v2 → v3). Automatic migration on first run.
 ## [v0.8.0] — 2026-05-30
 
 **Database schema changed** (v2 → v3). Automatic migration on first run.
