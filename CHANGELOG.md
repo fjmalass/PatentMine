@@ -9,6 +9,41 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.8.0] — 2026-05-30
+
+**Database schema changed** (v2 → v3). Automatic migration on first run.
+
+### Added
+- **Membership Provenance Tracking**:
+  - New `membership_provenance` table records how each patent entered a project: `added_method` (`direct`, `related`, `neighbors`, `citation`), `parent_patent_number`, `source_provider` (`uspto`/`google`/`file`), and `source_mode` (`compare`/`uspto-first`/etc.).
+  - Membership provenance backfilled for existing databases via automatic v2→v3 migration.
+  - Detail pane now displays a human-readable Provenance field with distinct glyphs for each ingestion method (Direct, Promoted from Citation, Neighbor, etc.) including parent patent, source provider, and source mode.
+  - New PROVENANCE column in the patent table (sortable, project-scoped).
+- **Provenance Filter**:
+  - `:filter provenance:manual` / `:filter prov:related` / `:filter provenance:system` predicates with aliases `prov:` and `provenance:`. Supports keywords `manual`/`direct`, `related`, `neighbors`, `system`/`auto`.
+  - Full integration with the boolean filter DSL (`:filter provenance:system and state:under_review`).
+- **Review State Provenance Awareness**:
+  - Review state changes from Citations and Family Graph panes now record the correct `added_method` (e.g. `citation`, `related`) in the membership provenance.
+- **`replay` CLI Command**:
+  - New `patentmine replay` sub-command for replaying history entries.
+- **USPTO Crawl Refinements**:
+  - API queries switched from `earliestPublicationNumber` to `publicationNumber` with fallback unmarshalling for backward compatibility.
+  - Enhanced logging around query formulation and patent matching.
+- **Test Coverage**:
+  - SQLite store tests for provenance read/write, migration, and schema integrity.
+  - Test for `earliestPublicationNumber` fallback in USPTO response parsing.
+  - Unit tests for provenance filter parsing.
+
+### Changed
+- `Membership` domain struct extended with `AddedMethod`, `ParentPatentNumber`, `SourceProvider`, `SourceMode`.
+- `PatentResult` RPC struct now includes the full `Membership` object.
+- Theme engine gains `ProvenanceGlyph()` method for rendering provenance indicators.
+- USPTO API query field changed from `earliestPublicationNumber` to `publicationNumber`.
+- `ReviewStateParams` RPC struct extended with optional `AddedMethod` field.
+
+### Fixed
+- USPTO crawl parsing correctly handles responses that only include `earliestPublicationNumber` without `publicationNumber`.
+
 ## [v0.7.1] — 2026-05-30
 
 No database schema changes.
