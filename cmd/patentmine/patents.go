@@ -402,13 +402,34 @@ func runPatentsCleanParsed(cfg config.Config, args []string, telemetry *observab
 	start := time.Now()
 
 	fmt.Printf("Opening database at %s...\n", dbPath)
+	// Check if the SQLite driver is registered to ensure it hasn't been omitted from imports.
+	var driverFound bool
+	for _, d := range sql.Drivers() {
+		if d == "sqlite" {
+			driverFound = true
+			break
+		}
+	}
+	if !driverFound {
+		err := fmt.Errorf("open sqlite database: driver \"sqlite\" is not registered (forgotten import of modernc.org/sqlite?)")
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", err)
+		return fail(err)
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return fail(fmt.Errorf("open sqlite database: %w", err))
+		wrappedErr := fmt.Errorf("open sqlite database: %w", err)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", wrappedErr)
+		return fail(wrappedErr)
 	}
 	defer db.Close()
 
 	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
+		wrappedErr := fmt.Errorf("failed to open or initialize database file %q: %w", dbPath, err)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", wrappedErr)
+		return fail(wrappedErr)
+	}
 
 	var beforeCount int
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM uspto_grant_body").Scan(&beforeCount); err != nil {

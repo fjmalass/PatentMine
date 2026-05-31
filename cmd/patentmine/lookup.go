@@ -188,10 +188,10 @@ func runLookup(args []string) int {
 	appNum = strings.TrimSpace(appNum)
 	var query string
 	if rawNum != "" && rawNum != appNum {
-		query = fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q OR %q",
+		query = fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s OR %q OR %q",
 			appNum, appNum, appNum, rawNum, appNum)
 	} else {
-		query = fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q",
+		query = fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s OR %q",
 			appNum, appNum, appNum, appNum)
 	}
 	url := fmt.Sprintf("https://api.uspto.gov/api/v1/patent/applications/search?q=%s", strings.ReplaceAll(url.QueryEscape(query), "+", "%20"))

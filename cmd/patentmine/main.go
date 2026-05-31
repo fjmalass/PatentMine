@@ -22,6 +22,7 @@ usage:
   patentmine uspto-manage       manage the patents/XML cache directory (list, archive, clean)
   patentmine check-connectivity check configured external service connectivity
   patentmine lookup             look up a patent by USPTO application number
+  patentmine replay             replay loading history of a project
   patentmine version            print the build version
 `
 
@@ -57,6 +58,8 @@ func run(args []string) int {
 		return runCheck(args[1:])
 	case "lookup":
 		return runLookup(args[1:])
+	case "replay":
+		return runReplay(args[1:])
 	case "version":
 		fmt.Println(appversion.String())
 		return 0

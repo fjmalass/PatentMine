@@ -149,3 +149,50 @@ var migrationFStatements = []string{
 
 	`DROP TABLE project_ids`,
 }
+
+// migrateV2ToV3 upgrades a v2 database to v3 by creating the membership_provenance
+// table and backfilling existing memberships.
+func (r *Repo) migrateV2ToV3(ctx context.Context) error {
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Create table if it didn't get created yet
+	_, err = tx.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS membership_provenance (
+			project_id            TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+			patent_number         TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+			added_method          TEXT NOT NULL,
+			parent_patent_number  TEXT,
+			source_provider       TEXT NOT NULL DEFAULT '',
+			source_mode           TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (project_id, patent_number),
+			FOREIGN KEY (project_id, patent_number) REFERENCES membership (project_id, patent_number) ON DELETE CASCADE ON UPDATE CASCADE
+		)`)
+	if err != nil {
+		return fmt.Errorf("create provenance table: %w", err)
+	}
+
+	// Backfill existing memberships as 'direct'
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO membership_provenance (project_id, patent_number, added_method)
+		SELECT project_id, patent_number, 'direct'
+		FROM membership
+		ON CONFLICT(project_id, patent_number) DO NOTHING`)
+	if err != nil {
+		return fmt.Errorf("backfill provenance: %w", err)
+	}
+
+	// Update schema version
+	_, err = tx.ExecContext(ctx, `
+		UPDATE schema_meta
+		SET value = '3'
+		WHERE key = 'schema_version'`)
+	if err != nil {
+		return fmt.Errorf("update schema version: %w", err)
+	}
+
+	return tx.Commit()
+}

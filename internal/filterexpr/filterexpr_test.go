@@ -88,4 +88,33 @@ func TestValidateProjectScope(t *testing.T) {
 	if err := ValidateProjectScope(expr, false); err == nil {
 		t.Fatal("expected ids_status project-scope error")
 	}
+
+	expr, err = Parse("provenance:manual")
+	if err != nil {
+		t.Fatalf("Parse provenance: %v", err)
+	}
+	if err := ValidateProjectScope(expr, false); err == nil {
+		t.Fatal("expected provenance project-scope error")
+	}
+}
+
+func TestParseSupportsProvenance(t *testing.T) {
+	expr, err := Parse("prov:manual or provenance:system or provenance:related or provenance:neighbors or provenance:neighbor")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := CanonicalString(expr), "provenance:manual or provenance:system or provenance:related or provenance:neighbors or provenance:neighbors"; got != want {
+		t.Fatalf("CanonicalString = %q, want %q", got, want)
+	}
+}
+
+func TestParseRejectsUnknownProvenance(t *testing.T) {
+	_, err := Parse("prov:invalid")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	expected := `unknown provenance keyword "invalid": use manual, related, neighbors, or system`
+	if got := err.Error(); got != expected {
+		t.Fatalf("error = %q, want %q", got, expected)
+	}
 }

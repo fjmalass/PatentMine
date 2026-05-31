@@ -169,6 +169,10 @@ Examples:
 2. `engine.list_patents`
 3. `store.sqlite.list_patents`
 4. `store.sqlite.count_patents`
+5. `store.sqlite.list_patents.filter_total` (counter: how often patent list queries were filtered)
+6. `store.sqlite.list_patents.filter_duration` (timing: query execution duration when filtered)
+7. `store.sqlite.list_patents.sort_total` (counter: how often patent list queries were sorted)
+8. `store.sqlite.list_patents.sort_duration` (timing: query execution duration when sorted)
 
 For crawl progress specifically, the daemon also records live gauges such as:
 

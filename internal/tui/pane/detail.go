@@ -58,6 +58,7 @@ type detailLoadedMsg struct {
 	idsEntry   *domain.IDSEntry
 	patentNote *domain.PatentNote
 	usptoApp   *domain.USPTOApplication
+	membership *domain.Membership
 	err        error
 }
 
@@ -100,6 +101,7 @@ type Detail struct {
 	idsEntry           *domain.IDSEntry
 	patentNote         *domain.PatentNote
 	usptoApp           *domain.USPTOApplication
+	membership         *domain.Membership
 	relCounts          map[domain.RelationKind]int
 	hasSourceDiffs     bool
 	jump               *JumpController
@@ -275,6 +277,7 @@ func (d *Detail) load() tea.Cmd {
 			idsEntry:   res.IDSEntry,
 			patentNote: res.PatentNote,
 			usptoApp:   res.USPTOApplication,
+			membership: res.Membership,
 			err:        err,
 		}
 	}
@@ -348,6 +351,7 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		d.idsEntry = m.idsEntry
 		d.patentNote = m.patentNote
 		d.usptoApp = m.usptoApp
+		d.membership = m.membership
 		d.hasSourceDiffs = false // will be set by the async loadSourceDiffs
 		d.page.Top()
 		d.cachedLines = nil
@@ -582,6 +586,47 @@ func (d *Detail) body(w int) string {
 		revVal := detailReviewStateText(d.state)
 		d.addAnchor(&b, d.jumpKey(detailLabelReviewState), detailLabelReviewState, revVal, true, 0)
 		d.field(&b, w, detailLabelReviewState, detailStyledReviewStateText(d.theme, d.state))
+
+		if d.membership != nil {
+			addedMethod := d.membership.AddedMethod
+			if shouldShowStubAsLoading(d.patent.FetchState, addedMethod) {
+				addedMethod = "loading"
+			}
+			if addedMethod != "" {
+				provGlyph := d.theme.ProvenanceGlyph(addedMethod)
+				provVal := ""
+				switch addedMethod {
+				case "loading":
+					provVal = provGlyph + " Loading/Discovered"
+				case "cites", "citation":
+					provVal = provGlyph + " Promoted from Citation"
+				case "cited_by", "cited":
+					provVal = provGlyph + " Promoted from Cited-By"
+				case "parent":
+					provVal = provGlyph + " Promoted from Parent"
+				case "child":
+					provVal = provGlyph + " Promoted from Child"
+				case "related":
+					provVal = provGlyph + " Promoted from Neighbor"
+				case "neighbors", "neighbor":
+					provVal = provGlyph + " Promoted from Neighbor"
+				case "direct", "manual":
+					provVal = provGlyph + " Direct Ingestion"
+				default:
+					provVal = provGlyph + " " + addedMethod
+				}
+				if !d.membership.ParentPatentNumber.IsZero() {
+					provVal += " (" + d.membership.ParentPatentNumber.String() + ")"
+				}
+				if d.membership.SourceProvider != "" {
+					provVal += " via " + strings.ToUpper(d.membership.SourceProvider)
+				}
+				if d.membership.SourceMode != "" {
+					provVal += " [" + d.membership.SourceMode + "]"
+				}
+				d.field(&b, w, "Provenance", provVal)
+			}
+		}
 
 		idsVal := detailIDSText(d.theme, d.idsEntry)
 		d.addAnchor(&b, d.jumpKey(detailLabelIDS), detailLabelIDS, idsVal, true, 0)

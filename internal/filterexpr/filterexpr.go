@@ -20,6 +20,7 @@ const (
 	FieldInventor   Field = "inventor"
 	FieldAssignee   Field = "assignee"
 	FieldCountry    Field = "country"
+	FieldProvenance Field = "provenance"
 )
 
 const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:active"
@@ -40,6 +41,7 @@ var fieldSpecs = []fieldSpec{
 	{name: FieldInventor, aliases: []string{"inv"}, parse: parseInventorTerm},
 	{name: FieldAssignee, aliases: []string{"owner"}, parse: parseAssigneeTerm},
 	{name: FieldCountry, parse: parseCountryTerm},
+	{name: FieldProvenance, aliases: []string{"prov", "provenance"}, parse: parseProvenanceTerm},
 }
 
 var fieldByName = func() map[string]fieldSpec {
@@ -132,6 +134,9 @@ func ValidateProjectScope(expr Expr, projectActive bool) error {
 	}
 	if UsesField(expr, FieldIDSStatus) {
 		return fmt.Errorf("ids_status filters require an active project")
+	}
+	if UsesField(expr, FieldProvenance) {
+		return fmt.Errorf("provenance filters require an active project")
 	}
 	return nil
 }
@@ -501,6 +506,30 @@ func parseCountryTerm(value string) (TermExpr, error) {
 		return TermExpr{}, fmt.Errorf("unknown country %q: use an ISO code (e.g. US, EP, WO) or common name", value)
 	}
 	return TermExpr{Field: FieldCountry, Value: code, Country: ValuePattern{Raw: code, Wildcard: false}}, nil
+}
+
+func ParseProvenance(value string) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(value))
+	switch key {
+	case "manual", "direct":
+		return "manual", nil
+	case "related":
+		return "related", nil
+	case "neighbors", "neighbor":
+		return "neighbors", nil
+	case "system", "auto":
+		return "system", nil
+	default:
+		return "", fmt.Errorf("unknown provenance keyword %q: use manual, related, neighbors, or system", value)
+	}
+}
+
+func parseProvenanceTerm(value string) (TermExpr, error) {
+	prov, err := ParseProvenance(value)
+	if err != nil {
+		return TermExpr{}, err
+	}
+	return TermExpr{Field: FieldProvenance, Value: prov}, nil
 }
 
 func unsupportedClassPatternError() error {

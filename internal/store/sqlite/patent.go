@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -42,12 +43,12 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_in_full, 0), ` +
 				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), ` +
 				`COALESCE(m.ids_added_at, ''), COALESCE(m.ids_submitted_at, '')` +
-				relationCounts + `, p.classifications`,
+				relationCounts + `, p.classifications, COALESCE(mp.added_method, 'direct')`,
 			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', 0, '', '', '', '', ''` +
-		relationCounts + `, p.classifications`, nil
+		relationCounts + `, p.classifications, 'direct'`, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -254,6 +255,8 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 		tagSortStart = time.Now()
 		defer func() { r.observeTagSortDuration(tagSortStart, &err, len(out), q) }()
 	}
+
+	filterSortCompStart := time.Now()
 	cols, colArgs := patentRowColumns(q.Project)
 	where, whereArgs, err := patentFilter(q)
 	if err != nil {
@@ -263,6 +266,8 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 	if err != nil {
 		return nil, err
 	}
+	compDur := time.Since(filterSortCompStart)
+
 	limit := q.Limit
 	if limit <= 0 {
 		limit = store.DefaultPageSize
@@ -273,6 +278,7 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 	args = append(args, orderArgs...)
 	args = append(args, limit, max(q.Offset, 0))
 
+	queryStart := time.Now()
 	rows, err := r.reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list patents: %w", err)
@@ -290,11 +296,16 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: list patents: %w", err)
 	}
+	queryDur := time.Since(queryStart)
+
 	if q.Project != "" {
 		if err := r.attachTags(ctx, q.Project, out); err != nil {
 			return nil, err
 		}
 	}
+
+	r.recordFilterSortMetrics(ctx, q, compDur, queryDur, len(out))
+
 	return out, nil
 }
 
@@ -346,6 +357,39 @@ func (r *Repo) observeTagSortDuration(start time.Time, errp *error, rows int, q 
 	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.limit", int64(q.Limit))
 	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.offset", int64(q.Offset))
 	r.metrics.SetGauge("store.sqlite.list_patents.sort_tags.rows", int64(rows))
+}
+
+func (r *Repo) recordFilterSortMetrics(ctx context.Context, q store.PatentQuery, compDur, queryDur time.Duration, rows int) {
+	hasFilter := q.Filter != "" || q.Search != "" || q.Classification != "" || q.IDSStatus != "" || q.ReviewState != domain.ReviewStateNone
+	hasSort := q.SortColumn != ""
+
+	if !hasFilter && !hasSort {
+		return
+	}
+
+	slog.InfoContext(ctx, "patent list query filter and sort metrics",
+		slog.String("project", string(q.Project)),
+		slog.String("filter", q.Filter),
+		slog.String("search", q.Search),
+		slog.String("sort_column", string(q.SortColumn)),
+		slog.Bool("sort_ascending", q.SortAscending),
+		slog.Duration("compilation_duration", compDur),
+		slog.Duration("query_duration", queryDur),
+		slog.Int("rows_returned", rows),
+	)
+
+	if r.metrics == nil {
+		return
+	}
+
+	if hasFilter {
+		r.metrics.IncCounter("store.sqlite.list_patents.filter_total", 1)
+		r.metrics.ObserveDuration("store.sqlite.list_patents.filter_duration", queryDur, false)
+	}
+	if hasSort {
+		r.metrics.IncCounter("store.sqlite.list_patents.sort_total", 1)
+		r.metrics.ObserveDuration("store.sqlite.list_patents.sort_duration", queryDur, false)
+	}
 }
 
 // attachTags fills the Tags field of every row in one query. It replaces a
@@ -406,16 +450,18 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		citationsCount, citedByCount int
 		parentsCount                 int
 		classificationsJSON          string
+		addedMethod                  string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
 		&idsKindCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt, &idsSubmittedAt,
-		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON); err != nil {
+		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON, &addedMethod); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
 	row.FetchState = domain.FetchState(fetchState)
 	row.ReviewState = domain.ReviewState(reviewState)
+	row.AddedMethod = addedMethod
 	if t, err := decodeTime(pubDate); err == nil {
 		row.PublicationDate = t
 	}
@@ -497,6 +543,11 @@ func patentSortExpr(q store.PatentQuery) (string, []any, error) {
 			`)), '') ` + dir, []any{string(q.Project)}, nil
 	case domain.SortByClassification:
 		return "json_extract(p.classifications, '$[0]') " + dir, nil, nil
+	case domain.SortByProvenance:
+		if q.Project != "" {
+			return "COALESCE(mp.added_method, 'direct') " + dir, nil, nil
+		}
+		return "p.number " + dir, nil, nil
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported sort column %q", q.SortColumn)
 	}
@@ -543,6 +594,7 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 			joinType = "LEFT JOIN"
 		}
 		sb.WriteString(" " + joinType + " membership m ON m.patent_number = p.number AND m.project_id = ?")
+		sb.WriteString(" LEFT JOIN membership_provenance mp ON mp.project_id = m.project_id AND mp.patent_number = m.patent_number")
 		args = append(args, string(q.Project))
 		if q.ReviewState != domain.ReviewStateNone {
 			conds = append(conds, "m.state = ?")
@@ -690,6 +742,19 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 		return `p.country = ?`, []any{term.Value}, nil
 	case filterexpr.FieldFetchState:
 		return `p.fetch_state = ?`, []any{term.Value}, nil
+	case filterexpr.FieldProvenance:
+		switch term.Value {
+		case "manual":
+			return "(COALESCE(mp.added_method, 'direct') = 'direct' OR COALESCE(mp.added_method, 'direct') = 'manual' OR COALESCE(mp.added_method, 'direct') = '')", nil, nil
+		case "related":
+			return "COALESCE(mp.added_method, 'direct') LIKE '%related%'", nil, nil
+		case "neighbors":
+			return "COALESCE(mp.added_method, 'direct') LIKE '%neighbor%'", nil, nil
+		case "system":
+			return "(COALESCE(mp.added_method, 'direct') = 'system' OR COALESCE(mp.added_method, 'direct') LIKE 'auto%' OR COALESCE(mp.added_method, 'direct') LIKE 'system%')", nil, nil
+		default:
+			return "COALESCE(mp.added_method, 'direct') = ?", []any{term.Value}, nil
+		}
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
 	}

@@ -378,6 +378,32 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistNotesExport, "Save Note: " + pat
 	case observability.ActionNotesDelete:
 		return theme.Glyphs.HistNotesExport, "Delete Note: " + pat
+	case observability.ActionMembershipAdd:
+		method := "manual"
+		if isManualVal, ok := rec.Attributes["manual"].(bool); ok {
+			if isManualVal {
+				method = "manual"
+			} else {
+				method = "system"
+			}
+		} else if isSystemVal, ok := rec.Attributes["system"].(bool); ok {
+			if isSystemVal {
+				method = "system"
+			} else {
+				method = "manual"
+			}
+		} else if src, ok := rec.Attributes["source"].(string); ok {
+			if strings.HasPrefix(src, "auto") || strings.HasPrefix(src, "system") {
+				method = "system"
+			} else if src == "add.related" || src == "related" {
+				method = "related"
+			} else if src == "direct" {
+				method = "manual"
+			} else {
+				method = src
+			}
+		}
+		return theme.Glyphs.HistPatent, fmt.Sprintf("Add Patent (%s): %s", method, pat)
 	case observability.ActionMembershipSetState:
 		rawState := ""
 		if s, ok := rec.Attributes["state"].(string); ok {

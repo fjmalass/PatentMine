@@ -16,6 +16,7 @@ const (
 	PatentColumnTags           PatentTableColumnKey = PatentTableColumnKey(SortByTags)
 	PatentColumnIDS            PatentTableColumnKey = PatentTableColumnKey(SortByIDS)
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)
+	PatentColumnProvenance     PatentTableColumnKey = PatentTableColumnKey(SortByProvenance)
 )
 
 // ColumnCellType identifies standard cell rendering/content types.
@@ -47,7 +48,7 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 		idsSortable = true
 		tagsSortable = true
 	}
-	return []PatentTableColumn{
+	cols := []PatentTableColumn{
 		{Key: PatentColumnIndex, Label: "#", Width: 4},
 		{Key: PatentColumnNumber, Label: "NUMBER", SortKey: SortByNumber, Sortable: true, Width: 16},
 		{Key: PatentColumnTitle, Label: "TITLE", SortKey: SortByTitle, Sortable: true},
@@ -58,9 +59,15 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 		{Key: PatentColumnCitedBy, Label: "CITED", Width: 5},
 		{Key: PatentColumnParents, Label: "PARENTS", Width: 7},
 		{Key: PatentColumnTags, Label: "TAGS", SortKey: SortByTags, Sortable: tagsSortable, Width: 14},
-		{Key: PatentColumnIDS, Label: "IDS", SortKey: SortByIDS, Sortable: idsSortable, Width: 12},
-		{Key: PatentColumnReviewState, Label: stateLabel, SortKey: SortByReviewState, Sortable: true, Width: 13, CellType: CellTypeState},
 	}
+	if projectID != "" {
+		cols = append(cols, PatentTableColumn{Key: PatentColumnProvenance, Label: "PROVENANCE", SortKey: SortByProvenance, Sortable: true, Width: 10})
+	}
+	cols = append(cols,
+		PatentTableColumn{Key: PatentColumnIDS, Label: "IDS", SortKey: SortByIDS, Sortable: idsSortable, Width: 12},
+		PatentTableColumn{Key: PatentColumnReviewState, Label: stateLabel, SortKey: SortByReviewState, Sortable: true, Width: 13, CellType: CellTypeState},
+	)
+	return cols
 }
 
 // PatentTableAllowsSort reports whether the current table contract exposes the

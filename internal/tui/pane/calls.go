@@ -299,12 +299,17 @@ func AddRelatedCmd(client *rpc.Client, project domain.ProjectID, patent domain.P
 // SetReviewStateCmd changes multiple memberships' states. When a single patent is targeted,
 // it is passed in a slice of length 1.
 func SetReviewStateCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState) tea.Cmd {
+	return SetReviewStateWithOptionsCmd(client, project, patents, state, "")
+}
+
+// SetReviewStateWithOptionsCmd changes multiple memberships' states with options like AddedMethod.
+func SetReviewStateWithOptionsCmd(client *rpc.Client, project domain.ProjectID, patents []domain.PatentNumber, state domain.ReviewState, addedMethod string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.ReviewStateResult
 		if err := client.Call(ctx, proto.MethodReviewState,
-			proto.ReviewStateParams{Project: project, Patents: patents, State: string(state)}, &res); err != nil {
+			proto.ReviewStateParams{Project: project, Patents: patents, State: string(state), AddedMethod: addedMethod}, &res); err != nil {
 			return StatusMsg{Key: text.StatusSetStateFailed, Args: []any{err.Error()}, Error: true}
 		}
 		if len(res.Patents) > 0 {

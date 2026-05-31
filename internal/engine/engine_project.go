@@ -209,10 +209,13 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 		state = before.ReviewState
 	}
 	after := domain.Membership{
-		Project:     project,
-		Patent:      record,
-		ReviewState: state,
-		AddedAt:     time.Now().UTC(),
+		Project:        project,
+		Patent:         record,
+		ReviewState:    state,
+		AddedAt:        time.Now().UTC(),
+		AddedMethod:    "direct",
+		SourceProvider: string(source),
+		SourceMode:     string(e.currentSourceMode()),
 	}
 	err = e.repo.AddMembership(ctx, after)
 	if err != nil {
@@ -237,6 +240,7 @@ func (e *Engine) addToProject(ctx context.Context, project domain.ProjectID, pat
 			"requested_number": patent.String(),
 			"project":          string(project),
 			"source":           string(source),
+			"manual":           true,
 		},
 	})
 	e.announceChange()
@@ -308,11 +312,22 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 	seen := map[domain.PatentNumber]bool{record: true}
 	for _, rel := range rels {
 		var neighbor domain.PatentNumber
+		var method string
 		switch record {
 		case rel.From:
 			neighbor = rel.To
+			if rel.Kind == "parent" || rel.Kind == "child" {
+				method = "related"
+			} else {
+				method = "neighbors"
+			}
 		case rel.To:
 			neighbor = rel.From
+			if rel.Kind == "parent" || rel.Kind == "child" {
+				method = "related"
+			} else {
+				method = "neighbors"
+			}
 		default:
 			continue
 		}
@@ -331,10 +346,13 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 			continue
 		}
 		m := domain.Membership{
-			Project:     project,
-			Patent:      neighborRecord,
-			ReviewState: domain.ReviewStateUnknown,
-			AddedAt:     time.Now().UTC(),
+			Project:            project,
+			Patent:             neighborRecord,
+			ReviewState:        domain.ReviewStateUnknown,
+			AddedAt:            time.Now().UTC(),
+			AddedMethod:        method,
+			ParentPatentNumber: record,
+			SourceMode:         string(e.currentSourceMode()),
 		}
 		if err := e.repo.AddMembership(ctx, m); err != nil {
 			e.log(ctx, slog.LevelError, "add related: membership insert failed",
@@ -354,6 +372,7 @@ func (e *Engine) AddRelated(ctx context.Context, project domain.ProjectID, paten
 				"project":          string(project),
 				"source":           "add.related",
 				"root":             record.String(),
+				"manual":           true,
 			},
 		})
 		added = append(added, neighborRecord)
@@ -394,6 +413,7 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 				continue
 			}
 			ctx := context.Background()
+			rels, _ := e.repo.AllRelations(ctx, root)
 			for _, s := range p.Stubs {
 				neighbor, parseErr := domain.ParsePatentNumber(s)
 				if parseErr != nil {
@@ -402,11 +422,21 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 				if _, exists := e.existingMembership(ctx, project, neighbor); exists {
 					continue
 				}
+				method := "neighbors"
+				for _, rel := range rels {
+					if (rel.From == root && rel.To == neighbor) || (rel.To == root && rel.From == neighbor) {
+						if rel.Kind == "parent" || rel.Kind == "child" {
+							method = "related"
+						}
+						break
+					}
+				}
 				m := domain.Membership{
 					Project:     project,
 					Patent:      neighbor,
 					ReviewState: domain.ReviewStateUnknown,
 					AddedAt:     time.Now().UTC(),
+					AddedMethod: method,
 				}
 				if err := e.repo.AddMembership(ctx, m); err != nil {
 					e.log(ctx, slog.LevelWarn, "auto-assign depth-1 neighbor membership failed",
@@ -427,6 +457,7 @@ func (e *Engine) autoAssignDepth1Neighbors(project domain.ProjectID, root domain
 						"source":           "auto.depth1",
 						"root":             rootStr,
 						"job_id":           string(id),
+						"manual":           false,
 					},
 				})
 				added++
@@ -537,6 +568,11 @@ func (e *Engine) cleanupIfNotFound(project domain.ProjectID, record domain.Paten
 // SetReviewState changes multiple memberships' states, enforcing domain rules and announcing changes once.
 // When a single patent is targeted, it is passed in a slice of length 1.
 func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, target domain.ReviewState) (err error) {
+	return e.SetReviewStateWithOptions(ctx, project, patents, target, "")
+}
+
+// SetReviewStateWithOptions is like SetReviewState but allows specifying the added method for missing memberships.
+func (e *Engine) SetReviewStateWithOptions(ctx context.Context, project domain.ProjectID, patents []domain.PatentNumber, target domain.ReviewState, addedMethod string) (err error) {
 	defer e.observeDuration("engine.set_review_state", time.Now(), &err)
 	if !target.Valid() {
 		return fmt.Errorf("engine: invalid review state %q", target)
@@ -567,6 +603,7 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				Patent:      record,
 				ReviewState: initialState,
 				AddedAt:     time.Now().UTC(),
+				AddedMethod: addedMethod,
 			}
 			if err := e.repo.AddMembership(ctx, m); err != nil {
 				e.log(ctx, slog.LevelError, "add membership in SetReviewState failed",
@@ -588,7 +625,10 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 				Status:   "committed",
 				Before:   domain.Membership{},
 				After:    m,
-				Attributes: map[string]any{"requested_number": record.String()},
+				Attributes: map[string]any{
+					"requested_number": record.String(),
+					"manual":           addedMethod == "" || addedMethod == "direct" || addedMethod == "manual",
+				},
 			})
 
 			addedRecords = append(addedRecords, record)
@@ -596,6 +636,17 @@ func (e *Engine) SetReviewState(ctx context.Context, project domain.ProjectID, p
 			current, err = e.repo.Membership(ctx, project, record)
 			if err != nil {
 				return err
+			}
+		} else if err == nil {
+			if addedMethod != "" && addedMethod != "direct" && addedMethod != "manual" {
+				m := domain.Membership{
+					Project:     project,
+					Patent:      record,
+					ReviewState: current.ReviewState,
+					AddedAt:     current.AddedAt,
+					AddedMethod: addedMethod,
+				}
+				_ = e.repo.AddMembership(ctx, m)
 			}
 		} else if err != nil {
 			return err
@@ -725,4 +776,25 @@ func (e *Engine) ReviewStateOf(ctx context.Context, project domain.ProjectID, pa
 		return "", false, err
 	}
 	return m.ReviewState, true, nil
+}
+
+// MembershipOf returns a patent's membership inside a project (including loading provenance).
+// ok is false if the patent is not a member of the project or the project is empty.
+func (e *Engine) MembershipOf(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (membership domain.Membership, ok bool, err error) {
+	defer e.observeDuration("engine.membership_of", time.Now(), &err)
+	if project == "" {
+		return domain.Membership{}, false, nil
+	}
+	record, err := e.recordNumber(ctx, patent)
+	if err != nil {
+		return domain.Membership{}, false, err
+	}
+	m, err := e.repo.Membership(ctx, project, record)
+	if errors.Is(err, store.ErrNotFound) {
+		return domain.Membership{}, false, nil
+	}
+	if err != nil {
+		return domain.Membership{}, false, err
+	}
+	return m, true, nil
 }

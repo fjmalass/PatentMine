@@ -27,7 +27,13 @@ func NewUSPTOSource(apiKey string) Source {
 		client:  &http.Client{Timeout: httpTimeout},
 		limiter: newLimiter(usptoMinInterval),
 		urlFor: func(n domain.PatentNumber) string {
-			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(usptoQuery(n))
+			q := usptoQuery(n)
+			slog.Info("crawl/uspto: query formulation",
+				slog.String("raw_number", n.String()),
+				slog.String("serial", n.Serial),
+				slog.String("kind", n.Kind),
+				slog.String("query", q))
+			return "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(q)
 		},
 		headers: func() http.Header {
 			h := make(http.Header)
@@ -60,17 +66,17 @@ func usptoQuery(n domain.PatentNumber) string {
 				serial, serial)
 		}
 		if norm != "" && norm != serial {
-			return fmt.Sprintf("applicationMetaData.earliestPublicationNumber:%s OR %q OR %q",
+			return fmt.Sprintf("applicationMetaData.publicationNumber:%s OR %q OR %q",
 				serial, norm, serial)
 		}
-		return fmt.Sprintf("applicationMetaData.earliestPublicationNumber:%s OR %q",
+		return fmt.Sprintf("applicationMetaData.publicationNumber:%s OR %q",
 			serial, serial)
 	}
 	if norm != "" && norm != serial {
-		return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q OR %q",
+		return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s OR %q OR %q",
 			serial, serial, serial, norm, serial)
 	}
-	return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.earliestPublicationNumber:%s OR %q",
+	return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s OR %q",
 		serial, serial, serial, serial)
 }
 
@@ -129,6 +135,23 @@ type usptoApplicationMeta struct {
 	PatentNumberText              string           `json:"patentNumberText"`
 	PatentNumber                  string           `json:"patentNumber"`
 	PublicationNumber             string           `json:"publicationNumber"`
+	EarliestPublicationNumber     string           `json:"earliestPublicationNumber"`
+}
+
+func (m *usptoApplicationMeta) UnmarshalJSON(data []byte) error {
+	type Alias usptoApplicationMeta
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if m.PublicationNumber == "" && m.EarliestPublicationNumber != "" {
+		m.PublicationNumber = m.EarliestPublicationNumber
+	}
+	return nil
 }
 
 type usptoEntity struct {
@@ -400,6 +423,11 @@ func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber)
 		return nil, nil
 	}
 	query := usptoQuery(number)
+	slog.Info("crawl/uspto: SearchUSPTO query formulation",
+		slog.String("raw_number", number.String()),
+		slog.String("serial", number.Serial),
+		slog.String("kind", number.Kind),
+		slog.String("query", query))
 	apiURL := "https://api.uspto.gov/api/v1/patent/applications/search?q=" + url.QueryEscape(query)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
@@ -482,8 +510,8 @@ func matchesPatent(raw string, target domain.PatentNumber) bool {
 		}
 	}
 
-	// Logging for debugging purposes
-	slog.Debug("matchesPatent comparison",
+	// Logging for debugging/conversion tracking purposes
+	slog.Info("matchesPatent comparison",
 		slog.String("raw_input", raw),
 		slog.String("target_number", target.String()),
 		slog.Bool("parse_success", parseSuccess),

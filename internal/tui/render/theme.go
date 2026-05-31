@@ -1,6 +1,10 @@
 package render
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Theme colours, named so no raw colour code appears at a call site.
 const (
@@ -123,6 +127,17 @@ const (
 	glyphStagePublication = "📄"
 	glyphStageGrant       = "🏆"
 	glyphStageUnknown     = "❓"
+
+	glyphProvManual   = "🔤"
+	glyphProvCitation = "🔗"
+	glyphProvCitedBy  = "👈"
+	glyphProvParent   = "⬆️"
+	glyphProvChild    = "⬇️"
+	glyphProvOther    = "❓"
+	glyphProvLoading  = "🔄"
+	glyphProvRelated   = "👪"
+	glyphProvNeighbors = "🏡"
+	glyphProvSystem    = "🤖"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -261,12 +276,23 @@ type ThemeGlyphs struct {
 	HistColType     string
 
 	// Table row prefix glyphs. table.go composes cursor+mark+" " = 3-char prefix.
-	RowCursor  string // cursor row in focused table, e.g. ">"
+	RowCursor   string // cursor row in focused table, e.g. ">"
 	RowNoCursor string // non-cursor row placeholder
-	RowActive  string // active/current item mark passed via MarkGlyph, e.g. "*"
-	RowMark    string // flagged/marked row indicator, e.g. "⚑"
-	RowChosen  string // confirmed-selection indicator, e.g. "✓" (caller override)
-	RowNoMark  string // no-mark placeholder, same display width
+	RowActive   string // active/current item mark passed via MarkGlyph, e.g. "*"
+	RowMark     string // flagged/marked row indicator, e.g. "⚑"
+	RowChosen   string // confirmed-selection indicator, e.g. "✓" (caller override)
+	RowNoMark   string // no-mark placeholder, same display width
+
+	ProvManual    string
+	ProvCitation  string
+	ProvCitedBy   string
+	ProvParent    string
+	ProvChild     string
+	ProvOther     string
+	ProvLoading   string
+	ProvRelated   string
+	ProvNeighbors string
+	ProvSystem    string
 }
 
 // NewTheme builds the default theme.
@@ -460,12 +486,23 @@ func NewTheme() Theme {
 			HistTagRemove:   glyphHistTagRemove,
 			HistColType:     glyphHistColType,
 
-			RowCursor:  glyphRowCursor,
+			RowCursor:   glyphRowCursor,
 			RowNoCursor: glyphRowNoCursor,
-			RowActive:  glyphRowActive,
-			RowMark:    glyphRowMark,
-			RowChosen:  glyphRowChosen,
-			RowNoMark:  glyphRowNoMark,
+			RowActive:   glyphRowActive,
+			RowMark:     glyphRowMark,
+			RowChosen:   glyphRowChosen,
+			RowNoMark:   glyphRowNoMark,
+
+			ProvManual:    glyphProvManual,
+			ProvCitation:  glyphProvCitation,
+			ProvCitedBy:   glyphProvCitedBy,
+			ProvParent:    glyphProvParent,
+			ProvChild:     glyphProvChild,
+			ProvOther:     glyphProvOther,
+			ProvLoading:   glyphProvLoading,
+			ProvRelated:   glyphProvRelated,
+			ProvNeighbors: glyphProvNeighbors,
+			ProvSystem:    glyphProvSystem,
 		},
 	}
 }
@@ -533,5 +570,32 @@ func (t Theme) StageGlyph(stage string) string {
 		return t.Glyphs.StageGrant
 	default:
 		return t.Glyphs.StageUnknown
+	}
+}
+
+// ProvenanceGlyph returns the emoji/glyph corresponding to the loading provenance method.
+func (t Theme) ProvenanceGlyph(method string) string {
+	method = strings.ToLower(method)
+	switch {
+	case method == "", method == "direct", method == "manual":
+		return t.Glyphs.ProvManual
+	case method == "related" || strings.Contains(method, "related"):
+		return t.Glyphs.ProvRelated
+	case method == "neighbors" || strings.Contains(method, "neighbor"):
+		return t.Glyphs.ProvNeighbors
+	case method == "system" || strings.HasPrefix(method, "auto") || strings.HasPrefix(method, "system"):
+		return t.Glyphs.ProvSystem
+	case method == "cites" || method == "citation":
+		return t.Glyphs.ProvCitation
+	case method == "cited_by" || method == "cited":
+		return t.Glyphs.ProvCitedBy
+	case method == "parent":
+		return t.Glyphs.ProvParent
+	case method == "child":
+		return t.Glyphs.ProvChild
+	case method == "loading":
+		return t.Glyphs.ProvLoading
+	default:
+		return t.Glyphs.ProvOther
 	}
 }

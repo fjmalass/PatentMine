@@ -328,12 +328,13 @@ func (s *Server) patentGet(ctx context.Context, raw json.RawMessage) (any, error
 	// State and tags are project-scoped; populate them only when the caller
 	// named a project, leaving them empty for a project-independent lookup.
 	if p.Project != "" {
-		state, ok, err := s.engine.ReviewStateOf(ctx, p.Project, p.Number)
+		m, ok, err := s.engine.MembershipOf(ctx, p.Project, p.Number)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			result.ReviewState = state
+			result.ReviewState = m.ReviewState
+			result.Membership = &m
 		}
 		tags, err := s.engine.PatentTags(ctx, p.Project, p.Number)
 		if err != nil {
@@ -586,7 +587,7 @@ func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, err
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrBadParams, err)
 	}
-	if err := s.engine.SetReviewState(ctx, p.Project, p.Patents, state); err != nil {
+	if err := s.engine.SetReviewStateWithOptions(ctx, p.Project, p.Patents, state, p.AddedMethod); err != nil {
 		return nil, err
 	}
 	records := make([]domain.PatentNumber, 0, len(p.Patents))

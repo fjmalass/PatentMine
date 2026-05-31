@@ -93,4 +93,5 @@ sequenceDiagram
    - Upon successful crawl, the patent gets saved as `cached`. Discovered citations are saved as `stub`.
    - During ingestion, any overlapping stub records are automatically resolved and deep-merged via `MergeRecords`.
    - The done event is caught by `cleanupIfNotFound` which automatically promotes the root patent's review state to `under_review`.
+   - The addition trigger records a `membership_provenance` entry (`direct` for manual adds, `related` for family expansions, and `system`/`auto` for crawler operations).
 

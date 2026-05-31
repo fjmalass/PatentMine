@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '2')
+VALUES ('schema_version', '3')
 ON CONFLICT(key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS patent (
@@ -565,6 +565,17 @@ CREATE TABLE IF NOT EXISTS membership (
 );
 
 CREATE INDEX IF NOT EXISTS idx_membership_project ON membership (project_id, state);
+
+CREATE TABLE IF NOT EXISTS membership_provenance (
+    project_id            TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    patent_number         TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    added_method          TEXT NOT NULL,
+    parent_patent_number  TEXT,
+    source_provider       TEXT NOT NULL DEFAULT '',
+    source_mode           TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (project_id, patent_number),
+    FOREIGN KEY (project_id, patent_number) REFERENCES membership (project_id, patent_number) ON DELETE CASCADE ON UPDATE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS project_patent_note (
     project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,

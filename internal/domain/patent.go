@@ -17,6 +17,7 @@ const (
 	SortByIDS            SortColumn = "ids"
 	SortByTags           SortColumn = "tags"
 	SortByClassification SortColumn = "classification"
+	SortByProvenance     SortColumn = "provenance"
 
 	// UI-only sort keys used by the per-patent classification overlay. They
 	// never travel over RPC — the overlay sorts its in-memory rows directly.
@@ -151,6 +152,7 @@ type PatentRow struct {
 	CitationsCount  int          `json:"citations_count,omitempty"`
 	CitedByCount    int          `json:"cited_by_count,omitempty"`
 	ParentsCount    int          `json:"parents_count,omitempty"`
+	AddedMethod     string       `json:"added_method,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.

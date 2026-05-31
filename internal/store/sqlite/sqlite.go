@@ -56,22 +56,56 @@ func Open(ctx context.Context, path string) (*Repo, error) {
 
 // OpenWithMetrics opens the database and wires in optional in-process metrics.
 func OpenWithMetrics(ctx context.Context, path string, metrics *observability.Metrics) (*Repo, error) {
+	// Check if the SQLite driver is registered to ensure it hasn't been omitted from imports.
+	var driverFound bool
+	for _, d := range sql.Drivers() {
+		if d == driverName {
+			driverFound = true
+			break
+		}
+	}
+	if !driverFound {
+		err := fmt.Errorf("store/sqlite: database driver %q is not registered (forgotten import of modernc.org/sqlite?)", driverName)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", err)
+		return nil, err
+	}
+
 	writer, err := sql.Open(driverName, dsn(path))
 	if err != nil {
-		return nil, fmt.Errorf("store/sqlite: open writer: %w", err)
+		wrappedErr := fmt.Errorf("store/sqlite: open writer: %w", err)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", wrappedErr)
+		return nil, wrappedErr
 	}
 	writer.SetMaxOpenConns(1)
+
+	if err := writer.PingContext(ctx); err != nil {
+		_ = writer.Close()
+		wrappedErr := fmt.Errorf("store/sqlite: failed to open or initialize database file %q: %w", path, err)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", wrappedErr)
+		return nil, wrappedErr
+	}
 
 	reader, err := sql.Open(driverName, dsn(path))
 	if err != nil {
 		_ = writer.Close()
-		return nil, fmt.Errorf("store/sqlite: open reader: %w", err)
+		wrappedErr := fmt.Errorf("store/sqlite: open reader: %w", err)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", wrappedErr)
+		return nil, wrappedErr
 	}
 	reader.SetMaxOpenConns(maxReaderConns)
+
+	if err := reader.PingContext(ctx); err != nil {
+		_ = writer.Close()
+		_ = reader.Close()
+		wrappedErr := fmt.Errorf("store/sqlite: failed to open or initialize database file %q: %w", path, err)
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", wrappedErr)
+		return nil, wrappedErr
+	}
 
 	r := &Repo{writer: writer, reader: reader, path: path, metrics: metrics}
 	if err := r.initSchema(ctx); err != nil {
 		_ = r.Close()
+		fmt.Fprintf(os.Stdout, "patentmine: database import/open failed: %v\n", err)
 		return nil, err
 	}
 	return r, nil
@@ -188,8 +222,14 @@ func (r *Repo) requireSchemaVersion(ctx context.Context) error {
 		`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
 		return fmt.Errorf("store/sqlite: read schema version: %w", err)
 	}
-	if version != "2" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 2", version)
+	if version == "2" {
+		if err := r.migrateV2ToV3(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v2 to v3: %w", err)
+		}
+		version = "3"
+	}
+	if version != "3" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 3", version)
 	}
 	return nil
 }

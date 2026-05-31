@@ -23,6 +23,7 @@ const (
 	colCitedBy        = 5
 	colParents        = 7
 	colTags           = 10
+	colProvenance     = 10
 	colIDS            = 8
 	colState          = 10
 	headerRows        = 2
@@ -76,9 +77,14 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 			column(domain.PatentColumnCitedBy, colCitedBy),
 			column(domain.PatentColumnParents, colParents),
 			column(domain.PatentColumnTags, colTags),
+		}
+		if _, exists := lookup[domain.PatentColumnProvenance]; exists {
+			cols = append(cols, column(domain.PatentColumnProvenance, colProvenance))
+		}
+		cols = append(cols,
 			column(domain.PatentColumnIDS, colIDS),
 			column(domain.PatentColumnReviewState, colState),
-		}
+		)
 
 	case bodyWidth >= 130:
 		cols = []tableCol{
@@ -210,6 +216,11 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 		return strconv.Itoa(row.ParentsCount)
 	case domain.PatentColumnTags:
 		return formatTags(row.Tags)
+	case domain.PatentColumnProvenance:
+		if shouldShowStubAsLoading(row.FetchState, row.AddedMethod) {
+			return theme.ProvenanceGlyph("loading")
+		}
+		return formatProvenance(theme, row.AddedMethod)
 	case domain.PatentColumnIDS:
 		return formatIDSSummary(theme, row.IDSEntry)
 	default:
@@ -452,4 +463,8 @@ func formatClassificationsShort(classifications []string, descs map[string]strin
 		return head
 	}
 	return fmt.Sprintf("%s (+%d)", head, len(classifications)-1)
+}
+
+func formatProvenance(theme render.Theme, addedMethod string) string {
+	return theme.ProvenanceGlyph(addedMethod)
 }

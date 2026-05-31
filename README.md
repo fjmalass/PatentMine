@@ -657,6 +657,8 @@ Supported fields:
 * `inventor:` : Global inventor filter.
 * `assignee:` : Global assignee filter.
 * `owner:` : Alias for `assignee:`.
+* `provenance:` : Project-scoped patent provenance filter (`manual` or `direct`, `related`, `system` or `auto`). Requires an active project.
+* `prov:` : Alias for `provenance:`.
 
 Examples:
 
@@ -665,6 +667,7 @@ Examples:
 * `:filter class:S04*`
 * `:filter inventor:"Ada Lovelace" and assignee:Acme*`
 * `:filter search:"widget sensor" and not class:H01L*`
+* `:filter provenance:system and state:under_review`
 
 Pattern rules:
 

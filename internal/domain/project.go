@@ -84,8 +84,12 @@ func ParseInventors(s string) []string {
 // Membership links one patent to one project and carries its workflow state.
 // A patent in several projects has one Membership per project.
 type Membership struct {
-	Patent      PatentNumber `json:"patent"`
-	Project     ProjectID    `json:"project"`
-	ReviewState ReviewState  `json:"review_state"`
-	AddedAt     time.Time    `json:"added_at"`
+	Patent             PatentNumber `json:"patent"`
+	Project            ProjectID    `json:"project"`
+	ReviewState        ReviewState  `json:"review_state"`
+	AddedAt            time.Time    `json:"added_at"`
+	AddedMethod        string       `json:"added_method,omitempty"`         // 'direct' or 'related'
+	ParentPatentNumber PatentNumber `json:"parent_patent_number,omitempty"` // Root patent of relationship
+	SourceProvider     string       `json:"source_provider,omitempty"`       // 'uspto', 'google', 'file'
+	SourceMode         string       `json:"source_mode,omitempty"`           // 'compare', 'uspto-first', etc.
 }

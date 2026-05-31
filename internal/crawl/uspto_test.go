@@ -135,6 +135,37 @@ func TestParseUSPTOEmptyResultIsNotAvailable(t *testing.T) {
 	}
 }
 
+func TestParseUSPTOHandlesEarliestPublicationNumber(t *testing.T) {
+	sample := `{
+	  "count": 1,
+	  "patentFileWrapperDataBag": [{
+	    "applicationNumberText": "11592460",
+	    "applicationMetaData": {
+	      "inventionTitle": "Sample Title",
+	      "earliestPublicationNumber": "US20070106721A1"
+	    }
+	  }]
+	}`
+	number := domain.MustParsePatentNumber("US20070106721A1")
+	res, err := parseUSPTO(number, []byte(sample))
+	if err != nil {
+		t.Fatalf("parseUSPTO with earliestPublicationNumber: %v", err)
+	}
+	if res.Patent.Title != "Sample Title" {
+		t.Errorf("title = %q, want 'Sample Title'", res.Patent.Title)
+	}
+	
+	var foundPub bool
+	for _, d := range res.Documents {
+		if d.Stage == domain.StagePublication && d.Number.Normalized() == "US20070106721A1" {
+			foundPub = true
+		}
+	}
+	if !foundPub {
+		t.Error("missing StagePublication document in res.Documents")
+	}
+}
+
 func TestMatchingUSPTOWrapperScoring(t *testing.T) {
 	// Wrapper A: Application 11714053 (with patent number 7561063)
 	wA := usptoWrapperData{

@@ -313,8 +313,17 @@ func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {
 }
 
 func (a *App) runReviewState(id command.ID, target domain.ReviewState) (tea.Model, tea.Cmd) {
+	addedMethod := ""
+	if p, ok := a.focusedPane().(*pane.Citations); ok {
+		addedMethod = string(p.Kind())
+		if addedMethod == "" {
+			addedMethod = "related"
+		}
+	} else if _, ok := a.focusedPane().(*pane.FamilyGraph); ok {
+		addedMethod = "related"
+	}
 	return a.runBulkAction(id, func(project domain.ProjectID, patents []domain.PatentNumber) tea.Cmd {
-		return pane.SetReviewStateCmd(a.client, project, patents, target)
+		return pane.SetReviewStateWithOptionsCmd(a.client, project, patents, target, addedMethod)
 	})
 }
 

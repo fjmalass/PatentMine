@@ -295,7 +295,7 @@ History overlay-specific interpretation: the expression runs as a case-insensiti
 | Notes (save/delete/export) | `:filter notes.` |
 | Patent focus events | `:filter ui.focus` |
 
-Catalog/citations/family interpret the same expression as the existing `filterexpr` grammar (e.g. `assignee:foo AND year:2024`). The expression is opaque to `FilterSortSettings`; each pane's match callback parses or substring-matches as it sees fit.
+Catalog/citations/family interpret the same expression as the existing `filterexpr` grammar (e.g. `assignee:foo AND year:2024`, or `provenance:system` for project listing). The expression is opaque to `FilterSortSettings`; each pane's match callback parses or substring-matches as it sees fit.
 
 ## Generic FilterSortSettings
 

@@ -279,6 +279,7 @@ type PatentResult struct {
 	IDSEntry         *domain.IDSEntry         `json:"ids_entry,omitempty"`
 	PatentNote       *domain.PatentNote       `json:"patent_note,omitempty"`
 	USPTOApplication *domain.USPTOApplication `json:"uspto_application,omitempty"`
+	Membership       *domain.Membership       `json:"membership,omitempty"`
 }
 
 // PatentListParams selects and paginates a patent listing.
@@ -399,9 +400,10 @@ type OrphanListResult struct {
 
 // ReviewStateParams sets one or more memberships' states.
 type ReviewStateParams struct {
-	Project domain.ProjectID      `json:"project"`
-	Patents []domain.PatentNumber `json:"patents"`
-	State   string                `json:"state"`
+	Project     domain.ProjectID        `json:"project"`
+	Patents     []domain.PatentNumber   `json:"patents"`
+	State       string                  `json:"state"`
+	AddedMethod string                  `json:"added_method,omitempty"`
 }
 
 // ReviewStateResult reports the canonical patent records whose state changed.

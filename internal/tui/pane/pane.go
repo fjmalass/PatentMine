@@ -253,3 +253,11 @@ func PaneHandlers() map[command.Scope][]command.ID {
 type SearchAppliedMsg struct {
 	Query string
 }
+
+// shouldShowStubAsLoading returns true if a patent stub should be shown as loading.
+// A stub should be shown as loading if its fetch state is a stub and its added method
+// is neither "neighbors" nor "related". Stubs representing cited/citations and children/parents
+// should instead display their respective relationship glyphs (neighbors/related).
+func shouldShowStubAsLoading(fetchState domain.FetchState, addedMethod string) bool {
+	return fetchState == domain.FetchStub && addedMethod != "neighbors" && addedMethod != "related"
+}

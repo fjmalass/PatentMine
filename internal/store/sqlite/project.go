@@ -220,13 +220,44 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err erro
 	if !m.ReviewState.Valid() {
 		return fmt.Errorf("store/sqlite: invalid review state %q", m.ReviewState)
 	}
-	_, err = r.writer.ExecContext(ctx,
+
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: add membership tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO membership (project_id, patent_number, state, added_at)
 		 VALUES (?,?,?,?)
 		 ON CONFLICT(project_id, patent_number) DO NOTHING`,
 		string(m.Project), m.Patent.Normalized(), string(m.ReviewState), encodeTime(m.AddedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: add membership: %w", err)
+	}
+
+	addedMethod := m.AddedMethod
+	if addedMethod == "" {
+		addedMethod = "direct"
+	}
+	var parentPatentVal *string
+	if !m.ParentPatentNumber.IsZero() {
+		norm := m.ParentPatentNumber.Normalized()
+		parentPatentVal = &norm
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO membership_provenance (project_id, patent_number, added_method, parent_patent_number, source_provider, source_mode)
+		 VALUES (?,?,?,?,?,?)
+		 ON CONFLICT(project_id, patent_number) DO UPDATE SET
+		   added_method = CASE WHEN added_method IN ('', 'direct', 'manual') AND excluded.added_method NOT IN ('', 'direct', 'manual') THEN excluded.added_method ELSE added_method END`,
+		string(m.Project), m.Patent.Normalized(), addedMethod, parentPatentVal, m.SourceProvider, m.SourceMode)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: add membership provenance: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: add membership commit: %w", err)
 	}
 	return nil
 }
@@ -235,11 +266,17 @@ func (r *Repo) AddMembership(ctx context.Context, m domain.Membership) (err erro
 func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (membership domain.Membership, err error) {
 	defer r.observeDuration("membership", time.Now(), &err)
 	row := r.reader.QueryRowContext(ctx,
-		`SELECT project_id, patent_number, state, added_at FROM membership
-		 WHERE project_id = ? AND patent_number = ?`,
+		`SELECT m.project_id, m.patent_number, m.state, m.added_at,
+		        COALESCE(p.added_method, 'direct'), COALESCE(p.parent_patent_number, ''),
+		        COALESCE(p.source_provider, ''), COALESCE(p.source_mode, '')
+		 FROM membership m
+		 LEFT JOIN membership_provenance p
+		   ON m.project_id = p.project_id AND m.patent_number = p.patent_number
+		 WHERE m.project_id = ? AND m.patent_number = ?`,
 		string(project), patent.Normalized())
 	var projectID, patentNumber, state, addedAt string
-	if err := row.Scan(&projectID, &patentNumber, &state, &addedAt); err != nil {
+	var addedMethod, parentPatentNumber, sourceProvider, sourceMode string
+	if err := row.Scan(&projectID, &patentNumber, &state, &addedAt, &addedMethod, &parentPatentNumber, &sourceProvider, &sourceMode); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Membership{}, store.ErrNotFound
 		}
@@ -249,11 +286,19 @@ func (r *Repo) Membership(ctx context.Context, project domain.ProjectID, patent 
 	if err != nil {
 		return domain.Membership{}, err
 	}
+	var parentPatent domain.PatentNumber
+	if parentPatentNumber != "" {
+		parentPatent, _ = domain.ParsePatentNumber(parentPatentNumber)
+	}
 	return domain.Membership{
-		Project:     domain.ProjectID(projectID),
-		Patent:      patent,
-		ReviewState: domain.ReviewState(state),
-		AddedAt:     added,
+		Project:            domain.ProjectID(projectID),
+		Patent:             patent,
+		ReviewState:        domain.ReviewState(state),
+		AddedAt:            added,
+		AddedMethod:        addedMethod,
+		ParentPatentNumber: parentPatent,
+		SourceProvider:     sourceProvider,
+		SourceMode:         sourceMode,
 	}, nil
 }
 
@@ -308,8 +353,13 @@ func (r *Repo) DeleteMembership(ctx context.Context, project domain.ProjectID, p
 func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out []domain.Membership, err error) {
 	defer r.observeDuration("memberships", time.Now(), &err)
 	rows, err := r.reader.QueryContext(ctx,
-		`SELECT project_id, patent_number, state, added_at FROM membership
-		 WHERE project_id = ? ORDER BY patent_number`, string(project))
+		`SELECT m.project_id, m.patent_number, m.state, m.added_at,
+		        COALESCE(p.added_method, 'direct'), COALESCE(p.parent_patent_number, ''),
+		        COALESCE(p.source_provider, ''), COALESCE(p.source_mode, '')
+		 FROM membership m
+		 LEFT JOIN membership_provenance p
+		   ON m.project_id = p.project_id AND m.patent_number = p.patent_number
+		 WHERE m.project_id = ? ORDER BY m.added_at ASC, m.patent_number`, string(project))
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list memberships: %w", err)
 	}
@@ -318,7 +368,8 @@ func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out [
 	out = nil
 	for rows.Next() {
 		var projectID, patentNumber, state, addedAt string
-		if err := rows.Scan(&projectID, &patentNumber, &state, &addedAt); err != nil {
+		var addedMethod, parentPatentNumber, sourceProvider, sourceMode string
+		if err := rows.Scan(&projectID, &patentNumber, &state, &addedAt, &addedMethod, &parentPatentNumber, &sourceProvider, &sourceMode); err != nil {
 			return nil, fmt.Errorf("store/sqlite: scan membership: %w", err)
 		}
 		patent, err := domain.ParsePatentNumber(patentNumber)
@@ -329,11 +380,19 @@ func (r *Repo) Memberships(ctx context.Context, project domain.ProjectID) (out [
 		if err != nil {
 			return nil, err
 		}
+		var parentPatent domain.PatentNumber
+		if parentPatentNumber != "" {
+			parentPatent, _ = domain.ParsePatentNumber(parentPatentNumber)
+		}
 		out = append(out, domain.Membership{
-			Project:     domain.ProjectID(projectID),
-			Patent:      patent,
-			ReviewState: domain.ReviewState(state),
-			AddedAt:     added,
+			Project:            domain.ProjectID(projectID),
+			Patent:             patent,
+			ReviewState:        domain.ReviewState(state),
+			AddedAt:            added,
+			AddedMethod:        addedMethod,
+			ParentPatentNumber: parentPatent,
+			SourceProvider:     sourceProvider,
+			SourceMode:         sourceMode,
 		})
 	}
 	if err := rows.Err(); err != nil {

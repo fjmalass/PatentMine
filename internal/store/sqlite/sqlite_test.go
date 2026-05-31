@@ -633,6 +633,196 @@ func TestPatentFilterExpressionSupportsBooleanLogic(t *testing.T) {
 	}
 }
 
+func TestPatentFilterExpressionSupportsProvenance(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p1 := samplePatent("US0000001A1")
+	p2 := samplePatent("US0000002A1")
+	p3 := samplePatent("US0000003A1")
+	for _, p := range []domain.Patent{p1, p2, p3} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent(%s): %v", p.Number, err)
+		}
+	}
+	// Add memberships with distinct provenances:
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p1.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "direct",
+	}); err != nil {
+		t.Fatalf("AddMembership p1: %v", err)
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p2.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "add.related",
+	}); err != nil {
+		t.Fatalf("AddMembership p2: %v", err)
+	}
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p3.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "auto.crawler",
+	}); err != nil {
+		t.Fatalf("AddMembership p3: %v", err)
+	}
+
+	// 1. Filter by provenance:manual
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "provenance:manual"})
+	if err != nil {
+		t.Fatalf("ListPatents provenance:manual: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p1.Number {
+		t.Fatalf("provenance:manual rows = %v, want only p1", rows)
+	}
+
+	// 2. Filter by provenance:related
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "provenance:related"})
+	if err != nil {
+		t.Fatalf("ListPatents provenance:related: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p2.Number {
+		t.Fatalf("provenance:related rows = %v, want only p2", rows)
+	}
+
+	// 3. Filter by provenance:system
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "provenance:system"})
+	if err != nil {
+		t.Fatalf("ListPatents provenance:system: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p3.Number {
+		t.Fatalf("provenance:system rows = %v, want only p3", rows)
+	}
+
+	// 4. Sort by SortByProvenance ascending (COALESCE(mp.added_method, 'direct') order: add.related, auto.crawler, direct)
+	rows, err = repo.ListPatents(ctx, store.PatentQuery{
+		Project:       project.ID,
+		SortColumn:    domain.SortByProvenance,
+		SortAscending: true,
+	})
+	if err != nil {
+		t.Fatalf("ListPatents sort by provenance ASC: %v", err)
+	}
+	if len(rows) != 3 || rows[0].Number != p2.Number || rows[1].Number != p3.Number || rows[2].Number != p1.Number {
+		t.Fatalf("sort by provenance ASC rows = %v, want order p2, p3, p1", rows)
+	}
+}
+
+func TestPatentFilterExpressionSupportsProvenanceNeighbors(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	project := domain.Project{ID: "proj-1", Name: "Project 1"}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p := samplePatent("US0000004A1")
+	if err := repo.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "neighbors",
+	}); err != nil {
+		t.Fatalf("AddMembership: %v", err)
+	}
+
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "provenance:neighbors"})
+	if err != nil {
+		t.Fatalf("ListPatents: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Number != p.Number {
+		t.Fatalf("rows = %v, want p4", rows)
+	}
+}
+
+func TestProvenanceConflictResolution(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+	project := domain.Project{ID: "p1", Name: "Project One", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, project); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	p := samplePatent("US0000001A1")
+	if err := repo.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	// 1. Initial direct/manual insert:
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "direct",
+	}); err != nil {
+		t.Fatalf("AddMembership direct: %v", err)
+	}
+
+	// Check provenance is "direct"
+	m, err := repo.Membership(ctx, project.ID, p.Number)
+	if err != nil {
+		t.Fatalf("Membership: %v", err)
+	}
+	if m.AddedMethod != "direct" {
+		t.Fatalf("initial AddedMethod = %q, want direct", m.AddedMethod)
+	}
+
+	// 2. Conflict update to "related":
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "related",
+	}); err != nil {
+		t.Fatalf("AddMembership related conflict: %v", err)
+	}
+
+	// Check provenance updated to "related"
+	m, err = repo.Membership(ctx, project.ID, p.Number)
+	if err != nil {
+		t.Fatalf("Membership: %v", err)
+	}
+	if m.AddedMethod != "related" {
+		t.Fatalf("after related conflict AddedMethod = %q, want related", m.AddedMethod)
+	}
+
+	// 3. Conflict update to "direct" should NOT downgrade "related":
+	if err := repo.AddMembership(ctx, domain.Membership{
+		Project:     project.ID,
+		Patent:      p.Number,
+		ReviewState: domain.ReviewStateUnknown,
+		AddedAt:     time.Now().UTC(),
+		AddedMethod: "direct",
+	}); err != nil {
+		t.Fatalf("AddMembership direct conflict: %v", err)
+	}
+
+	// Check provenance remains "related"
+	m, err = repo.Membership(ctx, project.ID, p.Number)
+	if err != nil {
+		t.Fatalf("Membership: %v", err)
+	}
+	if m.AddedMethod != "related" {
+		t.Fatalf("after direct conflict AddedMethod = %q, want related", m.AddedMethod)
+	}
+}
+
 func TestIDSEntryStoreAndPatentListing(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()
@@ -776,6 +966,38 @@ func TestListPatentsSortByTagsMetrics(t *testing.T) {
 	}
 	if snap.Gauges["store.sqlite.list_patents.sort_tags.offset"] != 1 {
 		t.Fatalf("sort_tags offset gauge = %d, want 1", snap.Gauges["store.sqlite.list_patents.sort_tags.offset"])
+	}
+}
+
+func TestListPatentsFilterAndSortMetrics(t *testing.T) {
+	repo, metrics := openTestRepoWithMetrics(t)
+	ctx := context.Background()
+	project, _, _ := seedTagSortFixture(t, repo, ctx, 3)
+
+	// 1. Trigger filter metrics
+	if _, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, Filter: "tag:prior_art"}); err != nil {
+		t.Fatalf("ListPatents with filter: %v", err)
+	}
+
+	snap := metrics.Snapshot()
+	if snap.Counters["store.sqlite.list_patents.filter_total"] != 1 {
+		t.Fatalf("filter_total counter = %d, want 1", snap.Counters["store.sqlite.list_patents.filter_total"])
+	}
+	if snap.Timings["store.sqlite.list_patents.filter_duration"].Count != 1 {
+		t.Fatalf("filter_duration timing count = %d, want 1", snap.Timings["store.sqlite.list_patents.filter_duration"].Count)
+	}
+
+	// 2. Trigger sort metrics
+	if _, err := repo.ListPatents(ctx, store.PatentQuery{Project: project.ID, SortColumn: domain.SortByProvenance}); err != nil {
+		t.Fatalf("ListPatents with sort: %v", err)
+	}
+
+	snap = metrics.Snapshot()
+	if snap.Counters["store.sqlite.list_patents.sort_total"] != 1 {
+		t.Fatalf("sort_total counter = %d, want 1", snap.Counters["store.sqlite.list_patents.sort_total"])
+	}
+	if snap.Timings["store.sqlite.list_patents.sort_duration"].Count != 1 {
+		t.Fatalf("sort_duration timing count = %d, want 1", snap.Timings["store.sqlite.list_patents.sort_duration"].Count)
 	}
 }
 
