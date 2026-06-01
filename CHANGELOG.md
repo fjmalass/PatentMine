@@ -9,6 +9,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.10.0] — 2026-06-01
+
 ### Fixed
 - **`:add.file` silently dropped zero-padded grant numbers**: a list entry like `US09658068B2` (leading-zero–padded grant number) parsed to an identity distinct from `US9658068B2`, and Google Patents only serves the un-padded form — so the crawl 404'd and the not-found cleanup deleted the membership, leaving the patent missing with no record, no stub, and no message. Root cause fixed in `domain.ParsePatentNumber`: a number carrying a kind code (e.g. `B2`/`A1`) is a grant/publication identifier whose leading zeros are insignificant padding and are now stripped, so `US09658068B2` and `US9658068B2` are one identity that resolves cleanly. Bare application serials (no kind code, e.g. `09/658,068`) keep their leading `09` series digits, which are significant.
 - **`:add.file` outcome was a transient status line**: a partial import (some numbers not found or ambiguous) flashed a one-line status that was easy to miss, so it looked like patents had silently vanished. It now ends with a result popup summarizing how many of how many were added, with a per-number reason for each failure.
