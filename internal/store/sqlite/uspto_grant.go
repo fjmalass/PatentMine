@@ -212,6 +212,7 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 	// with the complete kind code and the grant date parsed from the ingested XML.
 	var grantNum domain.PatentNumber
 	grantDocNum := strings.TrimSpace(ingest.Summary.GrantDocNumber)
+	grantKind := strings.TrimSpace(ingest.Summary.GrantKind)
 	if grantDocNum != "" {
 		if !strings.HasPrefix(strings.ToUpper(grantDocNum), "US") {
 			grantDocNum = "US" + grantDocNum
@@ -220,12 +221,17 @@ func (r *Repo) SaveUSPTOGrantIngest(ctx context.Context, ingest domain.USPTOGran
 			grantNum = gn
 		}
 	}
-	if grantNum.IsZero() && strings.TrimSpace(ingest.Summary.GrantDocNumber) != "" {
-		grantNum = domain.PatentNumber{
-			Country: "US",
-			Serial:  strings.TrimSpace(ingest.Summary.GrantDocNumber),
-			Kind:    ingest.Summary.GrantKind,
-		}
+	if grantNum.IsZero() && grantDocNum != "" {
+		grantNum = domain.PatentNumber{Country: "US", Serial: strings.TrimSpace(ingest.Summary.GrantDocNumber)}
+	}
+	// The grant number from the XML is frequently digits-only (e.g. "09658068"),
+	// while the kind code ("B2") arrives separately in GrantKind. Parsing the bare
+	// number yields a valid but kind-less PatentNumber, so the kind must be merged
+	// in explicitly — otherwise the grant document is stored without it and every
+	// Google-linkable number derived from it (notably :export.added) loses the
+	// kind, leaving a number Google Patents will not resolve.
+	if grantNum.Kind == "" && grantKind != "" {
+		grantNum.Kind = grantKind
 	}
 	if !grantNum.IsZero() {
 		var docDate time.Time
@@ -439,4 +445,3 @@ func (r *Repo) ClearUSPTOGrantBodies(ctx context.Context, applicationNumbers []s
 
 	return rowsDeleted, bytesSaved, nil
 }
-

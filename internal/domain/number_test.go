@@ -22,6 +22,9 @@ func TestParsePatentNumber(t *testing.T) {
 		{"with application brackets", "[17696256]", PatentNumber{"", "17696256", ""}},
 		{"google application with colon", "US: 12/820,712", PatentNumber{"US", "12820712", ""}},
 		{"google publication with colon", "US: 2010/0282272 A1", PatentNumber{"US", "20100282272", "A1"}},
+		{"leading-zero grant stripped", "US09658068B2", PatentNumber{"US", "9658068", "B2"}},
+		{"leading-zero grant no country", "09658068B2", PatentNumber{"", "9658068", "B2"}},
+		{"bare application keeps series zero", "09658068", PatentNumber{"", "09658068", ""}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

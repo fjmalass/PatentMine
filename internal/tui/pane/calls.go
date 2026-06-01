@@ -149,6 +149,19 @@ func ImportFileCmd(client *rpc.Client, path string) tea.Cmd {
 	}
 }
 
+// AddedImportDoneMsg reports the outcome of an :add.file import so the app can
+// show a result modal summarizing how many patents were added, how many failed,
+// and the per-number reason for each failure (e.g. "not found", "ambiguous
+// USPTO match"). It carries the full failure detail the transient status line
+// could not, so a partial import never silently swallows the patents it dropped.
+type AddedImportDoneMsg struct {
+	Path     string
+	Total    int
+	Added    int
+	Failed   int
+	Failures []string
+}
+
 // AddFileCmd bulk-adds every patent number listed in a plain-text file into
 // the project, with manual provenance. The daemon reads and parses the file.
 func AddFileCmd(client *rpc.Client, project domain.ProjectID, path string) tea.Cmd {
@@ -160,7 +173,13 @@ func AddFileCmd(client *rpc.Client, project domain.ProjectID, path string) tea.C
 			proto.AddedImportParams{Project: project, Path: path}, &res); err != nil {
 			return StatusMsg{Key: text.StatusAddedImportFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusAddedImportDone, Args: []any{res.Added, res.Total, path, res.Failed}, Error: res.Failed > 0}
+		return AddedImportDoneMsg{
+			Path:     path,
+			Total:    res.Total,
+			Added:    res.Added,
+			Failed:   res.Failed,
+			Failures: res.Failures,
+		}
 	}
 }
 

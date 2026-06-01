@@ -550,6 +550,80 @@ func TestEngineExportIDSUsesPublishedDocumentOnly(t *testing.T) {
 	}
 }
 
+// TestEngineManualMembershipsExportsKindCodedNumbers covers the :export.added
+// guarantee: every exported number carries a kind code (e.g. "…B2"/"…A1") so
+// the saved list links/re-imports cleanly against Google Patents, even when the
+// record is keyed by its kind-less application number — which is the common
+// case in USPTO source mode.
+func TestEngineManualMembershipsExportsKindCodedNumbers(t *testing.T) {
+	eng, repo := newTestEngine(t, nil)
+	ctx := context.Background()
+	project, err := eng.CreateProject(ctx, "Export")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// A granted record keyed by its application number — the grant document
+	// carries the "…B2" number Google serves.
+	granted := domain.MustParsePatentNumber("US16000020")
+	grantDoc := domain.MustParsePatentNumber("US0000020B2")
+	if err := eng.SavePatent(ctx, domain.Patent{
+		Number: granted, Title: "Granted", FetchState: domain.FetchCached,
+	}); err != nil {
+		t.Fatalf("SavePatent granted: %v", err)
+	}
+	for _, d := range []domain.Document{
+		{Number: granted, Stage: domain.StageApplication},
+		{Number: grantDoc, Stage: domain.StageGrant},
+	} {
+		if err := repo.SaveDocument(ctx, granted, d); err != nil {
+			t.Fatalf("SaveDocument granted: %v", err)
+		}
+	}
+	if _, _, _, err := eng.AddToProject(ctx, project.ID, granted); err != nil {
+		t.Fatalf("AddToProject granted: %v", err)
+	}
+
+	// A still-pending record keyed by its application number — its furthest
+	// document is the "…A1" publication, which Google does serve.
+	pending := domain.MustParsePatentNumber("US16000021")
+	pubDoc := domain.MustParsePatentNumber("US20210000021A1")
+	if err := eng.SavePatent(ctx, domain.Patent{
+		Number: pending, Title: "Pending", FetchState: domain.FetchCached,
+	}); err != nil {
+		t.Fatalf("SavePatent pending: %v", err)
+	}
+	for _, d := range []domain.Document{
+		{Number: pending, Stage: domain.StageApplication},
+		{Number: pubDoc, Stage: domain.StagePublication},
+	} {
+		if err := repo.SaveDocument(ctx, pending, d); err != nil {
+			t.Fatalf("SaveDocument pending: %v", err)
+		}
+	}
+	if _, _, _, err := eng.AddToProject(ctx, project.ID, pending); err != nil {
+		t.Fatalf("AddToProject pending: %v", err)
+	}
+
+	numbers, err := eng.ManualMemberships(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ManualMemberships: %v", err)
+	}
+
+	got := make(map[string]bool, len(numbers))
+	for _, n := range numbers {
+		if n.Kind == "" {
+			t.Errorf("exported number %s has no kind code; Google Patents needs the kind-coded document", n)
+		}
+		got[n.Normalized()] = true
+	}
+	for _, want := range []domain.PatentNumber{grantDoc, pubDoc} {
+		if !got[want.Normalized()] {
+			t.Errorf("export missing kind-coded number %s; got %v", want, numbers)
+		}
+	}
+}
+
 func TestEngineExportIDSUnknownProject(t *testing.T) {
 	eng, _ := newTestEngine(t, nil)
 	if _, err := eng.ExportIDS(context.Background(), "no-such-project"); err == nil {

@@ -1153,9 +1153,10 @@ func (a *App) cmdExportAdded(inv invocation) (tea.Model, tea.Cmd) {
 	}
 
 	// Explicit path: the user chose the destination, so skip the location
-	// picker — but still warn before clobbering an existing file.
+	// picker — but still warn before clobbering an existing file. The path is
+	// resolved to absolute so the popup always shows the full destination.
 	if len(inv.args) == 1 {
-		path := inv.args[0]
+		path := absPath(inv.args[0])
 		writeCmd := pane.ExportAddedCmd(a.client, a.activeProject.ID, path)
 		if _, err := os.Stat(path); err == nil {
 			a.confirmCmd = writeCmd
@@ -1177,10 +1178,19 @@ func (a *App) cmdExportAdded(inv invocation) (tea.Model, tea.Cmd) {
 	}
 	safeName := strings.NewReplacer(" ", "-", "/", "-", "\\", "-").Replace(a.activeProject.Name)
 	filename := fmt.Sprintf("patentmine-added-%s-%s.txt", safeName, time.Now().Format(domain.DateLayout))
-	path := filepath.Join(dir, filename)
+	path := absPath(filepath.Join(dir, filename))
 	a.confirmCmd = pane.ExportAddedCmd(a.client, a.activeProject.ID, path)
 	a.overlays = append(a.overlays, overlay.NewExportConfirm(a.theme, "Export Added Patents", path, scanExistingAddedExports(dir)))
 	return a, nil
+}
+
+// absPath resolves p to an absolute path for display and writing, falling back
+// to the original string if resolution fails.
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 // scanExistingAddedExports returns the patentmine-added-*.txt filenames already

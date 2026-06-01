@@ -866,8 +866,15 @@ func isManualMethod(method string) bool {
 	return method == "" || method == "direct" || method == "manual"
 }
 
-// ManualMemberships returns the record numbers of every patent manually added
-// to a project, in record order. It backs :export.added and its REST route.
+// ManualMemberships returns the Google-compatible numbers of every patent
+// manually added to a project, in record order. It backs :export.added and its
+// REST route.
+//
+// Each membership stores the canonical record key, which is usually the
+// kind-less application number (e.g. "US16123456"). Google Patents serves a
+// page only for the grant document ("…B2"), so the exported list carries each
+// record's GrantedNumber — explicitly resolved here so the saved file includes
+// the kind code and re-imports/links cleanly against Google.
 func (e *Engine) ManualMemberships(ctx context.Context, project domain.ProjectID) (numbers []domain.PatentNumber, err error) {
 	defer e.observeDuration("engine.manual_memberships", time.Now(), &err)
 	memberships, err := e.repo.Memberships(ctx, project)
@@ -875,9 +882,17 @@ func (e *Engine) ManualMemberships(ctx context.Context, project domain.ProjectID
 		return nil, err
 	}
 	for _, m := range memberships {
-		if isManualMethod(m.AddedMethod) {
-			numbers = append(numbers, m.Patent)
+		if !isManualMethod(m.AddedMethod) {
+			continue
 		}
+		// Resolve the record to its grant-stage (kind-coded) number for Google
+		// compatibility; fall back to the bare record key if the record cannot
+		// be loaded (it always should, since the membership references it).
+		googleNumber := m.Patent
+		if p, getErr := e.repo.Patent(ctx, m.Patent); getErr == nil {
+			googleNumber = p.GrantedNumber()
+		}
+		numbers = append(numbers, googleNumber)
 	}
 	if e.metrics != nil {
 		e.metrics.IncCounter("engine.added.export_total", 1)

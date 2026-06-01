@@ -179,10 +179,120 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "4"
 	}
-	if version != "4" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 4", version)
+	if version == "4" {
+		if err := r.migrateV4ToV5(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v4 to v5: %w", err)
+		}
+		version = "5"
+	}
+	if version != "5" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 5", version)
 	}
 	return nil
+}
+
+// migrateV4ToV5 repairs grant documents that were stored without their kind
+// code. The lighter crawl path recorded the grant number digits-only (e.g.
+// "US09658068") while the authoritative kind ("B2") was kept only in
+// uspto_application.grant_kind. Because :export.added derives each patent's
+// Google-linkable number from its grant document, those records exported a
+// kind-less number Google Patents will not serve. This backfill stamps the kind
+// onto the document (and the record's display number) from the stored
+// grant_kind, joining through the surrogate record id. It is data-only and
+// idempotent: rows already carrying a kind are left untouched.
+func (r *Repo) migrateV4ToV5(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v4-to-v5.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v4 to v5: backup: %w", err)
+	}
+	// uspto_application holds the authoritative grant_kind. When an earlier
+	// migration in the same chain (v3→v4) has dropped it for schema.sql to
+	// recreate empty, there is nothing to backfill — just advance the version.
+	hasUSPTO, err := r.tableExists(ctx, "uspto_application")
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v4 to v5: detect uspto_application: %w", err)
+	}
+
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v4 to v5: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if hasUSPTO {
+		for _, stmt := range migrationV4ToV5Statements {
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("store/sqlite: migrate v4 to v5: %w", err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '5' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v4 to v5: set version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v4 to v5: commit: %w", err)
+	}
+	return nil
+}
+
+// migrationV4ToV5Statements backfill grant-document kind codes from
+// uspto_application.grant_kind. The join goes document.record_number →
+// record.number → record.id → uspto_application.record_id, matching how the
+// source-derived tables key off the stable surrogate id.
+var migrationV4ToV5Statements = []string{
+	// A record may already carry a properly kinded grant document (from the grant
+	// XML path) alongside a stale kind-less one from the lighter crawl. Drop the
+	// kind-less duplicate first so the record resolves to a single grant document.
+	`DELETE FROM document
+	 WHERE stage = 'grant' AND kind = ''
+	   AND EXISTS (
+	       SELECT 1 FROM document d2
+	       WHERE d2.record_number = document.record_number
+	         AND d2.stage = 'grant' AND d2.kind != ''
+	   )`,
+	// Stamp the authoritative grant kind onto the remaining kind-less grant
+	// documents. Only the kind column is touched here: Documents() rebuilds a
+	// document's number from country/serial/kind, so this alone makes the exported
+	// Google number carry the kind, and it cannot collide with the document
+	// number's UNIQUE/primary key (the same grant document may exist under a
+	// divergent doc-centric record — see record-number identity divergence).
+	`UPDATE document
+	 SET kind = (
+	         SELECT ua.grant_kind FROM uspto_application ua
+	         JOIN record r ON r.id = ua.record_id
+	         WHERE r.number = document.record_number AND ua.grant_kind != ''
+	     )
+	 WHERE stage = 'grant' AND kind = ''
+	   AND EXISTS (
+	       SELECT 1 FROM uspto_application ua
+	       JOIN record r ON r.id = ua.record_id
+	       WHERE r.number = document.record_number AND ua.grant_kind != ''
+	   )`,
+	// Bring the canonical number column in line with the now-stamped kind, but
+	// only when the kinded form is not already taken by another document row, so a
+	// divergent record's grant document never triggers a PK collision. Where it
+	// would collide the kind column stays authoritative for the export.
+	`UPDATE document
+	 SET number = country || serial || kind
+	 WHERE stage = 'grant' AND kind != '' AND number = country || serial
+	   AND NOT EXISTS (
+	       SELECT 1 FROM document d2
+	       WHERE d2.number = document.country || document.serial || document.kind
+	   )`,
+	// Keep the record's display number aligned with its now-kinded grant document
+	// so the TUI and links show the Google-resolvable number, but only when the
+	// stored display number is the kind-less grant number we just corrected.
+	`UPDATE record
+	 SET display_number = (
+	         SELECT d.country || d.serial || d.kind FROM document d
+	         WHERE d.record_number = record.number AND d.stage = 'grant' AND d.kind != ''
+	         ORDER BY d.number LIMIT 1
+	     )
+	 WHERE EXISTS (
+	         SELECT 1 FROM document d
+	         WHERE d.record_number = record.number AND d.stage = 'grant'
+	           AND d.kind != '' AND record.display_number = d.country || d.serial
+	     )`,
 }
 
 // migrateV3ToV4 introduces the surrogate record id. It is rename-based and

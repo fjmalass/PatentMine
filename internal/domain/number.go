@@ -53,7 +53,22 @@ func ParsePatentNumber(raw string) (PatentNumber, error) {
 	if serial == "" {
 		return PatentNumber{}, ErrNoSerial
 	}
-	return PatentNumber{Country: m[1], Serial: serial, Kind: m[3]}, nil
+	kind := m[3]
+	// A document number that carries a kind code (e.g. "US09658068B2") is a
+	// grant or publication identifier whose leading zeros are insignificant
+	// zero-padding: Google's canonical page is "US9658068B2", so the padded
+	// form 404s and the patent silently vanishes after its not-found cleanup.
+	// Strip the padding so "US09658068B2" and "US9658068B2" are one identity
+	// that resolves cleanly. A bare application serial (no kind code, e.g.
+	// "09/658,068") is left intact: there the leading "09" is a significant
+	// series code, not padding.
+	if kind != "" {
+		serial = strings.TrimLeft(serial, "0")
+		if serial == "" {
+			serial = "0"
+		}
+	}
+	return PatentNumber{Country: m[1], Serial: serial, Kind: kind}, nil
 }
 
 // MustParsePatentNumber is ParsePatentNumber for compile-time-known literals

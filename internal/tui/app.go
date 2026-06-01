@@ -1011,6 +1011,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Int("count", m.Count),
 			slog.String("path", m.Path))
 		return a, nil
+	case pane.AddedImportDoneMsg:
+		lines := []string{
+			fmt.Sprintf("Added %d of %d patent(s) from:", m.Added, m.Total),
+			"  " + m.Path,
+		}
+		if m.Failed > 0 {
+			lines = append(lines, "", fmt.Sprintf("%d could not be added:", m.Failed))
+			for _, f := range m.Failures {
+				lines = append(lines, "  • "+f)
+			}
+		}
+		a.overlays = append(a.overlays, overlay.NewNoticeOverlay(a.theme, "Added List Imported", lines))
+		a.metrics.IncCounter("tui.added.import.done", 1)
+		a.log().Info("added list imported",
+			slog.String("path", m.Path),
+			slog.Int("total", m.Total),
+			slog.Int("added", m.Added),
+			slog.Int("failed", m.Failed))
+		return a, nil
 	case pane.AddShowMergeWarningMsg:
 		a.confirmCmd = pane.AddToProjectFromSourceWithOptionsCmd(a.client, m.Project, m.Patent, m.Source, true)
 		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, m.MergeWarning.Message))

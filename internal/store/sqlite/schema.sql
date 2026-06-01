@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '4')
+VALUES ('schema_version', '5')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique

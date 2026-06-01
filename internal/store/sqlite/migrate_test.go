@@ -148,8 +148,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 4 {
-		t.Fatalf("schema_version = %d, want 4", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 5 {
+		t.Fatalf("schema_version = %d, want 5", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -178,6 +178,74 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 	defer func() { _ = rows.Close() }()
 	if rows.Next() {
 		t.Fatalf("foreign_key_check reported violations after migration")
+	}
+}
+
+// TestMigrateV4ToV5BackfillsGrantKind reproduces the export bug: a granted
+// record whose grant document was stored digits-only (kind-less) while the
+// authoritative kind lives in uspto_application.grant_kind. The v4→v5 migration
+// must stamp the kind onto the grant document and the record display number so
+// the Google-linkable number derived at export carries it.
+func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v4.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v4 db: %v", err)
+	}
+	for _, stmt := range []string{
+		schemaSQL,
+		// Mark the database as v4 so Open() runs the v4→v5 migration.
+		`UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'`,
+		`INSERT INTO record (id, number, country, serial, kind, display_number, fetch_state)
+		 VALUES ('rid1', 'US14047231', 'US', '14047231', '', 'US09658068', 'cached')`,
+		`INSERT INTO document (number, record_number, country, serial, kind, stage)
+		 VALUES ('US14047231', 'US14047231', 'US', '14047231', '', 'application')`,
+		`INSERT INTO document (number, record_number, country, serial, kind, stage)
+		 VALUES ('US09658068', 'US14047231', 'US', '09658068', '', 'grant')`,
+		`INSERT INTO uspto_application (application_number, record_id, grant_doc_number, grant_kind, fetched_at)
+		 VALUES ('14047231', 'rid1', '09658068', 'B2', 't')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v4: %v\n%s", err, stmt)
+		}
+	}
+	_ = db.Close()
+
+	repo, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (migrate v4→v5): %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	scan := func(q string) string {
+		var s string
+		if err := repo.reader.QueryRowContext(ctx, q).Scan(&s); err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		return s
+	}
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "5" {
+		t.Fatalf("schema_version = %q, want 5", v)
+	}
+	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
+		t.Fatalf("grant document kind = %q, want B2", k)
+	}
+	if n := scan(`SELECT number FROM document WHERE record_number='US14047231' AND stage='grant'`); n != "US09658068B2" {
+		t.Fatalf("grant document number = %q, want US09658068B2", n)
+	}
+	if d := scan(`SELECT display_number FROM record WHERE number='US14047231'`); d != "US09658068B2" {
+		t.Fatalf("record display_number = %q, want US09658068B2", d)
+	}
+
+	// End to end: the number derived for Google export now carries the kind.
+	p, err := repo.Patent(ctx, domain.MustParsePatentNumber("US14047231"))
+	if err != nil {
+		t.Fatalf("Patent after migrate: %v", err)
+	}
+	if got := p.GrantedNumber().Normalized(); got != "US09658068B2" {
+		t.Fatalf("GrantedNumber() = %q, want US09658068B2", got)
 	}
 }
 
