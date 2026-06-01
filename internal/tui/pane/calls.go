@@ -149,6 +149,36 @@ func ImportFileCmd(client *rpc.Client, path string) tea.Cmd {
 	}
 }
 
+// AddFileCmd bulk-adds every patent number listed in a plain-text file into
+// the project, with manual provenance. The daemon reads and parses the file.
+func AddFileCmd(client *rpc.Client, project domain.ProjectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.AddedImportResult
+		if err := client.Call(ctx, proto.MethodAddedImport,
+			proto.AddedImportParams{Project: project, Path: path}, &res); err != nil {
+			return StatusMsg{Key: text.StatusAddedImportFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusAddedImportDone, Args: []any{res.Added, res.Total, path, res.Failed}, Error: res.Failed > 0}
+	}
+}
+
+// ExportAddedCmd writes the project's manually-added patents to a plain-text
+// list file at path.
+func ExportAddedCmd(client *rpc.Client, project domain.ProjectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.AddedExportResult
+		if err := client.Call(ctx, proto.MethodAddedExport,
+			proto.AddedExportParams{Project: project, OutputPath: path}, &res); err != nil {
+			return StatusMsg{Key: text.StatusAddedExportFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusAddedExportDone, Args: []any{res.Count, res.Path}}
+	}
+}
+
 // AddUSPTOShowCandidatesMsg is returned when a broad search yields multiple candidate wrappers.
 type AddUSPTOShowCandidatesMsg struct {
 	Project    domain.ProjectID
@@ -667,4 +697,3 @@ func FetchUSPTOXMLInteractiveCmd(client *rpc.Client, number domain.PatentNumber,
 		}
 	}
 }
-

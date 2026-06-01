@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -1073,8 +1075,6 @@ func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-
-
 // cmdImport fetches a patent by number — optionally forcing past the file
 // cache — or loads a fixture file when the argument is a path.
 func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {
@@ -1111,6 +1111,52 @@ func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {
 // isFixturePath reports whether arg names a fixture file rather than a patent.
 func isFixturePath(arg string) bool {
 	return strings.ContainsAny(arg, `/\`) || strings.HasSuffix(strings.ToLower(arg), ".json")
+}
+
+// cmdAddFile bulk-adds every patent number listed in a plain-text file into the
+// active project, exactly as repeated :add would. The daemon reads, validates,
+// and parses the file; each number is added with manual provenance.
+func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 1 {
+		return a.usageError(command.AddFile)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.AddFileCmd(a.client, a.activeProject.ID, inv.args[0])
+}
+
+// cmdExportAdded writes the active project's manually-added patents to a
+// plain-text list file that :add.file can later reload.
+func (a *App) cmdExportAdded(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(command.ExportAdded)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	dir := a.notesExportDir
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		dir = home
+	}
+	safeName := strings.NewReplacer(" ", "-", "/", "-", "\\", "-").Replace(a.activeProject.Name)
+	filename := fmt.Sprintf("patentmine-added-%s-%s.txt", safeName, time.Now().Format(domain.DateLayout))
+	path := filepath.Join(dir, filename)
+	return a, pane.ExportAddedCmd(a.client, a.activeProject.ID, path)
 }
 
 type aiPatentLoadedMsg struct {

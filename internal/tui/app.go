@@ -165,9 +165,11 @@ var appHandlers = map[command.ID]appHandler{
 	command.FetchUSPTOGrant:            (*App).cmdFetchUSPTOGrant,
 	command.FetchUSPTOAssignments:      (*App).cmdFetchUSPTOAssignments,
 	command.Import:                     (*App).cmdImport,
-	command.SourceMode:     (*App).cmdSourceMode,
-	command.SourceCompare: (*App).cmdSourceCompare,
-	command.SourceBibs:    (*App).cmdSourceBibs,
+	command.AddFile:                    (*App).cmdAddFile,
+	command.ExportAdded:                (*App).cmdExportAdded,
+	command.SourceMode:                 (*App).cmdSourceMode,
+	command.SourceCompare:              (*App).cmdSourceCompare,
+	command.SourceBibs:                 (*App).cmdSourceBibs,
 	command.CrawlDepthMax:              (*App).cmdCrawlDepthMax,
 	command.MarkActive:                 (*App).cmdMarkActive,
 	command.MarkUnderReview:            (*App).cmdMarkUnderReview,
@@ -212,6 +214,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.ProjectActivate:       true,
 	command.ProjectCreate:         true,
 	command.Import:                true,
+	command.AddFile:               true,
 	command.SourceMode:            true,
 	command.Tag:                   true,
 	command.Untag:                 true,
@@ -1007,9 +1010,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.FetchStarted {
 			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{m.Patent.String()}} }
 		} else if m.JobID != "" {
-			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusCrawlStarted, Args: []any{m.Patent.String(), m.JobID, 0}} }
+			cmd = func() tea.Msg {
+				return pane.StatusMsg{Key: text.StatusCrawlStarted, Args: []any{m.Patent.String(), m.JobID, 0}}
+			}
 		} else {
-			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAdded, Args: []any{m.Patent.String(), string(m.Project)}} }
+			cmd = func() tea.Msg {
+				return pane.StatusMsg{Key: text.StatusAdded, Args: []any{m.Patent.String(), string(m.Project)}}
+			}
 		}
 		return a, cmd
 	case pane.AddShowAutoSelectedCandidateMsg:
@@ -1022,9 +1029,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.FetchStarted {
 			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAddedNoCrawl, Args: []any{m.Patent.String()}} }
 		} else if m.JobID != "" {
-			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusCrawlStarted, Args: []any{m.Patent.String(), m.JobID, 0}} }
+			cmd = func() tea.Msg {
+				return pane.StatusMsg{Key: text.StatusCrawlStarted, Args: []any{m.Patent.String(), m.JobID, 0}}
+			}
 		} else {
-			cmd = func() tea.Msg { return pane.StatusMsg{Key: text.StatusAdded, Args: []any{m.Patent.String(), string(m.Project)}} }
+			cmd = func() tea.Msg {
+				return pane.StatusMsg{Key: text.StatusAdded, Args: []any{m.Patent.String(), string(m.Project)}}
+			}
 		}
 		return a, cmd
 	case pane.AddUSPTOShowCandidatesMsg:

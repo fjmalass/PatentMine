@@ -66,6 +66,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /projects/{id}/ids/entries/{number}", s.handleIDSEntrySave)
 	s.mux.HandleFunc("DELETE /projects/{id}/ids/entries/{number}", s.handleIDSEntryDelete)
 	s.mux.HandleFunc("PUT /projects/{id}", s.handleProjectUpdate)
+	s.mux.HandleFunc("GET /projects/{id}/added/export", s.handleAddedExport)
+	s.mux.HandleFunc("POST /projects/{id}/added", s.handleAddedImport)
 	s.mux.HandleFunc("GET /projects/{id}/notes", s.handleNoteList)
 	s.mux.HandleFunc("GET /projects/{id}/notes/export", s.handleNotesExport)
 	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/note", s.handleNoteGet)

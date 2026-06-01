@@ -2,6 +2,13 @@
 
 This document contains the execution flow sequence diagram for the TUI `:add` command across all `source.mode` settings.
 
+Related bulk commands:
+
+- **`:add.file <path>`** (aliases `add-file`, `load`) — reads a plain-text patent list and adds every number to the active project, each with `direct` (manual) provenance, exactly as repeated `:add` would. The daemon reads, validates the header, and parses the file; ambiguous USPTO matches are reported as failures rather than prompting, so the bulk run stays non-interactive. REST: `POST /projects/{id}/added`.
+- **`:export.added`** (aliases `export-added`, `add.export`) — writes the active project's manually-added patents (memberships with `direct`/`manual` provenance) to a plain-text list file that `:add.file` can reload. REST: `GET /projects/{id}/added/export`.
+
+Both operations emit activity records (`added.import` / `added.export`) and metrics, and each imported patent also records its own `membership.add` activity, so the full history is preserved. The file format carries a mandatory magic header (`# patentmine added-patents v1`) so a wrong-kind file is rejected on import.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -94,4 +101,23 @@ sequenceDiagram
    - During ingestion, any overlapping stub records are automatically resolved and deep-merged via `MergeRecords`.
    - The done event is caught by `cleanupIfNotFound` which automatically promotes the root patent's review state to `under_review`.
    - The addition trigger records a `membership_provenance` entry (`direct` for manual adds, `related` for family expansions, and `system`/`auto` for crawler operations).
+
+## Membership Provenance & Icons
+
+Every membership records *how* a patent entered a project in its `added_method` field. The TUI renders each provenance with a glyph (`Theme.ProvenanceGlyph`, defined in `internal/tui/render/theme.go`); the detail pane shows it next to a human-readable label. `:export.added` exports only the **manual** rows; `:add.file` writes new rows back as **manual**.
+
+| Glyph | `added_method` value(s) | Meaning | Exported by `:export.added`? |
+|:---:|---|---|:---:|
+| 🔤 | `direct`, `manual`, *(empty)* | Manually added via `:add` / `:add.file` (Direct Ingestion) | ✅ Yes |
+| 👪 | `related` | Promoted from a family neighbor (parent/child expansion) | ❌ No |
+| 🏡 | `neighbors` | Promoted from a depth-1 neighbor auto-assign | ❌ No |
+| 🤖 | `system`, `auto…` | Added by a crawler/system operation | ❌ No |
+| 🔗 | `cites`, `citation` | Promoted from a citation edge | ❌ No |
+| 👈 | `cited_by`, `cited` | Promoted from a cited-by edge | ❌ No |
+| ⬆️ | `parent` | Promoted from a parent edge | ❌ No |
+| ⬇️ | `child` | Promoted from a child edge | ❌ No |
+| 🔄 | `loading` | Stub still loading/being discovered | ❌ No |
+| ❓ | *(anything else)* | Unknown provenance | ❌ No |
+
+An empty `added_method` predates provenance tracking and is treated as manual, matching `filterexpr.ParseProvenance` and the engine's `isManualMethod` helper.
 

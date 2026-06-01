@@ -502,6 +502,35 @@ Manual XML fetch commands are available when you want to re-request XML or fetch
 
 Both commands work on the cursor row or visual selection. XML is cached on disk and tracked in `uspto_xml_download`; repeated fetches count as accesses and do not redownload if the local file exists.
 
+### 8.3.1 Bulk add from a list file, and export the added list
+
+Instead of typing patents one at a time, you can load a whole list from a plain-text file and, conversely, save the patents you have manually added back out to such a file. The two are inverses, so a list round-trips cleanly.
+
+```text
+:export.added            # write this project's manually-added patents to a list file
+:add.file <path>         # add every patent number in <path> to the active project
+```
+
+- **`:export.added`** (aliases `export-added`, `add.export`) writes the active project's manually-added patents — memberships with `direct` provenance — to `patentmine-added-<project>-<date>.txt` in the notes/export directory. Crawl-discovered neighbors (`related`, `neighbors`, citations, …) are deliberately excluded; see the provenance table in [TUI_ADD_FLOW.md](./TUI_ADD_FLOW.md#membership-provenance--icons).
+- **`:add.file <path>`** (aliases `add-file`, `load`) reads the file, validates its header, and adds each number to the active project with manual provenance — exactly as repeated `:add` would, including the auto-fetch. Ambiguous USPTO matches are reported as failures rather than opening a candidate picker, so the bulk run is non-interactive. A status line reports `added N of M (K failed)`.
+
+The file is one patent number per line under a **mandatory magic header**; blank lines and `#` comments are ignored. The header guards against feeding in the wrong kind of file:
+
+```text
+# patentmine added-patents v1
+# project: Acme Prior Art
+# exported: 2026-05-31
+US11611785B2
+EP1234567A1
+```
+
+Both operations are recorded in the activity/history log (`added.import` / `added.export`) and exposed over REST:
+
+```text
+GET  /projects/{id}/added/export    # returns the list as text/plain
+POST /projects/{id}/added           # body: raw list text, or JSON {"content":"…"} / {"path":"…"}
+```
+
 ### 8.4 View source, XML, full text, and citations
 
 Use these TUI surfaces after loading a USPTO record:

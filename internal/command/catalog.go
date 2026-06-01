@@ -71,14 +71,14 @@ const (
 
 	// Patent review-state changes. All four map to one proto method; the
 	// target state is the difference the dispatcher supplies.
-	MarkActive      ID = "patent.mark-active"
-	MarkUnderReview ID = "patent.mark-under-review"
-	MarkIgnored     ID = "patent.mark-ignored"
-	MarkDeleted     ID = "patent.mark-deleted"
-	AddToProject    ID = "patent.add-to-project"
-	AddUSPTO        ID = "patent.add-uspto"
-	AddGoogle       ID = "patent.add-google"
-	AddRelated      ID = "patent.add-related" // add the citations/parents/children of the current selection that are still stubs or lack membership in the active project
+	MarkActive            ID = "patent.mark-active"
+	MarkUnderReview       ID = "patent.mark-under-review"
+	MarkIgnored           ID = "patent.mark-ignored"
+	MarkDeleted           ID = "patent.mark-deleted"
+	AddToProject          ID = "patent.add-to-project"
+	AddUSPTO              ID = "patent.add-uspto"
+	AddGoogle             ID = "patent.add-google"
+	AddRelated            ID = "patent.add-related" // add the citations/parents/children of the current selection that are still stubs or lack membership in the active project
 	FetchUSPTO            ID = "patent.fetch-uspto"
 	FetchUSPTOPGPub       ID = "patent.fetch-uspto-pgpub"
 	FetchUSPTOGrant       ID = "patent.fetch-uspto-grant"
@@ -104,7 +104,7 @@ const (
 
 	// PatentDelete permanently removes a patent from the database.
 	PatentDelete ID = "patent.delete"
-	
+
 	// ClearPatentCache clears the parsed XML bodies cache.
 	ClearPatentCache ID = "patent.clear-cache"
 
@@ -117,6 +117,8 @@ const (
 	CrawlCancel    ID = "crawl.cancel"
 	LookupPatent   ID = "patent.lookup"
 	Import         ID = "patent.import"
+	AddFile        ID = "patent.add-file"      // bulk-add patent numbers listed in a plain-text file into the active project
+	ExportAdded    ID = "project.export-added" // write the active project's manually-added patents to a plain-text list file
 	SourceMode     ID = "source.mode"
 	SourceCompare  ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
 	SourceBibs     ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data
@@ -293,6 +295,8 @@ func Default() (*Registry, error) {
 		Command{ID: CrawlAll, Name: "crawl.all", Aliases: []string{"crawl", "recursion"}, Usage: ":crawl.all", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: LookupPatent, Name: "lookup", Aliases: []string{"lookup-patent"}, Usage: ":lookup", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
+		Command{ID: AddFile, Name: "add.file", Aliases: []string{"add-file", "load"}, Usage: ":add.file <path>", Kind: KindView, Scopes: projectScopes},
+		Command{ID: ExportAdded, Name: "export.added", Aliases: []string{"export-added", "add.export"}, Usage: ":export.added", Kind: KindView, Scopes: projectScopes},
 		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode"}, Usage: ":source.mode <compare|uspto-first|uspto-only|google-only>", Kind: KindView},
 		Command{ID: SourceCompare, Name: "source.compare", Aliases: []string{"compare", "compare-sources"}, Usage: ":source.compare", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: SourceBibs, Name: "source.bibs", Aliases: []string{"sources", "both"}, Usage: ":source.bibs", Kind: KindView, Scopes: []Scope{ScopeDetail}},

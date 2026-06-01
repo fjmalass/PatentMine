@@ -97,6 +97,8 @@ every frontend stays in step.
 | GET | `/projects/{id}/ids/entries/{number}` | `ids.entry.get` | One curated IDS entry. |
 | PUT | `/projects/{id}/ids/entries/{number}` | `ids.entry.save` | Insert/update an IDS entry. Body: a `domain.IDSEntry` (project & patent taken from path). |
 | DELETE | `/projects/{id}/ids/entries/{number}` | `ids.entry.delete` | Remove an IDS entry. |
+| GET | `/projects/{id}/added/export` | `added.export` | `text/plain` list of the project's manually-added patents (the `:export.added` format). |
+| POST | `/projects/{id}/added` | `added.import` | Bulk-add patents from a list. Body: raw list text (`text/plain`), or JSON `{"content":"…"}` / `{"path":"…"}`. Returns `total, added, failed, failures[]`. |
 | GET | `/projects/{id}/notes` | `patent.note.list` | All notes for a project. Query: `sort_by=date\|patent`. |
 | GET | `/projects/{id}/notes/export` | `patent.note.export` | `text/markdown`. Query: `sort_by=date\|patent`. |
 | GET | `/projects/{id}/patents/{number}/note` | `patent.note.get` | One patent note. |

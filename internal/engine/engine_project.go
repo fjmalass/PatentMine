@@ -775,10 +775,10 @@ func (e *Engine) SetReviewStateWithOptions(ctx context.Context, project domain.P
 				attrs["mutation_group_id"] = mutationGroupID
 			}
 			rec := observability.Record{
-				Action:   observability.ActionMembershipSetState,
-				Entity:   "membership",
-				EntityID: string(project) + "/" + record.String(),
-				Status:   "committed",
+				Action:     observability.ActionMembershipSetState,
+				Entity:     "membership",
+				EntityID:   string(project) + "/" + record.String(),
+				Status:     "committed",
 				Attributes: attrs,
 			}
 			after := current
@@ -856,4 +856,89 @@ func (e *Engine) MembershipOf(ctx context.Context, project domain.ProjectID, pat
 		return domain.Membership{}, false, err
 	}
 	return m, true, nil
+}
+
+// isManualMethod reports whether an AddedMethod marks a manually-added
+// membership (the :add / :add.file path) rather than a crawl-discovered
+// neighbor. An empty method predates provenance tracking and is treated as
+// manual, mirroring the patent-list filter (filterexpr.ParseProvenance).
+func isManualMethod(method string) bool {
+	return method == "" || method == "direct" || method == "manual"
+}
+
+// ManualMemberships returns the record numbers of every patent manually added
+// to a project, in record order. It backs :export.added and its REST route.
+func (e *Engine) ManualMemberships(ctx context.Context, project domain.ProjectID) (numbers []domain.PatentNumber, err error) {
+	defer e.observeDuration("engine.manual_memberships", time.Now(), &err)
+	memberships, err := e.repo.Memberships(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range memberships {
+		if isManualMethod(m.AddedMethod) {
+			numbers = append(numbers, m.Patent)
+		}
+	}
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.added.export_total", 1)
+		e.metrics.IncCounter("engine.added.export.patents_total", int64(len(numbers)))
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionAddedExport,
+		Entity:   "project",
+		EntityID: string(project),
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project": string(project),
+			"count":   len(numbers),
+		},
+	})
+	e.log(ctx, slog.LevelInfo, "added list exported",
+		slog.String("project", string(project)), slog.Int("count", len(numbers)))
+	return numbers, nil
+}
+
+// ImportPatentList adds every number to the project with manual (direct)
+// provenance, exactly as :add would. Merges are auto-confirmed and ambiguous
+// USPTO resolutions are reported as failures rather than prompting, so a bulk
+// file import is non-interactive. It returns the count added and a
+// "<number>: <reason>" line for each failure; it does not abort on the first
+// error so one bad entry cannot block the rest of the list.
+func (e *Engine) ImportPatentList(ctx context.Context, project domain.ProjectID, numbers []domain.PatentNumber) (added int, failures []string, err error) {
+	defer e.observeDuration("engine.import_patent_list", time.Now(), &err)
+	for _, n := range numbers {
+		_, _, candidates, _, _, _, addErr := e.AddToProjectWithOptions(ctx, project, n, true)
+		switch {
+		case addErr != nil:
+			failures = append(failures, fmt.Sprintf("%s: %v", n.String(), addErr))
+		case len(candidates) > 0:
+			failures = append(failures, fmt.Sprintf("%s: ambiguous USPTO match, add manually to choose", n.String()))
+		default:
+			added++
+		}
+	}
+	if e.metrics != nil {
+		e.metrics.IncCounter("engine.added.import_total", 1)
+		e.metrics.IncCounter("engine.added.import.added_total", int64(added))
+		e.metrics.IncCounter("engine.added.import.failed_total", int64(len(failures)))
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionAddedImport,
+		Entity:   "project",
+		EntityID: string(project),
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project":  string(project),
+			"total":    len(numbers),
+			"added":    added,
+			"failed":   len(failures),
+			"failures": failures,
+		},
+	})
+	e.log(ctx, slog.LevelInfo, "added list imported",
+		slog.String("project", string(project)),
+		slog.Int("total", len(numbers)),
+		slog.Int("added", added),
+		slog.Int("failed", len(failures)))
+	return added, failures, nil
 }

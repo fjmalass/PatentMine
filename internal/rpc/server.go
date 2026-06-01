@@ -17,6 +17,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
 	"patentmine/internal/observability"
+	"patentmine/internal/patentlist"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
 	"patentmine/internal/uspto"
@@ -104,6 +105,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodPatentNoteDelete:          s.patentNoteDelete,
 		proto.MethodPatentNoteList:            s.patentNoteList,
 		proto.MethodPatentNoteExport:          s.patentNoteExport,
+		proto.MethodAddedExport:               s.addedExport,
+		proto.MethodAddedImport:               s.addedImport,
 		proto.MethodMetricsGet:                s.metricsGet,
 		proto.MethodMetricsPush:               s.metricsPush,
 		proto.MethodActivityRaw:               s.activityRaw,
@@ -732,6 +735,71 @@ func (s *Server) importFile(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, err
 	}
 	return proto.Empty{}, nil
+}
+
+// addedExport renders the plain-text list of a project's manually-added
+// patents. With OutputPath set it writes the file; otherwise it returns the
+// list body in Content (the form the REST route uses).
+func (s *Server) addedExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.AddedExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	numbers, err := s.engine.ManualMemberships(ctx, p.Project)
+	if err != nil {
+		return nil, fmt.Errorf("list manual memberships: %w", err)
+	}
+	body := patentlist.Format(numbers, string(p.Project), time.Now().Format(domain.DateLayout))
+	if p.OutputPath != "" {
+		if err := os.WriteFile(p.OutputPath, []byte(body), 0o644); err != nil {
+			return nil, fmt.Errorf("write export file: %w", err)
+		}
+		s.engineLogger().Info("added list exported",
+			slog.String("project", string(p.Project)),
+			slog.Int("count", len(numbers)),
+			slog.String("path", p.OutputPath))
+		return proto.AddedExportResult{Path: p.OutputPath, Count: len(numbers)}, nil
+	}
+	return proto.AddedExportResult{Count: len(numbers), Content: body}, nil
+}
+
+// addedImport parses a plain-text patent list (from Content, or the file at
+// Path) and adds every number to the project with manual provenance.
+func (s *Server) addedImport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.AddedImportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	content := p.Content
+	if content == "" {
+		if p.Path == "" {
+			return nil, fmt.Errorf("%w: added import requires content or path", ErrBadParams)
+		}
+		body, readErr := os.ReadFile(p.Path)
+		if readErr != nil {
+			return nil, fmt.Errorf("read patent list %s: %w", p.Path, readErr)
+		}
+		content = string(body)
+	}
+	numbers, err := patentlist.Parse(content)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadParams, err)
+	}
+	added, failures, err := s.engine.ImportPatentList(ctx, p.Project, numbers)
+	if err != nil {
+		return nil, err
+	}
+	s.engineLogger().Info("added list imported",
+		slog.String("project", string(p.Project)),
+		slog.Int("total", len(numbers)),
+		slog.Int("added", added),
+		slog.Int("failed", len(failures)))
+	return proto.AddedImportResult{
+		Total:    len(numbers),
+		Added:    added,
+		Failed:   len(failures),
+		Failures: failures,
+	}, nil
 }
 
 func (s *Server) crawlCancel(ctx context.Context, raw json.RawMessage) (any, error) {

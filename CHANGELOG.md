@@ -9,6 +9,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Bulk patent lists**: new `:add.file <path>` (aliases `add-file`, `load`) loads a plain-text patent list into the active project with manual provenance, and `:export.added` (aliases `export-added`, `add.export`) writes a project's manually-added patents back out to such a file. The format carries a mandatory magic header (`# patentmine added-patents v1`) so wrong-kind files are rejected; one number per line, `#` comments allowed. Round-trips cleanly. New `internal/patentlist` package (with tests), `added.export`/`added.import` proto methods, REST routes `GET /projects/{id}/added/export` and `POST /projects/{id}/added`, activity records (`added.export`/`added.import`) and metrics. Provenance icons documented in `TUI_ADD_FLOW.md`.
+
 ## [v0.9.1] — 2026-05-31
 
 ### Fixed
