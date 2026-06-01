@@ -9,6 +9,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.10.1] — 2026-06-01
+
+### Fixed
+- **Multi-select failures lost per-number context**: `MultiCrawlCmd` now attributes each error to its patent number instead of concatenating opaque strings, and the `Loading` overlay propagates startup/validation errors through `WithErrors`, displaying them live and in the done summary.
+- **`MergeRecords` silently discarded source-derived data and curated review states**: merging a record into another (`:add` hitting an existing record) previously cascade-deleted the absorbed record's source-side tables (`source_bib`, `source_diff`, `uspto_application`, `uspto_document`, etc.) and overwrote a curated membership review state with an auto-default. Fixed by repointing source-derived rows via surrogate record id before the absorb record deletion and promoting the absorbed record's non-auto review state onto keep's membership row.
+- **`Ctrl+C` in loading overlay killed the app**: the `Loading` overlay no longer binds `ctrl+C` to `tea.Quit`, preventing accidental process termination during crawls.
+- **`:add` inconsistencies between application/grant/publication in Google and USPTO-only modes**: fixed Google data loading inconsistencies across patent stages and USPTO-only `:add` from Google-imported data; pre-1976 grants now show a clear message instead of a generic failure.
+
+### Added
+- **Assignee history tracking**: new `assignee_history` table (schema v5→v6 migration) records the full ownership timeline per record from at-grant assignee and recorded USPTO assignments. `RebuildAssigneeHistory` populates it lazily on (re)fetch. New commands `:open.assignees-project` (project-wide assignee rollup overlay with current-vs.-all coverage) and `:fetch.uspto.assignments-project` (batch assignment fetch for the active project). New `DAEMON_ASSIGNEE_FLOW.md` and `TUI_ASSIGNEE_FLOW.md` documentation.
+
+### Changed
+- **Command catalog split**: the monolithic `Default()` registry in `internal/command/catalog.go` was factored into per-domain files (`catalog_view.go`, `catalog_patent.go`, `catalog_crawl.go`, `catalog_project.go`, `catalog_tags.go`, `catalog_classification.go`).
+- **Proto/RPC type extraction**: all method parameter, result, and event types moved out of the monolithic `internal/proto/proto.go` and `internal/rpc/server.go` into domain-specific files (e.g. `proto_uspto.go`, `server_added.go`, etc.), reducing the monoliths by thousands of lines and making the API surface navigable.
+
 ## [v0.10.0] — 2026-06-01
 
 ### Fixed
