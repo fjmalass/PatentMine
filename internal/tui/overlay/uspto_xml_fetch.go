@@ -45,14 +45,10 @@ func (o *USPTOXMLFetchingOverlay) Command(command.ID, int) (Overlay, tea.Cmd) { 
 // Handles implements Overlay.
 func (o *USPTOXMLFetchingOverlay) Handles() []command.ID { return nil }
 
-// Update keeps the spinner ticking. Ctrl+C aborts the app the same way every
-// other overlay does; the fetch itself cannot be cancelled from here.
+// Update keeps the spinner ticking. The fetch itself cannot be cancelled from
+// here, so key presses are ignored.
 func (o *USPTOXMLFetchingOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	switch m := msg.(type) {
-	case tea.KeyMsg:
-		if m.String() == "ctrl+c" {
-			return o, tea.Quit
-		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		o.spinner, cmd = o.spinner.Update(m)

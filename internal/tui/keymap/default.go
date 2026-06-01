@@ -97,7 +97,8 @@ func viewActions() map[string]command.ID {
 // Default returns the shipped keymap.
 func Default() *Keymaps {
 	base := NewLayer("global", false).BindAll(map[string]command.ID{
-		"ctrl+c":     command.Quit,
+		// Ctrl+C is deliberately left unbound so an accidental interrupt cannot
+		// tear down the session mid-crawl; Q is the explicit quit key.
 		"Q":          command.Quit,
 		"?":          command.Help,
 		"M":          command.OpenMetrics,
