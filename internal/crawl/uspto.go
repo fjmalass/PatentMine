@@ -33,6 +33,10 @@ func (s *usptoSource) Name() domain.Source {
 }
 
 func (s *usptoSource) Fetch(ctx context.Context, number domain.PatentNumber) (Result, error) {
+	if note := usptoCoverageNote(number); note != "" {
+		return Result{}, fmt.Errorf("%w: USPTO has no record for %s — %s; use uspto-first or compare mode to fall back to Google", ErrNotAvailable, number, note)
+	}
+
 	res, err := s.strictSource.Fetch(ctx, number)
 	if err == nil {
 		return res, nil
@@ -559,6 +563,10 @@ func matchingUSPTOWrapper(number domain.PatentNumber, bags []usptoWrapperData) (
 // SearchUSPTO queries the USPTO ODP API using a strict query, falling back to a broad query
 // across multiple fields only if no candidates are found, and returns candidate lightweight rows.
 func SearchUSPTO(ctx context.Context, apiKey string, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {
+	if note := usptoCoverageNote(number); note != "" {
+		return nil, fmt.Errorf("%w: USPTO has no record for %s — %s; use uspto-first or compare mode to fall back to Google", ErrUSPTOApplicationNotFound, number, note)
+	}
+
 	serial := strings.TrimSpace(number.Serial)
 	if serial == "" {
 		return nil, nil

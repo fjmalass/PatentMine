@@ -116,7 +116,7 @@ func MultiCrawlCmd(client *rpc.Client, project domain.ProjectID, numbers []domai
 		for range numbers {
 			r := <-ch
 			if r.err != nil {
-				failErrs = append(failErrs, r.err.Error())
+				failErrs = append(failErrs, fmt.Sprintf("%s: %v", r.number, r.err))
 			} else {
 				jobIDs = append(jobIDs, r.jobID)
 			}
@@ -124,12 +124,10 @@ func MultiCrawlCmd(client *rpc.Client, project domain.ProjectID, numbers []domai
 		if len(jobIDs) == 0 {
 			return StatusMsg{Key: text.StatusCrawlStartFailed, Args: []any{strings.Join(failErrs, "; ")}, Error: true}
 		}
-		if len(failErrs) > 0 {
-			jobIDs = append(jobIDs, "(errors: "+strings.Join(failErrs, "; ")+")")
-		}
 		return MultiCrawlStartedMsg{
 			Numbers: numbers,
 			JobIDs:  jobIDs,
+			Errors:  failErrs,
 			Depth:   depth,
 		}
 	}

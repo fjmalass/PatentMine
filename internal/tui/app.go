@@ -1233,7 +1233,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			verb = "Looking up"
 		}
 		title := fmt.Sprintf("%s %d patents", verb, len(m.Numbers))
-		loading := overlay.NewLoading(a.theme, m.JobIDs, title, isLookup)
+		loading := overlay.NewLoading(a.theme, m.JobIDs, title, isLookup).WithErrors(m.Errors)
 		a.overlays = append(a.overlays, loading)
 		return a, loading.Init()
 	case pingLoadedMsg:

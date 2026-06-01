@@ -175,6 +175,7 @@ type IDSEntriesChangedMsg struct {
 type MultiCrawlStartedMsg struct {
 	Numbers []domain.PatentNumber
 	JobIDs  []string
+	Errors  []string
 	Depth   int
 }
 

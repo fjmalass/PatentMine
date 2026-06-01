@@ -26,6 +26,8 @@ type LoadingCompareSourcesMsg struct {
 	Patent string
 }
 
+const maxVisibleErrors = 5
+
 // Loading is a modal overlay that shows a throbber, progress bar, and ETA
 // while one or more background daemon jobs (like crawls) are running.
 // Single-job and multi-job modes are both supported.
@@ -64,6 +66,7 @@ type Loading struct {
 	progresses map[string]proto.CrawlProgress
 	doneCount  int // number of jobs that have finished
 	doneErrors []string
+	startupErrors []string // list of failures that occurred before/at startup
 
 	// Non-fatal warnings accumulated across progress events (e.g. Google was
 	// anti-bot blocked but USPTO satisfied the crawl). Kept distinct from
@@ -124,6 +127,17 @@ func NewLoading(theme render.Theme, jobIDs []string, title string, isLookup ...b
 // providers contributed data for that record.
 func (l *Loading) WithRoot(patent string) *Loading {
 	l.rootPatent = patent
+	return l
+}
+
+// WithErrors adds pre-existing startup or validation errors to the overlay.
+func (l *Loading) WithErrors(errs []string) *Loading {
+	for _, e := range errs {
+		if e != "" {
+			l.doneErrors = append(l.doneErrors, e)
+			l.startupErrors = append(l.startupErrors, e)
+		}
+	}
 	return l
 }
 
@@ -319,6 +333,23 @@ func (l *Loading) View(w, h int) string {
 	b.WriteString("  " + l.spinner.View() + " " + render.Truncate(l.message, w-6))
 	b.WriteByte('\n')
 
+	if len(l.startupErrors) > 0 {
+		totalAttempts := len(l.jobIDs) + len(l.startupErrors)
+		b.WriteString(fmt.Sprintf("  %s %d/%d startup attempts failed:\n",
+			l.theme.Warn.Render("Warning:"), len(l.startupErrors), totalAttempts))
+		limit := maxVisibleErrors
+		for i, e := range l.startupErrors {
+			if i >= limit {
+				b.WriteString(fmt.Sprintf("    - ... and %d more\n", len(l.startupErrors)-limit))
+				break
+			}
+			for _, line := range wrapText(e, w-8) {
+				b.WriteString("    - " + l.theme.Warn.Render(line) + "\n")
+			}
+		}
+		b.WriteByte('\n')
+	}
+
 	totalCrawled := l.sumProgress(func(p proto.CrawlProgress) int { return p.CrawledCount })
 	totalJobs := len(l.jobIDs)
 
@@ -421,7 +452,9 @@ func (l *Loading) viewDone(w int) string {
 	b.WriteString("\n")
 	elapsed := l.finishedAt.Sub(l.startTime).Round(time.Millisecond)
 	if len(l.doneErrors) > 0 {
-		b.WriteString("  " + l.theme.Error.Render("Failed") + "\n")
+		totalAttempts := len(l.jobIDs) + len(l.startupErrors)
+		summary := fmt.Sprintf("Failed in %s · %d/%d attempts failed", formatDuration(elapsed), len(l.doneErrors), totalAttempts)
+		b.WriteString("  " + l.theme.Error.Render(summary) + "\n")
 		for _, e := range l.doneErrors {
 			for _, line := range wrapText(e, w-4) {
 				b.WriteString("  " + line + "\n")
