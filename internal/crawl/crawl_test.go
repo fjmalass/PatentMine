@@ -130,6 +130,57 @@ func TestCrawlCancellation(t *testing.T) {
 	}
 }
 
+// TestResolveRecordKeepsRichestSurvivor proves the merge survivor is chosen by
+// data richness, not candidate order: a data-bearing record must win over an
+// empty stub even when the stub's number sorts first in the candidate list.
+func TestResolveRecordKeepsRichestSurvivor(t *testing.T) {
+	rich := domain.MustParsePatentNumber("US15300582") // cached, has a title
+	stub := domain.MustParsePatentNumber("US9862739B2") // empty stub
+
+	for _, tc := range []struct {
+		name       string
+		candidates []domain.PatentNumber
+	}{
+		{"stub first", []domain.PatentNumber{stub, rich}},
+		{"rich first", []domain.PatentNumber{rich, stub}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := openRepo(t)
+			ctx := context.Background()
+			crawler := newFileCrawler(t, repo, CrawlConfig{})
+
+			if err := repo.SavePatent(ctx, domain.Patent{Number: rich, FetchState: domain.FetchCached, Title: "Real Title"}); err != nil {
+				t.Fatalf("SavePatent rich: %v", err)
+			}
+			if err := repo.SaveDocument(ctx, rich, domain.Document{Number: rich, Stage: domain.StageApplication}); err != nil {
+				t.Fatalf("SaveDocument rich: %v", err)
+			}
+			if err := repo.SavePatent(ctx, domain.Patent{Number: stub, FetchState: domain.FetchStub}); err != nil {
+				t.Fatalf("SavePatent stub: %v", err)
+			}
+			if err := repo.SaveDocument(ctx, stub, domain.Document{Number: stub, Stage: domain.StageGrant}); err != nil {
+				t.Fatalf("SaveDocument stub: %v", err)
+			}
+
+			got, err := crawler.resolveRecord(ctx, tc.candidates)
+			if err != nil {
+				t.Fatalf("resolveRecord: %v", err)
+			}
+			if !got.Equal(rich) {
+				t.Fatalf("survivor = %s, want %s (data-richest record)", got, rich)
+			}
+			// The stub was absorbed: its document now resolves to the survivor.
+			rec, err := repo.RecordOf(ctx, stub)
+			if err != nil {
+				t.Fatalf("RecordOf(stub) after merge: %v", err)
+			}
+			if !rec.Equal(rich) {
+				t.Fatalf("stub document resolves to %s, want %s after merge", rec, rich)
+			}
+		})
+	}
+}
+
 func TestCrawlerImportFile(t *testing.T) {
 	repo := openRepo(t)
 	ctx := context.Background()

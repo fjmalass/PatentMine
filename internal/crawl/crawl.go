@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"patentmine/internal/domain"
@@ -589,9 +590,25 @@ func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentN
 	if len(records) == 0 {
 		return domain.PatentNumber{}, nil
 	}
+	// Pick the survivor by data richness, not candidate order: the candidate
+	// list is led by the parser's own record number (the application number for
+	// USPTO), which is often the emptiest of the colliding records. Folding the
+	// data-bearing record into an empty stub just because the stub sorted first
+	// would throw biblio away. Ties break on the canonical number for
+	// determinism. (See the record-number identity divergence.)
 	keep := records[0]
+	keepScore := c.recordRichness(ctx, keep)
 	for _, other := range records[1:] {
-		log.Info("merging duplicate stub patent records",
+		if s := c.recordRichness(ctx, other); s > keepScore ||
+			(s == keepScore && other.Normalized() < keep.Normalized()) {
+			keep, keepScore = other, s
+		}
+	}
+	for _, other := range records {
+		if other == keep {
+			continue
+		}
+		log.Info("merging duplicate patent records",
 			slog.String("keep", keep.String()),
 			slog.String("absorb", other.String()))
 		if err := c.repo.MergeRecords(ctx, keep, other); err != nil {
@@ -602,6 +619,29 @@ func (c *Crawler) resolveRecord(ctx context.Context, candidates []domain.PatentN
 		}
 	}
 	return keep, nil
+}
+
+// recordRichness scores how much real data a record holds, so resolveRecord
+// keeps the richest of a set of colliding records rather than whichever sorted
+// first. A fully fetched body outweighs a title, which outweighs an abstract; a
+// bare stub scores zero. A lookup failure scores zero too — a record we cannot
+// read is no reason to win the merge.
+func (c *Crawler) recordRichness(ctx context.Context, number domain.PatentNumber) int {
+	p, err := c.repo.Patent(ctx, number)
+	if err != nil {
+		return 0
+	}
+	score := 0
+	if p.FetchState == domain.FetchCached {
+		score += 4
+	}
+	if strings.TrimSpace(p.Title) != "" {
+		score += 2
+	}
+	if strings.TrimSpace(p.Abstract) != "" {
+		score++
+	}
+	return score
 }
 
 // shouldQueue reports whether a neighbour reached by an edge of the given kind

@@ -166,6 +166,108 @@ func TestMergeRecords(t *testing.T) {
 	}
 }
 
+// TestMergeRecordsPreservesAbsorbedSourceData guards the non-lossy contract: the
+// source-derived tables key off the record's surrogate id, so a merge must
+// repoint them to keep — otherwise deleting the absorb row CASCADE-deletes the
+// absorbed record's fetched data.
+func TestMergeRecordsPreservesAbsorbedSourceData(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	keep := domain.MustParsePatentNumber("US16000001")
+	absorb := domain.MustParsePatentNumber("US0000001B2")
+	if err := repo.SavePatent(ctx, samplePatent(keep.Normalized())); err != nil {
+		t.Fatalf("SavePatent keep: %v", err)
+	}
+	// The absorbed record carries USPTO source data, written through SaveNode so
+	// it lands in the id-keyed source tables.
+	if err := repo.SaveNode(ctx, store.NodeBatch{
+		Patent: samplePatent(absorb.Normalized()),
+		USPTOApplication: &domain.USPTOApplication{
+			ApplicationNumber: "16000099",
+			RecordNumber:      absorb,
+			InventionTitle:    "Absorbed Title",
+		},
+		SourceBibs: []domain.SourceBib{{
+			RecordNumber: absorb,
+			Source:       domain.SourceUSPTO,
+			Title:        "Absorbed Title",
+		}},
+	}); err != nil {
+		t.Fatalf("SaveNode absorb: %v", err)
+	}
+
+	if err := repo.MergeRecords(ctx, keep, absorb); err != nil {
+		t.Fatalf("MergeRecords: %v", err)
+	}
+
+	// The USPTO application survived and is now reachable under keep.
+	app, err := repo.USPTOApplication(ctx, keep)
+	if err != nil {
+		t.Fatalf("USPTOApplication(keep) after merge: %v (absorbed data was discarded)", err)
+	}
+	if app.ApplicationNumber != "16000099" {
+		t.Errorf("application number = %q, want 16000099", app.ApplicationNumber)
+	}
+	bibs, err := repo.SourceBibs(ctx, keep)
+	if err != nil {
+		t.Fatalf("SourceBibs(keep): %v", err)
+	}
+	if len(bibs) != 1 || bibs[0].Title != "Absorbed Title" {
+		t.Fatalf("source bibs = %+v, want the absorbed USPTO bib repointed to keep", bibs)
+	}
+}
+
+func TestMergeRecordsReviewStatePrecedence(t *testing.T) {
+	project := domain.Project{ID: "p-1", Name: "P"}
+	keep := domain.MustParsePatentNumber("US16000001")
+	absorb := domain.MustParsePatentNumber("US0000001B2")
+
+	cases := []struct {
+		name      string
+		keepState domain.ReviewState
+		absState  domain.ReviewState
+		want      domain.ReviewState
+	}{
+		{"auto default yields to curated", domain.ReviewStateUnknown, domain.ReviewStateUnderReview, domain.ReviewStateUnderReview},
+		{"curated keep survives", domain.ReviewStateActive, domain.ReviewStateUnknown, domain.ReviewStateActive},
+		{"deleted absorb does not suppress keep", domain.ReviewStateUnknown, domain.ReviewStateDeleted, domain.ReviewStateUnknown},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := openTestRepo(t)
+			ctx := context.Background()
+			if err := repo.SavePatent(ctx, samplePatent(keep.Normalized())); err != nil {
+				t.Fatalf("SavePatent keep: %v", err)
+			}
+			if err := repo.SavePatent(ctx, samplePatent(absorb.Normalized())); err != nil {
+				t.Fatalf("SavePatent absorb: %v", err)
+			}
+			if err := repo.SaveProject(ctx, project); err != nil {
+				t.Fatalf("SaveProject: %v", err)
+			}
+			if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: keep, ReviewState: tc.keepState}); err != nil {
+				t.Fatalf("AddMembership keep: %v", err)
+			}
+			if err := repo.AddMembership(ctx, domain.Membership{Project: project.ID, Patent: absorb, ReviewState: tc.absState}); err != nil {
+				t.Fatalf("AddMembership absorb: %v", err)
+			}
+
+			if err := repo.MergeRecords(ctx, keep, absorb); err != nil {
+				t.Fatalf("MergeRecords: %v", err)
+			}
+
+			m, err := repo.Membership(ctx, project.ID, keep)
+			if err != nil {
+				t.Fatalf("Membership(keep): %v", err)
+			}
+			if m.ReviewState != tc.want {
+				t.Errorf("kept review state = %q, want %q", m.ReviewState, tc.want)
+			}
+		})
+	}
+}
+
 func TestCheckCollisions(t *testing.T) {
 	repo := openTestRepo(t)
 	defer repo.Close()

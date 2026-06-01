@@ -113,9 +113,23 @@ func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (record
 	return domain.ParsePatentNumber(recordNumber)
 }
 
-// MergeRecords folds the absorb record into keep: its documents, memberships,
-// and relations are repointed and the absorb patent row is deleted. It is a
-// no-op when keep and absorb are the same record.
+// mergeAutoReviewStates are the membership states that carry no human decision —
+// the auto-assigned defaults a merge may freely overwrite with the absorbed
+// record's curated state. A blank state is the same as no membership row.
+const mergeAutoReviewStates = `('', 'unknown', 'needs_triage')`
+
+// MergeRecords folds the absorb record into keep and deletes absorb. It is
+// non-lossy: the graph/user tables keyed by record number (document, membership,
+// relation) are repointed, and the source-derived tables keyed by record id
+// (record_alias, source_bib, uspto_application, uspto_document, source_snapshot,
+// source_diff, assignee_history) are repointed too — otherwise deleting the
+// absorb row would CASCADE them away, silently discarding one side's fetched
+// data. On a per-project membership collision the more-curated review state
+// survives: keep keeps its own human decision, but an auto-default on keep is
+// promoted to absorb's curated state so a merge never reverts curation to
+// "unknown". A "deleted" absorb does not suppress a live keep membership (a
+// merge should not hide a patent), so it is excluded from promotion. No-op when
+// keep and absorb are the same record.
 func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumber) (err error) {
 	defer r.observeDuration("merge_records", time.Now(), &err)
 	if keep.IsZero() || absorb.IsZero() {
@@ -132,6 +146,18 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Source-derived tables key off the surrogate id, not the number, so they
+	// must be repointed by id before the absorb record row (and its cascade) is
+	// deleted.
+	kID, err := recordID(ctx, tx, keep)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: merge %s -> %s: keep id: %w", a, k, err)
+	}
+	aID, err := recordID(ctx, tx, absorb)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: merge %s -> %s: absorb id: %w", a, k, err)
+	}
+
 	exec := func(query string, args ...any) error {
 		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("store/sqlite: merge %s -> %s: %w", a, k, err)
@@ -139,13 +165,30 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 		return nil
 	}
 
-	// Move documents to keep. Repoint memberships and relations; OR IGNORE
-	// skips a move that would collide with a row keep already has, and the
-	// leftovers still pointing at absorb are then deleted.
+	// Repoint by record number: move documents, then memberships and relations.
+	// OR IGNORE skips a move that would collide with a row keep already has; the
+	// leftovers still pointing at absorb are then deleted. The membership-state
+	// promotion runs first, while absorb's rows still exist, so a curated state
+	// on absorb is preserved onto keep's colliding auto-default row.
+	// Repoint by record id: the source-derived tables. OR IGNORE skips rows that
+	// would collide with one keep already owns; the skipped absorb rows cascade
+	// away with the DELETE FROM record below.
 	steps := []struct {
 		query string
 		args  []any
 	}{
+		{`UPDATE membership SET state = (
+			SELECT a.state FROM membership a
+			WHERE a.patent_number = ? AND a.project_id = membership.project_id
+		)
+		WHERE patent_number = ?
+			AND state IN ` + mergeAutoReviewStates + `
+			AND EXISTS (
+				SELECT 1 FROM membership a
+				WHERE a.patent_number = ? AND a.project_id = membership.project_id
+					AND a.state NOT IN ` + mergeAutoReviewStates + `
+					AND a.state <> 'deleted'
+			)`, []any{a, k, a}},
 		{`UPDATE document SET record_number = ? WHERE record_number = ?`, []any{k, a}},
 		{`UPDATE OR IGNORE membership SET patent_number = ? WHERE patent_number = ?`, []any{k, a}},
 		{`DELETE FROM membership WHERE patent_number = ?`, []any{a}},
@@ -153,6 +196,13 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 		{`UPDATE OR IGNORE relation SET to_number = ? WHERE to_number = ?`, []any{k, a}},
 		{`DELETE FROM relation WHERE from_number = ? OR to_number = ?`, []any{a, a}},
 		{`DELETE FROM relation WHERE from_number = to_number`, nil},
+		{`UPDATE OR IGNORE record_alias SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
+		{`UPDATE OR IGNORE source_bib SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
+		{`UPDATE OR IGNORE assignee_history SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
+		{`UPDATE source_snapshot SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
+		{`UPDATE source_diff SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
+		{`UPDATE uspto_application SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
+		{`UPDATE uspto_document SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
 		{`DELETE FROM record WHERE number = ?`, []any{a}},
 	}
 	for _, s := range steps {
