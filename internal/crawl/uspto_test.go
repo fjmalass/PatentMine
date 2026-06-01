@@ -333,3 +333,94 @@ func TestParseUSPTOGrantDocumentKeepsRequestedKind(t *testing.T) {
 		t.Errorf("grant document number = %s, want %s (requested kind must be preserved)", grant.Number, number)
 	}
 }
+
+func TestParseUSPTOBindsRequestedNumberWhenGrantMetadataMissing(t *testing.T) {
+	// The ODP file wrapper for an application does not always carry the grant
+	// document metadata for the granted patent the caller asked for. Here the
+	// wrapper matches the requested grant only via its publication field and has
+	// no patentNumber / grantDocumentMetaData. Without binding the requested
+	// number to the record, the fetched data is orphaned under the application
+	// number and any stub the crawler created for the grant (e.g. a citation
+	// neighbour discovered by Google) stays empty and ungranted membership.
+	// (See the record-number identity divergence.)
+	sample := `{
+	  "count": 1,
+	  "patentFileWrapperDataBag": [{
+	    "applicationNumberText": "15300582",
+	    "applicationMetaData": {
+	      "inventionTitle": "Metal Complexes",
+	      "filingDate": "2016-09-29",
+	      "publicationNumber": "9862739"
+	    }
+	  }]
+	}`
+	number := domain.MustParsePatentNumber("US9862739B2")
+	res, err := parseUSPTO(number, []byte(sample))
+	if err != nil {
+		t.Fatalf("parseUSPTO: %v", err)
+	}
+
+	// candidateNumbers (which resolveRecord walks to find an existing record)
+	// must include the requested number so it unifies with the stub.
+	var bound bool
+	for _, n := range candidateNumbers(res) {
+		if n == number {
+			bound = true
+		}
+	}
+	if !bound {
+		t.Fatalf("requested number %s not among candidate numbers %v — data would orphan under the application number", number, candidateNumbers(res))
+	}
+
+	// And it should be carried as an authority identifier so the binding is
+	// durable, not just an in-memory document.
+	var foundID bool
+	for _, id := range res.AuthorityIdentifiers {
+		if id.DocumentNumber == number.Normalized() {
+			foundID = true
+		}
+	}
+	if !foundID {
+		t.Errorf("missing authority identifier for requested number %s", number)
+	}
+}
+
+func TestEnsureRequestedDocument(t *testing.T) {
+	app := domain.MustParsePatentNumber("US15300582")
+	grant := domain.MustParsePatentNumber("US9862739B2")
+	pub := domain.MustParsePatentNumber("US20110266528A1")
+
+	t.Run("adds missing grant", func(t *testing.T) {
+		docs := []domain.Document{{Number: app, Stage: domain.StageApplication}}
+		docs, ids := ensureRequestedDocument(grant, app, docs, nil)
+		if len(docs) != 2 || docs[1].Number != grant || docs[1].Stage != domain.StageGrant {
+			t.Fatalf("docs = %+v, want a grant document for %s appended", docs, grant)
+		}
+		if len(ids) != 1 || ids[0].IdentifierType != "grant" || ids[0].DocumentNumber != grant.Normalized() {
+			t.Fatalf("ids = %+v, want one grant identifier for %s", ids, grant)
+		}
+	})
+
+	t.Run("adds missing publication with publication type", func(t *testing.T) {
+		_, ids := ensureRequestedDocument(pub, app, nil, nil)
+		if len(ids) != 1 || ids[0].IdentifierType != "publication" {
+			t.Fatalf("ids = %+v, want one publication identifier", ids)
+		}
+	})
+
+	t.Run("no-op when requested is the record number", func(t *testing.T) {
+		docs := []domain.Document{{Number: app, Stage: domain.StageApplication}}
+		got, ids := ensureRequestedDocument(app, app, docs, nil)
+		if len(got) != 1 || ids != nil {
+			t.Fatalf("expected no-op, got docs=%+v ids=%+v", got, ids)
+		}
+	})
+
+	t.Run("no-op when already present", func(t *testing.T) {
+		docs := []domain.Document{{Number: app, Stage: domain.StageApplication}, {Number: grant, Stage: domain.StageGrant}}
+		got, ids := ensureRequestedDocument(grant, app, docs, nil)
+		if len(got) != 2 || ids != nil {
+			t.Fatalf("expected no-op, got docs=%+v ids=%+v", got, ids)
+		}
+	})
+}

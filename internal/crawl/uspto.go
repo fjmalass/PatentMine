@@ -433,6 +433,18 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 	res.Documents = append(res.Documents, extraDocs...)
 	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
 
+	// The matched wrapper does not always carry the grant/publication document
+	// metadata for the number the caller asked for — ODP often returns only an
+	// application file wrapper, even for a granted patent (see USPTO ODP
+	// coverage). Without a document bearing the requested number, resolveRecord
+	// cannot tie this fetch to the stub that already exists for it (e.g. a
+	// citation neighbour discovered earlier by Google), so the data is orphaned
+	// under the application number and the stub stays empty. matchingUSPTOWrapper
+	// already confirmed this wrapper corresponds to the requested number, so bind
+	// that number to the record explicitly. (See the record-number identity
+	// divergence.)
+	res.Documents, res.AuthorityIdentifiers = ensureRequestedDocument(number, recordNumber, res.Documents, res.AuthorityIdentifiers)
+
 	res.USPTOApplication = &domain.USPTOApplication{
 		ApplicationNumber:             appNumber,
 		RecordNumber:                  recordNumber,
@@ -800,6 +812,43 @@ func extractAdditionalUSPTODocuments(requested, recordNumber domain.PatentNumber
 		}
 	}
 
+	return docs, ids
+}
+
+// ensureRequestedDocument guarantees the caller-requested number is represented
+// as a document of the resolved record, so record resolution (resolveRecord)
+// unifies this fetch with any stub already keyed by that number rather than
+// orphaning the data under the application number. It is a no-op when the
+// requested number is the record (application) number itself or is already
+// among the documents (e.g. extractAdditionalUSPTODocuments recovered it from
+// grant/publication metadata).
+func ensureRequestedDocument(requested, recordNumber domain.PatentNumber, docs []domain.Document, ids []domain.AuthorityIdentifier) ([]domain.Document, []domain.AuthorityIdentifier) {
+	if requested.IsZero() || requested == recordNumber {
+		return docs, ids
+	}
+	for _, d := range docs {
+		if d.Number == requested {
+			return docs, ids
+		}
+	}
+	stage := domain.GuessStage(requested)
+	identifierType := "grant"
+	if stage == domain.StagePublication {
+		identifierType = "publication"
+	}
+	docs = append(docs, domain.Document{Number: requested, Stage: stage})
+	ids = append(ids, domain.AuthorityIdentifier{
+		Authority:      "US",
+		IdentifierType: identifierType,
+		Identifier:     requested.Normalized(),
+		RawIdentifier:  requested.String(),
+		RecordNumber:   recordNumber,
+		DocumentNumber: requested.Normalized(),
+		Country:        requested.Country,
+		Kind:           requested.Kind,
+		Source:         string(domain.SourceUSPTO),
+		Confidence:     100,
+	})
 	return docs, ids
 }
 
