@@ -81,3 +81,38 @@ func (s *Server) idsEntryDelete(ctx context.Context, raw json.RawMessage) (any, 
 	}
 	return proto.Empty{}, nil
 }
+func (s *Server) idsExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := s.engine.ExportIDS(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSResult{IDS: ids}, nil
+}
+
+func (s *Server) idsPDFExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.IDSPDFExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.engine.ExportIDSPDF(ctx, p.Project, engine.IDSPDFOptions{
+		CumulativeCount: p.CumulativeCount,
+		FeeAmount:       p.FeeAmount,
+		DepositAccount:  p.DepositAccount,
+		SignerName:      p.SignerName,
+		SignerSignature: p.SignerSignature,
+		SignerRegNumber: p.SignerRegNumber,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.IDSPDFExportResult{
+		Dir:       res.Dir,
+		Files:     res.Files,
+		FeeTier:   res.FeeTier,
+		PageCount: res.PageCount,
+	}, nil
+}
