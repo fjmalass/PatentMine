@@ -308,3 +308,28 @@ func TestUSPTOQueryKindRouting(t *testing.T) {
 		})
 	}
 }
+
+func TestParseUSPTOGrantDocumentKeepsRequestedKind(t *testing.T) {
+	// Requested as a grant with a kind code, but the ODP grant identifier is a
+	// bare serial. The emitted grant document must carry the requested kind so
+	// it resolves (via RecordOf, which matches on exact document number) to the
+	// stub the crawler created — otherwise the fetched bibliographic data is
+	// orphaned under the application number and the requested record stays empty.
+	number := domain.MustParsePatentNumber("US11611785B2")
+	res, err := parseUSPTO(number, []byte(usptoSampleResponse))
+	if err != nil {
+		t.Fatalf("parseUSPTO: %v", err)
+	}
+	var grant *domain.Document
+	for i := range res.Documents {
+		if res.Documents[i].Stage == domain.StageGrant {
+			grant = &res.Documents[i]
+		}
+	}
+	if grant == nil {
+		t.Fatal("no grant document produced")
+	}
+	if grant.Number != number {
+		t.Errorf("grant document number = %s, want %s (requested kind must be preserved)", grant.Number, number)
+	}
+}

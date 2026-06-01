@@ -46,14 +46,17 @@ func (s *usptoSource) Fetch(ctx context.Context, number domain.PatentNumber) (Re
 		if err == nil {
 			return res, nil
 		}
-		// A genuine miss on a pre-2001 US document is expected, not a query
-		// problem: the USPTO Open Data Portal only serves the post-2001
-		// application-publication era. Say so, so the failure is actionable
-		// (switch to uspto-first/compare so Google can serve it) rather than a
-		// bare "not available". %w keeps ErrNotAvailable so the registry still
-		// falls through to the next source.
-		if errors.Is(err, ErrNotAvailable) && isPreODPUSDocument(number) {
-			return Result{}, fmt.Errorf("%w: %s predates the USPTO Open Data Portal (pre-2001; the ODP covers post-2001 publications), so USPTO has no record — use uspto-first or compare mode to fall back to Google", ErrNotAvailable, number)
+		// A genuine miss is often a coverage gap, not a query problem: the USPTO
+		// Open Data Portal indexes the *published-application* file-wrapper
+		// dataset, so a document whose application was never published has no
+		// record there. The kind code says which (see usptoCoverageNote). Make
+		// the failure actionable (switch to uspto-first/compare so Google can
+		// serve it) rather than a bare "not available". %w keeps ErrNotAvailable
+		// so the registry still falls through to the next source.
+		if errors.Is(err, ErrNotAvailable) {
+			if note := usptoCoverageNote(number); note != "" {
+				return Result{}, fmt.Errorf("%w: USPTO has no record for %s — %s; use uspto-first or compare mode to fall back to Google", ErrNotAvailable, number, note)
+			}
 		}
 		return res, err
 	}
@@ -61,12 +64,24 @@ func (s *usptoSource) Fetch(ctx context.Context, number domain.PatentNumber) (Re
 	return Result{}, err
 }
 
-// isPreODPUSDocument reports whether a number is a pre-2001 US document, which
-// the USPTO Open Data Portal does not serve. The US switched grant kind codes
-// from a bare "A" to "B1"/"B2" on 2001-01-02, so a bare "A" on a US number marks
-// a document that predates the portal's coverage.
-func isPreODPUSDocument(n domain.PatentNumber) bool {
-	return n.Country == "US" && n.Kind == "A"
+// usptoCoverageNote explains why the USPTO Open Data Portal has no record for a
+// number when that is attributable to ODP coverage rather than a transient miss.
+// The ODP indexes the published-application file-wrapper dataset, so the grant
+// kind code is the signal: a US grant published as "B2" had a pre-grant
+// publication and is present; "B1" was granted without one; and a bare "A"
+// predates the pre-grant-publication system (pre-2001) — neither of the latter
+// two has a file wrapper to find. Returns "" when no specific note applies.
+func usptoCoverageNote(n domain.PatentNumber) string {
+	if n.Country != "US" {
+		return ""
+	}
+	switch {
+	case n.Kind == "A":
+		return "it is a pre-2001 grant, which predates the USPTO pre-grant-publication system, so the Open Data Portal (a published-application dataset) holds no file wrapper for it"
+	case n.Kind == "B1":
+		return "it was granted without a pre-grant publication (kind B1), so its application is not in the Open Data Portal's published-application dataset"
+	}
+	return ""
 }
 
 func (s *usptoSource) WithMetrics(metrics *observability.Metrics) {
@@ -414,7 +429,7 @@ func parseUSPTO(number domain.PatentNumber, body []byte) (Result, error) {
 		}},
 	}
 
-	extraDocs, extraIds := extractAdditionalUSPTODocuments(recordNumber, w)
+	extraDocs, extraIds := extractAdditionalUSPTODocuments(number, recordNumber, w)
 	res.Documents = append(res.Documents, extraDocs...)
 	res.AuthorityIdentifiers = append(res.AuthorityIdentifiers, extraIds...)
 
@@ -692,7 +707,7 @@ func usptoApplicants(m usptoApplicationMeta) []string {
 	return out
 }
 
-func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWrapperData) ([]domain.Document, []domain.AuthorityIdentifier) {
+func extractAdditionalUSPTODocuments(requested, recordNumber domain.PatentNumber, w usptoWrapperData) ([]domain.Document, []domain.AuthorityIdentifier) {
 	var docs []domain.Document
 	var ids []domain.AuthorityIdentifier
 
@@ -753,6 +768,17 @@ func extractAdditionalUSPTODocuments(recordNumber domain.PatentNumber, w usptoWr
 			grantStr = "US" + grantStr
 		}
 		if grantNum, err := domain.ParsePatentNumber(grantStr); err == nil {
+			// The ODP grant identifier is a bare serial (e.g. "6541975") with no
+			// kind code, but the user requested — and the crawler stubbed — the
+			// grant with its kind ("US6541975B2"). RecordOf resolves by exact
+			// document number, so without the kind this grant document never
+			// matches that stub and the fetched bibliographic data is orphaned
+			// under the application number instead. Carry the requested kind onto
+			// the grant document so it binds to the record the user added.
+			// (See the record-number identity divergence.)
+			if requested.Kind != "" && requested.Country == grantNum.Country && requested.Serial == grantNum.Serial {
+				grantNum = requested
+			}
 			docs = append(docs, domain.Document{
 				Number: grantNum,
 				Stage:  domain.StageGrant,
