@@ -9,6 +9,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.9.1] — 2026-05-31
+
+### Fixed
+- **REST-API**: completed missing API endpoints (crawl, metrics, notes, patents, projects, USPTO), added `REST_API.md` documentation, removed Google crawl source switches, fixed browser tests and detail-pane patent-number display
+
+### Changed
+- Standardized all date/time formatting across the codebase to use centralized layout constants (`DateLayout`, `DateTimeLayout`, etc.) in `internal/domain/patent.go` — replacing inline layout literals in crawl, uspto, export, TUI, RPC, and store layers
+
 ## [v0.9.0] — 2026-05-31
 
 **Major database update.** Automatic migration on first run.
