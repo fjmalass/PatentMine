@@ -17,9 +17,9 @@ const (
 
 func samplePatents() []domain.PatentRow {
 	return []domain.PatentRow{
-		{Number: domain.MustParsePatentNumber("US16000001"), DisplayNumber: domain.MustParsePatentNumber("US0000001B2"), Title: "First", FetchState: domain.FetchCached},
-		{Number: domain.MustParsePatentNumber("US16000002"), DisplayNumber: domain.MustParsePatentNumber("US0000002B2"), Title: "Second", FetchState: domain.FetchCached},
-		{Number: domain.MustParsePatentNumber("US16000003"), DisplayNumber: domain.MustParsePatentNumber("US0000003B2"), Title: "Third", FetchState: domain.FetchStub},
+		{Number: domain.MustParsePatentNumber("US16000001"), DisplayNumber: domain.MustParsePatentNumber("US1B2"), Title: "First", FetchState: domain.FetchCached},
+		{Number: domain.MustParsePatentNumber("US16000002"), DisplayNumber: domain.MustParsePatentNumber("US2B2"), Title: "Second", FetchState: domain.FetchCached},
+		{Number: domain.MustParsePatentNumber("US16000003"), DisplayNumber: domain.MustParsePatentNumber("US3B2"), Title: "Third", FetchState: domain.FetchStub},
 	}
 }
 
@@ -62,7 +62,7 @@ func TestCatalogSelectionFollowsCursor(t *testing.T) {
 func TestCatalogViewRendersRows(t *testing.T) {
 	c := loadedCatalog(t)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"[1/3]", "#", "NUMBER", "US0000001B2", "Second", "🗃️", "🦴"} {
+	for _, want := range []string{"[1/3]", "#", "NUMBER", "US1B2", "Second", "🗃️", "🦴"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalog view missing %q\n%s", want, out)
 		}
@@ -80,13 +80,13 @@ func TestCatalogIndexUsesAbsolutePositionAcrossPages(t *testing.T) {
 		offset:    2,
 		total:     5,
 		patents: []domain.PatentRow{
-			{Number: domain.MustParsePatentNumber("US16000003"), DisplayNumber: domain.MustParsePatentNumber("US0000003B2"), Title: "Third", FetchState: domain.FetchStub},
-			{Number: domain.MustParsePatentNumber("US16000004"), DisplayNumber: domain.MustParsePatentNumber("US0000004B2"), Title: "Fourth", FetchState: domain.FetchCached},
+			{Number: domain.MustParsePatentNumber("US16000003"), DisplayNumber: domain.MustParsePatentNumber("US3B2"), Title: "Third", FetchState: domain.FetchStub},
+			{Number: domain.MustParsePatentNumber("US16000004"), DisplayNumber: domain.MustParsePatentNumber("US4B2"), Title: "Fourth", FetchState: domain.FetchCached},
 		},
 	})
 	c = updated.(*Catalog)
 	out := c.View(testPaneWidth, testPaneHeight)
-	for _, want := range []string{"3    US0000003B2", "4    US0000004B2"} {
+	for _, want := range []string{"3    US3B2", "4    US4B2"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("catalog paged view missing %q\n%s", want, out)
 		}

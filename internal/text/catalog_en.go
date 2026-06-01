@@ -71,7 +71,6 @@ const (
 	StatusImported                Key = "status.imported"
 	StatusAddedExportDone         Key = "status.added_export_done"
 	StatusAddedExportFailed       Key = "status.added_export_failed"
-	StatusAddedImportDone         Key = "status.added_import_done"
 	StatusAddedImportFailed       Key = "status.added_import_failed"
 	StatusTagFailed               Key = "status.tag_failed"
 	StatusTagged                  Key = "status.tagged"
@@ -369,7 +368,6 @@ var englishNamed = map[Key]string{
 	StatusImported:                "imported %s",
 	StatusAddedExportDone:         "exported %d added patent(s) to %s",
 	StatusAddedExportFailed:       "export added list failed: %s",
-	StatusAddedImportDone:         "added %d of %d patent(s) from %s (%d failed)",
 	StatusAddedImportFailed:       "load patent list failed: %s",
 	StatusTagFailed:               "tag failed: %s",
 	StatusTagged:                  "tagged %s as %q in %s",

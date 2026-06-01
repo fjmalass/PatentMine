@@ -36,13 +36,13 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1, domain.CrawlProfileAll, false,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US1B2"), 1, domain.CrawlProfileAll, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
 
 	// US1 (root), US2, US3 fetched in full; US4 is beyond depth -> stub.
-	for _, num := range []string{"US0000001B2", "US0000002B2", "US0000003B2"} {
+	for _, num := range []string{"US1B2", "US2B2", "US3B2"} {
 		p, err := repo.Patent(ctx, domain.MustParsePatentNumber(num))
 		if err != nil {
 			t.Fatalf("patent %s missing: %v", num, err)
@@ -51,12 +51,12 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 			t.Fatalf("patent %s fetch state = %s, want cached", num, p.FetchState)
 		}
 	}
-	stub, err := repo.Patent(ctx, domain.MustParsePatentNumber("US0000004B2"))
+	stub, err := repo.Patent(ctx, domain.MustParsePatentNumber("US4B2"))
 	if err != nil {
-		t.Fatalf("stub US0000004B2 missing: %v", err)
+		t.Fatalf("stub US4B2 missing: %v", err)
 	}
 	if stub.FetchState != domain.FetchStub {
-		t.Fatalf("US0000004B2 fetch state = %s, want stub", stub.FetchState)
+		t.Fatalf("US4B2 fetch state = %s, want stub", stub.FetchState)
 	}
 
 	if last.CrawledCount != 3 || last.DiscoveredCount != 4 {
@@ -64,14 +64,14 @@ func TestCrawlWalksFamilyToDepth(t *testing.T) {
 	}
 
 	// Family edges were recorded.
-	cites, err := repo.Relations(ctx, domain.MustParsePatentNumber("US0000001B2"), domain.RelationCites)
+	cites, err := repo.Relations(ctx, domain.MustParsePatentNumber("US1B2"), domain.RelationCites)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
-	if len(cites) != 1 || !cites[0].To.Equal(domain.MustParsePatentNumber("US0000002B2")) {
+	if len(cites) != 1 || !cites[0].To.Equal(domain.MustParsePatentNumber("US2B2")) {
 		t.Fatalf("US1 cites = %v, want one edge to US2", cites)
 	}
-	parents, err := repo.Relations(ctx, domain.MustParsePatentNumber("US0000001B2"), domain.RelationParent)
+	parents, err := repo.Relations(ctx, domain.MustParsePatentNumber("US1B2"), domain.RelationParent)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 0, domain.CrawlProfileAll, false,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US1B2"), 0, domain.CrawlProfileAll, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestCrawlDepthZeroFetchesOnlyRoot(t *testing.T) {
 		t.Fatalf("depth-0 crawl fetched %d, want 1", last.CrawledCount)
 	}
 	// Neighbours are recorded as stubs, not fetched.
-	neighbour, err := repo.Patent(ctx, domain.MustParsePatentNumber("US0000002B2"))
+	neighbour, err := repo.Patent(ctx, domain.MustParsePatentNumber("US2B2"))
 	if err != nil {
 		t.Fatalf("neighbour stub missing: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestCrawlRespectsNodeBudget(t *testing.T) {
 	crawler := newFileCrawler(t, repo, CrawlConfig{NodeBudget: 2})
 
 	var last Progress
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 5, domain.CrawlProfileAll, false,
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US1B2"), 5, domain.CrawlProfileAll, false,
 		func(p Progress) { last = p }); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestCrawlCancellation(t *testing.T) {
 	cancel()
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
-	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 2, domain.CrawlProfileAll, false, nil)
+	err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US1B2"), 2, domain.CrawlProfileAll, false, nil)
 	if err == nil {
 		t.Fatal("Crawl on a cancelled context should return an error")
 	}
@@ -135,10 +135,10 @@ func TestCrawlerImportFile(t *testing.T) {
 	ctx := context.Background()
 	crawler := newFileCrawler(t, repo, CrawlConfig{})
 
-	if err := crawler.ImportFile(ctx, "testdata/US0000001B2.json"); err != nil {
+	if err := crawler.ImportFile(ctx, "testdata/US1B2.json"); err != nil {
 		t.Fatalf("ImportFile: %v", err)
 	}
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	p, err := repo.Patent(ctx, root)
 	if err != nil {
 		t.Fatalf("Patent after import: %v", err)
@@ -163,7 +163,7 @@ func TestCrawlReportsDepthMetricsAndLogs(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 	crawler := newFileCrawler(t, repo, CrawlConfig{}).WithMetrics(metrics).WithLogger(logger)
 
-	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US0000001B2"), 1, domain.CrawlProfileAll, false, nil); err != nil {
+	if err := crawler.Crawl(ctx, domain.MustParsePatentNumber("US1B2"), 1, domain.CrawlProfileAll, false, nil); err != nil {
 		t.Fatalf("Crawl: %v", err)
 	}
 

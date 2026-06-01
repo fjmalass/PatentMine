@@ -125,7 +125,7 @@ func TestListPatentsPagination(t *testing.T) {
 	if len(page) != 2 {
 		t.Fatalf("page size = %d, want 2", len(page))
 	}
-	if page[0].Number.Serial != "0000001" {
+	if page[0].Number.Serial != "1" {
 		t.Fatalf("first page not ordered by number: %v", page[0].Number)
 	}
 	rest, err := repo.ListPatents(ctx, store.PatentQuery{Limit: 2, Offset: 2})

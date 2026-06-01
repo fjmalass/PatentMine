@@ -42,29 +42,29 @@ func TestProjectsPaneSelectsLastUsed(t *testing.T) {
 }
 
 func TestCitationsPaneSelectsNeighbour(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
 
 	patents := []domain.PatentRow{
-		{Number: domain.MustParsePatentNumber("US0000002B2"), Title: "Second"},
-		{Number: domain.MustParsePatentNumber("US0000003B2"), Title: "Third"},
+		{Number: domain.MustParsePatentNumber("US2B2"), Title: "Second"},
+		{Number: domain.MustParsePatentNumber("US3B2"), Title: "Third"},
 	}
 	updated, _ := c.Update(citationsLoadedMsg{patents: patents, total: 2})
 	c = updated.(*Citations)
 
 	// Selection is the neighbour patent, so drilling into detail works.
 	sel, ok := c.Selection()
-	if !ok || sel.Serial != "0000002" {
-		t.Fatalf("selection = %v ok=%v, want US0000002B2", sel, ok)
+	if !ok || sel.Serial != "2" {
+		t.Fatalf("selection = %v ok=%v, want US2B2", sel, ok)
 	}
 	c.Command(command.NavBottom, Invocation{Repeat: 1})
 	sel, _ = c.Selection()
-	if sel.Serial != "0000003" {
-		t.Fatalf("selection after NavBottom = %v, want US0000003B2", sel)
+	if sel.Serial != "3" {
+		t.Fatalf("selection after NavBottom = %v, want US3B2", sel)
 	}
 
 	out := c.View(testCitationsPaneWidth, testCitationsPaneHeight)
-	for _, want := range []string{"[2/2]", "#", "1    US0000002B2", "Second"} {
+	for _, want := range []string{"[2/2]", "#", "1    US2B2", "Second"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("citations view missing expected content %q\n%s", want, out)
 		}
@@ -72,7 +72,7 @@ func TestCitationsPaneSelectsNeighbour(t *testing.T) {
 }
 
 func TestCitationsTitleReflectsKind(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	cited := NewCitations(nil, render.NewTheme(), root, domain.RelationCitedBy)
 	if !strings.HasPrefix(cited.Title(), "Cited by") {
 		t.Fatalf("cited-by pane title = %q, want a 'Cited by' prefix", cited.Title())
@@ -80,12 +80,12 @@ func TestCitationsTitleReflectsKind(t *testing.T) {
 }
 
 func TestCitationsAppliesReviewStateChangeImmediately(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
 	c.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
 	patents := []domain.PatentRow{
-		{Number: domain.MustParsePatentNumber("US0000002B2"), Title: "Second"},
-		{Number: domain.MustParsePatentNumber("US0000003B2"), Title: "Third"},
+		{Number: domain.MustParsePatentNumber("US2B2"), Title: "Second"},
+		{Number: domain.MustParsePatentNumber("US3B2"), Title: "Third"},
 	}
 	updated, _ := c.Update(citationsLoadedMsg{patents: patents, total: 2})
 	c = updated.(*Citations)
@@ -103,9 +103,9 @@ func TestCitationsAppliesReviewStateChangeImmediately(t *testing.T) {
 }
 
 func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
-	parent := domain.MustParsePatentNumber("EP0000002A1")
-	child := domain.MustParsePatentNumber("JP0000003A1")
+	root := domain.MustParsePatentNumber("US1B2")
+	parent := domain.MustParsePatentNumber("EP2A1")
+	child := domain.MustParsePatentNumber("JP3A1")
 	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
 	g.loading = false
 	g.nodes = []proto.FamilyGraphNode{
@@ -118,7 +118,7 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.jumpToFirstNode()
 
 	out := g.View(120, 12)
-	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP0000002A1", "dn:US0000001B2", "🦴  Child", "y: copy Mermaid"} {
+	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP2A1", "dn:US1B2", "🦴  Child", "y: copy Mermaid"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("family graph view missing %q\n%s", want, out)
 		}
@@ -163,9 +163,9 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 }
 
 func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
-	parent := domain.MustParsePatentNumber("EP0000002A1")
-	child := domain.MustParsePatentNumber("JP0000003A1")
+	root := domain.MustParsePatentNumber("US1B2")
+	parent := domain.MustParsePatentNumber("EP2A1")
+	child := domain.MustParsePatentNumber("JP3A1")
 	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
 	g.loading = false
 	g.nodes = []proto.FamilyGraphNode{
@@ -179,11 +179,11 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 	out := g.mermaidGraph()
 	for _, want := range []string{
 		"flowchart TD",
-		"p_us_0000001_b2((\"US0000001B2<br/>Root patent\"))",
-		"p_ep_0000002_a1[\"EP0000002A1<br/>Parent patent\"]",
-		"p_jp_0000003_a1[\"JP0000003A1\"]",
-		"p_ep_0000002_a1 --> p_us_0000001_b2",
-		"p_us_0000001_b2 -.-> p_jp_0000003_a1",
+		"p_us_1_b2((\"US1B2<br/>Root patent\"))",
+		"p_ep_2_a1[\"EP2A1<br/>Parent patent\"]",
+		"p_jp_3_a1[\"JP3A1\"]",
+		"p_ep_2_a1 --> p_us_1_b2",
+		"p_us_1_b2 -.-> p_jp_3_a1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("mermaid export missing %q\n%s", want, out)
@@ -192,7 +192,7 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 }
 
 func TestFamilyGraphViewUsesReviewStateForActiveProject(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
 	g.loading = false
 	g.project = "p1"
@@ -214,7 +214,7 @@ func TestFamilyGraphViewUsesReviewStateForActiveProject(t *testing.T) {
 }
 
 func TestFamilyGraphAppliesReviewStateChangeImmediately(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
 	g.project = "p1"
 	g.nodes = []proto.FamilyGraphNode{{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root"}, Depth: 0}}
@@ -233,7 +233,7 @@ func TestFamilyGraphAppliesReviewStateChangeImmediately(t *testing.T) {
 }
 
 func TestDetailAppliesReviewStateChangeImmediately(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "p1", nil)
 	d.loading = false
 
@@ -250,7 +250,7 @@ func TestDetailAppliesReviewStateChangeImmediately(t *testing.T) {
 }
 
 func TestDetailAppliesIDSEntryChangeImmediately(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "p1", nil)
 	d.loading = false
 	d.patent = domain.Patent{Number: num, Title: "Test Patent Title"}
@@ -287,7 +287,7 @@ func TestDetailAppliesIDSEntryChangeImmediately(t *testing.T) {
 
 	updated, _ = d.Update(IDSEntryChangedMsg{
 		Project: "p1",
-		Patent:  domain.MustParsePatentNumber("US0000002B2"),
+		Patent:  domain.MustParsePatentNumber("US2B2"),
 		Entry:   nil,
 	})
 	d = updated.(*Detail)
@@ -297,7 +297,7 @@ func TestDetailAppliesIDSEntryChangeImmediately(t *testing.T) {
 }
 
 func TestDetailPaneJumpActive(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	// Bound letters simulate keymap conflicts a, i, c, b — the algorithm
 	// should assign non-conflicting letters for those labels.
 	bound := []rune{'a', 'i', 'c', 'b'}
@@ -344,7 +344,7 @@ func TestDetailPaneJumpActive(t *testing.T) {
 }
 
 func TestDetailPaneMultilineSectionsHighlightAsOneGroup(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	d.patent = domain.Patent{
@@ -390,7 +390,7 @@ func TestDetailPaneMultilineSectionsHighlightAsOneGroup(t *testing.T) {
 }
 
 func TestDetailPaneDocumentsHighlightAsOneGroup(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	d.patent = domain.Patent{
@@ -425,7 +425,7 @@ func TestDetailPaneDocumentsHighlightAsOneGroup(t *testing.T) {
 }
 
 func TestDetailPaneNavMovesBetweenGroups(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	d.patent = domain.Patent{
@@ -466,7 +466,7 @@ func TestDetailPaneNavMovesBetweenGroups(t *testing.T) {
 }
 
 func TestDetailPaneShowsProjectPatentNote(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "p1", nil)
 	d.loading = false
 	d.patent = domain.Patent{Number: num, Title: "Test Patent Title"}
@@ -488,12 +488,12 @@ func TestDetailPaneShowsProjectPatentNote(t *testing.T) {
 }
 
 func TestCitationsPaneClassificationColumn(t *testing.T) {
-	root := domain.MustParsePatentNumber("US0000001B2")
+	root := domain.MustParsePatentNumber("US1B2")
 	c := NewCitations(nil, render.NewTheme(), root, domain.RelationCites)
 
 	patents := []domain.PatentRow{
 		{
-			Number:          domain.MustParsePatentNumber("US0000002B2"),
+			Number:          domain.MustParsePatentNumber("US2B2"),
 			Title:           "Second",
 			Classifications: []string{"G06F 17/30", "H04L 29/06"},
 		},
@@ -590,7 +590,7 @@ func TestWrapTextPreservesIndentation(t *testing.T) {
 
 func TestDetailViewDoesNotEmitOverwideWrappedLines(t *testing.T) {
 	const width = 36
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	d.patent = domain.Patent{
@@ -612,7 +612,7 @@ func TestDetailViewDoesNotEmitOverwideWrappedLines(t *testing.T) {
 
 func TestDetailSelectedFetchStateDoesNotPadEmojiRow(t *testing.T) {
 	const width = 36
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	d.patent = domain.Patent{Number: num, Title: "Fetch state", FetchState: domain.FetchCached}
@@ -632,7 +632,7 @@ func TestDetailSelectedFetchStateDoesNotPadEmojiRow(t *testing.T) {
 
 func TestDetailNavigationWithinViewportDoesNotForceTargetToTop(t *testing.T) {
 	const width = 80
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	d.patent = domain.Patent{Number: num, Title: "Fetch state", FetchState: domain.FetchCached}
@@ -668,7 +668,7 @@ func TestDetailClassificationsAreSummarized(t *testing.T) {
 
 func TestDetailNavigationSkipsWrappedFieldContinuations(t *testing.T) {
 	const width = 36
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "", nil)
 	d.loading = false
 	for i := 0; i < detailClassificationLimit; i++ {
@@ -708,7 +708,7 @@ func TestClampFocusedSortableColumnSkipsUnsortableCurrentColumn(t *testing.T) {
 }
 
 func TestDetailJumpKeysDump(t *testing.T) {
-	num := domain.MustParsePatentNumber("US0000001B2")
+	num := domain.MustParsePatentNumber("US1B2")
 	d := NewDetail(nil, render.NewTheme(), num, "test-project", nil)
 	t.Log("JUMP KEYS:")
 	for label, key := range d.jump.JumpKeys {

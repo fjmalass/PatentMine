@@ -1,9 +1,9 @@
 {
-  "number": "US0000002B2",
+  "number": "US2B2",
   "title": "Cited invention",
   "abstract": "A patent cited by the root.",
   "assignee": "Globex Inc",
   "inventors": ["Alan Turing"],
   "grant_date": "2020-09-10",
-  "cites": ["US0000004B2"]
+  "cites": ["US4B2"]
 }

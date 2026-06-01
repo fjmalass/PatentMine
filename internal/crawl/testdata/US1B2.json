@@ -1,5 +1,5 @@
 {
-  "number": "US0000001B2",
+  "number": "US1B2",
   "title": "Root invention",
   "abstract": "The root patent of the test family graph.",
   "assignee": "Acme Corp",
@@ -7,6 +7,6 @@
   "application_date": "2019-01-15",
   "publication_date": "2021-06-01",
   "grant_date": "2023-03-21",
-  "cites": ["US0000002B2"],
-  "parents": ["US0000003B2"]
+  "cites": ["US2B2"],
+  "parents": ["US3B2"]
 }
