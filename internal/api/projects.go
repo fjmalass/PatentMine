@@ -49,6 +49,82 @@ func (s *Server) handleIDSPDF(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodIDSPDFExport, params, &res)
 }
 
+// handleIDSPDFPreview returns a dry-run summary of an IDS export without
+// writing any files.
+func (s *Server) handleIDSPDFPreview(w http.ResponseWriter, r *http.Request) {
+	params := proto.IDSPDFExportParams{Project: domain.ProjectID(r.PathValue("id"))}
+	if r.ContentLength > 0 {
+		if !decodeBody(w, r, &params) {
+			return
+		}
+		params.Project = domain.ProjectID(r.PathValue("id"))
+	}
+	var res proto.IDSPDFPreviewResult
+	s.call(w, r, proto.MethodIDSPDFPreview, params, &res)
+}
+
+// handleIDSBulkSetStatus applies one IDS status to every patent in the body.
+func (s *Server) handleIDSBulkSetStatus(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Patents       []domain.PatentNumber `json:"patents"`
+		Status        domain.IDSEntryStatus `json:"status"`
+		DefaultInFull bool                  `json:"default_in_full"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	params := proto.IDSEntryBulkSetStatusParams{
+		Project:       domain.ProjectID(r.PathValue("id")),
+		Patents:       body.Patents,
+		Status:        body.Status,
+		DefaultInFull: body.DefaultInFull,
+	}
+	var res proto.IDSEntriesResult
+	s.call(w, r, proto.MethodIDSEntryBulkSetStatus, params, &res)
+}
+
+// handleIDSEntryGet returns one project/patent IDS entry.
+func (s *Server) handleIDSEntryGet(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	params := proto.IDSEntryParams{Project: domain.ProjectID(r.PathValue("id")), Patent: number}
+	var res proto.IDSEntryResult
+	s.call(w, r, proto.MethodIDSEntryGet, params, &res)
+}
+
+// handleIDSEntrySave inserts or updates one project/patent IDS entry. The path
+// owns the project and patent; the body carries the remaining fields.
+func (s *Server) handleIDSEntrySave(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var entry domain.IDSEntry
+	if !decodeBody(w, r, &entry) {
+		return
+	}
+	entry.Project = domain.ProjectID(r.PathValue("id"))
+	entry.Patent = number
+	var res proto.IDSEntryResult
+	s.call(w, r, proto.MethodIDSEntrySave, proto.IDSEntrySaveParams{Entry: entry}, &res)
+}
+
+// handleIDSEntryDelete removes one project/patent IDS entry.
+func (s *Server) handleIDSEntryDelete(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	params := proto.IDSEntryParams{Project: domain.ProjectID(r.PathValue("id")), Patent: number}
+	var res proto.Empty
+	s.call(w, r, proto.MethodIDSEntryDelete, params, &res)
+}
+
 // handleProjectUpdate persists changes to a project's mutable fields.
 func (s *Server) handleProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	var body domain.Project

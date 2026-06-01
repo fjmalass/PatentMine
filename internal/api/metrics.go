@@ -14,6 +14,17 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodMetricsGet, nil, &res)
 }
 
+// handleMetricsPush merges a client-side metrics snapshot into the daemon's.
+// Body: component, snapshot.
+func (s *Server) handleMetricsPush(w http.ResponseWriter, r *http.Request) {
+	var body proto.MetricsPushParams
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodMetricsPush, body, &res)
+}
+
 // handleMetricsProm renders the current in-memory metrics snapshot in
 // Prometheus exposition format.
 func (s *Server) handleMetricsProm(w http.ResponseWriter, r *http.Request) {

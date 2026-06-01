@@ -503,7 +503,14 @@ func (d *Detail) body(w int) string {
 	d.field(&b, w, detailLabelCountry, countryOrDash(p.Number.Country))
 	d.field(&b, w, detailLabelFetchState, detailFetchStateText(d.theme, p.FetchState))
 	d.field(&b, w, detailLabelSource, string(p.Source))
-	d.field(&b, w, detailLabelSourceURL, p.SourceURL)
+	// Always link the detail's Source URL to Google Patents, even when the
+	// crawl ran in a USPTO-only mode whose recorded SourceURL is the USPTO API
+	// query. Google's canonical page is the granted document, so build the URL
+	// from the grant number (the default "…B2" Google version) rather than the
+	// DisplayNumber, which in USPTO mode is the application number Google won't
+	// serve. (Provisional: the underlying SourceURL still reflects the real
+	// provider.)
+	d.field(&b, w, detailLabelSourceURL, p.GrantedNumber().GooglePatentURL())
 
 	// Conditional source comparison hint (Option A) — shown only when
 	// source_diff rows exist for this patent (from compare mode + enrichment).

@@ -99,7 +99,6 @@ func resolveBrowseURL(number domain.PatentNumber, result *proto.PatentResult, ta
 		display = number
 	}
 
-	sourceURL := strings.TrimSpace(patent.SourceURL)
 	switch target {
 	case browseTargetGoogle:
 		return browseResolution{URL: patentBrowserURL(display), Provider: "google", Kind: "forced"}, ""
@@ -122,10 +121,12 @@ func resolveBrowseURL(number domain.PatentNumber, result *proto.PatentResult, ta
 		}
 		return browseResolution{Provider: "uspto", Kind: "pgpub"}, "no USPTO publication XML URL for " + display.Normalized()
 	default:
-		if sourceURL != "" {
-			return browseResolution{URL: sourceURL, Provider: string(patent.Source), Kind: "source"}, ""
-		}
-		return browseResolution{URL: patentBrowserURL(display), Provider: "google", Kind: "fallback"}, ""
+		// Plain "w" opens the same Google Patents page the detail view links as
+		// its Source URL — the granted ("…B2") version. We deliberately do not
+		// open patent.SourceURL: in USPTO-only mode that is the USPTO ODP API
+		// query, not a browsable patent page. (Provisional, matches the detail
+		// override; the stored SourceURL still records the real provider.)
+		return browseResolution{URL: patentBrowserURL(display), Provider: "google", Kind: "default"}, ""
 	}
 }
 
@@ -213,7 +214,7 @@ func withUSPTOAPIKey(raw, apiKey string) string {
 }
 
 func patentBrowserURL(number domain.PatentNumber) string {
-	return "https://patents.google.com/patent/" + number.String()
+	return number.GooglePatentURL()
 }
 
 func openExternalURL(url string) error {

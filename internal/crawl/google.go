@@ -24,9 +24,6 @@ var Metrics *observability.Metrics
 // googleMinInterval keeps requests to Google Patents polite.
 const googleMinInterval = 2 * time.Second
 
-// googlePatentURLPrefix is the base of a Google Patents patent page URL.
-const googlePatentURLPrefix = "https://patents.google.com/patent/"
-
 // googleLimiter and googleClient are shared by every path that talks to Google
 // Patents — the bibliographic Source and FetchFullText alike — so the polite
 // request interval and the timeout/body caps apply to all Google traffic, not
@@ -38,7 +35,7 @@ var (
 
 // googlePatentURL returns the Google Patents page URL for a patent number.
 func googlePatentURL(n domain.PatentNumber) string {
-	return googlePatentURLPrefix + n.Normalized() + "/en"
+	return n.GooglePatentURL()
 }
 
 // googleUserAgent is a current desktop-browser User-Agent. Google Patents

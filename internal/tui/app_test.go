@@ -445,7 +445,7 @@ func TestOpenBrowserUsesFocusedSelection(t *testing.T) {
 	if !ok || status.Key != text.StatusBrowserOpened {
 		t.Fatalf("browser status = %#v, want StatusBrowserOpened", msg)
 	}
-	if len(opened) != 1 || opened[0] != "https://patents.google.com/patent/US11611785B2" {
+	if len(opened) != 1 || opened[0] != "https://patents.google.com/patent/US11611785B2/en" {
 		t.Fatalf("opened URLs = %v", opened)
 	}
 }

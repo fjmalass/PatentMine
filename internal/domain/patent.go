@@ -207,6 +207,19 @@ func (p Patent) NumberToShow() PatentNumber {
 	return p.Number
 }
 
+// GrantedNumber returns the record's grant-stage document number — Google
+// Patents' default ("…B2") version of the patent. It falls back to the latest
+// document's number, then the record number, when no grant document exists yet
+// (e.g. a still-pending application). Use this to build a Google Patents link:
+// the record's DisplayNumber may be the application number, which Google does
+// not serve a patent page for.
+func (p Patent) GrantedNumber() PatentNumber {
+	if doc, ok := p.DocumentFor(StageGrant); ok {
+		return doc.Number
+	}
+	return p.NumberToShow()
+}
+
 // DocumentFor returns the document of the given stage, if the record has one.
 func (p Patent) DocumentFor(stage Stage) (Document, bool) {
 	for _, d := range p.Documents {

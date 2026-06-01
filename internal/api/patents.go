@@ -164,6 +164,45 @@ func (s *Server) handleReviewState(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodReviewState, params, &res)
 }
 
+// handleInventorStats returns database statistics for the inventors of one patent.
+func (s *Server) handleInventorStats(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	params := proto.PatentGetParams{
+		Number:  number,
+		Project: domain.ProjectID(r.URL.Query().Get("project")),
+	}
+	var res proto.PatentInventorStatsResult
+	s.call(w, r, proto.MethodPatentInventorStats, params, &res)
+}
+
+// handleSourceBibsList returns each source's full bibliographic snapshot for the
+// all-fields side-by-side comparison view.
+func (s *Server) handleSourceBibsList(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var res proto.SourceBibsListResult
+	s.call(w, r, proto.MethodSourceBibsList, proto.SourceBibsListParams{Number: number}, &res)
+}
+
+// handlePatentDeleteBulk permanently removes the patents named in the body.
+func (s *Server) handlePatentDeleteBulk(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Patents []domain.PatentNumber `json:"patents"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodPatentDeleteBulk, proto.PatentDeleteBulkParams{Patents: body.Patents}, &res)
+}
+
 // handleSourceDiffsList lists all source comparison discrepancies generated for a patent.
 func (s *Server) handleSourceDiffsList(w http.ResponseWriter, r *http.Request) {
 	number, err := domain.ParsePatentNumber(r.PathValue("number"))

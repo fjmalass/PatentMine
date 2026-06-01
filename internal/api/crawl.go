@@ -43,3 +43,15 @@ func (s *Server) handleCrawl(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodCrawlFamily,
 		proto.CrawlFamilyParams{Root: body.Root, Depth: body.Depth, Force: body.Force}, &res)
 }
+
+// handleImportFile loads a patent record from a local fixture file. Body: path.
+func (s *Server) handleImportFile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodImportFile, proto.ImportFileParams{Path: body.Path}, &res)
+}

@@ -11,6 +11,7 @@ Related docs:
 3. [USPTO Loading & Source Configuration](./USPTO_CONFIG_LOADING.md)
 4. [TUI :add Execution Flow](./TUI_ADD_FLOW.md)
 5. [U.S. Patent Expiration Date Computation](./EXPIRATION_DATE.md)
+6. [Web REST API Reference](./REST_API.md)
 
 ---
 
@@ -61,11 +62,21 @@ PatentMine solves this mapping problem by separating **Canonical Identity**, **D
 
 ### Key Value Types (`internal/domain`)
 1. **`PatentNumber`** (`number.go`): A parsed, normalized value type containing:
-   * `Country` (ISO-2, e.g., `US`)
-   * `Serial` (Only raw digits, e.g., `11611785`)
-   * `Kind` (Optional stage code, e.g., `B2`)
-   
+   * `Country` (ISO-2, e.g., `US`; empty when the source omits it)
+   * `Serial` (Only raw digits, e.g., `11611785` — separators like `/`, `,`, `-`, and spaces are stripped on parse)
+   * `Kind` (Optional stage/kind code, e.g., `B2`; empty for application numbers)
+
    It implements custom JSON marshaling so it transfers across the wire and sqlite DB as a canonical string (`US11611785B2`) but compares equal when every field matches.
+
+   **`PatentNumber` is stage-agnostic.** It is *not* a "granted patent number" — it is whatever identifier a source happened to record, which may name any of the three lifecycle documents. The `Kind` code is what distinguishes them:
+
+   | Lifecycle document | Example inputs (all parse equal) | Canonical form | `Kind` |
+   | --- | --- | --- | --- |
+   | **Application** | `16/123,456`, `US16123456`, `US 16/123,456` | `US16123456` | *(none)* |
+   | **Publication** (pre-grant) | `US2020/0123456A1`, `US20200123456A1` | `US20200123456A1` | `A1` |
+   | **Grant** | `US11,611,785 B2`, `US11611785B2`, `11611785` | `US11611785B2` | `B2` |
+
+   Because the same invention owns all three numbers, a `PatentNumber` on its own does not tell you which patent record it belongs to — that mapping is resolved at `:add`/crawl time (see [§8.6](#86-what-add-number-accepts-and-how-each-source-mode-resolves-it)). The record's *granted* number, specifically, is exposed by `Patent.GrantedNumber()` — the `Kind: B2` grant document, used e.g. to build the canonical Google Patents link — which is distinct from the stage-agnostic `Number` (canonical record key, usually the application) and `DisplayNumber` (latest promoted stage).
 2. **`Document`** (`document.go`): Represents a single life-stage document (application, publication, or grant) containing its specific stage, date, and `PatentNumber`.
 3. **`Patent`** (`patent.go`): The master entity. It carries:
    * **`Number`**: The permanent canonical record key (representing the first document number ever discovered for this record).
@@ -497,7 +508,7 @@ Use these TUI surfaces after loading a USPTO record:
 
 | Goal | How |
 | --- | --- |
-| Open provider/source link | Select a patent and press `w`, or run `:browse`. If the record came from USPTO, PatentMine opens the saved ODP source URL and appends `api_key` for browser access. |
+| Open patent page | Select a patent and press `w`, or run `:browse`. Opens the **granted Google Patents page** (`Patent.GrantedNumber()`, the `…B2` version) — even in `uspto-only` mode, where the stored source URL is the USPTO ODP API *query* rather than a browsable page. Use the `:browse.uspto*` commands below to open the USPTO ODP source/XML directly (with `api_key` appended for browser access). |
 | Force USPTO XML link | Run `:browse.uspto` for grant-first publication fallback, `:browse.uspto.grant` for grant only, or `:browse.uspto.pgpub` / `:browse.uspto.pub` for publication only. |
 | Force Google link | Run `:browse.google` to open Google Patents regardless of saved source. |
 | Inspect source URL in-app | Open Detail with `enter` / `l`; the `Source URL`, `PGPub URL`, `Grant URL`, and XML filename rows appear when known. |
@@ -519,6 +530,30 @@ When you enter a patent identifier, PatentMine searches across multiple USPTO id
 
 If the broad search returns multiple possible wrappers, the TUI opens the `USPTOCandidatePicker` overlay. Navigate with `up` / `down` or `j` / `k`, then press `Enter` to choose the correct application. PatentMine then re-submits the load using that exact application number.
 
+### 8.6 What `:add <number>` accepts, and how each source mode resolves it
+
+`:add <xxx>` accepts **any** of the three lifecycle identifiers — an application, publication, or grant number — in any of the input spellings shown in [§2](#key-value-types-internaldomain). What happens *after* you type it depends on the active `source.mode`, because only the USPTO-preferred modes perform ODP candidate pre-resolution (`isUSPTOPreferred` in `engine_project.go`: true for `uspto-only`, `uspto-first`, and `compare`; **false** for `google-only`).
+
+The engine always starts with a **local check** (`RecordOf`): if any stage of the typed number is already a known document, it reuses that record and skips remote resolution entirely. The table below describes the *first-time* path, when the number is unknown locally:
+
+| `source.mode` | ODP candidate pre-resolution? | How `:add <number>` resolves the number | Which provider is crawled |
+| --- | --- | --- | --- |
+| `uspto-first` | **Yes** | Searches USPTO ODP across `applicationNumberText`, `patentNumber(Text)`, and `publicationNumber(Text)`, so a publication/grant number is mapped to its canonical **application** record. 1 match → auto-selected; >1 → candidate picker. | USPTO; falls back to Google only if USPTO has no record. |
+| `uspto-only` | **Yes** | Same ODP candidate mapping as `uspto-first`. | USPTO only. A missing USPTO record is an **error**, never a silent Google substitution. |
+| `compare` | **Yes** | Same ODP candidate mapping as `uspto-first`. | USPTO **and** Google; USPTO stays authoritative and the differences are stored for review. |
+| `google-only` | **No** | The number is used **as typed** (only normalized, not mapped). No ODP search and no candidate picker. | Google only. Google itself redirects a publication/application number to the granted page where one exists. |
+
+Concrete examples — assume the same invention has application `US16/123,456`, publication `US2020/0123456A1`, and grant `US11611785B2`, and that none are loaded yet:
+
+* **`:add US11611785B2` in `uspto-first`/`uspto-only`/`compare`** → ODP recognizes the grant number, maps it to application `16123456`, and the record is stored under the canonical application key with grant `US11611785B2` promoted to `DisplayNumber`.
+* **`:add US2020/0123456A1` in `uspto-only`** → ODP maps the publication number to the same application record; if that application is not in USPTO ODP, the add **fails** (no Google fallback).
+* **`:add 16123456` (bare application serial) in any USPTO-preferred mode** → matched directly on `applicationNumberText`; if several wrappers match, the candidate picker opens.
+* **`:add US11611785B2` in `google-only`** → no ODP step; Google Patents is crawled for `US11611785B2` directly.
+* **`:add US2020/0123456A1` in `google-only`** → Google is crawled for the publication number; Google's own redirect surfaces the granted document when it exists.
+* **`:add.uspto <number>`** → forces the USPTO-preferred path (ODP candidate resolution) regardless of the current mode; the inverse `:add.google` / `:browse.google` force the Google side.
+
+Regardless of which identifier you type or which mode resolves it, the saved record collapses all three documents into one `Patent` (see the merge/self-healing flow in [§3](#3-the-patent-lifecycle)). The detail view's **Source URL** and the `w` / `:browse` shortcut always link the *granted* Google Patents page (`Patent.GrantedNumber()`), even in `uspto-only` mode where the stored provider URL is the USPTO ODP API query.
+
 ---
 
 ## 9. CLI Subcommands & TUI Shortcut Reference
@@ -530,7 +565,7 @@ Launch CLI operations using the `patentmine` binary:
 * `patentmine serve` : Start the high-performance engine daemon (binds database and orchestrates Unix sockets).
 * `patentmine stop` : Send a termination signal to stop the running daemon.
 * `patentmine tui` : Launch the interactive Terminal User Interface thin client.
-* `patentmine api` : Boot the web API server gateway.
+* `patentmine api` : Boot the web API server gateway. Every route mirrors a daemon operation; see the [Web REST API Reference](./REST_API.md) for the full endpoint catalog and its TUI-parity matrix.
 * `patentmine paths` : Output the resolved runtime directories and file paths.
 * `patentmine lookup <number>` : Look up raw USPTO file wrapper metadata by application number, publication number, or patent number.
 * `patentmine expiration-date [options] <number>` : Compute the statutory U.S. patent expiration date (20-year term from the earliest-term filing date, plus PTA/PTE, capped by any terminal disclaimer), persist it, and compare it against the Google Patents estimate. Options: `-source uspto|google|both` (default `both`), `-refresh` to re-fetch application metadata from the USPTO live API. See [`EXPIRATION_DATE.md`](./EXPIRATION_DATE.md).

@@ -104,7 +104,31 @@ func TestResolveBrowseURLForcedGoogle(t *testing.T) {
 	if errText != "" {
 		t.Fatalf("google browse error = %q", errText)
 	}
-	if got.URL != "https://patents.google.com/patent/US11921100B2" || got.Provider != "google" {
+	if got.URL != "https://patents.google.com/patent/US11921100B2/en" || got.Provider != "google" {
 		t.Fatalf("google browse = %+v", got)
+	}
+}
+
+// TestResolveBrowseURLDefaultUsesGoogleGrant verifies the plain "w" (default)
+// browse target opens the granted Google Patents page rather than the recorded
+// SourceURL — which in USPTO-only mode is the USPTO ODP API query, not a
+// browsable patent page. This mirrors the detail view's Source URL override.
+func TestResolveBrowseURLDefaultUsesGoogleGrant(t *testing.T) {
+	number := domain.MustParsePatentNumber("US17730671")
+	res := &proto.PatentResult{
+		Patent: domain.Patent{
+			Number:    number,
+			Source:    domain.SourceUSPTO,
+			SourceURL: "https://api.uspto.gov/api/v1/patent/applications/search?q=applicationNumberText:17730671",
+			Documents: []domain.Document{{Number: domain.MustParsePatentNumber("US11921100B2"), Stage: domain.StageGrant}},
+		},
+	}
+
+	got, errText := resolveBrowseURL(number, res, browseTargetDefault)
+	if errText != "" {
+		t.Fatalf("default browse error = %q", errText)
+	}
+	if got.URL != "https://patents.google.com/patent/US11921100B2/en" || got.Provider != "google" {
+		t.Fatalf("default browse = %+v, want granted Google URL", got)
 	}
 }

@@ -76,6 +76,19 @@ func (n PatentNumber) Normalized() string {
 	return n.Country + n.Serial + n.Kind
 }
 
+// GooglePatentURLPrefix is the base of a Google Patents patent page URL. It
+// lives in domain so every layer that links to Google Patents (crawl Source,
+// detail view) builds the URL from one literal rather than repeating it.
+const GooglePatentURLPrefix = "https://patents.google.com/patent/"
+
+// GooglePatentURL returns the Google Patents page URL for this number. Google's
+// canonical page for a granted patent is its grant document (e.g. US…B2), so
+// callers that want the default Google version should build this from the
+// record's granted/latest number.
+func (n PatentNumber) GooglePatentURL() string {
+	return GooglePatentURLPrefix + n.Normalized() + "/en"
+}
+
 // String implements fmt.Stringer.
 func (n PatentNumber) String() string {
 	return n.Normalized()
