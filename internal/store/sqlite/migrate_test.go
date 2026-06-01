@@ -148,8 +148,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 5 {
-		t.Fatalf("schema_version = %d, want 5", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 6 {
+		t.Fatalf("schema_version = %d, want 6", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -226,8 +226,8 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "5" {
-		t.Fatalf("schema_version = %q, want 5", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "6" {
+		t.Fatalf("schema_version = %q, want 6", v)
 	}
 	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
 		t.Fatalf("grant document kind = %q, want B2", k)

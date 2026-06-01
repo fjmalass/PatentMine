@@ -185,10 +185,72 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "5"
 	}
-	if version != "5" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 5", version)
+	if version == "5" {
+		if err := r.migrateV5ToV6(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v5 to v6: %w", err)
+		}
+		version = "6"
+	}
+	if version != "6" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 6", version)
 	}
 	return nil
+}
+
+// migrateV5ToV6 introduces the assignee_history table (the record.id-keyed
+// ownership timeline). It is purely additive: the table is created here so the
+// version bump is self-contained, and schema.sql recreates it idempotently on the
+// following apply. No data backfill — existing databases populate assignee_history
+// lazily the next time each patent's assignments are (re)fetched, which calls
+// RebuildAssigneeHistory.
+//
+// TODO(assignee-backfill): one-time backfill of assignee_history from the
+// already-stored uspto_assignment rows + record.assignee so existing corpora get a
+// populated timeline without a re-fetch. Deferred to keep this migration trivial.
+func (r *Repo) migrateV5ToV6(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v5-to-v6.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v5 to v6: backup: %w", err)
+	}
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v5 to v6: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, stmt := range migrationV5ToV6Statements {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v5 to v6: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '6' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v5 to v6: set version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v5 to v6: commit: %w", err)
+	}
+	return nil
+}
+
+// migrationV5ToV6Statements create the assignee_history table and its indexes.
+// Kept in sync with schema.sql (idempotent CREATE ... IF NOT EXISTS).
+var migrationV5ToV6Statements = []string{
+	`CREATE TABLE IF NOT EXISTS assignee_history (
+	    record_id        TEXT NOT NULL REFERENCES record (id) ON DELETE CASCADE,
+	    pull_type        TEXT NOT NULL,
+	    ordinal          INTEGER NOT NULL DEFAULT 0,
+	    assignee_name    TEXT NOT NULL DEFAULT '',
+	    assignee_norm    TEXT NOT NULL DEFAULT '',
+	    effective_date   TEXT NOT NULL DEFAULT '',
+	    pulled_at        TEXT NOT NULL DEFAULT '',
+	    reel_frame       TEXT NOT NULL DEFAULT '',
+	    conveyance_text  TEXT NOT NULL DEFAULT '',
+	    is_latest        INTEGER NOT NULL DEFAULT 0,
+	    PRIMARY KEY (record_id, pull_type, ordinal)
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_assignee_history_record ON assignee_history (record_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_assignee_history_norm   ON assignee_history (assignee_norm)`,
+	`CREATE INDEX IF NOT EXISTS idx_assignee_history_latest ON assignee_history (record_id, is_latest)`,
 }
 
 // migrateV4ToV5 repairs grant documents that were stored without their kind

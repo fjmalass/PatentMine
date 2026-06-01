@@ -653,6 +653,24 @@ func LookupClassificationCmd(client *rpc.Client, code string) tea.Cmd {
 	}
 }
 
+// FetchAssignmentsProjectCmd batch-fetches assignments for the project's curated
+// members. The run is rate-limited at the USPTO side (≤1 req/s), so it can take a
+// while for a large project — it gets a generous timeout of its own rather than
+// the default per-call bound.
+func FetchAssignmentsProjectCmd(client *rpc.Client, project domain.ProjectID, includeExpired bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		var res proto.USPTOFetchAssignmentsBatchResult
+		if err := client.Call(ctx, proto.MethodUSPTOFetchAssignmentsBatch,
+			proto.USPTOFetchAssignmentsBatchParams{Project: project, IncludeExpired: includeExpired}, &res); err != nil {
+			return StatusMsg{Key: text.StatusAssignmentsFetchFailed, Args: []any{err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusAssignmentsBatchFetched,
+			Args: []any{res.Fetched, res.Skipped, res.Failed, res.Assignments}}
+	}
+}
+
 // FetchUSPTOAssignmentsCmd pulls the patent's assignment chain from the USPTO
 // Patent Assignment Search API and persists the result. Returns a status line
 // reporting how many assignments and parties were saved.

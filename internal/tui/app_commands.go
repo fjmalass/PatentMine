@@ -525,6 +525,49 @@ func (a *App) openAssignees(p domain.Patent) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// cmdOpenAssigneesProject opens the project-wide assignee rollup (current owners
+// vs. every assignee ever, with live/expired/not-fetched coverage). Project-scoped.
+func (a *App) cmdOpenAssigneesProject(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(command.OpenAssigneesProject)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	o, cmd := overlay.NewProjectAssigneesOverlay(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+// cmdFetchAssignmentsProject batch-fetches assignments for the active project's
+// curated members. An optional "include-expired" arg also refreshes expired
+// patents (skipped by default).
+func (a *App) cmdFetchAssignmentsProject(inv invocation) (tea.Model, tea.Cmd) {
+	includeExpired := false
+	for _, arg := range inv.args {
+		switch arg {
+		case "include-expired", "--include-expired", "expired":
+			includeExpired = true
+		default:
+			return a.usageError(command.FetchAssignmentsProject)
+		}
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	return a, pane.FetchAssignmentsProjectCmd(a.client, a.activeProject.ID, includeExpired)
+}
+
 func (a *App) openClassificationStats(p domain.Patent) (tea.Model, tea.Cmd) {
 	var project domain.ProjectID
 	if a.activeProject != nil {

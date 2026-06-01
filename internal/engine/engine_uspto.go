@@ -705,6 +705,112 @@ func (e *Engine) USPTOAssignments(ctx context.Context, applicationNumber string)
 	return e.repo.USPTOAssignments(ctx, applicationNumber)
 }
 
+// AssigneeHistory returns the record.id-keyed ownership timeline for one patent
+// (oldest first; current owner(s) flagged IsLatest). It is a pure read of rows
+// derived by the most recent FetchUSPTOAssignments.
+func (e *Engine) AssigneeHistory(ctx context.Context, n domain.PatentNumber) (res proto.AssigneeHistoryResult, err error) {
+	defer e.observeDuration("assignee.history", time.Now(), &err)
+	entries, err := e.repo.AssigneeHistory(ctx, n)
+	if err != nil {
+		return proto.AssigneeHistoryResult{}, fmt.Errorf("engine: assignee history: %w", err)
+	}
+	return proto.AssigneeHistoryResult{Number: n, Entries: entries}, nil
+}
+
+// ProjectAssignees rolls up assignee ownership across a project's members:
+// current owners (deduped, live patents only) vs. every assignee ever, plus
+// live/expired/not-fetched coverage.
+func (e *Engine) ProjectAssignees(ctx context.Context, project domain.ProjectID) (rollup domain.ProjectAssigneeRollup, err error) {
+	defer e.observeDuration("project.assignees", time.Now(), &err)
+	rollup, err = e.repo.ProjectAssignees(ctx, project)
+	if err != nil {
+		return domain.ProjectAssigneeRollup{}, fmt.Errorf("engine: project assignees: %w", err)
+	}
+	return rollup, nil
+}
+
+// FetchUSPTOAssignmentsForProject batch-fetches assignments for a project's
+// curated (manually-added) members. See FetchUSPTOAssignmentsBatch.
+func (e *Engine) FetchUSPTOAssignmentsForProject(ctx context.Context, project domain.ProjectID, includeExpired bool) (proto.USPTOFetchAssignmentsBatchResult, error) {
+	numbers, err := e.ManualMemberships(ctx, project)
+	if err != nil {
+		return proto.USPTOFetchAssignmentsBatchResult{}, fmt.Errorf("engine: project members: %w", err)
+	}
+	return e.FetchUSPTOAssignmentsBatch(ctx, numbers, includeExpired)
+}
+
+// FetchUSPTOAssignmentsBatch fetches recorded assignments for many patents. It
+// deduplicates the input, skips expired patents unless includeExpired (ownership
+// is frozen post-expiry, so a re-pull is wasted), and aggregates per-patent
+// outcomes. Each patent runs through the single-patent FetchUSPTOAssignments, so
+// the USPTO 1 req/s limiter and the assignee-history rebuild both apply per
+// record. Emits one timing span plus batch counters and an activity record.
+func (e *Engine) FetchUSPTOAssignmentsBatch(ctx context.Context, numbers []domain.PatentNumber, includeExpired bool) (res proto.USPTOFetchAssignmentsBatchResult, err error) {
+	defer e.observeDuration("uspto.fetch_assignments_batch", time.Now(), &err)
+	now := time.Now().UTC()
+
+	seen := make(map[string]struct{}, len(numbers))
+	for _, n := range numbers {
+		if n.IsZero() {
+			continue
+		}
+		key := n.Normalized()
+		if _, dup := seen[key]; dup {
+			continue // dedup: several input spellings may resolve to one record
+		}
+		seen[key] = struct{}{}
+		res.Total++
+
+		if ctx.Err() != nil {
+			res.Failed++
+			res.Failures = append(res.Failures, fmt.Sprintf("%s: %v", n.String(), ctx.Err()))
+			break
+		}
+		if !includeExpired {
+			if p, perr := e.repo.Patent(ctx, n); perr == nil &&
+				!p.ExpirationDate.IsZero() && p.ExpirationDate.Before(now) {
+				res.Skipped++
+				continue
+			}
+		}
+		one, ferr := e.FetchUSPTOAssignments(ctx, n)
+		if ferr != nil {
+			res.Failed++
+			res.Failures = append(res.Failures, fmt.Sprintf("%s: %v", n.String(), ferr))
+			continue
+		}
+		res.Fetched++
+		res.Assignments += one.Assignments
+		res.Parties += one.Parties
+	}
+
+	e.incCounter("uspto.fetch_assignments_batch.total", int64(res.Total))
+	e.incCounter("uspto.fetch_assignments_batch.fetched", int64(res.Fetched))
+	e.incCounter("uspto.fetch_assignments_batch.skipped", int64(res.Skipped))
+	e.incCounter("uspto.fetch_assignments_batch.failed", int64(res.Failed))
+	e.log(ctx, slog.LevelInfo, "uspto assignments batch fetched",
+		slog.Int("total", res.Total), slog.Int("fetched", res.Fetched),
+		slog.Int("skipped", res.Skipped), slog.Int("failed", res.Failed),
+		slog.Int("assignments", res.Assignments))
+	e.recordActivity(ctx, observability.Record{
+		Component: "engine",
+		Action:    "uspto.fetch_assignments.batch",
+		Status:    "ok",
+		Attributes: map[string]any{
+			"total": res.Total, "fetched": res.Fetched,
+			"skipped": res.Skipped, "failed": res.Failed,
+			"assignments": res.Assignments, "parties": res.Parties,
+		},
+	})
+	e.announceChange()
+	return res, nil
+}
+
+// TODO(assignee-search): SearchAssigneeAssignments(ctx, name) via a new
+// crawl.SearchUSPTOAssignmentsByAssignee (ODP q=assigneeBag.name:"…"), to drive
+// :find.assignee and GET /assignees/search. Deferred — needs result-ingestion
+// design. See ASSIGNEE_HISTORY_PLAN.md / TUI_ASSIGNEE_FLOW.md.
+
 // FetchUSPTOAssignments calls the USPTO Patent Assignment Search API for the
 // patent's application number and persists every recorded assignment plus its
 // parties. Existing rows for the application are replaced (a re-fetch
@@ -733,6 +839,12 @@ func (e *Engine) FetchUSPTOAssignments(ctx context.Context, n domain.PatentNumbe
 	}
 	if saveErr := e.repo.SaveUSPTOAssignments(ctx, app.ApplicationNumber, assignments); saveErr != nil {
 		return proto.USPTOFetchAssignmentsResult{}, fmt.Errorf("engine: save uspto assignments: %w", saveErr)
+	}
+	// Rebuild the record.id-keyed ownership timeline (at-grant owner + recorded
+	// assignments) so :open.assignees and the project rollup reflect this fetch.
+	pulledAt := time.Now().UTC().Format(domain.DateTimeLayout)
+	if rebuildErr := e.repo.RebuildAssigneeHistoryForNumber(ctx, n, pulledAt); rebuildErr != nil {
+		return proto.USPTOFetchAssignmentsResult{}, fmt.Errorf("engine: rebuild assignee history: %w", rebuildErr)
 	}
 	parties := 0
 	for _, a := range assignments {

@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '5')
+VALUES ('schema_version', '6')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -281,6 +281,33 @@ CREATE TABLE IF NOT EXISTS uspto_assignment_party (
         REFERENCES uspto_assignment (application_number, ordinal)
         ON DELETE CASCADE
 );
+
+-- assignee_history is the unified ownership timeline for a record, keyed off the
+-- stable surrogate record.id (so it survives record-number canonicalization /
+-- merges). It folds the at-grant assignee and every recorded assignment into one
+-- table with pull provenance, derived (delete-then-insert) from the raw source
+-- tables (record.assignee + uspto_assignment / uspto_assignment_party) by
+-- RebuildAssigneeHistory. pull_type is the kind of pull: 'at_grant' (assignee as
+-- of grant), 'assignment' (a recorded transfer), 'assignee_search' (reserved for
+-- name-search discovery). is_latest marks every party of the most-recent ownership
+-- event (>1 row = joint current owners). assignee_norm is the dedup key for
+-- "unique assignees" rollups (domain.NormalizeAssignee).
+CREATE TABLE IF NOT EXISTS assignee_history (
+    record_id        TEXT NOT NULL REFERENCES record (id) ON DELETE CASCADE,
+    pull_type        TEXT NOT NULL,
+    ordinal          INTEGER NOT NULL DEFAULT 0,
+    assignee_name    TEXT NOT NULL DEFAULT '',
+    assignee_norm    TEXT NOT NULL DEFAULT '',
+    effective_date   TEXT NOT NULL DEFAULT '',
+    pulled_at        TEXT NOT NULL DEFAULT '',
+    reel_frame       TEXT NOT NULL DEFAULT '',
+    conveyance_text  TEXT NOT NULL DEFAULT '',
+    is_latest        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (record_id, pull_type, ordinal)
+);
+CREATE INDEX IF NOT EXISTS idx_assignee_history_record ON assignee_history (record_id);
+CREATE INDEX IF NOT EXISTS idx_assignee_history_norm   ON assignee_history (assignee_norm);
+CREATE INDEX IF NOT EXISTS idx_assignee_history_latest ON assignee_history (record_id, is_latest);
 
 CREATE TABLE IF NOT EXISTS uspto_document (
     document_number      TEXT PRIMARY KEY,

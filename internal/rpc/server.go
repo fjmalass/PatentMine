@@ -10,17 +10,14 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
-	"patentmine/internal/observability"
 	"patentmine/internal/patentlist"
 	"patentmine/internal/proto"
 	"patentmine/internal/store"
-	"patentmine/internal/uspto"
 	appversion "patentmine/internal/version"
 )
 
@@ -66,77 +63,80 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		opt(s)
 	}
 	s.handlers = map[proto.Method]handlerFunc{
-		proto.MethodPing:                      s.ping,
-		proto.MethodPatentGet:                 s.patentGet,
-		proto.MethodPatentAssigneeStats:       s.patentAssigneeStats,
-		proto.MethodPatentClassificationStats: s.patentClassificationStats,
-		proto.MethodPatentInventorStats:       s.patentInventorStats,
-		proto.MethodPatentList:                s.patentList,
-		proto.MethodPatentTableColumns:        s.patentTableColumns,
-		proto.MethodPatentDelete:              s.patentDelete,
-		proto.MethodPatentDeleteBulk:          s.patentDeleteBulk,
-		proto.MethodPatentClearCache:          s.patentClearCache,
-		proto.MethodProjectList:               s.projectList,
-		proto.MethodProjectCreate:             s.projectCreate,
-		proto.MethodMembershipAdd:             s.membershipAdd,
-		proto.MethodAddRelated:                s.addRelated,
-		proto.MethodOrphanList:                s.orphanList,
-		proto.MethodReviewState:               s.reviewState,
-		proto.MethodTagPatent:                 s.tagPatent,
-		proto.MethodUntagPatent:               s.untagPatent,
-		proto.MethodCrawlFamily:               s.crawlFamily,
-		proto.MethodCrawlConfig:               s.crawlConfig,
-		proto.MethodSourceModeGet:             s.sourceModeGet,
-		proto.MethodSourceModeSet:             s.sourceModeSet,
-		proto.MethodCrawlCancel:               s.crawlCancel,
-		proto.MethodImportFile:                s.importFile,
-		proto.MethodRelations:                 s.relations,
-		proto.MethodFamilyGraph:               s.familyGraph,
-		proto.MethodIDSExport:                 s.idsExport,
-		proto.MethodIDSPDFExport:              s.idsPDFExport,
-		proto.MethodIDSPDFPreview:             s.idsPDFPreview,
-		proto.MethodProjectUpdate:             s.projectUpdate,
-		proto.MethodIDSEntryGet:               s.idsEntryGet,
-		proto.MethodIDSEntrySave:              s.idsEntrySave,
-		proto.MethodIDSEntryDelete:            s.idsEntryDelete,
-		proto.MethodIDSEntryBulkSetStatus:     s.idsEntryBulkSetStatus,
-		proto.MethodPatentNoteGet:             s.patentNoteGet,
-		proto.MethodPatentNoteSave:            s.patentNoteSave,
-		proto.MethodPatentNoteDelete:          s.patentNoteDelete,
-		proto.MethodPatentNoteList:            s.patentNoteList,
-		proto.MethodPatentNoteExport:          s.patentNoteExport,
-		proto.MethodAddedExport:               s.addedExport,
-		proto.MethodAddedImport:               s.addedImport,
-		proto.MethodMetricsGet:                s.metricsGet,
-		proto.MethodMetricsPush:               s.metricsPush,
-		proto.MethodActivityRaw:               s.activityRaw,
-		proto.MethodHistoryFeed:               s.historyFeed,
-		proto.MethodTagCreate:                 s.tagCreate,
-		proto.MethodTagList:                   s.tagList,
-		proto.MethodTagDelete:                 s.tagDelete,
-		proto.MethodTagPatentStrict:           s.tagPatentStrict,
-		proto.MethodUntagPatentStrict:         s.untagPatentStrict,
-		proto.MethodPatentTagList:             s.patentTagList,
-		proto.MethodClassificationGet:         s.classificationGet,
-		proto.MethodClassificationList:        s.classificationList,
-		proto.MethodClassificationSave:        s.classificationSave,
-		proto.MethodClassificationDelete:      s.classificationDelete,
-		proto.MethodClassificationLookup:      s.classificationLookup,
-		proto.MethodClassificationListByCodes: s.classificationListByCodes,
-		proto.MethodPatentClassificationList:  s.patentClassificationList,
-		proto.MethodTableViewList:             s.tableViewList,
-		proto.MethodTableViewGet:              s.tableViewGet,
-		proto.MethodTableViewSave:             s.tableViewSave,
-		proto.MethodTableViewDelete:           s.tableViewDelete,
-		proto.MethodUSPTOFetchXML:             s.usptoFetchXML,
-		proto.MethodUSPTOGrantBody:            s.usptoGrantBody,
-		proto.MethodUSPTOLookup:               s.usptoLookup,
-		proto.MethodUSPTOFetchAssignments:     s.usptoFetchAssignments,
-		proto.MethodUSPTOAssignmentList:       s.usptoAssignmentList,
-		proto.MethodUSPTOExpirationCalculate:  s.usptoExpirationCalculate,
-		proto.MethodSourceResolveDiffs:        s.sourceResolveDiffs,
-		proto.MethodSourceDiffsList:           s.sourceDiffsList,
-		proto.MethodSourceBibsList:            s.sourceBibsList,
+		proto.MethodPing:                       s.ping,
+		proto.MethodPatentGet:                  s.patentGet,
+		proto.MethodPatentAssigneeStats:        s.patentAssigneeStats,
+		proto.MethodPatentClassificationStats:  s.patentClassificationStats,
+		proto.MethodPatentInventorStats:        s.patentInventorStats,
+		proto.MethodPatentList:                 s.patentList,
+		proto.MethodPatentTableColumns:         s.patentTableColumns,
+		proto.MethodPatentDelete:               s.patentDelete,
+		proto.MethodPatentDeleteBulk:           s.patentDeleteBulk,
+		proto.MethodPatentClearCache:           s.patentClearCache,
+		proto.MethodProjectList:                s.projectList,
+		proto.MethodProjectCreate:              s.projectCreate,
+		proto.MethodMembershipAdd:              s.membershipAdd,
+		proto.MethodAddRelated:                 s.addRelated,
+		proto.MethodOrphanList:                 s.orphanList,
+		proto.MethodReviewState:                s.reviewState,
+		proto.MethodTagPatent:                  s.tagPatent,
+		proto.MethodUntagPatent:                s.untagPatent,
+		proto.MethodCrawlFamily:                s.crawlFamily,
+		proto.MethodCrawlConfig:                s.crawlConfig,
+		proto.MethodSourceModeGet:              s.sourceModeGet,
+		proto.MethodSourceModeSet:              s.sourceModeSet,
+		proto.MethodCrawlCancel:                s.crawlCancel,
+		proto.MethodImportFile:                 s.importFile,
+		proto.MethodRelations:                  s.relations,
+		proto.MethodFamilyGraph:                s.familyGraph,
+		proto.MethodIDSExport:                  s.idsExport,
+		proto.MethodIDSPDFExport:               s.idsPDFExport,
+		proto.MethodIDSPDFPreview:              s.idsPDFPreview,
+		proto.MethodProjectUpdate:              s.projectUpdate,
+		proto.MethodIDSEntryGet:                s.idsEntryGet,
+		proto.MethodIDSEntrySave:               s.idsEntrySave,
+		proto.MethodIDSEntryDelete:             s.idsEntryDelete,
+		proto.MethodIDSEntryBulkSetStatus:      s.idsEntryBulkSetStatus,
+		proto.MethodPatentNoteGet:              s.patentNoteGet,
+		proto.MethodPatentNoteSave:             s.patentNoteSave,
+		proto.MethodPatentNoteDelete:           s.patentNoteDelete,
+		proto.MethodPatentNoteList:             s.patentNoteList,
+		proto.MethodPatentNoteExport:           s.patentNoteExport,
+		proto.MethodAddedExport:                s.addedExport,
+		proto.MethodAddedImport:                s.addedImport,
+		proto.MethodMetricsGet:                 s.metricsGet,
+		proto.MethodMetricsPush:                s.metricsPush,
+		proto.MethodActivityRaw:                s.activityRaw,
+		proto.MethodHistoryFeed:                s.historyFeed,
+		proto.MethodTagCreate:                  s.tagCreate,
+		proto.MethodTagList:                    s.tagList,
+		proto.MethodTagDelete:                  s.tagDelete,
+		proto.MethodTagPatentStrict:            s.tagPatentStrict,
+		proto.MethodUntagPatentStrict:          s.untagPatentStrict,
+		proto.MethodPatentTagList:              s.patentTagList,
+		proto.MethodClassificationGet:          s.classificationGet,
+		proto.MethodClassificationList:         s.classificationList,
+		proto.MethodClassificationSave:         s.classificationSave,
+		proto.MethodClassificationDelete:       s.classificationDelete,
+		proto.MethodClassificationLookup:       s.classificationLookup,
+		proto.MethodClassificationListByCodes:  s.classificationListByCodes,
+		proto.MethodPatentClassificationList:   s.patentClassificationList,
+		proto.MethodTableViewList:              s.tableViewList,
+		proto.MethodTableViewGet:               s.tableViewGet,
+		proto.MethodTableViewSave:              s.tableViewSave,
+		proto.MethodTableViewDelete:            s.tableViewDelete,
+		proto.MethodUSPTOFetchXML:              s.usptoFetchXML,
+		proto.MethodUSPTOGrantBody:             s.usptoGrantBody,
+		proto.MethodUSPTOLookup:                s.usptoLookup,
+		proto.MethodUSPTOFetchAssignments:      s.usptoFetchAssignments,
+		proto.MethodUSPTOFetchAssignmentsBatch: s.usptoFetchAssignmentsBatch,
+		proto.MethodUSPTOAssignmentList:        s.usptoAssignmentList,
+		proto.MethodAssigneeHistory:            s.assigneeHistory,
+		proto.MethodProjectAssignees:           s.projectAssignees,
+		proto.MethodUSPTOExpirationCalculate:   s.usptoExpirationCalculate,
+		proto.MethodSourceResolveDiffs:         s.sourceResolveDiffs,
+		proto.MethodSourceDiffsList:            s.sourceDiffsList,
+		proto.MethodSourceBibsList:             s.sourceBibsList,
 	}
 	return s
 }
@@ -607,97 +607,6 @@ func (s *Server) reviewState(ctx context.Context, raw json.RawMessage) (any, err
 	return proto.ReviewStateResult{Patents: records}, nil
 }
 
-func (s *Server) tagPatent(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.TagPatent(ctx, p.Project, p.Patents, p.Name); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) untagPatent(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.UntagPatent(ctx, p.Project, p.Patents, p.Name); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) tagCreate(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagCreateParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	tag, err := s.engine.CreateTaxonomyTag(ctx, p.Project, p.Name)
-	if err != nil {
-		return nil, err
-	}
-	return tag, nil
-}
-
-func (s *Server) tagList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	tags, err := s.engine.ListTaxonomyTags(ctx, p.Project)
-	if err != nil {
-		return nil, err
-	}
-	return proto.TagListResult{Tags: tags}, nil
-}
-
-func (s *Server) tagDelete(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagDeleteParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.DeleteTaxonomyTag(ctx, p.Project, p.Name); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) tagPatentStrict(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.TagPatentStrict(ctx, p.Project, p.Patents, p.Name); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) untagPatentStrict(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TagParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.UntagPatentStrict(ctx, p.Project, p.Patents, p.Name); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) patentTagList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentTagListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	tags, err := s.engine.PatentTags(ctx, p.Project, p.Patent)
-	if err != nil {
-		return nil, err
-	}
-	return proto.PatentTagListResult{Tags: tags}, nil
-}
-
 func (s *Server) crawlFamily(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.CrawlFamilyParams](raw)
 	if err != nil {
@@ -928,626 +837,4 @@ func (s *Server) projectUpdate(ctx context.Context, raw json.RawMessage) (any, e
 		return nil, err
 	}
 	return proto.ProjectResult{Project: saved}, nil
-}
-
-func (s *Server) idsPDFPreview(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IDSPDFExportParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	prev, err := s.engine.PreviewIDSPDF(ctx, p.Project, engine.IDSPDFOptions{
-		CumulativeCount: p.CumulativeCount,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return proto.IDSPDFPreviewResult{
-		BaseDir:         prev.BaseDir,
-		USCount:         prev.USCount,
-		ForeignCount:    prev.ForeignCount,
-		Sheets:          prev.Sheets,
-		FeeTier:         prev.FeeTier,
-		CumulativeCount: prev.CumulativeCount,
-		ExistingDirs:    prev.ExistingDirs,
-		MissingFields:   prev.MissingFields,
-	}, nil
-}
-
-func (s *Server) idsEntryGet(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IDSEntryParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	entry, ok, err := s.engine.IDSEntryOf(ctx, p.Project, p.Patent)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, store.ErrNotFound
-	}
-	return proto.IDSEntryResult{Entry: entry}, nil
-}
-
-func (s *Server) idsEntrySave(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IDSEntrySaveParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	entry, err := s.engine.SaveIDSEntry(ctx, p.Entry)
-	if err != nil {
-		return nil, err
-	}
-	return proto.IDSEntryResult{Entry: entry}, nil
-}
-
-func (s *Server) idsEntryBulkSetStatus(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IDSEntryBulkSetStatusParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := s.engine.BulkSetIDSStatus(ctx, p.Project, p.Patents, p.Status, p.DefaultInFull)
-	if err != nil {
-		return nil, err
-	}
-	return proto.IDSEntriesResult{Entries: entries}, nil
-}
-
-func (s *Server) idsEntryDelete(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.IDSEntryParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.DeleteIDSEntry(ctx, p.Project, p.Patent); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) patentNoteGet(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentNoteParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	note, ok, err := s.engine.PatentNoteOf(ctx, p.Project, p.Patent)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, store.ErrNotFound
-	}
-	return proto.PatentNoteResult{Note: note}, nil
-}
-
-func (s *Server) patentNoteSave(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentNoteSaveParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	note, err := s.engine.SavePatentNote(ctx, p.Note)
-	if err != nil {
-		return nil, err
-	}
-	return proto.PatentNoteResult{Note: note}, nil
-}
-
-func (s *Server) patentNoteDelete(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentNoteParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.DeletePatentNote(ctx, p.Project, p.Patent); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) patentNoteList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentNoteListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	sortByDate := p.SortBy != proto.NoteSortByPatent
-	notes, err := s.engine.ListPatentNotes(ctx, p.Project, sortByDate)
-	if err != nil {
-		return nil, err
-	}
-	return proto.PatentNoteListResult{Notes: notes}, nil
-}
-
-func (s *Server) patentNoteExport(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentNoteExportParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	t0 := time.Now()
-	sortByDate := p.SortBy != proto.NoteSortByPatent
-	notes, err := s.engine.ListPatentNotes(ctx, p.Project, sortByDate)
-	if err != nil {
-		return nil, fmt.Errorf("list notes: %w", err)
-	}
-
-	md := buildNotesMarkdown(notes, string(p.Project), sortByDate)
-	bytes := len(md)
-
-	if p.OutputPath != "" {
-		if err := os.WriteFile(p.OutputPath, []byte(md), 0o644); err != nil {
-			return nil, fmt.Errorf("write export file: %w", err)
-		}
-		s.engineLogger().Info("notes exported",
-			slog.Int("count", len(notes)),
-			slog.Int("bytes", bytes),
-			slog.String("path", p.OutputPath),
-			slog.Int64("duration_ms", time.Since(t0).Milliseconds()))
-		return proto.PatentNoteExportResult{Path: p.OutputPath, Count: len(notes), Bytes: bytes}, nil
-	}
-	s.engineLogger().Info("notes export rendered",
-		slog.Int("count", len(notes)),
-		slog.Int("bytes", bytes),
-		slog.Int64("duration_ms", time.Since(t0).Milliseconds()))
-	return proto.PatentNoteExportResult{Count: len(notes), Bytes: bytes, Content: md}, nil
-}
-
-// buildNotesMarkdown generates the markdown document for a set of patent notes.
-func buildNotesMarkdown(notes []domain.PatentNote, projectName string, sortByDate bool) string {
-	var b strings.Builder
-	b.WriteString("# PatentMine Notes")
-	if projectName != "" {
-		b.WriteString(" — " + projectName)
-	}
-	b.WriteString("\n\n")
-	sortLabel := "date (most recent first)"
-	if !sortByDate {
-		sortLabel = "patent number"
-	}
-	fmt.Fprintf(&b, "Exported: %s  ·  Sorted by: %s\n\n",
-		time.Now().Format(domain.DateTimeLayout), sortLabel)
-	b.WriteString(strings.Repeat("─", 72) + "\n\n")
-	for _, note := range notes {
-		fmt.Fprintf(&b, "## %s\n\n_Updated: %s_\n\n",
-			note.Patent.String(), note.UpdatedAt.Format(domain.DateTimeLayout))
-		b.WriteString(note.Markdown)
-		b.WriteString("\n\n" + strings.Repeat("─", 72) + "\n\n")
-	}
-	return b.String()
-}
-
-// engineLogger returns the engine's logger if available, or the default.
-func (s *Server) engineLogger() *slog.Logger {
-	if l := s.engine.Logger(); l != nil {
-		return l
-	}
-	return slog.Default()
-}
-
-func (s *Server) metricsGet(context.Context, json.RawMessage) (any, error) {
-	merged := s.engine.MetricsSnapshot()
-	s.clientMetrics.Range(func(_, v any) bool {
-		snap, ok := v.(proto.MetricsSnapshot)
-		if !ok {
-			return true
-		}
-		for k, tm := range snap.Timings {
-			if existing, found := merged.Timings[k]; found {
-				merged.Timings[k] = mergeTimingMetric(existing, tm)
-			} else {
-				merged.Timings[k] = tm
-			}
-		}
-		for k, v := range snap.Counters {
-			merged.Counters[k] += v
-		}
-		for k, v := range snap.Gauges {
-			merged.Gauges[k] += v
-		}
-		return true
-	})
-	return proto.MetricsResult{Metrics: merged}, nil
-}
-
-func (s *Server) metricsPush(_ context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.MetricsPushParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	key := p.Component
-	if key == "" {
-		key = "client"
-	}
-	s.clientMetrics.Store(key, p.Snapshot)
-	return proto.Empty{}, nil
-}
-
-func (s *Server) activityRaw(_ context.Context, raw json.RawMessage) (any, error) {
-	if s.activityLogsDir == "" {
-		return nil, errors.New("rpc: activity logging is not configured")
-	}
-	p, err := decodeParams[proto.ActivityRawParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	limit := p.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	records, err := observability.ReadActivityRecords(s.activityLogsDir, observability.ActivityQuery{
-		Limit:     limit,
-		Component: p.Component,
-		Action:    p.Action,
-		Entity:    p.Entity,
-		Since:     p.Since,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return proto.ActivityRawResult{Records: records, Limit: limit, Returned: len(records)}, nil
-}
-
-func (s *Server) historyFeed(_ context.Context, raw json.RawMessage) (any, error) {
-	if s.activityLogsDir == "" {
-		return nil, errors.New("rpc: activity logging is not configured")
-	}
-	p, err := decodeParams[proto.HistoryFeedParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	return observability.ReadHistoryFeed(s.activityLogsDir, observability.HistoryQuery{
-		RawLimit:  p.RawLimit,
-		Component: p.Component,
-		Since:     p.Since,
-	})
-}
-
-func (s *Server) tableViewList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TableViewListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	views, err := s.engine.ListTableViews(ctx, p.Owner, p.TableType)
-	if err != nil {
-		return nil, err
-	}
-	return proto.TableViewListResult{Views: views}, nil
-}
-
-func (s *Server) tableViewGet(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TableViewGetParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	view, err := s.engine.TableView(ctx, p.Owner, p.ID)
-	if err != nil {
-		return nil, err
-	}
-	return proto.TableViewResult{View: view}, nil
-}
-
-func (s *Server) tableViewSave(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TableViewSaveParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	view, err := s.engine.SaveTableView(ctx, p.View)
-	if err != nil {
-		return nil, err
-	}
-	return proto.TableViewResult{View: view}, nil
-}
-
-func (s *Server) tableViewDelete(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.TableViewGetParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.DeleteTableView(ctx, p.Owner, p.ID); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-// mergeTimingMetric combines two timing summaries for the same key.
-func mergeTimingMetric(a, b proto.TimingMetric) proto.TimingMetric {
-	count := a.Count + b.Count
-	totalNanos := a.TotalNanos + b.TotalNanos
-	errors := a.Errors + b.Errors
-	minNanos := a.MinNanos
-	if b.MinNanos < minNanos {
-		minNanos = b.MinNanos
-	}
-	maxNanos := a.MaxNanos
-	if b.MaxNanos > maxNanos {
-		maxNanos = b.MaxNanos
-	}
-	lastNanos := b.LastNanos
-	var avgNanos int64
-	if count > 0 {
-		avgNanos = totalNanos / count
-	}
-	return proto.TimingMetric{
-		Count:      count,
-		Errors:     errors,
-		TotalNanos: totalNanos,
-		AvgNanos:   avgNanos,
-		AvgMillis:  avgNanos / int64(time.Millisecond),
-		MinNanos:   minNanos,
-		MinMillis:  minNanos / int64(time.Millisecond),
-		MaxNanos:   maxNanos,
-		MaxMillis:  maxNanos / int64(time.Millisecond),
-		LastNanos:  lastNanos,
-		LastMillis: lastNanos / int64(time.Millisecond),
-	}
-}
-
-func (s *Server) classificationGet(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.ClassificationGetParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	return s.engine.ClassificationDefinition(ctx, p.System, p.Code)
-}
-
-func (s *Server) classificationList(ctx context.Context, _ json.RawMessage) (any, error) {
-	classifications, err := s.engine.ListClassificationDefinitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return proto.ClassificationListResult{Classifications: classifications}, nil
-}
-
-func (s *Server) classificationSave(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.ClassificationParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.SaveClassificationDefinition(ctx, p.Classification); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) classificationDelete(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.ClassificationDeleteParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.DeleteClassificationDefinition(ctx, p.System, p.Code); err != nil {
-		return nil, err
-	}
-	return proto.Empty{}, nil
-}
-
-func (s *Server) classificationLookup(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.ClassificationLookupParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	return s.engine.LookupClassification(ctx, p.Code)
-}
-
-func (s *Server) classificationListByCodes(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.ClassificationListByCodesParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	classifications, err := s.engine.ListClassificationDefinitionsByCodes(ctx, p.Codes)
-	if err != nil {
-		return nil, err
-	}
-	return proto.ClassificationListResult{Classifications: classifications}, nil
-}
-
-func (s *Server) patentClassificationList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentClassificationListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	classifications, err := s.engine.ListPatentClassifications(ctx, p.Project, p.Patent)
-	if err != nil {
-		return nil, err
-	}
-	return proto.ClassificationListResult{Classifications: classifications}, nil
-}
-
-func (s *Server) usptoFetchXML(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.USPTOFetchXMLParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	return s.engine.FetchUSPTOXML(ctx, p.Number, p.Kind)
-}
-
-func (s *Server) usptoGrantBody(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.USPTOGrantBodyParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	body, present, err := s.engine.USPTOGrantBody(ctx, p.Number, p.Kind)
-	if err != nil {
-		return nil, err
-	}
-	return proto.USPTOGrantBodyResult{Present: present, Body: body}, nil
-}
-
-func (s *Server) sourceResolveDiffs(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.SourceResolveDiffsParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.engine.ResolveSourceDiffs(ctx, p.Number, p.Diffs); err != nil {
-		return nil, err
-	}
-	if metrics := s.engineMetrics(); metrics != nil {
-		metrics.IncCounter("rpc.source.resolve_diffs.success_total", 1)
-	}
-	return proto.SourceResolveDiffsResult{
-		Resolved: len(p.Diffs),
-		Message:  "reconciled",
-	}, nil
-}
-
-func (s *Server) sourceDiffsList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.SourceDiffsListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	diffs, err := s.engine.ListSourceDiffs(ctx, p.Number)
-	if err != nil {
-		return nil, err
-	}
-	return proto.SourceDiffsListResult{Diffs: diffs}, nil
-}
-
-func (s *Server) sourceBibsList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.SourceBibsListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	bibs, err := s.engine.SourceBibs(ctx, p.Number)
-	if err != nil {
-		return nil, err
-	}
-	return proto.SourceBibsListResult{Bibs: bibs}, nil
-}
-
-func (s *Server) usptoLookup(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.USPTOLookupParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	rawJSON, err := s.engine.USPTOLookup(ctx, p.Number)
-	if err != nil {
-		return nil, err
-	}
-	return proto.USPTOLookupResult{RawJSON: rawJSON}, nil
-}
-
-func (s *Server) usptoFetchAssignments(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.USPTOFetchAssignmentsParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	return s.engine.FetchUSPTOAssignments(ctx, p.Number)
-}
-
-func (s *Server) usptoExpirationCalculate(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.USPTOExpirationCalculateParams](raw)
-	if err != nil {
-		return nil, err
-	}
-
-	app, err := s.engine.ComputeAndStoreUSPTOExpiration(ctx, p.Number, p.Refresh)
-	if err != nil {
-		return nil, err
-	}
-
-	if p.ProjectID != "" {
-		if _, _, _, addErr := s.engine.AddToProjectFromSource(ctx, domain.ProjectID(p.ProjectID), p.Number, domain.SourceUSPTO, ""); addErr != nil {
-			s.Logger().Warn("failed to auto-add patent to project during expiration calculation",
-				slog.String("project_id", p.ProjectID),
-				slog.String("patent", p.Number.String()),
-				slog.String("error", addErr.Error()),
-			)
-		}
-	}
-
-	var googleExpStr, grantDateStr string
-	var title, inventors string
-	patentRec, err := s.engine.Patent(ctx, p.Number)
-	if err == nil {
-		title = patentRec.Title
-		var invs []string
-		for _, inv := range patentRec.Inventors {
-			invs = append(invs, string(inv))
-		}
-		inventors = strings.Join(invs, ", ")
-
-		if !patentRec.GrantDate.IsZero() {
-			grantDateStr = patentRec.GrantDate.Format(domain.DateLayout)
-		}
-	}
-	// The "Google estimate" comparison value comes from Google's own source_bib
-	// row, not the record projection — the projection now holds the authoritative
-	// USPTO computed date after ComputeAndStoreUSPTOExpiration runs above.
-	if bibs, bibErr := s.engine.SourceBibs(ctx, p.Number); bibErr == nil {
-		for _, bib := range bibs {
-			if bib.Source == domain.SourceGoogle && !bib.ExpirationDate.IsZero() {
-				googleExpStr = bib.ExpirationDate.Format(domain.DateLayout)
-				break
-			}
-		}
-	}
-	if title == "" {
-		title = app.InventionTitle
-	}
-	if inventors == "" {
-		inventors = app.FirstInventorName
-	}
-	// Fall back to ApplicationStatusDate for the grant date when the patent
-	// record does not store one but the USPTO application status indicates
-	// a granted patent (e.g. "Patented Case").
-	if grantDateStr == "" {
-		grantDateStr = uspto.GrantDateFromStatus(app.ApplicationStatusText, app.ApplicationStatusDate)
-	}
-
-	res := proto.USPTOExpirationCalculateResult{
-		ApplicationNumber:        app.ApplicationNumber,
-		PatentNumber:             p.Number.String(),
-		Title:                    title,
-		Inventors:                inventors,
-		FilingDate:               app.FilingDate,
-		GrantDate:                grantDateStr,
-		EarliestTermFilingDate:   app.EarliestTermFilingDate,
-		PatentTermAdjustmentDays: app.PatentTermAdjustmentDays,
-		PatentTermExtensionDays:  app.PatentTermExtension,
-		TerminalDisclaimerDate:   app.TerminalDisclaimerDate,
-		ComputedExpirationDate:   app.ComputedExpirationDate,
-		GoogleExpirationDate:     googleExpStr,
-		ComputedAt:               app.FetchedAt,
-	}
-
-	// Populate earliest-term parent info when the earliest filing date comes from a parent patent.
-	if app.EarliestTermAppNum != "" && app.EarliestTermAppNum != app.ApplicationNumber {
-		res.EarliestTermAppNum = app.EarliestTermAppNum
-		if parentApp, err := s.engine.USPTOApplicationOrFetch(ctx, app.EarliestTermAppNum); err == nil {
-			grantNum, grantDate := uspto.EarliestTermSource(parentApp)
-			// A cached parent stub may carry the application status but not the
-			// granted patent number; fetch fresh by application number to backfill
-			// it (and the inventor) before reporting.
-			if grantNum == "" {
-				if fresh, ferr := s.engine.RefreshUSPTOApplicationByAppNum(ctx, app.EarliestTermAppNum); ferr == nil {
-					parentApp = fresh
-					grantNum, grantDate = uspto.EarliestTermSource(parentApp)
-				}
-			}
-			res.EarliestTermPatentNumber = grantNum
-			res.EarliestTermGrantDate = grantDate
-			// Even when the granted patent number is unknown, the parent's grant
-			// date can still be derived from its application status.
-			if res.EarliestTermGrantDate == "" {
-				res.EarliestTermGrantDate = uspto.GrantDateFromStatus(parentApp.ApplicationStatusText, parentApp.ApplicationStatusDate)
-			}
-			res.EarliestTermTitle = parentApp.InventionTitle
-			res.EarliestTermInventors = parentApp.FirstInventorName
-		}
-	}
-
-	return res, nil
-}
-
-func (s *Server) usptoAssignmentList(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.USPTOAssignmentListParams](raw)
-	if err != nil {
-		return nil, err
-	}
-	app, err := s.engine.USPTOApplicationFor(ctx, p.Number)
-	if err != nil {
-		return nil, err
-	}
-	assignments, err := s.engine.USPTOAssignments(ctx, app.ApplicationNumber)
-	if err != nil {
-		return nil, err
-	}
-	return proto.USPTOAssignmentListResult{
-		ApplicationNumber: app.ApplicationNumber,
-		Assignments:       assignments,
-	}, nil
 }

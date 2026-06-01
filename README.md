@@ -12,6 +12,8 @@ Related docs:
 4. [TUI :add Execution Flow](./TUI_ADD_FLOW.md)
 5. [U.S. Patent Expiration Date Computation](./EXPIRATION_DATE.md)
 6. [Web REST API Reference](./REST_API.md)
+7. [Assignee & Ownership History (usage)](./TUI_ASSIGNEE_FLOW.md)
+8. [Daemon-Side Assignee Flow](./DAEMON_ASSIGNEE_FLOW.md)
 
 ---
 
@@ -531,6 +533,33 @@ Both operations are recorded in the activity/history log (`added.import` / `adde
 GET  /projects/{id}/added/export    # returns the list as text/plain
 POST /projects/{id}/added           # body: raw list text, or JSON {"content":"…"} / {"path":"…"}
 ```
+
+### 8.3.2 Track assignees & ownership history
+
+Beyond the raw assignment chain, PatentMine derives a **record.id-keyed ownership
+timeline** for each patent — the at-grant owner plus every recorded assignment,
+with the **current owner(s)** flagged and a `pulled_at` provenance stamp on every
+row. A re-fetch rebuilds it idempotently.
+
+```text
+:fetch.uspto.assignments    # pull the chain from USPTO ODP and rebuild the timeline
+:open.assignees             # view the selected patent's ownership timeline
+```
+
+Per patent you see every assignee with its effective date and pull type
+(`at_grant` vs `assignment`), with joint co-owners shown together and the current
+owner(s) marked. At the **project** level, a rollup answers *who owns this
+portfolio* — deduplicated **current owners** (live patents only) vs. **all
+assignees ever**, plus live / expired-frozen / not-fetched coverage. Expired
+patents are frozen: excluded from current-owner totals and skipped by batch fetch
+(ownership does not meaningfully change after expiry). Only the USPTO ODP system is
+used for assignment data.
+
+REST: `GET /patents/{number}/assignees` (timeline), `GET /projects/{id}/assignees`
+(rollup), `POST /assignments/fetch` and `POST /projects/{id}/assignees/fetch`
+(batch). Every fetch/rollup is timed and journaled (counters, `slog`, and activity
+records). For the full concept guide, command/REST reference, telemetry catalog,
+and batch-processing notes, see [`TUI_ASSIGNEE_FLOW.md`](./TUI_ASSIGNEE_FLOW.md).
 
 ### 8.4 View source, XML, full text, and citations
 

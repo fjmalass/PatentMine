@@ -149,6 +149,16 @@ type Repository interface {
 	// USPTOAssignments returns every recorded assignment for one application
 	// in document order, with their parties attached. Empty result, no error.
 	USPTOAssignments(ctx context.Context, applicationNumber string) ([]domain.USPTOAssignment, error)
+	// RebuildAssigneeHistoryForNumber recomputes the record.id-keyed ownership
+	// timeline (at-grant owner + recorded assignments) for one patent. pulledAt is
+	// the provenance timestamp stamped on the derived rows. No record row: no-op.
+	RebuildAssigneeHistoryForNumber(ctx context.Context, number domain.PatentNumber, pulledAt string) error
+	// AssigneeHistory returns one record's ownership timeline, oldest first, with
+	// the current owner(s) flagged (IsLatest). Empty result, no error.
+	AssigneeHistory(ctx context.Context, number domain.PatentNumber) ([]domain.AssigneeHistoryEntry, error)
+	// ProjectAssignees rolls up assignee ownership across a project's members:
+	// current owners (deduped, live patents only) and every assignee ever seen.
+	ProjectAssignees(ctx context.Context, project domain.ProjectID) (domain.ProjectAssigneeRollup, error)
 	// ListPatents returns one page of lightweight listing rows matching q.
 	ListPatents(ctx context.Context, q PatentQuery) ([]domain.PatentRow, error)
 	// CountPatents returns the total rows matching q, ignoring its paging.

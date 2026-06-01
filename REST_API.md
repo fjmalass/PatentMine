@@ -71,8 +71,10 @@ every frontend stays in step.
 |---|---|---|---|
 | POST | `/patents/{number}/uspto/fetch` | `uspto.fetch_xml` | Download grant/pgpub XML. Query: `kind=grant\|pgpub` (default grant). |
 | GET | `/patents/{number}/uspto/grant_body` | `uspto.grant_body` | Parsed grant/pgpub body. Query: `kind` (default grant, daemon falls back to pgpub). |
-| POST | `/patents/{number}/uspto/assignments` | `uspto.fetch_assignments` | Fetch & store assignment chain. |
-| GET | `/patents/{number}/uspto/assignments` | `uspto.assignment.list` | Persisted assignment chain. |
+| POST | `/patents/{number}/uspto/assignments` | `uspto.fetch_assignments` | Fetch & store assignment chain (also rebuilds the assignee timeline). |
+| GET | `/patents/{number}/uspto/assignments` | `uspto.assignment.list` | Persisted raw assignment chain. |
+| GET | `/patents/{number}/assignees` | `assignee.history` | Record.id-keyed ownership **timeline**: at-grant owner + each recorded assignment, oldest first, current owner(s) flagged `is_latest`. |
+| POST | `/assignments/fetch` | `uspto.fetch_assignments.batch` | **Batch** fetch for an explicit list. Body `{ "numbers": ["US…", …], "include_expired": false }`. Skips expired unless `include_expired`. Returns `{total,fetched,skipped,failed,assignments,parties,failures[]}`. |
 
 ### Stats
 
@@ -99,6 +101,8 @@ every frontend stays in step.
 | DELETE | `/projects/{id}/ids/entries/{number}` | `ids.entry.delete` | Remove an IDS entry. |
 | GET | `/projects/{id}/added/export` | `added.export` | `text/plain` list of the project's manually-added patents (the `:export.added` format). The patent count is also returned in the `X-Patent-Count` response header. |
 | POST | `/projects/{id}/added` | `added.import` | Bulk-add patents from a list. Body: raw list text (`text/plain`), or JSON `{"content":"…"}` / `{"path":"…"}`. Returns `total, added, failed, failures[]`. |
+| GET | `/projects/{id}/assignees` | `project.assignees` | Assignee **rollup**: `current_owners` (deduped, live patents only) vs. `all_assignees` (every owner ever), plus `live_patents`, `expired_patents`, `not_fetched` coverage. Grouped by normalized name. |
+| POST | `/projects/{id}/assignees/fetch` | `uspto.fetch_assignments.batch` | **Batch** fetch over the project's curated members. Body (optional): `{ "include_expired": false }`. Returns the batch result. |
 | GET | `/projects/{id}/notes` | `patent.note.list` | All notes for a project. Query: `sort_by=date\|patent`. |
 | GET | `/projects/{id}/notes/export` | `patent.note.export` | `text/markdown`. Query: `sort_by=date\|patent`. |
 | GET | `/projects/{id}/patents/{number}/note` | `patent.note.get` | One patent note. |
