@@ -215,6 +215,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.ProjectCreate:         true,
 	command.Import:                true,
 	command.AddFile:               true,
+	command.ExportAdded:           true,
 	command.SourceMode:            true,
 	command.Tag:                   true,
 	command.Untag:                 true,
@@ -998,6 +999,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.log().Info("notes export initiated",
 			slog.String("path", m.Path),
 			slog.Int("existing_files", len(m.ExistingFiles)))
+		return a, nil
+	case pane.ExportAddedDoneMsg:
+		a.overlays = append(a.overlays, overlay.NewNoticeOverlay(a.theme, "Added List Exported", []string{
+			fmt.Sprintf("Exported %d added patent(s).", m.Count),
+			"Saved to:",
+			"  " + m.Path,
+		}))
+		a.metrics.IncCounter("tui.added.export.done", 1)
+		a.log().Info("added list exported",
+			slog.Int("count", m.Count),
+			slog.String("path", m.Path))
 		return a, nil
 	case pane.AddShowMergeWarningMsg:
 		a.confirmCmd = pane.AddToProjectFromSourceWithOptionsCmd(a.client, m.Project, m.Patent, m.Source, true)

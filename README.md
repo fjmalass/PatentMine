@@ -507,11 +507,12 @@ Both commands work on the cursor row or visual selection. XML is cached on disk 
 Instead of typing patents one at a time, you can load a whole list from a plain-text file and, conversely, save the patents you have manually added back out to such a file. The two are inverses, so a list round-trips cleanly.
 
 ```text
-:export.added            # write this project's manually-added patents to a list file
+:export.added            # confirm a default location, then write this project's added patents
+:export.added <path>     # write directly to <path>
 :add.file <path>         # add every patent number in <path> to the active project
 ```
 
-- **`:export.added`** (aliases `export-added`, `add.export`) writes the active project's manually-added patents — memberships with `direct` provenance — to `patentmine-added-<project>-<date>.txt` in the notes/export directory. Crawl-discovered neighbors (`related`, `neighbors`, citations, …) are deliberately excluded; see the provenance table in [TUI_ADD_FLOW.md](./TUI_ADD_FLOW.md#membership-provenance--icons).
+- **`:export.added [path]`** (aliases `export-added`, `add.export`) writes the active project's manually-added patents — memberships with `direct` provenance — to a plain-text list file. With a `path` argument it writes there directly (warning first if that file already exists); with no argument it proposes a default `patentmine-added-<project>-<date>.txt` in the notes/export directory and opens a **confirmation popup showing where the file will be saved** before writing. Either way, a **result popup afterwards reports how many patents were exported and where**. Crawl-discovered neighbors (`related`, `neighbors`, citations, …) are deliberately excluded; see the provenance table in [TUI_ADD_FLOW.md](./TUI_ADD_FLOW.md#membership-provenance--icons).
 - **`:add.file <path>`** (aliases `add-file`, `load`) reads the file, validates its header, and adds each number to the active project with manual provenance — exactly as repeated `:add` would, including the auto-fetch. Ambiguous USPTO matches are reported as failures rather than opening a candidate picker, so the bulk run is non-interactive. A status line reports `added N of M (K failed)`.
 
 The file is one patent number per line under a **mandatory magic header**; blank lines and `#` comments are ignored. The header guards against feeding in the wrong kind of file:

@@ -5,7 +5,7 @@ This document contains the execution flow sequence diagram for the TUI `:add` co
 Related bulk commands:
 
 - **`:add.file <path>`** (aliases `add-file`, `load`) — reads a plain-text patent list and adds every number to the active project, each with `direct` (manual) provenance, exactly as repeated `:add` would. The daemon reads, validates the header, and parses the file; ambiguous USPTO matches are reported as failures rather than prompting, so the bulk run stays non-interactive. REST: `POST /projects/{id}/added`.
-- **`:export.added`** (aliases `export-added`, `add.export`) — writes the active project's manually-added patents (memberships with `direct`/`manual` provenance) to a plain-text list file that `:add.file` can reload. REST: `GET /projects/{id}/added/export`.
+- **`:export.added [path]`** (aliases `export-added`, `add.export`) — writes the active project's manually-added patents (memberships with `direct`/`manual` provenance) to a plain-text list file that `:add.file` can reload. With a `path` it writes there directly (warning first if that file already exists); with no argument it opens a confirmation popup showing the proposed default location before writing. Either way a result popup then reports how many patents were exported and where. REST: `GET /projects/{id}/added/export` (count also in the `X-Patent-Count` header).
 
 Both operations emit activity records (`added.import` / `added.export`) and metrics, and each imported patent also records its own `membership.add` activity, so the full history is preserved. The file format carries a mandatory magic header (`# patentmine added-patents v1`) so a wrong-kind file is rejected on import.
 

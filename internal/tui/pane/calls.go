@@ -164,6 +164,13 @@ func AddFileCmd(client *rpc.Client, project domain.ProjectID, path string) tea.C
 	}
 }
 
+// ExportAddedDoneMsg reports a successful added-list export so the app can show
+// a result modal with the count and destination path.
+type ExportAddedDoneMsg struct {
+	Count int
+	Path  string
+}
+
 // ExportAddedCmd writes the project's manually-added patents to a plain-text
 // list file at path.
 func ExportAddedCmd(client *rpc.Client, project domain.ProjectID, path string) tea.Cmd {
@@ -175,7 +182,7 @@ func ExportAddedCmd(client *rpc.Client, project domain.ProjectID, path string) t
 			proto.AddedExportParams{Project: project, OutputPath: path}, &res); err != nil {
 			return StatusMsg{Key: text.StatusAddedExportFailed, Args: []any{err.Error()}, Error: true}
 		}
-		return StatusMsg{Key: text.StatusAddedExportDone, Args: []any{res.Count, res.Path}}
+		return ExportAddedDoneMsg{Count: res.Count, Path: res.Path}
 	}
 }
 

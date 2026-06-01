@@ -1133,8 +1133,14 @@ func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
 
 // cmdExportAdded writes the active project's manually-added patents to a
 // plain-text list file that :add.file can later reload.
+// cmdExportAdded writes the active project's manually-added patents to a
+// plain-text list file. With an explicit path argument it writes there
+// directly; with no argument it proposes a default path in the export
+// directory and opens a confirmation popup so the user can see where the file
+// will be saved before it is written. Either way, a result modal afterwards
+// reports how many patents were exported and where.
 func (a *App) cmdExportAdded(inv invocation) (tea.Model, tea.Cmd) {
-	if len(inv.args) != 0 {
+	if len(inv.args) > 1 {
 		return a.usageError(command.ExportAdded)
 	}
 	if a.activeProject == nil {
@@ -1145,6 +1151,22 @@ func (a *App) cmdExportAdded(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
+
+	// Explicit path: the user chose the destination, so skip the location
+	// picker — but still warn before clobbering an existing file.
+	if len(inv.args) == 1 {
+		path := inv.args[0]
+		writeCmd := pane.ExportAddedCmd(a.client, a.activeProject.ID, path)
+		if _, err := os.Stat(path); err == nil {
+			a.confirmCmd = writeCmd
+			a.overlays = append(a.overlays, overlay.NewConfirm(a.theme,
+				fmt.Sprintf("%s already exists. Overwrite?", path)))
+			return a, nil
+		}
+		return a, writeCmd
+	}
+
+	// No path: propose a default in the export directory and confirm it.
 	dir := a.notesExportDir
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -1156,7 +1178,29 @@ func (a *App) cmdExportAdded(inv invocation) (tea.Model, tea.Cmd) {
 	safeName := strings.NewReplacer(" ", "-", "/", "-", "\\", "-").Replace(a.activeProject.Name)
 	filename := fmt.Sprintf("patentmine-added-%s-%s.txt", safeName, time.Now().Format(domain.DateLayout))
 	path := filepath.Join(dir, filename)
-	return a, pane.ExportAddedCmd(a.client, a.activeProject.ID, path)
+	a.confirmCmd = pane.ExportAddedCmd(a.client, a.activeProject.ID, path)
+	a.overlays = append(a.overlays, overlay.NewExportConfirm(a.theme, "Export Added Patents", path, scanExistingAddedExports(dir)))
+	return a, nil
+}
+
+// scanExistingAddedExports returns the patentmine-added-*.txt filenames already
+// in dir, shown in the export confirmation so the user can spot prior exports.
+func scanExistingAddedExports(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, "patentmine-added-") && strings.HasSuffix(name, ".txt") {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 type aiPatentLoadedMsg struct {

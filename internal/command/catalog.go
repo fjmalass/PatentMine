@@ -296,7 +296,7 @@ func Default() (*Registry, error) {
 		Command{ID: LookupPatent, Name: "lookup", Aliases: []string{"lookup-patent"}, Usage: ":lookup", Kind: KindEngine, Method: proto.MethodCrawlFamily, Scopes: patentScopes},
 		Command{ID: Import, Name: "import", Aliases: []string{"import-patent"}, Usage: ":import <number|file> [force]", Kind: KindEngine, Method: proto.MethodCrawlFamily},
 		Command{ID: AddFile, Name: "add.file", Aliases: []string{"add-file", "load"}, Usage: ":add.file <path>", Kind: KindView, Scopes: projectScopes},
-		Command{ID: ExportAdded, Name: "export.added", Aliases: []string{"export-added", "add.export"}, Usage: ":export.added", Kind: KindView, Scopes: projectScopes},
+		Command{ID: ExportAdded, Name: "export.added", Aliases: []string{"export-added", "add.export"}, Usage: ":export.added [path]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: SourceMode, Name: "source.mode", Aliases: []string{"source-mode"}, Usage: ":source.mode <compare|uspto-first|uspto-only|google-only>", Kind: KindView},
 		Command{ID: SourceCompare, Name: "source.compare", Aliases: []string{"compare", "compare-sources"}, Usage: ":source.compare", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: SourceBibs, Name: "source.bibs", Aliases: []string{"sources", "both"}, Usage: ":source.bibs", Kind: KindView, Scopes: []Scope{ScopeDetail}},

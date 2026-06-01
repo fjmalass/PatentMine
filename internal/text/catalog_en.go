@@ -267,7 +267,7 @@ var cmdStrings = map[string][2]string{
 	"patent.lookup":                  {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":                  {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"patent.add-file":                {"Add patents from file", "Bulk-add every patent number listed in a plain-text file into the active project, with manual provenance — the inverse of Export added list."},
-	"project.export-added":           {"Export added list", "Write the active project's manually-added patents to a plain-text list file that Add patents from file can reload."},
+	"project.export-added":           {"Export added list", "Write the active project's manually-added patents to a plain-text list file that Add patents from file can reload. Give a path to write there directly (warning first if it already exists), or omit it to confirm a default location first; a result popup reports how many patents were exported and where."},
 	"source.mode":                    {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
 	"source.compare":                 {"Compare sources", "Review and reconcile differences between data sources (e.g. USPTO vs Google) for the current patent. Opens the split comparison overlay (default choice = USPTO)."},
 	"source.bibs":                    {"Source bibliography", "Show every source's bibliographic data side by side for the current patent (USPTO, Google, …), all fields, with differing values highlighted. Read-only."},

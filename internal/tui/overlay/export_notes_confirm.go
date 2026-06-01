@@ -11,20 +11,27 @@ import (
 
 // ExportNotesConfirm shows the proposed export path and any existing files in
 // the same directory before the write happens. [y] confirms, anything else
-// cancels.
+// cancels. Despite the name it backs any export-to-file confirmation; the
+// title is supplied by the caller.
 type ExportNotesConfirm struct {
 	theme         render.Theme
+	title         string
 	path          string
 	existingFiles []string
 }
 
-// NewExportNotesConfirm builds the overlay.
+// NewExportConfirm builds the overlay with a caller-supplied title.
+func NewExportConfirm(theme render.Theme, title, path string, existingFiles []string) *ExportNotesConfirm {
+	return &ExportNotesConfirm{theme: theme, title: title, path: path, existingFiles: existingFiles}
+}
+
+// NewExportNotesConfirm builds the overlay for the notes export.
 func NewExportNotesConfirm(theme render.Theme, path string, existingFiles []string) *ExportNotesConfirm {
-	return &ExportNotesConfirm{theme: theme, path: path, existingFiles: existingFiles}
+	return NewExportConfirm(theme, "Export Notes", path, existingFiles)
 }
 
 // Title implements Overlay.
-func (e *ExportNotesConfirm) Title() string { return "Export Notes" }
+func (e *ExportNotesConfirm) Title() string { return e.title }
 
 // Command implements Overlay.
 func (e *ExportNotesConfirm) Command(command.ID, int) (Overlay, tea.Cmd) { return e, nil }
