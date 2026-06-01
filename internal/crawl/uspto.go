@@ -42,10 +42,31 @@ func (s *usptoSource) Fetch(ctx context.Context, number domain.PatentNumber) (Re
 		slog.Info("crawl/uspto: strict query failed, attempting broad query fallback",
 			slog.String("raw_number", number.String()),
 			slog.String("error", err.Error()))
-		return s.broadSource.Fetch(ctx, number)
+		res, err = s.broadSource.Fetch(ctx, number)
+		if err == nil {
+			return res, nil
+		}
+		// A genuine miss on a pre-2001 US document is expected, not a query
+		// problem: the USPTO Open Data Portal only serves the post-2001
+		// application-publication era. Say so, so the failure is actionable
+		// (switch to uspto-first/compare so Google can serve it) rather than a
+		// bare "not available". %w keeps ErrNotAvailable so the registry still
+		// falls through to the next source.
+		if errors.Is(err, ErrNotAvailable) && isPreODPUSDocument(number) {
+			return Result{}, fmt.Errorf("%w: %s predates the USPTO Open Data Portal (pre-2001; the ODP covers post-2001 publications), so USPTO has no record — use uspto-first or compare mode to fall back to Google", ErrNotAvailable, number)
+		}
+		return res, err
 	}
 
 	return Result{}, err
+}
+
+// isPreODPUSDocument reports whether a number is a pre-2001 US document, which
+// the USPTO Open Data Portal does not serve. The US switched grant kind codes
+// from a bare "A" to "B1"/"B2" on 2001-01-02, so a bare "A" on a US number marks
+// a document that predates the portal's coverage.
+func isPreODPUSDocument(n domain.PatentNumber) bool {
+	return n.Country == "US" && n.Kind == "A"
 }
 
 func (s *usptoSource) WithMetrics(metrics *observability.Metrics) {
@@ -112,17 +133,30 @@ func NewUSPTOSource(apiKey string) Source {
 	}
 }
 
+// isUSPTOPublicationKind reports whether a kind code denotes a US pre-grant
+// publication ("A1"/"A2"/"A9"). A bare "A" is deliberately excluded: it is
+// ambiguous (a pre-2001 grant serial also carries a bare "A"), so it must not be
+// narrowed to the publication-number field. "B"-prefixed grant kinds are handled
+// separately by the callers.
+func isUSPTOPublicationKind(kind string) bool {
+	return len(kind) == 2 && kind[0] == 'A' && kind[1] >= '0' && kind[1] <= '9'
+}
+
 func usptoStrictQuery(n domain.PatentNumber) string {
 	serial := strings.TrimSpace(n.Serial)
 	if serial == "" {
 		return ""
 	}
-	if n.Kind != "" {
-		if strings.HasPrefix(n.Kind, "B") {
-			return fmt.Sprintf("applicationMetaData.patentNumber:%s", serial)
-		}
+	switch {
+	case strings.HasPrefix(n.Kind, "B"):
+		return fmt.Sprintf("applicationMetaData.patentNumber:%s", serial)
+	case isUSPTOPublicationKind(n.Kind):
 		return fmt.Sprintf("applicationMetaData.publicationNumber:%s", serial)
 	}
+	// No kind, a bare "A" (ambiguous: a pre-2001 grant serial or an
+	// application-era document), or an unrecognised kind: search every
+	// identifier field so the lookup matches whichever field USPTO holds the
+	// serial under, instead of narrowing to a single field that may be wrong.
 	return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s",
 		serial, serial, serial)
 }
@@ -133,15 +167,15 @@ func usptoBroadQuery(n domain.PatentNumber) string {
 		return ""
 	}
 	norm := n.Normalized()
-	if n.Kind != "" {
-		if strings.HasPrefix(n.Kind, "B") {
-			if norm != "" && norm != serial {
-				return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q OR %q",
-					serial, norm, serial)
-			}
-			return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q",
-				serial, serial)
+	switch {
+	case strings.HasPrefix(n.Kind, "B"):
+		if norm != "" && norm != serial {
+			return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q OR %q",
+				serial, norm, serial)
 		}
+		return fmt.Sprintf("applicationMetaData.patentNumber:%s OR %q",
+			serial, serial)
+	case isUSPTOPublicationKind(n.Kind):
 		if norm != "" && norm != serial {
 			return fmt.Sprintf("applicationMetaData.publicationNumber:%s OR %q OR %q",
 				serial, norm, serial)
@@ -149,6 +183,8 @@ func usptoBroadQuery(n domain.PatentNumber) string {
 		return fmt.Sprintf("applicationMetaData.publicationNumber:%s OR %q",
 			serial, serial)
 	}
+	// No kind, bare "A", or unrecognised kind: search every identifier field
+	// (see usptoStrictQuery) plus the normalized form.
 	if norm != "" && norm != serial {
 		return fmt.Sprintf("applicationNumberText:%s OR applicationMetaData.patentNumber:%s OR applicationMetaData.publicationNumber:%s OR %q OR %q",
 			serial, serial, serial, norm, serial)

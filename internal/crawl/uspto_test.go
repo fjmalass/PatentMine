@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"patentmine/internal/domain"
@@ -264,5 +265,46 @@ func TestMatchesPatentTelemetry(t *testing.T) {
 
 	if snap.Counters["crawl.uspto.matches_patent.matched_total"] != 2 {
 		t.Errorf("matched_total = %d, want 2", snap.Counters["crawl.uspto.matches_patent.matched_total"])
+	}
+}
+
+func TestUSPTOQueryKindRouting(t *testing.T) {
+	const (
+		patentField = "applicationMetaData.patentNumber:"
+		pubField    = "applicationMetaData.publicationNumber:"
+		appField    = "applicationNumberText:"
+	)
+	cases := []struct {
+		name       string
+		number     string
+		wantStrict string // a substring the strict query must contain
+		broadAll   bool   // broad query must search every identifier field
+	}{
+		// Post-2001 grant: serial is the patent number.
+		{name: "B2 grant", number: "US11611785B2", wantStrict: patentField},
+		// Pre-grant publication: serial is the publication number.
+		{name: "A1 publication", number: "US20220252571A1", wantStrict: pubField},
+		// Bare "A" is ambiguous (pre-2001 grant serial or application-era doc):
+		// it must not be narrowed to the publication field, but searched broadly.
+		{name: "bare A is not narrowed", number: "US2675482A", wantStrict: appField, broadAll: true},
+		// No kind code at all: searched broadly.
+		{name: "no kind", number: "US2675482", wantStrict: appField, broadAll: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n := domain.MustParsePatentNumber(tc.number)
+			strict := usptoStrictQuery(n)
+			if !strings.Contains(strict, tc.wantStrict) {
+				t.Errorf("strict query %q does not contain %q", strict, tc.wantStrict)
+			}
+			// A bare "A" must never be routed to the publication-number field.
+			if tc.broadAll {
+				for _, field := range []string{appField, patentField, pubField} {
+					if !strings.Contains(usptoBroadQuery(n), field) {
+						t.Errorf("broad query %q does not search %q", usptoBroadQuery(n), field)
+					}
+				}
+			}
+		})
 	}
 }
