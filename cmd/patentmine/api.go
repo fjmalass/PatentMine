@@ -28,8 +28,10 @@ func runAPI(args []string) int {
 	flags := flag.NewFlagSet("api", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	addrFlag := flags.String("addr", "", "HTTP listen address")
+	webDirFlag := flags.String("web-dir", "", "directory with built SPA (served at /ui/)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "usage: patentmine api [--addr host:port]")
+		fmt.Fprintln(flags.Output(), "usage: patentmine api [--addr host:port] [--web-dir path]")
+		fmt.Fprintln(flags.Output(), "  env: PATENTMINE_API_TOKEN, PATENTMINE_API_CORS_ORIGINS, PATENTMINE_API_TLS_CERT/KEY, PATENTMINE_WEB_DIR")
 	}
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -79,9 +81,29 @@ func runAPI(args []string) int {
 		}
 	}
 
-	fmt.Printf("patentmine api %s listening on http://%s\n", appversion.String(), addr)
+	webDir := *webDirFlag
+	if webDir == "" {
+		webDir = os.Getenv("PATENTMINE_WEB_DIR")
+	}
+	sec := api.SecurityFromEnv()
+	opts := []api.Option{
+		api.WithActivity(telemetry, time.Duration(cfg.ActivityMinMS)*time.Millisecond),
+		api.WithSecurity(sec),
+		api.WithAI(api.AIConfigFromAppConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel)),
+	}
+	if webDir != "" {
+		opts = append(opts, api.WithWebDir(webDir))
+	}
+	scheme := "http"
+	if sec.TLSCert != "" && sec.TLSKey != "" {
+		scheme = "https"
+	}
+	fmt.Printf("patentmine api %s listening on %s://%s\n", appversion.String(), scheme, addr)
+	if webDir != "" {
+		fmt.Printf("  web UI: %s://%s/ui/\n", scheme, addr)
+	}
 	telemetry.Logger.InfoContext(ctx, "api listening", slog.String("addr", addr))
-	if err := api.NewServer(client, registry, api.WithActivity(telemetry, time.Duration(cfg.ActivityMinMS)*time.Millisecond)).ListenAndServe(ctx, addr); err != nil {
+	if err := api.NewServer(client, registry, opts...).ListenAndServe(ctx, addr); err != nil {
 		telemetry.Logger.ErrorContext(ctx, "api serve failed", slog.String("error", err.Error()))
 		return fail(err)
 	}

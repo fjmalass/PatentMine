@@ -225,7 +225,6 @@ func Default() *Keymaps {
 			"/":      command.OpenSearch,
 			"ctrl+r": command.Refresh,
 		})
-
 	notes := NewLayer("notes", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
@@ -235,8 +234,11 @@ func Default() *Keymaps {
 			"enter":  command.OpenPatentNote,
 			"N":      command.OpenPatentNote,
 			"h":      command.Back,
-			"left":   command.Back,
 			"ctrl+r": command.Refresh,
+			"right":  command.ColNext,
+			"left":   command.ColPrev,
+			".":      command.SortApply,
+			"/":      command.FindOpen,
 		})
 
 	// The overlay layer is composed directly on top of the global base while an
@@ -256,6 +258,17 @@ func Default() *Keymaps {
 			"h":   command.Back,
 			"esc": command.Back,
 			".":   command.FetchUSPTOGrant,
+		})
+
+	orphans := NewLayer("orphans", false).
+		BindAll(listMotions()).
+		BindAll(map[string]command.ID{
+			"enter":  command.OpenDetail,
+			"l":      command.OpenDetail,
+			"right":  command.ColNext,
+			"left":   command.ColPrev,
+			".":      command.SortApply,
+			"/":      command.FindOpen,
 		})
 
 	overlay := NewLayer("overlay", false).BindAll(map[string]command.ID{
@@ -280,6 +293,7 @@ func Default() *Keymaps {
 			command.ScopeProjects:  projects,
 			command.ScopeFullText:  fullText,
 			command.ScopeNotes:     notes,
+			command.ScopeOrphans:   orphans,
 			command.ScopeOverlay:   overlay,
 		},
 	}

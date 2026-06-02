@@ -625,7 +625,7 @@ Launch CLI operations using the `patentmine` binary:
 * `patentmine serve` : Start the high-performance engine daemon (binds database and orchestrates Unix sockets).
 * `patentmine stop` : Send a termination signal to stop the running daemon.
 * `patentmine tui` : Launch the interactive Terminal User Interface thin client.
-* `patentmine api` : Boot the web API server gateway. Every route mirrors a daemon operation; see the [Web REST API Reference](./REST_API.md) for the full endpoint catalog and its TUI-parity matrix.
+* `patentmine api` : Boot the web API server gateway. Every route mirrors a daemon operation; see the [Web REST API Reference](./REST_API.md) for the full endpoint catalog and its TUI-parity matrix. Optional browser UI: `patentmine api --web-dir ./web/dist` then open `/ui/` (see [web/README.md](./web/README.md) and [REMOTE_API.md](./REMOTE_API.md)).
 * `patentmine paths` : Output the resolved runtime directories and file paths.
 * `patentmine lookup <number>` : Look up raw USPTO file wrapper metadata by application number, publication number, or patent number.
 * `patentmine expiration-date [options] <number>` : Compute the statutory U.S. patent expiration date (20-year term from the earliest-term filing date, plus PTA/PTE, capped by any terminal disclaimer), persist it, and compare it against the Google Patents estimate. Options: `-source uspto|google|both` (default `both`), `-refresh` to re-fetch application metadata from the USPTO live API. See [`EXPIRATION_DATE.md`](./EXPIRATION_DATE.md).

@@ -3,6 +3,7 @@ package overlay
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -51,9 +52,17 @@ type InventorStatsOverlay struct {
 	patent   domain.Patent
 	project  domain.ProjectID
 	stats    []domain.InventorStats
+	allStats []domain.InventorStats
 	selected int
 	loading  bool
 	err      error
+
+	searchActive bool
+	searchQuery  string
+	searchScope  int
+
+	patentsSearchActive bool
+	patentsSearchQuery  string
 
 	// Dual-pane focus, pagination, and state
 	focus           statsFocus
@@ -66,26 +75,32 @@ type InventorStatsOverlay struct {
 	loadID          uint64
 
 	// Sorting and column navigation
-	activeSort    domain.SortColumn
-	sortAscending bool
-	focusedColIdx int
-	lastWidth     int
+	activeSort         domain.SortColumn
+	sortAscending      bool
+	focusedColIdx      int
+	lastWidth          int
+	statsSortCol       string
+	statsSortAsc       bool
+	statsFocusedColIdx int
 }
 
 // NewInventorStatsOverlay initializes and triggers an async query for inventor stats.
 func NewInventorStatsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID, startFocusPatents bool) (*InventorStatsOverlay, tea.Cmd) {
 	o := &InventorStatsOverlay{
-		client:        client,
-		theme:         theme,
-		catalog:       catalog,
-		patent:        patent,
-		project:       project,
-		loading:       true,
-		patentsPage:   render.NewPaginator(5), // Initial visible size, dynamically updated on View / resize
-		activeSort:    domain.SortByNumber,
-		sortAscending: true,
-		focusedColIdx: -1,
-		lastWidth:     90,
+		client:             client,
+		theme:              theme,
+		catalog:            catalog,
+		patent:             patent,
+		project:            project,
+		loading:            true,
+		patentsPage:        render.NewPaginator(5), // Initial visible size, dynamically updated on View / resize
+		activeSort:         domain.SortByNumber,
+		sortAscending:      true,
+		focusedColIdx:      -1,
+		lastWidth:          90,
+		statsSortCol:       "patents",
+		statsSortAsc:       false,
+		statsFocusedColIdx: 1,
 	}
 	if startFocusPatents {
 		o.focus = focusPatents
@@ -124,10 +139,8 @@ func (o *InventorStatsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		if m.err != nil {
 			o.err = m.err
 		} else {
-			o.stats = m.stats
-			if o.selected >= len(o.stats) {
-				o.selected = max(0, len(o.stats)-1)
-			}
+			o.allStats = m.stats
+			o.applyFilter()
 			if len(o.stats) > 0 {
 				o.loadSeq++
 				o.loadID = o.loadSeq
@@ -171,6 +184,7 @@ func (o *InventorStatsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		innerHeight := h - 4
 
 		o.focusedColIdx = clampFocusedStatsColumn(o.currentCols(), o.focusedColIdx)
+		o.statsFocusedColIdx = clampFocusedStatsColumn(o.currentStatsCols(), o.statsFocusedColIdx)
 
 		_, patentsH := o.calcHeights(innerHeight)
 		if patentsH != o.patentsPage.PageSize() {
@@ -192,6 +206,66 @@ func (o *InventorStatsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	o.err = nil
 	o.patentsErr = nil
+
+	if o.searchActive {
+		switch msg.Type {
+		case tea.KeyTab:
+			o.searchScope = (o.searchScope + 1) % len(inventorSearchScopes)
+			o.applyFilter()
+			return o, o.reloadPatentsCmd(), true
+		case tea.KeyEsc:
+			o.searchActive = false
+			o.searchQuery = ""
+			o.applyFilter()
+			return o, o.reloadPatentsCmd(), true
+		case tea.KeyEnter:
+			o.searchActive = false
+			return o, nil, true
+		case tea.KeyBackspace, tea.KeyDelete:
+			if len(o.searchQuery) > 0 {
+				runes := []rune(o.searchQuery)
+				o.searchQuery = string(runes[:len(runes)-1])
+				o.applyFilter()
+				return o, o.reloadPatentsCmd(), true
+			}
+			return o, nil, true
+		case tea.KeyCtrlW:
+			o.searchQuery = ""
+			o.applyFilter()
+			return o, o.reloadPatentsCmd(), true
+		case tea.KeyRunes, tea.KeySpace:
+			o.searchQuery += msg.String()
+			o.applyFilter()
+			return o, o.reloadPatentsCmd(), true
+		}
+		return o, nil, true
+	}
+
+	if o.patentsSearchActive {
+		switch msg.Type {
+		case tea.KeyEsc:
+			o.patentsSearchActive = false
+			o.patentsSearchQuery = ""
+			return o, o.reloadPatentsCmd(), true
+		case tea.KeyEnter:
+			o.patentsSearchActive = false
+			return o, nil, true
+		case tea.KeyBackspace, tea.KeyDelete:
+			if len(o.patentsSearchQuery) > 0 {
+				runes := []rune(o.patentsSearchQuery)
+				o.patentsSearchQuery = string(runes[:len(runes)-1])
+				return o, o.reloadPatentsCmd(), true
+			}
+			return o, nil, true
+		case tea.KeyCtrlW:
+			o.patentsSearchQuery = ""
+			return o, o.reloadPatentsCmd(), true
+		case tea.KeyRunes, tea.KeySpace:
+			o.patentsSearchQuery += msg.String()
+			return o, o.reloadPatentsCmd(), true
+		}
+		return o, nil, true
+	}
 
 	// Try paginator's visual key handling first
 	if o.focus == focusPatents {
@@ -234,10 +308,52 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 				o.patentsLoading = true
 				return o, o.loadPatentsCmd(o.stats[o.selected].Inventor, o.loadID), true
 			}
-		case "l", "right", "enter":
+		case "l", "enter":
 			o.focus = focusPatents
 			o.focusedColIdx = 0
 			return o, nil, true
+		case "/":
+			o.searchActive = true
+			o.searchQuery = ""
+			o.applyFilter()
+			return o, o.reloadPatentsCmd(), true
+		case "left":
+			statsCols := o.currentStatsCols()
+			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, -1)
+			return o, nil, true
+		case "right":
+			statsCols := o.currentStatsCols()
+			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, 1)
+			return o, nil, true
+		case ".":
+			if len(o.stats) > 0 {
+				statsCols := o.currentStatsCols()
+				colIdx := o.statsFocusedColIdx
+				if colIdx < 0 || colIdx >= len(statsCols) {
+					colIdx = 1
+					for idx, c := range statsCols {
+						if c.SortKey == o.statsSortCol {
+							colIdx = idx
+							break
+						}
+					}
+				}
+				col := statsCols[colIdx]
+				if col.SortKey != "" {
+					if o.statsSortCol == col.SortKey {
+						o.statsSortAsc = !o.statsSortAsc
+					} else {
+						o.statsSortCol = col.SortKey
+						o.statsSortAsc = true
+					}
+					o.sortStats()
+					o.patentsPage.Top()
+					o.loadSeq++
+					o.loadID = o.loadSeq
+					o.patentsLoading = true
+					return o, o.loadPatentsCmd(o.stats[o.selected].Inventor, o.loadID), true
+				}
+			}
 		}
 	} else { // focus == focusPatents
 		// 1. Keys that DO NOT require patents to be populated
@@ -283,6 +399,12 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 				return o, o.reloadPatentsCmd(), true
 			}
 			return o, nil, true
+		}
+
+		if msg.String() == "/" {
+			o.patentsSearchActive = true
+			o.patentsSearchQuery = ""
+			return o, o.reloadPatentsCmd(), true
 		}
 
 		// 2. Keys that DO require patents to be populated
@@ -407,6 +529,34 @@ func (o *InventorStatsOverlay) currentCols() []render.TableColumn {
 	}
 }
 
+func (o *InventorStatsOverlay) currentStatsCols() []render.TableColumn {
+	maxNameLen := 8
+	for _, s := range o.stats {
+		if len(s.Inventor) > maxNameLen {
+			maxNameLen = len(s.Inventor)
+		}
+	}
+	nameColWidth := maxNameLen + 2
+	targetW := o.lastWidth - statsTableMargin
+	if nameColWidth > targetW-35 {
+		nameColWidth = max(15, targetW-35)
+	}
+	fixedColWidths := nameColWidth + 9 + 4 + 4 + 4 + 4
+	tagsColWidth := targetW - 10 - fixedColWidths
+	if tagsColWidth < 10 {
+		tagsColWidth = 10
+	}
+	return []render.TableColumn{
+		{Key: "name", Label: "Inventor", SortKey: "name", Width: nameColWidth},
+		{Key: "total", Label: "Total", SortKey: "patents", Width: 9},
+		{Key: "unknown", Label: o.theme.Glyphs.ReviewStateUnknown, SortKey: "unknown", Width: 4},
+		{Key: "under_review", Label: o.theme.Glyphs.ReviewStateUnderReview, SortKey: "under_review", Width: 4},
+		{Key: "active", Label: o.theme.Glyphs.ReviewStateActive, SortKey: "active", Width: 4},
+		{Key: "ignored", Label: o.theme.Glyphs.ReviewStateIgnored, SortKey: "ignored", Width: 4},
+		{Key: "tags", Label: "Tags", SortKey: "tags", Width: tagsColWidth},
+	}
+}
+
 // View renders the list of inventors and their respective metrics.
 func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 	o.lastWidth = maxW
@@ -438,44 +588,53 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 	statsH, patentsH := o.calcHeights(maxH)
 	o.patentsPage.SetPageSize(patentsH)
 
-	// 3. Render Inventor Stats List
-	maxNameLen := 0
-	for _, s := range o.stats {
-		if len(s.Inventor) > maxNameLen {
-			maxNameLen = len(s.Inventor)
-		}
-	}
-
+	statsCols := o.currentStatsCols()
 	startStats := max(0, o.selected-statsH/2)
 	endStats := min(len(o.stats), startStats+statsH)
 	if endStats-startStats < statsH && startStats > 0 {
 		startStats = max(0, endStats-statsH)
 	}
 
-	for i := startStats; i < endStats; i++ {
-		s := o.stats[i]
-		isSelectedRow := i == o.selected
-		cursorPart := o.theme.Glyphs.RowNoCursor
-		if isSelectedRow && o.focus == focusInventors {
-			cursorPart = o.theme.Glyphs.RowCursor
+	statsTableStr := render.RenderTable(render.TableParams{
+		Theme:         o.theme,
+		Columns:       statsCols,
+		RowCount:      endStats - startStats,
+		FocusedColIdx: o.statsFocusedColIdx,
+		ActiveSort:    o.statsSortCol,
+		SortAscending: o.statsSortAsc,
+		FocusActive:   o.focus == focusInventors,
+		IsRowCursor: func(rowIdx int) bool {
+			return startStats+rowIdx == o.selected
+		},
+	}, targetW, func(rowIdx, colIdx int) string {
+		absIdx := startStats + rowIdx
+		if absIdx < 0 || absIdx >= len(o.stats) {
+			return ""
 		}
-		prefix := cursorPart + o.theme.Glyphs.RowNoMark + " "
-
-		paddedName := render.Pad(s.Inventor, maxNameLen+2)
-		statsStr := render.FormatEntityStats(s.Total, s.States, s.Tags)
-		line := fmt.Sprintf("%s%s%s", prefix, paddedName, statsStr)
-
-		if isSelectedRow && o.focus == focusInventors {
-			b.WriteString(o.theme.Selected.Render(render.Truncate(line, targetW)))
-		} else {
-			if i%2 == 1 {
-				b.WriteString(o.theme.RowAlt.Render(render.Truncate(line, targetW)))
-			} else {
-				b.WriteString(o.theme.Row.Render(render.Truncate(line, targetW)))
+		s := o.stats[absIdx]
+		switch statsCols[colIdx].Key {
+		case "name":
+			return s.Inventor
+		case "total":
+			return strconv.Itoa(s.Total)
+		case "unknown":
+			return strconv.Itoa(s.States["unknown"])
+		case "under_review":
+			return strconv.Itoa(s.States["under_review"])
+		case "active":
+			return strconv.Itoa(s.States["active"])
+		case "ignored":
+			return strconv.Itoa(s.States["ignored"])
+		case "tags":
+			if val := render.FormatTagsForSort(s.Tags); val != "" {
+				return val
 			}
+			return "-"
+		default:
+			return ""
 		}
-		b.WriteString("\n")
-	}
+	})
+	b.WriteString(statsTableStr)
 
 	// 4. Divider / Patents Header
 	b.WriteString("\n")
@@ -563,22 +722,30 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 
 	// 6. Help Footnote / Instructions
 	b.WriteString("\n")
-	var footnote string
-	if o.focus == focusInventors {
-		status := "[0/0]"
-		if len(o.stats) > 0 {
-			status = fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))
-		}
-		footnote = fmt.Sprintf("%s  [Tab/l/→/Enter] Focus Patents  [j/k/↑/↓] Select Inventor  [q/Q/Esc] Close", status)
+	if o.searchActive {
+		searchLine := "/ " + o.searchQuery + "▋  [Scope: " + inventorSearchScopes[o.searchScope].Label + " (Tab to cycle)]"
+		b.WriteString(o.theme.Selected.Render(render.Pad(searchLine, targetW)))
+	} else if o.patentsSearchActive {
+		searchLine := "/ " + o.patentsSearchQuery + "▋ (patents)"
+		b.WriteString(o.theme.Selected.Render(render.Pad(searchLine, targetW)))
 	} else {
-		status := subtableStatus(o.patentsPage)
-		if o.patentsPage.VisualMode() {
-			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [I] IDS  [v/q/Q/Esc] Clear", status)
+		var footnote string
+		if o.focus == focusInventors {
+			status := "[0/0]"
+			if len(o.stats) > 0 {
+				status = fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))
+			}
+			footnote = fmt.Sprintf("%s  [Tab/l/Enter] Focus Patents  [/] Search  [j/k/↑/↓] Scroll  [←/→] Focus Col  [.] Sort  [q/Q/Esc] Close", status)
 		} else {
-			footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close", status)
+			status := subtableStatus(o.patentsPage)
+			if o.patentsPage.VisualMode() {
+				footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [I] IDS  [v/q/Q/Esc] Clear", status)
+			} else {
+				footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Inventors  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [/] Search  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close", status)
+			}
 		}
+		b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 	}
-	b.WriteString(o.theme.Dim.Render(render.Truncate(footnote, targetW)))
 
 	return b.String()
 }
@@ -629,6 +796,7 @@ func (o *InventorStatsOverlay) loadPatentsCmd(inventor string, requestID uint64)
 				Offset:        offset,
 				SortColumn:    o.activeSort,
 				SortAscending: o.sortAscending,
+				Search:        o.patentsSearchQuery,
 			}, &res)
 
 		return loadedPatentListMsg{
@@ -732,4 +900,116 @@ func (o *InventorStatsOverlay) selections() []domain.PatentNumber {
 		out = append(out, o.patents[abs-offset].Number)
 	}
 	return out
+}
+
+func (o *InventorStatsOverlay) sortStats() {
+	if len(o.stats) == 0 {
+		return
+	}
+	var selectedInventor string
+	if o.selected >= 0 && o.selected < len(o.stats) {
+		selectedInventor = o.stats[o.selected].Inventor
+	}
+
+	sort.SliceStable(o.stats, func(i, j int) bool {
+		var cmp bool
+		var equal bool
+
+		switch o.statsSortCol {
+		case "name":
+			cmp = o.stats[i].Inventor < o.stats[j].Inventor
+			equal = o.stats[i].Inventor == o.stats[j].Inventor
+		case "total", "patents":
+			cmp = o.stats[i].Total < o.stats[j].Total
+			equal = o.stats[i].Total == o.stats[j].Total
+		case "unknown":
+			valI := o.stats[i].States["unknown"]
+			valJ := o.stats[j].States["unknown"]
+			cmp = valI < valJ
+			equal = valI == valJ
+		case "under_review":
+			valI := o.stats[i].States["under_review"]
+			valJ := o.stats[j].States["under_review"]
+			cmp = valI < valJ
+			equal = valI == valJ
+		case "active":
+			valI := o.stats[i].States["active"]
+			valJ := o.stats[j].States["active"]
+			cmp = valI < valJ
+			equal = valI == valJ
+		case "ignored":
+			valI := o.stats[i].States["ignored"]
+			valJ := o.stats[j].States["ignored"]
+			cmp = valI < valJ
+			equal = valI == valJ
+		case "tags":
+			strI := render.FormatTagsForSort(o.stats[i].Tags)
+			strJ := render.FormatTagsForSort(o.stats[j].Tags)
+			cmp = strI < strJ
+			equal = strI == strJ
+		default:
+			cmp = o.stats[i].Total < o.stats[j].Total
+			equal = o.stats[i].Total == o.stats[j].Total
+		}
+
+		if equal {
+			return o.stats[i].Inventor < o.stats[j].Inventor
+		}
+
+		if o.statsSortAsc {
+			return cmp
+		}
+		return !cmp
+	})
+
+	if selectedInventor != "" {
+		for idx, stat := range o.stats {
+			if stat.Inventor == selectedInventor {
+				o.selected = idx
+				break
+			}
+		}
+	}
+}
+
+var inventorSearchScopes = []struct {
+	Key   string
+	Label string
+}{
+	{"all", "All Columns"},
+	{"name", "Name"},
+	{"tags", "Tags"},
+	{"states", "States"},
+}
+
+func (o *InventorStatsOverlay) applyFilter() {
+	if o.searchQuery == "" {
+		o.stats = o.allStats
+	} else {
+		o.stats = nil
+		q := strings.ToLower(o.searchQuery)
+		scope := inventorSearchScopes[o.searchScope].Key
+		for _, s := range o.allStats {
+			match := false
+			switch scope {
+			case "all":
+				match = strings.Contains(strings.ToLower(s.Inventor), q) ||
+					strings.Contains(strings.ToLower(render.FormatTagsForSort(s.Tags)), q) ||
+					strings.Contains(strings.ToLower(fmt.Sprintf("%d %d %d %d", s.States["unknown"], s.States["under_review"], s.States["active"], s.States["ignored"])), q)
+			case "name":
+				match = strings.Contains(strings.ToLower(s.Inventor), q)
+			case "tags":
+				match = strings.Contains(strings.ToLower(render.FormatTagsForSort(s.Tags)), q)
+			case "states":
+				match = strings.Contains(strings.ToLower(fmt.Sprintf("unknown:%d under_review:%d active:%d ignored:%d", s.States["unknown"], s.States["under_review"], s.States["active"], s.States["ignored"])), q)
+			}
+			if match {
+				o.stats = append(o.stats, s)
+			}
+		}
+	}
+	o.sortStats()
+	if o.selected >= len(o.stats) {
+		o.selected = max(0, len(o.stats)-1)
+	}
 }

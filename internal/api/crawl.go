@@ -32,16 +32,36 @@ func (s *Server) handleSourceModeSet(w http.ResponseWriter, r *http.Request) {
 // handleCrawl starts a family-graph crawl.
 func (s *Server) handleCrawl(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Root  domain.PatentNumber `json:"root"`
-		Depth int                 `json:"depth"`
-		Force bool                `json:"force"`
+		Project domain.ProjectID    `json:"project"`
+		Root    domain.PatentNumber `json:"root"`
+		Depth   int                 `json:"depth"`
+		Profile domain.CrawlProfile `json:"profile"`
+		Force   bool                `json:"force"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
+	if body.Profile == "" {
+		body.Profile = domain.CrawlProfileFamily
+	}
 	var res proto.CrawlStartResult
-	s.call(w, r, proto.MethodCrawlFamily,
-		proto.CrawlFamilyParams{Root: body.Root, Depth: body.Depth, Force: body.Force}, &res)
+	s.call(w, r, proto.MethodCrawlFamily, proto.CrawlFamilyParams{
+		Project: body.Project,
+		Root:    body.Root,
+		Depth:   body.Depth,
+		Profile: body.Profile,
+		Force:   body.Force,
+	}, &res)
+}
+
+// handleCrawlCancel cancels a running crawl job.
+func (s *Server) handleCrawlCancel(w http.ResponseWriter, r *http.Request) {
+	var body proto.CrawlCancelParams
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodCrawlCancel, body, &res)
 }
 
 // handleImportFile loads a patent record from a local fixture file. Body: path.

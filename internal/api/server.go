@@ -31,6 +31,11 @@ type Server struct {
 	activityLogsDir     string
 	activityMetrics     *observability.Metrics
 	activityMinDuration time.Duration
+	security            SecurityConfig
+	ai                  AIConfig
+	events              *eventHub
+	session             sessionStore
+	webDir              string
 }
 
 // Option customizes the HTTP frontend.
@@ -49,24 +54,43 @@ func WithActivity(rt *observability.Runtime, minDuration time.Duration) Option {
 	}
 }
 
+// WithSecurity applies bearer auth, CORS, and optional TLS settings.
+func WithSecurity(sec SecurityConfig) Option {
+	return func(s *Server) { s.security = sec }
+}
+
+// WithAI enables server-side AI curation endpoints.
+func WithAI(cfg AIConfig) Option {
+	return func(s *Server) { s.ai = cfg }
+}
+
+// WithWebDir serves a built SPA from dir (index.html for unknown paths).
+func WithWebDir(dir string) Option {
+	return func(s *Server) { s.webDir = dir }
+}
+
 // NewServer builds the HTTP server and registers its routes.
 func NewServer(client *rpc.Client, registry *command.Registry, opts ...Option) *Server {
 	s := &Server{client: client, registry: registry, mux: http.NewServeMux(), activityMinDuration: 100 * time.Millisecond}
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.events = newEventHub()
 	s.routes()
+	s.startEventForwarder()
 	return s
 }
 
-// Handler exposes the router, mainly for tests.
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler exposes the router with security middleware, mainly for tests.
+func (s *Server) Handler() http.Handler {
+	return wrapSecurity(s.mux, s.security)
+}
 
 // ListenAndServe serves HTTP on addr until ctx is cancelled.
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           s.mux,
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
@@ -75,7 +99,13 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	var err error
+	if s.security.TLSCert != "" && s.security.TLSKey != "" {
+		err = srv.ListenAndServeTLS(s.security.TLSCert, s.security.TLSKey)
+	} else {
+		err = srv.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("api: serve: %w", err)
 	}
 	return nil

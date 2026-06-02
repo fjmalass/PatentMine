@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -44,15 +44,22 @@ type AllNotes struct {
 	activeProject *domain.Project
 	handlers      map[command.ID]cmdHandler
 
-	notes      []domain.PatentNote
-	page       render.Paginator
-	sortByDate bool
-	loading    bool
-	loadErr    string
-	loadID     uint64
-	logger     *slog.Logger
-	metrics    *observability.Metrics
-	exportDir  string // directory for exported .md files; empty = user home dir
+	allNotes      []domain.PatentNote
+	notes         []domain.PatentNote
+	page          render.Paginator
+	loading       bool
+	loadErr       string
+	loadID        uint64
+	logger        *slog.Logger
+	metrics       *observability.Metrics
+	exportDir     string // directory for exported .md files; empty = user home dir
+
+	searchActive  bool
+	searchQuery   string
+	searchScope   int
+	focusedColIdx int
+	sortAscending bool
+	activeSort    string
 }
 
 func (a *AllNotes) log() *slog.Logger {
@@ -69,8 +76,11 @@ func NewAllNotes(client *rpc.Client, theme render.Theme, project *domain.Project
 		theme:         theme,
 		activeProject: project,
 		page:          render.NewPaginator(20),
-		sortByDate:    true,
 		loading:       true,
+		focusedColIdx: -1,
+		sortAscending: true,
+		activeSort:    "date",
+		searchScope:   0,
 	}
 	a.handlers = map[command.ID]cmdHandler{
 		command.NavDown:         func(inv Invocation) tea.Cmd { a.page.MoveDown(inv.Repeat); return nil },
@@ -83,6 +93,15 @@ func NewAllNotes(client *rpc.Client, theme render.Theme, project *domain.Project
 		command.NotesSortToggle: func(Invocation) tea.Cmd { return a.toggleSort() },
 		command.NotesExportMD:   func(Invocation) tea.Cmd { return a.exportMD() },
 		command.OpenPatentNote:  func(Invocation) tea.Cmd { return a.openSelectedNote() },
+		command.ColNext:         func(Invocation) tea.Cmd { return a.focusNext() },
+		command.ColPrev:         func(Invocation) tea.Cmd { return a.focusPrev() },
+		command.SortApply:       func(Invocation) tea.Cmd { return a.applySort() },
+		command.FindOpen: func(Invocation) tea.Cmd {
+			a.searchActive = true
+			a.searchQuery = ""
+			a.applyFilter()
+			return nil
+		},
 	}
 	return a
 }
@@ -112,35 +131,60 @@ func (a *AllNotes) load() tea.Cmd {
 	}
 	client := a.client
 	project := a.activeProject.ID
-	sortByDate := a.sortByDate
 	requestID := nextAsyncID()
 	a.loadID = requestID
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
-		sortBy := proto.NoteSortByDate
-		if !sortByDate {
-			sortBy = proto.NoteSortByPatent
-		}
 		var res proto.PatentNoteListResult
 		t0 := time.Now()
 		err := client.Call(ctx, proto.MethodPatentNoteList,
-			proto.PatentNoteListParams{Project: project, SortBy: sortBy}, &res)
+			proto.PatentNoteListParams{Project: project, SortBy: proto.NoteSortByDate}, &res)
 		return allNotesLoadedMsg{requestID: requestID, notes: res.Notes, err: err, loadDuration: time.Since(t0)}
 	}
 }
 
+func (a *AllNotes) focusNext() tea.Cmd {
+	a.focusedColIdx = (a.focusedColIdx + 1) % 3
+	return nil
+}
+
+func (a *AllNotes) focusPrev() tea.Cmd {
+	a.focusedColIdx = (a.focusedColIdx - 1 + 3) % 3
+	return nil
+}
+
+func (a *AllNotes) applySort() tea.Cmd {
+	if a.focusedColIdx < 0 {
+		return nil
+	}
+	cols := a.currentCols(80)
+	col := cols[a.focusedColIdx]
+	if col.SortKey == "" {
+		return nil
+	}
+	if a.activeSort == col.SortKey {
+		a.sortAscending = !a.sortAscending
+	} else {
+		a.activeSort = col.SortKey
+		a.sortAscending = true
+	}
+	a.applyFilter()
+	return nil
+}
+
 func (a *AllNotes) toggleSort() tea.Cmd {
-	a.sortByDate = !a.sortByDate
-	a.loading = true
+	if a.activeSort == "date" {
+		a.activeSort = "patent"
+	} else {
+		a.activeSort = "date"
+	}
+	a.applyFilter()
 	label := "patent number"
-	if a.sortByDate {
+	if a.activeSort == "date" {
 		label = "date"
 	}
-	return tea.Batch(
-		a.load(),
-		func() tea.Msg { return StatusMsg{Key: text.StatusNotesSorted, Args: []any{label}} },
-	)
+	return func() tea.Msg { return StatusMsg{Key: text.StatusNotesSorted, Args: []any{label}} }
 }
 
 func (a *AllNotes) openSelectedNote() tea.Cmd {
@@ -157,7 +201,6 @@ func (a *AllNotes) exportMD() tea.Cmd {
 	if len(a.notes) == 0 {
 		return status(text.StatusNotesExportFailed, true, "no notes to export")
 	}
-	sortByDate := a.sortByDate
 	exportDir := a.exportDir
 	client := a.client
 	var projectID domain.ProjectID
@@ -166,6 +209,7 @@ func (a *AllNotes) exportMD() tea.Cmd {
 		projectID = a.activeProject.ID
 		projectName = a.activeProject.Name
 	}
+	activeSort := a.activeSort
 	return func() tea.Msg {
 		dir := exportDir
 		if dir == "" {
@@ -181,7 +225,7 @@ func (a *AllNotes) exportMD() tea.Cmd {
 		path := filepath.Join(dir, filename)
 		existing := scanExistingExports(dir)
 		sortBy := proto.NoteSortByDate
-		if !sortByDate {
+		if activeSort == "patent" {
 			sortBy = proto.NoteSortByPatent
 		}
 		writeCmd := buildExportRPCCmd(client, projectID, sortBy, path)
@@ -251,8 +295,8 @@ func (a *AllNotes) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			return a, nil
 		}
 		a.loadErr = ""
-		a.notes = m.notes
-		a.page.SetTotal(len(a.notes))
+		a.allNotes = m.notes
+		a.applyFilter()
 		a.metrics.ObserveDuration("tui.all_notes.load", m.loadDuration, false)
 		a.log().Info("all notes loaded",
 			slog.Int("count", len(m.notes)),
@@ -275,83 +319,191 @@ func (a *AllNotes) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
 }
 
-const notesSnippetLen = 60
+var notesSearchScopes = []struct {
+	Key   string
+	Label string
+}{
+	{"all", "All Columns"},
+	{"patent", "Patent Number"},
+	{"note", "Note Content"},
+}
+
+func (a *AllNotes) applyFilter() {
+	if a.searchQuery == "" {
+		a.notes = a.allNotes
+	} else {
+		a.notes = nil
+		q := strings.ToLower(a.searchQuery)
+		scope := notesSearchScopes[a.searchScope].Key
+		for _, note := range a.allNotes {
+			match := false
+			switch scope {
+			case "all":
+				match = strings.Contains(strings.ToLower(note.Patent.String()), q) ||
+					strings.Contains(strings.ToLower(note.Markdown), q)
+			case "patent":
+				match = strings.Contains(strings.ToLower(note.Patent.String()), q)
+			case "note":
+				match = strings.Contains(strings.ToLower(note.Markdown), q)
+			}
+			if match {
+				a.notes = append(a.notes, note)
+			}
+		}
+	}
+	a.sortNotes()
+	a.page.SetTotal(len(a.notes))
+	if a.page.Cursor() >= len(a.notes) {
+		a.page.NavTop(0)
+	}
+}
+
+func (a *AllNotes) sortNotes() {
+	slices.SortFunc(a.notes, func(i, j domain.PatentNote) int {
+		var cmp int
+		switch a.activeSort {
+		case "patent":
+			cmp = strings.Compare(i.Patent.String(), j.Patent.String())
+		case "note":
+			cmp = strings.Compare(i.Markdown, j.Markdown)
+		case "date":
+			if i.UpdatedAt.Before(j.UpdatedAt) {
+				cmp = -1
+			} else if i.UpdatedAt.After(j.UpdatedAt) {
+				cmp = 1
+			} else {
+				cmp = 0
+			}
+		default:
+			if i.UpdatedAt.Before(j.UpdatedAt) {
+				cmp = -1
+			} else if i.UpdatedAt.After(j.UpdatedAt) {
+				cmp = 1
+			} else {
+				cmp = 0
+			}
+		}
+		if !a.sortAscending {
+			cmp = -cmp
+		}
+		return cmp
+	})
+}
+
+func (a *AllNotes) currentCols(w int) []render.TableColumn {
+	noteWidth := max(10, w-20-12-6)
+	return []render.TableColumn{
+		{Key: "patent", Label: "PATENT", SortKey: "patent", Width: 20},
+		{Key: "note", Label: "NOTE", SortKey: "note", Width: noteWidth},
+		{Key: "updated", Label: "UPDATED", SortKey: "date", Width: 12},
+	}
+}
+
+func (a *AllNotes) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
+	if a.searchActive {
+		switch msg.Type {
+		case tea.KeyTab:
+			a.searchScope = (a.searchScope + 1) % len(notesSearchScopes)
+			a.applyFilter()
+			return a, nil, true
+		case tea.KeyEsc:
+			a.searchActive = false
+			a.searchQuery = ""
+			a.applyFilter()
+			return a, nil, true
+		case tea.KeyEnter:
+			a.searchActive = false
+			return a, nil, true
+		case tea.KeyBackspace, tea.KeyDelete:
+			if len(a.searchQuery) > 0 {
+				runes := []rune(a.searchQuery)
+				a.searchQuery = string(runes[:len(runes)-1])
+				a.applyFilter()
+			}
+			return a, nil, true
+		case tea.KeyCtrlW:
+			a.searchQuery = ""
+			a.applyFilter()
+			return a, nil, true
+		case tea.KeyRunes, tea.KeySpace:
+			a.searchQuery += msg.String()
+			a.applyFilter()
+			return a, nil, true
+		}
+		return a, nil, true
+	}
+	return a, nil, false
+}
 
 // View implements Pane.
 func (a *AllNotes) View(w, h int) string {
-	if a.loading && len(a.notes) == 0 {
+	if a.loading && len(a.allNotes) == 0 {
 		return a.theme.Dim.Render("loading notes…")
 	}
 	if a.loadErr != "" {
 		return a.theme.Error.Render("error: " + a.loadErr)
 	}
-	if len(a.notes) == 0 {
+	if len(a.allNotes) == 0 {
 		if a.activeProject == nil {
 			return a.theme.Dim.Render("no active project")
 		}
 		return a.theme.Dim.Render("no notes for this project — open a patent and press N")
 	}
 
-	a.page.SetPageSize(max(h-headerRows, 1))
-
-	sortLabel := "date"
-	if !a.sortByDate {
-		sortLabel = "patent"
-	}
+	a.page.SetPageSize(max(h-headerRows-2, 1))
 
 	var b strings.Builder
-	b.WriteString(renderTableStatusLine(a.theme, w, a.page.Cursor(), a.page.Total(), "sort:"+sortLabel))
+	// Render status line
+	statusText := "sort:" + a.activeSort
+	if a.sortAscending {
+		statusText += " (asc)"
+	} else {
+		statusText += " (desc)"
+	}
+	b.WriteString(renderTableStatusLine(a.theme, w, a.page.Cursor(), a.page.Total(), statusText))
 	b.WriteByte('\n')
-	b.WriteString(a.theme.Header.Render(notesHeaderRow(w)))
 
+	cols := a.currentCols(w)
 	start, end := a.page.Window()
-	for i := start; i < end; i++ {
-		note := a.notes[i]
-		line := notesRow(formatViewIndex(i), note, w)
-		b.WriteByte('\n')
-		if i == a.page.Cursor() {
-			b.WriteString(a.theme.Selected.Render(render.Pad(line, w)))
-		} else {
-			b.WriteString(tableRowStyle(a.theme, i)(render.Pad(line, w)))
+
+	tableStr := render.RenderTable(render.TableParams{
+		Theme:         a.theme,
+		Columns:       cols,
+		RowCount:      end - start,
+		FocusedColIdx: a.focusedColIdx,
+		ActiveSort:    a.activeSort,
+		SortAscending: a.sortAscending,
+		FocusActive:   true,
+		IsRowCursor: func(rowIdx int) bool {
+			return start+rowIdx == a.page.Cursor()
+		},
+	}, w, func(rowIdx, colIdx int) string {
+		absIdx := start + rowIdx
+		if absIdx < 0 || absIdx >= len(a.notes) {
+			return ""
 		}
-	}
+		note := a.notes[absIdx]
+		switch cols[colIdx].Key {
+		case "patent":
+			return note.Patent.String()
+		case "note":
+			return firstLine(strings.TrimSpace(note.Markdown))
+		case "updated":
+			return note.UpdatedAt.Format(domain.DateLayout)
+		default:
+			return ""
+		}
+	})
+	b.WriteString(tableStr)
+
 	b.WriteByte('\n')
-	b.WriteString(a.theme.Dim.Render("  [s] sort  [e] export .md  [enter/N] open note  [esc] back"))
+	if a.searchActive {
+		searchLine := "/ " + a.searchQuery + "▋  [Scope: " + notesSearchScopes[a.searchScope].Label + " (Tab to cycle)]"
+		b.WriteString(a.theme.Selected.Render(render.Pad(searchLine, w)))
+	} else {
+		b.WriteString(a.theme.Dim.Render(render.Pad("  [←/→] Focus Col  [.] Sort  [/] Search  [e] export .md  [enter/N] open note  [esc] back", w)))
+	}
 	return b.String()
-}
-
-func notesHeaderRow(w int) string {
-	const numW = 6
-	const dateW = 12
-	patent := "PATENT"
-	dateCol := "UPDATED"
-	snippet := "NOTE"
-	rest := w - numW - dateW - len(patent) - 4
-	if rest < len(snippet) {
-		rest = len(snippet)
-	}
-	return fmt.Sprintf("%-*s  %-20s  %-*s  %s", numW, "#", patent, rest, snippet, dateCol)
-}
-
-func notesRow(idx string, note domain.PatentNote, w int) string {
-	const numW = 6
-	const dateW = 12
-	patentStr := note.Patent.String()
-	dateStr := note.UpdatedAt.Format(domain.DateLayout)
-	snippet := firstLine(strings.TrimSpace(note.Markdown))
-	snippetMax := w - numW - len(patentStr) - dateW - 6
-	if snippetMax < 0 {
-		snippetMax = 0
-	}
-	if utf8.RuneCountInString(snippet) > snippetMax {
-		runes := []rune(snippet)
-		if snippetMax > 3 {
-			snippet = string(runes[:snippetMax-1]) + "…"
-		} else {
-			snippet = string(runes[:snippetMax])
-		}
-	}
-	return fmt.Sprintf("%-*s  %-20s  %-*s  %s", numW, idx, patentStr, snippetMax, snippet, dateStr)
 }
 
 func firstLine(s string) string {

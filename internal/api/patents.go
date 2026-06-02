@@ -191,6 +191,83 @@ func (s *Server) handleSourceBibsList(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodSourceBibsList, proto.SourceBibsListParams{Number: number}, &res)
 }
 
+// handlePatentDelete permanently removes one patent.
+func (s *Server) handlePatentDelete(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodPatentDelete, proto.PatentDeleteParams{Number: number}, &res)
+}
+
+// handlePatentClearCache clears parsed body cache for one or more patents.
+func (s *Server) handlePatentClearCache(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var body struct {
+		Patents []domain.PatentNumber `json:"patents"`
+	}
+	if r.ContentLength > 0 {
+		if !decodeBody(w, r, &body) {
+			return
+		}
+	}
+	patents := body.Patents
+	if len(patents) == 0 {
+		patents = []domain.PatentNumber{number}
+	}
+	var res proto.PatentClearCacheResult
+	s.call(w, r, proto.MethodPatentClearCache, proto.PatentClearCacheParams{Patents: patents}, &res)
+}
+
+// handlePatentTagAssignLoose assigns a tag using tag.assign (creates taxonomy if needed).
+func (s *Server) handlePatentTagAssignLoose(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	var body struct {
+		Project domain.ProjectID `json:"project"`
+		Name    string           `json:"name"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Project == "" {
+		body.Project = domain.ProjectID(r.URL.Query().Get("project"))
+	}
+	params := proto.TagParams{
+		Project: body.Project,
+		Patents: []domain.PatentNumber{number},
+		Name:    body.Name,
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodTagPatent, params, &res)
+}
+
+// handlePatentTagRemoveLoose removes a tag via tag.remove.
+func (s *Server) handlePatentTagRemoveLoose(w http.ResponseWriter, r *http.Request) {
+	number, err := domain.ParsePatentNumber(r.PathValue("number"))
+	if err != nil {
+		badRequest(w, "invalid patent number: "+err.Error())
+		return
+	}
+	project := domain.ProjectID(firstNonEmpty(r.URL.Query().Get("project")))
+	params := proto.TagParams{
+		Project: project,
+		Patents: []domain.PatentNumber{number},
+		Name:    r.PathValue("name"),
+	}
+	var res proto.Empty
+	s.call(w, r, proto.MethodUntagPatent, params, &res)
+}
+
 // handlePatentDeleteBulk permanently removes the patents named in the body.
 func (s *Server) handlePatentDeleteBulk(w http.ResponseWriter, r *http.Request) {
 	var body struct {

@@ -64,6 +64,12 @@ every frontend stays in step.
 | GET | `/patents/{number}/bibs` | `source.bibs.list` | Each source's full bibliographic snapshot. |
 | GET | `/patents/{number}/expiration` | `uspto.expiration.calculate` | Compute (and persist) statutory U.S. expiration. Query: `project, refresh`. |
 | DELETE | `/patents` | `patent.delete_bulk` | Permanently remove patents. Body: `patents[]`. |
+| DELETE | `/patents/{number}` | `patent.delete` | Permanently remove one patent. |
+| POST | `/patents/{number}/clear_cache` | `patent.clear_cache` | Clear parsed body cache. Body optional: `patents[]`. |
+| POST | `/patents/{number}/tags` | `tag.assign` | Loose tag assign. Body: `name`, optional `project`. |
+| DELETE | `/patents/{number}/tags/{name}` | `tag.remove` | Loose tag remove. Query: `project`. |
+| POST | `/patents/{number}/ai/analyze` | — | Server-side AI curation. Body: `action`, optional `prompt`. |
+| GET | `/ai/config` | — | AI provider configuration status. |
 
 ### USPTO data (per patent)
 
@@ -92,6 +98,7 @@ every frontend stays in step.
 | POST | `/projects` | `project.create` | Body: `name`. |
 | PUT | `/projects/{id}` | `project.update` | Body: a `domain.Project`. |
 | POST | `/projects/{id}/patents` | `membership.add` | Body: `patent, source, confirm_merge`. |
+| POST | `/projects/{id}/patents/related` | `membership.add_related` | Body: `patent`. |
 | GET | `/projects/{id}/ids` | `ids.export` | Build the IDS for a project. |
 | POST | `/projects/{id}/ids/pdf` | `ids.export.pdf` | Render PTO/SB/08a+08c. Optional body overrides (`cumulative_count, fee_amount, deposit_account, signer_*`). |
 | POST | `/projects/{id}/ids/pdf/preview` | `ids.export.pdf.preview` | Dry-run summary (counts, fee tier, missing fields). Same optional body as the PDF export. |
@@ -136,7 +143,12 @@ every frontend stays in step.
 
 | Method | Path | Proto method | Notes |
 |---|---|---|---|
-| POST | `/crawl` | `crawl.family` | Body: `root, depth, force`. |
+| POST | `/crawl` | `crawl.family` | Body: `root, depth, force, profile, project`. |
+| POST | `/crawl/cancel` | `crawl.cancel` | Body: `job_id`. |
+| GET | `/events` | — | SSE stream of `crawl.*` and `db.changed` (and `session.changed`). |
+| GET | `/session` | — | Shared UI session state for web clients. |
+| PUT/PATCH | `/session` | — | Update session (project, patent, view, filter). |
+| POST | `/filters/validate` | — | Parse/validate filter expression. Body: `expression`, `project_active`. |
 | POST | `/import` | `import.file` | Load a patent from a local fixture file. Body: `path`. |
 | GET | `/crawl/config` | `crawl.config` | Daemon crawl defaults. |
 | GET | `/source_mode` | `source_mode.get` | |
@@ -184,20 +196,6 @@ dispatch. They were previously TUI-only; REST now mirrors them:
 `source.bibs.list`, `uspto.fetch_xml`, `uspto.grant_body`,
 `uspto.fetch_assignments`, `uspto.assignment.list`, `uspto.expiration.calculate`,
 `import.file`, `patent.delete_bulk`, `metrics.push`.
-
-### ❌ Engine commands the TUI exposes but REST still does NOT
-
-| Catalog command(s) | Proto method | Missing REST route (suggested) |
-|---|---|---|
-| `add.related` | `membership.add_related` | `POST /projects/{id}/patents/related` |
-| `delete` (single) | `patent.delete` | `DELETE /patents/{number}` (bulk `DELETE /patents` exists) |
-| `patent.clear-cache` | `patent.clear_cache` | `POST /patents/{number}/clear_cache` |
-| `tag` (loose) | `tag.assign` | `POST /patents/{number}/tags` (project-less) |
-| `untag` (loose) | `tag.remove` | `DELETE /patents/{number}/tags/{name}` (project-less) |
-| `crawl.cancel` | `crawl.cancel` | `POST /crawl/cancel` |
-
-> Note: the project-scoped (**strict**) tag/untag endpoints exist; only the
-> loose, project-less `tag.assign` / `tag.remove` variants are unexposed.
 
 ### ℹ️ Defined proto methods still used by neither frontend directly
 

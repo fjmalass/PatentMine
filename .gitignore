@@ -15,3 +15,5 @@ junk*.*
 
 outputs/
 exports/
+
+**/node_modules/**

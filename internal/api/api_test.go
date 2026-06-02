@@ -35,7 +35,12 @@ func testAPI(t *testing.T) http.Handler {
 	return testAPIEnv(t).handler
 }
 
-func testAPIEnv(t *testing.T) apiEnv {
+func testAPIWithOpts(t *testing.T, opts ...api.Option) http.Handler {
+	t.Helper()
+	return testAPIEnv(t, opts...).handler
+}
+
+func testAPIEnv(t *testing.T, opts ...api.Option) apiEnv {
 	t.Helper()
 
 	repo, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "api.db"))
@@ -75,7 +80,9 @@ func testAPIEnv(t *testing.T) apiEnv {
 		eng.Close()
 		_ = repo.Close()
 	})
-	return apiEnv{handler: api.NewServer(client, registry).Handler(), repo: repo}
+	allOpts := append([]api.Option{}, opts...)
+	srv := api.NewServer(client, registry, allOpts...)
+	return apiEnv{handler: srv.Handler(), repo: repo}
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {

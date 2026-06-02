@@ -154,6 +154,22 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodProjectCreate, proto.ProjectCreateParams{Name: body.Name}, &res)
 }
 
+// handleAddRelated grants membership to family-graph neighbors of a patent.
+func (s *Server) handleAddRelated(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Patent domain.PatentNumber `json:"patent"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	params := proto.AddRelatedParams{
+		Project: domain.ProjectID(r.PathValue("id")),
+		Patent:  body.Patent,
+	}
+	var res proto.AddRelatedResult
+	s.call(w, r, proto.MethodAddRelated, params, &res)
+}
+
 // handleAddMember adds a patent to a project.
 func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	var body struct {

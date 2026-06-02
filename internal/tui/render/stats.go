@@ -7,35 +7,43 @@ import (
 )
 
 // FormatEntityStats formats aggregated counts for any database entity (inventor, tag, assignee)
-// in a fixed-width ASCII layout so long rows do not spill outside popup borders.
-func FormatEntityStats(total int, states map[string]int, tags map[string]int) string {
+// in a fixed-width compact layout using theme glyphs so long rows do not spill outside popup borders.
+func FormatEntityStats(theme Theme, total int, states map[string]int, tags map[string]int) string {
 	unknown := states["unknown"]
 	underReview := states["under_review"]
 	active := states["active"]
 	ignored := states["ignored"]
-	other := states["other"]
 
-	var tagParts []string
-	if len(tags) > 0 {
-		var tagNames []string
-		for name := range tags {
-			tagNames = append(tagNames, name)
-		}
-		slices.Sort(tagNames)
-		for _, name := range tagNames {
-			tagParts = append(tagParts, fmt.Sprintf("[%d] %s", tags[name], name))
-		}
+	tagsStr := FormatTagsForSort(tags)
+	if tagsStr == "" {
+		tagsStr = "-"
 	}
 
-	tagsStr := "none"
-	if len(tagParts) > 0 {
-		tagsStr = strings.Join(tagParts, ", ")
+	// Format: PATENTS (width 8)  STATES (width 25)  TAGS
+	patentsStr := fmt.Sprintf("  %3d   ", total)
+	statesStr := fmt.Sprintf("%s %d  %s %d  %s %d  %s %d",
+		theme.Glyphs.ReviewStateUnknown, unknown,
+		theme.Glyphs.ReviewStateUnderReview, underReview,
+		theme.Glyphs.ReviewStateActive, active,
+		theme.Glyphs.ReviewStateIgnored, ignored,
+	)
+
+	return fmt.Sprintf("%s %-25s  %s", patentsStr, statesStr, tagsStr)
+}
+
+// FormatTagsForSort returns a deterministic comma-separated string of tags and counts for sorting.
+func FormatTagsForSort(tags map[string]int) string {
+	if len(tags) == 0 {
+		return ""
 	}
-
-	// Reserve enough room for hundreds or thousands of patents without shifting the following columns.
-	totalLabel := fmt.Sprintf("[%4d]", total)
-	paddedTotal := Pad(totalLabel, 8)
-
-	return fmt.Sprintf("%s state: [%d] unknown, [%d] review, [%d] active, [%d] ignored, [%d] other, tags: %s",
-		paddedTotal, unknown, underReview, active, ignored, other, tagsStr)
+	var tagNames []string
+	for name := range tags {
+		tagNames = append(tagNames, name)
+	}
+	slices.Sort(tagNames)
+	var parts []string
+	for _, name := range tagNames {
+		parts = append(parts, fmt.Sprintf("[%d]%s", tags[name], name))
+	}
+	return strings.Join(parts, ", ")
 }

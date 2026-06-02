@@ -1,6 +1,7 @@
 package pane
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/render"
+	"patentmine/internal/tui/tableview"
 )
 
 // catalogClassDescsMsg delivers a batch of cached classification descriptions.
@@ -28,6 +30,11 @@ type catalogClassDescsMsg struct {
 type findDebounceMsg struct {
 	seq   uint64
 	query string
+}
+
+// catalogTableViewMsg delivers a saved table view for the patents catalog.
+type catalogTableViewMsg struct {
+	filter string
 }
 
 // catalogLoadedMsg delivers a finished patent.list result.
@@ -220,7 +227,19 @@ func (c *Catalog) Scope() command.Scope { return command.ScopeCatalog }
 func (c *Catalog) Title() string { return "Patents" }
 
 // Init implements Pane.
-func (c *Catalog) Init() tea.Cmd { return tea.Batch(c.loadColumns(), c.load()) }
+func (c *Catalog) Init() tea.Cmd {
+	return tea.Batch(c.loadColumns(), loadDefaultPatentsTableViewCmd(c.client), c.load())
+}
+
+func loadDefaultPatentsTableViewCmd(client *rpc.Client) tea.Cmd {
+	return func() tea.Msg {
+		view, ok, err := tableview.LoadDefaultPatents(context.Background(), client)
+		if err != nil || !ok {
+			return catalogTableViewMsg{}
+		}
+		return catalogTableViewMsg{filter: tableview.FilterFromView(view)}
+	}
+}
 
 func (c *Catalog) loadColumns() tea.Cmd {
 	requestID := nextAsyncID()
@@ -509,6 +528,13 @@ func (c *Catalog) reselectLast() tea.Cmd {
 // Update implements Pane.
 func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	switch m := msg.(type) {
+	case catalogTableViewMsg:
+		if m.filter != "" {
+			if expr, err := filterexpr.Parse(m.filter); err == nil {
+				c.filter.setExpression(expr)
+			}
+		}
+		return c, nil
 	case findDebounceMsg:
 		if m.seq == c.searchSeq {
 			return c, c.load()

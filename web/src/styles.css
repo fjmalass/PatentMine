@@ -1,0 +1,158 @@
+:root {
+  color-scheme: dark light;
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --border: #2d3a4d;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --accent: #3d8bfd;
+  --danger: #e5534b;
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 1rem;
+}
+
+.sidebar h1 {
+  font-size: 1.1rem;
+  margin: 0 0 1rem;
+}
+
+.sidebar nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 0.35rem;
+  padding: 0.45rem 0.6rem;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar nav button.active,
+.sidebar nav button:hover {
+  background: #243044;
+  border-color: var(--border);
+}
+
+.main {
+  padding: 1rem 1.25rem;
+  overflow: auto;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  align-items: center;
+}
+
+input,
+select,
+button,
+textarea {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #334155;
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+}
+
+tr.selected {
+  background: #243044;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.pane-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .pane-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pre {
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  border-radius: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}

@@ -33,6 +33,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /table_views/{id}", s.handleTableViewDelete)
 	s.mux.HandleFunc("GET /activity/replay_history", s.handleReplayHistory)
 	s.mux.HandleFunc("GET /commands", s.handleCommands)
+	s.mux.HandleFunc("GET /events", s.handleEvents)
+	s.mux.HandleFunc("GET /session", s.handleSessionGet)
+	s.mux.HandleFunc("PUT /session", s.handleSessionPut)
+	s.mux.HandleFunc("PATCH /session", s.handleSessionPatch)
+	s.mux.HandleFunc("POST /filters/validate", s.handleFilterValidate)
+	s.mux.HandleFunc("GET /ai/config", s.handleAIConfig)
+	s.mux.HandleFunc("POST /patents/{number}/ai/analyze", s.handleAIAnalyze)
 	s.mux.HandleFunc("GET /patents", s.handlePatentList)
 	s.mux.HandleFunc("GET /patents/orphans", s.handleOrphanList)
 	s.mux.HandleFunc("GET /assignees", s.handleAssigneeStats)
@@ -40,6 +47,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /classifications/stats", s.handleClassificationStats)
 	s.mux.HandleFunc("GET /patents/columns", s.handlePatentTableColumns)
 	s.mux.HandleFunc("GET /patents/{number}", s.handlePatentGet)
+	s.mux.HandleFunc("DELETE /patents/{number}", s.handlePatentDelete)
+	s.mux.HandleFunc("POST /patents/{number}/clear_cache", s.handlePatentClearCache)
+	s.mux.HandleFunc("POST /patents/{number}/tags", s.handlePatentTagAssignLoose)
+	s.mux.HandleFunc("DELETE /patents/{number}/tags/{name}", s.handlePatentTagRemoveLoose)
 	s.mux.HandleFunc("GET /patents/{number}/relations", s.handleRelations)
 	s.mux.HandleFunc("GET /patents/{number}/family", s.handleFamilyGraph)
 	s.mux.HandleFunc("PUT /patents/{number}/review_state", s.handleReviewState)
@@ -60,6 +71,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /projects", s.handleProjectList)
 	s.mux.HandleFunc("POST /projects", s.handleProjectCreate)
 	s.mux.HandleFunc("POST /projects/{id}/patents", s.handleAddMember)
+	s.mux.HandleFunc("POST /projects/{id}/patents/related", s.handleAddRelated)
 	s.mux.HandleFunc("GET /projects/{id}/ids", s.handleIDS)
 	s.mux.HandleFunc("POST /projects/{id}/ids/pdf", s.handleIDSPDF)
 	s.mux.HandleFunc("POST /projects/{id}/ids/pdf/preview", s.handleIDSPDFPreview)
@@ -83,6 +95,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /config/source_mode", s.handleSourceModeGet)
 	s.mux.HandleFunc("PUT /config/source_mode", s.handleSourceModeSet)
 	s.mux.HandleFunc("POST /crawl", s.handleCrawl)
+	s.mux.HandleFunc("POST /crawl/cancel", s.handleCrawlCancel)
 	s.mux.HandleFunc("POST /import", s.handleImportFile)
 
 	// Tag Taxonomy endpoints
@@ -101,6 +114,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /classifications/lookup", s.handleClassificationLookup)
 	s.mux.HandleFunc("POST /classifications/by_codes", s.handleClassificationListByCodes)
 	s.mux.HandleFunc("GET /projects/{id}/patents/{number}/classifications", s.handlePatentClassificationList)
+
+	s.registerWebUI()
 }
 
 // handleHealth pings the daemon.

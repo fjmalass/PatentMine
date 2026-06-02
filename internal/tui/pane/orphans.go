@@ -3,6 +3,7 @@ package pane
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,22 +32,34 @@ type Orphans struct {
 	theme    render.Theme
 	handlers map[command.ID]cmdHandler
 
-	rows    []domain.PatentRow
-	total   int
-	page    render.Paginator
-	loading bool
-	loadErr string
-	loadID  uint64
-	logger  *slog.Logger
+	allRows  []domain.PatentRow
+	rows     []domain.PatentRow
+	total    int
+	page     render.Paginator
+	loading  bool
+	loadErr  string
+	loadID   uint64
+	logger   *slog.Logger
+
+	searchActive  bool
+	searchQuery   string
+	searchScope   int
+	focusedColIdx int
+	sortAscending bool
+	activeSort    string
 }
 
 // NewOrphans builds the orphan-patents pane.
 func NewOrphans(client *rpc.Client, theme render.Theme) *Orphans {
 	o := &Orphans{
-		client:  client,
-		theme:   theme,
-		page:    render.NewPaginator(20),
-		loading: true,
+		client:        client,
+		theme:         theme,
+		page:          render.NewPaginator(20),
+		loading:       true,
+		focusedColIdx: -1,
+		sortAscending: true,
+		activeSort:    "number",
+		searchScope:   0,
 	}
 	o.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(inv Invocation) tea.Cmd { o.page.MoveDown(inv.Repeat); return nil },
@@ -56,6 +69,15 @@ func NewOrphans(client *rpc.Client, theme render.Theme) *Orphans {
 		command.NavTop:      func(inv Invocation) tea.Cmd { o.page.NavTop(inv.Repeat); return nil },
 		command.NavBottom:   func(inv Invocation) tea.Cmd { o.page.NavBottom(inv.Repeat); return nil },
 		command.Refresh:     func(Invocation) tea.Cmd { o.loading = true; return o.load() },
+		command.ColNext:     func(Invocation) tea.Cmd { return o.focusNext() },
+		command.ColPrev:     func(Invocation) tea.Cmd { return o.focusPrev() },
+		command.SortApply:   func(Invocation) tea.Cmd { return o.applySort() },
+		command.FindOpen: func(Invocation) tea.Cmd {
+			o.searchActive = true
+			o.searchQuery = ""
+			o.applyFilter()
+			return nil
+		},
 	}
 	return o
 }
@@ -99,6 +121,35 @@ func (o *Orphans) load() tea.Cmd {
 	}
 }
 
+func (o *Orphans) focusNext() tea.Cmd {
+	o.focusedColIdx = (o.focusedColIdx + 1) % 3
+	return nil
+}
+
+func (o *Orphans) focusPrev() tea.Cmd {
+	o.focusedColIdx = (o.focusedColIdx - 1 + 3) % 3
+	return nil
+}
+
+func (o *Orphans) applySort() tea.Cmd {
+	if o.focusedColIdx < 0 {
+		return nil
+	}
+	cols := o.currentCols(80)
+	col := cols[o.focusedColIdx]
+	if col.SortKey == "" {
+		return nil
+	}
+	if o.activeSort == col.SortKey {
+		o.sortAscending = !o.sortAscending
+	} else {
+		o.activeSort = col.SortKey
+		o.sortAscending = true
+	}
+	o.applyFilter()
+	return nil
+}
+
 func (o *Orphans) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if handler, ok := o.handlers[id]; ok {
 		return o, handler(inv)
@@ -120,9 +171,9 @@ func (o *Orphans) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			return o, status(text.StatusOrphanLoadFailed, true, m.err.Error())
 		}
 		o.loadErr = ""
-		o.rows = m.rows
+		o.allRows = m.rows
 		o.total = m.total
-		o.page.SetTotal(len(o.rows))
+		o.applyFilter()
 		return o, nil
 	}
 	return o, nil
@@ -136,44 +187,180 @@ func (o *Orphans) Selection() (domain.PatentNumber, bool) {
 	return o.rows[cur].Number, true
 }
 
+var orphansSearchScopes = []struct {
+	Key   string
+	Label string
+}{
+	{"all", "All Columns"},
+	{"number", "Patent Number"},
+	{"fetch", "Fetch State"},
+	{"title", "Title"},
+}
+
+func (o *Orphans) applyFilter() {
+	if o.searchQuery == "" {
+		o.rows = o.allRows
+	} else {
+		o.rows = nil
+		q := strings.ToLower(o.searchQuery)
+		scope := orphansSearchScopes[o.searchScope].Key
+		for _, row := range o.allRows {
+			match := false
+			switch scope {
+			case "all":
+				match = strings.Contains(strings.ToLower(row.Number.String()), q) ||
+					strings.Contains(strings.ToLower(string(row.FetchState)), q) ||
+					strings.Contains(strings.ToLower(row.Title), q)
+			case "number":
+				match = strings.Contains(strings.ToLower(row.Number.String()), q)
+			case "fetch":
+				match = strings.Contains(strings.ToLower(string(row.FetchState)), q)
+			case "title":
+				match = strings.Contains(strings.ToLower(row.Title), q)
+			}
+			if match {
+				o.rows = append(o.rows, row)
+			}
+		}
+	}
+	o.sortRows()
+	o.page.SetTotal(len(o.rows))
+	if o.page.Cursor() >= len(o.rows) {
+		o.page.NavTop(0)
+	}
+}
+
+func (o *Orphans) sortRows() {
+	if o.activeSort == "" {
+		return
+	}
+	slices.SortFunc(o.rows, func(i, j domain.PatentRow) int {
+		var cmp int
+		switch o.activeSort {
+		case "number":
+			cmp = strings.Compare(i.Number.String(), j.Number.String())
+		case "fetch_state":
+			cmp = strings.Compare(string(i.FetchState), string(j.FetchState))
+		case "title":
+			cmp = strings.Compare(i.Title, j.Title)
+		default:
+			cmp = strings.Compare(i.Number.String(), j.Number.String())
+		}
+		if !o.sortAscending {
+			cmp = -cmp
+		}
+		return cmp
+	})
+}
+
+func (o *Orphans) currentCols(w int) []render.TableColumn {
+	titleWidth := max(10, w-18-12-6)
+	return []render.TableColumn{
+		{Key: "number", Label: "NUMBER", SortKey: "number", Width: 18},
+		{Key: "fetch", Label: "FETCH", SortKey: "fetch_state", Width: 12},
+		{Key: "title", Label: "TITLE", SortKey: "title", Width: titleWidth},
+	}
+}
+
+func (o *Orphans) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
+	if o.searchActive {
+		switch msg.Type {
+		case tea.KeyTab:
+			o.searchScope = (o.searchScope + 1) % len(orphansSearchScopes)
+			o.applyFilter()
+			return o, nil, true
+		case tea.KeyEsc:
+			o.searchActive = false
+			o.searchQuery = ""
+			o.applyFilter()
+			return o, nil, true
+		case tea.KeyEnter:
+			o.searchActive = false
+			return o, nil, true
+		case tea.KeyBackspace, tea.KeyDelete:
+			if len(o.searchQuery) > 0 {
+				runes := []rune(o.searchQuery)
+				o.searchQuery = string(runes[:len(runes)-1])
+				o.applyFilter()
+			}
+			return o, nil, true
+		case tea.KeyCtrlW:
+			o.searchQuery = ""
+			o.applyFilter()
+			return o, nil, true
+		case tea.KeyRunes, tea.KeySpace:
+			o.searchQuery += msg.String()
+			o.applyFilter()
+			return o, nil, true
+		}
+		return o, nil, true
+	}
+	return o, nil, false
+}
+
+// View implements Pane.
 func (o *Orphans) View(w, h int) string {
 	switch {
-	case o.loading && len(o.rows) == 0:
+	case o.loading && len(o.allRows) == 0:
 		return o.theme.Dim.Render("loading orphan patents…")
 	case o.loadErr != "":
 		return o.theme.Error.Render("error: " + o.loadErr)
-	case len(o.rows) == 0:
+	case len(o.allRows) == 0:
 		return o.theme.Dim.Render("no orphan patents — every patent in the database belongs to a project")
 	}
-	o.page.SetPageSize(max(h-headerRows, 1))
+	o.page.SetPageSize(max(h-headerRows-2, 1))
 
 	var b strings.Builder
-	b.WriteString(renderTableStatusLine(o.theme, w, o.page.Cursor(), o.page.Total(),
-		fmt.Sprintf("total:%d", o.total)))
+	statusText := fmt.Sprintf("total:%d  sort:%s", o.total, o.activeSort)
+	if o.sortAscending {
+		statusText += " (asc)"
+	} else {
+		statusText += " (desc)"
+	}
+	b.WriteString(renderTableStatusLine(o.theme, w, o.page.Cursor(), o.page.Total(), statusText))
 	b.WriteByte('\n')
-	b.WriteString(o.theme.Header.Render(orphanRow("#", "NUMBER", "FETCH", "TITLE", w)))
+
+	cols := o.currentCols(w)
 	start, end := o.page.Window()
-	for i := start; i < end; i++ {
-		row := o.rows[i]
-		line := orphanRow(formatViewIndex(i), row.Number.String(), string(row.FetchState), truncTitle(row.Title), w)
-		b.WriteByte('\n')
-		if i == o.page.Cursor() {
-			b.WriteString(o.theme.Selected.Render(render.Pad(line, w)))
-		} else {
-			b.WriteString(tableRowStyle(o.theme, i)(render.Pad(line, w)))
+
+	tableStr := render.RenderTable(render.TableParams{
+		Theme:         o.theme,
+		Columns:       cols,
+		RowCount:      end - start,
+		FocusedColIdx: o.focusedColIdx,
+		ActiveSort:    o.activeSort,
+		SortAscending: o.sortAscending,
+		FocusActive:   true,
+		IsRowCursor: func(rowIdx int) bool {
+			return start+rowIdx == o.page.Cursor()
+		},
+	}, w, func(rowIdx, colIdx int) string {
+		absIdx := start + rowIdx
+		if absIdx < 0 || absIdx >= len(o.rows) {
+			return ""
 		}
+		row := o.rows[absIdx]
+		switch cols[colIdx].Key {
+		case "number":
+			return row.Number.String()
+		case "fetch":
+			return string(row.FetchState)
+		case "title":
+			return truncTitle(row.Title)
+		default:
+			return ""
+		}
+	})
+	b.WriteString(tableStr)
+
+	b.WriteByte('\n')
+	if o.searchActive {
+		searchLine := "/ " + o.searchQuery + "▋  [Scope: " + orphansSearchScopes[o.searchScope].Label + " (Tab to cycle)]"
+		b.WriteString(o.theme.Selected.Render(render.Pad(searchLine, w)))
+	} else {
+		b.WriteString(o.theme.Dim.Render(render.Pad("  [←/→] Focus Col  [.] Sort  [/] Search  [esc] back", w)))
 	}
 	return b.String()
-}
-
-func orphanRow(idx, number, fetch, title string, w int) string {
-	const idxW, numW, fetchW = 4, 18, 8
-	titleW := w - idxW - numW - fetchW - 6
-	if titleW < 10 {
-		titleW = 10
-	}
-	return fmt.Sprintf("%-*s  %-*s  %-*s  %-*s",
-		idxW, idx, numW, render.Truncate(number, numW), fetchW, render.Truncate(fetch, fetchW), titleW, render.Truncate(title, titleW))
 }
 
 func truncTitle(s string) string {
