@@ -95,6 +95,14 @@ func (p *Prompt) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			return p, nil, true
 		}
 		return p, func() tea.Msg { return PromptSubmitMsg{Input: input} }, true
+	case tea.KeyTab:
+		if selected, ok := p.selected(); ok {
+			p.query = selected.command.Name
+			p.cursor = len([]rune(p.query))
+			p.error = ""
+			p.filter()
+		}
+		return p, nil, true
 	case tea.KeyBackspace:
 		if p.cursor == 0 {
 			return p, nil, true

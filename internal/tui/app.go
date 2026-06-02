@@ -197,7 +197,6 @@ var appHandlers = map[command.ID]appHandler{
 	command.SettingsAI:                 (*App).cmdSettingsAI,
 	command.OpenAssignees:              (*App).cmdOpenAssignees,
 	command.OpenAssigneesProject:       (*App).cmdOpenAssigneesProject,
-	command.OpenAssigneeStats:          (*App).cmdOpenAssigneeStats,
 	command.PatentExpirationDate:       (*App).cmdPatentExpirationDate,
 	command.OpenClassificationStats:    (*App).cmdOpenClassificationStats,
 	command.OpenInventors:              (*App).cmdOpenInventors,
@@ -718,18 +717,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o := overlay.NewAIMenu(a.theme, m.patent, a.aiProvider, a.buildAnalyzer())
 		a.overlays = append(a.overlays, o)
 		return a, nil
-	case openAssigneesPatentLoadedMsg:
+	case openAssigneesProjectPatentLoadedMsg:
 		if m.err != nil {
 			a.setErr(text.StatusDaemonUnavailable, m.err.Error())
 			return a, nil
 		}
-		return a.openAssignees(m.patent)
-	case openAssigneeStatsPatentLoadedMsg:
-		if m.err != nil {
-			a.setErr(text.StatusDaemonUnavailable, m.err.Error())
-			return a, nil
-		}
-		return a.openAssigneeStats(m.patent)
+		return a.openAssigneesProject(m.patent)
 	case overlay.AISwitchProviderMsg:
 		a.aiProvider = ai.Provider(m.NewProvider)
 		if len(a.overlays) > 0 {

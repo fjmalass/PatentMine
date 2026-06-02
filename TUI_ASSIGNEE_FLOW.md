@@ -9,9 +9,9 @@ optimized.
 
 > **Implementation status.** The data layer (schema `assignee_history`, the
 > derivation, the project rollup) and the TUI views are **shipped**.
-> TUI: `:fetch.uspto.assignments` (single), `:open.assignees` (timeline),
-> `:open.assignee-stats` (statistics & patents subtable), `:open.assignees.project`
-> (project rollup), and `:fetch.uspto.assignments.project` (project batch) are **live**.
+> TUI: `:fetch.uspto.assignments` (single), `:open.assignees` (project rollup),
+> `:open.assignees.project` (project assignee stats split view), and `:fetch.uspto.assignments.project`
+> (project batch) are **live**.
 > Remaining work: `:export.assignees` and `:fetch.uspto.assignments.file`.
 > Remote assignee-name search is **deferred**.
 > Sourced from the USPTO ODP applications-assignment endpoint:
@@ -48,52 +48,32 @@ a dead patent.
 
 ---
 
-## 2. Per-patent: the ownership timeline and assignee stats
+## 2. Project-wide Assignee Rollup & Statistics
 
 ```text
 :fetch.uspto.assignments     # pull the chain from USPTO ODP (rebuilds the timeline)
-:open.assignees              # view the timeline overlay for the selected patent
-:open.assignee-stats        # view the interactive assignee analytics and patents list
+:open.assignees              # open the project-wide assignee rollup report (current owners vs. all ever)
+:open.assignees.project      # open project-wide assignee statistics/analytics with scrollable split view of patents
+:export.assignees [path]     # (in progress) write the rollup as a report
 ```
 
 `:fetch.uspto.assignments` calls the USPTO assignment API for the patent's
 application number, stores the raw chain, and **rebuilds** the record's
 `assignee_history` (at-grant owner + each recorded assignee, current owner flagged).
 
-`:open.assignees` (detail-scoped) shows the unified ownership timeline overlay using a structured single-row-per-entry table:
-* **DATE MADE**: When the assignment was executed (`EffectiveDate`).
-* **DATE FOUND**: When the assignment was pulled from the USPTO database (`PulledAt`).
-* **ORIGIN**: The source type of the owner entry (`grant` for at-grant or `assign` for assignment).
-* **CURRENT**: A checkmark (`✓ Yes`) indicating the current owner.
-* **ASSIGNEE & DETAILS**: The assignee name, transaction/conveyance type, and microfilm reel/frame coordinates.
+`:open.assignees` (project-scoped) opens the project-wide rollup report (`ProjectAssigneesOverlay`) which answers *who owns this portfolio*:
+* **Current owners**: Deduplicated owners across **live** patents only.
+* **All assignees ever**: Every owner ever seen, with first/last dates and whether still current.
+* **Coverage buckets**: Live, expired (frozen), and not-fetched patent counts.
 
-`:open.assignee-stats` (detail-scoped) displays the interactive assignee statistics panel, allowing you to browse all assignees in the database/project on the top panel and view the list of patents owned by the selected assignee in a scrollable subtable below.
+`:open.assignees.project` (patent-scoped) displays the interactive assignee statistics panel (`AssigneeStatsOverlay`). It allows you to browse all assignees in the project on the top panel and view the list of patents owned by the selected assignee in a scrollable subtable (split view) below. When a patent is selected, its assignee is preselected when available.
+
+Pressing **Enter** on the **Assignee** line in the patent detail view opens the unified single-patent ownership timeline overlay (`AssigneeTimelineOverlay`) showing assignment transaction details.
 
 REST:
-
 ```text
 GET /patents/{number}/assignees          # the timeline (assignee.history)
-```
-
-## 3. Project rollup: "all" vs "current" assignees
-
-Answers *who owns this portfolio*:
-
-- **Current owners** — deduplicated owners across **live** patents only.
-- **All assignees ever** — every owner ever seen, with first/last dates and whether
-  still current.
-- Coverage buckets: live / expired (frozen) / not-fetched.
-
-```text
-:open.assignees.project      # open the rollup view (live)
-:export.assignees [path]     # (in progress) write the rollup as a report
-```
-
-The view name is verb-first (`open.<object>.<qualifier>`), consistent with the
-`open.assignees` family — not a bare `project.assignees` noun.
-
-```text
-GET  /projects/{id}/assignees          # the rollup (project.assignees)
+GET /projects/{id}/assignees             # the rollup (project.assignees)
 ```
 
 Report shape:

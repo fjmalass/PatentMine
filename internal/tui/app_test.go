@@ -961,46 +961,66 @@ func TestAppOpenAssigneesFromCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	pn := domain.MustParsePatentNumber("US11611785B2")
-
-	// 1. Attempting to open without selecting a patent should fail with StatusNoPatentSelected
 	catalog := &patentSelectionProbePane{ScopeVal: command.ScopeCatalog, TitleVal: "Catalog", hasSel: false}
 	app.panes = []pane.Pane{catalog}
 	app.activeProject = &domain.Project{ID: "p-1", Name: "Project 1"}
+	app.client = &rpc.Client{} // Non-nil client
 
 	inv := invocation{repeat: 1, args: nil, source: "typed"}
 	_, cmd := app.cmdOpenAssignees(inv)
-	if cmd != nil {
-		t.Fatal("expected no command when no patent is selected")
-	}
-	if app.status != "no patent selected" {
-		t.Errorf("expected StatusNoPatentSelected, got: %s", app.status)
-	}
-
-	// 2. Select a patent and check that it returns a command to fetch details
-	catalog.selected = pn
-	catalog.hasSel = true
-	app.client = &rpc.Client{} // Non-nil client
-	_, cmd = app.cmdOpenAssignees(inv)
 	if cmd == nil {
-		t.Fatal("expected command to fetch patent details")
+		t.Fatal("expected command to load rollup")
 	}
-
-	// 3. When openAssigneesPatentLoadedMsg is received, the overlay is opened
-	patent := domain.Patent{Number: pn, DisplayNumber: pn, Assignee: "IBM"}
-	updatedModel, _ := app.Update(openAssigneesPatentLoadedMsg{patent: patent})
-	app = updatedModel.(*App)
 
 	if len(app.overlays) != 1 {
 		t.Fatalf("expected 1 overlay, got %d", len(app.overlays))
 	}
-	o, ok := app.overlays[0].(*overlay.AssigneeTimelineOverlay)
+	o, ok := app.overlays[0].(*overlay.ProjectAssigneesOverlay)
 	if !ok {
-		t.Fatalf("expected AssigneeTimelineOverlay, got %T", app.overlays[0])
+		t.Fatalf("expected ProjectAssigneesOverlay, got %T", app.overlays[0])
 	}
 	if !strings.Contains(o.Title(), "Assignee") {
 		t.Fatalf("unexpected overlay title: %s", o.Title())
 	}
 }
+
+func TestAppOpenAssigneesProjectFromCatalog(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	app, err := New(nil, reg, keymap.Default(), text.English())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	pn := domain.MustParsePatentNumber("US11611785B2")
+
+	catalog := &patentSelectionProbePane{ScopeVal: command.ScopeCatalog, TitleVal: "Catalog", hasSel: true, selected: pn}
+	app.panes = []pane.Pane{catalog}
+	app.activeProject = &domain.Project{ID: "p-1", Name: "Project 1"}
+	app.client = &rpc.Client{}
+
+	inv := invocation{repeat: 1, args: nil, source: "typed"}
+	_, cmd := app.cmdOpenAssigneesProject(inv)
+	if cmd == nil {
+		t.Fatal("expected command to fetch patent details")
+	}
+
+	patent := domain.Patent{Number: pn, DisplayNumber: pn, Assignee: "IBM"}
+	updatedModel, _ := app.Update(openAssigneesProjectPatentLoadedMsg{patent: patent})
+	app = updatedModel.(*App)
+
+	if len(app.overlays) != 1 {
+		t.Fatalf("expected 1 overlay, got %d", len(app.overlays))
+	}
+	o, ok := app.overlays[0].(*overlay.AssigneeStatsOverlay)
+	if !ok {
+		t.Fatalf("expected AssigneeStatsOverlay, got %T", app.overlays[0])
+	}
+	if !strings.Contains(o.Title(), "Assignee") {
+		t.Fatalf("unexpected overlay title: %s", o.Title())
+	}
+}
+
 
 

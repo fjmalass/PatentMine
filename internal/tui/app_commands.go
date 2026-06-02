@@ -355,7 +355,7 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 				p.DisplayNumber = num
 			}
 		}
-		return a.openAssignees(p)
+		return a.openAssigneeTimeline(p)
 	}
 
 	if detail.IsCursorOnClassifications() {
@@ -394,17 +394,15 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 	return a.openInventors(p, false)
 }
 
-type openAssigneesPatentLoadedMsg struct {
+type openAssigneesProjectPatentLoadedMsg struct {
 	patent domain.Patent
 	err    error
 }
 
-type openAssigneeStatsPatentLoadedMsg struct {
-	patent domain.Patent
-	err    error
-}
-
-func (a *App) cmdOpenAssigneeStats(inv invocation) (tea.Model, tea.Cmd) {
+func (a *App) cmdOpenAssigneesProject(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(command.OpenAssigneesProject)
+	}
 	if detail, ok := a.focusedPane().(*pane.Detail); ok {
 		p := detail.Patent()
 		if num, ok := detail.Selection(); ok {
@@ -415,7 +413,7 @@ func (a *App) cmdOpenAssigneeStats(inv invocation) (tea.Model, tea.Cmd) {
 				p.DisplayNumber = num
 			}
 		}
-		return a.openAssigneeStats(p)
+		return a.openAssigneesProject(p)
 	}
 
 	number, ok := a.focusedPane().Selection()
@@ -434,46 +432,27 @@ func (a *App) cmdOpenAssigneeStats(inv invocation) (tea.Model, tea.Cmd) {
 		var res proto.PatentResult
 		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
 		if err != nil {
-			return openAssigneeStatsPatentLoadedMsg{err: err}
+			return openAssigneesProjectPatentLoadedMsg{err: err}
 		}
-		return openAssigneeStatsPatentLoadedMsg{patent: res.Patent}
+		return openAssigneesProjectPatentLoadedMsg{patent: res.Patent}
 	}
 }
 
 func (a *App) cmdOpenAssignees(inv invocation) (tea.Model, tea.Cmd) {
-	if detail, ok := a.focusedPane().(*pane.Detail); ok {
-		p := detail.Patent()
-		if num, ok := detail.Selection(); ok {
-			if p.Number.Serial == "" {
-				p.Number = num
-			}
-			if p.DisplayNumber.Serial == "" {
-				p.DisplayNumber = num
-			}
-		}
-		return a.openAssignees(p)
+	if len(inv.args) != 0 {
+		return a.usageError(command.OpenAssignees)
 	}
-
-	number, ok := a.focusedPane().Selection()
-	if !ok {
-		a.setErr(text.StatusNoPatentSelected)
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	var project domain.ProjectID
-	if a.activeProject != nil {
-		project = a.activeProject.ID
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
 	}
-	a.setStatus(text.StatusLoadingPatent, number.String())
-	return a, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		var res proto.PatentResult
-		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
-		if err != nil {
-			return openAssigneesPatentLoadedMsg{err: err}
-		}
-		return openAssigneesPatentLoadedMsg{patent: res.Patent}
-	}
+	o, cmd := overlay.NewProjectAssigneesOverlay(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
 }
 
 func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
@@ -580,13 +559,7 @@ func (a *App) openInventors(p domain.Patent, focusPatents bool) (tea.Model, tea.
 	return a, cmd
 }
 
-func (a *App) openAssignees(p domain.Patent) (tea.Model, tea.Cmd) {
-	o, cmd := overlay.NewAssigneeTimelineOverlay(a.client, a.theme, p)
-	a.overlays = append(a.overlays, o)
-	return a, cmd
-}
-
-func (a *App) openAssigneeStats(p domain.Patent) (tea.Model, tea.Cmd) {
+func (a *App) openAssigneesProject(p domain.Patent) (tea.Model, tea.Cmd) {
 	var project domain.ProjectID
 	if a.activeProject != nil {
 		project = a.activeProject.ID
@@ -596,21 +569,8 @@ func (a *App) openAssigneeStats(p domain.Patent) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
-// cmdOpenAssigneesProject opens the project-wide assignee rollup (current owners
-// vs. every assignee ever, with live/expired/not-fetched coverage). Project-scoped.
-func (a *App) cmdOpenAssigneesProject(inv invocation) (tea.Model, tea.Cmd) {
-	if len(inv.args) != 0 {
-		return a.usageError(command.OpenAssigneesProject)
-	}
-	if a.client == nil {
-		a.setErr(text.StatusDaemonUnavailable)
-		return a, nil
-	}
-	if a.activeProject == nil {
-		a.setErr(text.StatusNoActiveProject)
-		return a, nil
-	}
-	o, cmd := overlay.NewProjectAssigneesOverlay(a.client, a.theme, a.activeProject.ID)
+func (a *App) openAssigneeTimeline(p domain.Patent) (tea.Model, tea.Cmd) {
+	o, cmd := overlay.NewAssigneeTimelineOverlay(a.client, a.theme, p)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }

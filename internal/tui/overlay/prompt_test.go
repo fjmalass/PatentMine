@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"patentmine/internal/command"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
@@ -92,5 +94,28 @@ func TestPromptDirectListsBrowseVariants(t *testing.T) {
 	prompt.filter()
 	if len(prompt.shown) == 0 || prompt.shown[0].command.Name != "browse.google" {
 		t.Fatalf("browse.google top result = %+v", prompt.shown)
+	}
+}
+
+func TestPromptTabExpansion(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeCatalog, PromptDirect)
+	prompt.query = "open.proj"
+	prompt.filter()
+
+	// Simulate pressing Tab key
+	updated, _, handled := prompt.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if !handled {
+		t.Fatal("expected Tab key to be handled")
+	}
+	p := updated.(*Prompt)
+	if got := p.query; got != "open.projects" {
+		t.Fatalf("expected query to expand to open.projects, got %q", got)
+	}
+	if got := p.cursor; got != len("open.projects") {
+		t.Fatalf("expected cursor at end (%d), got %d", len("open.projects"), got)
 	}
 }

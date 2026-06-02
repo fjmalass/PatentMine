@@ -517,29 +517,7 @@ func (o *AssigneeStatsOverlay) loadStatsCmd() tea.Cmd {
 		if err := o.client.Call(ctx, proto.MethodPatentAssigneeStats, proto.PatentAssigneeStatsParams{Project: o.project}, &res); err != nil {
 			return loadedAssigneeStatsMsg{err: err}
 		}
-		stats := res.Stats
-		if !o.patent.Number.IsZero() {
-			var histRes proto.AssigneeHistoryResult
-			_ = o.client.Call(ctx, proto.MethodAssigneeHistory, proto.AssigneeHistoryParams{Number: o.patent.Number}, &histRes)
-			allowed := make(map[string]bool)
-			for _, entry := range histRes.Entries {
-				if norm := strings.TrimSpace(entry.AssigneeNorm); norm != "" {
-					allowed[norm] = true
-				}
-			}
-			if norm := domain.NormalizeAssignee(o.patent.Assignee); norm != "" {
-				allowed[norm] = true
-			}
-			var filtered []domain.AssigneeStats
-			for _, stat := range stats {
-				norm := domain.NormalizeAssignee(stat.Assignee)
-				if allowed[norm] {
-					filtered = append(filtered, stat)
-				}
-			}
-			stats = filtered
-		}
-		return loadedAssigneeStatsMsg{stats: stats}
+		return loadedAssigneeStatsMsg{stats: res.Stats}
 	}
 }
 

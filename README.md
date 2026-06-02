@@ -543,13 +543,13 @@ row. A re-fetch rebuilds it idempotently.
 
 ```text
 :fetch.uspto.assignments    # pull the chain from USPTO ODP and rebuild the timeline
-:open.assignees             # view the selected patent's ownership timeline
-:open.assignee-stats        # view assignee statistics / analytics and their patents list
+:open.assignees             # view project-wide assignee owner rollup report
+:open.assignees.project      # view project-wide assignee statistics/analytics with scrollable split view of patents
 ```
 
 Per patent you see every assignee with its effective date and pull type
 (`at_grant` vs `assignment`), with joint co-owners shown together and the current
-owner(s) marked. At the **project** level, a rollup answers *who owns this
+owner(s) marked. At the **project** level, a rollup report (`:open.assignees`) answers *who owns this
 portfolio* — deduplicated **current owners** (live patents only) vs. **all
 assignees ever**, plus live / expired-frozen / not-fetched coverage. Expired
 patents are frozen: excluded from current-owner totals and skipped by batch fetch
