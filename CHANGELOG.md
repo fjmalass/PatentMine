@@ -9,6 +9,26 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.11.0] — 2026-06-02
+
+### Added
+- **Web UI**: new React/TypeScript frontend (Vite-based) with catalog, detail, family, IDS, metrics, notes, relations, and settings views; served via REST API static file endpoint.
+- **Assignee Timeline overlay**: interactive timeline and batch USPTO assignment fetch overlays (`:open.assignees-project`, `:fetch.uspto.assignments-project`).
+- **REST API**: security middleware, session management, AI endpoint, filters/events endpoints, static file serving.
+- **REST API engine parity tests**: comprehensive test suite validating REST API behavior matches engine behavior.
+- **Benchmarking infrastructure**: `BENCH.md` and `scripts/bench-api.sh` for API performance benchmarking.
+- **Tableview enhancements**: improved sort/filter interactions.
+- **Prompt overlay tests**: test coverage for the prompt overlay component.
+
+### Changed
+- **Stats overlays refactored**: classification, inventor, and assignee stats overlays consolidated and simplified.
+- **All Notes pane and Orphans pane refactored**: improved layout and interaction patterns.
+- **Project pane improvements**: last-visited tracking and UI cleanup.
+- **Assignee naming cleaned up**: command naming, catalog entries, and documentation standardized.
+
+### Fixed
+- **Inventor search**: SQLite inventor query now correctly matches search terms.
+
 ## [v0.10.1] — 2026-06-01
 
 ### Fixed
