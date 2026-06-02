@@ -25,20 +25,38 @@ func TestProjectsPaneSelectsLastUsed(t *testing.T) {
 		{ID: "p-1", Name: "Project 1", CreatedAt: time.Now().UTC()},
 		{ID: "p-2", Name: "Project 2", CreatedAt: time.Now().UTC()},
 	}
-	p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint", "AI: Gemini", "Search: Google, USPTO", "Backup: B2", "Daemon: connected")
 
-	updated, _ := p.Update(projectsLoadedMsg{requestID: 0, projects: projects})
-	p = updated.(*Projects)
-	got, ok := p.selectedProject()
-	if !ok || got.ID != "p-2" {
-		t.Fatalf("selected project = %v ok=%v, want p-2", got, ok)
-	}
-	out := p.View(testSplashPaneWidth, testSplashPaneHeight)
-	for _, want := range []string{"[2/2]", "#", "SELECT PROJECT", "last used", "[p-2]", "1", "2"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("projects view missing %q\n%s", want, out)
+	t.Run("selects last project at index 1", func(t *testing.T) {
+		p := NewSplash(nil, render.NewTheme(), "p-2", "footer", "hint", "AI: Gemini", "Search: Google, USPTO", "Backup: B2", "Daemon: connected")
+		updated, _ := p.Update(projectsLoadedMsg{requestID: 0, projects: projects})
+		p = updated.(*Projects)
+		got, ok := p.selectedProject()
+		if !ok || got.ID != "p-2" {
+			t.Fatalf("selected project = %v ok=%v, want p-2", got, ok)
 		}
-	}
+		out := p.View(testSplashPaneWidth, testSplashPaneHeight)
+		for _, want := range []string{"[2/2]", "#", "SELECT PROJECT", "last used", "[p-2]", "1", "2"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("projects view missing %q\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("selects last project at index 0", func(t *testing.T) {
+		p := NewSplash(nil, render.NewTheme(), "p-1", "footer", "hint", "AI: Gemini", "Search: Google, USPTO", "Backup: B2", "Daemon: connected")
+		updated, _ := p.Update(projectsLoadedMsg{requestID: 0, projects: projects})
+		p = updated.(*Projects)
+		got, ok := p.selectedProject()
+		if !ok || got.ID != "p-1" {
+			t.Fatalf("selected project = %v ok=%v, want p-1", got, ok)
+		}
+		out := p.View(testSplashPaneWidth, testSplashPaneHeight)
+		for _, want := range []string{"[1/2]", "#", "SELECT PROJECT", "last used", "[p-1]", "1", "2"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("projects view missing %q\n%s", want, out)
+			}
+		}
+	})
 }
 
 func TestCitationsPaneSelectsNeighbour(t *testing.T) {

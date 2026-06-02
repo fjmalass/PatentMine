@@ -36,6 +36,8 @@ type PatentQuery struct {
 	RelationKind domain.RelationKind
 	// Search, when set, is a case-insensitive substring match on number/title.
 	Search string
+	// SearchScope, when set, narrows Search to specific fields.
+	SearchScope string
 	// Classification, when set, filters patents by prefix matching of their classifications.
 	Classification string
 	// ClassificationCode, when set, filters patents by exact classification code match.

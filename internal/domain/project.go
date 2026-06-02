@@ -32,6 +32,7 @@ type Project struct {
 	ArtUnit              string            `json:"art_unit,omitempty"`
 	Examiners            []ProjectExaminer `json:"examiners,omitempty"`
 	AttorneyDocketNumber string            `json:"attorney_docket_number,omitempty"`
+	CachedCount          int               `json:"cached_count"`
 }
 
 // FirstInventor returns the first-named inventor for the IDS header, or empty

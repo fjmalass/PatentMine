@@ -105,6 +105,15 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		sortAscending:  true,
 		focusedColIdx:  -1,
 	}
+	c.find.scopes = []SearchScope{
+		{"all", "All Columns"},
+		{"number", "Number"},
+		{"title", "Title"},
+		{"inventor", "Inventor"},
+		{"class", "Class"},
+		{"assignee", "Assignee"},
+		{"tags", "Tags"},
+	}
 	c.handlers = map[command.ID]cmdHandler{
 		command.NavDown:      func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveDown(inv.Repeat) }) },
 		command.NavUp:        func(inv Invocation) tea.Cmd { return c.move(func() { c.page.MoveUp(inv.Repeat) }) },
@@ -179,6 +188,7 @@ func (c *Citations) load() tea.Cmd {
 				Project:       project,
 				Filter:        c.filter.Expression,
 				Search:        c.filter.Search,
+				SearchScope:   c.find.activeScopeKey(),
 				Limit:         limit,
 				Offset:        offset,
 				SortColumn:    c.activeSort,
@@ -631,6 +641,7 @@ func (c *Citations) loadAllPages(total int) tea.Cmd {
 	}
 	filter := c.filter.Expression
 	search := c.filter.Search
+	scope := c.find.activeScopeKey()
 	sort := c.activeSort
 	asc := c.sortAscending
 	return func() tea.Msg {
@@ -644,6 +655,7 @@ func (c *Citations) loadAllPages(total int) tea.Cmd {
 				Project:       project,
 				Filter:        filter,
 				Search:        search,
+				SearchScope:   scope,
 				Limit:         total,
 				Offset:        0,
 				SortColumn:    sort,

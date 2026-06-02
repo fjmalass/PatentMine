@@ -68,6 +68,12 @@ application number, stores the raw chain, and **rebuilds** the record's
 
 `:open.assignees.project` (patent-scoped) displays the interactive assignee statistics panel (`AssigneeStatsOverlay`). It allows you to browse all assignees in the project on the top panel and view the list of patents owned by the selected assignee in a scrollable subtable (split view) below. When a patent is selected, its assignee is preselected when available.
 
+Inside the assignee statistics panel, you can use **`/`** to incrementally search/filter the assignees. Pressing **`Tab`** while searching cycles the active filtering scope:
+* **All Columns**: Matches your query against assignee name, tags, and review states count.
+* **Name**: Matches only the assignee name.
+* **Tags**: Matches tags assigned to the assignee's patents.
+* **States**: Matches patent review states.
+
 Pressing **Enter** on the **Assignee** line in the patent detail view opens the unified single-patent ownership timeline overlay (`AssigneeTimelineOverlay`) showing assignment transaction details.
 
 REST:

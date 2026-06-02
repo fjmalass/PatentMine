@@ -634,11 +634,43 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 	}
 
 	if q.Search != "" {
-		// Number stays a substring LIKE so a partial patent number still
-		// matches mid-token; title and abstract go through the FTS5 index.
-		conds = append(conds, "(p.number LIKE ? OR p.rowid IN "+
-			"(SELECT rowid FROM record_fts WHERE record_fts MATCH ?))")
-		args = append(args, "%"+q.Search+"%", ftsQuery(q.Search))
+		scope := q.SearchScope
+		if scope == "" {
+			scope = "all"
+		}
+		switch scope {
+		case "all":
+			conds = append(conds, "(p.number LIKE ? OR p.rowid IN "+
+				"(SELECT rowid FROM record_fts WHERE record_fts MATCH ?))")
+			args = append(args, "%"+q.Search+"%", ftsQuery(q.Search))
+		case "number":
+			conds = append(conds, "p.number LIKE ?")
+			args = append(args, "%"+q.Search+"%")
+		case "title":
+			conds = append(conds, "p.rowid IN (SELECT rowid FROM record_fts WHERE title MATCH ?)")
+			args = append(args, ftsQuery(q.Search))
+		case "inventor":
+			conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\')`)
+			if strings.Contains(q.Search, "*") {
+				args = append(args, wildcardLikePattern(q.Search, true))
+			} else {
+				args = append(args, "%"+q.Search+"%")
+			}
+		case "class":
+			conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE UPPER(json_each.value) LIKE ? ESCAPE '\')`)
+			args = append(args, classificationLikePattern(q.Search, false))
+		case "assignee":
+			conds = append(conds, "p.assignee LIKE ? ESCAPE '\\'")
+			if strings.Contains(q.Search, "*") {
+				args = append(args, wildcardLikePattern(q.Search, true))
+			} else {
+				args = append(args, "%"+q.Search+"%")
+			}
+		case "tags":
+			conds = append(conds, `EXISTS (SELECT 1 FROM patent_tag pt JOIN tag t ON t.id = pt.tag_id `+
+				`WHERE t.project_id = ? AND pt.patent_number = p.number AND LOWER(t.name) LIKE LOWER(?))`)
+			args = append(args, string(q.Project), "%"+q.Search+"%")
+		}
 	}
 
 	if q.Classification != "" {

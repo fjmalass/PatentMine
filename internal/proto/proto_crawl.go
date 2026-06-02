@@ -53,6 +53,7 @@ type RelationsParams struct {
 	ReviewState    domain.ReviewState  `json:"review_state,omitempty"`
 	IDSStatus      string              `json:"ids_status,omitempty"`
 	Search         string              `json:"search,omitempty"`
+	SearchScope    string              `json:"search_scope,omitempty"`
 	Classification string              `json:"classification,omitempty"`
 	Inventor       string              `json:"inventor,omitempty"`
 	Limit          int                 `json:"limit,omitempty"`

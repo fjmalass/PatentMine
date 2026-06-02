@@ -145,6 +145,7 @@ func (s *Server) patentList(ctx context.Context, raw json.RawMessage) (any, erro
 		ReviewState:        p.ReviewState,
 		IDSStatus:          p.IDSStatus,
 		Search:             p.Search,
+		SearchScope:        p.SearchScope,
 		Classification:     p.Classification,
 		ClassificationCode: p.ClassificationCode,
 		Inventor:           p.Inventor,

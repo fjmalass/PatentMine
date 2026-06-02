@@ -178,6 +178,15 @@ func NewCatalog(client *rpc.Client, theme render.Theme) *Catalog {
 		sortAscending:  true,
 		focusedColIdx:  -1,
 	}
+	c.find.scopes = []SearchScope{
+		{"all", "All Columns"},
+		{"number", "Number"},
+		{"title", "Title"},
+		{"inventor", "Inventor"},
+		{"class", "Class"},
+		{"assignee", "Assignee"},
+		{"tags", "Tags"},
+	}
 	if expr, err := filterexpr.Parse("fetch_state:cached"); err == nil {
 		c.filter.setExpression(expr)
 	}
@@ -276,6 +285,7 @@ func (c *Catalog) load() tea.Cmd {
 				Project:       project,
 				Filter:        c.filter.Expression,
 				Search:        c.filter.Search,
+				SearchScope:   c.find.activeScopeKey(),
 				Limit:         limit,
 				Offset:        offset,
 				SortColumn:    c.activeSort,
@@ -888,6 +898,7 @@ func (c *Catalog) loadAllPages(total int) tea.Cmd {
 	}
 	filter := c.filter.Expression
 	search := c.filter.Search
+	scope := c.find.activeScopeKey()
 	sort := c.activeSort
 	asc := c.sortAscending
 	return func() tea.Msg {
@@ -900,6 +911,7 @@ func (c *Catalog) loadAllPages(total int) tea.Cmd {
 				Project:       project,
 				Filter:        filter,
 				Search:        search,
+				SearchScope:   scope,
 				Limit:         total,
 				Offset:        0,
 				SortColumn:    sort,
@@ -925,6 +937,7 @@ func (c *Catalog) findAnchorIndex(anchor domain.PatentNumber, total int) tea.Cmd
 	}
 	filter := c.filter.Expression
 	search := c.filter.Search
+	scope := c.find.activeScopeKey()
 	sort := c.activeSort
 	asc := c.sortAscending
 	return func() tea.Msg {
@@ -936,6 +949,7 @@ func (c *Catalog) findAnchorIndex(anchor domain.PatentNumber, total int) tea.Cmd
 				Project:       project,
 				Filter:        filter,
 				Search:        search,
+				SearchScope:   scope,
 				Limit:         total,
 				Offset:        0,
 				SortColumn:    sort,

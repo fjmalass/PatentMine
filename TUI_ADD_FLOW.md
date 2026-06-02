@@ -121,3 +121,18 @@ Every membership records *how* a patent entered a project in its `added_method` 
 
 An empty `added_method` predates provenance tracking and is treated as manual, matching `filterexpr.ParseProvenance` and the engine's `isManualMethod` helper.
 
+---
+
+## Searching & Filtering Added Patents
+
+Once patents are added to a project, they can be searched, highlighted, and filtered dynamically in the **Catalog** view:
+* Press **`/`** to open the Find/Filter query prompt.
+* Press **`Tab`** while typing to dynamically cycle the search scope:
+  * **All Columns**: Broad search matching title, abstract, and patent number.
+  * **Number**: Filters by patent number substring.
+  * **Title**: Limits full-text search (FTS) to patent titles.
+  * **Inventor**: Filters by patent inventors.
+  * **Class**: Filters by patent classifications.
+  * **Assignee**: Filters by current assignee.
+  * **Tags**: Filters by tags assigned in the active project.
+

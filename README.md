@@ -657,6 +657,16 @@ Rules of thumb:
 - Use `/` when the result is a filtered view, in-pane search, or text highlight.
 - Press `?` to see key bindings; press `:` to discover typed commands available in the current pane.
 
+#### Search Scope Cycling
+
+When typing a query in the `/` search prompt, you can press **`Tab`** to dynamically cycle the search scope. The active scope is displayed inline (e.g., `[Scope: All Columns (Tab to cycle)]`).
+
+This feature is supported across all major list/table views:
+* **Patents Catalog / Citations views**: Cycles database-level queries across *All Columns*, *Number*, *Title*, *Inventor*, *Class*, *Assignee*, or *Tags*.
+* **All Notes view**: Cycles in-memory filtering across *All Columns*, *Patent Number*, or *Note Content*.
+* **Orphans view**: Cycles in-memory filtering across *All Columns*, *Patent Number*, *Fetch State*, or *Title*.
+* **Stats Overlays (Assignees, Inventors, Classifications)**: Cycles in-memory filtering across *All Columns*, *Name/Code*, *Description*, *Tags*, or *States*.
+
 #### A. Global Key Bindings (Active Everywhere)
 * `ctrl+c` / `Q` : Quit the TUI application completely.
 * `?` : Open the interactive Help overlay.
@@ -693,7 +703,7 @@ Rules of thumb:
 * `c` : Open the family citations graph panel.
 * `b` : Open the "cited by" family citations graph panel.
 * `p` : Toggle the Projects dashboard list.
-* `/` : Open the Find/Filter query prompt. Plain input becomes `search:` text; `class:<pattern>` replaces the current classification terms.
+* `/` : Open the Find/Filter query prompt. Type search terms and press **`Tab`** to cycle search scopes (All Columns, Number, Title, Inventor, Class, Assignee, Tags).
 * `n` / `N` : Navigate forwards/backwards through Find/Filter pattern matches.
 * `ctrl+r` : Hard refresh the catalog database view.
 * `v` : Enter line-based visual selection mode.

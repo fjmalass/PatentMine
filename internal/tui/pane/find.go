@@ -42,12 +42,20 @@ func equalFoldPrefix(s, prefix string) bool {
 	return true
 }
 
+// SearchScope represents a specific column or field scope for a search.
+type SearchScope struct {
+	Key   string
+	Label string
+}
+
 // findBar is the inline / search bar state shared by catalog and citations.
 // The zero value is inactive.
 type findBar struct {
-	active bool
-	input  string
-	prev   string // filter.Search at open time, restored on Esc
+	active      bool
+	input       string
+	prev        string // filter.Search at open time, restored on Esc
+	scopes      []SearchScope
+	activeScope int
 }
 
 func (fb *findBar) open(currentSearch string) {
@@ -56,10 +64,23 @@ func (fb *findBar) open(currentSearch string) {
 	fb.prev = currentSearch
 }
 
+func (fb *findBar) activeScopeKey() string {
+	if len(fb.scopes) == 0 {
+		return "all"
+	}
+	return fb.scopes[fb.activeScope].Key
+}
+
 // handleKey processes one raw key event while the bar is active.
 // Returns the current search string and one of: "reload", "confirm", "cancel", "".
 func (fb *findBar) handleKey(msg tea.KeyMsg) (search string, action string) {
 	switch msg.Type {
+	case tea.KeyTab:
+		if len(fb.scopes) > 0 {
+			fb.activeScope = (fb.activeScope + 1) % len(fb.scopes)
+			return fb.input, "reload"
+		}
+		return fb.input, ""
 	case tea.KeyEnter:
 		fb.active = false
 		return fb.input, "confirm"
@@ -95,6 +116,9 @@ func (fb *findBar) handleKey(msg tea.KeyMsg) (search string, action string) {
 // view renders the find bar as a single line.
 func (fb *findBar) view(w int, theme render.Theme, total int) string {
 	bar := "/ " + fb.input + "▋"
+	if len(fb.scopes) > 0 {
+		bar += "  [Scope: " + fb.scopes[fb.activeScope].Label + " (Tab to cycle)]"
+	}
 	if total >= 0 {
 		bar += "  (" + matchLabel(total) + ")"
 	}

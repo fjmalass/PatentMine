@@ -113,6 +113,7 @@ func (s *Server) relations(ctx context.Context, raw json.RawMessage) (any, error
 		ReviewState:    p.ReviewState,
 		IDSStatus:      p.IDSStatus,
 		Search:         p.Search,
+		SearchScope:    p.SearchScope,
 		Classification: p.Classification,
 		Inventor:       p.Inventor,
 		Limit:          p.Limit,

@@ -2,6 +2,7 @@ package pane
 
 import (
 	"log/slog"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,16 +57,17 @@ func (p *Projects) log() *slog.Logger {
 }
 
 // NewProjects builds an empty projects pane.
-func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch, activeBackup, activeDaemon string) *Projects {
+func NewProjects(client *rpc.Client, theme render.Theme, lastProjectID domain.ProjectID, activeAI, activeSearch, activeBackup, activeDaemon string) *Projects {
 	p := &Projects{
-		client:       client,
-		theme:        theme,
-		page:         render.NewPaginator(10),
-		loading:      true,
-		activeAI:     activeAI,
-		activeSearch: activeSearch,
-		activeBackup: activeBackup,
-		activeDaemon: activeDaemon,
+		client:        client,
+		theme:         theme,
+		page:          render.NewPaginator(10),
+		loading:       true,
+		lastProjectID: lastProjectID,
+		activeAI:      activeAI,
+		activeSearch:  activeSearch,
+		activeBackup:  activeBackup,
+		activeDaemon:  activeDaemon,
 	}
 	p.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(inv Invocation) tea.Cmd { p.page.MoveDown(inv.Repeat); return nil },
@@ -82,9 +84,8 @@ func NewProjects(client *rpc.Client, theme render.Theme, activeAI, activeSearch,
 
 // NewSplash builds the startup project-selection screen.
 func NewSplash(client *rpc.Client, theme render.Theme, lastProjectID domain.ProjectID, splashFooter, emptyHint string, activeAI, activeSearch, activeBackup, activeDaemon string) *Projects {
-	p := NewProjects(client, theme, activeAI, activeSearch, activeBackup, activeDaemon)
+	p := NewProjects(client, theme, lastProjectID, activeAI, activeSearch, activeBackup, activeDaemon)
 	p.splash = true
-	p.lastProjectID = lastProjectID
 	p.splashFooter = splashFooter
 	p.emptyHint = emptyHint
 	return p
@@ -165,8 +166,7 @@ func (p *Projects) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if p.lastProjectID != "" {
 			for i, project := range p.projects {
 				if project.ID == p.lastProjectID {
-					p.page.Top()
-					p.page.MoveDown(i)
+					p.page.GotoLine(i + 1)
 					break
 				}
 			}
@@ -233,30 +233,34 @@ func (p *Projects) View(w, h int) string {
 	if p.splash {
 		b.WriteString(p.splashHeader(w))
 		b.WriteString("\n\n")
-		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeDaemon, p.activeSearch, p.activeBackup))
-		b.WriteByte('\n')
-		b.WriteString(p.theme.Header.Render(splashProjectRow("#", " ", "NAME", "ID", "UPDATED", "HINT", w)))
-	} else {
-		b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeDaemon, p.activeSearch, p.activeBackup))
-		b.WriteByte('\n')
-		b.WriteString(p.theme.Header.Render(projectRow("#", p.activeLabel(), "NAME", p.createdLabel(), w)))
 	}
+	b.WriteString(renderTableStatusLine(p.theme, w, p.page.Cursor(), p.page.Total(), p.activeAI, p.activeDaemon, p.activeSearch, p.activeBackup))
+	b.WriteByte('\n')
+	b.WriteString(p.theme.Header.Render(projectRow("#", " ", " ", "NAME", "CACHED", "ID", p.createdLabel(), "HINT", w)))
+
 	start, end := p.page.Window()
 	for i := start; i < end; i++ {
 		proj := p.projects[i]
-		line := projectRow(formatViewIndex(i), activeProjectMark(p.activeProject, proj), proj.Name, proj.CreatedAt.Format(domain.DateLayout), w)
-		rowStyle := tableRowStyle(p.theme, i)
-		if p.splash {
-			marker := "  "
-			if i == p.page.Cursor() {
-				marker = "→ "
-			}
-			hint := ""
-			if proj.ID == p.lastProjectID {
-				hint = "last used"
-			}
-			line = splashProjectRow(formatViewIndex(i), marker, proj.Name, string(proj.ID), proj.CreatedAt.Format(domain.DateLayout), hint, w)
+		marker := "  "
+		if i == p.page.Cursor() {
+			marker = "→ "
 		}
+		hint := ""
+		if proj.ID == p.lastProjectID {
+			hint = "last used"
+		}
+		line := projectRow(
+			formatViewIndex(i),
+			marker,
+			activeProjectMark(p.activeProject, proj),
+			proj.Name,
+			strconv.Itoa(proj.CachedCount),
+			string(proj.ID),
+			proj.CreatedAt.Format(domain.DateLayout),
+			hint,
+			w,
+		)
+		rowStyle := tableRowStyle(p.theme, i)
 		b.WriteByte('\n')
 		if i == p.page.Cursor() {
 			b.WriteString(p.theme.Selected.Render(render.Pad(line, w)))
@@ -316,13 +320,6 @@ func (p *Projects) centerSplash(body string, height, width int) string {
 	return body
 }
 
-func (p *Projects) activeLabel() string {
-	if p.splash {
-		return " "
-	}
-	return "ACTIVE"
-}
-
 func (p *Projects) createdLabel() string {
 	if p.splash {
 		return "UPDATED"
@@ -330,32 +327,27 @@ func (p *Projects) createdLabel() string {
 	return "CREATED"
 }
 
-func splashProjectRow(index, marker, name, id, updated, hint string, w int) string {
+func projectRow(index, marker, active, name, cached, id, date, hint string, w int) string {
 	const indexW = 4
 	const markerW = 2
+	const activeW = 2
+	const nameW = 24
+	const cachedW = 8
 	const idW = 16
-	const updatedW = 12
-	const hintW = 10
-	nameW := max(w-indexW-markerW-idW-updatedW-hintW-5, 0)
+	const dateW = 12
+	hintW := max(w-indexW-markerW-activeW-nameW-cachedW-idW-dateW-7, 0)
+	displayID := id
+	if id != "" && id != "ID" {
+		displayID = "[" + id + "]"
+	}
 	return render.Pad(index, indexW) + " " +
 		render.Pad(marker, markerW) + " " +
-		render.Pad(render.Truncate(name, nameW), nameW) + " " +
-		render.Pad(render.Truncate("["+id+"]", idW), idW) + " " +
-		render.Pad(updated, updatedW) + " " +
-		render.Pad(render.Truncate(hint, hintW), hintW)
-}
-
-// projectRow formats one project line.
-
-func projectRow(index, active, name, created string, w int) string {
-	const indexW = 4
-	const activeW = 6
-	const createdW = 12
-	nameW := max(w-indexW-activeW-createdW-3, 0)
-	return render.Pad(index, indexW) + " " +
 		render.Pad(active, activeW) + " " +
 		render.Pad(render.Truncate(name, nameW), nameW) + " " +
-		render.Pad(created, createdW)
+		render.Pad(cached, cachedW) + " " +
+		render.Pad(render.Truncate(displayID, idW), idW) + " " +
+		render.Pad(date, dateW) + " " +
+		render.Pad(render.Truncate(hint, hintW), hintW)
 }
 
 func activeProjectMark(active *domain.Project, candidate domain.Project) string {

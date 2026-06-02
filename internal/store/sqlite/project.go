@@ -203,10 +203,17 @@ func (r *Repo) loadProjectLists(ctx context.Context, p *domain.Project) error {
 		}
 		examiners = append(examiners, domain.ProjectExaminer{Name: name, RecordedAt: t})
 	}
-	if err := exs.Err(); err != nil {
-		return err
-	}
 	p.Examiners = examiners
+
+	var cachedCount int
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT count(*) FROM membership m JOIN record r ON r.number = m.patent_number WHERE m.project_id = ? AND r.fetch_state = 'cached'`,
+		string(p.ID)).Scan(&cachedCount)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: count cached patents: %w", err)
+	}
+	p.CachedCount = cachedCount
+
 	return nil
 }
 
