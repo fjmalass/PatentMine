@@ -669,9 +669,8 @@ func FetchAssignmentsProjectCmd(client *rpc.Client, project domain.ProjectID, in
 	}
 }
 
-// FetchUSPTOAssignmentsCmd pulls the patent's assignment chain from the USPTO
-// Patent Assignment Search API and persists the result. Returns a status line
-// reporting how many assignments and parties were saved.
+// FetchUSPTOAssignmentsCmd downloads the recorded assignments for a single patent,
+// returning a StatusMsg upon completion.
 func FetchUSPTOAssignmentsCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
@@ -682,6 +681,36 @@ func FetchUSPTOAssignmentsCmd(client *rpc.Client, number domain.PatentNumber) te
 			return StatusMsg{Key: text.StatusAssignmentsFetchFailed, Args: []any{err.Error()}, Error: true}
 		}
 		return StatusMsg{Key: text.StatusAssignmentsFetched, Args: []any{number.String(), res.Assignments, res.Parties}}
+	}
+}
+
+// USPTOAssignmentsFetchedMsg is delivered when an interactive
+// assignments fetch completes. The App handler closes the spinner overlay,
+// and emits a final status line.
+type USPTOAssignmentsFetchedMsg struct {
+	Number      domain.PatentNumber
+	Assignments int
+	Parties     int
+	Err         string
+}
+
+// FetchUSPTOAssignmentsInteractiveCmd is the interactive variant: it returns a
+// typed result the App can dispatch on, rather than a finished status line, so
+// the App can close the spinner overlay.
+func FetchUSPTOAssignmentsInteractiveCmd(client *rpc.Client, number domain.PatentNumber) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.USPTOFetchAssignmentsResult
+		if err := client.Call(ctx, proto.MethodUSPTOFetchAssignments,
+			proto.USPTOFetchAssignmentsParams{Number: number}, &res); err != nil {
+			return USPTOAssignmentsFetchedMsg{Number: number, Err: err.Error()}
+		}
+		return USPTOAssignmentsFetchedMsg{
+			Number:      number,
+			Assignments: res.Assignments,
+			Parties:     res.Parties,
+		}
 	}
 }
 

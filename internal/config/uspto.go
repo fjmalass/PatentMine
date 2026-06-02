@@ -19,13 +19,15 @@ const (
 
 // USPTOConnectionResult holds the result of a USPTO API connectivity check.
 type USPTOConnectionResult struct {
-	Connected     bool
-	Remaining     string
-	Limit         string
-	Message       string
-	StatusCode    int
-	RequestBytes  int64
-	ResponseBytes int64
+	Connected            bool
+	AssignmentsActivated bool
+	AssignmentsMessage   string
+	Remaining            string
+	Limit                string
+	Message              string
+	StatusCode           int
+	RequestBytes         int64
+	ResponseBytes        int64
 }
 
 // ResolveAPIKey resolves a raw API key string. If the key starts with "file:",
@@ -87,14 +89,44 @@ func CheckUSPTOConnection(ctx context.Context, key string) USPTOConnectionResult
 		msg += fmt.Sprintf(" (rate limit: %s/%s remaining)", remaining, limit)
 	}
 
+	connected := isHTTPSuccessStatus(resp.StatusCode)
+	assignmentsActivated := false
+	assignmentsMsg := ""
+
+	if connected {
+		assignURL := "https://api.uspto.gov/api/v1/patent/applications/10880803/assignment"
+		reqAssign, err := http.NewRequestWithContext(ctx, http.MethodGet, assignURL, nil)
+		if err == nil {
+			reqAssign.Header.Set("x-api-key", key)
+			reqAssign.Header.Set("Accept", "application/json")
+			if respAssign, err := client.Do(reqAssign); err == nil {
+				defer respAssign.Body.Close()
+				bodyBytes, _ := io.ReadAll(io.LimitReader(respAssign.Body, 1024))
+				bodyStr := string(bodyBytes)
+				if respAssign.StatusCode == http.StatusOK {
+					assignmentsActivated = true
+					assignmentsMsg = "Patent Assignment Search API is active."
+				} else if respAssign.StatusCode == http.StatusForbidden || strings.Contains(bodyStr, "Missing Authentication Token") {
+					assignmentsMsg = "Patent Assignment Search product is not activated on this key."
+				} else {
+					assignmentsMsg = fmt.Sprintf("Patent Assignment Search check returned status %d", respAssign.StatusCode)
+				}
+			} else {
+				assignmentsMsg = "Failed to reach Patent Assignment Search API."
+			}
+		}
+	}
+
 	return USPTOConnectionResult{
-		Connected:     isHTTPSuccessStatus(resp.StatusCode),
-		Remaining:     remaining,
-		Limit:         limit,
-		Message:       msg,
-		StatusCode:    resp.StatusCode,
-		RequestBytes:  requestBytes,
-		ResponseBytes: responseBytes,
+		Connected:            connected,
+		AssignmentsActivated: assignmentsActivated,
+		AssignmentsMessage:   assignmentsMsg,
+		Remaining:            remaining,
+		Limit:                limit,
+		Message:              msg,
+		StatusCode:           resp.StatusCode,
+		RequestBytes:         requestBytes,
+		ResponseBytes:        responseBytes,
 	}
 }
 

@@ -22,6 +22,7 @@ const (
 	StatusUnhandledCommand        Key = "status.unhandled_command"
 	StatusInvalidPatentNumber     Key = "status.invalid_patent_number"
 	StatusGeneric                 Key = "status.generic"
+	StatusLoadingPatent           Key = "status.loading_patent"
 	StatusDaemonClosed            Key = "status.daemon_closed"
 	StatusAIAnalysisStarted       Key = "status.ai_analysis_started"
 	StatusAIAnalysisFailed        Key = "status.ai_analysis_failed"
@@ -327,6 +328,7 @@ var englishNamed = map[Key]string{
 	StatusUnhandledCommand:        "unhandled command: %s",
 	StatusInvalidPatentNumber:     "invalid patent number: %s",
 	StatusGeneric:                 "%s",
+	StatusLoadingPatent:           "loading patent %s...",
 	StatusDaemonClosed:            "daemon connection closed",
 	StatusAIAnalysisStarted:       "AI analysis starting on patent %s via %s...",
 	StatusAIAnalysisFailed:        "AI curation failed: %s",

@@ -909,3 +909,98 @@ func TestAppRoutesBulkIDSEntriesAsSingleBatchUpdate(t *testing.T) {
 		t.Fatalf("bulk IDS update should not emit per-patent messages, got %T", catalog.receivedMsg)
 	}
 }
+
+func TestAppSetPendingScrollAnchorOnAdd(t *testing.T) {
+	app := newRPCBackedTestApp(t)
+	catalog := pane.NewCatalog(app.client, render.NewTheme())
+	app.panes = []pane.Pane{catalog}
+	app.activeProject = &domain.Project{ID: "p-1", Name: "Project 1"}
+
+	pn := domain.MustParsePatentNumber("US11611785B2")
+	inv := invocation{
+		repeat: 1,
+		args:   []string{"US11611785B2"},
+		source: "typed",
+	}
+	_, _ = app.cmdAddToProjectFromSource(inv, "", command.AddToProject)
+
+	anchorVal := catalog.PendingScrollAnchor()
+	if anchorVal != pn {
+		t.Errorf("expected pendingScrollAnchor to be %s, got %s", pn.String(), anchorVal.String())
+	}
+}
+
+type patentSelectionProbePane struct {
+	ScopeVal command.Scope
+	TitleVal string
+	selected domain.PatentNumber
+	hasSel   bool
+}
+
+func (p *patentSelectionProbePane) Scope() command.Scope { return p.ScopeVal }
+func (p *patentSelectionProbePane) Title() string        { return p.TitleVal }
+func (p *patentSelectionProbePane) Init() tea.Cmd        { return nil }
+func (p *patentSelectionProbePane) View(int, int) string { return "" }
+func (p *patentSelectionProbePane) Selection() (domain.PatentNumber, bool) {
+	return p.selected, p.hasSel
+}
+func (p *patentSelectionProbePane) Handles() []command.ID { return nil }
+func (p *patentSelectionProbePane) Command(command.ID, pane.Invocation) (pane.Pane, tea.Cmd) {
+	return p, nil
+}
+func (p *patentSelectionProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
+	return p, nil
+}
+
+func TestAppOpenAssigneesFromCatalog(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	app, err := New(nil, reg, keymap.Default(), text.English())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	pn := domain.MustParsePatentNumber("US11611785B2")
+
+	// 1. Attempting to open without selecting a patent should fail with StatusNoPatentSelected
+	catalog := &patentSelectionProbePane{ScopeVal: command.ScopeCatalog, TitleVal: "Catalog", hasSel: false}
+	app.panes = []pane.Pane{catalog}
+	app.activeProject = &domain.Project{ID: "p-1", Name: "Project 1"}
+
+	inv := invocation{repeat: 1, args: nil, source: "typed"}
+	_, cmd := app.cmdOpenAssignees(inv)
+	if cmd != nil {
+		t.Fatal("expected no command when no patent is selected")
+	}
+	if app.status != "no patent selected" {
+		t.Errorf("expected StatusNoPatentSelected, got: %s", app.status)
+	}
+
+	// 2. Select a patent and check that it returns a command to fetch details
+	catalog.selected = pn
+	catalog.hasSel = true
+	app.client = &rpc.Client{} // Non-nil client
+	_, cmd = app.cmdOpenAssignees(inv)
+	if cmd == nil {
+		t.Fatal("expected command to fetch patent details")
+	}
+
+	// 3. When openAssigneesPatentLoadedMsg is received, the overlay is opened
+	patent := domain.Patent{Number: pn, DisplayNumber: pn, Assignee: "IBM"}
+	updatedModel, _ := app.Update(openAssigneesPatentLoadedMsg{patent: patent})
+	app = updatedModel.(*App)
+
+	if len(app.overlays) != 1 {
+		t.Fatalf("expected 1 overlay, got %d", len(app.overlays))
+	}
+	o, ok := app.overlays[0].(*overlay.AssigneeTimelineOverlay)
+	if !ok {
+		t.Fatalf("expected AssigneeTimelineOverlay, got %T", app.overlays[0])
+	}
+	if !strings.Contains(o.Title(), "Assignee") {
+		t.Fatalf("unexpected overlay title: %s", o.Title())
+	}
+}
+
+

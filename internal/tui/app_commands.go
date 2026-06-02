@@ -394,21 +394,45 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 	return a.openInventors(p, false)
 }
 
-func (a *App) cmdOpenAssignees(invocation) (tea.Model, tea.Cmd) {
-	detail, ok := a.focusedPane().(*pane.Detail)
+type openAssigneesPatentLoadedMsg struct {
+	patent domain.Patent
+	err    error
+}
+
+func (a *App) cmdOpenAssignees(inv invocation) (tea.Model, tea.Cmd) {
+	if detail, ok := a.focusedPane().(*pane.Detail); ok {
+		p := detail.Patent()
+		if num, ok := detail.Selection(); ok {
+			if p.Number.Serial == "" {
+				p.Number = num
+			}
+			if p.DisplayNumber.Serial == "" {
+				p.DisplayNumber = num
+			}
+		}
+		return a.openAssignees(p)
+	}
+
+	number, ok := a.focusedPane().Selection()
 	if !ok {
+		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
-	p := detail.Patent()
-	if num, ok := detail.Selection(); ok {
-		if p.Number.Serial == "" {
-			p.Number = num
-		}
-		if p.DisplayNumber.Serial == "" {
-			p.DisplayNumber = num
-		}
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
 	}
-	return a.openAssignees(p)
+	a.setStatus(text.StatusLoadingPatent, number.String())
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.PatentResult
+		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
+		if err != nil {
+			return openAssigneesPatentLoadedMsg{err: err}
+		}
+		return openAssigneesPatentLoadedMsg{patent: res.Patent}
+	}
 }
 
 func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
@@ -516,11 +540,7 @@ func (a *App) openInventors(p domain.Patent, focusPatents bool) (tea.Model, tea.
 }
 
 func (a *App) openAssignees(p domain.Patent) (tea.Model, tea.Cmd) {
-	var project domain.ProjectID
-	if a.activeProject != nil {
-		project = a.activeProject.ID
-	}
-	o, cmd := overlay.NewAssigneeStatsOverlay(a.client, a.theme, a.text, p, project)
+	o, cmd := overlay.NewAssigneeTimelineOverlay(a.client, a.theme, p)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }
@@ -676,8 +696,9 @@ func (a *App) cmdFetchUSPTOPGPub(inv invocation) (tea.Model, tea.Cmd) {
 }
 
 // cmdFetchUSPTOAssignments triggers the engine's Patent Assignment Search
-// fetch for the focused patent. One RPC per selected patent — the chain is
-// usually small and the search endpoint replies fast, so no spinner overlay.
+// fetch for the focused patent. A single-patent dispatch displays a modal
+// spinner overlay for active feedback; multi-patent dispatches run silently
+// in the background.
 func (a *App) cmdFetchUSPTOAssignments(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) != 0 {
 		return a.usageError(command.FetchUSPTOAssignments)
@@ -691,6 +712,15 @@ func (a *App) cmdFetchUSPTOAssignments(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
+	if len(numbers) == 1 {
+		spinner := overlay.NewUSPTOAssignmentsFetchingOverlay(a.theme, numbers[0])
+		a.overlays = append(a.overlays, spinner)
+		a.metrics.IncCounter("tui.uspto.fetch_assignments.interactive.started", 1)
+		return a, tea.Batch(spinner.Init(), pane.FetchUSPTOAssignmentsInteractiveCmd(a.client, numbers[0]))
+	}
+
+	a.metrics.IncCounter("tui.uspto.fetch_assignments.batch.started", 1)
+	a.metrics.IncCounter("tui.uspto.fetch_assignments.batch.total", int64(len(numbers)))
 	cmds := make([]tea.Cmd, 0, len(numbers))
 	for _, n := range numbers {
 		cmds = append(cmds, pane.FetchUSPTOAssignmentsCmd(a.client, n))
@@ -756,6 +786,29 @@ func (a *App) fetchAndOpenUSPTOXML(numbers []domain.PatentNumber, kind proto.USP
 		cmds = append(cmds, pane.FetchUSPTOXMLInteractiveCmd(a.client, n, kind))
 	}
 	return a, tea.Batch(cmds...)
+}
+
+// handleUSPTOAssignmentsFetched dismisses the interactive assignments fetch overlay
+// and reports the status (assignments and parties counts).
+func (a *App) handleUSPTOAssignmentsFetched(m pane.USPTOAssignmentsFetchedMsg) (tea.Model, tea.Cmd) {
+	if len(a.overlays) > 0 {
+		if _, ok := a.overlays[len(a.overlays)-1].(*overlay.USPTOAssignmentsFetchingOverlay); ok {
+			a.overlays = a.overlays[:len(a.overlays)-1]
+		}
+	}
+	if m.Err != "" {
+		a.metrics.IncCounter("tui.uspto.fetch_assignments.interactive.failed", 1)
+		a.setErr(text.StatusAssignmentsFetchFailed, m.Err)
+		if strings.Contains(m.Err, "Missing Authentication Token") || strings.Contains(m.Err, "Forbidden") || strings.Contains(m.Err, "403") {
+			msg := "USPTO Assignment Search failed due to Missing Authentication Token.\n\nYour API key is not subscribed to the product \"Patent Assignment Search\".\n\nPlease log in to developer.uspto.gov and add this product subscription to your API key."
+			a.overlays = append(a.overlays, overlay.NewErrorOverlay(a.theme, msg))
+		}
+		return a, nil
+	}
+	a.metrics.IncCounter("tui.uspto.fetch_assignments.interactive.success", 1)
+	a.status = a.text.Tf(text.StatusAssignmentsFetched, m.Number.String(), m.Assignments, m.Parties)
+	a.statusErr = false
+	return a, a.refreshPanes()
 }
 
 // handleUSPTOXMLFetched dismisses the fetch spinner and reports the saved
@@ -852,6 +905,13 @@ func (a *App) cmdAddToProjectFromSource(inv invocation, source domain.Source, us
 	if a.client == nil {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
+	}
+	if len(numbers) > 0 {
+		for _, p := range a.panes {
+			if catalog, ok := p.(*pane.Catalog); ok {
+				catalog.SetPendingScrollAnchor(numbers[0])
+			}
+		}
 	}
 	cmds := make([]tea.Cmd, 0, len(numbers))
 	for _, n := range numbers {

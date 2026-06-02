@@ -6,35 +6,32 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"patentmine/internal/domain"
 )
 
-// usptoAssignmentSearchURL is the USPTO Open Data Portal assignments search
-// endpoint. The query parameter mirrors patent search: a Lucene-style expression
-// over assignment fields (applicationNumberText, patentNumberText, etc.).
-const usptoAssignmentSearchURL = "https://api.uspto.gov/api/v1/patent/assignments/search"
+// usptoAssignmentAppURL is the working USPTO ODP endpoint for pulling a specific application's assignments.
+const usptoAssignmentAppURL = "https://api.uspto.gov/api/v1/patent/applications/%s/assignment"
 
-// usptoAssignmentResponse is the search-response envelope. Field shapes mirror
-// the patent search response to stay consistent with the rest of the package.
+// usptoAssignmentResponse represents the response structure returned by the ODP application assignment endpoint.
 type usptoAssignmentResponse struct {
-	Count                  int                       `json:"count"`
-	RequestIdentifier      string                    `json:"requestIdentifier"`
-	PatentAssignmentBag    []usptoAssignmentDataItem `json:"patentAssignmentBag"`
+	Count                    int                              `json:"count"`
+	RequestIdentifier        string                           `json:"requestIdentifier"`
+	PatentFileWrapperDataBag []usptoPatentFileWrapperDataItem `json:"patentFileWrapperDataBag"`
 }
 
-// usptoAssignmentDataItem is one recorded assignment plus its parties. Field
-// names follow the USPTO ODP JSON casing. Any field the API omits decodes as
-// zero — the ingest layer treats every column as optional.
+type usptoPatentFileWrapperDataItem struct {
+	AssignmentBag         []usptoAssignmentDataItem `json:"assignmentBag"`
+	ApplicationNumberText string                    `json:"applicationNumberText"`
+}
+
+// usptoAssignmentDataItem holds the transaction details of one assignment event.
 type usptoAssignmentDataItem struct {
-	ReelNumber                    string                     `json:"reelNumber"`
-	FrameNumber                   string                     `json:"frameNumber"`
+	ReelNumber                    any                        `json:"reelNumber"`
+	FrameNumber                   any                        `json:"frameNumber"`
 	ReelAndFrameNumber            string                     `json:"reelAndFrameNumber"`
-	ApplicationNumberText         string                     `json:"applicationNumberText"`
-	PatentNumberText              string                     `json:"patentNumberText"`
 	ConveyanceText                string                     `json:"conveyanceText"`
 	AssignmentReceivedDate        string                     `json:"assignmentReceivedDate"`
 	AssignmentRecordedDate        string                     `json:"assignmentRecordedDate"`
@@ -42,30 +39,30 @@ type usptoAssignmentDataItem struct {
 	AssignmentDocumentLocationURI string                     `json:"assignmentDocumentLocationURI"`
 	AttorneyDocketNumber          string                     `json:"attorneyDocketNumber"`
 	PageTotalQuantity             int                        `json:"pageTotalQuantity"`
-	ImageAvailable                bool                       `json:"imageAvailable"`
+	ImageAvailableStatusCode      bool                       `json:"imageAvailableStatusCode"`
 	CorrespondenceAddress         map[string]any             `json:"correspondenceAddress"`
 	AssignorBag                   []usptoAssignmentPartyJSON `json:"assignorBag"`
 	AssigneeBag                   []usptoAssignmentPartyJSON `json:"assigneeBag"`
 }
 
 type usptoAssignmentPartyJSON struct {
-	NameLineOneText string         `json:"nameLineOneText"`
-	ExecutionDate   string         `json:"executionDate"`
-	Address         map[string]any `json:"address"`
+	NameLineOneText  string         `json:"nameLineOneText"`
+	AssigneeNameText string         `json:"assigneeNameText"`
+	AssignorName     string         `json:"assignorName"`
+	ExecutionDate    string         `json:"executionDate"`
+	Address          map[string]any `json:"address"`
+	AssigneeAddress  map[string]any `json:"assigneeAddress"`
 }
 
-// FetchUSPTOAssignments calls the assignment search endpoint for one
-// application number and returns the recorded chain in document order. An
-// HTTP 404 returns nil, nil so a patent with no recorded assignment is not a
-// hard error. An empty applicationNumber returns nil, nil.
+// FetchUSPTOAssignments calls the USPTO ODP applications/assignment endpoint for the given
+// application number and returns the recorded assignments in document order.
 func FetchUSPTOAssignments(ctx context.Context, apiKey, applicationNumber string) ([]domain.USPTOAssignment, error) {
 	appNum := strings.TrimSpace(applicationNumber)
 	if appNum == "" {
 		return nil, nil
 	}
 
-	q := fmt.Sprintf("applicationNumberText:%s", appNum)
-	apiURL := usptoAssignmentSearchURL + "?q=" + url.QueryEscape(q)
+	apiURL := fmt.Sprintf(usptoAssignmentAppURL, appNum)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -101,49 +98,81 @@ func FetchUSPTOAssignments(ctx context.Context, apiKey, applicationNumber string
 		return nil, fmt.Errorf("uspto assignments: decode: %w", err)
 	}
 
-	out := make([]domain.USPTOAssignment, 0, len(env.PatentAssignmentBag))
-	for i, raw := range env.PatentAssignmentBag {
-		assignment := domain.USPTOAssignment{
-			ApplicationNumber:             appNum,
-			Ordinal:                       i,
-			ReelAndFrameNumber:            firstNonEmpty(raw.ReelAndFrameNumber, reelFrame(raw.ReelNumber, raw.FrameNumber)),
-			ReelNumber:                    raw.ReelNumber,
-			FrameNumber:                   raw.FrameNumber,
-			ConveyanceText:                raw.ConveyanceText,
-			AssignmentReceivedDate:        raw.AssignmentReceivedDate,
-			AssignmentRecordedDate:        raw.AssignmentRecordedDate,
-			AssignmentMailedDate:          raw.AssignmentMailedDate,
-			AssignmentDocumentLocationURI: raw.AssignmentDocumentLocationURI,
-			AttorneyDocketNumber:          raw.AttorneyDocketNumber,
-			PageTotalQuantity:             raw.PageTotalQuantity,
-			ImageAvailable:                raw.ImageAvailable,
-			CorrespondenceAddressJSON:     marshalJSON(raw.CorrespondenceAddress),
+	var out []domain.USPTOAssignment
+	ordinal := 0
+	for _, wrapper := range env.PatentFileWrapperDataBag {
+		for _, raw := range wrapper.AssignmentBag {
+			reelStr := parseStringOrInt(raw.ReelNumber)
+			frameStr := parseStringOrInt(raw.FrameNumber)
+
+			assignment := domain.USPTOAssignment{
+				ApplicationNumber:             appNum,
+				Ordinal:                       ordinal,
+				ReelAndFrameNumber:            firstNonEmpty(raw.ReelAndFrameNumber, reelFrame(reelStr, frameStr)),
+				ReelNumber:                    reelStr,
+				FrameNumber:                   frameStr,
+				ConveyanceText:                raw.ConveyanceText,
+				AssignmentReceivedDate:        raw.AssignmentReceivedDate,
+				AssignmentRecordedDate:        raw.AssignmentRecordedDate,
+				AssignmentMailedDate:          raw.AssignmentMailedDate,
+				AssignmentDocumentLocationURI: raw.AssignmentDocumentLocationURI,
+				AttorneyDocketNumber:          raw.AttorneyDocketNumber,
+				PageTotalQuantity:             raw.PageTotalQuantity,
+				ImageAvailable:                raw.ImageAvailableStatusCode,
+				CorrespondenceAddressJSON:     marshalJSON(raw.CorrespondenceAddress),
+			}
+
+			for j, p := range raw.AssignorBag {
+				name := firstNonEmpty(p.AssignorName, p.NameLineOneText)
+				assignment.Parties = append(assignment.Parties, domain.USPTOAssignmentParty{
+					ApplicationNumber: appNum,
+					AssignmentOrdinal: ordinal,
+					Role:              "assignor",
+					Ordinal:           j,
+					NameText:          name,
+					ExecutionDate:     p.ExecutionDate,
+					AddressJSON:       marshalJSON(p.Address),
+				})
+			}
+
+			for j, p := range raw.AssigneeBag {
+				name := firstNonEmpty(p.AssigneeNameText, p.NameLineOneText)
+				addr := p.AssigneeAddress
+				if len(addr) == 0 {
+					addr = p.Address
+				}
+				assignment.Parties = append(assignment.Parties, domain.USPTOAssignmentParty{
+					ApplicationNumber: appNum,
+					AssignmentOrdinal: ordinal,
+					Role:              "assignee",
+					Ordinal:           j,
+					NameText:          name,
+					ExecutionDate:     p.ExecutionDate,
+					AddressJSON:       marshalJSON(addr),
+				})
+			}
+
+			out = append(out, assignment)
+			ordinal++
 		}
-		for j, p := range raw.AssignorBag {
-			assignment.Parties = append(assignment.Parties, domain.USPTOAssignmentParty{
-				ApplicationNumber: appNum,
-				AssignmentOrdinal: i,
-				Role:              "assignor",
-				Ordinal:           j,
-				NameText:          p.NameLineOneText,
-				ExecutionDate:     p.ExecutionDate,
-				AddressJSON:       marshalJSON(p.Address),
-			})
-		}
-		for j, p := range raw.AssigneeBag {
-			assignment.Parties = append(assignment.Parties, domain.USPTOAssignmentParty{
-				ApplicationNumber: appNum,
-				AssignmentOrdinal: i,
-				Role:              "assignee",
-				Ordinal:           j,
-				NameText:          p.NameLineOneText,
-				ExecutionDate:     p.ExecutionDate,
-				AddressJSON:       marshalJSON(p.Address),
-			})
-		}
-		out = append(out, assignment)
 	}
 	return out, nil
+}
+
+func parseStringOrInt(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		return fmt.Sprintf("%.0f", val)
+	case int:
+		return fmt.Sprintf("%d", val)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 func reelFrame(reel, frame string) string {

@@ -141,6 +141,16 @@ func (c *Catalog) WithLogger(l *slog.Logger) *Catalog { c.logger = l; return c }
 // WithMetrics attaches the runtime metrics sink. Optional: nil is safe.
 func (c *Catalog) WithMetrics(m *observability.Metrics) *Catalog { c.metrics = m; return c }
 
+// SetPendingScrollAnchor registers a patent to scroll to and cursor-highlight on the next load.
+func (c *Catalog) SetPendingScrollAnchor(number domain.PatentNumber) {
+	c.pendingScrollAnchor = number
+}
+
+// PendingScrollAnchor returns the current pending scroll target, if any.
+func (c *Catalog) PendingScrollAnchor() domain.PatentNumber {
+	return c.pendingScrollAnchor
+}
+
 func (c *Catalog) log() *slog.Logger {
 	if c.logger != nil {
 		return c.logger

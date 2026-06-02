@@ -38,7 +38,7 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 		return proto.USPTOFetchXMLResult{}, errors.New("engine: patents dir not configured")
 	}
 
-	app, err := e.repo.USPTOApplication(ctx, n)
+	app, err := e.ensureUSPTOApplication(ctx, n)
 	if err != nil {
 		return proto.USPTOFetchXMLResult{}, fmt.Errorf("engine: load uspto application: %w", err)
 	}
@@ -822,7 +822,7 @@ func (e *Engine) FetchUSPTOAssignments(ctx context.Context, n domain.PatentNumbe
 	if apiKey == "" {
 		return proto.USPTOFetchAssignmentsResult{}, errors.New("engine: USPTO API key not configured")
 	}
-	app, err := e.repo.USPTOApplication(ctx, n)
+	app, err := e.ensureUSPTOApplication(ctx, n)
 	if err != nil {
 		return proto.USPTOFetchAssignmentsResult{}, fmt.Errorf("engine: load uspto application: %w", err)
 	}
@@ -976,5 +976,28 @@ func (e *Engine) ClearPatentCache(ctx context.Context, patents []domain.PatentNu
 
 	cleared, bytesSaved, opErr = e.repo.ClearUSPTOGrantBodies(ctx, appNums)
 	return cleared, bytesSaved, opErr
+}
+
+// ensureUSPTOApplication retrieves the saved USPTO application details for a patent record.
+// If it is not found (store.ErrNotFound), it triggers a best-effort depth-0 fetch/lookup
+// using e.crawl to populate the uspto_application row before attempting to load it again.
+func (e *Engine) ensureUSPTOApplication(ctx context.Context, n domain.PatentNumber) (domain.USPTOApplication, error) {
+	app, err := e.repo.USPTOApplication(ctx, n)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) && e.crawl != nil {
+			job := e.crawl(n, 0, domain.CrawlProfileFamily, false, domain.SourceUSPTO)
+			if job != nil {
+				// Execute the depth-0 fetch job synchronously
+				_ = job.Run(ctx, JobID("auto-lookup"), func(ev proto.Event) {
+					if e.bus != nil {
+						e.bus.Publish(ev)
+					}
+				})
+				// Attempt to load from the repository again
+				app, err = e.repo.USPTOApplication(ctx, n)
+			}
+		}
+	}
+	return app, err
 }
 

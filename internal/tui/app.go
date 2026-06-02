@@ -76,12 +76,14 @@ type serviceConnectionLoadedMsg struct {
 }
 
 type serviceCheckInfo struct {
-	Duration      time.Duration
-	StatusCode    int
-	RequestBytes  int64
-	ResponseBytes int64
-	Message       string
-	Err           string
+	Duration             time.Duration
+	StatusCode           int
+	RequestBytes         int64
+	ResponseBytes        int64
+	Message              string
+	Err                  string
+	AssignmentsActivated bool
+	AssignmentsMessage   string
 }
 
 type serviceConnectionState string
@@ -195,6 +197,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.SettingsAI:                 (*App).cmdSettingsAI,
 	command.OpenAssignees:              (*App).cmdOpenAssignees,
 	command.OpenAssigneesProject:       (*App).cmdOpenAssigneesProject,
+	command.OpenAssigneeStats:          (*App).cmdOpenAssigneeStats,
 	command.PatentExpirationDate:       (*App).cmdPatentExpirationDate,
 	command.OpenClassificationStats:    (*App).cmdOpenClassificationStats,
 	command.OpenInventors:              (*App).cmdOpenInventors,
@@ -536,11 +539,13 @@ func (a *App) checkServiceConnections() tea.Cmd {
 				start := time.Now()
 				result := config.CheckUSPTOConnection(ctx, resolved)
 				usptoInfo = serviceCheckInfo{
-					Duration:      time.Since(start),
-					StatusCode:    result.StatusCode,
-					RequestBytes:  result.RequestBytes,
-					ResponseBytes: result.ResponseBytes,
-					Message:       result.Message,
+					Duration:             time.Since(start),
+					StatusCode:           result.StatusCode,
+					RequestBytes:         result.RequestBytes,
+					ResponseBytes:        result.ResponseBytes,
+					Message:              result.Message,
+					AssignmentsActivated: result.AssignmentsActivated,
+					AssignmentsMessage:   result.AssignmentsMessage,
 				}
 				if result.Connected {
 					uspto = serviceConnected
@@ -713,6 +718,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o := overlay.NewAIMenu(a.theme, m.patent, a.aiProvider, a.buildAnalyzer())
 		a.overlays = append(a.overlays, o)
 		return a, nil
+	case openAssigneesPatentLoadedMsg:
+		if m.err != nil {
+			a.setErr(text.StatusDaemonUnavailable, m.err.Error())
+			return a, nil
+		}
+		return a.openAssignees(m.patent)
 	case overlay.AISwitchProviderMsg:
 		a.aiProvider = ai.Provider(m.NewProvider)
 		if len(a.overlays) > 0 {
@@ -1078,6 +1089,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case pane.USPTOXMLFetchedMsg:
 		return a.handleUSPTOXMLFetched(m)
+	case pane.USPTOAssignmentsFetchedMsg:
+		return a.handleUSPTOAssignmentsFetched(m)
 	case overlay.USPTOCandidateSelectMsg:
 		if len(a.overlays) > 0 {
 			a.overlays = a.overlays[:len(a.overlays)-1]
@@ -1264,6 +1277,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case serviceConnectionLoadedMsg:
 		a.usptoConnection = m.uspto
 		a.backupConnection = m.backup
+		if m.uspto == serviceConnected && !m.usptoInfo.AssignmentsActivated {
+			title := "Warning: Patent Assignment API Not Active"
+			lines := []string{
+				"Your USPTO ODP API Key is connected,",
+				"BUT the Patent Assignment Search product is not active.",
+				"",
+				"To pull post-grant transfers (assignee history),",
+				"please log in to developer.uspto.gov and",
+				"subscribe your API key to product:",
+				"  \"Patent Assignment Search\"",
+			}
+			a.overlays = append(a.overlays, overlay.NewNoticeOverlay(a.theme, title, lines))
+		}
 		return a, a.broadcast(pane.ServiceStatusChangedMsg{
 			ActiveAI:     a.activeAIString(),
 			ActiveSearch: a.activeSearchString(),
