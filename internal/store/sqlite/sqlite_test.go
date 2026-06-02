@@ -140,18 +140,62 @@ func TestListPatentsPagination(t *testing.T) {
 func TestListPatentsSearch(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()
-	if err := repo.SavePatent(ctx, samplePatent("US0000001A1")); err != nil {
+	p1 := samplePatent("US0000001A1")
+	p1.Assignee = "Acme Corp"
+	p1.Inventors = []domain.Inventor{"Ada Lovelace", "Alan Turing"}
+	if err := repo.SavePatent(ctx, p1); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
-	if err := repo.SavePatent(ctx, samplePatent("EP0000002A1")); err != nil {
+	p2 := samplePatent("EP0000002A1")
+	p2.Assignee = "Beta Industries"
+	p2.Inventors = []domain.Inventor{"Grace Hopper"}
+	if err := repo.SavePatent(ctx, p2); err != nil {
 		t.Fatalf("SavePatent: %v", err)
 	}
+
+	// 1. Existing search by number prefix (all scope)
 	got, err := repo.ListPatents(ctx, store.PatentQuery{Search: "ep00000"})
 	if err != nil {
 		t.Fatalf("ListPatents search: %v", err)
 	}
 	if len(got) != 1 || got[0].Number.Country != "EP" {
 		t.Fatalf("search returned %v, want one EP patent", got)
+	}
+
+	// 2. Search for inventor name in "all" scope (should find p1)
+	got, err = repo.ListPatents(ctx, store.PatentQuery{Search: "Lovelace"})
+	if err != nil {
+		t.Fatalf("ListPatents search: %v", err)
+	}
+	if len(got) != 1 || got[0].Number.String() != p1.Number.String() {
+		t.Fatalf("search for Lovelace returned %v, want %s", got, p1.Number)
+	}
+
+	// 3. Search for assignee name in "all" scope (should find p1)
+	got, err = repo.ListPatents(ctx, store.PatentQuery{Search: "Acme"})
+	if err != nil {
+		t.Fatalf("ListPatents search: %v", err)
+	}
+	if len(got) != 1 || got[0].Number.String() != p1.Number.String() {
+		t.Fatalf("search for Acme returned %v, want %s", got, p1.Number)
+	}
+
+	// 4. Filter by case-insensitive exact inventor (should find p1)
+	got, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `inventor:"ada lovelace"`})
+	if err != nil {
+		t.Fatalf("ListPatents search by filter: %v", err)
+	}
+	if len(got) != 1 || got[0].Number.String() != p1.Number.String() {
+		t.Fatalf("filter for ada lovelace returned %v, want %s", got, p1.Number)
+	}
+
+	// 5. Filter by case-insensitive exact assignee (should find p1)
+	got, err = repo.ListPatents(ctx, store.PatentQuery{Filter: `assignee:"acme corp"`})
+	if err != nil {
+		t.Fatalf("ListPatents search by filter: %v", err)
+	}
+	if len(got) != 1 || got[0].Number.String() != p1.Number.String() {
+		t.Fatalf("filter for acme corp returned %v, want %s", got, p1.Number)
 	}
 }
 

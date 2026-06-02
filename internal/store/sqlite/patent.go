@@ -640,9 +640,15 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 		}
 		switch scope {
 		case "all":
-			conds = append(conds, "(p.number LIKE ? OR p.rowid IN "+
+			var searchPattern string
+			if strings.Contains(q.Search, "*") {
+				searchPattern = wildcardLikePattern(q.Search, true)
+			} else {
+				searchPattern = "%" + q.Search + "%"
+			}
+			conds = append(conds, "(p.number LIKE ? ESCAPE '\\' OR p.assignee LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\\') OR p.rowid IN "+
 				"(SELECT rowid FROM record_fts WHERE record_fts MATCH ?))")
-			args = append(args, "%"+q.Search+"%", ftsQuery(q.Search))
+			args = append(args, searchPattern, searchPattern, searchPattern, ftsQuery(q.Search))
 		case "number":
 			conds = append(conds, "p.number LIKE ?")
 			args = append(args, "%"+q.Search+"%")
@@ -686,12 +692,12 @@ func patentFilter(q store.PatentQuery) (string, []any, error) {
 	}
 
 	if q.Inventor != "" {
-		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?)`)
+		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE LOWER(json_each.value) = LOWER(?))`)
 		args = append(args, q.Inventor)
 	}
 
 	if q.Assignee != "" {
-		conds = append(conds, `p.assignee = ?`)
+		conds = append(conds, `LOWER(p.assignee) = LOWER(?)`)
 		args = append(args, q.Assignee)
 	}
 
@@ -756,20 +762,27 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 	case filterexpr.FieldClass:
 		return `EXISTS (SELECT 1 FROM json_each(p.classifications) WHERE UPPER(json_each.value) LIKE ? ESCAPE '\')`, []any{classificationLikePattern(term.Class.Raw, term.Class.Wildcard)}, nil
 	case filterexpr.FieldSearch:
-		return `(p.number LIKE ? OR p.rowid IN (SELECT rowid FROM record_fts WHERE record_fts MATCH ?))`, []any{"%" + term.Value + "%", ftsQuery(term.Value)}, nil
+		var searchPattern string
+		if strings.Contains(term.Value, "*") {
+			searchPattern = wildcardLikePattern(term.Value, true)
+		} else {
+			searchPattern = "%" + term.Value + "%"
+		}
+		return `(p.number LIKE ? ESCAPE '\' OR p.assignee LIKE ? ESCAPE '\' OR EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\') OR p.rowid IN (SELECT rowid FROM record_fts WHERE record_fts MATCH ?))`,
+			[]any{searchPattern, searchPattern, searchPattern, ftsQuery(term.Value)}, nil
 	case filterexpr.FieldInventor:
 		if term.Inventor.Wildcard {
-			return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\')`, []any{wildcardLikePattern(term.Inventor.Raw, false)}, nil
+			return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value LIKE ? ESCAPE '\')`, []any{wildcardLikePattern(term.Inventor.Raw, true)}, nil
 		}
-		return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE json_each.value = ?)`, []any{term.Value}, nil
+		return `EXISTS (SELECT 1 FROM json_each(p.inventors) WHERE LOWER(json_each.value) = LOWER(?))`, []any{term.Value}, nil
 	case filterexpr.FieldAssignee:
 		if term.Assignee.Wildcard {
-			return `p.assignee LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Assignee.Raw, false)}, nil
+			return `p.assignee LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Assignee.Raw, true)}, nil
 		}
-		return `p.assignee = ?`, []any{term.Value}, nil
+		return `LOWER(p.assignee) = LOWER(?)`, []any{term.Value}, nil
 	case filterexpr.FieldCountry:
 		if term.Country.Wildcard {
-			return `p.country LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Country.Raw, false)}, nil
+			return `p.country LIKE ? ESCAPE '\'`, []any{wildcardLikePattern(term.Country.Raw, true)}, nil
 		}
 		return `p.country = ?`, []any{term.Value}, nil
 	case filterexpr.FieldFetchState:
