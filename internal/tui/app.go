@@ -724,6 +724,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		return a.openAssignees(m.patent)
+	case openAssigneeStatsPatentLoadedMsg:
+		if m.err != nil {
+			a.setErr(text.StatusDaemonUnavailable, m.err.Error())
+			return a, nil
+		}
+		return a.openAssigneeStats(m.patent)
 	case overlay.AISwitchProviderMsg:
 		a.aiProvider = ai.Provider(m.NewProvider)
 		if len(a.overlays) > 0 {

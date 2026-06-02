@@ -399,6 +399,47 @@ type openAssigneesPatentLoadedMsg struct {
 	err    error
 }
 
+type openAssigneeStatsPatentLoadedMsg struct {
+	patent domain.Patent
+	err    error
+}
+
+func (a *App) cmdOpenAssigneeStats(inv invocation) (tea.Model, tea.Cmd) {
+	if detail, ok := a.focusedPane().(*pane.Detail); ok {
+		p := detail.Patent()
+		if num, ok := detail.Selection(); ok {
+			if p.Number.Serial == "" {
+				p.Number = num
+			}
+			if p.DisplayNumber.Serial == "" {
+				p.DisplayNumber = num
+			}
+		}
+		return a.openAssigneeStats(p)
+	}
+
+	number, ok := a.focusedPane().Selection()
+	if !ok {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	a.setStatus(text.StatusLoadingPatent, number.String())
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.PatentResult
+		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
+		if err != nil {
+			return openAssigneeStatsPatentLoadedMsg{err: err}
+		}
+		return openAssigneeStatsPatentLoadedMsg{patent: res.Patent}
+	}
+}
+
 func (a *App) cmdOpenAssignees(inv invocation) (tea.Model, tea.Cmd) {
 	if detail, ok := a.focusedPane().(*pane.Detail); ok {
 		p := detail.Patent()
@@ -541,6 +582,16 @@ func (a *App) openInventors(p domain.Patent, focusPatents bool) (tea.Model, tea.
 
 func (a *App) openAssignees(p domain.Patent) (tea.Model, tea.Cmd) {
 	o, cmd := overlay.NewAssigneeTimelineOverlay(a.client, a.theme, p)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+func (a *App) openAssigneeStats(p domain.Patent) (tea.Model, tea.Cmd) {
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	o, cmd := overlay.NewAssigneeStatsOverlay(a.client, a.theme, a.text, p, project)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }

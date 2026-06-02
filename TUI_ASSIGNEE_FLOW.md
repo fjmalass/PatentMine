@@ -8,12 +8,14 @@ commands and REST endpoints, what telemetry is recorded, and how batch runs are
 optimized.
 
 > **Implementation status.** The data layer (schema `assignee_history`, the
-> derivation, the project rollup) and the backend (engine → proto → rpc → REST)
-> are **shipped**. TUI: `:fetch.uspto.assignments` (single), `:open.assignees`,
-> `:open.assignees.project` (rollup view), and `:fetch.uspto.assignments.project`
-> (project batch) are **live**. Still in progress: enriching `:open.assignees` to
-> render the per-patent timeline, plus `:export.assignees` and
-> `:fetch.uspto.assignments.file`. Remote assignee-name search is **deferred**.
+> derivation, the project rollup) and the TUI views are **shipped**.
+> TUI: `:fetch.uspto.assignments` (single), `:open.assignees` (timeline),
+> `:open.assignee-stats` (statistics & patents subtable), `:open.assignees.project`
+> (project rollup), and `:fetch.uspto.assignments.project` (project batch) are **live**.
+> Remaining work: `:export.assignees` and `:fetch.uspto.assignments.file`.
+> Remote assignee-name search is **deferred**.
+> Sourced from the USPTO ODP applications-assignment endpoint:
+> `api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/assignment`
 > For the daemon/server side of this flow, see
 > [`DAEMON_ASSIGNEE_FLOW.md`](./DAEMON_ASSIGNEE_FLOW.md).
 
@@ -46,18 +48,26 @@ a dead patent.
 
 ---
 
-## 2. Per-patent: the ownership timeline
+## 2. Per-patent: the ownership timeline and assignee stats
 
 ```text
 :fetch.uspto.assignments     # pull the chain from USPTO ODP (rebuilds the timeline)
-:open.assignees              # view the timeline for the selected patent
+:open.assignees              # view the timeline overlay for the selected patent
+:open.assignee-stats        # view the interactive assignee analytics and patents list
 ```
 
 `:fetch.uspto.assignments` calls the USPTO assignment API for the patent's
 application number, stores the raw chain, and **rebuilds** the record's
 `assignee_history` (at-grant owner + each recorded assignee, current owner flagged).
-`:open.assignees` (detail-scoped) shows that timeline: assignee · effective date ·
-pull type · pulled-at, with the current owner(s) marked.
+
+`:open.assignees` (detail-scoped) shows the unified ownership timeline overlay using a structured single-row-per-entry table:
+* **DATE MADE**: When the assignment was executed (`EffectiveDate`).
+* **DATE FOUND**: When the assignment was pulled from the USPTO database (`PulledAt`).
+* **ORIGIN**: The source type of the owner entry (`grant` for at-grant or `assign` for assignment).
+* **CURRENT**: A checkmark (`✓ Yes`) indicating the current owner.
+* **ASSIGNEE & DETAILS**: The assignee name, transaction/conveyance type, and microfilm reel/frame coordinates.
+
+`:open.assignee-stats` (detail-scoped) displays the interactive assignee statistics panel, allowing you to browse all assignees in the database/project on the top panel and view the list of patents owned by the selected assignee in a scrollable subtable below.
 
 REST:
 
@@ -203,10 +213,7 @@ workers that would only queue behind the limiter.
 
 Tracked in [`TODO.md`](./TODO.md) and in-code `TODO(assignee-…)` markers:
 
-- TUI wiring: enrich `:open.assignees` to render the per-patent timeline; add
-  `:export.assignees` and `:fetch.uspto.assignments.file`. (The project rollup view
-  `:open.assignees.project` and project batch `:fetch.uspto.assignments.project`
-  are shipped.)
+- TUI wiring: `:open.assignees` (timeline) and `:open.assignee-stats` (statistics) are fully shipped, along with `:open.assignees.project` and project batch `:fetch.uspto.assignments.project`. Still remaining: `:export.assignees` and `:fetch.uspto.assignments.file`.
 - Remote assignee-name **search** (`:find.assignee`, `GET /assignees/search`) via a new
   `crawl.SearchUSPTOAssignmentsByAssignee`.
 - At-grant **joint** owners from `uspto_grant_party` (today the at-grant row uses the

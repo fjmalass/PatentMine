@@ -544,6 +544,7 @@ row. A re-fetch rebuilds it idempotently.
 ```text
 :fetch.uspto.assignments    # pull the chain from USPTO ODP and rebuild the timeline
 :open.assignees             # view the selected patent's ownership timeline
+:open.assignee-stats        # view assignee statistics / analytics and their patents list
 ```
 
 Per patent you see every assignee with its effective date and pull type
