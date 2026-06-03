@@ -9,6 +9,39 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.12.0] — 2026-06-03
+
+### Added
+- **Patent kind display and stage detection**: new `DisplayString()`, `Stage()`, `IsGrant()`, `IsPublication()`, `IsApplication()` methods on `PatentNumber`. US serials formatted with commas (`US11,795,648B2`), applications as `XX/YYY,YYY`, publications as `YYYY/NNNNNNN`. Kind codes beyond `B*` recognised as grants (`E*`, `S*`, `P*` excluding `PL`). Reissue numbers auto-prefixed with `US`.
+- **KIND column** in catalog detail, inventor stats, classification stats, and assignee history overlays — sortable stage glyph column (trophy grant, page publication, pencil application).
+- **Sorting by kind** via `SortByKind` with SQL rank ordering (Grants→Publications→Applications).
+- **Family graph export**: `ExportFamilyGraph()` generates transitively reduced Mermaid flowchart + ASCII preview + timeline diagram with PDF rendering via mermaid.ink. Exposed as `:export.family.mermaid` and `y` key binding.
+- **Relation type annotations** on family graph edges: continuity types (CON, CIP, DIV, PROV, REISSUE) extracted from USPTO data with dedicated glyphs.
+- **Tree-based family graph rendering**: box-drawing tree layout with Root/Parents/Children sections, cycle detection, alternating row colors.
+- **Stage-based colour styling**: `StyleStageGrant` (green/bold), `StyleStagePublication` (dim), `StyleStageApplication` (warn) on `Theme`.
+- **Assignee history fallback**: falls back to at-grant assignee when no USPTO assignment chain exists.
+- **Worker pool panic recovery**: `recover()` guard logs and reports crawl panics instead of crashing.
+- **USPTO Assignment API warning**: health check warns when assignment API key is active but not activated; status bar shows warning glyph.
+- **Auto-force crawl of stub patents**: engine auto-crawls `FetchStub` patents during crawl/expiration/USPTO lookup.
+- **Crawl depth in status messages**: loading overlays show depth (e.g. "Crawling US12345678 (depth 4)").
+
+### Changed
+- **Patent number regex expanded**: accepts alphabetical serial prefixes (`RE`, `D`, `PP`) for reissues, designs, plant patents.
+- **`GuessStage()` broadened**: uses full `IsGrant()`/`IsPublication()`/`IsApplication()` instead of narrow `strings.HasPrefix(n.Kind, "B")`.
+- **USPTO crawl queries**: delegate kind-code routing to `HasExplicitGrantKind()`/`HasExplicitPublicationKind()`.
+- **Google Patents scraper**: deduplicates kindless vs. kind-coded references; overrides guessed `StageApplication` to `StageGrant` for metadata labeled as patent.
+- **USPTO relations**: `relationsFromUSPTOContinuity()` no longer inserts redundant bidirectional `RelationChild`.
+- **Family graph capacity**: max depth 6→10, max nodes 200→400.
+- **Inconsistency detection relaxed**: flags when *either* parent or child is unseen (not both).
+- **REST API**: assignee routes consolidated to `AllAssigneesHistory`; old `/assignees/stats` is a compatibility alias.
+
+### Fixed
+- **Stalls when crawling with multiple potential sources**: `Bus.Publish()` resilient to closed subscriber channels; worker pool recovers from panics.
+- **USPTO assignment warning not displayed**: health check surfaces warning when assignment API not activated.
+- **Duplicate kindless documents from Google Patents**: drops redundant kindless versions when kind-coded version is present.
+- **Empty assignee history**: falls back to at-grant assignee from `record` table instead of returning empty list.
+- **USPTO strict query for ambiguous kind codes**: searches all identifier fields when kind code is absent/unrecognised.
+
 ## [v0.11.0] — 2026-06-02
 
 ### Added
