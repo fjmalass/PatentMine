@@ -191,7 +191,10 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent patent", FetchState: domain.FetchCached}, Depth: 1},
 		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "", FetchState: domain.FetchStub}, Depth: 1},
 	}
-	g.edges = []proto.FamilyGraphEdge{{Parent: parent, Child: root}, {Parent: root, Child: child, Inconsistent: true}}
+	g.edges = []proto.FamilyGraphEdge{
+		{Parent: parent, Child: root, RelationType: "con"},
+		{Parent: root, Child: child, Inconsistent: true, RelationType: "cip"},
+	}
 	g.rebuildRows()
 
 	out := g.mermaidGraph()
@@ -200,8 +203,8 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 		"p_us_1_b2((\"US1B2 🏆<br/>Root patent\"))",
 		"p_ep_2_a1[\"EP2A1 📄<br/>Parent patent\"]",
 		"p_jp_3_a1[\"JP3A1 📄\"]",
-		"p_ep_2_a1 --> p_us_1_b2",
-		"p_us_1_b2 -.-> p_jp_3_a1",
+		"p_ep_2_a1 -->|CON| p_us_1_b2",
+		"p_us_1_b2 -.->|CIP| p_jp_3_a1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("mermaid export missing %q\n%s", want, out)

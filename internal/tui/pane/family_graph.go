@@ -504,6 +504,14 @@ func (g *FamilyGraph) mermaidGraph() string {
 		if edge.Inconsistent {
 			arrow = " -.-> "
 		}
+		if edge.RelationType != "" {
+			rel := strings.ToUpper(edge.RelationType)
+			if edge.Inconsistent {
+				arrow = " -.->|" + rel + "| "
+			} else {
+				arrow = " -->|" + rel + "| "
+			}
+		}
 		b.WriteString("  ")
 		b.WriteString(parentLabel)
 		b.WriteString(arrow)
