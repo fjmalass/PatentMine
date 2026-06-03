@@ -3,6 +3,7 @@ package pane
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,13 +30,16 @@ const (
 	familyGraphRowNode
 )
 
-const familyGraphMaxDepthHint = 6
+const familyGraphMaxDepthHint = 10
 
 type familyGraphRow struct {
-	kind  familyGraphRowKind
-	depth int
-	label string
-	node  *proto.FamilyGraphNode
+	kind        familyGraphRowKind
+	depth       int
+	label       string
+	node        *proto.FamilyGraphNode
+	indent      string
+	isCycle     bool
+	isCrossRef  bool
 }
 
 // FamilyGraph shows one bounded BFS parent/child graph rooted at a patent.
@@ -53,6 +57,7 @@ type FamilyGraph struct {
 	nodes        []proto.FamilyGraphNode
 	edges        []proto.FamilyGraphEdge
 	rows         []familyGraphRow
+	occurrences  map[domain.PatentNumber]int
 	nodeLabels   map[domain.PatentNumber]string
 	parentRefs   map[domain.PatentNumber][]string
 	childRefs    map[domain.PatentNumber][]string
@@ -483,31 +488,62 @@ func (g *FamilyGraph) renderRow(row familyGraphRow, w int) string {
 	if row.node == nil {
 		return ""
 	}
-	return g.renderNodeLine(*row.node, w)
+	return g.renderNodeLine(row, w)
 }
 
-func (g *FamilyGraph) renderNodeLine(node proto.FamilyGraphNode, w int) string {
+func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
+	node := *row.node
 	number := node.Patent.DisplayNumber
 	if number.IsZero() {
 		number = node.Patent.Number
 	}
-	parents := shortPatentList(node.Parents, 2)
-	children := shortPatentList(node.Children, 3)
-	title := strings.TrimSpace(node.Patent.Title)
-	if title == "" {
-		title = "(stub)"
+
+	indent := row.indent
+
+	var labelStr string
+	if row.isCycle {
+		label := g.nodeLabel(node.Patent.Number)
+		cycleText := fmt.Sprintf("-> %s (Cycle)", label)
+		labelStr = g.theme.Warn.Render(cycleText)
+	} else if row.isCrossRef {
+		label := g.nodeLabel(node.Patent.Number)
+		crossText := fmt.Sprintf("-> %s (Cross-Ref)", label)
+		labelStr = g.theme.Dim.Render(crossText)
+	} else {
+		if g.occurrences[node.Patent.Number] > 1 {
+			label := g.nodeLabel(node.Patent.Number)
+			labelStr = g.theme.Info.Render("[" + label + "]")
+		}
 	}
-	line := fmt.Sprintf("  %s %-4s %-7s %-15s %-2s  up:%-12s  dn:%-12s  %s  %s",
-		depthGlyph(node.Depth),
-		g.nodeLabel(node.Patent.Number),
-		badgeText(g.nodeBadges(node)),
-		number.String(),
-		countryOrDash(node.Patent.Number.Country),
-		shortRefList(g.parentRefs[node.Patent.Number], 3, parents),
-		shortRefList(g.childRefs[node.Patent.Number], 3, children),
-		g.stateText(node.Patent),
-		title,
-	)
+
+	var line string
+	if row.isCycle || row.isCrossRef {
+		line = fmt.Sprintf("  %s %-15s %s",
+			indent,
+			number.String(),
+			labelStr,
+		)
+	} else {
+		title := strings.TrimSpace(node.Patent.Title)
+		if title == "" {
+			title = "(stub)"
+		}
+
+		labelSpacing := ""
+		if labelStr != "" {
+			labelSpacing = labelStr + " "
+		}
+
+		line = fmt.Sprintf("  %s%s%-15s %-2s  %s  %s",
+			indent,
+			labelSpacing,
+			number.String(),
+			countryOrDash(node.Patent.Number.Country),
+			g.stateText(node.Patent),
+			title,
+		)
+	}
+
 	return render.Truncate(line, w)
 }
 
@@ -545,24 +581,177 @@ func depthGlyph(depth int) string {
 
 func (g *FamilyGraph) rebuildRows() {
 	g.rebuildGraphIndex()
-	rows := make([]familyGraphRow, 0, len(g.nodes)+g.depth+1)
-	lastDepth := -1
+
+	nodeMap := make(map[domain.PatentNumber]*proto.FamilyGraphNode, len(g.nodes))
 	for i := range g.nodes {
-		node := &g.nodes[i]
-		if node.Depth != lastDepth {
-			if len(rows) > 0 {
-				rows = append(rows, familyGraphRow{kind: familyGraphRowHeader, label: ""})
-			}
-			rows = append(rows, familyGraphRow{
-				kind:  familyGraphRowHeader,
-				depth: node.Depth,
-				label: g.depthHeader(*node),
-			})
-			lastDepth = node.Depth
-		}
-		rows = append(rows, familyGraphRow{kind: familyGraphRowNode, depth: node.Depth, node: node})
+		nodeMap[g.nodes[i].Patent.Number] = &g.nodes[i]
 	}
+
+	var rows []familyGraphRow
+
+	// Root Section
+	rows = append(rows, familyGraphRow{
+		kind:  familyGraphRowHeader,
+		label: "Root Patent:",
+	})
+	rootNode := nodeMap[g.root]
+	if rootNode != nil {
+		rows = append(rows, familyGraphRow{
+			kind:   familyGraphRowNode,
+			node:   rootNode,
+			indent: "  ● ",
+		})
+	}
+
+	// Parents Section (Predecessors)
+	hasParents := rootNode != nil && len(rootNode.Parents) > 0
+	if hasParents {
+		if len(rows) > 0 {
+			rows = append(rows, familyGraphRow{kind: familyGraphRowHeader, label: ""})
+		}
+		rows = append(rows, familyGraphRow{
+			kind:  familyGraphRowHeader,
+			label: "Parents (Predecessors):",
+		})
+		visitedParents := make(map[domain.PatentNumber]bool)
+		pathParents := []domain.PatentNumber{g.root}
+		for i, parent := range rootNode.Parents {
+			g.walkUp(parent, "  ", i == len(rootNode.Parents)-1, visitedParents, pathParents, &rows, nodeMap)
+		}
+	}
+
+	// Children Section (Successors)
+	hasChildren := rootNode != nil && len(rootNode.Children) > 0
+	if hasChildren {
+		if len(rows) > 0 {
+			rows = append(rows, familyGraphRow{kind: familyGraphRowHeader, label: ""})
+		}
+		rows = append(rows, familyGraphRow{
+			kind:  familyGraphRowHeader,
+			label: "Children (Successors):",
+		})
+		visitedChildren := make(map[domain.PatentNumber]bool)
+		pathChildren := []domain.PatentNumber{g.root}
+		for i, child := range rootNode.Children {
+			g.walkDown(child, "  ", i == len(rootNode.Children)-1, visitedChildren, pathChildren, &rows, nodeMap)
+		}
+	}
+
+	// Count occurrences of each patent number in rows
+	g.occurrences = make(map[domain.PatentNumber]int)
+	for _, r := range rows {
+		if r.kind == familyGraphRowNode && r.node != nil {
+			g.occurrences[r.node.Patent.Number]++
+		}
+	}
+
 	g.rows = rows
+}
+
+func (g *FamilyGraph) walkUp(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode) {
+	node := nodeMap[num]
+	if node == nil {
+		return
+	}
+
+	prefix := "├── "
+	if isLast {
+		prefix = "└── "
+	}
+	fullIndent := indent + prefix
+
+	if slices.Contains(path, num) {
+		*rows = append(*rows, familyGraphRow{
+			kind:    familyGraphRowNode,
+			node:    node,
+			indent:  fullIndent,
+			isCycle: true,
+		})
+		return
+	}
+
+	if visited[num] {
+		*rows = append(*rows, familyGraphRow{
+			kind:       familyGraphRowNode,
+			node:       node,
+			indent:     fullIndent,
+			isCrossRef: true,
+		})
+		return
+	}
+	visited[num] = true
+
+	*rows = append(*rows, familyGraphRow{
+		kind:   familyGraphRowNode,
+		node:   node,
+		indent: fullIndent,
+	})
+
+	if len(node.Parents) > 0 {
+		nextIndent := indent
+		if isLast {
+			nextIndent += "    "
+		} else {
+			nextIndent += "│   "
+		}
+		newPath := append(path, num)
+		for i, parent := range node.Parents {
+			g.walkUp(parent, nextIndent, i == len(node.Parents)-1, visited, newPath, rows, nodeMap)
+		}
+	}
+}
+
+func (g *FamilyGraph) walkDown(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode) {
+	node := nodeMap[num]
+	if node == nil {
+		return
+	}
+
+	prefix := "├── "
+	if isLast {
+		prefix = "└── "
+	}
+	fullIndent := indent + prefix
+
+	if slices.Contains(path, num) {
+		*rows = append(*rows, familyGraphRow{
+			kind:    familyGraphRowNode,
+			node:    node,
+			indent:  fullIndent,
+			isCycle: true,
+		})
+		return
+	}
+
+	if visited[num] {
+		*rows = append(*rows, familyGraphRow{
+			kind:       familyGraphRowNode,
+			node:       node,
+			indent:     fullIndent,
+			isCrossRef: true,
+		})
+		return
+	}
+	visited[num] = true
+
+	*rows = append(*rows, familyGraphRow{
+		kind:   familyGraphRowNode,
+		node:   node,
+		indent: fullIndent,
+	})
+
+	if len(node.Children) > 0 {
+		nextIndent := indent
+		if isLast {
+			nextIndent += "    "
+		} else {
+			nextIndent += "│   "
+		}
+		newPath := append(path, num)
+		for i, child := range node.Children {
+			g.walkDown(child, nextIndent, i == len(node.Children)-1, visited, newPath, rows, nodeMap)
+		}
+	}
 }
 
 func (g *FamilyGraph) depthHeader(node proto.FamilyGraphNode) string {

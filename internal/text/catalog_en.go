@@ -337,7 +337,7 @@ var englishNamed = map[Key]string{
 	StatusCrawlProgress:           "crawl %s — depth %d/%d, crawled %d, discovered %d: %s",
 	StatusCrawlFailed:             "crawl %s failed: %s  (see activity/logs for source details)",
 	StatusCrawlComplete:           "crawl %s complete",
-	StatusCrawlStarted:            "crawl started for %s (%s)",
+	StatusCrawlStarted:            "crawl started for %s (%s) depth %d",
 	StatusCrawlStartFailed:        "crawl failed: %s",
 	StatusCrawlDepthMax:           "crawl family depth max: %d",
 	StatusAddFailed:               "add to project failed: %s  (resolution details may be in the error or activity)",

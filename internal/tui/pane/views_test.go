@@ -127,21 +127,21 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g := NewFamilyGraph(nil, render.NewTheme(), root, 2, nil)
 	g.loading = false
 	g.nodes = []proto.FamilyGraphNode{
-		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root", FetchState: domain.FetchCached}, Depth: 0, Parents: []domain.PatentNumber{parent}},
+		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root", FetchState: domain.FetchCached}, Depth: 0, Parents: []domain.PatentNumber{parent}, Children: []domain.PatentNumber{child}},
 		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent", FetchState: domain.FetchCached}, Depth: 1, Children: []domain.PatentNumber{root}},
-		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchStub}, Depth: 1},
+		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchStub}, Depth: 1, Parents: []domain.PatentNumber{root}},
 	}
 	g.rebuildRows()
 	g.page.SetTotal(len(g.rows))
 	g.jumpToFirstNode()
 
 	out := g.View(120, 12)
-	for _, want := range []string{"Depth 0  ·  1 node(s)  root", "Depth 1  ·  2 node(s)", "up:EP2A1", "dn:US1B2", "🦴  Child", "y: copy Mermaid"} {
+	for _, want := range []string{"Root Patent:", "Parents (Predecessors):", "Children (Successors):", "Parent", "Child", "y: copy Mermaid"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("family graph view missing %q\n%s", want, out)
 		}
 	}
-	if !strings.Contains(out, "depth:2/6") {
+	if !strings.Contains(out, "depth:2/10") {
 		t.Fatalf("family graph summary missing current/max depth\n%s", out)
 	}
 

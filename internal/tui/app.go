@@ -1159,6 +1159,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			patent, _ := m.Args[0].(string)
 			title := verb + " " + patent
+			if !isLookup {
+				if d, ok := m.Args[2].(int); ok && d > 0 {
+					title = fmt.Sprintf("Crawling %s (depth %d)", patent, d)
+				}
+			}
 			loading := overlay.NewLoading(a.theme, []string{jobID}, title, isLookup).WithRoot(patent)
 			a.overlays = append(a.overlays, loading)
 			return a, loading.Init()

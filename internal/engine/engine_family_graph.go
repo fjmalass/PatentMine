@@ -16,8 +16,8 @@ import (
 const (
 	defaultFamilyGraphDepth    = 2
 	defaultFamilyGraphMaxNodes = 60
-	maxFamilyGraphDepth        = 6
-	maxFamilyGraphNodes        = 200
+	maxFamilyGraphDepth        = 10
+	maxFamilyGraphNodes        = 400
 )
 
 type familyEdgeKey struct {
