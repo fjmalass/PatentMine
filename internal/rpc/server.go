@@ -62,7 +62,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 	s.handlers = map[proto.Method]handlerFunc{
 		proto.MethodPing:                       s.ping,
 		proto.MethodPatentGet:                  s.patentGet,
-		proto.MethodPatentAssigneeStats:        s.patentAssigneeStats,
+		proto.MethodAllAssigneesHistory:        s.allAssigneesHistory,
 		proto.MethodPatentClassificationStats:  s.patentClassificationStats,
 		proto.MethodPatentInventorStats:        s.patentInventorStats,
 		proto.MethodPatentList:                 s.patentList,

@@ -171,8 +171,8 @@ type Repository interface {
 	ListOrphanPatents(ctx context.Context, limit, offset int) ([]domain.PatentRow, int, error)
 	// PatentInventorStats aggregates database statistics for a set of inventors within a project.
 	PatentInventorStats(ctx context.Context, project domain.ProjectID, inventors []domain.Inventor) ([]domain.InventorStats, error)
-	// PatentAssigneeStats aggregates database statistics for assignees within a project.
-	PatentAssigneeStats(ctx context.Context, project domain.ProjectID) ([]domain.AssigneeStats, error)
+	// AllAssigneesHistory aggregates database history/statistics for assignees within a project.
+	AllAssigneesHistory(ctx context.Context, project domain.ProjectID) ([]domain.AllAssigneesHistory, error)
 	// PatentClassificationStats aggregates database statistics for classification codes within a project.
 	PatentClassificationStats(ctx context.Context, project domain.ProjectID) ([]domain.ClassificationStats, error)
 

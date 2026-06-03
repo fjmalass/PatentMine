@@ -307,7 +307,7 @@ func TestAPIPatentListHonorsReviewStateAlias(t *testing.T) {
 	}
 }
 
-func TestAPIAssigneeStats(t *testing.T) {
+func TestAPIAllAssigneesHistory(t *testing.T) {
 	env := testAPIEnv(t)
 	ctx := context.Background()
 	project := domain.Project{ID: "p1", Name: "Project One"}
@@ -326,11 +326,11 @@ func TestAPIAssigneeStats(t *testing.T) {
 			t.Fatalf("AddMembership(%s): %v", number, err)
 		}
 	}
-	w := do(t, env.handler, http.MethodGet, "/assignees/stats?project=p1", "")
+	w := do(t, env.handler, http.MethodGet, "/assignees/history?project=p1", "")
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /assignees/stats = %d: %s", w.Code, w.Body.String())
+		t.Fatalf("GET /assignees/history = %d: %s", w.Code, w.Body.String())
 	}
-	var res proto.PatentAssigneeStatsResult
+	var res proto.AllAssigneesHistoryResult
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatalf("decode assignees: %v", err)
 	}

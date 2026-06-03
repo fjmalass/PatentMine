@@ -952,7 +952,7 @@ func (p *patentSelectionProbePane) Update(msg tea.Msg) (pane.Pane, tea.Cmd) {
 	return p, nil
 }
 
-func TestAppOpenAssigneesFromCatalog(t *testing.T) {
+func TestAppOpenAssigneesProjectFromCatalog(t *testing.T) {
 	reg, err := command.Default()
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
@@ -967,7 +967,7 @@ func TestAppOpenAssigneesFromCatalog(t *testing.T) {
 	app.client = &rpc.Client{} // Non-nil client
 
 	inv := invocation{repeat: 1, args: nil, source: "typed"}
-	_, cmd := app.cmdOpenAssignees(inv)
+	_, cmd := app.cmdOpenAssigneesProject(inv)
 	if cmd == nil {
 		t.Fatal("expected command to load rollup")
 	}
@@ -984,7 +984,7 @@ func TestAppOpenAssigneesFromCatalog(t *testing.T) {
 	}
 }
 
-func TestAppOpenAssigneesProjectFromCatalog(t *testing.T) {
+func TestAppOpenAllAssigneesHistoryFromCatalog(t *testing.T) {
 	reg, err := command.Default()
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
@@ -1001,21 +1001,21 @@ func TestAppOpenAssigneesProjectFromCatalog(t *testing.T) {
 	app.client = &rpc.Client{}
 
 	inv := invocation{repeat: 1, args: nil, source: "typed"}
-	_, cmd := app.cmdOpenAssigneesProject(inv)
+	_, cmd := app.cmdOpenAllAssigneesHistory(inv)
 	if cmd == nil {
 		t.Fatal("expected command to fetch patent details")
 	}
 
 	patent := domain.Patent{Number: pn, DisplayNumber: pn, Assignee: "IBM"}
-	updatedModel, _ := app.Update(openAssigneesProjectPatentLoadedMsg{patent: patent})
+	updatedModel, _ := app.Update(openAllAssigneesHistoryPatentLoadedMsg{patent: patent})
 	app = updatedModel.(*App)
 
 	if len(app.overlays) != 1 {
 		t.Fatalf("expected 1 overlay, got %d", len(app.overlays))
 	}
-	o, ok := app.overlays[0].(*overlay.AssigneeStatsOverlay)
+	o, ok := app.overlays[0].(*overlay.AllAssigneesHistoryOverlay)
 	if !ok {
-		t.Fatalf("expected AssigneeStatsOverlay, got %T", app.overlays[0])
+		t.Fatalf("expected AllAssigneesHistoryOverlay, got %T", app.overlays[0])
 	}
 	if !strings.Contains(o.Title(), "Assignee") {
 		t.Fatalf("unexpected overlay title: %s", o.Title())

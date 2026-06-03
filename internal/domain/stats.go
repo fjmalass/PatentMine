@@ -1,7 +1,7 @@
 package domain
 
-// AssigneeStats carries aggregated database statistics for an assignee.
-type AssigneeStats struct {
+// AllAssigneesHistory carries aggregated database history for an assignee.
+type AllAssigneesHistory struct {
 	Assignee string         `json:"assignee"`
 	Total    int            `json:"total"`
 	States   map[string]int `json:"states"`

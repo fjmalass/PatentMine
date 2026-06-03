@@ -19,20 +19,20 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-type loadedAssigneeStatsMsg struct {
-	stats []domain.AssigneeStats
+type loadedAllAssigneesHistoryMsg struct {
+	stats []domain.AllAssigneesHistory
 	err   error
 }
 
-// AssigneeStatsOverlay presents interactive statistics for all assignees.
-type AssigneeStatsOverlay struct {
+// AllAssigneesHistoryOverlay presents interactive statistics for all assignees.
+type AllAssigneesHistoryOverlay struct {
 	client   *rpc.Client
 	theme    render.Theme
 	catalog  *text.Catalog
 	patent   domain.Patent
 	project  domain.ProjectID
-	stats    []domain.AssigneeStats
-	allStats []domain.AssigneeStats
+	stats    []domain.AllAssigneesHistory
+	allStats []domain.AllAssigneesHistory
 	selected int
 	loading  bool
 	err      error
@@ -62,46 +62,48 @@ type AssigneeStatsOverlay struct {
 	statsSortCol       string
 	statsSortAsc       bool
 	statsFocusedColIdx int
+	filterToPatent     bool
 }
 
-func NewAssigneeStatsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID) (*AssigneeStatsOverlay, tea.Cmd) {
-	o := &AssigneeStatsOverlay{
-		client:        client,
-		theme:         theme,
-		catalog:       catalog,
-		patent:        patent,
-		project:       project,
-		loading:       true,
-		focus:         focusAssignees,
-		patentsPage:   render.NewPaginator(5),
-		activeSort:    domain.SortByNumber,
-		sortAscending: true,
-		focusedColIdx: -1,
-		lastWidth:     90,
-		preselect:          strings.TrimSpace(patent.Assignee),
-		statsSortCol:       "patents",
-		statsSortAsc:       false,
+func NewAllAssigneesHistoryOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID, filterToPatent bool) (*AllAssigneesHistoryOverlay, tea.Cmd) {
+	o := &AllAssigneesHistoryOverlay{
+		client:         client,
+		theme:          theme,
+		catalog:        catalog,
+		patent:         patent,
+		project:        project,
+		loading:        true,
+		focus:          focusAssignees,
+		patentsPage:    render.NewPaginator(5),
+		activeSort:     domain.SortByNumber,
+		sortAscending:  true,
+		focusedColIdx:  -1,
+		lastWidth:      90,
+		preselect:      strings.TrimSpace(patent.Assignee),
+		statsSortCol:   "patents",
+		statsSortAsc:   false,
 		statsFocusedColIdx: 1,
+		filterToPatent:     filterToPatent,
 	}
 	return o, o.loadStatsCmd()
 }
 
 const focusAssignees = focusInventors
 
-func (o *AssigneeStatsOverlay) Title() string { return "Assignee Analytics" }
+func (o *AllAssigneesHistoryOverlay) Title() string { return "Assignee Analytics" }
 
-func (o *AssigneeStatsOverlay) Handles() []command.ID { return []command.ID{command.CloseOverlay} }
+func (o *AllAssigneesHistoryOverlay) Handles() []command.ID { return []command.ID{command.CloseOverlay} }
 
-func (o *AssigneeStatsOverlay) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
+func (o *AllAssigneesHistoryOverlay) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if id == command.CloseOverlay {
 		return o, func() tea.Msg { return CloseOverlayMsg{} }
 	}
 	return o, nil
 }
 
-func (o *AssigneeStatsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
+func (o *AllAssigneesHistoryOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	switch m := msg.(type) {
-	case loadedAssigneeStatsMsg:
+	case loadedAllAssigneesHistoryMsg:
 		o.loading = false
 		if m.err != nil {
 			o.err = m.err
@@ -175,7 +177,7 @@ func (o *AssigneeStatsOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	return o, nil
 }
 
-func (o *AssigneeStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+func (o *AllAssigneesHistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	o.err = nil
 	o.patentsErr = nil
 
@@ -442,11 +444,11 @@ func (o *AssigneeStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 	return o, nil, true
 }
 
-func (o *AssigneeStatsOverlay) OverlaySize(termW, termH int) (w, h int) {
+func (o *AllAssigneesHistoryOverlay) OverlaySize(termW, termH int) (w, h int) {
 	return PctSize(termW, termH, 90, 90, 90, 22)
 }
 
-func (o *AssigneeStatsOverlay) currentCols() []render.TableColumn {
+func (o *AllAssigneesHistoryOverlay) currentCols() []render.TableColumn {
 	w := o.lastWidth - statsTableMargin
 	if w < 40 {
 		w = 40
@@ -471,7 +473,7 @@ func (o *AssigneeStatsOverlay) currentCols() []render.TableColumn {
 	}
 }
 
-func (o *AssigneeStatsOverlay) currentStatsCols() []render.TableColumn {
+func (o *AllAssigneesHistoryOverlay) currentStatsCols() []render.TableColumn {
 	maxNameLen := 8
 	for _, s := range o.stats {
 		if len(s.Assignee) > maxNameLen {
@@ -499,7 +501,7 @@ func (o *AssigneeStatsOverlay) currentStatsCols() []render.TableColumn {
 	}
 }
 
-func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
+func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 	o.lastWidth = maxW
 	targetW := maxW - statsTableMargin
 	if targetW < 40 {
@@ -682,19 +684,67 @@ func (o *AssigneeStatsOverlay) View(maxW, maxH int) string {
 	return b.String()
 }
 
-func (o *AssigneeStatsOverlay) loadStatsCmd() tea.Cmd {
+func (o *AllAssigneesHistoryOverlay) loadStatsCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		var res proto.PatentAssigneeStatsResult
-		if err := o.client.Call(ctx, proto.MethodPatentAssigneeStats, proto.PatentAssigneeStatsParams{Project: o.project}, &res); err != nil {
-			return loadedAssigneeStatsMsg{err: err}
+		var res proto.AllAssigneesHistoryResult
+		if err := o.client.Call(ctx, proto.MethodAllAssigneesHistory, proto.AllAssigneesHistoryParams{Project: o.project}, &res); err != nil {
+			return loadedAllAssigneesHistoryMsg{err: err}
 		}
-		return loadedAssigneeStatsMsg{stats: res.Stats}
+
+		if o.filterToPatent && !o.patent.Number.IsZero() {
+			allowedAssignees := make(map[string]bool)
+			if name := strings.TrimSpace(o.patent.Assignee); name != "" {
+				allowedAssignees[strings.ToLower(name)] = true
+			}
+
+			var hist proto.AssigneeHistoryResult
+			if err := o.client.Call(ctx, proto.MethodAssigneeHistory, proto.AssigneeHistoryParams{Number: o.patent.Number}, &hist); err == nil {
+				for _, entry := range hist.Entries {
+					if name := strings.TrimSpace(entry.AssigneeName); name != "" {
+						allowedAssignees[strings.ToLower(name)] = true
+					}
+				}
+			}
+
+			var filtered []domain.AllAssigneesHistory
+			for _, s := range res.Stats {
+				if allowedAssignees[strings.ToLower(s.Assignee)] {
+					filtered = append(filtered, s)
+				}
+			}
+
+			if len(filtered) == 0 {
+				for name := range allowedAssignees {
+					origName := name
+					if strings.ToLower(o.patent.Assignee) == name {
+						origName = o.patent.Assignee
+					}
+					found := false
+					for _, f := range filtered {
+						if strings.ToLower(f.Assignee) == name {
+							found = true
+							break
+						}
+					}
+					if !found && origName != "" {
+						filtered = append(filtered, domain.AllAssigneesHistory{
+							Assignee: origName,
+							Total:    1,
+							States:   map[string]int{"unknown": 1},
+						})
+					}
+				}
+			}
+			return loadedAllAssigneesHistoryMsg{stats: filtered}
+		}
+
+		return loadedAllAssigneesHistoryMsg{stats: res.Stats}
 	}
 }
 
-func (o *AssigneeStatsOverlay) reloadPatentsCmd() tea.Cmd {
+func (o *AllAssigneesHistoryOverlay) reloadPatentsCmd() tea.Cmd {
 	o.loadSeq++
 	o.loadID = o.loadSeq
 	o.patentsLoading = true
@@ -707,7 +757,7 @@ func (o *AssigneeStatsOverlay) reloadPatentsCmd() tea.Cmd {
 	return o.loadPatentsCmd(assignee, o.loadID)
 }
 
-func (o *AssigneeStatsOverlay) loadPatentsCmd(assignee string, requestID uint64) tea.Cmd {
+func (o *AllAssigneesHistoryOverlay) loadPatentsCmd(assignee string, requestID uint64) tea.Cmd {
 	offset := o.patentsPage.Offset()
 	limit := o.patentsPage.PageSize()
 	return func() tea.Msg {
@@ -719,7 +769,7 @@ func (o *AssigneeStatsOverlay) loadPatentsCmd(assignee string, requestID uint64)
 	}
 }
 
-func (o *AssigneeStatsOverlay) calcHeights(innerHeight int) (statsH, patentsH int) {
+func (o *AllAssigneesHistoryOverlay) calcHeights(innerHeight int) (statsH, patentsH int) {
 	availH := innerHeight - 10
 	if availH < 2 {
 		availH = 2
@@ -729,12 +779,12 @@ func (o *AssigneeStatsOverlay) calcHeights(innerHeight int) (statsH, patentsH in
 	return statsH, patentsH
 }
 
-func (o *AssigneeStatsOverlay) clearVisual() {
+func (o *AllAssigneesHistoryOverlay) clearVisual() {
 	o.patentsPage.SaveVisual()
 	o.patentsPage.ClearVisual()
 }
 
-func (o *AssigneeStatsOverlay) selections() []domain.PatentNumber {
+func (o *AllAssigneesHistoryOverlay) selections() []domain.PatentNumber {
 	start, end, active := o.patentsPage.VisualRange()
 	if !active || len(o.patents) == 0 {
 		return nil
@@ -752,7 +802,7 @@ func (o *AssigneeStatsOverlay) selections() []domain.PatentNumber {
 	return out
 }
 
-func (o *AssigneeStatsOverlay) sortStats() {
+func (o *AllAssigneesHistoryOverlay) sortStats() {
 	if len(o.stats) == 0 {
 		return
 	}
@@ -832,7 +882,7 @@ var assigneeSearchScopes = []struct {
 	{"states", "States"},
 }
 
-func (o *AssigneeStatsOverlay) applyFilter() {
+func (o *AllAssigneesHistoryOverlay) applyFilter() {
 	if o.searchQuery == "" {
 		o.stats = o.allStats
 	} else {

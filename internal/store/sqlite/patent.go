@@ -1070,9 +1070,9 @@ func (r *Repo) PatentInventorStats(ctx context.Context, project domain.ProjectID
 	return out, nil
 }
 
-// PatentAssigneeStats aggregates database statistics for all non-empty assignees within a project.
-func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID) (out []domain.AssigneeStats, err error) {
-	defer r.observeDuration("patent_assignee_stats", time.Now(), &err)
+// AllAssigneesHistory aggregates database history/statistics for all non-empty assignees within a project.
+func (r *Repo) AllAssigneesHistory(ctx context.Context, project domain.ProjectID) (out []domain.AllAssigneesHistory, err error) {
+	defer r.observeDuration("all_assignees_history", time.Now(), &err)
 	query := `SELECT p.assignee, p.number, COALESCE(m.state, ''), COALESCE(t.name, '')
 		FROM record p
 		LEFT JOIN membership m ON m.patent_number = p.number AND m.project_id = ?
@@ -1091,7 +1091,7 @@ func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID
 	}
 	defer func() { _ = rows.Close() }()
 
-	byAssignee := make(map[string]*domain.AssigneeStats)
+	byAssignee := make(map[string]*domain.AllAssigneesHistory)
 	seenPatents := make(map[string]map[string]bool)
 	for rows.Next() {
 		var assignee, number, state, tagName string
@@ -1100,7 +1100,7 @@ func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID
 		}
 		stats := byAssignee[assignee]
 		if stats == nil {
-			stats = &domain.AssigneeStats{Assignee: assignee, States: make(map[string]int), Tags: make(map[string]int)}
+			stats = &domain.AllAssigneesHistory{Assignee: assignee, States: make(map[string]int), Tags: make(map[string]int)}
 			byAssignee[assignee] = stats
 			seenPatents[assignee] = make(map[string]bool)
 		}
@@ -1124,7 +1124,7 @@ func (r *Repo) PatentAssigneeStats(ctx context.Context, project domain.ProjectID
 	for _, stats := range byAssignee {
 		out = append(out, *stats)
 	}
-	slices.SortFunc(out, func(a, b domain.AssigneeStats) int {
+	slices.SortFunc(out, func(a, b domain.AllAssigneesHistory) int {
 		if a.Total != b.Total {
 			return b.Total - a.Total
 		}

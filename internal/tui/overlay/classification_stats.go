@@ -468,7 +468,7 @@ func (o *ClassificationStatsOverlay) OverlaySize(termW, termH int) (w, h int) {
 }
 
 func (o *ClassificationStatsOverlay) currentCols() []render.TableColumn {
-	return (&AssigneeStatsOverlay{lastWidth: o.lastWidth}).currentCols()
+	return (&AllAssigneesHistoryOverlay{lastWidth: o.lastWidth}).currentCols()
 }
 
 func (o *ClassificationStatsOverlay) currentStatsCols() []render.TableColumn {

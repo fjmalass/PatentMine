@@ -307,7 +307,7 @@ Today filter/sort logic is duplicated across at least eight files:
 
 * `pane/catalog.go`, `pane/citations.go`, `pane/family_graph.go` — own `applyFilter` + `PatentFilter`.
 * `overlay/history.go` — own `filterMode`, `filterInput`, `filterQuery`, `sortAscending`, `handleFilterKey`.
-* `overlay/assignee_stats.go`, `overlay/classification_stats.go`, `overlay/inventor_stats.go`, `overlay/patent_classification_view.go` — own `sortAscending` toggles.
+* `overlay/all_assignees_history.go`, `overlay/classification_stats.go`, `overlay/inventor_stats.go`, `overlay/patent_classification_view.go` — own `sortAscending` toggles.
 
 Each rewrites prompt handling, status bar rendering, help hints, and telemetry emission. The refactor collapses all of this into one container.
 
@@ -323,7 +323,7 @@ package listui
 // match callback decides how to interpret it (filterexpr grammar, plain
 // substring, or anything else).
 type FilterSortSettings struct {
-    Table       string // "history", "catalog_patents", "assignee_stats", ...
+    Table       string // "history", "catalog_patents", "all_assignees_history", ...
     Query       string
     SortColumn  string
     SortAsc     bool

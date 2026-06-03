@@ -67,14 +67,14 @@ type PatentListResult struct {
 	Total   int                `json:"total"`
 }
 
-// PatentAssigneeStatsParams selects assignee analytics within an optional project scope.
-type PatentAssigneeStatsParams struct {
+// AllAssigneesHistoryParams selects assignee analytics within an optional project scope.
+type AllAssigneesHistoryParams struct {
 	Project domain.ProjectID `json:"project,omitempty"`
 }
 
-// PatentAssigneeStatsResult carries database statistics for assignees.
-type PatentAssigneeStatsResult struct {
-	Stats []domain.AssigneeStats `json:"stats"`
+// AllAssigneesHistoryResult carries database history/statistics for assignees.
+type AllAssigneesHistoryResult struct {
+	Stats []domain.AllAssigneesHistory `json:"stats"`
 }
 
 // PatentClassificationStatsParams selects classification analytics within an optional project scope.

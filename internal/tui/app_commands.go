@@ -355,7 +355,13 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 				p.DisplayNumber = num
 			}
 		}
-		return a.openAssigneeTimeline(p)
+		var project domain.ProjectID
+		if a.activeProject != nil {
+			project = a.activeProject.ID
+		}
+		o, cmd := overlay.NewAllAssigneesHistoryOverlay(a.client, a.theme, a.text, p, project, true)
+		a.overlays = append(a.overlays, o)
+		return a, cmd
 	}
 
 	if detail.IsCursorOnClassifications() {
@@ -394,14 +400,75 @@ func (a *App) cmdOpenInventors(invocation) (tea.Model, tea.Cmd) {
 	return a.openInventors(p, false)
 }
 
-type openAssigneesProjectPatentLoadedMsg struct {
+type openAssigneesPatentLoadedMsg struct {
 	patent domain.Patent
 	err    error
+}
+
+func (a *App) cmdOpenAssignees(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(command.OpenAssignees)
+	}
+	if detail, ok := a.focusedPane().(*pane.Detail); ok {
+		p := detail.Patent()
+		if num, ok := detail.Selection(); ok {
+			if p.Number.Serial == "" {
+				p.Number = num
+			}
+			if p.DisplayNumber.Serial == "" {
+				p.DisplayNumber = num
+			}
+		}
+		return a.openAssigneeTimeline(p)
+	}
+
+	number, ok := a.focusedPane().Selection()
+	if !ok {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	var project domain.ProjectID
+	if a.activeProject != nil {
+		project = a.activeProject.ID
+	}
+	a.setStatus(text.StatusLoadingPatent, number.String())
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.PatentResult
+		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
+		if err != nil {
+			return openAssigneesPatentLoadedMsg{err: err}
+		}
+		return openAssigneesPatentLoadedMsg{patent: res.Patent}
+	}
 }
 
 func (a *App) cmdOpenAssigneesProject(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) != 0 {
 		return a.usageError(command.OpenAssigneesProject)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	o, cmd := overlay.NewProjectAssigneesOverlay(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, cmd
+}
+
+type openAllAssigneesHistoryPatentLoadedMsg struct {
+	patent domain.Patent
+	err    error
+}
+
+func (a *App) cmdOpenAllAssigneesHistory(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 0 {
+		return a.usageError(command.OpenAllAssigneesHistory)
 	}
 	if detail, ok := a.focusedPane().(*pane.Detail); ok {
 		p := detail.Patent()
@@ -432,27 +499,10 @@ func (a *App) cmdOpenAssigneesProject(inv invocation) (tea.Model, tea.Cmd) {
 		var res proto.PatentResult
 		err := a.client.Call(ctx, proto.MethodPatentGet, proto.PatentGetParams{Number: number, Project: project}, &res)
 		if err != nil {
-			return openAssigneesProjectPatentLoadedMsg{err: err}
+			return openAllAssigneesHistoryPatentLoadedMsg{err: err}
 		}
-		return openAssigneesProjectPatentLoadedMsg{patent: res.Patent}
+		return openAllAssigneesHistoryPatentLoadedMsg{patent: res.Patent}
 	}
-}
-
-func (a *App) cmdOpenAssignees(inv invocation) (tea.Model, tea.Cmd) {
-	if len(inv.args) != 0 {
-		return a.usageError(command.OpenAssignees)
-	}
-	if a.client == nil {
-		a.setErr(text.StatusDaemonUnavailable)
-		return a, nil
-	}
-	if a.activeProject == nil {
-		a.setErr(text.StatusNoActiveProject)
-		return a, nil
-	}
-	o, cmd := overlay.NewProjectAssigneesOverlay(a.client, a.theme, a.activeProject.ID)
-	a.overlays = append(a.overlays, o)
-	return a, cmd
 }
 
 func (a *App) cmdPatentExpirationDate(inv invocation) (tea.Model, tea.Cmd) {
@@ -564,7 +614,7 @@ func (a *App) openAssigneesProject(p domain.Patent) (tea.Model, tea.Cmd) {
 	if a.activeProject != nil {
 		project = a.activeProject.ID
 	}
-	o, cmd := overlay.NewAssigneeStatsOverlay(a.client, a.theme, a.text, p, project)
+	o, cmd := overlay.NewAllAssigneesHistoryOverlay(a.client, a.theme, a.text, p, project, false)
 	a.overlays = append(a.overlays, o)
 	return a, cmd
 }

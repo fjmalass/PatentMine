@@ -18,7 +18,7 @@ type Method string
 const (
 	MethodPing                       Method = "ping"
 	MethodPatentGet                  Method = "patent.get"
-	MethodPatentAssigneeStats        Method = "patent.assignee_stats"
+	MethodAllAssigneesHistory        Method = "patent.all_assignees_history"
 	MethodPatentClassificationStats  Method = "patent.classification_stats"
 	MethodPatentInventorStats        Method = "patent.inventor_stats"
 	MethodPatentList                 Method = "patent.list"

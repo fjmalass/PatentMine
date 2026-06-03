@@ -101,10 +101,10 @@ func (s *Server) handlePatentList(w http.ResponseWriter, r *http.Request) {
 	s.call(w, r, proto.MethodPatentList, params, &res)
 }
 
-// handleAssigneeStats returns patent assignee stats.
-func (s *Server) handleAssigneeStats(w http.ResponseWriter, r *http.Request) {
-	var res proto.PatentAssigneeStatsResult
-	s.call(w, r, proto.MethodPatentAssigneeStats, proto.PatentAssigneeStatsParams{Project: domain.ProjectID(r.URL.Query().Get("project"))}, &res)
+// handleAllAssigneesHistory returns all assignees history.
+func (s *Server) handleAllAssigneesHistory(w http.ResponseWriter, r *http.Request) {
+	var res proto.AllAssigneesHistoryResult
+	s.call(w, r, proto.MethodAllAssigneesHistory, proto.AllAssigneesHistoryParams{Project: domain.ProjectID(r.URL.Query().Get("project"))}, &res)
 }
 
 // handlePatentTableColumns returns patent table columns schema.

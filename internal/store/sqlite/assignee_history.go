@@ -231,6 +231,24 @@ func (r *Repo) AssigneeHistory(ctx context.Context, number domain.PatentNumber) 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: iterate assignee history: %w", err)
 	}
+	if len(out) == 0 {
+		var recordID, assignee, grantDate string
+		err := r.reader.QueryRowContext(ctx,
+			`SELECT id, assignee, grant_date FROM record WHERE number = ?`, number.Normalized()).
+			Scan(&recordID, &assignee, &grantDate)
+		if err == nil && strings.TrimSpace(assignee) != "" {
+			out = append(out, domain.AssigneeHistoryEntry{
+				RecordID:      recordID,
+				RecordNumber:  number,
+				PullType:      domain.PullTypeAtGrant,
+				Ordinal:       0,
+				AssigneeName:  assignee,
+				AssigneeNorm:  domain.NormalizeAssignee(assignee),
+				EffectiveDate: normalizeAssigneeDate(grantDate),
+				IsLatest:      true,
+			})
+		}
+	}
 	return out, nil
 }
 

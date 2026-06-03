@@ -72,16 +72,16 @@ func (s *Server) patentInventorStats(ctx context.Context, raw json.RawMessage) (
 	return proto.PatentInventorStatsResult{Stats: stats}, nil
 }
 
-func (s *Server) patentAssigneeStats(ctx context.Context, raw json.RawMessage) (any, error) {
-	p, err := decodeParams[proto.PatentAssigneeStatsParams](raw)
+func (s *Server) allAssigneesHistory(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.AllAssigneesHistoryParams](raw)
 	if err != nil {
 		return nil, err
 	}
-	stats, err := s.engine.PatentAssigneeStats(ctx, p.Project)
+	stats, err := s.engine.AllAssigneesHistory(ctx, p.Project)
 	if err != nil {
 		return nil, err
 	}
-	return proto.PatentAssigneeStatsResult{Stats: stats}, nil
+	return proto.AllAssigneesHistoryResult{Stats: stats}, nil
 }
 
 func (s *Server) patentClassificationStats(ctx context.Context, raw json.RawMessage) (any, error) {

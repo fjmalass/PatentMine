@@ -86,8 +86,9 @@ every frontend stays in step.
 
 | Method | Path | Proto method | Notes |
 |---|---|---|---|
-| GET | `/assignees` | `patent.assignee_stats` | Query: `project`. |
-| GET | `/assignees/stats` | `patent.assignee_stats` | Alias of `/assignees`. |
+| GET | `/assignees/history` | `patent.all_assignees_history` | Query: `project`. Get assignee history rollups. |
+| GET | `/assignees` | `patent.all_assignees_history` | Alias of `/assignees/history`. |
+| GET | `/assignees/stats` | `patent.all_assignees_history` | Alias of `/assignees/history`. |
 | GET | `/classifications/stats` | `patent.classification_stats` | Query: `project`. |
 
 ### Projects

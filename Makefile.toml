@@ -475,8 +475,8 @@ echo
 echo "verifying /commands"
 curl -fsS "http://$api_addr/commands" >/dev/null
 echo "ok"
-echo "verifying /assignees/stats"
-curl -fsS "http://$api_addr/assignees/stats" >/dev/null
+echo "verifying /assignees/history"
+curl -fsS "http://$api_addr/assignees/history" >/dev/null
 echo "ok"
 echo "verifying /classifications/stats"
 curl -fsS "http://$api_addr/classifications/stats" >/dev/null

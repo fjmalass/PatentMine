@@ -1310,7 +1310,7 @@ func TestPatentInventorStats(t *testing.T) {
 	}
 }
 
-func TestPatentAssigneeStats(t *testing.T) {
+func TestAllAssigneesHistory(t *testing.T) {
 	repo := openTestRepo(t)
 	ctx := context.Background()
 	project := domain.Project{ID: "proj-1", Name: "Test Project", CreatedAt: time.Now().UTC()}
@@ -1346,9 +1346,9 @@ func TestPatentAssigneeStats(t *testing.T) {
 		t.Fatalf("TagPatents: %v", err)
 	}
 
-	stats, err := repo.PatentAssigneeStats(ctx, project.ID)
+	stats, err := repo.AllAssigneesHistory(ctx, project.ID)
 	if err != nil {
-		t.Fatalf("PatentAssigneeStats: %v", err)
+		t.Fatalf("AllAssigneesHistory: %v", err)
 	}
 	if len(stats) != 1 {
 		t.Fatalf("expected 1 assignee stats row in project scope, got %d", len(stats))

@@ -23,6 +23,7 @@ const (
 	OpenProjects            ID = "view.projects"
 	OpenAssignees           ID = "view.assignees"
 	OpenAssigneesProject    ID = "view.assignees-project"
+	OpenAllAssigneesHistory  ID = "view.all-assignees-history"
 	PatentExpirationDate    ID = "patent.expiration-date"
 	OpenClassificationStats ID = "view.classification-stats"
 	OpenInventors           ID = "view.inventors"

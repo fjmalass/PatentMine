@@ -32,10 +32,10 @@ func (e *Engine) PatentInventorStats(ctx context.Context, number domain.PatentNu
 	return e.repo.PatentInventorStats(ctx, project, p.Inventors)
 }
 
-// PatentAssigneeStats aggregates metrics for all assignees in the active dataset.
-func (e *Engine) PatentAssigneeStats(ctx context.Context, project domain.ProjectID) (stats []domain.AssigneeStats, err error) {
-	defer e.observeDuration("engine.patent_assignee_stats", time.Now(), &err)
-	return e.repo.PatentAssigneeStats(ctx, project)
+// AllAssigneesHistory aggregates metrics for all assignees in the active dataset.
+func (e *Engine) AllAssigneesHistory(ctx context.Context, project domain.ProjectID) (stats []domain.AllAssigneesHistory, err error) {
+	defer e.observeDuration("engine.all_assignees_history", time.Now(), &err)
+	return e.repo.AllAssigneesHistory(ctx, project)
 }
 
 // PatentClassificationStats aggregates metrics for all classification codes in the active dataset.

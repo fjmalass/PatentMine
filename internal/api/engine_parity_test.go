@@ -62,7 +62,7 @@ var engineMethodsWithREST = map[proto.Method]bool{
 	proto.MethodSourceResolveDiffs:      true,
 	proto.MethodPatentInventorStats:     true,
 	proto.MethodSourceBibsList:          true,
-	proto.MethodPatentAssigneeStats:     true,
+	proto.MethodAllAssigneesHistory:     true,
 	proto.MethodPatentClassificationStats: true,
 	proto.MethodProjectAssignees:        true,
 	proto.MethodUSPTOFetchXML:           true,

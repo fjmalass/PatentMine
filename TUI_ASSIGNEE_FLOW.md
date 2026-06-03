@@ -52,8 +52,9 @@ a dead patent.
 
 ```text
 :fetch.uspto.assignments     # pull the chain from USPTO ODP (rebuilds the timeline)
-:open.assignees              # open the project-wide assignee rollup report (current owners vs. all ever)
-:open.assignees.project      # open project-wide assignee statistics/analytics with scrollable split view of patents
+:open.assignees              # open single-patent assignee ownership timeline showing transaction details
+:open.assignees.project      # open project-wide assignee rollup report (current owners vs. all ever)
+:open.all-assignees-history # open project-wide assignee history/analytics with scrollable split view of patents
 :export.assignees [path]     # (in progress) write the rollup as a report
 ```
 
@@ -61,20 +62,22 @@ a dead patent.
 application number, stores the raw chain, and **rebuilds** the record's
 `assignee_history` (at-grant owner + each recorded assignee, current owner flagged).
 
-`:open.assignees` (project-scoped) opens the project-wide rollup report (`ProjectAssigneesOverlay`) which answers *who owns this portfolio*:
+`:open.assignees` (patent-scoped) opens the single-patent ownership timeline overlay (`AssigneeTimelineOverlay`) showing assignment transaction details.
+
+`:open.assignees.project` (project-scoped) opens the project-wide rollup report (`ProjectAssigneesOverlay`) which answers *who owns this portfolio*:
 * **Current owners**: Deduplicated owners across **live** patents only.
 * **All assignees ever**: Every owner ever seen, with first/last dates and whether still current.
 * **Coverage buckets**: Live, expired (frozen), and not-fetched patent counts.
 
-`:open.assignees.project` (patent-scoped) displays the interactive assignee statistics panel (`AssigneeStatsOverlay`). It allows you to browse all assignees in the project on the top panel and view the list of patents owned by the selected assignee in a scrollable subtable (split view) below. When a patent is selected, its assignee is preselected when available.
+`:open.all-assignees-history` displays the interactive assignee history panel (`AllAssigneesHistoryOverlay`). It allows you to browse all assignees in the project on the top panel and view the list of patents owned by the selected assignee in a scrollable subtable (split view) below. When a patent is selected, its assignee is preselected when available.
 
-Inside the assignee statistics panel, you can use **`/`** to incrementally search/filter the assignees. Pressing **`Tab`** while searching cycles the active filtering scope:
+Inside the assignee history panel, you can use **`/`** to incrementally search/filter the assignees. Pressing **`Tab`** while searching cycles the active filtering scope:
 * **All Columns**: Matches your query against assignee name, tags, and review states count.
 * **Name**: Matches only the assignee name.
 * **Tags**: Matches tags assigned to the assignee's patents.
 * **States**: Matches patent review states.
 
-Pressing **Enter** on the **Assignee** line in the patent detail view opens the unified single-patent ownership timeline overlay (`AssigneeTimelineOverlay`) showing assignment transaction details.
+Pressing Enter on the Assignee line in the patent detail view opens the assignee history panel (AllAssigneesHistoryOverlay) filtered to ONLY show the assignees associated with that specific patent, displaying them in a split view where you can see all of their other patents in the project.
 
 REST:
 ```text
@@ -199,7 +202,7 @@ workers that would only queue behind the limiter.
 
 Tracked in [`TODO.md`](./TODO.md) and in-code `TODO(assignee-…)` markers:
 
-- TUI wiring: `:open.assignees` (timeline) and `:open.assignee-stats` (statistics) are fully shipped, along with `:open.assignees.project` and project batch `:fetch.uspto.assignments.project`. Still remaining: `:export.assignees` and `:fetch.uspto.assignments.file`.
+- TUI wiring: `:open.assignees` (rollup), `:open.assignees.project` (statistics), and `:open.assignee.timeline` (timeline) are fully shipped, along with project batch `:fetch.uspto.assignments.project`. Still remaining: `:export.assignees` and `:fetch.uspto.assignments.file`.
 - Remote assignee-name **search** (`:find.assignee`, `GET /assignees/search`) via a new
   `crawl.SearchUSPTOAssignmentsByAssignee`.
 - At-grant **joint** owners from `uspto_grant_party` (today the at-grant row uses the

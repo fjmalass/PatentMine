@@ -11,7 +11,7 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-func TestAssigneeStatsOverlaySorting(t *testing.T) {
+func TestAllAssigneesHistoryOverlaySorting(t *testing.T) {
 	theme := render.NewTheme()
 	catalog := text.English()
 	patent := domain.Patent{
@@ -20,12 +20,12 @@ func TestAssigneeStatsOverlaySorting(t *testing.T) {
 		Assignee:      "IBM",
 	}
 
-	o := &AssigneeStatsOverlay{
+	o := &AllAssigneesHistoryOverlay{
 		theme:              theme,
 		catalog:            catalog,
 		patent:             patent,
 		project:            "proj-1",
-		stats: []domain.AssigneeStats{
+		stats: []domain.AllAssigneesHistory{
 			{
 				Assignee: "Apple",
 				Total:    5,
