@@ -278,6 +278,11 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 
 	occurrences := make(map[domain.PatentNumber]int)
 	nodeLabels := make(map[domain.PatentNumber]string, len(res.Nodes))
+	relTypes := make(map[string]string)
+	for _, edge := range res.Edges {
+		key := edge.Parent.Normalized() + "\x00" + edge.Child.Normalized()
+		relTypes[key] = edge.RelationType
+	}
 	depthCounts := make(map[int]int)
 	crossEdges := 0
 	depthByNumber := make(map[domain.PatentNumber]int, len(res.Nodes))
@@ -310,6 +315,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 		indent     string
 		isCycle    bool
 		isCrossRef bool
+		parent     domain.PatentNumber
 	}
 
 	var rows []asciiRow
@@ -445,8 +451,8 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 
 		visitedParents := make(map[domain.PatentNumber]bool)
 		pathParents := []domain.PatentNumber{res.Root}
-		var walkParentsDAG func(domain.PatentNumber, string, bool, []domain.PatentNumber)
-		walkParentsDAG = func(num domain.PatentNumber, indent string, isLast bool, path []domain.PatentNumber) {
+		var walkParentsDAG func(domain.PatentNumber, domain.PatentNumber, string, bool, []domain.PatentNumber)
+		walkParentsDAG = func(num domain.PatentNumber, parent domain.PatentNumber, indent string, isLast bool, path []domain.PatentNumber) {
 			if num == res.Root {
 				return
 			}
@@ -465,6 +471,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 					node:    node,
 					indent:  fullIndent,
 					isCycle: true,
+					parent:  parent,
 				})
 				return
 			}
@@ -473,6 +480,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 					node:       node,
 					indent:     fullIndent,
 					isCrossRef: true,
+					parent:  parent,
 				})
 				return
 			}
@@ -480,6 +488,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 			rows = append(rows, asciiRow{
 				node:   node,
 				indent: fullIndent,
+				parent:  parent,
 			})
 
 			children := childrenInDAG[num]
@@ -498,13 +507,13 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 				}
 				newPath := append(path, num)
 				for i, child := range childrenToWalk {
-					walkParentsDAG(child, nextIndent, i == len(childrenToWalk)-1, newPath)
+					walkParentsDAG(child, num, nextIndent, i == len(childrenToWalk)-1, newPath)
 				}
 			}
 		}
 
 		for i, src := range sources {
-			walkParentsDAG(src, "  ", i == len(sources)-1, pathParents)
+			walkParentsDAG(src, domain.PatentNumber{}, "  ", i == len(sources)-1, pathParents)
 		}
 	}
 
@@ -604,8 +613,8 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 		visitedChildren := make(map[domain.PatentNumber]bool)
 		pathChildren := []domain.PatentNumber{res.Root}
 		rootChildren := descendantChildren[res.Root]
-		var walkChildrenDAG func(domain.PatentNumber, string, bool, []domain.PatentNumber)
-		walkChildrenDAG = func(num domain.PatentNumber, indent string, isLast bool, path []domain.PatentNumber) {
+		var walkChildrenDAG func(domain.PatentNumber, domain.PatentNumber, string, bool, []domain.PatentNumber)
+		walkChildrenDAG = func(num domain.PatentNumber, parent domain.PatentNumber, indent string, isLast bool, path []domain.PatentNumber) {
 			node := nodeMap[num]
 			if node == nil || node.Patent.FetchState == domain.FetchStub {
 				return
@@ -621,6 +630,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 					node:    node,
 					indent:  fullIndent,
 					isCycle: true,
+					parent:  parent,
 				})
 				return
 			}
@@ -629,6 +639,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 					node:       node,
 					indent:     fullIndent,
 					isCrossRef: true,
+					parent:  parent,
 				})
 				return
 			}
@@ -636,6 +647,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 			rows = append(rows, asciiRow{
 				node:   node,
 				indent: fullIndent,
+				parent:  parent,
 			})
 
 			children := descendantChildren[num]
@@ -648,13 +660,13 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 				}
 				newPath := append(path, num)
 				for i, child := range children {
-					walkChildrenDAG(child, nextIndent, i == len(children)-1, newPath)
+					walkChildrenDAG(child, num, nextIndent, i == len(children)-1, newPath)
 				}
 			}
 		}
 
 		for i, child := range rootChildren {
-			walkChildrenDAG(child, "  ", i == len(rootChildren)-1, pathChildren)
+			walkChildrenDAG(child, res.Root, "  ", i == len(rootChildren)-1, pathChildren)
 		}
 	}
 
@@ -664,21 +676,50 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 		}
 	}
 
-	maxPrefixWidth := 0
-	for _, r := range rows {
-		if !r.isHeader && r.node != nil {
-			prefixWidth := len(r.indent)
-			if r.isCycle || r.isCrossRef {
-				prefixWidth += 3
-			} else {
-				prefixWidth += 2
-				if occurrences[r.node.Patent.Number] > 1 {
-					prefixWidth += 8
-				}
+	headStrings := make(map[int]string)
+	maxHeadWidth := 0
+	for idx, r := range rows {
+		if r.isHeader || r.node == nil {
+			continue
+		}
+		node := *r.node
+		number := node.Patent.DisplayNumber
+		if number.IsZero() {
+			number = node.Patent.Number
+		}
+
+		relTypeBracket := ""
+		if !r.parent.IsZero() {
+			key := r.parent.Normalized() + "\x00" + node.Patent.Number.Normalized()
+			if relType, ok := relTypes[key]; ok && relType != "" {
+				relTypeBracket = "[" + relType + "] "
 			}
-			if prefixWidth > maxPrefixWidth {
-				maxPrefixWidth = prefixWidth
+		}
+
+		labelStr := ""
+		if r.isCycle {
+			label := nodeLabels[node.Patent.Number]
+			if label == "" {
+				label = "N??"
 			}
+			labelStr = fmt.Sprintf(" -> %s (Cycle)", label)
+		} else if r.isCrossRef {
+			label := nodeLabels[node.Patent.Number]
+			if label == "" {
+				label = "N??"
+			}
+			labelStr = fmt.Sprintf(" -> %s (Cross-Ref)", label)
+		} else {
+			if occurrences[node.Patent.Number] > 1 {
+				label := nodeLabels[node.Patent.Number]
+				labelStr = " [" + label + "]"
+			}
+		}
+
+		head := fmt.Sprintf("  %s%s%s%s", r.indent, relTypeBracket, number.DisplayString(), labelStr)
+		headStrings[idx] = head
+		if len(head) > maxHeadWidth {
+			maxHeadWidth = len(head)
 		}
 	}
 
@@ -711,7 +752,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 	b.WriteString("─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n")
 
 	// Write rows
-	for _, r := range rows {
+	for idx, r := range rows {
 		if r.isHeader {
 			b.WriteString(r.headerText)
 			b.WriteString("\n")
@@ -723,64 +764,23 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 		}
 
 		node := *r.node
-		number := node.Patent.DisplayNumber
-		if number.IsZero() {
-			number = node.Patent.Number
+		head := headStrings[idx]
+		headPadded := padRight(head, maxHeadWidth)
+
+		title := strings.TrimSpace(node.Patent.Title)
+		if title == "" {
+			title = "(stub)"
 		}
 
-		var labelStr string
-		if r.isCycle {
-			label := nodeLabels[node.Patent.Number]
-			if label == "" {
-				label = "N??"
-			}
-			labelStr = fmt.Sprintf("-> %s (Cycle)", label)
-		} else if r.isCrossRef {
-			label := nodeLabels[node.Patent.Number]
-			if label == "" {
-				label = "N??"
-			}
-			labelStr = fmt.Sprintf("-> %s (Cross-Ref)", label)
-		} else {
-			if occurrences[node.Patent.Number] > 1 {
-				label := nodeLabels[node.Patent.Number]
-				labelStr = "[" + label + "]"
-			}
-		}
+		countryPadded := padRight(countryOrDash(node.Patent.Number.Country), 2)
+		statePadded := padRight(fetchStateAscii(node.Patent), 2)
 
-		var line string
-		if r.isCycle || r.isCrossRef {
-			prefix := fmt.Sprintf("  %s ", r.indent)
-			prefixPadded := padRight(prefix, maxPrefixWidth)
-			line = fmt.Sprintf("%s %s %s",
-				prefixPadded,
-				padRight(number.DisplayString(), 15),
-				labelStr,
-			)
-		} else {
-			title := strings.TrimSpace(node.Patent.Title)
-			if title == "" {
-				title = "(stub)"
-			}
-			labelSpacing := ""
-			if labelStr != "" {
-				labelSpacing = labelStr + " "
-			}
-			prefix := fmt.Sprintf("  %s%s", r.indent, labelSpacing)
-			prefixPadded := padRight(prefix, maxPrefixWidth)
-			numberPadded := padRight(number.DisplayString(), 15)
-			countryPadded := padRight(countryOrDash(node.Patent.Number.Country), 2)
-			statePadded := padRight(fetchStateAscii(node.Patent), 2)
-
-			line = fmt.Sprintf("%s %s  %s  %s  %s",
-				prefixPadded,
-				numberPadded,
-				countryPadded,
-				statePadded,
-				title,
-			)
-		}
-
+		line := fmt.Sprintf("%s  %s  %s  %s",
+			headPadded,
+			countryPadded,
+			statePadded,
+			title,
+		)
 		b.WriteString(line)
 		b.WriteString("\n")
 	}

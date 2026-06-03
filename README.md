@@ -79,6 +79,12 @@ PatentMine solves this mapping problem by separating **Canonical Identity**, **D
    | **Grant** | `US11,611,785 B2`, `US11611785B2`, `11611785` | `US11611785B2` | `B2` |
 
    Because the same invention owns all three numbers, a `PatentNumber` on its own does not tell you which patent record it belongs to — that mapping is resolved at `:add`/crawl time (see [§8.6](#86-what-add-number-accepts-and-how-each-source-mode-resolves-it)). The record's *granted* number, specifically, is exposed by `Patent.GrantedNumber()` — the `Kind: B2` grant document, used e.g. to build the canonical Google Patents link — which is distinct from the stage-agnostic `Number` (canonical record key, usually the application) and `DisplayNumber` (latest promoted stage).
+
+   > [!WARNING]
+   > **Display Formatting & Stage Heuristics:**
+   > When rendering patent numbers, `DisplayString()` formats US serial numbers (e.g. adding commas `US62,132,131` or slashes/commas `US16/123,456`) and appends stage emojis (🏆 for Grants, 📄 for Publications, 🖋️ for Applications).
+   > If the kind code is empty, the stage is inferred by digit length for US patents (≤7 digits represents a legacy Grant, 8 digits an Application, 11 digits a Publication). This inference is **brittle** on raw search inputs. The canonical stage must be confirmed with a USPTO lookup/fetch, which writes the correct kind code to the database and promotes the record's `DisplayNumber`.
+
 2. **`Document`** (`document.go`): Represents a single life-stage document (application, publication, or grant) containing its specific stage, date, and `PatentNumber`.
 3. **`Patent`** (`patent.go`): The master entity. It carries:
    * **`Number`**: The permanent canonical record key (representing the first document number ever discovered for this record).

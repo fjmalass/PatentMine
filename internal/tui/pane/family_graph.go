@@ -43,6 +43,7 @@ type familyGraphRow struct {
 	indent      string
 	isCycle     bool
 	isCrossRef  bool
+	parent      domain.PatentNumber
 }
 
 // FamilyGraph shows one bounded BFS parent/child graph rooted at a patent.
@@ -65,6 +66,7 @@ type FamilyGraph struct {
 	nodeLabels   map[domain.PatentNumber]string
 	parentRefs   map[domain.PatentNumber][]string
 	childRefs    map[domain.PatentNumber][]string
+	relTypes     map[string]string
 	depthCounts  map[int]int
 	crossEdges   int
 	visualMode   bool
@@ -608,57 +610,45 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 
 	indent := row.indent
 
+	relTypeBracket := ""
+	if !row.parent.IsZero() {
+		key := row.parent.Normalized() + "\x00" + node.Patent.Number.Normalized()
+		if relType, ok := g.relTypes[key]; ok && relType != "" {
+			relTypeBracket = g.theme.Dim.Render("[" + relType + "] ")
+		}
+	}
+
 	var labelStr string
 	if row.isCycle {
 		label := g.nodeLabel(node.Patent.Number)
-		cycleText := fmt.Sprintf("-> %s (Cycle)", label)
-		labelStr = g.theme.Warn.Render(cycleText)
+		labelStr = " " + g.theme.Warn.Render(fmt.Sprintf("-> %s (Cycle)", label))
 	} else if row.isCrossRef {
 		label := g.nodeLabel(node.Patent.Number)
-		crossText := fmt.Sprintf("-> %s (Cross-Ref)", label)
-		labelStr = g.theme.Dim.Render(crossText)
+		labelStr = " " + g.theme.Dim.Render(fmt.Sprintf("-> %s (Cross-Ref)", label))
 	} else {
 		if g.occurrences[node.Patent.Number] > 1 {
 			label := g.nodeLabel(node.Patent.Number)
-			labelStr = g.theme.Info.Render("[" + label + "]")
+			labelStr = " " + g.theme.Info.Render("[" + label + "]")
 		}
 	}
 
-	var line string
-	if row.isCycle || row.isCrossRef {
-		prefix := fmt.Sprintf("  %s ", indent)
-		prefixPadded := render.Pad(prefix, g.maxPrefixWidth)
-		line = fmt.Sprintf("%s %s %s",
-			prefixPadded,
-			render.Pad(number.DisplayString(), 15),
-			labelStr,
-		)
-	} else {
-		title := strings.TrimSpace(node.Patent.Title)
-		if title == "" {
-			title = "(stub)"
-		}
+	styledHead := fmt.Sprintf("  %s%s%s%s", indent, relTypeBracket, number.DisplayString(), labelStr)
+	headPadded := render.Pad(styledHead, g.maxPrefixWidth)
 
-		labelSpacing := ""
-		if labelStr != "" {
-			labelSpacing = labelStr + " "
-		}
-
-		prefix := fmt.Sprintf("  %s%s", indent, labelSpacing)
-		prefixPadded := render.Pad(prefix, g.maxPrefixWidth)
-		numberPadded := render.Pad(number.DisplayString(), 15)
-		countryPadded := render.Pad(countryOrDash(node.Patent.Number.Country), 2)
-		statePadded := render.Pad(g.stateText(node.Patent), 2)
-
-		line = fmt.Sprintf("%s %s  %s  %s  %s",
-			prefixPadded,
-			numberPadded,
-			countryPadded,
-			statePadded,
-			title,
-		)
+	title := strings.TrimSpace(node.Patent.Title)
+	if title == "" {
+		title = "(stub)"
 	}
 
+	countryPadded := render.Pad(countryOrDash(node.Patent.Number.Country), 2)
+	statePadded := render.Pad(g.stateText(node.Patent), 2)
+
+	line := fmt.Sprintf("%s  %s  %s  %s",
+		headPadded,
+		countryPadded,
+		statePadded,
+		title,
+	)
 
 	return render.Truncate(line, w)
 }
@@ -702,6 +692,13 @@ func (g *FamilyGraph) rebuildRows() {
 	for i := range g.nodes {
 		nodeMap[g.nodes[i].Patent.Number] = &g.nodes[i]
 	}
+
+	relTypes := make(map[string]string)
+	for _, edge := range g.edges {
+		key := edge.Parent.Normalized() + "\x00" + edge.Child.Normalized()
+		relTypes[key] = edge.RelationType
+	}
+	g.relTypes = relTypes
 
 	var rows []familyGraphRow
 
@@ -854,7 +851,7 @@ func (g *FamilyGraph) rebuildRows() {
 		visitedParents := make(map[domain.PatentNumber]bool)
 		pathParents := []domain.PatentNumber{g.root}
 		for i, src := range sources {
-			g.walkParentsDAG(src, "  ", i == len(sources)-1, visitedParents, pathParents, &rows, nodeMap, childrenInDAG)
+			g.walkParentsDAG(src, domain.PatentNumber{}, "  ", i == len(sources)-1, visitedParents, pathParents, &rows, nodeMap, childrenInDAG)
 		}
 	}
 
@@ -964,7 +961,7 @@ func (g *FamilyGraph) rebuildRows() {
 		pathChildren := []domain.PatentNumber{g.root}
 		rootChildren := descendantChildren[g.root]
 		for i, child := range rootChildren {
-			g.walkChildrenDAG(child, "  ", i == len(rootChildren)-1, visitedChildren, pathChildren, &rows, nodeMap, descendantChildren)
+			g.walkChildrenDAG(child, g.root, "  ", i == len(rootChildren)-1, visitedChildren, pathChildren, &rows, nodeMap, descendantChildren)
 		}
 	}
 
@@ -980,19 +977,36 @@ func (g *FamilyGraph) rebuildRows() {
 	g.maxPrefixWidth = 0
 	for _, r := range rows {
 		if r.kind == familyGraphRowNode && r.node != nil {
-			prefixWidth := render.StringWidth(r.indent)
-			if r.isCycle || r.isCrossRef {
-				// prefix := fmt.Sprintf("  %s ", indent)
-				prefixWidth += 3 // 2 for leading "  ", 1 for trailing " "
-			} else {
-				// prefix := fmt.Sprintf("  %s%s", indent, labelSpacing)
-				prefixWidth += 2 // 2 for leading "  "
-				if g.occurrences[r.node.Patent.Number] > 1 {
-					// labelStr is "[N01]", which is 7 cells
-					// labelSpacing is labelStr + " ", which is 8 cells
-					prefixWidth += 8
+			node := *r.node
+			number := node.Patent.DisplayNumber
+			if number.IsZero() {
+				number = node.Patent.Number
+			}
+
+			relTypeBracket := ""
+			if !r.parent.IsZero() {
+				key := r.parent.Normalized() + "\x00" + node.Patent.Number.Normalized()
+				if relType, ok := g.relTypes[key]; ok && relType != "" {
+					relTypeBracket = "[" + relType + "] "
 				}
 			}
+
+			labelStr := ""
+			if r.isCycle {
+				label := g.nodeLabel(node.Patent.Number)
+				labelStr = fmt.Sprintf(" -> %s (Cycle)", label)
+			} else if r.isCrossRef {
+				label := g.nodeLabel(node.Patent.Number)
+				labelStr = fmt.Sprintf(" -> %s (Cross-Ref)", label)
+			} else {
+				if g.occurrences[node.Patent.Number] > 1 {
+					label := g.nodeLabel(node.Patent.Number)
+					labelStr = " [" + label + "]"
+				}
+			}
+
+			head := fmt.Sprintf("  %s%s%s%s", r.indent, relTypeBracket, number.DisplayString(), labelStr)
+			prefixWidth := render.StringWidth(head)
 			if prefixWidth > g.maxPrefixWidth {
 				g.maxPrefixWidth = prefixWidth
 			}
@@ -1055,7 +1069,7 @@ func (g *FamilyGraph) walkUp(num domain.PatentNumber, indent string, isLast bool
 	}
 }
 
-func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode, childrenInDAG map[domain.PatentNumber][]domain.PatentNumber) {
+func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, parent domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode, childrenInDAG map[domain.PatentNumber][]domain.PatentNumber) {
 	if num == g.root {
 		return
 	}
@@ -1077,6 +1091,7 @@ func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, indent string, isL
 			node:    node,
 			indent:  fullIndent,
 			isCycle: true,
+			parent:  parent,
 		})
 		return
 	}
@@ -1087,6 +1102,7 @@ func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, indent string, isL
 			node:       node,
 			indent:     fullIndent,
 			isCrossRef: true,
+			parent:     parent,
 		})
 		return
 	}
@@ -1096,6 +1112,7 @@ func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, indent string, isL
 		kind:   familyGraphRowNode,
 		node:   node,
 		indent: fullIndent,
+		parent: parent,
 	})
 
 	children := childrenInDAG[num]
@@ -1115,12 +1132,12 @@ func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, indent string, isL
 		}
 		newPath := append(path, num)
 		for i, child := range childrenToWalk {
-			g.walkParentsDAG(child, nextIndent, i == len(childrenToWalk)-1, visited, newPath, rows, nodeMap, childrenInDAG)
+			g.walkParentsDAG(child, num, nextIndent, i == len(childrenToWalk)-1, visited, newPath, rows, nodeMap, childrenInDAG)
 		}
 	}
 }
 
-func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode, descendantChildren map[domain.PatentNumber][]domain.PatentNumber) {
+func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, parent domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode, descendantChildren map[domain.PatentNumber][]domain.PatentNumber) {
 	node := nodeMap[num]
 	if node == nil || node.Patent.FetchState == domain.FetchStub {
 		return
@@ -1138,6 +1155,7 @@ func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, indent string, is
 			node:    node,
 			indent:  fullIndent,
 			isCycle: true,
+			parent:  parent,
 		})
 		return
 	}
@@ -1148,6 +1166,7 @@ func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, indent string, is
 			node:       node,
 			indent:     fullIndent,
 			isCrossRef: true,
+			parent:     parent,
 		})
 		return
 	}
@@ -1157,6 +1176,7 @@ func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, indent string, is
 		kind:   familyGraphRowNode,
 		node:   node,
 		indent: fullIndent,
+		parent: parent,
 	})
 
 	children := descendantChildren[num]
@@ -1169,7 +1189,7 @@ func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, indent string, is
 		}
 		newPath := append(path, num)
 		for i, child := range children {
-			g.walkChildrenDAG(child, nextIndent, i == len(children)-1, visited, newPath, rows, nodeMap, descendantChildren)
+			g.walkChildrenDAG(child, num, nextIndent, i == len(children)-1, visited, newPath, rows, nodeMap, descendantChildren)
 		}
 	}
 }

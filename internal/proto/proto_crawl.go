@@ -90,7 +90,9 @@ type FamilyGraphEdge struct {
 	Parent       domain.PatentNumber `json:"parent"`
 	Child        domain.PatentNumber `json:"child"`
 	Inconsistent bool                `json:"inconsistent,omitempty"`
+	RelationType string              `json:"relation_type,omitempty"`
 }
+
 
 // FamilyGraphResult carries a bounded parent/child graph plus traversal attrs.
 type FamilyGraphResult struct {

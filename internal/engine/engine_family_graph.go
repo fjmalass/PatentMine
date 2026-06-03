@@ -1,4 +1,4 @@
-package engine
+ackage engine
 
 import (
 	"context"
@@ -205,10 +205,32 @@ func (e *Engine) FamilyGraph(ctx context.Context, p proto.FamilyGraphParams) (ou
 		if _, ok := nodes[key.child]; !ok {
 			continue
 		}
+		relType := ""
+		if conts, err := e.repo.USPTOContinuities(ctx, key.child.Serial); err == nil {
+			for _, c := range conts {
+				parentClean := cleanSerial(c.ParentApplicationNumberText)
+				if parentClean == key.parent.Serial {
+					relType = shortRelationType(c.ClaimParentageTypeCode, c.ClaimParentageTypeDescriptionText)
+					break
+				}
+			}
+		}
+		if relType == "" {
+			if conts, err := e.repo.USPTOContinuities(ctx, key.parent.Serial); err == nil {
+				for _, c := range conts {
+					childClean := cleanSerial(c.ChildApplicationNumberText)
+					if childClean == key.child.Serial {
+						relType = shortRelationType(c.ClaimParentageTypeCode, c.ClaimParentageTypeDescriptionText)
+						break
+					}
+				}
+			}
+		}
 		resultEdges = append(resultEdges, proto.FamilyGraphEdge{
 			Parent:       key.parent,
 			Child:        key.child,
 			Inconsistent: !(state.parentSeen || state.childSeen),
+			RelationType: relType,
 		})
 	}
 	slices.SortFunc(resultEdges, func(a, b proto.FamilyGraphEdge) int {
@@ -361,3 +383,36 @@ func sortedPatentNumbers(set map[domain.PatentNumber]bool) []domain.PatentNumber
 	})
 	return out
 }
+
+func cleanSerial(s string) string {
+	s = strings.ReplaceAll(s, "/", "")
+	s = strings.ReplaceAll(s, ",", "")
+	return strings.TrimSpace(s)
+}
+
+func shortRelationType(code, desc string) string {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	desc = strings.ToLower(strings.TrimSpace(desc))
+	switch {
+	case code == "CON" || strings.Contains(desc, "continuation") && !strings.Contains(desc, "part"):
+		return "con"
+	case code == "CIP" || strings.Contains(desc, "continuation-in-part") || (strings.Contains(desc, "continuation") && strings.Contains(desc, "part")):
+		return "CIP"
+	case code == "DIV" || strings.Contains(desc, "division") || strings.Contains(desc, "divisional"):
+		return "div"
+	case code == "PROV" || strings.Contains(desc, "provisional"):
+		return "prov"
+	default:
+		if code != "" {
+			return strings.ToLower(code)
+		}
+		if desc != "" {
+			if len(desc) > 5 {
+				return desc[:4]
+			}
+			return desc
+		}
+		return ""
+	}
+}
+
