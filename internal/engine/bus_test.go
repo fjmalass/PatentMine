@@ -62,3 +62,28 @@ func TestBusCloseClosesSubscribers(t *testing.T) {
 	bus.Publish(dbEvent())
 	bus.Close()
 }
+
+func TestBusPublishConcurrentlyClosed(t *testing.T) {
+	bus := NewBus()
+	defer bus.Close()
+
+	done := make(chan bool)
+	go func() {
+		for i := 0; i < 1000; i++ {
+			_, unsub := bus.Subscribe()
+			unsub()
+		}
+		done <- true
+	}()
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			bus.Publish(dbEvent())
+		}
+		done <- true
+	}()
+
+	<-done
+	<-done
+}
+

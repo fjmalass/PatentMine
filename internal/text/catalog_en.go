@@ -64,6 +64,9 @@ const (
 	StatusExportDone              Key = "status.export_done"
 	StatusNotesExportDone         Key = "status.notes_export_done"
 	StatusNotesExportFailed       Key = "status.notes_export_failed"
+	StatusFamilyExportDone        Key = "status.family_export_done"
+	StatusFamilyExportFailed      Key = "status.family_export_failed"
+	StatusFamilyExportPDFOpenFailed Key = "status.family_export_pdf_open_failed"
 	StatusNotesLoadFailed         Key = "status.notes_load_failed"
 	StatusNotesSorted             Key = "status.notes_sorted"
 	StatusProjectCreateFailed     Key = "status.project_create_failed"
@@ -366,6 +369,9 @@ var englishNamed = map[Key]string{
 	StatusExportDone:              "IDS for %q: %d disclosed reference(s)",
 	StatusNotesExportDone:         "exported %d note(s) to %s",
 	StatusNotesExportFailed:       "notes export failed: %s",
+	StatusFamilyExportDone:        "exported family graph to %s",
+	StatusFamilyExportFailed:      "export family graph failed: %s",
+	StatusFamilyExportPDFOpenFailed: "exported family graph to %s but failed to open: %s",
 	StatusNotesLoadFailed:         "load notes failed: %s",
 	StatusNotesSorted:             "sorted by %s",
 	StatusProjectCreateFailed:     "create project failed: %s",

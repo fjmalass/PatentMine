@@ -104,3 +104,20 @@ type FamilyGraphResult struct {
 	HiddenByCountry    int                 `json:"hidden_by_country,omitempty"`
 	InconsistencyCount int                 `json:"inconsistency_count,omitempty"`
 }
+
+// FamilyGraphExportParams carries options for exporting the family graph.
+type FamilyGraphExportParams struct {
+	Root      domain.PatentNumber `json:"root"`
+	Depth     int                 `json:"depth,omitempty"`
+	MaxNodes  int                 `json:"max_nodes,omitempty"`
+	Project   domain.ProjectID    `json:"project,omitempty"`
+	Countries []string            `json:"countries,omitempty"`
+	Path      string              `json:"path,omitempty"`
+}
+
+// FamilyGraphExportResult describes the output of exporting the family graph.
+type FamilyGraphExportResult struct {
+	Path      string `json:"path,omitempty"`
+	Mermaid   string `json:"mermaid,omitempty"`
+	ASCIIPath string `json:"ascii_path,omitempty"`
+}

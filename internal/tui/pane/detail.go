@@ -481,8 +481,8 @@ func (d *Detail) body(w int) string {
 	d.pgpubURLLine, d.pgpubURLLineEnd = -1, -1
 	d.grantURLLine, d.grantURLLineEnd = -1, -1
 	var b strings.Builder
-	d.field(&b, w, detailLabelShownAs, numberToShow(p).String())
-	d.field(&b, w, detailLabelRecordKey, p.Number.String())
+	d.field(&b, w, detailLabelShownAs, numberToShow(p).DisplayString())
+	d.field(&b, w, detailLabelRecordKey, p.Number.DisplayString())
 	d.field(&b, w, detailLabelTitle, p.Title)
 
 	// Assignee

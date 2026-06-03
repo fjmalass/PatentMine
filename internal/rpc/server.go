@@ -86,6 +86,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodImportFile:                 s.importFile,
 		proto.MethodRelations:                  s.relations,
 		proto.MethodFamilyGraph:                s.familyGraph,
+		proto.MethodFamilyGraphExport:          s.familyGraphExport,
 		proto.MethodIDSExport:                  s.idsExport,
 		proto.MethodIDSPDFExport:               s.idsPDFExport,
 		proto.MethodIDSPDFPreview:              s.idsPDFPreview,

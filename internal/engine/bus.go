@@ -78,23 +78,29 @@ func (b *Bus) Publish(ev proto.Event) {
 	b.mu.Unlock()
 
 	for _, ch := range chans {
-		select {
-		case ch <- ev:
-		default:
-			if metrics != nil {
-				metrics.IncCounter("engine.bus.drop_total", 1)
-			}
-			select {
-			case <-ch:
-			default:
-			}
+		func() {
+			defer func() {
+				_ = recover()
+			}()
 			select {
 			case ch <- ev:
 			default:
+				if metrics != nil {
+					metrics.IncCounter("engine.bus.drop_total", 1)
+				}
+				select {
+				case <-ch:
+				default:
+				}
+				select {
+				case ch <- ev:
+				default:
+				}
 			}
-		}
+		}()
 	}
 }
+
 
 // Close shuts the Bus down and closes every subscriber channel.
 func (b *Bus) Close() {

@@ -109,6 +109,23 @@ func (n PatentNumber) String() string {
 	return n.Normalized()
 }
 
+// DisplayString returns a human-friendly string for the patent number.
+// If it is not a granted patent (e.g. it is an application or publication),
+// it appends " (App)" or " (Pub)" respectively, to prevent confusion in outputs like family graphs.
+func (n PatentNumber) DisplayString() string {
+	if n.IsZero() {
+		return ""
+	}
+	norm := n.Normalized()
+	if strings.HasPrefix(n.Kind, "B") {
+		return norm
+	}
+	if n.Kind == "" {
+		return norm + " (App)"
+	}
+	return norm + " (Pub)"
+}
+
 // Equal reports whether two numbers refer to the same patent document.
 func (n PatentNumber) Equal(other PatentNumber) bool {
 	return n == other

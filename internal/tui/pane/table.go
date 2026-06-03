@@ -199,7 +199,7 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 	case domain.PatentColumnIndex:
 		return formatViewIndex(absoluteIndex)
 	case domain.PatentColumnNumber:
-		return numberToShowRow(row).String()
+		return numberToShowRow(row).DisplayString()
 	case domain.PatentColumnTitle:
 		return row.Title
 	case domain.PatentColumnInventor:

@@ -135,3 +135,18 @@ func (s *Server) familyGraph(ctx context.Context, raw json.RawMessage) (any, err
 	}
 	return s.engine.FamilyGraph(ctx, p)
 }
+
+func (s *Server) familyGraphExport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.FamilyGraphExportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	engineParams := proto.FamilyGraphParams{
+		Root:      p.Root,
+		Depth:     p.Depth,
+		MaxNodes:  p.MaxNodes,
+		Project:   p.Project,
+		Countries: p.Countries,
+	}
+	return s.engine.ExportFamilyGraph(ctx, engineParams, p.Path)
+}

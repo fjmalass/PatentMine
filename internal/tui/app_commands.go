@@ -316,6 +316,37 @@ func (a *App) cmdOpenFamilyGraph(inv invocation) (tea.Model, tea.Cmd) {
 	return a.openFamilyGraph(depth, args)
 }
 
+func (a *App) cmdFamilyExportMermaid(inv invocation) (tea.Model, tea.Cmd) {
+	// If the focused pane is the FamilyGraph pane, delegate to it so it uses the current view filters
+	if g, ok := a.focusedPane().(*pane.FamilyGraph); ok {
+		updated, cmd := g.Command(command.FamilyExportMermaid, pane.Invocation{Repeat: inv.repeat, Args: inv.args})
+		a.panes[len(a.panes)-1] = updated
+		return a, cmd
+	}
+
+	// Otherwise, resolve the active selection
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	number := numbers[0]
+
+	// Output path argument (if any)
+	var path string
+	if len(inv.args) > 0 {
+		path = inv.args[0]
+	}
+
+	projectID := domain.ProjectID("")
+	if a.activeProject != nil {
+		projectID = a.activeProject.ID
+	}
+
+	return a, pane.ExportFamilyMermaid(a.client, number, projectID, path)
+}
+
+
 func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)

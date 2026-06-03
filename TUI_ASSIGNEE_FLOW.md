@@ -46,6 +46,13 @@ shown with its last-known owner but is **excluded from "current owners"** and is
 **skipped by batch fetch** by default — there is no point re-pulling ownership for
 a dead patent.
 
+**Lifecycle Stage & Identifier Collisions.** To ensure data consistency across assignee
+history and the family graph, the database strictly prevents collisions between US application
+numbers and US patent grant numbers that share the same digits (e.g. US Application `12/348,821`
+vs. US Patent `12,348,821`). The Google Patents scraper ensures that kindless patent/grant references
+do not generate fake `StageApplication` documents, and drops redundant kindless versions of a serial
+when a kind-coded version is present.
+
 ---
 
 ## 2. Project-wide Assignee Rollup & Statistics

@@ -1022,5 +1022,53 @@ func TestAppOpenAllAssigneesHistoryFromCatalog(t *testing.T) {
 	}
 }
 
+func TestAppFamilyExportMermaidCommandAvailability(t *testing.T) {
+	reg, err := command.Default()
+	if err != nil {
+		t.Fatalf("command.Default: %v", err)
+	}
+	app, err := New(nil, reg, keymap.Default(), text.English())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	pn := domain.MustParsePatentNumber("US11611785B2")
+
+	// Test 1: In ScopeFamily (Family Graph pane)
+	familyPane := &patentSelectionProbePane{ScopeVal: command.ScopeFamily, TitleVal: "Family graph", hasSel: true, selected: pn}
+	app.panes = []pane.Pane{familyPane}
+
+	cmd, ok := app.registry.LookupName("export.family.mermaid")
+	if !ok {
+		t.Fatal("failed to lookup export.family.mermaid")
+	}
+	if !cmd.AvailableIn(app.scope()) {
+		t.Fatal("export.family.mermaid should be available in ScopeFamily")
+	}
+
+	app.Update(runeKey(':'))
+	updated, cmdExec := app.Update(overlay.PromptSubmitMsg{Input: "export.family.mermaid"})
+	app = updated.(*App)
+	if cmdExec == nil {
+		t.Fatal("expected executeTypedCommand to return a cmd in ScopeFamily")
+	}
+
+	// Test 2: In ScopeDetail (Detail pane)
+	detailPane := &patentSelectionProbePane{ScopeVal: command.ScopeDetail, TitleVal: "Detail", hasSel: true, selected: pn}
+	app.panes = []pane.Pane{detailPane}
+
+	if !cmd.AvailableIn(app.scope()) {
+		t.Fatal("export.family.mermaid should be available in ScopeDetail")
+	}
+
+	app.Update(runeKey(':'))
+	updated, cmdExec = app.Update(overlay.PromptSubmitMsg{Input: "export.family.mermaid"})
+	app = updated.(*App)
+	if cmdExec == nil {
+		t.Fatal("expected executeTypedCommand to return a cmd in ScopeDetail")
+	}
+}
+
+
+
 
 

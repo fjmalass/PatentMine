@@ -198,8 +198,8 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 	for _, want := range []string{
 		"flowchart TD",
 		"p_us_1_b2((\"US1B2<br/>Root patent\"))",
-		"p_ep_2_a1[\"EP2A1<br/>Parent patent\"]",
-		"p_jp_3_a1[\"JP3A1\"]",
+		"p_ep_2_a1[\"EP2A1 (Pub)<br/>Parent patent\"]",
+		"p_jp_3_a1[\"JP3A1 (Pub)\"]",
 		"p_ep_2_a1 --> p_us_1_b2",
 		"p_us_1_b2 -.-> p_jp_3_a1",
 	} {

@@ -74,3 +74,24 @@ func TestPatentNumberEqualAndNormalize(t *testing.T) {
 		t.Fatal("parsed number should not report IsZero")
 	}
 }
+
+func TestPatentNumberDisplayString(t *testing.T) {
+	cases := []struct {
+		name string
+		num  PatentNumber
+		want string
+	}{
+		{"grant", PatentNumber{"US", "11611785", "B2"}, "US11611785B2"},
+		{"application", PatentNumber{"US", "16123456", ""}, "US16123456 (App)"},
+		{"publication", PatentNumber{"US", "20200123456", "A1"}, "US20200123456A1 (Pub)"},
+		{"zero", PatentNumber{}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.num.DisplayString(); got != c.want {
+				t.Errorf("%v.DisplayString() = %q, want %q", c.num, got, c.want)
+			}
+		})
+	}
+}
+

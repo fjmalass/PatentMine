@@ -86,7 +86,23 @@ func (p *workerPool) loop() {
 func (p *workerPool) run(qj queuedJob) {
 	start := time.Now()
 	emit := func(ev proto.Event) { p.bus.Publish(ev) }
-	err := qj.job.Run(qj.ctx, qj.id, emit)
+
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("job panicked: %v", r)
+				if p.logger != nil {
+					p.logger.Error("background job panicked",
+						slog.String("job_id", string(qj.id)),
+						slog.Any("recover", r))
+				}
+			}
+		}()
+		err = qj.job.Run(qj.ctx, qj.id, emit)
+	}()
+
+
 
 	p.mu.Lock()
 	if cancel, ok := p.cancels[qj.id]; ok {

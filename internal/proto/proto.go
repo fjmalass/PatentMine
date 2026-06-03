@@ -42,6 +42,7 @@ const (
 	MethodImportFile                 Method = "import.file"
 	MethodRelations                  Method = "patent.relations"
 	MethodFamilyGraph                Method = "patent.family_graph"
+	MethodFamilyGraphExport          Method = "patent.family_graph.export"
 	MethodIDSExport                  Method = "ids.export"
 	MethodIDSPDFExport               Method = "ids.export.pdf"
 	MethodIDSPDFPreview              Method = "ids.export.pdf.preview"

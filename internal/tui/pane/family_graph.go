@@ -3,6 +3,9 @@ package pane
 import (
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,7 +123,7 @@ func NewFamilyGraph(client *rpc.Client, theme render.Theme, root domain.PatentNu
 			}
 			return nil
 		},
-		command.FamilyExportMermaid: func(Invocation) tea.Cmd { return g.copyMermaid() },
+		command.FamilyExportMermaid: g.exportMermaid,
 		command.FamilyDepthMore:     func(Invocation) tea.Cmd { return g.adjustDepth(1) },
 		command.FamilyDepthLess:     func(Invocation) tea.Cmd { return g.adjustDepth(-1) },
 		command.CrawlFamily:         func(Invocation) tea.Cmd { return g.crawlSelected(domain.CrawlProfileFamily) },
@@ -379,6 +382,14 @@ func (g *FamilyGraph) View(w, h int) string {
 			lines = append(lines, g.theme.Selected.Render(render.Pad(line, w)))
 			continue
 		}
+		if row.kind == familyGraphRowNode {
+			if (start+i)%2 == 1 {
+				lines = append(lines, g.theme.RowAlt.Render(render.Pad(line, w)))
+			} else {
+				lines = append(lines, g.theme.Row.Render(render.Pad(line, w)))
+			}
+			continue
+		}
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
@@ -412,13 +423,58 @@ func (g *FamilyGraph) filterLine(w int) string {
 	}
 	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  ·  depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
 }
-
-func (g *FamilyGraph) copyMermaid() tea.Cmd {
+func (g *FamilyGraph) exportMermaid(inv Invocation) tea.Cmd {
 	if len(g.nodes) == 0 {
 		return status(text.StatusNoPatentSelected, false, "family graph is empty")
 	}
-	out := g.mermaidGraph()
-	return func() tea.Msg { return CopyToClipboardMsg{Text: out} }
+
+	if len(inv.Args) == 0 {
+		out := g.mermaidGraph()
+		return func() tea.Msg { return CopyToClipboardMsg{Text: out} }
+	}
+
+	path := inv.Args[0]
+	client := g.client
+	number := g.root
+	depth := g.depth
+	countries := append([]string(nil), g.countries...)
+	maxNodes := g.maxNodes
+	project := g.project
+
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.FamilyGraphExportResult
+		err := client.Call(ctx, proto.MethodFamilyGraphExport, proto.FamilyGraphExportParams{
+			Root:      number,
+			Depth:     depth,
+			MaxNodes:  maxNodes,
+			Project:   project,
+			Countries: countries,
+			Path:      path,
+		}, &res)
+		if err != nil {
+			return StatusMsg{Key: text.StatusFamilyExportFailed, Args: []any{err.Error()}, Error: true}
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".pdf" {
+			var openErr error
+			switch runtime.GOOS {
+			case "darwin":
+				openErr = exec.Command("open", path).Start()
+			case "windows":
+				openErr = exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+			default:
+				openErr = exec.Command("xdg-open", path).Start()
+			}
+			if openErr != nil {
+				return StatusMsg{Key: text.StatusFamilyExportPDFOpenFailed, Args: []any{path, openErr.Error()}, Error: false}
+			}
+		}
+
+		return StatusMsg{Key: text.StatusFamilyExportDone, Args: []any{path}}
+	}
 }
 
 func (g *FamilyGraph) mermaidGraph() string {
@@ -432,7 +488,14 @@ func (g *FamilyGraph) mermaidGraph() string {
 		}
 		fmt.Fprintf(&b, "  %s%s%s%s\n", id, shapeOpen, mermaidNodeText(node), shapeClose)
 	}
+
+	reduced := transitivelyReduced(g.edges)
+
 	for _, edge := range g.edges {
+		key := edge.Parent.Normalized() + "\x00" + edge.Child.Normalized()
+		if !reduced[key] {
+			continue
+		}
 		parentLabel := mermaidNodeID(edge.Parent)
 		childLabel := mermaidNodeID(edge.Child)
 		arrow := " --> "
@@ -448,6 +511,49 @@ func (g *FamilyGraph) mermaidGraph() string {
 	return b.String()
 }
 
+func transitivelyReduced(edges []proto.FamilyGraphEdge) map[string]bool {
+	adj := make(map[domain.PatentNumber][]domain.PatentNumber)
+	for _, edge := range edges {
+		adj[edge.Parent] = append(adj[edge.Parent], edge.Child)
+	}
+
+	isReachableWithoutDirect := func(u, v domain.PatentNumber) bool {
+		visited := make(map[domain.PatentNumber]bool)
+		visited[u] = true
+		queue := []domain.PatentNumber{}
+		for _, child := range adj[u] {
+			if child != v {
+				queue = append(queue, child)
+				visited[child] = true
+			}
+		}
+
+		for len(queue) > 0 {
+			curr := queue[0]
+			queue = queue[1:]
+			if curr == v {
+				return true
+			}
+			for _, neighbor := range adj[curr] {
+				if !visited[neighbor] {
+					visited[neighbor] = true
+					queue = append(queue, neighbor)
+				}
+			}
+		}
+		return false
+	}
+
+	kept := make(map[string]bool)
+	for _, edge := range edges {
+		if !isReachableWithoutDirect(edge.Parent, edge.Child) {
+			key := edge.Parent.Normalized() + "\x00" + edge.Child.Normalized()
+			kept[key] = true
+		}
+	}
+	return kept
+}
+
 func mermaidNodeText(node proto.FamilyGraphNode) string {
 	number := node.Patent.DisplayNumber
 	if number.IsZero() {
@@ -455,13 +561,14 @@ func mermaidNodeText(node proto.FamilyGraphNode) string {
 	}
 	title := strings.TrimSpace(node.Patent.Title)
 	if title == "" {
-		return mermaidEscape(number.String())
+		return mermaidEscape(number.DisplayString())
 	}
 	if len(title) > 48 {
 		title = strings.TrimSpace(title[:45]) + "..."
 	}
-	return mermaidEscape(number.String() + "<br/>" + title)
+	return mermaidEscape(number.DisplayString() + "<br/>" + title)
 }
+
 
 func mermaidNodeID(number domain.PatentNumber) string {
 	parts := []string{strings.ToLower(number.Country), strings.ToLower(number.Serial)}
@@ -523,7 +630,7 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 		prefixPadded := render.Pad(prefix, g.maxPrefixWidth)
 		line = fmt.Sprintf("%s %s %s",
 			prefixPadded,
-			render.Pad(number.String(), 15),
+			render.Pad(number.DisplayString(), 15),
 			labelStr,
 		)
 	} else {
@@ -539,7 +646,7 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 
 		prefix := fmt.Sprintf("  %s%s", indent, labelSpacing)
 		prefixPadded := render.Pad(prefix, g.maxPrefixWidth)
-		numberPadded := render.Pad(number.String(), 15)
+		numberPadded := render.Pad(number.DisplayString(), 15)
 		countryPadded := render.Pad(countryOrDash(node.Patent.Number.Country), 2)
 		statePadded := render.Pad(g.stateText(node.Patent), 2)
 
@@ -551,6 +658,7 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 			title,
 		)
 	}
+
 
 	return render.Truncate(line, w)
 }
@@ -874,11 +982,15 @@ func (g *FamilyGraph) rebuildRows() {
 		if r.kind == familyGraphRowNode && r.node != nil {
 			prefixWidth := render.StringWidth(r.indent)
 			if r.isCycle || r.isCrossRef {
-				// Cycle/CrossRef doesn't have labelStr, but we'll show indent + space
-				prefixWidth += 1
+				// prefix := fmt.Sprintf("  %s ", indent)
+				prefixWidth += 3 // 2 for leading "  ", 1 for trailing " "
 			} else {
+				// prefix := fmt.Sprintf("  %s%s", indent, labelSpacing)
+				prefixWidth += 2 // 2 for leading "  "
 				if g.occurrences[r.node.Patent.Number] > 1 {
-					prefixWidth += 7 // for "[N01] "
+					// labelStr is "[N01]", which is 7 cells
+					// labelSpacing is labelStr + " ", which is 8 cells
+					prefixWidth += 8
 				}
 			}
 			if prefixWidth > g.maxPrefixWidth {
@@ -1427,3 +1539,45 @@ func (g *FamilyGraph) jumpToLastNode() {
 func (g *FamilyGraph) PatentNumber() domain.PatentNumber { return g.root }
 func (g *FamilyGraph) Depth() int                        { return g.depth }
 func (g *FamilyGraph) Countries() []string               { return g.countries }
+
+// ExportFamilyMermaid handles fetching and exporting family graph as Mermaid without needing a FamilyGraph pane.
+func ExportFamilyMermaid(client *rpc.Client, number domain.PatentNumber, project domain.ProjectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+
+		var res proto.FamilyGraphExportResult
+		err := client.Call(ctx, proto.MethodFamilyGraphExport, proto.FamilyGraphExportParams{
+			Root:     number,
+			Depth:    2, // Default depth
+			MaxNodes: 60,
+			Project:  project,
+			Path:     path,
+		}, &res)
+		if err != nil {
+			return StatusMsg{Key: text.StatusFamilyExportFailed, Args: []any{err.Error()}, Error: true}
+		}
+
+		if path == "" {
+			return CopyToClipboardMsg{Text: res.Mermaid}
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".pdf" {
+			var openErr error
+			switch runtime.GOOS {
+			case "darwin":
+				openErr = exec.Command("open", path).Start()
+			case "windows":
+				openErr = exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+			default:
+				openErr = exec.Command("xdg-open", path).Start()
+			}
+			if openErr != nil {
+				return StatusMsg{Key: text.StatusFamilyExportPDFOpenFailed, Args: []any{path, openErr.Error()}, Error: false}
+			}
+		}
+
+		return StatusMsg{Key: text.StatusFamilyExportDone, Args: []any{path}}
+	}
+}

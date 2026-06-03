@@ -719,7 +719,16 @@ This feature is supported across all major list/table views:
 * `o` : Open the visual **Notes Buffer** overlay to view, copy, or export accumulated notes (including AI reports).
 * `ctrl+r` : Refresh the current detail views.
 
-#### F. IDS Curation Pane Bindings
+#### F. Family Graph Pane Bindings
+* `y` : Export/copy the transitively reduced family tree DAG as a Mermaid diagram.
+* `[` / `-` : Decrease the family crawl depth displayed.
+* `]` / `+` : Increase the family crawl depth displayed.
+* `v` : Enter line-based visual selection mode.
+* `g a` / `ctrl+a` : Select all visible family tree nodes.
+* `enter` / `l` : Open the patent detail pane for the selected record.
+* `esc` / `left` / `h` : Go back to the previous pane.
+
+#### G. IDS Curation Pane Bindings
 * `enter` / `e` : Edit reference fields inside the curated IDS entries.
 * `f` : Toggle full listing/narrow views.
 * `s` : Cycle IDS review statuses (Pending, Approved, Disclosed).
@@ -727,7 +736,7 @@ This feature is supported across all major list/table views:
 * `p` : Switch back to the Projects dashboard.
 * `ctrl+r` : Refresh references.
 
-#### G. Projects Dashboard Bindings
+#### H. Projects Dashboard Bindings
 * `enter` / `l` / `right` : Activate and open the selected project.
 * `u` : Deactivate the current active project filter.
 * `n` : Create a new project profile.
@@ -817,6 +826,8 @@ HTTP endpoints:
 Supported `table_type` values are `ids_activity_history`, `patents`, `citations`, and `inventor_stats`. See [`FILTER_VIEW.md`](./FILTER_VIEW.md) for the design notes, tradeoffs, and storage model.
 
 Filter/search/sort usage is recorded through metrics and activity telemetry so common fields, sort columns, saved-view selections, and view complexity can be reviewed later.
+
+* `:export.family.mermaid [PATH]` (aliases `:family.mermaid`, `:export-mermaid`, `:copy-mermaid`) : Export the family tree DAG as a transitively reduced Mermaid flowchart. If `PATH` is omitted, the Mermaid source code is copied to the system clipboard (compatible with the `y` key binding). If `PATH` is specified, it writes the flowchart to that file. If the file path ends in `.pdf`, the diagram is rendered via the `mermaid.ink` API, saved as a PDF, and automatically opened in the default system viewer.
 
 * `:tag.add <name>` : Register a new tag name (strictly lowercase snake_case `^[a-z0-9_]+$`) in the active project's taxonomy.
 * `:tag.list` : List all tags currently registered in the active project's taxonomy.
