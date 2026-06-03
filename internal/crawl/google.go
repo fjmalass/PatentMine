@@ -553,6 +553,13 @@ func extractAdditionalGoogleDocuments(recordNumber domain.PatentNumber, doc *goq
 	var ids []domain.AuthorityIdentifier
 	seenDocs := make(map[domain.PatentNumber]bool)
 
+	type rawCandidate struct {
+		num        domain.PatentNumber
+		rawContent string
+		isApp      bool
+	}
+	var candidates []rawCandidate
+
 	doc.Find("meta").Each(func(_ int, s *goquery.Selection) {
 		name, _ := s.Attr("name")
 		content, _ := s.Attr("content")
@@ -562,51 +569,89 @@ func extractAdditionalGoogleDocuments(recordNumber domain.PatentNumber, doc *goq
 		}
 		content = strings.TrimSpace(content)
 
-		// Parse using domain.ParsePatentNumber
 		if name == "citation_patent_application_number" || (name == "DC.relation" && scheme == "application") {
-			if num, err := domain.ParsePatentNumber(content); err == nil && !seenDocs[num] {
-				seenDocs[num] = true
-				docs = append(docs, domain.Document{
-					Number: num,
-					Stage:  domain.StageApplication,
-				})
-				ids = append(ids, domain.AuthorityIdentifier{
-					Authority:      "GOOGLE",
-					IdentifierType: "application",
-					Identifier:     num.Normalized(),
-					RawIdentifier:  content,
-					RecordNumber:   recordNumber,
-					DocumentNumber: num.Normalized(),
-					Country:        num.Country,
-					Kind:           num.Kind,
-					Source:         string(domain.SourceGoogle),
-					Confidence:     80,
+			if num, err := domain.ParsePatentNumber(content); err == nil {
+				candidates = append(candidates, rawCandidate{
+					num:        num,
+					rawContent: content,
+					isApp:      true,
 				})
 			}
 		}
 		if name == "citation_patent_publication_number" || name == "citation_patent_number" || (name == "DC.relation" && scheme == "patent") {
-			if num, err := domain.ParsePatentNumber(content); err == nil && !seenDocs[num] {
-				seenDocs[num] = true
-				stage := domain.GuessStage(num)
-				docs = append(docs, domain.Document{
-					Number: num,
-					Stage:  stage,
-				})
-				ids = append(ids, domain.AuthorityIdentifier{
-					Authority:      "GOOGLE",
-					IdentifierType: string(stage),
-					Identifier:     num.Normalized(),
-					RawIdentifier:  content,
-					RecordNumber:   recordNumber,
-					DocumentNumber: num.Normalized(),
-					Country:        num.Country,
-					Kind:           num.Kind,
-					Source:         string(domain.SourceGoogle),
-					Confidence:     80,
+			if num, err := domain.ParsePatentNumber(content); err == nil {
+				candidates = append(candidates, rawCandidate{
+					num:        num,
+					rawContent: content,
+					isApp:      false,
 				})
 			}
 		}
 	})
+
+	hasKindCoded := make(map[string]bool)
+	if recordNumber.Kind != "" {
+		hasKindCoded[recordNumber.Country+"\x00"+recordNumber.Serial] = true
+	}
+	for _, c := range candidates {
+		if !c.isApp && c.num.Kind != "" {
+			hasKindCoded[c.num.Country+"\x00"+c.num.Serial] = true
+		}
+	}
+
+	for _, c := range candidates {
+		// Ensure the document matching recordNumber is skipped from additional docs.
+		if c.num.Normalized() == recordNumber.Normalized() {
+			continue
+		}
+		if !c.isApp && c.num.Country == recordNumber.Country && c.num.Serial == recordNumber.Serial {
+			continue
+		}
+
+		// Identify if a kind-coded version of a serial exists (either in the metadata
+		// elements or from the parent recordNumber), and drop the kindless version.
+		if !c.isApp && c.num.Kind == "" {
+			key := c.num.Country + "\x00" + c.num.Serial
+			if hasKindCoded[key] {
+				continue
+			}
+		}
+
+		if seenDocs[c.num] {
+			continue
+		}
+		seenDocs[c.num] = true
+
+		var stage domain.Stage
+		if c.isApp {
+			stage = domain.StageApplication
+		} else {
+			stage = domain.GuessStage(c.num)
+			// For metadata explicitly labeled as a patent (not application),
+			// override a guessed StageApplication to StageGrant.
+			if stage == domain.StageApplication {
+				stage = domain.StageGrant
+			}
+		}
+
+		docs = append(docs, domain.Document{
+			Number: c.num,
+			Stage:  stage,
+		})
+		ids = append(ids, domain.AuthorityIdentifier{
+			Authority:      "GOOGLE",
+			IdentifierType: string(stage),
+			Identifier:     c.num.Normalized(),
+			RawIdentifier:  c.rawContent,
+			RecordNumber:   recordNumber,
+			DocumentNumber: c.num.Normalized(),
+			Country:        c.num.Country,
+			Kind:           c.num.Kind,
+			Source:         string(domain.SourceGoogle),
+			Confidence:     80,
+		})
+	}
+
 	return docs, ids
 }
 

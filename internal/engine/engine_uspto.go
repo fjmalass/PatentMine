@@ -985,7 +985,8 @@ func (e *Engine) ensureUSPTOApplication(ctx context.Context, n domain.PatentNumb
 	app, err := e.repo.USPTOApplication(ctx, n)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) && e.crawl != nil {
-			job := e.crawl(n, 0, domain.CrawlProfileFamily, false, domain.SourceUSPTO)
+			force := e.isStub(ctx, n)
+			job := e.crawl(n, 0, domain.CrawlProfileFamily, force, domain.SourceUSPTO)
 			if job != nil {
 				// Execute the depth-0 fetch job synchronously
 				_ = job.Run(ctx, JobID("auto-lookup"), func(ev proto.Event) {

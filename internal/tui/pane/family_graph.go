@@ -621,10 +621,132 @@ func (g *FamilyGraph) rebuildRows() {
 			kind:  familyGraphRowHeader,
 			label: "Parents (Predecessors):",
 		})
+
+		// 1. Collect all nodes in the Parents DAG by walking up Parents from the root.
+		parentsDAG := make(map[domain.PatentNumber]bool)
+		var collect func(num domain.PatentNumber)
+		collect = func(num domain.PatentNumber) {
+			if parentsDAG[num] {
+				return
+			}
+			parentsDAG[num] = true
+			node := nodeMap[num]
+			if node == nil {
+				return
+			}
+			for _, p := range node.Parents {
+				collect(p)
+			}
+		}
+		for _, p := range rootNode.Parents {
+			collect(p)
+		}
+
+		// 2. Identify the source nodes (nodes with no parents in the Parents DAG).
+		var sources []domain.PatentNumber
+		for num := range parentsDAG {
+			node := nodeMap[num]
+			if node == nil || node.Patent.FetchState == domain.FetchStub {
+				continue
+			}
+			hasParentsInDAG := false
+			for _, p := range node.Parents {
+				pNode := nodeMap[p]
+				if pNode != nil && pNode.Patent.FetchState != domain.FetchStub {
+					hasParentsInDAG = true
+					break
+				}
+			}
+			if !hasParentsInDAG {
+				sources = append(sources, num)
+			}
+		}
+
+		// Deterministic sort for sources
+		slices.SortFunc(sources, func(a, b domain.PatentNumber) int {
+			if cmp := strings.Compare(a.Country, b.Country); cmp != 0 {
+				return cmp
+			}
+			return strings.Compare(a.Normalized(), b.Normalized())
+		})
+
+		// 3. Build child mapping within the Parents DAG.
+		childrenInDAG := make(map[domain.PatentNumber][]domain.PatentNumber)
+		for num := range parentsDAG {
+			node := nodeMap[num]
+			if node == nil || node.Patent.FetchState == domain.FetchStub {
+				continue
+			}
+			for _, p := range node.Parents {
+				if parentsDAG[p] {
+					childrenInDAG[p] = append(childrenInDAG[p], num)
+				}
+			}
+		}
+		// Include links to the root from its direct parents in the DAG.
+		for _, p := range rootNode.Parents {
+			if parentsDAG[p] {
+				childrenInDAG[p] = append(childrenInDAG[p], g.root)
+			}
+		}
+
+		// Transitive reduction for Parents DAG
+		reachable := func(start, target domain.PatentNumber) bool {
+			visited := map[domain.PatentNumber]bool{start: true}
+			queue := []domain.PatentNumber{start}
+			for len(queue) > 0 {
+				curr := queue[0]
+				queue = queue[1:]
+				if curr == target && curr != start {
+					return true
+				}
+				for _, child := range childrenInDAG[curr] {
+					if !visited[child] {
+						visited[child] = true
+						queue = append(queue, child)
+					}
+				}
+			}
+			return false
+		}
+
+		reducedChildren := make(map[domain.PatentNumber][]domain.PatentNumber)
+		for u, children := range childrenInDAG {
+			var kept []domain.PatentNumber
+			for _, v := range children {
+				hasLongerPath := false
+				for _, w := range children {
+					if w == v {
+						continue
+					}
+					if reachable(w, v) {
+						hasLongerPath = true
+						break
+					}
+				}
+				if !hasLongerPath {
+					kept = append(kept, v)
+				}
+			}
+			reducedChildren[u] = kept
+		}
+		childrenInDAG = reducedChildren
+
+		// Deterministic sort for child lists
+		for p := range childrenInDAG {
+			slices.SortFunc(childrenInDAG[p], func(a, b domain.PatentNumber) int {
+				if cmp := strings.Compare(a.Country, b.Country); cmp != 0 {
+					return cmp
+				}
+				return strings.Compare(a.Normalized(), b.Normalized())
+			})
+		}
+
+		// 4. Walk down from the sources to the root.
 		visitedParents := make(map[domain.PatentNumber]bool)
 		pathParents := []domain.PatentNumber{g.root}
-		for i, parent := range rootNode.Parents {
-			g.walkUp(parent, "  ", i == len(rootNode.Parents)-1, visitedParents, pathParents, &rows, nodeMap)
+		for i, src := range sources {
+			g.walkParentsDAG(src, "  ", i == len(sources)-1, visitedParents, pathParents, &rows, nodeMap, childrenInDAG)
 		}
 	}
 
@@ -638,10 +760,103 @@ func (g *FamilyGraph) rebuildRows() {
 			kind:  familyGraphRowHeader,
 			label: "Children (Successors):",
 		})
+
+		// 1. Collect all nodes in the Children DAG by walking down Children from the root.
+		childrenDAG := make(map[domain.PatentNumber]bool)
+		var collect func(num domain.PatentNumber)
+		collect = func(num domain.PatentNumber) {
+			if childrenDAG[num] {
+				return
+			}
+			childrenDAG[num] = true
+			node := nodeMap[num]
+			if node == nil {
+				return
+			}
+			for _, c := range node.Children {
+				collect(c)
+			}
+		}
+		for _, c := range rootNode.Children {
+			collect(c)
+		}
+
+		// 2. Build parent-child mapping within the Children DAG.
+		descendantChildren := make(map[domain.PatentNumber][]domain.PatentNumber)
+		for num := range childrenDAG {
+			node := nodeMap[num]
+			if node == nil || node.Patent.FetchState == domain.FetchStub {
+				continue
+			}
+			for _, c := range node.Children {
+				if childrenDAG[c] {
+					descendantChildren[num] = append(descendantChildren[num], c)
+				}
+			}
+		}
+		for _, c := range rootNode.Children {
+			if childrenDAG[c] {
+				descendantChildren[g.root] = append(descendantChildren[g.root], c)
+			}
+		}
+
+		// Transitive reduction for Children DAG
+		reachableDesc := func(start, target domain.PatentNumber) bool {
+			visited := map[domain.PatentNumber]bool{start: true}
+			queue := []domain.PatentNumber{start}
+			for len(queue) > 0 {
+				curr := queue[0]
+				queue = queue[1:]
+				if curr == target && curr != start {
+					return true
+				}
+				for _, child := range descendantChildren[curr] {
+					if !visited[child] {
+						visited[child] = true
+						queue = append(queue, child)
+					}
+				}
+			}
+			return false
+		}
+
+		reducedDescendants := make(map[domain.PatentNumber][]domain.PatentNumber)
+		for u, children := range descendantChildren {
+			var kept []domain.PatentNumber
+			for _, v := range children {
+				hasLongerPath := false
+				for _, w := range children {
+					if w == v {
+						continue
+					}
+					if reachableDesc(w, v) {
+						hasLongerPath = true
+						break
+					}
+				}
+				if !hasLongerPath {
+					kept = append(kept, v)
+				}
+			}
+			reducedDescendants[u] = kept
+		}
+		descendantChildren = reducedDescendants
+
+		// Deterministic sort for child lists
+		for p := range descendantChildren {
+			slices.SortFunc(descendantChildren[p], func(a, b domain.PatentNumber) int {
+				if cmp := strings.Compare(a.Country, b.Country); cmp != 0 {
+					return cmp
+				}
+				return strings.Compare(a.Normalized(), b.Normalized())
+			})
+		}
+
 		visitedChildren := make(map[domain.PatentNumber]bool)
 		pathChildren := []domain.PatentNumber{g.root}
-		for i, child := range rootNode.Children {
-			g.walkDown(child, "  ", i == len(rootNode.Children)-1, visitedChildren, pathChildren, &rows, nodeMap)
+		rootChildren := descendantChildren[g.root]
+		for i, child := range rootChildren {
+			g.walkChildrenDAG(child, "  ", i == len(rootChildren)-1, visitedChildren, pathChildren, &rows, nodeMap, descendantChildren)
 		}
 	}
 
@@ -724,6 +939,125 @@ func (g *FamilyGraph) walkUp(num domain.PatentNumber, indent string, isLast bool
 		newPath := append(path, num)
 		for i, parent := range node.Parents {
 			g.walkUp(parent, nextIndent, i == len(node.Parents)-1, visited, newPath, rows, nodeMap)
+		}
+	}
+}
+
+func (g *FamilyGraph) walkParentsDAG(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode, childrenInDAG map[domain.PatentNumber][]domain.PatentNumber) {
+	if num == g.root {
+		return
+	}
+
+	node := nodeMap[num]
+	if node == nil || node.Patent.FetchState == domain.FetchStub {
+		return
+	}
+
+	prefix := "├── "
+	if isLast {
+		prefix = "└── "
+	}
+	fullIndent := indent + prefix
+
+	if slices.Contains(path, num) {
+		*rows = append(*rows, familyGraphRow{
+			kind:    familyGraphRowNode,
+			node:    node,
+			indent:  fullIndent,
+			isCycle: true,
+		})
+		return
+	}
+
+	if visited[num] {
+		*rows = append(*rows, familyGraphRow{
+			kind:       familyGraphRowNode,
+			node:       node,
+			indent:     fullIndent,
+			isCrossRef: true,
+		})
+		return
+	}
+	visited[num] = true
+
+	*rows = append(*rows, familyGraphRow{
+		kind:   familyGraphRowNode,
+		node:   node,
+		indent: fullIndent,
+	})
+
+	children := childrenInDAG[num]
+	var childrenToWalk []domain.PatentNumber
+	for _, child := range children {
+		if child != g.root {
+			childrenToWalk = append(childrenToWalk, child)
+		}
+	}
+
+	if len(childrenToWalk) > 0 {
+		nextIndent := indent
+		if isLast {
+			nextIndent += "    "
+		} else {
+			nextIndent += "│   "
+		}
+		newPath := append(path, num)
+		for i, child := range childrenToWalk {
+			g.walkParentsDAG(child, nextIndent, i == len(childrenToWalk)-1, visited, newPath, rows, nodeMap, childrenInDAG)
+		}
+	}
+}
+
+func (g *FamilyGraph) walkChildrenDAG(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode, descendantChildren map[domain.PatentNumber][]domain.PatentNumber) {
+	node := nodeMap[num]
+	if node == nil || node.Patent.FetchState == domain.FetchStub {
+		return
+	}
+
+	prefix := "├── "
+	if isLast {
+		prefix = "└── "
+	}
+	fullIndent := indent + prefix
+
+	if slices.Contains(path, num) {
+		*rows = append(*rows, familyGraphRow{
+			kind:    familyGraphRowNode,
+			node:    node,
+			indent:  fullIndent,
+			isCycle: true,
+		})
+		return
+	}
+
+	if visited[num] {
+		*rows = append(*rows, familyGraphRow{
+			kind:       familyGraphRowNode,
+			node:       node,
+			indent:     fullIndent,
+			isCrossRef: true,
+		})
+		return
+	}
+	visited[num] = true
+
+	*rows = append(*rows, familyGraphRow{
+		kind:   familyGraphRowNode,
+		node:   node,
+		indent: fullIndent,
+	})
+
+	children := descendantChildren[num]
+	if len(children) > 0 {
+		nextIndent := indent
+		if isLast {
+			nextIndent += "    "
+		} else {
+			nextIndent += "│   "
+		}
+		newPath := append(path, num)
+		for i, child := range children {
+			g.walkChildrenDAG(child, nextIndent, i == len(children)-1, visited, newPath, rows, nodeMap, descendantChildren)
 		}
 	}
 }

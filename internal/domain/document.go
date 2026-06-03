@@ -70,5 +70,8 @@ func GuessStage(n PatentNumber) Stage {
 	if strings.HasPrefix(n.Kind, "B") {
 		return StageGrant
 	}
+	if n.Country == "US" && n.Kind == "" {
+		return StageApplication
+	}
 	return StagePublication
 }

@@ -43,6 +43,9 @@ func (e *Engine) startFamilyCrawl(ctx context.Context, root domain.PatentNumber,
 	if root.IsZero() {
 		return "", errors.New("engine: crawl root must not be empty")
 	}
+	if !force && e.isStub(ctx, root) {
+		force = true
+	}
 	id, err = e.pool.submit(e.crawl(root, depth, profile, force, source))
 	if err != nil {
 		e.log(ctx, slog.LevelError, "crawl enqueue failed", slog.String("root", root.String()), slog.Int("depth", depth), slog.String("profile", string(profile)), slog.String("source", string(source)), slog.String("error", err.Error()))

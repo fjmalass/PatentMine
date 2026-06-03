@@ -1122,6 +1122,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(cmds...)
 	case pane.StatusMsg:
+		if m.Key == text.StatusCrawlStarted && len(m.Args) >= 3 {
+			if d, ok := m.Args[2].(int); ok && d < 0 {
+				m.Args[2] = 4 // default family crawl depth
+			}
+		}
 		a.status, a.statusErr = a.text.Tf(m.Key, m.Args...), m.Error
 		if m.Key == text.StatusNotesExportDone {
 			count, _ := m.Args[0].(int)

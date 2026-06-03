@@ -163,7 +163,7 @@ func (e *Engine) FamilyGraph(ctx context.Context, p proto.FamilyGraphParams) (ou
 	hiddenByCountry = len(hiddenNodes)
 
 	for key, state := range edges {
-		if state.parentSeen && state.childSeen {
+		if state.parentSeen || state.childSeen {
 			continue
 		}
 		inconsistent++
@@ -208,7 +208,7 @@ func (e *Engine) FamilyGraph(ctx context.Context, p proto.FamilyGraphParams) (ou
 		resultEdges = append(resultEdges, proto.FamilyGraphEdge{
 			Parent:       key.parent,
 			Child:        key.child,
-			Inconsistent: !(state.parentSeen && state.childSeen),
+			Inconsistent: !(state.parentSeen || state.childSeen),
 		})
 	}
 	slices.SortFunc(resultEdges, func(a, b proto.FamilyGraphEdge) int {

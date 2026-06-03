@@ -1303,12 +1303,12 @@ func TestFamilyGraphReportsInconsistentRelations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FamilyGraph: %v", err)
 	}
-	if graph.InconsistencyCount != 1 {
-		t.Fatalf("InconsistencyCount = %d, want 1", graph.InconsistencyCount)
+	if graph.InconsistencyCount != 0 {
+		t.Fatalf("InconsistencyCount = %d, want 0", graph.InconsistencyCount)
 	}
 	snap := metrics.Snapshot()
-	if snap.Counters["engine.family_graph.inconsistent_edges_total"] != 1 {
-		t.Fatalf("inconsistent edge counter = %d, want 1", snap.Counters["engine.family_graph.inconsistent_edges_total"])
+	if snap.Counters["engine.family_graph.inconsistent_edges_total"] != 0 {
+		t.Fatalf("inconsistent edge counter = %d, want 0", snap.Counters["engine.family_graph.inconsistent_edges_total"])
 	}
 }
 

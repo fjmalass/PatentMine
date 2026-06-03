@@ -456,3 +456,9 @@ func (e *Engine) SourceBibs(ctx context.Context, n domain.PatentNumber) ([]domai
 	}
 	return bibs, err
 }
+
+// isStub returns true if the patent exists in the repository and is in the FetchStub state.
+func (e *Engine) isStub(ctx context.Context, n domain.PatentNumber) bool {
+	p, err := e.repo.Patent(ctx, n)
+	return err == nil && p.FetchState == domain.FetchStub
+}

@@ -25,6 +25,10 @@ func TestGuessStage(t *testing.T) {
 	if got := GuessStage(pub); got != StagePublication {
 		t.Errorf("GuessStage(%s) = %s, want publication", pub, got)
 	}
+	app := MustParsePatentNumber("US16123456")
+	if got := GuessStage(app); got != StageApplication {
+		t.Errorf("GuessStage(%s) = %s, want application", app, got)
+	}
 }
 
 func TestLatestDocumentPicksFurthestStage(t *testing.T) {

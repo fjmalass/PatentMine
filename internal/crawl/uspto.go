@@ -995,8 +995,7 @@ func relationsFromUSPTOContinuity(child domain.PatentNumber, rows []usptoContinu
 			continue
 		}
 		out = append(out,
-			domain.Relation{From: child, To: parent, Kind: domain.RelationParent},
-			domain.Relation{From: parent, To: child, Kind: domain.RelationChild})
+			domain.Relation{From: child, To: parent, Kind: domain.RelationParent})
 	}
 	return out
 }

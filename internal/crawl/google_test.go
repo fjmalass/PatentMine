@@ -274,3 +274,60 @@ func TestParseDescription_Hierarchical(t *testing.T) {
 		t.Errorf("Formatted Google description mismatch:\nwant:\n%q\ngot:\n%q", expectedText, paragraphs[0].Text)
 	}
 }
+
+func TestParseGoogle_AvoidKindlessDuplicates(t *testing.T) {
+	googleHTML := `<!doctype html><html><head>
+<meta name="DC.title" content="Test Title"/>
+<meta name="citation_patent_number" content="US12348821" />
+<meta name="citation_patent_publication_number" content="US12348821B2" />
+<meta name="citation_patent_application_number" content="US12348821" />
+</head><body>
+<span itemprop="title">Test Title</span>
+</body></html>`
+
+	number := domain.MustParsePatentNumber("US12348821B2")
+	res, err := parseGoogle(number, []byte(googleHTML))
+	if err != nil {
+		t.Fatalf("parseGoogle: %v", err)
+	}
+
+	// We expect:
+	// 1. The main document (US12348821B2, StageGrant)
+	// 2. The application document (US12348821, StageApplication)
+	// We should NOT have any other documents (especially not a kindless US12348821 with StageApplication that came from citation_patent_number).
+	var foundMain, foundApp, foundIncorrectApp bool
+	var incorrectStages []domain.Stage
+
+	for _, d := range res.Documents {
+		if d.Number.Normalized() == "US12348821B2" {
+			if d.Stage == domain.StageGrant {
+				foundMain = true
+			} else {
+				incorrectStages = append(incorrectStages, d.Stage)
+			}
+		} else if d.Number.Normalized() == "US12348821" {
+			if d.Stage == domain.StageApplication {
+				if foundApp {
+					foundIncorrectApp = true // duplicate application document!
+				}
+				foundApp = true
+			} else {
+				incorrectStages = append(incorrectStages, d.Stage)
+			}
+		}
+	}
+
+	if !foundMain {
+		t.Errorf("missing main document (US12348821B2 StageGrant), incorrect stages found: %v", incorrectStages)
+	}
+	if !foundApp {
+		t.Errorf("missing application document (US12348821 StageApplication)")
+	}
+	if foundIncorrectApp {
+		t.Errorf("found duplicate or incorrect application document for US12348821")
+	}
+	if len(res.Documents) != 2 {
+		t.Errorf("expected exactly 2 documents, got %d: %+v", len(res.Documents), res.Documents)
+	}
+}
+

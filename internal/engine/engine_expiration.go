@@ -141,7 +141,8 @@ func (e *Engine) ComputeAndStoreUSPTOExpiration(ctx context.Context, n domain.Pa
 			if err != nil {
 				// Try a synchronous USPTO/ODP crawl/lookup to fetch, parse, and persist metadata
 				if e.crawl != nil {
-					job := e.crawl(n, 0, domain.CrawlProfileAll, false, domain.SourceUSPTO)
+					force := e.isStub(ctx, n)
+					job := e.crawl(n, 0, domain.CrawlProfileAll, force, domain.SourceUSPTO)
 					_ = job.Run(ctx, "sync-uspto-lookup", func(proto.Event) {})
 				}
 				// Retry loading the USPTOApplication after crawl

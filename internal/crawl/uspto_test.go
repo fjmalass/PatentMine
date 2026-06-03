@@ -84,7 +84,7 @@ func TestParseUSPTOExtractsBibliographicFields(t *testing.T) {
 	for _, rel := range res.Relations {
 		counts[rel.Kind]++
 	}
-	if counts[domain.RelationParent] != 1 || counts[domain.RelationChild] != 1 {
+	if counts[domain.RelationParent] != 1 || len(res.Relations) != 1 {
 		t.Errorf("continuity relations = %+v", res.Relations)
 	}
 
