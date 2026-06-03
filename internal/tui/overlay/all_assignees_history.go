@@ -455,21 +455,47 @@ func (o *AllAssigneesHistoryOverlay) currentCols() []render.TableColumn {
 	}
 	switch {
 	case w >= 80:
-		fixedWidth := 70
+		fixedWidth := 75
 		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "inventor", Label: "Inventor", SortKey: string(domain.SortByInventor), Width: 16}, {Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4}, {Key: "tags", Label: "Tags", SortKey: string(domain.SortByTags), Width: 15}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
+		return []render.TableColumn{
+			{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16},
+			{Key: "kind", Label: "Kind", SortKey: string(domain.SortByKind), Width: 4},
+			{Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth},
+			{Key: "inventor", Label: "Inventor", SortKey: string(domain.SortByInventor), Width: 16},
+			{Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4},
+			{Key: "tags", Label: "Tags", SortKey: string(domain.SortByTags), Width: 15},
+			{Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12},
+		}
 	case w >= 65:
-		fixedWidth := 54
+		fixedWidth := 59
 		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "inventor", Label: "Inventor", SortKey: string(domain.SortByInventor), Width: 16}, {Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
+		return []render.TableColumn{
+			{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16},
+			{Key: "kind", Label: "Kind", SortKey: string(domain.SortByKind), Width: 4},
+			{Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth},
+			{Key: "inventor", Label: "Inventor", SortKey: string(domain.SortByInventor), Width: 16},
+			{Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4},
+			{Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12},
+		}
 	case w >= 55:
+		fixedWidth := 42
+		titleWidth := max(10, w-fixedWidth)
+		return []render.TableColumn{
+			{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16},
+			{Key: "kind", Label: "Kind", SortKey: string(domain.SortByKind), Width: 4},
+			{Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth},
+			{Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4},
+			{Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12},
+		}
+	default:
 		fixedWidth := 37
 		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "year", Label: "Year", SortKey: string(domain.SortByExpires), Width: 4}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
-	default:
-		fixedWidth := 32
-		titleWidth := max(10, w-fixedWidth)
-		return []render.TableColumn{{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16}, {Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth}, {Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12}}
+		return []render.TableColumn{
+			{Key: "number", Label: "Number", SortKey: string(domain.SortByNumber), Width: 16},
+			{Key: "kind", Label: "Kind", SortKey: string(domain.SortByKind), Width: 4},
+			{Key: "title", Label: "Title", SortKey: string(domain.SortByTitle), Width: titleWidth},
+			{Key: "state", Label: "State", SortKey: string(domain.SortByReviewState), Width: 12},
+		}
 	}
 }
 
@@ -637,6 +663,12 @@ func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 					return p.DisplayNumber.String()
 				}
 				return p.Number.String()
+			case "kind":
+				num := p.Number
+				if !p.DisplayNumber.IsZero() {
+					num = p.DisplayNumber
+				}
+				return o.theme.StageGlyph(string(num.Stage()))
 			case "title":
 				return strings.Join(strings.Fields(p.Title), " ")
 			case "inventor":

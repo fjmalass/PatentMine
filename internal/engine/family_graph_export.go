@@ -56,9 +56,11 @@ func (e *Engine) ExportFamilyGraph(ctx context.Context, p proto.FamilyGraphParam
 		if title == "" {
 			title = "(stub)"
 		}
-		numStr := pat.DisplayNumber.DisplayString()
-		if numStr == "" {
-			numStr = pat.Number.DisplayString()
+		var numStr string
+		if !pat.DisplayNumber.IsZero() {
+			numStr = exportDisplayString(pat.DisplayNumber)
+		} else {
+			numStr = exportDisplayString(pat.Number)
 		}
 
 		if !pat.ApplicationDate.IsZero() {
@@ -255,6 +257,14 @@ func (e *Engine) familyGraphMermaidText(res proto.FamilyGraphResult) string {
 		arrow := " --> "
 		if edge.Inconsistent {
 			arrow = " -.-> "
+		}
+		if edge.RelationType != "" {
+			rel := strings.ToUpper(edge.RelationType)
+			if edge.Inconsistent {
+				arrow = " -.->|" + rel + "| "
+			} else {
+				arrow = " -->|" + rel + "| "
+			}
 		}
 		b.WriteString("  ")
 		b.WriteString(parentLabel)
@@ -716,7 +726,7 @@ func (e *Engine) FamilyGraphASCII(res proto.FamilyGraphResult) string {
 			}
 		}
 
-		head := fmt.Sprintf("  %s%s%s%s", r.indent, relTypeBracket, number.DisplayString(), labelStr)
+		head := fmt.Sprintf("  %s%s%s%s", r.indent, relTypeBracket, exportDisplayString(number), labelStr)
 		headStrings[idx] = head
 		if len(head) > maxHeadWidth {
 			maxHeadWidth = len(head)
@@ -888,12 +898,12 @@ func mermaidNodeText(node proto.FamilyGraphNode) string {
 	}
 	title := strings.TrimSpace(node.Patent.Title)
 	if title == "" {
-		return mermaidEscape(number.DisplayString())
+		return mermaidEscape(exportDisplayString(number))
 	}
 	if len(title) > 48 {
 		title = strings.TrimSpace(title[:45]) + "..."
 	}
-	return mermaidEscape(number.DisplayString() + "<br/>" + title)
+	return mermaidEscape(exportDisplayString(number) + "<br/>" + title)
 }
 
 
@@ -948,4 +958,17 @@ func (e *Engine) familyGraphMermaidTimeline(res proto.FamilyGraphResult, events 
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func exportDisplayString(n domain.PatentNumber) string {
+	if n.IsZero() {
+		return ""
+	}
+	emoji := "🖋️"
+	if n.IsGrant() {
+		emoji = "🏆"
+	} else if n.IsPublication() {
+		emoji = "📄"
+	}
+	return n.DisplayString() + " " + emoji
 }

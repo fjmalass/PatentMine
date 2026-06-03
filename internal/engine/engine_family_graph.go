@@ -1,4 +1,4 @@
-ackage engine
+package engine
 
 import (
 	"context"
@@ -394,14 +394,14 @@ func shortRelationType(code, desc string) string {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	desc = strings.ToLower(strings.TrimSpace(desc))
 	switch {
-	case code == "CON" || strings.Contains(desc, "continuation") && !strings.Contains(desc, "part"):
-		return "con"
 	case code == "CIP" || strings.Contains(desc, "continuation-in-part") || (strings.Contains(desc, "continuation") && strings.Contains(desc, "part")):
-		return "CIP"
+		return string(domain.RelTypeCIP)
+	case code == "CON" || strings.Contains(desc, "continuation"):
+		return string(domain.RelTypeCON)
 	case code == "DIV" || strings.Contains(desc, "division") || strings.Contains(desc, "divisional"):
-		return "div"
+		return string(domain.RelTypeDIV)
 	case code == "PROV" || strings.Contains(desc, "provisional"):
-		return "prov"
+		return string(domain.RelTypePROV)
 	default:
 		if code != "" {
 			return strings.ToLower(code)
@@ -415,4 +415,3 @@ func shortRelationType(code, desc string) string {
 		return ""
 	}
 }
-

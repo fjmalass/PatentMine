@@ -16,6 +16,7 @@ import (
 const (
 	colIndex          = 4
 	colNumber         = 16
+	colKind           = 4
 	colInventor       = 14
 	colClassification = 12
 	colExpires        = 8
@@ -69,6 +70,7 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
 			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnKind, colKind),
 			column(domain.PatentColumnTitle, 0),
 			column(domain.PatentColumnInventor, colInventor),
 			column(domain.PatentColumnClassification, colClassification),
@@ -90,6 +92,7 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
 			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnKind, colKind),
 			column(domain.PatentColumnTitle, 0),
 			column(domain.PatentColumnInventor, colInventor),
 			column(domain.PatentColumnClassification, colClassification),
@@ -105,6 +108,7 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
 			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnKind, colKind),
 			column(domain.PatentColumnTitle, 0),
 			column(domain.PatentColumnInventor, colInventor),
 			column(domain.PatentColumnClassification, colClassification),
@@ -118,6 +122,7 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
 			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnKind, colKind),
 			column(domain.PatentColumnTitle, 0),
 			column(domain.PatentColumnInventor, 12),
 			column(domain.PatentColumnClassification, 12),
@@ -129,6 +134,7 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
 			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnKind, colKind),
 			column(domain.PatentColumnTitle, 0),
 			column(domain.PatentColumnInventor, 10),
 			column(domain.PatentColumnClassification, 10),
@@ -139,6 +145,7 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		cols = []tableCol{
 			column(domain.PatentColumnIndex, colIndex),
 			column(domain.PatentColumnNumber, colNumber),
+			column(domain.PatentColumnKind, colKind),
 			column(domain.PatentColumnTitle, 0),
 			column(domain.PatentColumnReviewState, colState),
 		}
@@ -150,7 +157,12 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 	}
 	fixedW += len(cols) - 1
 
-	cols[2].width = max(bodyWidth-fixedW, 1)
+	for idx, col := range cols {
+		if col.key == domain.PatentColumnTitle {
+			cols[idx].width = max(bodyWidth-fixedW, 1)
+			break
+		}
+	}
 	return cols
 }
 
@@ -199,7 +211,11 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 	case domain.PatentColumnIndex:
 		return formatViewIndex(absoluteIndex)
 	case domain.PatentColumnNumber:
-		return numberToShowRow(row).DisplayString()
+		num := numberToShowRow(row)
+		return num.DisplayString()
+	case domain.PatentColumnKind:
+		num := numberToShowRow(row)
+		return theme.StageGlyph(string(num.Stage()))
 	case domain.PatentColumnTitle:
 		return row.Title
 	case domain.PatentColumnInventor:

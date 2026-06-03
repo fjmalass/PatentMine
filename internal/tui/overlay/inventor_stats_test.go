@@ -113,16 +113,34 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 	}
 
 	// 6. Test shifting column focus and sorting
-	// Move column focus right (should focus Title at idx 1)
+	// Move column focus right (should focus Kind at idx 1)
 	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
 	if !handled {
 		t.Fatal("Expected key 'right' to move column focus right")
 	}
 	if o.focusedColIdx != 1 {
-		t.Errorf("Expected focused column to be 1 (Title), got %d", o.focusedColIdx)
+		t.Errorf("Expected focused column to be 1 (Kind), got %d", o.focusedColIdx)
 	}
 
-	// Move column focus left (should focus Number at idx 0)
+	// Move column focus right again (should focus Title at idx 2)
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	if !handled {
+		t.Fatal("Expected key 'right' to move column focus right")
+	}
+	if o.focusedColIdx != 2 {
+		t.Errorf("Expected focused column to be 2 (Title), got %d", o.focusedColIdx)
+	}
+
+	// Move column focus left (should focus Kind at idx 1)
+	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if !handled {
+		t.Fatal("Expected key 'left' to move column focus left")
+	}
+	if o.focusedColIdx != 1 {
+		t.Errorf("Expected focused column to be 1 (Kind), got %d", o.focusedColIdx)
+	}
+
+	// Move column focus left again (should focus Number at idx 0)
 	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
 	if !handled {
 		t.Fatal("Expected key 'left' to move column focus left")
@@ -277,26 +295,26 @@ func TestAdaptiveColumnHidingAndClamping(t *testing.T) {
 		theme:         theme,
 		catalog:       catalog,
 		patent:        patent,
-		focusedColIdx: 4, // Focused on "Tags" (index 4) originally
+		focusedColIdx: 5, // Focused on "Tags" (index 5) originally
 		lastWidth:     100,
 	}
 
-	// 1. Verify 6 columns are visible at width 100
+	// 1. Verify 7 columns are visible at width 100
 	cols := o.currentCols()
-	if len(cols) != 6 {
-		t.Errorf("Expected 6 columns at width 100, got %d", len(cols))
+	if len(cols) != 7 {
+		t.Errorf("Expected 7 columns at width 100, got %d", len(cols))
 	}
 
 	// 2. Perform resize to terminal width 76 (which results in inner width 70, hiding "Tags")
-	// "Tags" at idx 4 is now hidden, the new columns set has length 5.
+	// "Tags" at idx 5 is now hidden, the new columns set has length 6.
 	// Clamping should adjust focusedColIdx to the nearest sortable column.
 	o.Update(tea.WindowSizeMsg{Width: 76, Height: 40})
 
 	cols = o.currentCols()
-	if len(cols) != 5 {
-		t.Errorf("Expected 5 columns at inner width 70 (terminal width 76), got %d", len(cols))
+	if len(cols) != 6 {
+		t.Errorf("Expected 6 columns at inner width 70 (terminal width 76), got %d", len(cols))
 	}
-	if o.focusedColIdx >= 5 {
+	if o.focusedColIdx >= 6 {
 		t.Errorf("Expected focused column to be clamped to a valid index, got %d", o.focusedColIdx)
 	}
 }

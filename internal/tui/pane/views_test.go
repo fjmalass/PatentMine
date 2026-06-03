@@ -197,9 +197,9 @@ func TestFamilyGraphMermaidExportIsGroupedByDepth(t *testing.T) {
 	out := g.mermaidGraph()
 	for _, want := range []string{
 		"flowchart TD",
-		"p_us_1_b2((\"US1B2<br/>Root patent\"))",
-		"p_ep_2_a1[\"EP2A1 (Pub)<br/>Parent patent\"]",
-		"p_jp_3_a1[\"JP3A1 (Pub)\"]",
+		"p_us_1_b2((\"US1B2 🏆<br/>Root patent\"))",
+		"p_ep_2_a1[\"EP2A1 📄<br/>Parent patent\"]",
+		"p_jp_3_a1[\"JP3A1 📄\"]",
 		"p_ep_2_a1 --> p_us_1_b2",
 		"p_us_1_b2 -.-> p_jp_3_a1",
 	} {
@@ -532,12 +532,12 @@ func TestPatentTableColumnsResponsive(t *testing.T) {
 		width       int
 		wantColumns []string
 	}{
-		{150, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "TAGS", "IDS", "FETCH STATE"}},
-		{135, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "IDS", "FETCH STATE"}},
-		{120, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "TAGS", "IDS", "FETCH STATE"}},
-		{85, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "FETCH STATE"}},
-		{70, []string{"#", "NUMBER", "TITLE", "INVENTOR", "CLASS", "FETCH STATE"}},
-		{50, []string{"#", "NUMBER", "TITLE", "FETCH STATE"}},
+		{150, []string{"#", "NUMBER", "KIND", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "TAGS", "IDS", "FETCH STATE"}},
+		{135, []string{"#", "NUMBER", "KIND", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "CITES", "CITED", "PARENTS", "IDS", "FETCH STATE"}},
+		{120, []string{"#", "NUMBER", "KIND", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "TAGS", "IDS", "FETCH STATE"}},
+		{85, []string{"#", "NUMBER", "KIND", "TITLE", "INVENTOR", "CLASS", "EXPIRES", "FETCH STATE"}},
+		{70, []string{"#", "NUMBER", "KIND", "TITLE", "INVENTOR", "CLASS", "FETCH STATE"}},
+		{50, []string{"#", "NUMBER", "KIND", "TITLE", "FETCH STATE"}},
 	}
 
 	for _, tt := range tests {
@@ -559,14 +559,32 @@ func TestMoveSortableColumnSkipsUnsortableVisibleColumns(t *testing.T) {
 	if got := moveSortableColumn(cols, -1, 1); got != 1 {
 		t.Fatalf("moveSortableColumn next from none = %d, want 1 for NUMBER", got)
 	}
-	if got := moveSortableColumn(cols, 5, 1); got != 8 {
-		t.Fatalf("moveSortableColumn next from EXPIRES = %d, want 8 for IDS", got)
+	if got := moveSortableColumn(cols, 1, 1); got != 2 {
+		t.Fatalf("moveSortableColumn next from NUMBER = %d, want 2 for KIND", got)
 	}
-	if got := moveSortableColumn(cols, 8, 1); got != 1 {
+	if got := moveSortableColumn(cols, 2, 1); got != 3 {
+		t.Fatalf("moveSortableColumn next from KIND = %d, want 3 for TITLE", got)
+	}
+	if got := moveSortableColumn(cols, 3, 1); got != 4 {
+		t.Fatalf("moveSortableColumn next from TITLE = %d, want 4 for INVENTOR", got)
+	}
+	if got := moveSortableColumn(cols, 4, -1); got != 3 {
+		t.Fatalf("moveSortableColumn prev from INVENTOR = %d, want 3 for TITLE", got)
+	}
+	if got := moveSortableColumn(cols, 3, -1); got != 2 {
+		t.Fatalf("moveSortableColumn prev from TITLE = %d, want 2 for KIND", got)
+	}
+	if got := moveSortableColumn(cols, 2, -1); got != 1 {
+		t.Fatalf("moveSortableColumn prev from KIND = %d, want 1 for NUMBER", got)
+	}
+	if got := moveSortableColumn(cols, 6, 1); got != 9 {
+		t.Fatalf("moveSortableColumn next from EXPIRES = %d, want 9 for FETCH", got)
+	}
+	if got := moveSortableColumn(cols, 9, 1); got != 1 {
 		t.Fatalf("moveSortableColumn should wrap to NUMBER, got %d", got)
 	}
-	if got := moveSortableColumn(cols, 8, -1); got != 5 {
-		t.Fatalf("moveSortableColumn prev from FETCH = %d, want 5 for EXPIRES", got)
+	if got := moveSortableColumn(cols, 9, -1); got != 6 {
+		t.Fatalf("moveSortableColumn prev from FETCH = %d, want 6 for EXPIRES", got)
 	}
 }
 
@@ -720,7 +738,7 @@ func TestClampFocusedSortableColumnSkipsUnsortableCurrentColumn(t *testing.T) {
 		t.Fatalf("clampFocusedSortableColumn from index column = %d, want NUMBER column index 1", got)
 	}
 	projectCols := patentTableColumns(120, domain.PatentTableColumns("p1"))
-	if got := clampFocusedSortableColumn(projectCols, 6); got != 6 {
+	if got := clampFocusedSortableColumn(projectCols, 7); got != 7 {
 		t.Fatalf("clampFocusedSortableColumn should keep sortable TAGS focus, got %d", got)
 	}
 }

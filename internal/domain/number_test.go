@@ -81,15 +81,36 @@ func TestPatentNumberDisplayString(t *testing.T) {
 		num  PatentNumber
 		want string
 	}{
-		{"grant", PatentNumber{"US", "11611785", "B2"}, "US11611785B2"},
-		{"application", PatentNumber{"US", "16123456", ""}, "US16123456 (App)"},
-		{"publication", PatentNumber{"US", "20200123456", "A1"}, "US20200123456A1 (Pub)"},
+		{"grant", PatentNumber{"US", "11611785", "B2"}, "US11,611,785B2"},
+		{"application", PatentNumber{"US", "16123456", ""}, "US16/123,456"},
+		{"publication", PatentNumber{"US", "20200123456", "A1"}, "US2020/0123456A1"},
+		{"reissue", PatentNumber{"US", "RE48372", "E1"}, "USRE48,372E1"},
+		{"design", PatentNumber{"US", "D890123", "S1"}, "USD890,123S1"},
 		{"zero", PatentNumber{}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if got := c.num.DisplayString(); got != c.want {
 				t.Errorf("%v.DisplayString() = %q, want %q", c.num, got, c.want)
+			}
+		})
+	}
+}
+
+func TestPatentNumberStage(t *testing.T) {
+	cases := []struct {
+		name string
+		num  PatentNumber
+		want Stage
+	}{
+		{"grant", PatentNumber{"US", "11611785", "B2"}, StageGrant},
+		{"publication", PatentNumber{"US", "20200123456", "A1"}, StagePublication},
+		{"application", PatentNumber{"US", "16123456", ""}, StageApplication},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.num.Stage(); got != c.want {
+				t.Errorf("%v.Stage() = %q, want %q", c.num, got, c.want)
 			}
 		})
 	}

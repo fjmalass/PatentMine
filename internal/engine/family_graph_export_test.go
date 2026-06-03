@@ -10,6 +10,7 @@ import (
 
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
+	"patentmine/internal/store"
 )
 
 func TestExportFamilyGraph(t *testing.T) {
@@ -38,7 +39,7 @@ func TestExportFamilyGraph(t *testing.T) {
 		t.Fatalf("SavePatent root: %v", err)
 	}
 
-	// Seed parent patent
+	// Seed parent patent with a continuity relation where rootNum is the parent of parentNum
 	parentNum := domain.MustParsePatentNumber("US9000000B2")
 	parentPat := domain.Patent{
 		Number:          parentNum,
@@ -50,8 +51,22 @@ func TestExportFamilyGraph(t *testing.T) {
 		GrantDate:       time.Date(2014, 3, 1, 0, 0, 0, 0, time.UTC),
 		ExpirationDate:  time.Date(2030, 2, 1, 0, 0, 0, 0, time.UTC),
 	}
-	if err := repo.SavePatent(ctx, parentPat); err != nil {
-		t.Fatalf("SavePatent parent: %v", err)
+	continuity := domain.USPTOContinuity{
+		ApplicationNumber:                 "9000000",
+		ParentApplicationNumberText:       "10000000",
+		ChildApplicationNumberText:        "9000000",
+		ClaimParentageTypeCode:            "CON",
+		ClaimParentageTypeDescriptionText: "continuation",
+	}
+	if err := repo.SaveNode(ctx, store.NodeBatch{
+		Patent: parentPat,
+		USPTOApplication: &domain.USPTOApplication{
+			ApplicationNumber: "9000000",
+			RecordNumber:      parentNum,
+		},
+		USPTOContinuities: []domain.USPTOContinuity{continuity},
+	}); err != nil {
+		t.Fatalf("SaveNode parent: %v", err)
 	}
 
 	// Save relations between root and parent
@@ -108,6 +123,9 @@ func TestExportFamilyGraph(t *testing.T) {
 	if !strings.Contains(mermaidStr, "p_us_9000000_b2") {
 		t.Errorf("flowchart mermaid file missing parent node:\n%s", mermaidStr)
 	}
+	if !strings.Contains(mermaidStr, "p_us_10000000_b2 -->|CON| p_us_9000000_b2") {
+		t.Errorf("flowchart mermaid file missing CON relation arrow:\n%s", mermaidStr)
+	}
 
 	// Check exported ASCII preview (.txt) file
 	txtPath := filepath.Join(tmpDir, "family.txt")
@@ -122,10 +140,10 @@ func TestExportFamilyGraph(t *testing.T) {
 	if !strings.Contains(txtStr, "Family Timeline:") {
 		t.Errorf("ASCII preview missing timeline section header:\n%s", txtStr)
 	}
-	if !strings.Contains(txtStr, "2010-02-01 : US9000000B2 Filed") {
+	if !strings.Contains(txtStr, "2010-02-01 : US9,000,000B2 🏆 Filed") {
 		t.Errorf("ASCII preview missing parent filing event:\n%s", txtStr)
 	}
-	if !strings.Contains(txtStr, "2035-01-02") && !strings.Contains(txtStr, "2035-01-01 : US10000000B2 Expired") {
+	if !strings.Contains(txtStr, "2035-01-02") && !strings.Contains(txtStr, "2035-01-01 : US10,000,000B2 🏆 Expired") {
 		t.Errorf("ASCII preview missing root expiration event:\n%s", txtStr)
 	}
 
@@ -139,7 +157,7 @@ func TestExportFamilyGraph(t *testing.T) {
 	if !strings.Contains(timelineStr, "timeline") {
 		t.Errorf("timeline mermaid file missing timeline header:\n%s", timelineStr)
 	}
-	if !strings.Contains(timelineStr, "2010 : US9000000B2 Filed") {
+	if !strings.Contains(timelineStr, "2010 : US9,000,000B2 🏆 Filed") {
 		t.Errorf("timeline mermaid file missing parent filing year:\n%s", timelineStr)
 	}
 }

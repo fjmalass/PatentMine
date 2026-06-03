@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -63,15 +62,13 @@ type Document struct {
 }
 
 // GuessStage infers a life stage from a number's kind code, for a document
-// discovered (e.g. as a citation) without an explicit stage. A "B" kind is a
-// grant; anything else is treated as a publication. An application is only
-// recognised when stated explicitly — application numbers carry no kind code.
+// discovered (e.g. as a citation) without an explicit stage.
 func GuessStage(n PatentNumber) Stage {
-	if strings.HasPrefix(n.Kind, "B") {
+	if n.IsGrant() {
 		return StageGrant
 	}
-	if n.Country == "US" && n.Kind == "" {
-		return StageApplication
+	if n.IsPublication() {
+		return StagePublication
 	}
-	return StagePublication
+	return StageApplication
 }

@@ -10,6 +10,7 @@ type SortColumn string
 
 const (
 	SortByNumber         SortColumn = "number"
+	SortByKind           SortColumn = "kind"
 	SortByTitle          SortColumn = "title"
 	SortByInventor       SortColumn = "inventor"
 	SortByExpires        SortColumn = "expires"

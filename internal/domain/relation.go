@@ -16,6 +16,17 @@ const (
 	RelationChild RelationKind = "child"
 )
 
+// RelationType defines the type of priority or continuity relation (e.g. CIP, CON, DIV).
+type RelationType string
+
+const (
+	RelTypeCON     RelationType = "con"
+	RelTypeCIP     RelationType = "cip"
+	RelTypeDIV     RelationType = "div"
+	RelTypePROV    RelationType = "prov"
+	RelTypeREISSUE RelationType = "reissue"
+)
+
 // Valid reports whether the RelationKind is a known value.
 func (k RelationKind) Valid() bool {
 	switch k {

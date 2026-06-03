@@ -616,6 +616,12 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 					return p.DisplayNumber.String()
 				}
 				return p.Number.String()
+			case "kind":
+				num := p.Number
+				if !p.DisplayNumber.IsZero() {
+					num = p.DisplayNumber
+				}
+				return o.theme.StageGlyph(string(num.Stage()))
 			case "title":
 				return strings.Join(strings.Fields(p.Title), " ")
 			case "inventor":

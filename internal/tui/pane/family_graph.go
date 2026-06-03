@@ -421,9 +421,9 @@ func (g *FamilyGraph) summaryLine(w int) string {
 
 func (g *FamilyGraph) filterLine(w int) string {
 	if len(g.countries) == 0 {
-		return g.theme.Dim.Render(render.Truncate(" depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+		return g.theme.Dim.Render(render.Truncate(" depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: ➡️=con 🧩=CIP ✂️=div ⏳=prov 🩹=reissue  ·  R=root M=merge B=branch X=cross-edge", w))
 	}
-	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  ·  depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: R=root M=merge B=branch X=cross-edge", w))
+	return g.theme.Dim.Render(render.Truncate(" countries: "+strings.Join(g.countries, ", ")+"  ·  depth: use [ ] or -/+  ·  y: copy Mermaid  ·  legend: ➡️=con 🧩=CIP ✂️=div ⏳=prov 🩹=reissue  ·  R=root M=merge B=branch X=cross-edge", w))
 }
 func (g *FamilyGraph) exportMermaid(inv Invocation) tea.Cmd {
 	if len(g.nodes) == 0 {
@@ -563,12 +563,12 @@ func mermaidNodeText(node proto.FamilyGraphNode) string {
 	}
 	title := strings.TrimSpace(node.Patent.Title)
 	if title == "" {
-		return mermaidEscape(number.DisplayString())
+		return mermaidEscape(number.DisplayString() + " " + stageEmoji(number))
 	}
 	if len(title) > 48 {
 		title = strings.TrimSpace(title[:45]) + "..."
 	}
-	return mermaidEscape(number.DisplayString() + "<br/>" + title)
+	return mermaidEscape(number.DisplayString() + " " + stageEmoji(number) + "<br/>" + title)
 }
 
 
@@ -614,7 +614,12 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 	if !row.parent.IsZero() {
 		key := row.parent.Normalized() + "\x00" + node.Patent.Number.Normalized()
 		if relType, ok := g.relTypes[key]; ok && relType != "" {
-			relTypeBracket = g.theme.Dim.Render("[" + relType + "] ")
+			glyph := g.theme.RelationTypeGlyph(relType)
+			if glyph != "" {
+				relTypeBracket = g.theme.Dim.Render(glyph + " " + relType + " ")
+			} else {
+				relTypeBracket = g.theme.Dim.Render("[" + relType + "] ")
+			}
 		}
 	}
 
@@ -632,7 +637,18 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 		}
 	}
 
-	styledHead := fmt.Sprintf("  %s%s%s%s", indent, relTypeBracket, number.DisplayString(), labelStr)
+	dispNo := number.DisplayString()
+	var styledNumber string
+	switch number.Stage() {
+	case domain.StageGrant:
+		styledNumber = g.theme.StyleStageGrant.Render(dispNo + " " + g.theme.StageGlyph(string(domain.StageGrant)))
+	case domain.StagePublication:
+		styledNumber = g.theme.StyleStagePublication.Render(dispNo + " " + g.theme.StageGlyph(string(domain.StagePublication)))
+	default:
+		styledNumber = g.theme.StyleStageApplication.Render(dispNo + " " + g.theme.StageGlyph(string(domain.StageApplication)))
+	}
+
+	styledHead := fmt.Sprintf("  %s%s%s%s", indent, relTypeBracket, styledNumber, labelStr)
 	headPadded := render.Pad(styledHead, g.maxPrefixWidth)
 
 	title := strings.TrimSpace(node.Patent.Title)
@@ -987,7 +1003,12 @@ func (g *FamilyGraph) rebuildRows() {
 			if !r.parent.IsZero() {
 				key := r.parent.Normalized() + "\x00" + node.Patent.Number.Normalized()
 				if relType, ok := g.relTypes[key]; ok && relType != "" {
-					relTypeBracket = "[" + relType + "] "
+					glyph := g.theme.RelationTypeGlyph(relType)
+					if glyph != "" {
+						relTypeBracket = glyph + " " + relType + " "
+					} else {
+						relTypeBracket = "[" + relType + "] "
+					}
 				}
 			}
 
@@ -1005,7 +1026,7 @@ func (g *FamilyGraph) rebuildRows() {
 				}
 			}
 
-			head := fmt.Sprintf("  %s%s%s%s", r.indent, relTypeBracket, number.DisplayString(), labelStr)
+			head := fmt.Sprintf("  %s%s%s%s", r.indent, relTypeBracket, g.displayString(number), labelStr)
 			prefixWidth := render.StringWidth(head)
 			if prefixWidth > g.maxPrefixWidth {
 				g.maxPrefixWidth = prefixWidth
@@ -1600,4 +1621,21 @@ func ExportFamilyMermaid(client *rpc.Client, number domain.PatentNumber, project
 
 		return StatusMsg{Key: text.StatusFamilyExportDone, Args: []any{path}}
 	}
+}
+
+func (g *FamilyGraph) displayString(number domain.PatentNumber) string {
+	if number.IsZero() {
+		return ""
+	}
+	return number.DisplayString() + " " + g.theme.StageGlyph(string(number.Stage()))
+}
+
+func stageEmoji(number domain.PatentNumber) string {
+	if number.IsGrant() {
+		return "🏆"
+	}
+	if number.IsPublication() {
+		return "📄"
+	}
+	return "🖋️"
 }

@@ -523,6 +523,12 @@ func patentSortExpr(q store.PatentQuery) (string, []any, error) {
 	switch q.SortColumn {
 	case domain.SortByNumber:
 		return "p.number " + dir, nil, nil
+	case domain.SortByKind:
+		return `(CASE ` +
+			`WHEN (p.kind LIKE 'B%' OR p.kind LIKE 'E%' OR p.kind LIKE 'S%' OR (p.kind LIKE 'P%' AND p.kind != 'PL') OR (p.country = 'US' AND p.kind = 'A') OR (p.country = 'US' AND p.kind = '' AND length(p.serial) <= 7)) THEN 1 ` +
+			`WHEN (p.kind != '' OR (p.country = 'US' AND p.kind = '' AND length(p.serial) = 11)) THEN 2 ` +
+			`ELSE 3 ` +
+			`END) ` + dir, nil, nil
 	case domain.SortByTitle:
 		return "p.title " + dir, nil, nil
 	case domain.SortByInventor:

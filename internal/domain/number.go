@@ -17,6 +17,8 @@ type PatentNumber struct {
 	Kind    string // Kind code (e.g. "B2", "A1"); empty when absent.
 }
 
+
+
 var (
 	// ErrEmptyNumber is returned when the input has no content.
 	ErrEmptyNumber = errors.New("domain: empty patent number")
@@ -24,15 +26,14 @@ var (
 	ErrNoSerial = errors.New("domain: patent number has no serial digits")
 )
 
-// patentNumberPattern matches an optional 2-letter country code, a run of
-// serial digits (which may contain spaces, commas, hyphens, or slashes — so
-// application numbers like "16/123,456" parse), and an optional kind code.
-// Examples: "US11611785B2", "US-11,611,785-B2", "EP1234567A1", "US16/123456".
+// patentNumberPattern matches an optional 2-letter country code, optional spaces/hyphens,
+// an optional alphabetical prefix (like RE, D, PP) followed by serial digits, and an optional kind code.
+// Examples: "US11611785B2", "US-11,611,785-B2", "EP1234567A1", "US16/123456", "RE48372", "USD890123".
 var patentNumberPattern = regexp.MustCompile(
-	`^([A-Z]{2})?[\s\-]*([0-9][0-9\s,\-/]*?)[\s\-]*([A-Z][0-9]?)?$`,
+	`^([A-Z]{2})?[\s\-]*([A-Z]*[0-9][0-9\s,\-/]*?)[\s\-]*([A-Z][0-9]?)?$`,
 )
 
-var nonDigit = regexp.MustCompile(`[^0-9]`)
+var nonAlphanumeric = regexp.MustCompile(`[^A-Z0-9]`)
 
 // ParsePatentNumber normalizes raw input into a PatentNumber. It uppercases,
 // trims, and strips separators so the same patent written differently by
@@ -45,11 +46,17 @@ func ParsePatentNumber(raw string) (PatentNumber, error) {
 	if s == "" {
 		return PatentNumber{}, ErrEmptyNumber
 	}
+
+	// For US reissue patents parsed without country prefix (e.g. RE48372), treat as US
+	if strings.HasPrefix(s, "RE") && len(s) > 2 && s[2] >= '0' && s[2] <= '9' {
+		s = "US" + s
+	}
+
 	m := patentNumberPattern.FindStringSubmatch(s)
 	if m == nil {
 		return PatentNumber{}, fmt.Errorf("domain: cannot parse patent number %q", raw)
 	}
-	serial := nonDigit.ReplaceAllString(m[2], "")
+	serial := nonAlphanumeric.ReplaceAllString(m[2], "")
 	if serial == "" {
 		return PatentNumber{}, ErrNoSerial
 	}
@@ -109,21 +116,166 @@ func (n PatentNumber) String() string {
 	return n.Normalized()
 }
 
+// HasExplicitGrantKind reports whether the patent number has an explicit kind code representing a grant.
+func (n PatentNumber) HasExplicitGrantKind() bool {
+	if strings.HasPrefix(n.Kind, "B") || strings.HasPrefix(n.Kind, "E") || strings.HasPrefix(n.Kind, "S") {
+		return true
+	}
+	if strings.HasPrefix(n.Kind, "P") && n.Kind != "PL" {
+		return true
+	}
+	return false
+}
+
+// HasExplicitPublicationKind reports whether the patent number has an explicit kind code representing a publication.
+func (n PatentNumber) HasExplicitPublicationKind() bool {
+	if n.Kind != "" && !strings.HasPrefix(n.Kind, "B") && !strings.HasPrefix(n.Kind, "E") && !strings.HasPrefix(n.Kind, "S") {
+		if strings.HasPrefix(n.Kind, "P") && n.Kind != "PL" {
+			return false
+		}
+		// Exclude legacy US grants which have bare "A" kind codes
+		if n.Country == "US" && n.Kind == "A" {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// IsGrant reports whether the patent number represents a granted patent.
+func (n PatentNumber) IsGrant() bool {
+	if n.HasExplicitGrantKind() {
+		return true
+	}
+	// US legacy grants sometimes carry a bare "A" kind code (e.g. US1234567A)
+	if n.Country == "US" && n.Kind == "A" {
+		return true
+	}
+	// Fallback stage detection for US granted patents queried without kind codes
+	if n.Country == "US" && n.Kind == "" {
+		digitsOnly := getDigitsOnly(n.Serial)
+		if len(digitsOnly) <= 7 {
+			return true
+		}
+	}
+	return false
+}
+
+// IsUSGrant reports whether the patent number represents a US granted patent.
+func (n PatentNumber) IsUSGrant() bool {
+	return n.Country == "US" && n.IsGrant()
+}
+
+// IsPublication reports whether the patent number represents a published pre-grant application.
+func (n PatentNumber) IsPublication() bool {
+	if n.HasExplicitPublicationKind() {
+		return true
+	}
+	// Fallback stage detection for US publications queried without kind codes (11 digits)
+	if n.Country == "US" && n.Kind == "" {
+		digitsOnly := getDigitsOnly(n.Serial)
+		if len(digitsOnly) == 11 {
+			return true
+		}
+	}
+	return false
+}
+
+// IsApplication reports whether the patent number represents an application.
+func (n PatentNumber) IsApplication() bool {
+	return !n.IsGrant() && !n.IsPublication()
+}
+
+// Stage returns the lifecycle stage of this patent number.
+func (n PatentNumber) Stage() Stage {
+	if n.IsGrant() {
+		return StageGrant
+	}
+	if n.IsPublication() {
+		return StagePublication
+	}
+	return StageApplication
+}
+
+// getDigitsOnly returns only the numerical digits in the string.
+func getDigitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// formatUSApplication formats an 8-digit US application number as "XX/YYY,YYY".
+func formatUSApplication(serial string) string {
+	digits := getDigitsOnly(serial)
+	if len(digits) != 8 {
+		return serial
+	}
+	return digits[:2] + "/" + digits[2:5] + "," + digits[5:]
+}
+
+// formatUSPublication formats an 11-digit US publication number as "YYYY/NNNNNNN".
+func formatUSPublication(serial string) string {
+	digits := getDigitsOnly(serial)
+	if len(digits) != 11 {
+		return serial
+	}
+	return digits[:4] + "/" + digits[4:]
+}
+
+// formatCommas formats numerical values with thousands commas, leaving alphabetical prefixes intact.
+func formatCommas(s string) string {
+	prefix := ""
+	digits := s
+	for i, r := range s {
+		if r >= '0' && r <= '9' {
+			prefix = s[:i]
+			digits = s[i:]
+			break
+		}
+	}
+
+	n := len(digits)
+	if n <= 3 {
+		return prefix + digits
+	}
+	var b strings.Builder
+	b.WriteString(prefix)
+	first := n % 3
+	if first == 0 {
+		first = 3
+	}
+	b.WriteString(digits[:first])
+	for i := first; i < n; i += 3 {
+		b.WriteByte(',')
+		b.WriteString(digits[i : i+3])
+	}
+	return b.String()
+}
+
 // DisplayString returns a human-friendly string for the patent number.
-// If it is not a granted patent (e.g. it is an application or publication),
-// it appends " (App)" or " (Pub)" respectively, to prevent confusion in outputs like family graphs.
 func (n PatentNumber) DisplayString() string {
 	if n.IsZero() {
 		return ""
 	}
-	norm := n.Normalized()
-	if strings.HasPrefix(n.Kind, "B") {
-		return norm
+
+	serialDisp := n.Serial
+
+	// Coordinate US-specific visual formatting
+	if n.Country == "US" {
+		if n.IsGrant() {
+			serialDisp = formatCommas(n.Serial)
+		} else if n.IsApplication() {
+			serialDisp = formatUSApplication(n.Serial)
+		} else if n.IsPublication() {
+			serialDisp = formatUSPublication(n.Serial)
+		}
 	}
-	if n.Kind == "" {
-		return norm + " (App)"
-	}
-	return norm + " (Pub)"
+
+	return n.Country + serialDisp + n.Kind
 }
 
 // Equal reports whether two numbers refer to the same patent document.

@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"patentmine/internal/domain"
 )
 
 // Theme colours, named so no raw colour code appears at a call site.
@@ -138,6 +140,13 @@ const (
 	glyphProvRelated   = "👪"
 	glyphProvNeighbors = "🏡"
 	glyphProvSystem    = "🤖"
+
+	glyphRelContinuation = "➡️"
+	glyphRelCIP          = "🧩"
+	glyphRelDivisional   = "✂️"
+	glyphRelProvisional  = "⏳"
+	glyphRelReissue      = "🩹"
+	glyphRelOther        = "❓"
 )
 
 // Theme bundles the lipgloss styles the TUI draws with. One Theme is built at
@@ -202,6 +211,9 @@ type Theme struct {
 	JumpGlobalValue lipgloss.Style
 	JumpLocalLabel  lipgloss.Style
 	JumpLocalValue  lipgloss.Style
+	StyleStageApplication lipgloss.Style
+	StyleStagePublication lipgloss.Style
+	StyleStageGrant       lipgloss.Style
 
 	// Glyphs holds the single-character markers used across panes. They live
 	// on the theme so a build can override them (ASCII-only terminals, custom
@@ -293,6 +305,13 @@ type ThemeGlyphs struct {
 	ProvRelated   string
 	ProvNeighbors string
 	ProvSystem    string
+
+	RelContinuation string
+	RelCIP          string
+	RelDivisional   string
+	RelProvisional  string
+	RelReissue      string
+	RelOther        string
 }
 
 // NewTheme builds the default theme.
@@ -423,6 +442,10 @@ func NewTheme() Theme {
 		JumpLocalLabel:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorWarn)).Bold(true),
 		JumpLocalValue:  lipgloss.NewStyle().Foreground(lipgloss.Color(colorMarked)),
 
+		StyleStageApplication: lipgloss.NewStyle().Foreground(lipgloss.Color(colorWarn)),
+		StyleStagePublication: lipgloss.NewStyle().Foreground(lipgloss.Color(colorDim)),
+		StyleStageGrant:       lipgloss.NewStyle().Foreground(lipgloss.Color(colorOK)).Bold(true),
+
 		Glyphs: ThemeGlyphs{
 			FamilyParent:  glyphFamilyParent,
 			FamilyChild:   glyphFamilyChild,
@@ -503,6 +526,13 @@ func NewTheme() Theme {
 			ProvRelated:   glyphProvRelated,
 			ProvNeighbors: glyphProvNeighbors,
 			ProvSystem:    glyphProvSystem,
+
+			RelContinuation: glyphRelContinuation,
+			RelCIP:          glyphRelCIP,
+			RelDivisional:   glyphRelDivisional,
+			RelProvisional:  glyphRelProvisional,
+			RelReissue:      glyphRelReissue,
+			RelOther:        glyphRelOther,
 		},
 	}
 }
@@ -604,5 +634,26 @@ func (t Theme) ProvenanceGlyph(method string) string {
 // (composed of cursor + mark + a trailing space).
 func (t Theme) TablePrefixWidth() int {
 	return StringWidth(t.Glyphs.RowNoCursor + t.Glyphs.RowNoMark + " ")
+}
+
+// RelationTypeGlyph returns the glyph corresponding to the family relationship type.
+func (t Theme) RelationTypeGlyph(relType string) string {
+	switch domain.RelationType(strings.ToLower(strings.TrimSpace(relType))) {
+	case domain.RelTypeCON:
+		return t.Glyphs.RelContinuation
+	case domain.RelTypeCIP:
+		return t.Glyphs.RelCIP
+	case domain.RelTypeDIV:
+		return t.Glyphs.RelDivisional
+	case domain.RelTypePROV:
+		return t.Glyphs.RelProvisional
+	case domain.RelTypeREISSUE:
+		return t.Glyphs.RelReissue
+	default:
+		if relType == "" {
+			return ""
+		}
+		return t.Glyphs.RelOther
+	}
 }
 

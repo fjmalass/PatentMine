@@ -6,6 +6,7 @@ type PatentTableColumnKey string
 const (
 	PatentColumnIndex          PatentTableColumnKey = "index"
 	PatentColumnNumber         PatentTableColumnKey = PatentTableColumnKey(SortByNumber)
+	PatentColumnKind           PatentTableColumnKey = "kind"
 	PatentColumnTitle          PatentTableColumnKey = PatentTableColumnKey(SortByTitle)
 	PatentColumnInventor       PatentTableColumnKey = PatentTableColumnKey(SortByInventor)
 	PatentColumnClassification PatentTableColumnKey = PatentTableColumnKey(SortByClassification)
@@ -51,6 +52,7 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 	cols := []PatentTableColumn{
 		{Key: PatentColumnIndex, Label: "#", Width: 4},
 		{Key: PatentColumnNumber, Label: "NUMBER", SortKey: SortByNumber, Sortable: true, Width: 16},
+		{Key: PatentColumnKind, Label: "KIND", SortKey: SortByKind, Sortable: true, Width: 4},
 		{Key: PatentColumnTitle, Label: "TITLE", SortKey: SortByTitle, Sortable: true},
 		{Key: PatentColumnInventor, Label: "INVENTOR", SortKey: SortByInventor, Sortable: true, Width: 18},
 		{Key: PatentColumnClassification, Label: "CLASS", SortKey: SortByClassification, Sortable: true, Width: 16},
