@@ -129,7 +129,7 @@ func TestFamilyGraphViewGroupsByDepthAndSkipsHeaders(t *testing.T) {
 	g.nodes = []proto.FamilyGraphNode{
 		{Patent: domain.PatentRow{Number: root, DisplayNumber: root, Title: "Root", FetchState: domain.FetchCached}, Depth: 0, Parents: []domain.PatentNumber{parent}, Children: []domain.PatentNumber{child}},
 		{Patent: domain.PatentRow{Number: parent, DisplayNumber: parent, Title: "Parent", FetchState: domain.FetchCached}, Depth: 1, Children: []domain.PatentNumber{root}},
-		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchStub}, Depth: 1, Parents: []domain.PatentNumber{root}},
+		{Patent: domain.PatentRow{Number: child, DisplayNumber: child, Title: "Child", FetchState: domain.FetchCached}, Depth: 1, Parents: []domain.PatentNumber{root}},
 	}
 	g.rebuildRows()
 	g.page.SetTotal(len(g.rows))

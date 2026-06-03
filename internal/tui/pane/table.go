@@ -325,7 +325,7 @@ func renderStatusExtra(theme render.Theme, extra string) string {
 	switch {
 	case strings.Contains(extra, "🟢"):
 		return theme.OK.Render(extra)
-	case strings.Contains(extra, "🟡"):
+	case strings.Contains(extra, "🟡") || strings.Contains(extra, "⚠️"):
 		return theme.Warn.Render(extra)
 	case strings.Contains(extra, "🔴"):
 		return theme.Error.Render(extra)

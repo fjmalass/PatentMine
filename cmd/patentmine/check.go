@@ -157,7 +157,11 @@ func checkUSPTO(ctx context.Context, cfg config.Config, verbose bool) checkResul
 	result := config.CheckUSPTOConnection(ctx, apiKey)
 
 	if result.Connected {
-		return checkResult{Name: "USPTO", State: checkGreen, Message: result.Message}
+		msg := result.Message
+		if !result.AssignmentsActivated {
+			msg += " (Warning: Patent Assignment Search API is not active)"
+		}
+		return checkResult{Name: "USPTO", State: checkGreen, Message: msg}
 	}
 	return checkResult{Name: "USPTO", State: checkYellow, Message: result.Message}
 }

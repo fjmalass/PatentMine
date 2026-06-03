@@ -57,6 +57,7 @@ type FamilyGraph struct {
 	nodes        []proto.FamilyGraphNode
 	edges        []proto.FamilyGraphEdge
 	rows         []familyGraphRow
+	maxPrefixWidth int
 	occurrences  map[domain.PatentNumber]int
 	nodeLabels   map[domain.PatentNumber]string
 	parentRefs   map[domain.PatentNumber][]string
@@ -518,9 +519,11 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 
 	var line string
 	if row.isCycle || row.isCrossRef {
-		line = fmt.Sprintf("  %s %-15s %s",
-			indent,
-			number.String(),
+		prefix := fmt.Sprintf("  %s ", indent)
+		prefixPadded := render.Pad(prefix, g.maxPrefixWidth)
+		line = fmt.Sprintf("%s %s %s",
+			prefixPadded,
+			render.Pad(number.String(), 15),
 			labelStr,
 		)
 	} else {
@@ -534,12 +537,17 @@ func (g *FamilyGraph) renderNodeLine(row familyGraphRow, w int) string {
 			labelSpacing = labelStr + " "
 		}
 
-		line = fmt.Sprintf("  %s%s%-15s %-2s  %s  %s",
-			indent,
-			labelSpacing,
-			number.String(),
-			countryOrDash(node.Patent.Number.Country),
-			g.stateText(node.Patent),
+		prefix := fmt.Sprintf("  %s%s", indent, labelSpacing)
+		prefixPadded := render.Pad(prefix, g.maxPrefixWidth)
+		numberPadded := render.Pad(number.String(), 15)
+		countryPadded := render.Pad(countryOrDash(node.Patent.Number.Country), 2)
+		statePadded := render.Pad(g.stateText(node.Patent), 2)
+
+		line = fmt.Sprintf("%s %s  %s  %s  %s",
+			prefixPadded,
+			numberPadded,
+			countryPadded,
+			statePadded,
 			title,
 		)
 	}
@@ -645,12 +653,31 @@ func (g *FamilyGraph) rebuildRows() {
 		}
 	}
 
+	// Calculate maxPrefixWidth
+	g.maxPrefixWidth = 0
+	for _, r := range rows {
+		if r.kind == familyGraphRowNode && r.node != nil {
+			prefixWidth := render.StringWidth(r.indent)
+			if r.isCycle || r.isCrossRef {
+				// Cycle/CrossRef doesn't have labelStr, but we'll show indent + space
+				prefixWidth += 1
+			} else {
+				if g.occurrences[r.node.Patent.Number] > 1 {
+					prefixWidth += 7 // for "[N01] "
+				}
+			}
+			if prefixWidth > g.maxPrefixWidth {
+				g.maxPrefixWidth = prefixWidth
+			}
+		}
+	}
+
 	g.rows = rows
 }
 
 func (g *FamilyGraph) walkUp(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode) {
 	node := nodeMap[num]
-	if node == nil {
+	if node == nil || node.Patent.FetchState == domain.FetchStub {
 		return
 	}
 
@@ -703,7 +730,7 @@ func (g *FamilyGraph) walkUp(num domain.PatentNumber, indent string, isLast bool
 
 func (g *FamilyGraph) walkDown(num domain.PatentNumber, indent string, isLast bool, visited map[domain.PatentNumber]bool, path []domain.PatentNumber, rows *[]familyGraphRow, nodeMap map[domain.PatentNumber]*proto.FamilyGraphNode) {
 	node := nodeMap[num]
-	if node == nil {
+	if node == nil || node.Patent.FetchState == domain.FetchStub {
 		return
 	}
 

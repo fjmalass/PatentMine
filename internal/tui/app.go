@@ -283,8 +283,9 @@ type App struct {
 	usptoAPIKey      string
 	xmlBatch         *xmlBatchState
 	usptoConfigured  bool
-	usptoConnection  serviceConnectionState
-	backupConfigured bool
+	usptoConnection           serviceConnectionState
+	usptoAssignmentsActivated bool
+	backupConfigured          bool
 	backupConnection serviceConnectionState
 	backupBucket     string
 	backupRemote     string
@@ -382,6 +383,9 @@ func (a *App) activeAIString() string {
 }
 
 func (a *App) activeSearchString() string {
+	if a.usptoConnection == serviceConnected && !a.usptoAssignmentsActivated {
+		return "USPTO: ⚠️ connected (no post-grant)"
+	}
 	return "USPTO: " + a.serviceConnectionLabel(a.usptoConnection)
 }
 
@@ -1287,6 +1291,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case serviceConnectionLoadedMsg:
 		a.usptoConnection = m.uspto
+		a.usptoAssignmentsActivated = m.usptoInfo.AssignmentsActivated
 		a.backupConnection = m.backup
 		if m.uspto == serviceConnected && !m.usptoInfo.AssignmentsActivated {
 			title := "Warning: Patent Assignment API Not Active"
