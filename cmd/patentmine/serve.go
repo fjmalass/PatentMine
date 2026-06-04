@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"patentmine/internal/ai"
 	"patentmine/internal/config"
 	"patentmine/internal/crawl"
 	"patentmine/internal/domain"
@@ -125,6 +126,14 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	crawler := crawl.NewCrawler(registry, cachingRepo, crawl.CrawlConfig{}).WithMetrics(telemetry.Metrics).WithLogger(telemetry.Logger)
 	crawl.Metrics = telemetry.Metrics
 	crawlCfg := crawler.Config()
+	// The drafting subsystem reuses the configured AI provider (local Ollama or
+	// cloud Gemini) and writes rendered .docx into the IDS export base.
+	drafter := ai.NewDrafter(ai.DrafterConfig{
+		Provider:     cfg.AIProvider,
+		GeminiAPIKey: cfg.GeminiAPIKey,
+		OllamaHost:   cfg.OllamaHost,
+		OllamaModel:  cfg.OllamaModel,
+	})
 	return engine.New(ctx, cachingRepo, crawl.Factory(crawler),
 		engine.WithFileImporter(crawler),
 		engine.WithCrawlMaxDepth(crawlCfg.MaxDepth),
@@ -134,7 +143,8 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithActivityRecorder(telemetry.Activity),
 		engine.WithMetrics(telemetry.Metrics),
 		engine.WithSourceModeController(registry),
-		engine.WithIDSExportDir(cfg.IDSExportDir),
+		engine.WithDocsExportDir(cfg.DocsExportDir),
+		engine.WithDrafter(drafter),
 		engine.WithUSPTOAPIKey(cfg.USPTOAPIKey),
 		engine.WithPatentsDir(patentsDir),
 		engine.WithUSPTOSearcher(func(ctx context.Context, number domain.PatentNumber) ([]domain.USPTOCandidate, error) {

@@ -22,6 +22,7 @@ usage:
   patentmine uspto-manage       manage the patents/XML cache directory (list, archive, clean)
   patentmine check-connectivity check configured external service connectivity
   patentmine lookup             look up a patent by USPTO application number
+  patentmine draft              draft applications / office-action responses and render .docx
   patentmine expiration-date    compute and compare estimated patent expiration dates
   patentmine replay             replay loading history of a project
   patentmine version            print the build version
@@ -59,6 +60,8 @@ func run(args []string) int {
 		return runCheck(args[1:])
 	case "lookup":
 		return runLookup(args[1:])
+	case "draft":
+		return runDraft(args[1:])
 	case "expiration-date":
 		return runExpirationDate(args[1:])
 	case "replay":

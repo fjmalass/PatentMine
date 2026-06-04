@@ -191,10 +191,100 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "6"
 	}
-	if version != "6" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 6", version)
+	if version == "6" {
+		if err := r.migrateV6ToV7(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v6 to v7: %w", err)
+		}
+		version = "7"
+	}
+	if version != "7" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 7", version)
 	}
 	return nil
+}
+
+// migrateV6ToV7 introduces the drafting subsystem tables (office_action, draft,
+// draft_section, draft_claim). It is purely additive — the tables are created
+// here so the version bump is self-contained, and schema.sql recreates them
+// idempotently on the following apply. No data backfill is needed.
+func (r *Repo) migrateV6ToV7(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v6-to-v7.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v6 to v7: backup: %w", err)
+	}
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v6 to v7: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, stmt := range migrationV6ToV7Statements {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v6 to v7: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '7' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v6 to v7: set version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v6 to v7: commit: %w", err)
+	}
+	return nil
+}
+
+// migrationV6ToV7Statements create the drafting tables and indexes. Kept in sync
+// with schema.sql (idempotent CREATE ... IF NOT EXISTS).
+var migrationV6ToV7Statements = []string{
+	`CREATE TABLE IF NOT EXISTS office_action (
+	    id                 TEXT PRIMARY KEY,
+	    project_id         TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+	    application_number TEXT NOT NULL DEFAULT '',
+	    mail_date          TEXT NOT NULL DEFAULT '',
+	    oa_type            TEXT NOT NULL DEFAULT '',
+	    examiner           TEXT NOT NULL DEFAULT '',
+	    art_unit           TEXT NOT NULL DEFAULT '',
+	    blob_path          TEXT NOT NULL DEFAULT '',
+	    blob_hash          TEXT NOT NULL DEFAULT '',
+	    extracted_text     TEXT NOT NULL DEFAULT '',
+	    source             TEXT NOT NULL DEFAULT '',
+	    imported_at        TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_office_action_project ON office_action (project_id, mail_date DESC)`,
+	`CREATE TABLE IF NOT EXISTS draft (
+	    id                TEXT PRIMARY KEY,
+	    project_id        TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+	    kind              TEXT NOT NULL,
+	    title             TEXT NOT NULL DEFAULT '',
+	    status            TEXT NOT NULL DEFAULT 'draft',
+	    office_action_id  TEXT REFERENCES office_action (id) ON DELETE SET NULL,
+	    created_at        TEXT NOT NULL,
+	    updated_at        TEXT NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_draft_project ON draft (project_id, updated_at DESC)`,
+	`CREATE TABLE IF NOT EXISTS draft_section (
+	    draft_id     TEXT NOT NULL REFERENCES draft (id) ON DELETE CASCADE,
+	    ordinal      INTEGER NOT NULL,
+	    kind         TEXT NOT NULL DEFAULT '',
+	    heading      TEXT NOT NULL DEFAULT '',
+	    body         TEXT NOT NULL DEFAULT '',
+	    pinned_json  TEXT NOT NULL DEFAULT '[]',
+	    ai_provider  TEXT NOT NULL DEFAULT '',
+	    ai_model     TEXT NOT NULL DEFAULT '',
+	    generated_at TEXT NOT NULL DEFAULT '',
+	    human_edited INTEGER NOT NULL DEFAULT 0,
+	    PRIMARY KEY (draft_id, ordinal)
+	)`,
+	`CREATE TABLE IF NOT EXISTS draft_claim (
+	    draft_id   TEXT NOT NULL REFERENCES draft (id) ON DELETE CASCADE,
+	    ordinal    INTEGER NOT NULL,
+	    number     INTEGER NOT NULL DEFAULT 0,
+	    claim_type TEXT NOT NULL DEFAULT '',
+	    depends_on INTEGER NOT NULL DEFAULT 0,
+	    status     TEXT NOT NULL DEFAULT 'original',
+	    base_text  TEXT NOT NULL DEFAULT '',
+	    text       TEXT NOT NULL DEFAULT '',
+	    PRIMARY KEY (draft_id, ordinal)
+	)`,
 }
 
 // migrateV5ToV6 introduces the assignee_history table (the record.id-keyed

@@ -135,6 +135,16 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodSourceResolveDiffs:         s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:            s.sourceDiffsList,
 		proto.MethodSourceBibsList:             s.sourceBibsList,
+		proto.MethodDraftCreate:                s.draftCreate,
+		proto.MethodDraftGet:                   s.draftGet,
+		proto.MethodDraftList:                  s.draftList,
+		proto.MethodDraftSave:                  s.draftSave,
+		proto.MethodDraftDelete:                s.draftDelete,
+		proto.MethodDraftExportDocx:            s.draftExportDocx,
+		proto.MethodDraftSectionAI:             s.draftSectionAI,
+		proto.MethodOfficeActionImport:         s.officeActionImport,
+		proto.MethodOfficeActionList:           s.officeActionList,
+		proto.MethodOfficeActionGet:            s.officeActionGet,
 	}
 	return s
 }

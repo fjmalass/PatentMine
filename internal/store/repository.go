@@ -244,6 +244,26 @@ type Repository interface {
 	// ListIDSEntries returns every curated IDS entry of a project.
 	ListIDSEntries(ctx context.Context, project domain.ProjectID) ([]domain.IDSEntry, error)
 
+	// SaveDraft inserts or updates a draft (provisional / non-provisional
+	// application or office-action response) with its sections and claims.
+	SaveDraft(ctx context.Context, d domain.Draft) error
+	// Draft returns one draft with its sections and claims, or ErrNotFound.
+	Draft(ctx context.Context, id domain.DraftID) (domain.Draft, error)
+	// ListDrafts returns a project's drafts as summaries (no sections/claims).
+	ListDrafts(ctx context.Context, project domain.ProjectID) ([]domain.Draft, error)
+	// DeleteDraft removes a draft and, by cascade, its sections and claims.
+	DeleteDraft(ctx context.Context, id domain.DraftID) error
+
+	// SaveOfficeAction inserts or updates an imported office action.
+	SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) error
+	// OfficeAction returns one office action, or ErrNotFound.
+	OfficeAction(ctx context.Context, id string) (domain.OfficeAction, error)
+	// ListOfficeActions returns a project's office actions, newest first.
+	ListOfficeActions(ctx context.Context, project domain.ProjectID) ([]domain.OfficeAction, error)
+	// DeleteOfficeAction removes an office action; referencing drafts have their
+	// link reset to NULL.
+	DeleteOfficeAction(ctx context.Context, id string) error
+
 	// PatentNote returns one project-scoped patent note.
 	PatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.PatentNote, error)
 	// ListPatentNotes returns all project-scoped notes sorted by date (updated_at DESC) or patent number.

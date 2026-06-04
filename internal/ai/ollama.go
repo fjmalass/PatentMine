@@ -83,9 +83,25 @@ func (o *OllamaAnalyzer) AnalyzePatent(ctx context.Context, patent domain.Patent
 		sb.WriteString("\nPlease summarize the core technical novelty of this patent and highlight key legal/technology design takeaways.\n")
 	}
 
+	return o.generate(ctx, sb.String())
+}
+
+// Complete runs a single completion against the provided prompt and returns the
+// local model's text. It is the generic entry point the drafting subsystem uses
+// (the caller constructs the grounded prompt via ai.BuildDraftPrompt). Running
+// locally, it keeps unpublished application content off third-party services.
+func (o *OllamaAnalyzer) Complete(ctx context.Context, prompt string) (string, error) {
+	return o.generate(ctx, prompt)
+}
+
+// Model returns the local model name, for draft provenance.
+func (o *OllamaAnalyzer) Model() string { return o.model }
+
+// generate performs one /api/generate call with the given prompt text.
+func (o *OllamaAnalyzer) generate(ctx context.Context, prompt string) (string, error) {
 	reqPayload := ollamaRequest{
 		Model:  o.model,
-		Prompt: sb.String(),
+		Prompt: prompt,
 		Stream: false,
 	}
 

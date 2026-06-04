@@ -89,6 +89,19 @@ const (
 	MethodProjectAssignees           Method = "project.assignees"
 	MethodUSPTOExpirationCalculate   Method = "uspto.expiration.calculate"
 
+	// Drafting subsystem: provisional / non-provisional applications and
+	// office-action responses, rendered to .docx.
+	MethodDraftCreate         Method = "draft.create"
+	MethodDraftGet            Method = "draft.get"
+	MethodDraftList           Method = "draft.list"
+	MethodDraftSave           Method = "draft.save"
+	MethodDraftDelete         Method = "draft.delete"
+	MethodDraftExportDocx     Method = "draft.export.docx"
+	MethodDraftSectionAI      Method = "draft.section.ai"
+	MethodOfficeActionImport  Method = "office_action.import"
+	MethodOfficeActionList    Method = "office_action.list"
+	MethodOfficeActionGet     Method = "office_action.get"
+
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
 	MethodSourceDiffsList    Method = "source.diffs.list"

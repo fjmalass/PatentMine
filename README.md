@@ -14,6 +14,8 @@ Related docs:
 6. [Web REST API Reference](./REST_API.md)
 7. [Assignee & Ownership History (usage)](./TUI_ASSIGNEE_FLOW.md)
 8. [Daemon-Side Assignee Flow](./DAEMON_ASSIGNEE_FLOW.md)
+9. [Drafting: Applications & Office-Action Responses](./DRAFTING.md)
+10. [Office Actions & Response Drafting](./TUI_OFFICE_ACTION.md)
 
 ---
 

@@ -56,7 +56,7 @@ type Config struct {
 	CrawlWorkers       int               // Concurrent crawl goroutines; 0 means use engine default.
 	ActivityMinMS      int               // Minimum UI look/hover duration to record.
 	NotesExportDir     string            // Directory for exported notes .md files; empty means user home dir.
-	IDSExportDir       string            // Directory for exported IDS PDF bundles; empty means $HomeDir/exports.
+	DocsExportDir      string            // Base for rendered project documents (IDS PDF bundles, drafts, office-action files); empty means $HomeDir/exports.
 	BackupProvider     string            // Backup provider name, e.g. b2.
 	BackupBucket       string            // Remote backup bucket/container name.
 	BackupB2KeyID      string            // Backblaze B2 application key ID.
@@ -263,9 +263,15 @@ func Load() (Config, error) {
 	}
 
 	notesExportDir := os.Getenv("PATENTMINE_NOTES_EXPORT_DIR")
-	idsExportDir := os.Getenv("PATENTMINE_IDS_EXPORT_DIR")
-	if idsExportDir == "" {
-		idsExportDir = filepath.Join(home, "exports")
+	// DocsExportDir is the base for rendered project documents (IDS PDF bundles,
+	// drafts, office-action files). PATENTMINE_IDS_EXPORT_DIR is honored as a
+	// deprecated fallback so pre-rename .env setups keep working.
+	docsExportDir := os.Getenv("PATENTMINE_DOCS_EXPORT_DIR")
+	if docsExportDir == "" {
+		docsExportDir = os.Getenv("PATENTMINE_IDS_EXPORT_DIR")
+	}
+	if docsExportDir == "" {
+		docsExportDir = filepath.Join(home, "exports")
 	}
 	backupProvider := os.Getenv("PATENTMINE_BACKUP_PROVIDER")
 	backupBucket := os.Getenv("PATENTMINE_BACKUP_BUCKET")
@@ -320,7 +326,7 @@ func Load() (Config, error) {
 		CrawlWorkers:       crawlWorkers,
 		ActivityMinMS:      activityMinMS,
 		NotesExportDir:     notesExportDir,
-		IDSExportDir:       idsExportDir,
+		DocsExportDir:      docsExportDir,
 		BackupProvider:     backupProvider,
 		BackupBucket:       backupBucket,
 		BackupB2KeyID:      backupB2KeyID,

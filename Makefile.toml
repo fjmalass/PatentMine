@@ -12,7 +12,7 @@ APP_NAME = "patentmine"
 BIN_DIR = "./bin"
 API_PID_NAME = "patentmine-api.pid"
 API_ADDR = "127.0.0.1:18080"
-PATENTMINE_IDS_EXPORT_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/exports"
+PATENTMINE_DOCS_EXPORT_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/exports"
 PM_VERSION_SCRIPT = '''
 PM_DESCRIBE="$(git describe --always --dirty --tags 2>/dev/null || git rev-parse --short HEAD)"
 PM_COMMIT="$(git rev-parse --short HEAD)"
@@ -541,4 +541,43 @@ curl -fsSL https://ollama.com/install.sh | sh
 echo "Updating mistral LLM model..."
 ollama pull mistral
 echo "Update complete!"
+'''
+
+# ---------------------------------------------------------------------------
+# Drafting subsystem: provisional / non-provisional applications and
+# office-action responses, rendered to .docx. Drafting runs in the daemon and
+# uses the configured AI provider (local Ollama by default — see ollama-setup —
+# or cloud Gemini via GEMINI_API_KEY). Start the daemon first (start-daemon).
+# ---------------------------------------------------------------------------
+[tasks.draft]
+description = "Drafting CLI: new | list | show | export | ai | oa-import | oa-list. e.g. cargo make draft new --project p-123 --kind provisional --title 'My Invention'"
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} draft $CARGO_MAKE_TASK_ARGS
+'''
+
+[tasks.draft-setup]
+description = "Provision the local AI drafting path (installs Ollama and pulls the model)."
+dependencies = ["ollama-setup"]
+
+[tasks.draft-demo]
+description = "End-to-end smoke: create a provisional draft in PROJECT_ID and render it to .docx."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+run() { go run -ldflags "$PM_LDFLAGS" ${BINARY} "$@"; }
+
+if [ -z "${PROJECT_ID:-}" ]; then
+  echo "Set PROJECT_ID=<existing project id> first (create a project in the TUI or web API),"
+  echo "then run: PROJECT_ID=p-123 cargo make draft-demo"
+  exit 0
+fi
+
+echo "Creating a provisional draft in $PROJECT_ID..."
+run draft new --project "$PROJECT_ID" --kind provisional --title "Demo Invention"
+echo
+echo "Listing drafts:"
+run draft list --project "$PROJECT_ID"
+echo
+echo "Tip: copy a draft id from above, then render it:"
+echo "  cargo make draft export --id <draftID>"
 '''

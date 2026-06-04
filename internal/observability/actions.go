@@ -57,6 +57,15 @@ const (
 	ActionSourceCompareOpen  = "source.compare.open"
 	ActionSourceDiffsLoad    = "source.diffs.load"
 	ActionSourceResolveDiffs = "source.resolve_diffs"
+
+	// Drafting subsystem (provisional / non-provisional applications and
+	// office-action responses rendered to .docx).
+	ActionDraftCreate        = "draft.create"
+	ActionDraftSave          = "draft.save"
+	ActionDraftDelete        = "draft.delete"
+	ActionDraftExportDocx    = "draft.export.docx"
+	ActionDraftSectionAI     = "draft.section.ai"
+	ActionOfficeActionImport = "office_action.import"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -102,4 +111,10 @@ var AllActions = []string{
 	ActionSourceDiffsLoad,
 	ActionSourceResolveDiffs,
 	ActionUIClearCache,
+	ActionDraftCreate,
+	ActionDraftSave,
+	ActionDraftDelete,
+	ActionDraftExportDocx,
+	ActionDraftSectionAI,
+	ActionOfficeActionImport,
 }

@@ -46,7 +46,7 @@ type IDSPDFPreview struct {
 // (and surface missing IDS header fields) before committing.
 func (e *Engine) PreviewIDSPDF(ctx context.Context, projectID domain.ProjectID, opts IDSPDFOptions) (preview IDSPDFPreview, err error) {
 	defer e.observeDuration("engine.preview_ids_pdf", time.Now(), &err)
-	if e.idsExportDir == "" {
+	if e.docsExportDir == "" {
 		return IDSPDFPreview{}, errors.New("engine: ids export dir not configured")
 	}
 	project, err := e.repo.Project(ctx, projectID)
@@ -68,7 +68,7 @@ func (e *Engine) PreviewIDSPDF(ctx context.Context, projectID domain.ProjectID, 
 	}
 
 	preview = IDSPDFPreview{
-		BaseDir:         filepath.Join(e.idsExportDir, sanitizeProjectID(string(projectID))),
+		BaseDir:         filepath.Join(e.docsExportDir, sanitizeProjectID(string(projectID))),
 		USCount:         len(us),
 		ForeignCount:    len(foreign),
 		Sheets:          len(sheets),
@@ -214,7 +214,7 @@ func listExistingExports(base string) []string {
 // the entries' length when no prior IDS has been filed).
 func (e *Engine) ExportIDSPDF(ctx context.Context, projectID domain.ProjectID, opts IDSPDFOptions) (res exportids.Result, err error) {
 	defer e.observeDuration("engine.export_ids_pdf", time.Now(), &err)
-	if e.idsExportDir == "" {
+	if e.docsExportDir == "" {
 		return exportids.Result{}, errors.New("engine: ids export dir not configured")
 	}
 	project, err := e.repo.Project(ctx, projectID)
@@ -244,7 +244,7 @@ func (e *Engine) ExportIDSPDF(ctx context.Context, projectID domain.ProjectID, o
 		SignerRegNumber: opts.SignerRegNumber,
 	}
 	obs := &observability.Runtime{Metrics: e.metrics, Activity: e.activities}
-	res, err = exportids.Export(ctx, in, e.idsExportDir, obs)
+	res, err = exportids.Export(ctx, in, e.docsExportDir, obs)
 	if err != nil {
 		return exportids.Result{}, err
 	}

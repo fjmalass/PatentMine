@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+	geminiModel   = "gemini-2.5-flash"
+	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent"
 	httpTimeout   = 30 * time.Second
 )
 
@@ -58,7 +59,7 @@ type geminiResponse struct {
 	} `json:"candidates"`
 }
 
-// AnalyzePatent formats a patent's bibliographic data, abstract, first claim, 
+// AnalyzePatent formats a patent's bibliographic data, abstract, first claim,
 // and optional notes/prompts, evaluates them, and retrieves a detailed AI analysis.
 func (g *GeminiAnalyzer) AnalyzePatent(ctx context.Context, patent domain.Patent, prompt string) (string, error) {
 	if g.apiKey == "" {
@@ -91,16 +92,26 @@ func (g *GeminiAnalyzer) AnalyzePatent(ctx context.Context, patent domain.Patent
 		sb.WriteString("\nPlease summarize the core technical novelty of this patent and highlight key legal/technology design takeaways.\n")
 	}
 
+	return g.generate(ctx, sb.String())
+}
+
+// Complete runs a single completion against the provided prompt and returns the
+// model's text. It is the generic, grounding-agnostic entry point used by the
+// drafting subsystem; the caller owns prompt construction (see ai.BuildDraftPrompt).
+func (g *GeminiAnalyzer) Complete(ctx context.Context, prompt string) (string, error) {
+	if g.apiKey == "" {
+		return "", errors.New("ai/gemini: API Key is required")
+	}
+	return g.generate(ctx, prompt)
+}
+
+// Model returns the identifier of the underlying model, for draft provenance.
+func (g *GeminiAnalyzer) Model() string { return geminiModel }
+
+// generate performs one generateContent call with the given prompt text.
+func (g *GeminiAnalyzer) generate(ctx context.Context, prompt string) (string, error) {
 	reqPayload := geminiRequest{
-		Contents: []geminiContent{
-			{
-				Parts: []geminiPart{
-					{
-						Text: sb.String(),
-					},
-				},
-			},
-		},
+		Contents: []geminiContent{{Parts: []geminiPart{{Text: prompt}}}},
 	}
 
 	payloadBytes, err := json.Marshal(reqPayload)
@@ -136,6 +147,9 @@ func (g *GeminiAnalyzer) AnalyzePatent(ctx context.Context, patent domain.Patent
 		return "", fmt.Errorf("ai/gemini: decode response: %w", err)
 	}
 
+	if len(respPayload.Candidates) == 0 || len(respPayload.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("ai/gemini: empty response from model")
+	}
 	return respPayload.Candidates[0].Content.Parts[0].Text, nil
 }
 

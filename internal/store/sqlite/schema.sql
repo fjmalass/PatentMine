@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '6')
+VALUES ('schema_version', '7')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -747,3 +747,75 @@ CREATE TABLE IF NOT EXISTS saved_table_view (
 );
 
 CREATE INDEX IF NOT EXISTS idx_saved_table_view_owner_table ON saved_table_view (owner, table_type, scope, updated_at DESC);
+
+-- office_action is the examiner document a response answers. The PDF bytes live
+-- on disk (blob_path, with blob_hash for integrity) following the source_snapshot
+-- convention; extracted_text is the groundable/searchable plain text. It is
+-- project-scoped, like the IDS curation data.
+CREATE TABLE IF NOT EXISTS office_action (
+    id                 TEXT PRIMARY KEY,
+    project_id         TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    application_number TEXT NOT NULL DEFAULT '',
+    mail_date          TEXT NOT NULL DEFAULT '',
+    oa_type            TEXT NOT NULL DEFAULT '',
+    examiner           TEXT NOT NULL DEFAULT '',
+    art_unit           TEXT NOT NULL DEFAULT '',
+    blob_path          TEXT NOT NULL DEFAULT '',
+    blob_hash          TEXT NOT NULL DEFAULT '',
+    extracted_text     TEXT NOT NULL DEFAULT '',
+    source             TEXT NOT NULL DEFAULT '',
+    imported_at        TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_office_action_project ON office_action (project_id, mail_date DESC);
+
+-- draft is a project-scoped, section-structured legal document rendered to .docx.
+-- One model unifies first-application drafting (provisional / non-provisional)
+-- and office-action responses; kind selects the section skeleton and whether
+-- claims apply. office_action_id links a response back to the examiner document.
+CREATE TABLE IF NOT EXISTS draft (
+    id                TEXT PRIMARY KEY,
+    project_id        TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    kind              TEXT NOT NULL,
+    title             TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'draft',
+    -- Nullable: a first application has no answered office action. NULL (not '')
+    -- so the foreign key is simply absent rather than pointing at a phantom row.
+    office_action_id  TEXT REFERENCES office_action (id) ON DELETE SET NULL,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_draft_project ON draft (project_id, updated_at DESC);
+
+-- draft_section holds one prose section. pinned_json is the list of verbatim
+-- source spans the section must reproduce (the anti-hallucination guardrail); AI
+-- provenance distinguishes machine-drafted from human-authored text.
+CREATE TABLE IF NOT EXISTS draft_section (
+    draft_id     TEXT NOT NULL REFERENCES draft (id) ON DELETE CASCADE,
+    ordinal      INTEGER NOT NULL,
+    kind         TEXT NOT NULL DEFAULT '',
+    heading      TEXT NOT NULL DEFAULT '',
+    body         TEXT NOT NULL DEFAULT '',
+    pinned_json  TEXT NOT NULL DEFAULT '[]',
+    ai_provider  TEXT NOT NULL DEFAULT '',
+    ai_model     TEXT NOT NULL DEFAULT '',
+    generated_at TEXT NOT NULL DEFAULT '',
+    human_edited INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (draft_id, ordinal)
+);
+
+-- draft_claim holds one claim. status is the MPEP 714 amendment identifier;
+-- base_text is the prior version (for a currently-amended claim) the renderer
+-- diffs against text to produce the underline/strikethrough markup.
+CREATE TABLE IF NOT EXISTS draft_claim (
+    draft_id   TEXT NOT NULL REFERENCES draft (id) ON DELETE CASCADE,
+    ordinal    INTEGER NOT NULL,
+    number     INTEGER NOT NULL DEFAULT 0,
+    claim_type TEXT NOT NULL DEFAULT '',
+    depends_on INTEGER NOT NULL DEFAULT 0,
+    status     TEXT NOT NULL DEFAULT 'original',
+    base_text  TEXT NOT NULL DEFAULT '',
+    text       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (draft_id, ordinal)
+);

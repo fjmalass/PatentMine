@@ -9,6 +9,18 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Drafting subsystem** (`internal/domain/drafting.go`, `internal/export/docx`, `internal/engine/engine_drafting.go`): author **provisional** and **non-provisional first applications** and **office-action responses** as project-scoped, section-structured documents and render them to **.docx**. One `Draft` model (kind = provisional / nonprovisional / oa_response) seeds the conventional section skeleton at creation. Schema bumped to **v7** with additive tables `office_action`, `draft`, `draft_section`, `draft_claim` (migration `migrateV6ToV7`).
+- **Pure-Go .docx writer** (`internal/export/docx`): a dependency-free WordprocessingML generator (stdlib `archive/zip`), preserving the single-static-binary build. Claim-amendment markup (MPEP 714 underline-insertion / strikethrough-deletion + status identifiers) is rendered **deterministically in code** from a word-level diff of `base_text` vs `text`, never by the model.
+- **Office-action import**: `ImportOfficeAction` records the examiner document with the bytes on disk (SHA-256 hashed) and metadata in the row (the `source_snapshot` convention), plus extracted text for grounding. Manual import is the baseline path; a `.txt` source doubles as extracted text.
+- **Grounded AI drafting** (`internal/ai/drafting.go`): `BuildDraftPrompt` assembles a source-blocked, anti-hallucination prompt (use only provided material; reproduce pinned spans verbatim; mark unsupported statements `‹NEEDS ATTORNEY INPUT›`). `VerifyDraft` / `VerifyVerbatim` mechanically verify pinned quotes were reproduced. Both Gemini (cloud) and Ollama (local) gained a generic `Complete` + `Model` and satisfy the new `ai.Drafter` interface; `ai.NewDrafter` selects the provider from config.
+- **`patentmine draft` CLI** (`new` / `list` / `show` / `export` / `ai` / `oa-import` / `oa-list`) over the daemon RPC, and **`cargo make draft` / `draft-setup` / `draft-demo`** tasks in `Makefile.toml`.
+- **RPC**: `draft.create`, `draft.get`, `draft.list`, `draft.save`, `draft.delete`, `draft.export.docx`, `draft.section.ai`, `office_action.import`, `office_action.list`, `office_action.get`.
+- **Docs**: `DRAFTING.md` and `TUI_OFFICE_ACTION.md` (linked from `README.md`).
+
+### Changed
+- **Renamed `PATENTMINE_IDS_EXPORT_DIR` → `PATENTMINE_DOCS_EXPORT_DIR`** now that the directory holds IDS PDF bundles, rendered drafts (`.docx`), and imported office-action files — not just IDS. The old variable is still honored as a **deprecated fallback**, so existing `.env` setups keep working. Internally, `config.IDSExportDir` → `DocsExportDir` and `engine.WithIDSExportDir`/`WithDraftExportDir` collapse into one `engine.WithDocsExportDir`.
+
 ## [v0.12.0] — 2026-06-03
 
 ### Added

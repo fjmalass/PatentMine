@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"patentmine/internal/ai"
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
@@ -78,7 +79,8 @@ type Engine struct {
 	metrics          *observability.Metrics
 	crawlMaxDepth    int
 	crawlWorkerCount int
-	idsExportDir     string
+	docsExportDir    string
+	drafter          ai.Drafter
 	usptoAPIKey      string
 	patentsDir       string
 
@@ -148,10 +150,18 @@ func WithCrawlWorkers(n int) Option {
 	}
 }
 
-// WithIDSExportDir sets the base directory the IDS PDF exporter writes into.
-// Empty leaves it unset; ExportIDSPDF will then return an error when called.
-func WithIDSExportDir(dir string) Option {
-	return func(e *Engine) { e.idsExportDir = dir }
+// WithDocsExportDir sets the base directory for rendered project documents —
+// IDS PDF bundles, drafts (.docx), and imported office-action files. Empty
+// leaves it unset; the IDS and draft exporters then return an error when called.
+func WithDocsExportDir(dir string) Option {
+	return func(e *Engine) { e.docsExportDir = dir }
+}
+
+// WithDrafter wires the AI drafter (cloud Gemini or local Ollama) used by
+// DraftSection. Nil leaves the engine without drafting; DraftSection then
+// returns an actionable error pointing the user at setup.
+func WithDrafter(d ai.Drafter) Option {
+	return func(e *Engine) { e.drafter = d }
 }
 
 // WithUSPTOSearcher wires the USPTO candidate searcher.
