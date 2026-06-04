@@ -114,49 +114,34 @@ project.
 
 ---
 
-## 3. Recommendation
+## 3. Recommendation / Design Alignments
 
-**Adopt Approach C.** Keep tracking **per-patent** (the maintenance-fee deadline
-rows are the source of truth) and add an **optional project association** for
-organizing by client/matter. Concretely:
+**Adopt Approach C** for the database backend, tracking renewals **per-patent** via a dedicated `patent_renewal` configuration table, with optional project tagging via the `deadline` table.
 
-- `:track.renewals <patent>` (and a patent-detail action) tags the created
-  deadlines with the **active project** when there is one, leaving it empty
-  otherwise. Tracking never *requires* a project.
-- A patent is "tracked for renewal" exactly when it has pending `maintenance_fee`
-  deadlines; an **`:untrack.renewals <patent>`** removes/dismisses them.
-- `:show.deadlines` stays the global docket; add a **project filter** so a matter
-  shows only its tagged renewals, and add a **renewals watchlist** view (the
-  distinct list of tracked patents with their next due date).
-
-This reconciles your idea — *scope to a project, track only some patents* — without
-making "project" the unit of tracking. A "dedicated Renewals project" remains a
-fine **convention** a user can adopt (a project whose members they all track), but
-it is not the mechanism.
+For the TUI layer and reminders, we aligned on the following choices:
+- **TUI Column representation (Option 1.2)**: Instead of a text column, we prefix the `NUMBER` column in the patent catalog table with a visual indicator dot (e.g., green dot if tracked, yellow if payment window open/grace, grey if untracked).
+- **Global docketing integration (Option 3.2)**: Integrate a tab/toggle inside the global `:show.deadlines` view (the main docketing board) that filters the view to show only upcoming renewals.
+- **Entity Size assignment**: We assign `large`/`small`/`micro` on a per-renewal basis. This should only be done when validation is sent. Reminders (emails and other notifications) will include the estimated entity size tier.
+- **Enabling/Disabling Review Workflow**: An explicit flag/tag can be added to patents to enable or disable the human review workflow state for a given patent or group of patents.
 
 ---
 
 ## 4. Data model
 
-Current (implemented):
+The implemented schema (version 9) includes:
 
-```
-deadline(id, kind, patent_number, project_id, office_action_id,
-         title, window_opens, due_date, grace_ends, status, ...)
-reminder_log(subject, threshold_days, channel, sent_at)   -- dedupe
-```
+### `patent_renewal` table
+- `patent_number` TEXT PRIMARY KEY REFERENCES record (number) ON DELETE CASCADE
+- `entity_size` TEXT NOT NULL DEFAULT 'large' -- large, small, micro
+- `is_tracked` INTEGER NOT NULL DEFAULT 1 -- 1 = active, 0 = disabled/untracked
+- `created_at` TEXT NOT NULL DEFAULT ''
+- `updated_at` TEXT NOT NULL DEFAULT ''
 
-Proposed deltas for Approach C (small; mostly using what exists):
+### `deadline` table (existing)
+- `id`, `kind` (`maintenance_fee` / `annuity`), `patent_number`, `project_id`, `window_opens`, `due_date`, `grace_ends`, `status` (`pending` / `done` / `dismissed`), `created_at`, `updated_at`
 
-- **Populate `deadline.project_id`** in `TrackRenewals` from the active project
-  (already a column; engine input needs the project threaded through).
-- Optionally record **entity size** (large / small / micro) and **paid-on / next
-  amount** per patent — but only when we add fee *amounts*; dates need none of it.
-- A patent is granted/utility-only check before tracking (design patents and
-  provisionals have no maintenance fees).
-
-No new tables are required for the core; the watchlist is a query over
-`deadline WHERE kind='maintenance_fee' AND status='pending'`.
+### `reminder_log` table (existing)
+- `subject` (deadline ID), `threshold_days`, `channel`, `sent_at`
 
 ---
 
@@ -165,40 +150,29 @@ No new tables are required for the core; the watchlist is a query over
 ```mermaid
 flowchart TD
     A["Issued patent in the DB (has a grant date)"] -->|":track.renewals <num>" or detail action| B["Create 3 maintenance_fee deadlines\n(3.5 / 7.5 / 11.5 yr), tagged with the active project (optional)"]
-    B --> C[":show.deadlines — global docket\n(filter by project)"]
-    B --> D["Daily reminder loop → email digest\n(2mo / 15d / 7d before, + overdue)"]
+    B --> C[":show.deadlines — global docket\n(tab/filter to show only renewals)"]
+    B --> D["Daily reminder loop → email digest\n(remind estimated entity size)"]
     C -->|"p paid / x dismiss"| E["Deadline done/dismissed\n(stops reminding)"]
-    A -->|":untrack.renewals <num>"| F["Remove the patent's maintenance deadlines"]
+    A -->|":untrack.renewals <num>"| F["Remove the patent's maintenance deadlines / set is_tracked = 0"]
 ```
 
-- **Selective, per-project**: open a project, then `:track.renewals` the specific
-  member patents to watch. The docket filtered to that project shows just those.
-- **Portfolio**: track patents with no active project; the global docket is your
-  whole renewal book.
+- **TUI Grid Display**: Prepend visual indicators to the `NUMBER` cell.
+- **Reminders**: Hydrate the email/SMS notifications with the estimated entity size tier assigned to the renewal.
 
 ---
 
 ## 6. TODO
 
-Tracking primitive + management surfaces (Approach C):
+Tracking primitive + database schema (Option C):
+- [x] **Database Migration & Table**: Implement `patent_renewal` table and schema version 9.
+- [x] **Domain Hydration**: Update `domain.Patent` and `domain.PatentRow` to expose renewal configuration.
+- [x] **Store/Repository**: Implement `SavePatentRenewal` and `PatentRenewal` in Go store layer and wrappers in cache.
 
-- [ ] **Project tag on renewals**: thread the active project into
-  `TrackRenewals` so created deadlines carry `project_id` (the column already
-  exists; `proto.TrackRenewalsParams` + `engine.TrackRenewals` need a project
-  field, and `cmdTrackRenewals` should pass `a.activeProject`).
-- [ ] **`:untrack.renewals <patent>`** — delete/dismiss a patent's
-  `maintenance_fee` deadlines (engine + RPC + command).
-- [ ] **Renewals watchlist view** — a distinct list of tracked patents (one row
-  per patent: number, title, next maintenance due, project) rather than one row
-  per deadline; `:show.renewals` or a tab in the deadlines view.
-- [ ] **Project-filtered docket** — `:show.deadlines` honors the active project
-  (and a "all matters" toggle).
-- [ ] **Patent-detail integration** — show a patent's maintenance schedule in the
-  detail pane and offer a `track / untrack` action there (the natural place,
-  since renewal is a property of the patent).
-- [ ] **Selective bulk-track** — from a project / catalog selection, track the
-  chosen granted members in one action (and a guard that skips non-granted /
-  non-utility patents).
+TUI integration:
+- [x] **Prefix NUMBER column with indicator dot (Option 1.2)**: Update catalog view row rendering to draw green/yellow/grey dots depending on renewal tracking and window status.
+- [x] **Tab on Deadlines view (Option 3.2)**: Modify deadlines view tabs to support filtering to renewals.
+- [x] **Toggle tag/flag for renewal tracking**: Enable/disable renewal tracking via `:track.renewals` and `:untrack.renewals`.
+- [x] **Per-renewal Entity Size**: Update the tracking command/RPC/DB and engine to assign entity size (large/small/micro) per renewal and include the size tier in reminders.
 
 Correctness / coverage:
 

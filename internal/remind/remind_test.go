@@ -29,7 +29,7 @@ func TestNewNotifierSelection(t *testing.T) {
 func TestBuildDigest(t *testing.T) {
 	now := time.Now()
 	rs := []Reminder{
-		{Title: "B fee", Kind: "Maintenance fee", DueDate: now.AddDate(0, 0, 10), DaysUntil: 10},
+		{Title: "B fee", Kind: "Maintenance fee", DueDate: now.AddDate(0, 0, 10), DaysUntil: 10, EntitySize: "small"},
 		{Title: "A overdue", Kind: "OA response", DueDate: now.AddDate(0, 0, -3), DaysUntil: -3},
 	}
 	msg := buildDigest("from@x.com", "to@y.com", rs)
@@ -42,6 +42,9 @@ func TestBuildDigest(t *testing.T) {
 	}
 	if !strings.Contains(msg, "OVERDUE") {
 		t.Fatalf("overdue item not flagged:\n%s", msg)
+	}
+	if !strings.Contains(msg, "(small entity)") {
+		t.Fatalf("expected digest to contain entity size '(small entity)', got:\n%s", msg)
 	}
 }
 

@@ -204,8 +204,14 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "8"
 	}
-	if version != "8" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 8", version)
+	if version == "8" {
+		if err := r.migrateV8ToV9(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v8 to v9: %w", err)
+		}
+		version = "9"
+	}
+	if version != "9" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 9", version)
 	}
 	return nil
 }
@@ -735,4 +741,35 @@ func (r *Repo) migrateV2ToV3(ctx context.Context) error {
 	}
 
 	return tx.Commit()
+}
+
+// migrateV8ToV9 creates the patent_renewal table to track patent maintenance/annuity configurations.
+func (r *Repo) migrateV8ToV9(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v8-to-v9.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v8 to v9: backup: %w", err)
+	}
+	stmt := `CREATE TABLE IF NOT EXISTS patent_renewal (
+		patent_number TEXT PRIMARY KEY REFERENCES record (number) ON DELETE CASCADE,
+		entity_size   TEXT NOT NULL DEFAULT 'large',
+		is_tracked    INTEGER NOT NULL DEFAULT 1,
+		created_at    TEXT NOT NULL DEFAULT '',
+		updated_at    TEXT NOT NULL DEFAULT ''
+	)`
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v8 to v9: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, stmt); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v8 to v9: create table: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '9' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v8 to v9: set version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v8 to v9: commit: %w", err)
+	}
+	return nil
 }

@@ -369,16 +369,30 @@ type UnvalidatedTimeMsg struct {
 
 // TrackRenewalsCmd derives a granted patent's U.S. maintenance-fee deadlines
 // from its grant date and records them.
-func TrackRenewalsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
+func TrackRenewalsCmd(client *rpc.Client, patentNumber string, entitySize string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.DeadlineListResult
 		if err := client.Call(ctx, proto.MethodTrackRenewals,
-			proto.TrackRenewalsParams{PatentNumber: patentNumber}, &res); err != nil {
+			proto.TrackRenewalsParams{PatentNumber: patentNumber, EntitySize: entitySize}, &res); err != nil {
 			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Track renewals failed: " + err.Error()}, Error: true}
 		}
 		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Tracking %d maintenance-fee deadlines for %s", len(res.Deadlines), patentNumber)}}
+	}
+}
+
+// UntrackRenewalsCmd stops tracking a patent's U.S. maintenance-fee/annuity deadlines.
+func UntrackRenewalsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res struct{}
+		if err := client.Call(ctx, proto.MethodUntrackRenewals,
+			proto.UntrackRenewalsParams{PatentNumber: patentNumber}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Untrack renewals failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Stopped tracking renewals for %s", patentNumber)}}
 	}
 }
 

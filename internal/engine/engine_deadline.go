@@ -11,6 +11,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 	"patentmine/internal/remind"
+	"patentmine/internal/store"
 )
 
 // ListDeadlines returns every pending deadline across the database — the stored
@@ -57,8 +58,16 @@ func officeActionDeadline(oa domain.OfficeAction) domain.Deadline {
 // TrackRenewals derives the U.S. maintenance-fee schedule for a granted patent
 // from its grant date and records the deadlines, replacing any it had before so
 // the schedule never double-tracks. Returns the deadlines created.
-func (e *Engine) TrackRenewals(ctx context.Context, patentNumber string) (out []domain.Deadline, err error) {
+func (e *Engine) TrackRenewals(ctx context.Context, patentNumber string, entitySize string) (out []domain.Deadline, err error) {
 	defer e.observeDuration("engine.track_renewals", time.Now(), &err)
+	if entitySize != "" {
+		switch entitySize {
+		case "large", "small", "micro":
+			// valid
+		default:
+			return nil, fmt.Errorf("engine: invalid entity size %q; must be large, small, or micro", entitySize)
+		}
+	}
 	num, err := domain.ParsePatentNumber(patentNumber)
 	if err != nil {
 		return nil, fmt.Errorf("engine: track renewals: %w", err)
@@ -85,12 +94,77 @@ func (e *Engine) TrackRenewals(ctx context.Context, patentNumber string) (out []
 			return nil, err
 		}
 	}
+
+	var createdAt time.Time
+	existing, err := e.repo.PatentRenewal(ctx, patent.Number)
+	if err == nil {
+		if entitySize == "" {
+			entitySize = existing.EntitySize
+		}
+		createdAt = existing.CreatedAt
+	} else if errors.Is(err, store.ErrNotFound) {
+		if entitySize == "" {
+			entitySize = "large"
+		}
+		createdAt = now
+	} else {
+		return nil, err
+	}
+
+	ren := domain.PatentRenewal{
+		PatentNumber: patent.Number,
+		EntitySize:   entitySize,
+		IsTracked:    true,
+		CreatedAt:    createdAt,
+		UpdatedAt:    now,
+	}
+	if err := e.repo.SavePatentRenewal(ctx, ren); err != nil {
+		return nil, err
+	}
+
 	e.recordActivity(ctx, observability.Record{
 		Action: observability.ActionRenewalsTrack, Entity: "patent", EntityID: canonical, Status: "committed",
 		Attributes: map[string]any{"deadlines": len(deadlines)},
 	})
 	e.announceChange()
 	return deadlines, nil
+}
+
+// UntrackRenewals stops tracking a patent's renewals by deleting its maintenance deadlines and setting is_tracked to false.
+func (e *Engine) UntrackRenewals(ctx context.Context, patentNumber string) (err error) {
+	defer e.observeDuration("engine.untrack_renewals", time.Now(), &err)
+	num, err := domain.ParsePatentNumber(patentNumber)
+	if err != nil {
+		return fmt.Errorf("engine: untrack renewals: %w", err)
+	}
+	canonical := num.String()
+	if err := e.repo.DeleteDeadlinesForPatent(ctx, canonical, domain.DeadlineMaintenanceFee); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	ren, err := e.repo.PatentRenewal(ctx, num)
+	if errors.Is(err, store.ErrNotFound) {
+		ren = domain.PatentRenewal{
+			PatentNumber: num,
+			EntitySize:   "large",
+			CreatedAt:    now,
+		}
+	} else if err != nil {
+		return err
+	}
+
+	ren.IsTracked = false
+	ren.UpdatedAt = now
+	if err := e.repo.SavePatentRenewal(ctx, ren); err != nil {
+		return err
+	}
+
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionRenewalsUntrack, Entity: "patent", EntityID: canonical, Status: "committed",
+	})
+	e.announceChange()
+	return nil
 }
 
 // DeadlinesForPatent returns a patent's tracked deadlines.
@@ -179,6 +253,14 @@ func (e *Engine) dueReminders(ctx context.Context, channel string) ([]remind.Rem
 				return nil, nil, err
 			}
 			if !sent {
+				var entitySize string
+				if d.Kind == domain.DeadlineMaintenanceFee || d.Kind == domain.DeadlineAnnuity {
+					if num, err := domain.ParsePatentNumber(d.PatentNumber); err == nil {
+						if ren, err := e.repo.PatentRenewal(ctx, num); err == nil {
+							entitySize = ren.EntitySize
+						}
+					}
+				}
 				batch = append(batch, remind.Reminder{
 					Subject:      d.ID,
 					Kind:         d.Kind.Label(),
@@ -187,6 +269,7 @@ func (e *Engine) dueReminders(ctx context.Context, channel string) ([]remind.Rem
 					DaysUntil:    days,
 					PatentNumber: d.PatentNumber,
 					Project:      string(d.Project),
+					EntitySize:   entitySize,
 				})
 				marks = append(marks, reminderMark{subject: d.ID, threshold: t})
 			}

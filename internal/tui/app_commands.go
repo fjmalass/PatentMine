@@ -1440,14 +1440,30 @@ func (a *App) cmdShowDeadlines(invocation) (tea.Model, tea.Cmd) {
 
 // cmdTrackRenewals tracks a granted patent's U.S. maintenance-fee deadlines.
 func (a *App) cmdTrackRenewals(inv invocation) (tea.Model, tea.Cmd) {
-	if len(inv.args) != 1 {
+	if len(inv.args) < 1 || len(inv.args) > 2 {
 		return a.usageError(command.TrackRenewals)
+	}
+	var entitySize string
+	if len(inv.args) == 2 {
+		entitySize = inv.args[1]
 	}
 	if a.client == nil {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	return a, pane.TrackRenewalsCmd(a.client, inv.args[0])
+	return a, pane.TrackRenewalsCmd(a.client, inv.args[0], entitySize)
+}
+
+// cmdUntrackRenewals stops tracking a patent's U.S. maintenance-fee/annuity deadlines.
+func (a *App) cmdUntrackRenewals(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 1 {
+		return a.usageError(command.UntrackRenewals)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.UntrackRenewalsCmd(a.client, inv.args[0])
 }
 
 // cmdLogTime records a manual time entry: :log.time <activity> <duration> [note].

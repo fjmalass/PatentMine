@@ -249,6 +249,12 @@ type DeadlineListResult struct {
 // maintenance-fee deadlines from its grant date.
 type TrackRenewalsParams struct {
 	PatentNumber string `json:"patent_number"`
+	EntitySize   string `json:"entity_size,omitempty"`
+}
+
+// UntrackRenewalsParams asks the daemon to stop tracking a patent's renewals.
+type UntrackRenewalsParams struct {
+	PatentNumber string `json:"patent_number"`
 }
 
 // DeadlineStatusParams marks one deadline done/dismissed/pending.

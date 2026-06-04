@@ -398,11 +398,22 @@ func (s *Server) trackRenewals(ctx context.Context, raw json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	deadlines, err := s.engine.TrackRenewals(ctx, p.PatentNumber)
+	deadlines, err := s.engine.TrackRenewals(ctx, p.PatentNumber, p.EntitySize)
 	if err != nil {
 		return nil, err
 	}
 	return proto.DeadlineListResult{Deadlines: deadlines}, nil
+}
+
+func (s *Server) untrackRenewals(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.UntrackRenewalsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.UntrackRenewals(ctx, p.PatentNumber); err != nil {
+		return nil, err
+	}
+	return struct{}{}, nil
 }
 
 func (s *Server) deadlineSetStatus(ctx context.Context, raw json.RawMessage) (any, error) {

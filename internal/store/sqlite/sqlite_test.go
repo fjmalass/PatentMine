@@ -1663,3 +1663,108 @@ func TestSourceBibsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPatentRenewalRoundTrip(t *testing.T) {
+	repo := openTestRepo(t)
+	ctx := context.Background()
+
+	// 1. Create a sample patent
+	p := samplePatent("US11611785B2")
+	if err := repo.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	// 2. Fetch the patent, verify its Renewal config is nil (not tracked by default)
+	got, err := repo.Patent(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("Patent: %v", err)
+	}
+	if got.Renewal != nil {
+		t.Fatalf("expected Renewal to be nil for new patent, got: %+v", got.Renewal)
+	}
+
+	// Also verify the list row has RenewalTracked = false
+	rows, err := repo.ListPatents(ctx, store.PatentQuery{})
+	if err != nil {
+		t.Fatalf("ListPatents: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 patent row, got %d", len(rows))
+	}
+	if rows[0].RenewalTracked {
+		t.Errorf("expected RenewalTracked = false, got true")
+	}
+
+	// 3. Save a renewal configuration directly via SavePatentRenewal
+	renewal := domain.PatentRenewal{
+		PatentNumber: p.Number,
+		EntitySize:   "small",
+		IsTracked:    true,
+	}
+	if err := repo.SavePatentRenewal(ctx, renewal); err != nil {
+		t.Fatalf("SavePatentRenewal: %v", err)
+	}
+
+	// 4. Retrieve via PatentRenewal
+	gotRen, err := repo.PatentRenewal(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("PatentRenewal: %v", err)
+	}
+	if gotRen.EntitySize != "small" || !gotRen.IsTracked {
+		t.Errorf("got renewal = %+v, want %+v", gotRen, renewal)
+	}
+
+	// 5. Fetch the patent and list row, verify renewal is hydrated
+	got2, err := repo.Patent(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("Patent: %v", err)
+	}
+	if got2.Renewal == nil {
+		t.Fatal("expected Renewal to be non-nil")
+	}
+	if got2.Renewal.EntitySize != "small" || !got2.Renewal.IsTracked {
+		t.Errorf("got Renewal = %+v, want is_tracked=true, entity_size=small", got2.Renewal)
+	}
+
+	rows2, err := repo.ListPatents(ctx, store.PatentQuery{})
+	if err != nil {
+		t.Fatalf("ListPatents: %v", err)
+	}
+	if !rows2[0].RenewalTracked || rows2[0].EntitySize != "small" {
+		t.Errorf("got row renewal = tracked:%t size:%q, want true/small", rows2[0].RenewalTracked, rows2[0].EntitySize)
+	}
+
+	// 6. Disable tracking and update size, verify it updates
+	renewal.EntitySize = "micro"
+	renewal.IsTracked = false
+	if err := repo.SavePatentRenewal(ctx, renewal); err != nil {
+		t.Fatalf("SavePatentRenewal: %v", err)
+	}
+
+	got3, err := repo.Patent(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("Patent: %v", err)
+	}
+	if got3.Renewal == nil || got3.Renewal.EntitySize != "micro" || got3.Renewal.IsTracked {
+		t.Errorf("got Renewal = %+v, want is_tracked=false, entity_size=micro", got3.Renewal)
+	}
+
+	// 7. Save patent with a renewal config attached to the Patent object itself
+	p2 := samplePatent("US11611786B2")
+	p2.Renewal = &domain.PatentRenewal{
+		PatentNumber: p2.Number,
+		EntitySize:   "large",
+		IsTracked:    true,
+	}
+	if err := repo.SavePatent(ctx, p2); err != nil {
+		t.Fatalf("SavePatent with Renewal: %v", err)
+	}
+
+	got4, err := repo.Patent(ctx, p2.Number)
+	if err != nil {
+		t.Fatalf("Patent: %v", err)
+	}
+	if got4.Renewal == nil || got4.Renewal.EntitySize != "large" || !got4.Renewal.IsTracked {
+		t.Errorf("got Renewal = %+v, want is_tracked=true, entity_size=large", got4.Renewal)
+	}
+}
+

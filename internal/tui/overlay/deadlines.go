@@ -35,11 +35,13 @@ type Deadlines struct {
 	client *rpc.Client
 	theme  render.Theme
 
-	items   []domain.Deadline
-	cursor  int
-	loading bool
-	loadErr string
-	msg     string
+	items        []domain.Deadline
+	filtered     []domain.Deadline
+	showRenewals bool
+	cursor       int
+	loading      bool
+	loadErr      string
+	msg          string
 }
 
 func NewDeadlines(client *rpc.Client, theme render.Theme) *Deadlines {
@@ -69,6 +71,22 @@ func (o *Deadlines) loadCmd() tea.Cmd {
 	}
 }
 
+func (o *Deadlines) filterItems() {
+	if !o.showRenewals {
+		o.filtered = o.items
+	} else {
+		o.filtered = nil
+		for _, d := range o.items {
+			if d.Kind == domain.DeadlineMaintenanceFee || d.Kind == domain.DeadlineAnnuity {
+				o.filtered = append(o.filtered, d)
+			}
+		}
+	}
+	if o.cursor >= len(o.filtered) {
+		o.cursor = max(len(o.filtered)-1, 0)
+	}
+}
+
 func (o *Deadlines) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 	if m, ok := msg.(deadlinesLoadedMsg); ok {
 		o.loading = false
@@ -78,9 +96,7 @@ func (o *Deadlines) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		}
 		o.items = m.items
 		o.loadErr = ""
-		if o.cursor >= len(o.items) {
-			o.cursor = max(len(o.items)-1, 0)
-		}
+		o.filterItems()
 	}
 	return o, nil
 }
@@ -92,6 +108,10 @@ func (o *Deadlines) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	case tea.KeyTab:
+		o.showRenewals = !o.showRenewals
+		o.filterItems()
+		return o, nil, true
 	case tea.KeyUp:
 		o.move(-1)
 		return o, nil, true
@@ -117,20 +137,20 @@ func (o *Deadlines) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 }
 
 func (o *Deadlines) move(delta int) {
-	if len(o.items) == 0 {
+	if len(o.filtered) == 0 {
 		return
 	}
-	o.cursor = max(0, min(o.cursor+delta, len(o.items)-1))
+	o.cursor = max(0, min(o.cursor+delta, len(o.filtered)-1))
 }
 
 // setStatus marks the selected deadline done/dismissed. Synthesized office-action
 // response deadlines ("oa:<id>") are not stored rows — they clear when the
 // office action is responded to — so they cannot be set here.
 func (o *Deadlines) setStatus(status domain.DeadlineStatus) tea.Cmd {
-	if o.cursor < 0 || o.cursor >= len(o.items) {
+	if o.cursor < 0 || o.cursor >= len(o.filtered) {
 		return nil
 	}
-	d := o.items[o.cursor]
+	d := o.filtered[o.cursor]
 	if strings.HasPrefix(d.ID, "oa:") {
 		o.msg = "respond to the office action to clear its deadline"
 		return nil
@@ -156,25 +176,36 @@ func (o *Deadlines) View(maxW, maxH int) string {
 	if o.loadErr != "" {
 		return o.theme.Error.Render("error: " + o.loadErr)
 	}
-	if len(o.items) == 0 {
-		return o.theme.Dim.Render(render.Truncate(
-			"No pending deadlines. Track patent renewals with :track.renewals <number>.", maxW))
+
+	var tabLine string
+	if !o.showRenewals {
+		tabLine = o.theme.Selected.Render(" All Deadlines ") + "  " + o.theme.Dim.Render(" Renewals Only ")
+	} else {
+		tabLine = o.theme.Dim.Render(" All Deadlines ") + "  " + o.theme.Selected.Render(" Renewals Only ")
 	}
 
 	var b strings.Builder
-	bodyRows := max(maxH-2, 1)
-	for i := 0; i < len(o.items) && i < bodyRows; i++ {
-		d := o.items[i]
-		row := fmt.Sprintf("%-16s %-13s %s", deadlineDueLabel(d), d.Kind.Label(), d.Title)
-		cell := render.Pad(render.Truncate(row, maxW), maxW)
-		if i == o.cursor {
-			b.WriteString(o.theme.Selected.Render(cell))
-		} else {
-			b.WriteString(o.theme.Row.Render(cell))
-		}
+	b.WriteString(tabLine + "\n\n")
+
+	if len(o.filtered) == 0 {
+		b.WriteString(o.theme.Dim.Render(render.Truncate(
+			"No pending deadlines matching filters. Track patent renewals with :track.renewals <number>.", maxW)))
 		b.WriteByte('\n')
+	} else {
+		bodyRows := max(maxH-4, 1)
+		for i := 0; i < len(o.filtered) && i < bodyRows; i++ {
+			d := o.filtered[i]
+			row := fmt.Sprintf("%-16s %-13s %s", deadlineDueLabel(d), d.Kind.Label(), d.Title)
+			cell := render.Pad(render.Truncate(row, maxW), maxW)
+			if i == o.cursor {
+				b.WriteString(o.theme.Selected.Render(cell))
+			} else {
+				b.WriteString(o.theme.Row.Render(cell))
+			}
+			b.WriteByte('\n')
+		}
 	}
-	footer := "↑/↓ move · p mark done · x dismiss · esc close"
+	footer := "tab toggle filter · ↑/↓ move · p mark done · x dismiss · esc close"
 	if o.msg != "" {
 		footer = o.msg + " · " + footer
 	}

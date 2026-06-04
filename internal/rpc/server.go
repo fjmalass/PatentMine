@@ -163,6 +163,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTimeSummary:                s.timeSummary,
 		proto.MethodDeadlineList:               s.deadlineList,
 		proto.MethodTrackRenewals:              s.trackRenewals,
+		proto.MethodUntrackRenewals:            s.untrackRenewals,
 		proto.MethodDeadlineSetStatus:          s.deadlineSetStatus,
 		proto.MethodDeadlineRemind:             s.deadlineRemind,
 	}

@@ -279,6 +279,18 @@ func (c *Cache) DeleteTag(ctx context.Context, project domain.ProjectID, name st
 	return nil
 }
 
+func (c *Cache) SavePatentRenewal(ctx context.Context, renewal domain.PatentRenewal) error {
+	if err := c.Repository.SavePatentRenewal(ctx, renewal); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) PatentRenewal(ctx context.Context, number domain.PatentNumber) (domain.PatentRenewal, error) {
+	return c.Repository.PatentRenewal(ctx, number)
+}
+
 // queryKey builds a stable string key for a listing query.
 func queryKey(prefix string, q PatentQuery) string {
 	// Marshal the full query so newly added PatentQuery fields automatically

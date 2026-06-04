@@ -122,6 +122,15 @@ type InventorStats struct {
 	Tags     map[string]int `json:"tags"`
 }
 
+// PatentRenewal holds the configuration and metadata for a patent's renewal tracking.
+type PatentRenewal struct {
+	PatentNumber PatentNumber `json:"patent_number"`
+	EntitySize   string       `json:"entity_size"` // e.g. "large", "small", "micro"
+	IsTracked    bool         `json:"is_tracked"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+}
+
 // Patent is the core business object: one patent record. One record spans the
 // invention's whole life — its application, publication, and grant are all
 // Documents of the same record. It carries no I/O or UI concerns: persistence
@@ -156,6 +165,8 @@ type Patent struct {
 	Classifications []string `json:"classifications"`
 	// Documents is the open-ended set of life-stage documents for this record.
 	Documents []Document `json:"documents"`
+	// Renewal is the renewal configuration for this patent, if tracked/configured.
+	Renewal *PatentRenewal `json:"renewal,omitempty"`
 }
 
 // PatentRow is the lightweight listing shape used by paged views. It keeps the
@@ -176,7 +187,12 @@ type PatentRow struct {
 	CitationsCount  int          `json:"citations_count,omitempty"`
 	CitedByCount    int          `json:"cited_by_count,omitempty"`
 	ParentsCount    int          `json:"parents_count,omitempty"`
-	AddedMethod     string       `json:"added_method,omitempty"`
+	AddedMethod            string       `json:"added_method,omitempty"`
+	RenewalTracked         bool         `json:"renewal_tracked"`
+	EntitySize             string       `json:"entity_size,omitempty"`
+	NextRenewalDue         time.Time    `json:"next_renewal_due,omitempty"`
+	NextRenewalWindowOpens time.Time    `json:"next_renewal_window_opens,omitempty"`
+	NextRenewalGraceEnds   time.Time    `json:"next_renewal_grace_ends,omitempty"`
 }
 
 // IsStub reports whether only a reference exists, without the full body.

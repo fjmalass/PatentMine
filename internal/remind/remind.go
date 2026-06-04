@@ -24,6 +24,7 @@ type Reminder struct {
 	DaysUntil    int
 	PatentNumber string
 	Project      string
+	EntitySize   string // estimated entity size tier (large, small, micro) for renewals
 }
 
 // Notifier delivers a batch of reminders over one channel.
@@ -126,13 +127,17 @@ func buildDigest(from, to string, rs []Reminder) string {
 	b.WriteString("Upcoming patent deadlines:\r\n\r\n")
 	for _, r := range sorted {
 		when := r.DueDate.Format("2006-01-02")
+		suffix := ""
+		if r.EntitySize != "" {
+			suffix = fmt.Sprintf(" (%s entity)", r.EntitySize)
+		}
 		switch {
 		case r.DaysUntil < 0:
-			fmt.Fprintf(&b, "  • OVERDUE (%dd) — %s — due %s [%s]\r\n", -r.DaysUntil, r.Title, when, r.Kind)
+			fmt.Fprintf(&b, "  • OVERDUE (%dd) — %s — due %s [%s]%s\r\n", -r.DaysUntil, r.Title, when, r.Kind, suffix)
 		case r.DaysUntil == 0:
-			fmt.Fprintf(&b, "  • DUE TODAY — %s — %s [%s]\r\n", r.Title, when, r.Kind)
+			fmt.Fprintf(&b, "  • DUE TODAY — %s — %s [%s]%s\r\n", r.Title, when, r.Kind, suffix)
 		default:
-			fmt.Fprintf(&b, "  • in %dd — %s — due %s [%s]\r\n", r.DaysUntil, r.Title, when, r.Kind)
+			fmt.Fprintf(&b, "  • in %dd — %s — due %s [%s]%s\r\n", r.DaysUntil, r.Title, when, r.Kind, suffix)
 		}
 	}
 	b.WriteString("\r\n— PatentMine docketing assistant (verify all dates; this is not legal advice)\r\n")

@@ -80,6 +80,7 @@ const (
 	ActionTimeDelete            = "time_entry.delete"
 	ActionAIUsage               = "ai_usage.record" // an AI call recorded for billing
 	ActionRenewalsTrack         = "deadline.track_renewals"
+	ActionRenewalsUntrack       = "deadline.untrack_renewals"
 	ActionDeadlineStatus        = "deadline.set_status"
 	ActionDeadlineRemind        = "deadline.remind"
 )
@@ -145,6 +146,7 @@ var AllActions = []string{
 	ActionTimeDelete,
 	ActionAIUsage,
 	ActionRenewalsTrack,
+	ActionRenewalsUntrack,
 	ActionDeadlineStatus,
 	ActionDeadlineRemind,
 }

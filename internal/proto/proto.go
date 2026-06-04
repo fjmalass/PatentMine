@@ -125,6 +125,7 @@ const (
 	// Deadlines + reminders (OA responses, patent maintenance fees).
 	MethodDeadlineList       Method = "deadline.list"
 	MethodTrackRenewals      Method = "deadline.track_renewals"
+	MethodUntrackRenewals    Method = "deadline.untrack_renewals"
 	MethodDeadlineSetStatus  Method = "deadline.set_status"
 	MethodDeadlineRemind     Method = "deadline.remind"
 

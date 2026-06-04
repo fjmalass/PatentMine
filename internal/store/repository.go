@@ -94,6 +94,10 @@ type NodeBatch struct {
 type Repository interface {
 	// SavePatent inserts or updates a patent by its number.
 	SavePatent(ctx context.Context, p domain.Patent) error
+	// SavePatentRenewal inserts or updates a patent's renewal configuration.
+	SavePatentRenewal(ctx context.Context, renewal domain.PatentRenewal) error
+	// PatentRenewal returns the renewal configuration for a patent, or ErrNotFound.
+	PatentRenewal(ctx context.Context, number domain.PatentNumber) (domain.PatentRenewal, error)
 	// SaveNode atomically writes one crawled patent: its record, documents,
 	// neighbour stubs, and family-graph edges.
 	SaveNode(ctx context.Context, batch NodeBatch) error

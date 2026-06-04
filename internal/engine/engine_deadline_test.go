@@ -101,3 +101,135 @@ func TestListDeadlinesMergesOfficeActionResponse(t *testing.T) {
 		t.Fatalf("expected a synthesized OA-response deadline, got %+v", deadlines)
 	}
 }
+
+func TestTrackAndUntrackRenewals(t *testing.T) {
+	ctx := context.Background()
+	eng, repo := newTestEngine(t, nil)
+
+	// Save a patent in the repository so TrackRenewals can load it.
+	p := domain.Patent{
+		Number:     domain.PatentNumber{Country: "US", Serial: "10000000", Kind: "B2"},
+		Title:      "Test Patent",
+		GrantDate:  time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC),
+		FetchState: domain.FetchCached,
+	}
+	if err := repo.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	// 1. Track renewals with custom entity size
+	deadlines, err := eng.TrackRenewals(ctx, "US10000000B2", "small")
+	if err != nil {
+		t.Fatalf("TrackRenewals: %v", err)
+	}
+	if len(deadlines) != 3 {
+		t.Fatalf("got %d deadlines, want 3", len(deadlines))
+	}
+
+	// Verify renewal config exists and is_tracked is true, and entity size is small
+	ren, err := repo.PatentRenewal(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("PatentRenewal: %v", err)
+	}
+	if !ren.IsTracked {
+		t.Error("expected IsTracked to be true")
+	}
+	if ren.EntitySize != "small" {
+		t.Errorf("expected EntitySize to be small, got %q", ren.EntitySize)
+	}
+
+	// 2. Track renewals again with empty entity size -> preserves existing size
+	_, err = eng.TrackRenewals(ctx, "US10000000B2", "")
+	if err != nil {
+		t.Fatalf("TrackRenewals empty: %v", err)
+	}
+	renAfter, err := repo.PatentRenewal(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("PatentRenewal: %v", err)
+	}
+	if renAfter.EntitySize != "small" {
+		t.Errorf("expected EntitySize to remain small, got %q", renAfter.EntitySize)
+	}
+
+	// 3. Track renewals with invalid entity size -> error
+	_, err = eng.TrackRenewals(ctx, "US10000000B2", "invalid")
+	if err == nil {
+		t.Fatal("expected error tracking with invalid entity size")
+	}
+
+	// 4. Untrack renewals
+	if err := eng.UntrackRenewals(ctx, "US10000000B2"); err != nil {
+		t.Fatalf("UntrackRenewals: %v", err)
+	}
+
+	// Verify deadlines are gone
+	listed, err := eng.DeadlinesForPatent(ctx, "US10000000B2")
+	if err != nil {
+		t.Fatalf("DeadlinesForPatent: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("expected 0 deadlines after untrack, got %d", len(listed))
+	}
+
+	// Verify renewal config is updated to is_tracked = false
+	ren2, err := repo.PatentRenewal(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("PatentRenewal: %v", err)
+	}
+	if ren2.IsTracked {
+		t.Error("expected IsTracked to be false after untrack")
+	}
+}
+
+func TestRenewalReminderEntitySize(t *testing.T) {
+	ctx := context.Background()
+	eng, repo := newTestEngine(t, nil)
+	fake := &fakeNotifier{}
+	WithNotifier(fake)(eng)
+
+	// Save patent & renewal configuration
+	p := domain.Patent{
+		Number:     domain.PatentNumber{Country: "US", Serial: "10000000", Kind: "B2"},
+		Title:      "Test Patent",
+		GrantDate:  time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC),
+		FetchState: domain.FetchCached,
+	}
+	if err := repo.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+
+	_, err := eng.TrackRenewals(ctx, "US10000000B2", "micro")
+	if err != nil {
+		t.Fatalf("TrackRenewals: %v", err)
+	}
+
+	// Update the deadlines' due dates to make one due soon (e.g. 5 days from now)
+	deadlines, err := eng.DeadlinesForPatent(ctx, "US10000000B2")
+	if err != nil {
+		t.Fatalf("DeadlinesForPatent: %v", err)
+	}
+	if len(deadlines) == 0 {
+		t.Fatal("expected deadlines")
+	}
+
+	now := time.Now().UTC()
+	deadlines[0].DueDate = now.AddDate(0, 0, 5)
+	if err := repo.SaveDeadline(ctx, deadlines[0]); err != nil {
+		t.Fatalf("SaveDeadline: %v", err)
+	}
+
+	// Trigger due reminders
+	_, err = eng.SendDueReminders(ctx)
+	if err != nil {
+		t.Fatalf("SendDueReminders: %v", err)
+	}
+
+	if len(fake.sent) != 1 || len(fake.sent[0]) != 1 {
+		t.Fatalf("expected 1 reminder sent, got %v", fake.sent)
+	}
+
+	r := fake.sent[0][0]
+	if r.EntitySize != "micro" {
+		t.Errorf("expected reminder EntitySize to be 'micro', got %q", r.EntitySize)
+	}
+}

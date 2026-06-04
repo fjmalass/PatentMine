@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '8')
+VALUES ('schema_version', '9')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -878,6 +878,15 @@ CREATE TABLE IF NOT EXISTS reminder_log (
     channel        TEXT NOT NULL,
     sent_at        TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (subject, threshold_days, channel)
+);
+
+-- patent_renewal records the configuration for a patent's renewal tracking.
+CREATE TABLE IF NOT EXISTS patent_renewal (
+    patent_number TEXT PRIMARY KEY REFERENCES record (number) ON DELETE CASCADE,
+    entity_size   TEXT NOT NULL DEFAULT 'large',
+    is_tracked    INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT '',
+    updated_at    TEXT NOT NULL DEFAULT ''
 );
 
 -- draft is a project-scoped, section-structured legal document rendered to .docx.

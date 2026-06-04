@@ -212,7 +212,16 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 		return formatViewIndex(absoluteIndex)
 	case domain.PatentColumnNumber:
 		num := numberToShowRow(row)
-		return num.DisplayString()
+		s := num.DisplayString()
+		if row.RenewalTracked {
+			now := time.Now().UTC()
+			if !row.NextRenewalWindowOpens.IsZero() && now.After(row.NextRenewalWindowOpens) && (row.NextRenewalGraceEnds.IsZero() || now.Before(row.NextRenewalGraceEnds)) {
+				s = "🟡 " + s
+			} else {
+				s = "🟢 " + s
+			}
+		}
+		return s
 	case domain.PatentColumnKind:
 		num := numberToShowRow(row)
 		return theme.StageGlyph(string(num.Stage()))

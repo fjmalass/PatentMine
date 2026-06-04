@@ -17,6 +17,7 @@ func draftingCommands() []Command {
 		Command{ID: ValidateTime, Name: "validate.time", Aliases: []string{"validate-time"}, Usage: ":validate.time", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ShowTime, Name: "show.time", Aliases: []string{"show-time"}, Usage: ":show.time", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ShowDeadlines, Name: "show.deadlines", Aliases: []string{"deadlines", "show-deadlines"}, Usage: ":show.deadlines", Kind: KindView, Scopes: projectScopes},
-		Command{ID: TrackRenewals, Name: "track.renewals", Aliases: []string{"track-renewals", "renewals"}, Usage: ":track.renewals <patent-number>", Kind: KindView, Scopes: projectScopes},
+		Command{ID: TrackRenewals, Name: "track.renewals", Aliases: []string{"track-renewals", "renewals"}, Usage: ":track.renewals <patent-number> [large|small|micro]", Kind: KindView, Scopes: projectScopes},
+		Command{ID: UntrackRenewals, Name: "untrack.renewals", Aliases: []string{"untrack-renewals", "untrack"}, Usage: ":untrack.renewals <patent-number>", Kind: KindView, Scopes: projectScopes},
 	}
 }

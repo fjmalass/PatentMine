@@ -133,6 +133,7 @@ const (
 	ShowTime         ID = "time.show"            // show the matter's time + AI-usage summary
 	ShowDeadlines    ID = "deadline.show"        // open the cross-matter deadlines docket
 	TrackRenewals    ID = "deadline.track"       // track a patent's U.S. maintenance-fee deadlines
+	UntrackRenewals  ID = "deadline.untrack"     // stop tracking a patent's renewals
 	SourceMode       ID = "source.mode"
 	SourceCompare    ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
 	SourceBibs       ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data

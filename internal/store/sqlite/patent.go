@@ -20,7 +20,9 @@ import (
 const patentColumns = `p.country, p.serial, p.kind, p.title, p.abstract, p.assignee,
 	p.inventors, p.fetch_state, p.source, p.application_date, p.publication_date,
 	p.grant_date, p.fetched_at, p.display_number,
-	p.first_claim, p.expiration_date, p.expiration_source, p.source_url, p.classifications`
+	p.first_claim, p.expiration_date, p.expiration_source, p.source_url, p.classifications,
+	COALESCE((SELECT is_tracked FROM patent_renewal WHERE patent_number = p.number), 0),
+	COALESCE((SELECT entity_size FROM patent_renewal WHERE patent_number = p.number), '')`
 
 // patentRowColumns returns the SELECT column list for scanPatentRow. When
 // project is non-empty the membership state and curated IDS columns are
@@ -37,18 +39,28 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 		(SELECT COUNT(1) FROM relation rel WHERE
 			(rel.from_number = p.number AND rel.kind = 'parent') OR
 			(rel.to_number = p.number AND rel.kind = 'child'))`
+	renewalDateQueries := `, COALESCE((SELECT MIN(due_date) FROM deadline WHERE patent_number = p.number AND (kind = 'maintenance_fee' OR kind = 'annuity') AND status = 'pending'), '')` +
+		`, COALESCE((SELECT MIN(window_opens) FROM deadline WHERE patent_number = p.number AND (kind = 'maintenance_fee' OR kind = 'annuity') AND status = 'pending'), '')` +
+		`, COALESCE((SELECT MIN(grace_ends) FROM deadline WHERE patent_number = p.number AND (kind = 'maintenance_fee' OR kind = 'annuity') AND status = 'pending'), '')`
+
 	if project != "" {
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_in_full, 0), ` +
 				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), ` +
 				`COALESCE(m.ids_added_at, ''), COALESCE(m.ids_submitted_at, '')` +
-				relationCounts + `, p.classifications, COALESCE(mp.added_method, 'direct')`,
+				relationCounts + `, p.classifications, COALESCE(mp.added_method, 'direct')` +
+				`, COALESCE((SELECT is_tracked FROM patent_renewal WHERE patent_number = p.number), 0)` +
+				`, COALESCE((SELECT entity_size FROM patent_renewal WHERE patent_number = p.number), '')` +
+				renewalDateQueries,
 			nil
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', 0, '', '', '', '', ''` +
-		relationCounts + `, p.classifications, 'direct'`, nil
+		relationCounts + `, p.classifications, 'direct'` +
+		`, COALESCE((SELECT is_tracked FROM patent_renewal WHERE patent_number = p.number), 0)` +
+		`, COALESCE((SELECT entity_size FROM patent_renewal WHERE patent_number = p.number), '')` +
+		renewalDateQueries, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -68,7 +80,83 @@ func (r *Repo) SavePatent(ctx context.Context, p domain.Patent) (err error) {
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save patent %s: %w", p.Number, err)
 	}
+	if p.Renewal != nil {
+		if err := r.SavePatentRenewal(ctx, *p.Renewal); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// SavePatentRenewal inserts or updates a patent's renewal configuration.
+func (r *Repo) SavePatentRenewal(ctx context.Context, renewal domain.PatentRenewal) (err error) {
+	defer r.observeDuration("save_patent_renewal", time.Now(), &err)
+	if renewal.PatentNumber.IsZero() {
+		return errors.New("store/sqlite: cannot save patent renewal with empty number")
+	}
+	stmt := `INSERT INTO patent_renewal (patent_number, entity_size, is_tracked, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(patent_number) DO UPDATE SET
+			entity_size = excluded.entity_size,
+			is_tracked = excluded.is_tracked,
+			updated_at = excluded.updated_at`
+
+	now := encodeTime(time.Now())
+	created := encodeTime(renewal.CreatedAt)
+	if created == "" {
+		created = now
+	}
+	updated := encodeTime(renewal.UpdatedAt)
+	if updated == "" {
+		updated = now
+	}
+
+	trackedVal := 0
+	if renewal.IsTracked {
+		trackedVal = 1
+	}
+
+	_, err = r.writer.ExecContext(ctx, stmt,
+		renewal.PatentNumber.Normalized(),
+		renewal.EntitySize,
+		trackedVal,
+		created,
+		updated,
+	)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save patent renewal %s: %w", renewal.PatentNumber, err)
+	}
+	return nil
+}
+
+// PatentRenewal returns the renewal configuration for a patent, or store.ErrNotFound.
+func (r *Repo) PatentRenewal(ctx context.Context, number domain.PatentNumber) (renewal domain.PatentRenewal, err error) {
+	defer r.observeDuration("patent_renewal", time.Now(), &err)
+	var (
+		patNum, entitySize, created, updated string
+		trackedVal int
+	)
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT patent_number, entity_size, is_tracked, created_at, updated_at FROM patent_renewal WHERE patent_number = ?`,
+		number.Normalized(),
+	).Scan(&patNum, &entitySize, &trackedVal, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.PatentRenewal{}, store.ErrNotFound
+	}
+	if err != nil {
+		return domain.PatentRenewal{}, fmt.Errorf("store/sqlite: get patent renewal %s: %w", number, err)
+	}
+
+	renewal.PatentNumber = number
+	renewal.EntitySize = entitySize
+	renewal.IsTracked = trackedVal != 0
+	if renewal.CreatedAt, err = decodeTime(created); err != nil {
+		return domain.PatentRenewal{}, err
+	}
+	if renewal.UpdatedAt, err = decodeTime(updated); err != nil {
+		return domain.PatentRenewal{}, err
+	}
+	return renewal, nil
 }
 
 // DeletePatent permanently removes a patent and all its associated documents,
@@ -436,26 +524,31 @@ func (r *Repo) attachTags(ctx context.Context, project domain.ProjectID, rows []
 // scanPatentRow reads one lightweight listing row.
 func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	var (
-		row                          domain.PatentRow
-		country, serial, kind, shown string
-		inventorsJSON, pubDate       string
-		expirationDate               string
-		fetchState, reviewState      string
-		tagsJSON                     string
-		idsKindCode                  string
-		idsRelevant, idsNotes        string
-		idsStatus, idsAddedAt        string
-		idsSubmittedAt               string
-		idsInFull                    int
-		citationsCount, citedByCount int
-		parentsCount                 int
-		classificationsJSON          string
-		addedMethod                  string
+		row                             domain.PatentRow
+		country, serial, kind, shown    string
+		inventorsJSON, pubDate          string
+		expirationDate                  string
+		fetchState, reviewState         string
+		tagsJSON                        string
+		idsKindCode                     string
+		idsRelevant, idsNotes           string
+		idsStatus, idsAddedAt           string
+		idsSubmittedAt                  string
+		idsInFull                       int
+		citationsCount, citedByCount    int
+		parentsCount                    int
+		classificationsJSON             string
+		addedMethod                     string
+		renewalTrackedVal               int
+		renewalEntitySize               string
+		nextDueStr, windowStr, graceStr string
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
 		&idsKindCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt, &idsSubmittedAt,
-		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON, &addedMethod); err != nil {
+		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON, &addedMethod,
+		&renewalTrackedVal, &renewalEntitySize,
+		&nextDueStr, &windowStr, &graceStr); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -487,6 +580,17 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 	row.CitationsCount = citationsCount
 	row.CitedByCount = citedByCount
 	row.ParentsCount = parentsCount
+	row.RenewalTracked = renewalTrackedVal != 0
+	row.EntitySize = renewalEntitySize
+	if t, err := decodeTime(nextDueStr); err == nil {
+		row.NextRenewalDue = t
+	}
+	if t, err := decodeTime(windowStr); err == nil {
+		row.NextRenewalWindowOpens = t
+	}
+	if t, err := decodeTime(graceStr); err == nil {
+		row.NextRenewalGraceEnds = t
+	}
 	if idsStatus != "" || idsKindCode != "" || idsRelevant != "" || idsNotes != "" || idsAddedAt != "" || idsInFull != 0 {
 		row.IDSEntry = &domain.IDSEntry{
 			Patent:           row.Number,
@@ -884,10 +988,13 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 		appDate, pubDate, grant, fetched string
 		displayNumber, expiration        string
 		classifications                  string
+		renewalTrackedVal                int
+		renewalEntitySize                string
 	)
 	if err := s.Scan(&country, &serial, &kind, &p.Title, &p.Abstract, &p.Assignee,
 		&inventors, &fetchState, &source, &appDate, &pubDate, &grant, &fetched,
-		&displayNumber, &p.FirstClaim, &expiration, &p.ExpirationSource, &p.SourceURL, &classifications); err != nil {
+		&displayNumber, &p.FirstClaim, &expiration, &p.ExpirationSource, &p.SourceURL, &classifications,
+		&renewalTrackedVal, &renewalEntitySize); err != nil {
 		return domain.Patent{}, err
 	}
 	p.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
@@ -921,6 +1028,13 @@ func scanPatent(s rowScanner) (domain.Patent, error) {
 	}
 	if p.ExpirationDate, err = decodeTime(expiration); err != nil {
 		return domain.Patent{}, err
+	}
+	if renewalEntitySize != "" {
+		p.Renewal = &domain.PatentRenewal{
+			PatentNumber: p.Number,
+			EntitySize:   renewalEntitySize,
+			IsTracked:    renewalTrackedVal != 0,
+		}
 	}
 	return p, nil
 }
