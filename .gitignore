@@ -18,4 +18,5 @@ exports/
 samples/
 
 **/node_modules/**
+session-ses*
 
