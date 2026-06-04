@@ -134,11 +134,19 @@ func (o *OfficeActionMetaForm) submit() tea.Cmd {
 	return func() tea.Msg { return OfficeActionImportSubmitMsg{Params: params} }
 }
 
+func (o *OfficeActionMetaForm) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, 80, 80, 76, 15)
+}
+
 func (o *OfficeActionMetaForm) View(maxW, _ int) string {
 	var b strings.Builder
 	if !o.isEdit {
-		b.WriteString(o.theme.Dim.Render(render.Truncate("file: "+o.source, maxW)))
-		b.WriteString("\n\n")
+		fileLabel := "file: " + o.source
+		for _, line := range wrapTextOrPath(fileLabel, maxW) {
+			b.WriteString(o.theme.Dim.Render(line))
+			b.WriteByte('\n')
+		}
+		b.WriteByte('\n')
 	}
 	for i, label := range oamLabels {
 		marker := "  "
@@ -158,7 +166,10 @@ func (o *OfficeActionMetaForm) View(maxW, _ int) string {
 	if !o.isEdit {
 		hint = "[tab] field · [enter] import · [esc] cancel · [ctrl+u] clear · deadline auto-set from mail date"
 	}
-	b.WriteString(o.theme.Dim.Render(render.Truncate(hint, maxW)))
+	for _, line := range wrapText(hint, maxW) {
+		b.WriteString(o.theme.Dim.Render(line))
+		b.WriteByte('\n')
+	}
 	return b.String()
 }
 
@@ -169,4 +180,22 @@ func shortLabel(label string) string {
 		return strings.TrimSpace(label[:i])
 	}
 	return label
+}
+
+func wrapTextOrPath(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	if strings.Contains(text, " ") {
+		return wrapText(text, width)
+	}
+	var lines []string
+	for len(text) > width {
+		lines = append(lines, text[:width])
+		text = text[width:]
+	}
+	if len(text) > 0 {
+		lines = append(lines, text)
+	}
+	return lines
 }

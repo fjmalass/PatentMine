@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -706,11 +708,6 @@ func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain
 		return domain.MatterDocument{}, errors.New("engine: document has no stored file to extract")
 	}
 
-	extractor, ok := e.drafter.(ai.Extractor)
-	if !ok {
-		return domain.MatterDocument{}, errors.New("engine: AI text extraction is not available with the configured provider (set a Gemini API key)")
-	}
-
 	var text string
 	extPath := extractedTextPath(doc.BlobPath)
 	if extPath != "" {
@@ -720,6 +717,41 @@ func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain
 	}
 
 	if text == "" {
+		if stdTxt := extractDocText(doc.BlobPath); stdTxt != "" {
+			text = stdTxt
+			doc.ExtractedText = text
+			if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+				return domain.MatterDocument{}, err
+			}
+			if doc.Kind == domain.MatterDocOA && doc.OfficeActionID != "" {
+				if oa, err := e.repo.OfficeAction(ctx, doc.OfficeActionID); err == nil {
+					oa.ExtractedText = text
+					_ = e.repo.SaveOfficeAction(ctx, oa)
+				}
+			}
+			saveExtractedTextFile(doc.BlobPath, text)
+
+			e.recordActivity(ctx, observability.Record{
+				Action:   observability.ActionMatterDocumentExtract,
+				Entity:   "matter_document",
+				EntityID: doc.ID,
+				Status:   "committed",
+				Attributes: map[string]any{
+					"project": string(doc.Project),
+					"source":  "standard_parser",
+					"chars":   len(text),
+					"name":    doc.DisplayName,
+				},
+			})
+			e.announceChange()
+			return doc, nil
+		}
+
+		extractor, ok := e.drafter.(ai.Extractor)
+		if !ok {
+			return domain.MatterDocument{}, errors.New("engine: standard extraction found no text, and AI text extraction is not available with the configured provider (set a Gemini API key)")
+		}
+
 		data, err := os.ReadFile(doc.BlobPath)
 		if err != nil {
 			return domain.MatterDocument{}, fmt.Errorf("engine: read document file: %w", err)
@@ -1130,8 +1162,64 @@ func extractDocText(path string) string {
 		if txt, err := pdf.ExtractText(path); err == nil {
 			return txt
 		}
+	case ".docx":
+		if txt, err := extractDocxText(path); err == nil {
+			return txt
+		}
 	}
 	return ""
+}
+
+func extractDocxText(path string) (string, error) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = zr.Close() }()
+
+	for _, f := range zr.File {
+		if f.Name == "word/document.xml" {
+			rc, err := f.Open()
+			if err != nil {
+				return "", err
+			}
+			defer func() { _ = rc.Close() }()
+			return parseDocxXML(rc)
+		}
+	}
+	return "", fmt.Errorf("word/document.xml not found in docx")
+}
+
+func parseDocxXML(r io.Reader) (string, error) {
+	dec := xml.NewDecoder(r)
+	var b strings.Builder
+	var inText bool
+	for {
+		t, err := dec.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+		switch se := t.(type) {
+		case xml.StartElement:
+			if se.Name.Local == "t" {
+				inText = true
+			} else if se.Name.Local == "p" || se.Name.Local == "br" || se.Name.Local == "cr" {
+				b.WriteByte('\n')
+			}
+		case xml.EndElement:
+			if se.Name.Local == "t" {
+				inText = false
+			}
+		case xml.CharData:
+			if inText {
+				b.Write(se)
+			}
+		}
+	}
+	return b.String(), nil
 }
 
 // copyWithHash copies src into dir, naming the file "<id><ext>", and returns the

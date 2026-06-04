@@ -53,13 +53,19 @@ func (c *OfficeActionDeleteConfirm) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd,
 	return c, nil, true
 }
 
+func (c *OfficeActionDeleteConfirm) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, 80, 80, 76, 12)
+}
+
 // View implements Overlay.
 func (c *OfficeActionDeleteConfirm) View(maxW, _ int) string {
 	var b strings.Builder
-	b.WriteString(c.theme.Row.Render(render.Truncate(
-		fmt.Sprintf("How do you want to delete the office action mailed %s?", c.oa.MailDate.Format(domain.DateLayout)),
-		maxW)))
-	b.WriteString("\n\n")
+	prompt := fmt.Sprintf("How do you want to delete the office action mailed %s?", c.oa.MailDate.Format(domain.DateLayout))
+	for _, line := range wrapText(prompt, maxW) {
+		b.WriteString(c.theme.Row.Render(line))
+		b.WriteByte('\n')
+	}
+	b.WriteString("\n")
 
 	b.WriteString("  ")
 	b.WriteString(c.theme.HelpKey.Render("[1/y]"))

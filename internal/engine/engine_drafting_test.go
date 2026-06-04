@@ -294,7 +294,7 @@ func TestExtractDocumentTextWithoutExtractorErrors(t *testing.T) {
 	// A plain fakeDrafter implements Drafter but not ai.Extractor.
 	eng, proj := newDraftEngine(t, &fakeDrafter{})
 
-	src := filepath.Join(t.TempDir(), "ref.txt")
+	src := filepath.Join(t.TempDir(), "ref.png")
 	if err := os.WriteFile(src, []byte("plain text"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -397,4 +397,35 @@ func validDocxContains(t *testing.T, data []byte, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestExtractDocxText(t *testing.T) {
+	// Create a mock docx in memory
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("word/document.xml")
+	if err != nil {
+		t.Fatalf("create document.xml: %v", err)
+	}
+	xmlContent := `<?xml version="1.0" encoding="utf-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello World from Docx</w:t></w:r></w:p></w:body></w:document>`
+	_, _ = w.Write([]byte(xmlContent))
+	_ = zw.Close()
+
+	// Write to temporary file
+	tmpFile, err := os.CreateTemp("", "test_*.docx")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+	_, _ = tmpFile.Write(buf.Bytes())
+
+	// Call extractDocxText
+	txt, err := extractDocxText(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("extractDocxText failed: %v", err)
+	}
+	if !strings.Contains(txt, "Hello World from Docx") {
+		t.Errorf("expected 'Hello World from Docx' in %q", txt)
+	}
 }
