@@ -848,6 +848,38 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 
 CREATE INDEX IF NOT EXISTS idx_ai_usage_project ON ai_usage (project_id, created_at DESC);
 
+-- deadline is one tracked due date — an office-action response, a U.S.
+-- maintenance fee, a foreign annuity, or a custom date — owned by a patent, a
+-- matter, or an office action. One reminder engine watches them all.
+CREATE TABLE IF NOT EXISTS deadline (
+    id               TEXT PRIMARY KEY,
+    kind             TEXT NOT NULL DEFAULT 'custom',
+    patent_number    TEXT NOT NULL DEFAULT '',
+    project_id       TEXT NOT NULL DEFAULT '',
+    office_action_id TEXT NOT NULL DEFAULT '',
+    title            TEXT NOT NULL DEFAULT '',
+    window_opens     TEXT NOT NULL DEFAULT '',
+    due_date         TEXT NOT NULL DEFAULT '',
+    grace_ends       TEXT NOT NULL DEFAULT '',
+    status           TEXT NOT NULL DEFAULT 'pending',
+    created_at       TEXT NOT NULL DEFAULT '',
+    updated_at       TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_deadline_status_due ON deadline (status, due_date);
+CREATE INDEX IF NOT EXISTS idx_deadline_patent ON deadline (patent_number);
+
+-- reminder_log dedupes sent reminders so a given deadline is reminded at most
+-- once per threshold per channel. subject keys the deadline (its id, or
+-- "oa:<officeActionID>" for the response deadlines synthesized from office_action).
+CREATE TABLE IF NOT EXISTS reminder_log (
+    subject        TEXT NOT NULL,
+    threshold_days INTEGER NOT NULL,
+    channel        TEXT NOT NULL,
+    sent_at        TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (subject, threshold_days, channel)
+);
+
 -- draft is a project-scoped, section-structured legal document rendered to .docx.
 -- One model unifies first-application drafting (provisional / non-provisional)
 -- and office-action responses; kind selects the section skeleton and whether

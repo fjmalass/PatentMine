@@ -79,6 +79,9 @@ const (
 	ActionTimeValidate          = "time_entry.validate"
 	ActionTimeDelete            = "time_entry.delete"
 	ActionAIUsage               = "ai_usage.record" // an AI call recorded for billing
+	ActionRenewalsTrack         = "deadline.track_renewals"
+	ActionDeadlineStatus        = "deadline.set_status"
+	ActionDeadlineRemind        = "deadline.remind"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -141,4 +144,7 @@ var AllActions = []string{
 	ActionTimeValidate,
 	ActionTimeDelete,
 	ActionAIUsage,
+	ActionRenewalsTrack,
+	ActionDeadlineStatus,
+	ActionDeadlineRemind,
 }

@@ -151,6 +151,12 @@ const (
 	HintMove            Key = "hint.move"
 	HintSlashCommands   Key = "hint.slash_commands"
 	HintHistory         Key = "hint.history"
+	HintOAOpen          Key = "hint.oa_open"
+	HintOAAdd           Key = "hint.oa_add"
+	HintOAResponse      Key = "hint.oa_response"
+	HintDocuments       Key = "hint.documents"
+	HintComms           Key = "hint.comms"
+	HintNotesEditor     Key = "hint.notes_editor"
 	SplashCreateHint    Key = "splash.create_hint"
 	SplashCreateKeyHint Key = "splash.create_key_hint"
 
@@ -282,6 +288,11 @@ var cmdStrings = map[string][2]string{
 	"officeaction.respond":                    {"Draft response", "Create an office-action response (a DraftOAResponse linked to the latest office action) and open a split editor: the matter's documents on the left to copy from (ctrl-n/ctrl-p to cycle, yy/p to copy a passage), the REMARKS on the right. ctrl+s saves, ctrl-e exports the .docx."},
 	"matter.comm.log":                         {"Log communication", "Record one entry in the matter's communications log — an email, phone call, examiner interview, filing, or note — capturing who it was with and what happened."},
 	"matter.comm.open":                        {"Open communications", "Open the matter's communications log: every recorded email, call, interview, filing, and note, newest first. Enter views the full comment, d deletes an entry."},
+	"time.log":                                {"Log time", "Record a manual time entry against the matter: an activity (reading/writing/ai/call/admin), a duration (e.g. 30m, 1h15m, 1:15, or plain minutes), and an optional note. Manual entries are validated on entry."},
+	"time.validate":                           {"Validate time", "Review auto-captured time before it is billed: correct each entry's activity/duration/note, then validate (or delete) it. Auto entries (editor focus, AI calls) start unvalidated."},
+	"time.show":                               {"Show time", "Show the matter's billing readout: recorded time by activity, the validated/unvalidated split, and AI usage (calls + tokens)."},
+	"deadline.show":                           {"Show deadlines", "Open the cross-matter deadlines docket: every pending office-action response and patent maintenance fee, soonest due first, with overdue/due-soon cues. p marks one done, x dismisses it."},
+	"deadline.track":                          {"Track renewals", "Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (due at 3.5 / 7.5 / 11.5 years). Pass the patent number, e.g. :track.renewals US10000000B2."},
 	"project.export-added":                   {"Export added list", "Write the active project's manually-added patents to a plain-text list file that Add patents from file can reload. Give a path to write there directly (warning first if it already exists), or omit it to confirm a default location first; a result popup reports how many patents were exported and where."},
 	"source.mode":                            {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
 	"source.compare":                         {"Compare sources", "Review and reconcile differences between data sources (e.g. USPTO vs Google) for the current patent. Opens the split comparison overlay (default choice = USPTO)."},
@@ -465,6 +476,12 @@ var englishNamed = map[Key]string{
 	HintMove:            "move",
 	HintSlashCommands:   "/ commands",
 	HintHistory:         "history",
+	HintOAOpen:          "open",
+	HintOAAdd:           "add OA",
+	HintOAResponse:      "respond",
+	HintDocuments:       "documents",
+	HintComms:           "communications",
+	HintNotesEditor:     "notes",
 	SplashCreateHint:    "Create one with %s.",
 	SplashCreateKeyHint: "Create one with %s or %s.",
 

@@ -151,5 +151,14 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.NotesExportMD}, Label: text.HintExportNotes},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},
+		command.ScopeMatterOA: {
+			{Commands: []command.ID{command.AddOfficeAction}, Label: text.HintOAAdd},
+			{Commands: []command.ID{command.DraftResponse}, Label: text.HintOAResponse},
+		},
+		command.ScopeMatterOADetail: {
+			{Commands: []command.ID{command.OpenDocuments}, Label: text.HintDocuments},
+			{Commands: []command.ID{command.OpenComms}, Label: text.HintComms},
+			{Commands: []command.ID{command.DraftResponse}, Label: text.HintOAResponse},
+		},
 	}
 }

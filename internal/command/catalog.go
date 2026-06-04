@@ -128,6 +128,11 @@ const (
 	DraftResponse    ID = "officeaction.respond" // draft an office-action response, copying from the matter's documents
 	LogComm          ID = "matter.comm.log"      // record a communications-log entry (call/email/interview) for the matter
 	OpenComms        ID = "matter.comm.open"      // open the matter's communications log
+	LogTime          ID = "time.log"             // record a manual time entry for the matter
+	ValidateTime     ID = "time.validate"        // review + validate auto-captured time before billing
+	ShowTime         ID = "time.show"            // show the matter's time + AI-usage summary
+	ShowDeadlines    ID = "deadline.show"        // open the cross-matter deadlines docket
+	TrackRenewals    ID = "deadline.track"       // track a patent's U.S. maintenance-fee deadlines
 	SourceMode       ID = "source.mode"
 	SourceCompare    ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
 	SourceBibs       ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data

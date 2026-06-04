@@ -189,14 +189,17 @@ type MatterEventIDParams struct {
 	ID string `json:"id"`
 }
 
-// TimeLogParams records one manual time entry. Manual entries are validated on
-// entry (the user typed them); Seconds is the duration.
+// TimeLogParams records one time entry. A manual entry (Auto false) is validated
+// on entry — the user typed it; an Auto entry (the editor's reading/writing focus
+// capture) is recorded unvalidated for the attorney to review. Seconds is the
+// duration.
 type TimeLogParams struct {
 	Project        domain.ProjectID    `json:"project"`
 	OfficeActionID string              `json:"office_action_id,omitempty"`
 	Activity       domain.TimeActivity `json:"activity"`
 	Seconds        int                 `json:"seconds"`
 	Note           string              `json:"note,omitempty"`
+	Auto           bool                `json:"auto,omitempty"`
 }
 
 // TimeEntryResult carries one time entry.
@@ -234,4 +237,27 @@ type TimeIDParams struct {
 type TimeSummaryResult struct {
 	Time domain.TimeSummary    `json:"time"`
 	AI   domain.AIUsageSummary `json:"ai"`
+}
+
+// DeadlineListResult carries a set of deadlines (pending across the database, or
+// a patent's schedule).
+type DeadlineListResult struct {
+	Deadlines []domain.Deadline `json:"deadlines"`
+}
+
+// TrackRenewalsParams asks the daemon to derive a granted patent's U.S.
+// maintenance-fee deadlines from its grant date.
+type TrackRenewalsParams struct {
+	PatentNumber string `json:"patent_number"`
+}
+
+// DeadlineStatusParams marks one deadline done/dismissed/pending.
+type DeadlineStatusParams struct {
+	ID     string                `json:"id"`
+	Status domain.DeadlineStatus `json:"status"`
+}
+
+// DeadlineRemindResult reports how many reminders were delivered.
+type DeadlineRemindResult struct {
+	Sent int `json:"sent"`
 }

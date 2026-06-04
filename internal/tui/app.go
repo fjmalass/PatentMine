@@ -179,6 +179,11 @@ var appHandlers = map[command.ID]appHandler{
 	command.DraftResponse:              (*App).cmdDraftResponse,
 	command.LogComm:                    (*App).cmdLogComm,
 	command.OpenComms:                  (*App).cmdOpenComms,
+	command.LogTime:                    (*App).cmdLogTime,
+	command.ValidateTime:               (*App).cmdValidateTime,
+	command.ShowTime:                   (*App).cmdShowTime,
+	command.ShowDeadlines:              (*App).cmdShowDeadlines,
+	command.TrackRenewals:              (*App).cmdTrackRenewals,
 	command.SourceMode:                 (*App).cmdSourceMode,
 	command.SourceCompare:              (*App).cmdSourceCompare,
 	command.SourceBibs:                 (*App).cmdSourceBibs,
@@ -233,6 +238,8 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.AddOfficeAction:         true,
 	command.AddDocument:             true,
 	command.SetMatterType:           true,
+	command.LogTime:                 true,
+	command.TrackRenewals:           true,
 	command.FamilyExportMermaid:     true,
 	command.FetchAssignmentsProject: true,
 	command.SourceMode:              true,
@@ -847,6 +854,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.MatterEventSubmitMsg:
 		a.popOverlay()
 		return a, pane.AddMatterEventCmd(a.client, m.Params)
+	case pane.UnvalidatedTimeMsg:
+		// On reopening a matter with unbilled auto-captured time, prompt the user
+		// to review it (only when it belongs to the still-active project).
+		if m.Count > 0 && a.activeProject != nil && a.activeProject.ID == m.Project {
+			a.setStatus(text.StatusGeneric, fmt.Sprintf("⚠ %d time entries need validation — run :validate.time", m.Count))
+		}
+		return a, nil
+	case pane.DueDeadlineMsg:
+		// In-app deadline banner: surface overdue / due-soon deadlines on open.
+		if m.Count > 0 {
+			a.setStatus(text.StatusGeneric, fmt.Sprintf("⏰ %d deadline(s) due soon — run :show.deadlines", m.Count))
+		}
+		return a, nil
+	case pane.OpenOfficeActionDetailMsg:
+		return a.pushPane(pane.NewOfficeActionDetail(a.client, a.theme, m.OA).WithLogger(a.log()))
+	case pane.OpenOfficeActionEditorMsg:
+		a.overlays = append(a.overlays, overlay.NewOfficeActionEditor(a.client, a.theme, m.OA))
+		return a, nil
 	case overlay.IDSHeaderSubmitMsg:
 		a.popOverlay()
 		return a.handleIDSHeaderSubmit(m.Project)

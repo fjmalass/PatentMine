@@ -122,6 +122,12 @@ const (
 	MethodTimeDelete      Method = "time_entry.delete"
 	MethodTimeSummary     Method = "time_entry.summary"
 
+	// Deadlines + reminders (OA responses, patent maintenance fees).
+	MethodDeadlineList       Method = "deadline.list"
+	MethodTrackRenewals      Method = "deadline.track_renewals"
+	MethodDeadlineSetStatus  Method = "deadline.set_status"
+	MethodDeadlineRemind     Method = "deadline.remind"
+
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
 	MethodSourceDiffsList    Method = "source.diffs.list"

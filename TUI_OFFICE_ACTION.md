@@ -15,11 +15,13 @@ Related docs:
 - [TUI_ADD_FLOW.md](./TUI_ADD_FLOW.md) · [TUI_ASSIGNEE_FLOW.md](./TUI_ASSIGNEE_FLOW.md) — sibling project flows.
 
 > [!NOTE]
-> **Where the surface lives today.** The office-action response workflow runs
-> through the `patentmine draft` **CLI** and the daemon **RPC** (which also backs
-> the web API). The **in-TUI** surface — overlays and key bindings — is the
-> planned integration sketched in [§7](#7-planned-tui-integration); it is not yet
-> bound. Everything in §§1–6 works now via CLI/RPC.
+> **Where the surface lives today.** The drafting/response internals run through
+> the `patentmine draft` **CLI** and the daemon **RPC** (which also backs the web
+> API). In the TUI the office action is now a **prosecution-matter workspace**
+> reached through a dedicated **Office Actions pane** (`:open.officeaction`): a
+> navigable table of the matter's office actions, `a` to import a new one, and
+> `enter` to drill into a detail view (documents · timing · communications ·
+> response). See [§7](#7-tui-integration).
 
 ---
 
@@ -84,11 +86,14 @@ Office-action types (`--type`): `non_final`, `final`, `restriction`,
 `advisory`, `notice_of_allowance`.
 
 > [!NOTE]
-> **Coverage & extraction.** The USPTO ODP file-wrapper coverage is partial, and
-> older Office Actions are scanned images (needing OCR), so **ODP auto-fetch** and
-> **PDF/OCR text extraction** are deferred follow-ups (see [§8](#8-follow-ups)).
-> Manual import with supplied/`.txt` text is the dependable path today and keeps
-> the build pure-Go.
+> **Text extraction.** A `.txt` source is read inline; a **PDF** is text-extracted
+> by the pure-Go `internal/pdf` extractor (`ledongthuc/pdf`) on import. USPTO
+> Office Actions are frequently **scanned, image-only PDFs** with no text layer —
+> the extractor returns nothing for those, so `:open.documents` offers **`e`** to
+> run **AI/OCR extraction** (Gemini multimodal) on demand, saving the transcribed
+> text back to the document (and recording it as billable AI usage). **ODP
+> auto-fetch** of the OA remains a deferred follow-up (see [§8](#8-follow-ups));
+> manual import stays the always-works baseline.
 
 ---
 
@@ -124,7 +129,7 @@ never silently alter claim scope.
 | `withdrawn` | (Withdrawn) | none |
 
 Claims are edited as structured data (via RPC `draft.save` / the web API, or the
-TUI editor in [§7](#7-planned-tui-integration)); `patentmine draft show` prints
+TUI editor in [§7](#7-tui-integration)); `patentmine draft show` prints
 the current claim set.
 
 ### 3.2 Drafting the remarks (grounded AI, optional)
@@ -207,8 +212,13 @@ cargo make draft-setup
 ### RPC methods (also back the web API)
 
 `office_action.import`, `office_action.list`, `office_action.get`,
-`draft.create`, `draft.get`, `draft.list`, `draft.save`, `draft.delete`,
-`draft.section.ai`, `draft.export.docx`.
+`office_action.save_notes`, `draft.create`, `draft.get`, `draft.list`,
+`draft.save`, `draft.delete`, `draft.section.ai`, `draft.export.docx`.
+
+Prosecution-matter workspace: `matter.document.import` / `.list` / `.rename` /
+`.delete` / `.extract` (AI OCR), `matter.event.add` / `.list` / `.delete`
+(communications log), `time_entry.log` / `.list` / `.unvalidated` / `.update` /
+`.validate`-via-update / `.summary`, and `project.set_matter_type`.
 
 ### cargo-make
 
@@ -252,37 +262,71 @@ pin-span verbatim enforcement (see §3.2). Editor affordances mirror the IDS pan
 in [README §9.G](./README.md#g-ids-curation-pane-bindings); wiring a new command
 follows the recipe in [README §6](./README.md#6-tui-key-binding-architecture).
 
-### Status
+### Status — the prosecution-matter workspace (implemented)
 
-- **`:add.officeaction [path]`** — implemented. With a path it imports directly;
-  with **no argument it opens a file picker** (`bubbles/filepicker`, a modal
-  overlay) rooted at your home directory — arrow/`j`/`k` to move, `enter` to
-  open/select, `←`/`backspace` to go up, `esc` to cancel; only `.pdf`/`.txt` are
-  selectable. The chosen file is copied into the docs export store, with a result
-  notice. Because the TUI and daemon share a filesystem (unix socket), the picker
-  browses **locally** and only the **path** travels over RPC — the daemon does
-  the copy.
-- **`:open.officeaction`** — implemented. Opens the project's office-action
-  **table** (type · mail date · examiner, `✎` marks ones with notes); `↑/↓` or
-  `j/k` move, `enter` opens the selected one, `esc` closes.
-- **Split text/notes editor** — implemented. Examiner **extracted text** on the
-  left (read-only, vim-navigable), the **notes** on the right (editable, opens in
-  vim NORMAL). **`ctrl-w h`** focuses the examiner, **`ctrl-w l`** the notes,
-  **`ctrl-w w`** toggles; **`ctrl+s`** saves the notes (`office_action.save_notes`),
-  **`esc`** closes (or leaves insert mode first). Both panes are the shared
-  `vimBuffer` — full vim motions/editing, one code path.
-- **`:add.draft` / `:export.draft`** (application & response drafting in the TUI)
-  — still CLI/RPC only; in progress.
+The office action is now the centre of a matter workspace. The bytes-on-disk /
+metadata-in-row convention extends to a **`matter_document`** table (many files
+per matter) and the project gains a **matter type** stage; office actions gain a
+**response deadline** (auto-computed from mail date + type) and a **status**.
+
+| Command | What it does |
+| --- | --- |
+| `:open.officeaction` | The **Office Actions pane** — a table of the matter's office actions (mailed · type · examiner · response-due countdown · status). `↑/↓`/`j`/`k` move, `/` filters, `a` imports a new OA, `R` drafts a response, and **`enter` drills into the detail pane** (documents · timing · communications · response). |
+| `:add.officeaction [path]` | Import an OA (also `a` in the pane). With no path it opens the hand-rolled **file picker** (`.pdf`/`.txt`); either way a **metadata form** then captures **examiner**, mail date, type, art unit, application number (pre-filled from the project). The file is copied + hashed + text-extracted, the response deadline computed, and the OA registered as the matter's first document. |
+| `:add.document [path]` | File a supporting document (reference, prior response, …) under the matter (picker or path). |
+| `:open.documents` | The matter's **document list**: `enter` views the text (read-only vim viewer), **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes. |
+| `:draft.response` | Create a `DraftOAResponse` linked to the latest OA and open the **split response editor**: matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; **`yy`/`p`** copy a passage across, `ctrl+s` saves, `ctrl-e` exports the `.docx`. |
+| `:log.comm` · `:open.comms` | Record / browse the **communications log** (email · phone · interview · filing · note — party + what happened). |
+| `:set.matter <type>` | Set the project's prosecution stage (provisional / nonprovisional / in_prosecution / issued). |
+| `:validate.time` | Review the **auto-captured time** queue: correct each entry's activity/duration/note, then validate (or delete). Reopening a matter with unvalidated time prompts here. |
+| `:show.time` | Billing readout: recorded time by activity, validated/unvalidated split, and AI usage (calls + tokens). |
+| `:log.time <activity> <duration> [note]` | Add a manual, validated time entry (duration: `30m`, `1h15m`, `1:15`, or plain minutes). |
+| `:show.deadlines` | Cross-matter docket: pending OA responses + patent maintenance fees, soonest due first (`p` done, `x` dismiss). |
+| `:track.renewals <patent>` | Track a granted patent's U.S. maintenance-fee deadlines (3.5 / 7.5 / 11.5 yr from grant). |
+
+- **Split text/notes editor** (`:open.officeaction` → `enter`) — examiner
+  **extracted text** on the left (read-only, vim-navigable), **notes** on the
+  right (editable, vim NORMAL). `ctrl-w h/l/w` switches panes, `ctrl+s` saves
+  (`office_action.save_notes`), `esc` closes. A shared **yank register** lets
+  `yy` in the examiner pane `p`-paste into the notes. Both panes are the shared
+  `vimBuffer`.
+- **Office Actions pane + drill-down** (`:open.officeaction`) — the table above
+  plus a **detail pane** (`enter`) showing the OA's metadata and response
+  deadline, the matter's document/communication counts, and the **time + AI-usage
+  tally** (with an "unvalidated — review before billing" cue). Detail keys: `f`
+  documents · `c` communications · `R` draft response · `enter` notes editor ·
+  `esc` back.
+- **Time tracking + AI usage** — billable work is captured automatically: AI
+  drafting and OCR calls log an `ai_usage` row + an auto, **unvalidated**
+  `time_entry`, and the split editors record **reading** (left pane) vs
+  **writing** (right pane) time on close. `:validate.time` is the **review queue**
+  — correct each entry's activity/duration/note, then validate or delete it
+  (captured time is a draft until a human signs off); reopening a matter with
+  unvalidated time prompts here. `:show.time` is the billing readout and
+  `:log.time` adds a manual entry. Every operation carries duration metrics +
+  activity records (reusing the existing observability stack).
+- **Deadlines + reminders** — one unified `deadline` model covers OA responses
+  (auto-seeded from the mail date) and patent **maintenance fees**
+  (`:track.renewals <patent>` derives the U.S. 3.5/7.5/11.5-yr schedule from the
+  grant date). `:show.deadlines` is the cross-matter docket; opening a matter
+  banners anything due soon. A pluggable `internal/remind` Notifier sends **email
+  over SMTP** at 2 months / 15 days / 7 days before due (+ overdue), deduped and
+  fired by a daily loop — opt-in via `PATENTMINE_REMINDER_EMAIL_*`; the in-app
+  surface always works. Dates only (fee amounts deliberately not encoded). This
+  is docketing assistance, not legal advice — verify all dates.
 
 ---
 
 ## 8. Follow-ups
 
-- **TUI overlays** for the flow in §7 (today: CLI / RPC / web).
+- **Hourly rates / billing amounts** — time and AI usage are tracked as
+  durations/counts now; attaching rates (per activity/timekeeper, and a
+  $/1k-tokens AI rate) to produce dollar amounts and an invoice export is a later
+  pass. Maintenance-fee **dollar amounts** likewise (entity-size dependent) — the
+  dates are tracked; link to the live USPTO fee schedule rather than encode them.
+- **Foreign annuities** — the `annuity` deadline kind exists; per-jurisdiction
+  annual schedules (vs. the implemented U.S. maintenance math) are a follow-up.
 - **ODP auto-fetch** of the Office Action when the API key is entitled (manual
   import remains the always-works baseline).
-- **PDF text extraction / OCR** for scanned Office Actions — currently a `.txt`
-  source doubles as extracted text, or text is supplied with `--text`; PDF/OCR
-  would add an external dependency, deliberately kept out of the pure-Go build.
 - **Structured rejections** (statute → claims → cited references) to drive a
   per-rejection response skeleton and per-reference grounding.

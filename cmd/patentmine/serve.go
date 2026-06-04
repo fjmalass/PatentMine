@@ -18,6 +18,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
 	"patentmine/internal/observability"
+	"patentmine/internal/remind"
 	"patentmine/internal/rpc"
 	"patentmine/internal/store"
 	"patentmine/internal/store/sqlite"
@@ -134,8 +135,20 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		OllamaHost:   cfg.OllamaHost,
 		OllamaModel:  cfg.OllamaModel,
 	})
-	return engine.New(ctx, cachingRepo, crawl.Factory(crawler),
+	// Deadline reminders: an opt-in SMTP email notifier, otherwise a no-op (the
+	// in-app deadline surface is always available).
+	notifier := remind.NewNotifier(remind.EmailConfig{
+		Enabled:  cfg.ReminderEmailEnabled,
+		Host:     cfg.ReminderSMTPHost,
+		Port:     cfg.ReminderSMTPPort,
+		Username: cfg.ReminderSMTPUser,
+		Password: cfg.ReminderSMTPPassword,
+		From:     cfg.ReminderEmailFrom,
+		To:       cfg.ReminderEmailTo,
+	})
+	eng := engine.New(ctx, cachingRepo, crawl.Factory(crawler),
 		engine.WithFileImporter(crawler),
+		engine.WithNotifier(notifier),
 		engine.WithCrawlMaxDepth(crawlCfg.MaxDepth),
 		engine.WithCrawlWorkers(cfg.CrawlWorkers),
 		engine.WithCPCLookup(crawl.LookupCPCDescription),
@@ -151,7 +164,13 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 			return crawl.SearchUSPTO(ctx, cfg.USPTOAPIKey, number)
 		}),
 		engine.WithUSPTOAssignmentFetcher(crawl.FetchUSPTOAssignments),
-	), nil
+	)
+	// Deliver deadline reminders on a daily tick when an email channel is
+	// configured; the in-app deadline surface needs no loop.
+	if notifier.Enabled() {
+		eng.StartReminderLoop(ctx, 24*time.Hour)
+	}
+	return eng, nil
 }
 
 // fail prints err and returns the failure exit code.

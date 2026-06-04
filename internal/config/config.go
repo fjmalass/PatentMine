@@ -65,6 +65,17 @@ type Config struct {
 	BackupRcloneRemote string            // rclone remote name used for backup checks.
 	LogRetainDays      int               // Number of days of log/activity files to keep.
 	LogMaxSizeBytes    int64             // Maximum size limit for the logs directory in bytes.
+
+	// Deadline reminder email (opt-in). When ReminderEmailEnabled and an SMTP
+	// host + recipient are set, the daemon sends maintenance-fee / OA-response
+	// reminders over SMTP; otherwise the in-app deadline surface stands alone.
+	ReminderEmailEnabled bool
+	ReminderSMTPHost     string
+	ReminderSMTPPort     int
+	ReminderSMTPUser     string
+	ReminderSMTPPassword string
+	ReminderEmailFrom    string
+	ReminderEmailTo      string
 }
 
 // BackupConfigured reports whether backup settings are present. Connectivity is
@@ -299,6 +310,16 @@ func Load() (Config, error) {
 		logRetainDays = 14
 	}
 
+	reminderEmailEnabled := false
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PATENTMINE_REMINDER_EMAIL_ENABLED"))) {
+	case "1", "true", "yes", "on":
+		reminderEmailEnabled = true
+	}
+	reminderSMTPPort, _ := strconv.Atoi(os.Getenv("PATENTMINE_REMINDER_SMTP_PORT"))
+	if reminderSMTPPort <= 0 {
+		reminderSMTPPort = 587
+	}
+
 	logMaxSizeBytesStr := os.Getenv("PATENTMINE_LOG_MAX_SIZE_BYTES")
 	var logMaxSizeBytes int64
 	if logMaxSizeBytesStr != "" {
@@ -335,5 +356,13 @@ func Load() (Config, error) {
 		BackupRcloneRemote: backupRcloneRemote,
 		LogRetainDays:      logRetainDays,
 		LogMaxSizeBytes:    logMaxSizeBytes,
+
+		ReminderEmailEnabled: reminderEmailEnabled,
+		ReminderSMTPHost:     os.Getenv("PATENTMINE_REMINDER_SMTP_HOST"),
+		ReminderSMTPPort:     reminderSMTPPort,
+		ReminderSMTPUser:     os.Getenv("PATENTMINE_REMINDER_SMTP_USER"),
+		ReminderSMTPPassword: os.Getenv("PATENTMINE_REMINDER_SMTP_PASSWORD"),
+		ReminderEmailFrom:    os.Getenv("PATENTMINE_REMINDER_EMAIL_FROM"),
+		ReminderEmailTo:      os.Getenv("PATENTMINE_REMINDER_EMAIL_TO"),
 	}, nil
 }

@@ -55,6 +55,7 @@ type ResponseEditor struct {
 
 	focusResponse bool
 	pendingWindow bool
+	focus         focusTimer
 	msg           string
 }
 
@@ -83,7 +84,16 @@ func NewResponseEditor(client *rpc.Client, theme render.Theme, draft domain.Draf
 		source:        source,
 		response:      response,
 		focusResponse: true,
+		focus:         newFocusTimer(true), // opens focused on the editable response
 	}
+}
+
+// closeCmd flushes the session's reading/writing time as auto entries and closes.
+func (o *ResponseEditor) closeCmd() tea.Cmd {
+	return tea.Batch(
+		o.focus.flushCmd(o.client, o.draft.Project, o.draft.OfficeActionID),
+		func() tea.Msg { return CloseOverlayMsg{} },
+	)
 }
 
 // remarksSectionIndex returns the index of the REMARKS section, creating one in
@@ -168,6 +178,7 @@ func (o *ResponseEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		case "w":
 			o.focusResponse = !o.focusResponse
 		}
+		o.focus.switchTo(o.focusResponse) // left=source(reading), right=response(writing)
 		return o, nil, true
 	}
 	if msg.Type == tea.KeyCtrlW && !(o.focusResponse && o.response.vimInsert) {
@@ -189,14 +200,14 @@ func (o *ResponseEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			o.response.handleKey(msg)
 			return o, nil, true
 		}
-		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+		return o, o.closeCmd(), true
 	}
 
 	switch _, intent := o.focused().handleKey(msg); intent {
 	case intentSave:
 		return o, o.saveCmd(), true
 	case intentClose:
-		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+		return o, o.closeCmd(), true
 	}
 	return o, nil, true
 }

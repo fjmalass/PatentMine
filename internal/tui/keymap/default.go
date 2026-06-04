@@ -271,6 +271,27 @@ func Default() *Keymaps {
 			"/":      command.FindOpen,
 		})
 
+	matterOA := NewLayer("matter_oa", false).
+		BindAll(listMotions()).
+		BindAll(map[string]command.ID{
+			"/":      command.FindOpen,
+			"ctrl+r": command.Refresh,
+			"a":      command.AddOfficeAction,
+			"R":      command.DraftResponse,
+			// enter / l drill into the detail pane (intercepted by the pane).
+		})
+
+	matterOADetail := NewLayer("matter_oa_detail", false).
+		BindAll(map[string]command.ID{
+			"f":      command.OpenDocuments,
+			"c":      command.OpenComms,
+			"R":      command.DraftResponse,
+			"ctrl+r": command.Refresh,
+			"esc":    command.Back,
+			"h":      command.Back,
+			// enter / n open the office action's notes editor (intercepted by the pane).
+		})
+
 	overlay := NewLayer("overlay", false).BindAll(map[string]command.ID{
 		"esc":    command.CloseOverlay,
 		"q":      command.CloseOverlay,
@@ -294,6 +315,8 @@ func Default() *Keymaps {
 			command.ScopeFullText:  fullText,
 			command.ScopeNotes:     notes,
 			command.ScopeOrphans:   orphans,
+			command.ScopeMatterOA:       matterOA,
+			command.ScopeMatterOADetail: matterOADetail,
 			command.ScopeOverlay:   overlay,
 		},
 	}

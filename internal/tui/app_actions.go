@@ -267,6 +267,7 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 		if len(cmds) == 0 {
 			cmds = append(cmds, mounted.Init())
 		}
+		cmds = append(cmds, a.unvalidatedTimeCheck(project.ID))
 		return a, tea.Batch(cmds...)
 	}
 	if len(a.panes) > 1 {
@@ -285,7 +286,20 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 			},
 		})
 	}
-	return a, tea.Batch(a.broadcast(pane.ProjectChangedMsg{Project: &project}), recCmd)
+	return a, tea.Batch(a.broadcast(pane.ProjectChangedMsg{Project: &project}), recCmd, a.unvalidatedTimeCheck(project.ID))
+}
+
+// unvalidatedTimeCheck returns a command that, on opening a matter, surfaces two
+// things the user should act on: unvalidated (auto-captured) time to review, and
+// deadlines that are overdue or due soon. No-op when the daemon is unavailable.
+func (a *App) unvalidatedTimeCheck(project domain.ProjectID) tea.Cmd {
+	if a.client == nil {
+		return nil
+	}
+	return tea.Batch(
+		pane.UnvalidatedTimeCountCmd(a.client, project),
+		pane.DueDeadlineCountCmd(a.client),
+	)
 }
 
 func (a *App) resolveProjectArg(arg string) (domain.Project, bool) {

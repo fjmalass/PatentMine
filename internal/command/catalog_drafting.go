@@ -13,5 +13,10 @@ func draftingCommands() []Command {
 		Command{ID: DraftResponse, Name: "draft.response", Aliases: []string{"draft-response", "respond"}, Usage: ":draft.response", Kind: KindView, Scopes: projectScopes},
 		Command{ID: LogComm, Name: "log.comm", Aliases: []string{"log-comm", "log.communication"}, Usage: ":log.comm", Kind: KindView, Scopes: projectScopes},
 		Command{ID: OpenComms, Name: "open.comms", Aliases: []string{"open-comms", "communications"}, Usage: ":open.comms", Kind: KindView, Scopes: projectScopes},
+		Command{ID: LogTime, Name: "log.time", Aliases: []string{"log-time"}, Usage: ":log.time <reading|writing|ai|call|admin> <duration> [note]", Kind: KindView, Scopes: projectScopes},
+		Command{ID: ValidateTime, Name: "validate.time", Aliases: []string{"validate-time"}, Usage: ":validate.time", Kind: KindView, Scopes: projectScopes},
+		Command{ID: ShowTime, Name: "show.time", Aliases: []string{"show-time"}, Usage: ":show.time", Kind: KindView, Scopes: projectScopes},
+		Command{ID: ShowDeadlines, Name: "show.deadlines", Aliases: []string{"deadlines", "show-deadlines"}, Usage: ":show.deadlines", Kind: KindView, Scopes: projectScopes},
+		Command{ID: TrackRenewals, Name: "track.renewals", Aliases: []string{"track-renewals", "renewals"}, Usage: ":track.renewals <patent-number>", Kind: KindView, Scopes: projectScopes},
 	}
 }

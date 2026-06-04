@@ -42,6 +42,7 @@ type OfficeActionEditor struct {
 
 	focusNotes    bool // which pane has focus
 	pendingWindow bool // saw ctrl-w, awaiting h/l/w
+	focus         focusTimer
 	msg           string
 }
 
@@ -66,7 +67,17 @@ func NewOfficeActionEditor(client *rpc.Client, theme render.Theme, oa domain.Off
 		examiner:   examiner,
 		notes:      notes,
 		focusNotes: true,
+		focus:      newFocusTimer(true), // opens focused on the editable notes
 	}
+}
+
+// closeCmd flushes the session's reading/writing time as auto entries and closes
+// the editor.
+func (o *OfficeActionEditor) closeCmd() tea.Cmd {
+	return tea.Batch(
+		o.focus.flushCmd(o.client, o.oa.Project, o.oa.ID),
+		func() tea.Msg { return CloseOverlayMsg{} },
+	)
 }
 
 func (o *OfficeActionEditor) Title() string {
@@ -125,6 +136,7 @@ func (o *OfficeActionEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) 
 		case "w":
 			o.focusNotes = !o.focusNotes
 		}
+		o.focus.switchTo(o.focusNotes) // left=examiner(reading), right=notes(writing)
 		return o, nil, true
 	}
 	if msg.Type == tea.KeyCtrlW && !(o.focusNotes && o.notes.vimInsert) {
@@ -138,14 +150,14 @@ func (o *OfficeActionEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) 
 			o.notes.handleKey(msg)
 			return o, nil, true
 		}
-		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+		return o, o.closeCmd(), true
 	}
 
 	switch _, intent := o.focused().handleKey(msg); intent {
 	case intentSave:
 		return o, o.saveCmd(), true
 	case intentClose:
-		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+		return o, o.closeCmd(), true
 	}
 	return o, nil, true
 }

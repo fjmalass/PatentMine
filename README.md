@@ -15,7 +15,8 @@ Related docs:
 7. [Assignee & Ownership History (usage)](./TUI_ASSIGNEE_FLOW.md)
 8. [Daemon-Side Assignee Flow](./DAEMON_ASSIGNEE_FLOW.md)
 9. [Drafting: Applications & Office-Action Responses](./DRAFTING.md)
-10. [Office Actions & Response Drafting](./TUI_OFFICE_ACTION.md)
+10. [Office Actions & the Prosecution-Matter Workspace](./TUI_OFFICE_ACTION.md) — multi-document matters (with AI/OCR text extraction), a copy-from-documents response editor, a communications log, deadlines, and time/AI-usage tracking.
+11. [Patent Renewals & Maintenance-Fee Tracking](./TUI_RENEWALS.md) — designating patents to watch for renewal, the unified deadline model, and reminders (in progress; includes a TODO).
 
 ---
 
@@ -751,6 +752,24 @@ This feature is supported across all major list/table views:
 * `I` : Export the complete Information Disclosure Statement (IDS) draft.
 * `/` : Search project listings.
 * `ctrl+r` : Refresh project items.
+
+#### I. Office Actions & Prosecution-Matter Workspace (`:` commands)
+
+The active project is a prosecution **matter** that holds many documents, a
+communications log, deadlines, and tracked time. See
+[Office Actions & the Prosecution-Matter Workspace](./TUI_OFFICE_ACTION.md) for the full flow.
+
+* `:add.officeaction [path]` : Import an Office Action (file picker if no path); a metadata form captures the **examiner**, mail date, type, art unit, and application number before the file is copied, text-extracted, and its response deadline computed.
+* `:open.officeaction` : Open the **Office Actions pane** — a table (mailed · type · examiner · response-due countdown · status); `a` add, `R` respond, `/` filter, **`enter` drills into** the detail pane (documents · timing · communications · response). From the detail, `enter` opens the split examiner-text / notes editor (`yy`/`p` copies examiner text into the notes).
+* `:add.document [path]` / `:open.documents` : File and browse supporting documents (references, prior responses). In the list, `enter` views the text, **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes.
+* `:draft.response` : Create a response draft linked to the latest OA and open the split editor — matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; `yy`/`p` copy passages across, `ctrl+s` saves, `ctrl-e` exports the `.docx`.
+* `:log.comm` / `:open.comms` : Record and browse the communications log (email · phone · interview · filing · note).
+* `:set.matter <type>` : Set the prosecution stage (`provisional` / `nonprovisional` / `in_prosecution` / `issued`).
+* `:validate.time` : Review auto-captured time (AI calls, and editor reading/writing) — correct each entry's activity/duration/note, then validate or delete it before it is billed. Reopening a matter with unvalidated time prompts you here.
+* `:show.time` : Billing readout — recorded time by activity, the validated/unvalidated split, and AI usage (calls + tokens).
+* `:log.time <activity> <duration> [note]` : Add a manual (validated) time entry, e.g. `:log.time call 20m left a voicemail` (duration accepts `30m`, `1h15m`, `1:15`, or plain minutes).
+* `:show.deadlines` : Cross-matter docket — every pending office-action response and patent maintenance fee, soonest due first (overdue/due-soon cues; `p` marks done, `x` dismisses). Opening a matter banners anything due soon.
+* `:track.renewals <patent-number>` : Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (3.5 / 7.5 / 11.5 yr). Email reminders at 2 months / 15 days / 7 days are opt-in via `PATENTMINE_REMINDER_EMAIL_*` (SMTP); the in-app docket always works. Docketing assistance — verify all dates.
 
 ### TUI Command Prompt Commands (Via `:`)
 

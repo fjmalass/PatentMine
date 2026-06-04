@@ -333,6 +333,88 @@ func CreateResponseCmd(client *rpc.Client, project domain.ProjectID) tea.Cmd {
 	}
 }
 
+// LogTimeCmd records one manual time entry (validated on entry).
+func LogTimeCmd(client *rpc.Client, project domain.ProjectID, activity domain.TimeActivity, seconds int, note string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.TimeEntryResult
+		if err := client.Call(ctx, proto.MethodTimeLog,
+			proto.TimeLogParams{Project: project, Activity: activity, Seconds: seconds, Note: note}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Log time failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Logged %s %dm", res.Entry.Activity.Label(), res.Entry.Seconds/60)}}
+	}
+}
+
+// UnvalidatedTimeCountCmd reports how many time entries await validation, so the
+// app can prompt to review them when a matter is reopened.
+func UnvalidatedTimeCountCmd(client *rpc.Client, project domain.ProjectID) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.TimeListResult
+		if err := client.Call(ctx, proto.MethodTimeUnvalidated, proto.TimeListParams{Project: project}, &res); err != nil {
+			return nil
+		}
+		return UnvalidatedTimeMsg{Project: project, Count: len(res.Entries)}
+	}
+}
+
+// UnvalidatedTimeMsg reports the count of a project's unvalidated time entries.
+type UnvalidatedTimeMsg struct {
+	Project domain.ProjectID
+	Count   int
+}
+
+// TrackRenewalsCmd derives a granted patent's U.S. maintenance-fee deadlines
+// from its grant date and records them.
+func TrackRenewalsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.DeadlineListResult
+		if err := client.Call(ctx, proto.MethodTrackRenewals,
+			proto.TrackRenewalsParams{PatentNumber: patentNumber}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Track renewals failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Tracking %d maintenance-fee deadlines for %s", len(res.Deadlines), patentNumber)}}
+	}
+}
+
+// DueDeadlineMsg reports how many pending deadlines are overdue or due soon, for
+// the in-app banner shown when a matter is opened.
+type DueDeadlineMsg struct {
+	Count   int
+	Soonest string
+}
+
+// DueDeadlineCountCmd counts pending deadlines that are overdue or due within 30
+// days, so the app can surface a banner.
+func DueDeadlineCountCmd(client *rpc.Client) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.DeadlineListResult
+		if err := client.Call(ctx, proto.MethodDeadlineList, struct{}{}, &res); err != nil {
+			return nil
+		}
+		count, soonest := 0, ""
+		for _, d := range res.Deadlines {
+			if d.DueDate.IsZero() {
+				continue
+			}
+			if days := d.DaysUntilDue(); days <= 30 {
+				count++
+				if soonest == "" {
+					soonest = d.Title
+				}
+			}
+		}
+		return DueDeadlineMsg{Count: count, Soonest: soonest}
+	}
+}
+
 // AddMatterEventCmd records one communications-log entry from the event form.
 func AddMatterEventCmd(client *rpc.Client, params proto.MatterEventAddParams) tea.Cmd {
 	return func() tea.Msg {

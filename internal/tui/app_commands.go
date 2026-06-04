@@ -1426,6 +1426,116 @@ func (a *App) cmdLogComm(invocation) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// cmdShowDeadlines opens the cross-matter deadlines docket (office-action
+// responses + patent maintenance fees).
+func (a *App) cmdShowDeadlines(invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewDeadlines(a.client, a.theme)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// cmdTrackRenewals tracks a granted patent's U.S. maintenance-fee deadlines.
+func (a *App) cmdTrackRenewals(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 1 {
+		return a.usageError(command.TrackRenewals)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.TrackRenewalsCmd(a.client, inv.args[0])
+}
+
+// cmdLogTime records a manual time entry: :log.time <activity> <duration> [note].
+func (a *App) cmdLogTime(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) < 2 {
+		return a.usageError(command.LogTime)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	activity, err := domain.ParseTimeActivity(inv.args[0])
+	if err != nil {
+		return a.usageError(command.LogTime)
+	}
+	seconds, err := parseTimeDuration(inv.args[1])
+	if err != nil {
+		return a.usageError(command.LogTime)
+	}
+	note := strings.Join(inv.args[2:], " ")
+	return a, pane.LogTimeCmd(a.client, a.activeProject.ID, activity, seconds, note)
+}
+
+// cmdValidateTime opens the review queue of unvalidated time entries.
+func (a *App) cmdValidateTime(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewTimeReview(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// cmdShowTime opens the matter's time + AI-usage summary.
+func (a *App) cmdShowTime(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewTimeSummary(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// parseTimeDuration accepts a Go duration ("30m", "1h15m"), an "H:MM" clock
+// value, or a plain integer read as minutes, and returns whole seconds.
+func parseTimeDuration(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		secs := int(d.Round(time.Second) / time.Second)
+		if secs <= 0 {
+			return 0, fmt.Errorf("non-positive duration")
+		}
+		return secs, nil
+	}
+	if h, m, ok := strings.Cut(s, ":"); ok {
+		hi, err1 := strconv.Atoi(strings.TrimSpace(h))
+		mi, err2 := strconv.Atoi(strings.TrimSpace(m))
+		if err1 == nil && err2 == nil && hi >= 0 && mi >= 0 {
+			secs := hi*3600 + mi*60
+			if secs > 0 {
+				return secs, nil
+			}
+		}
+		return 0, fmt.Errorf("invalid H:MM duration %q", s)
+	}
+	if mins, err := strconv.Atoi(s); err == nil && mins > 0 {
+		return mins * 60, nil
+	}
+	return 0, fmt.Errorf("unrecognized duration %q", s)
+}
+
 // cmdOpenComms opens the active matter's communications log.
 func (a *App) cmdOpenComms(invocation) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
@@ -1476,8 +1586,9 @@ func (a *App) cmdSetMatterType(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.SetMatterTypeCmd(a.client, a.activeProject.ID, mt)
 }
 
-// cmdOpenOfficeAction opens the active project's office-action table. Selecting
-// a row opens the split examiner-text / notes editor.
+// cmdOpenOfficeAction opens the active matter's office-action table as a pane.
+// Each row drills into the detail pane (documents · timing · communications ·
+// response); `a` imports a new office action.
 func (a *App) cmdOpenOfficeAction(invocation) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
@@ -1487,9 +1598,7 @@ func (a *App) cmdOpenOfficeAction(invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	o := overlay.NewOfficeActionList(a.client, a.theme, a.activeProject.ID)
-	a.overlays = append(a.overlays, o)
-	return a, o.Init()
+	return a.pushPane(pane.NewOfficeActions(a.client, a.theme, a.activeProject.ID).WithLogger(a.log()))
 }
 
 // handleFilePicked routes a file chosen in a FilePicker overlay to its action.

@@ -16,6 +16,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
 	"patentmine/internal/proto"
+	"patentmine/internal/remind"
 	"patentmine/internal/store"
 	"patentmine/internal/uspto"
 )
@@ -83,6 +84,8 @@ type Engine struct {
 	drafter          ai.Drafter
 	usptoAPIKey      string
 	patentsDir       string
+	notifier         remind.Notifier
+	reminderDays     []int
 
 	// changeMu guards the EventDBChanged debounce state below.
 	changeMu      sync.Mutex
@@ -164,6 +167,27 @@ func WithDrafter(d ai.Drafter) Option {
 	return func(e *Engine) { e.drafter = d }
 }
 
+// WithNotifier wires the deadline-reminder notifier (e.g. email over SMTP). The
+// default is a no-op — the in-app deadline surface is always available; email is
+// opt-in via config.
+func WithNotifier(n remind.Notifier) Option {
+	return func(e *Engine) {
+		if n != nil {
+			e.notifier = n
+		}
+	}
+}
+
+// WithReminderThresholds sets the days-before-due at which reminders fire. An
+// empty slice leaves the default (2 months / 15 days / 7 days + overdue).
+func WithReminderThresholds(days []int) Option {
+	return func(e *Engine) {
+		if len(days) > 0 {
+			e.reminderDays = days
+		}
+	}
+}
+
 // WithUSPTOSearcher wires the USPTO candidate searcher.
 func WithUSPTOSearcher(s USPTOSearcher) Option {
 	return func(e *Engine) { e.usptoSearcher = s }
@@ -196,6 +220,8 @@ func New(ctx context.Context, repo store.Repository, crawl CrawlFactory, opts ..
 		crawl:            crawl,
 		logger:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		crawlWorkerCount: crawlWorkers,
+		notifier:         remind.NoopNotifier{},
+		reminderDays:     remind.DefaultThresholds,
 	}
 	for _, opt := range opts {
 		opt(eng)

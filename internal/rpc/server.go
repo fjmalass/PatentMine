@@ -155,6 +155,16 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodMatterEventList:            s.matterEventList,
 		proto.MethodMatterEventDelete:          s.matterEventDelete,
 		proto.MethodProjectSetMatterType:       s.projectSetMatterType,
+		proto.MethodTimeLog:                    s.timeLog,
+		proto.MethodTimeList:                   s.timeList,
+		proto.MethodTimeUnvalidated:            s.timeUnvalidated,
+		proto.MethodTimeUpdate:                 s.timeUpdate,
+		proto.MethodTimeDelete:                 s.timeDelete,
+		proto.MethodTimeSummary:                s.timeSummary,
+		proto.MethodDeadlineList:               s.deadlineList,
+		proto.MethodTrackRenewals:              s.trackRenewals,
+		proto.MethodDeadlineSetStatus:          s.deadlineSetStatus,
+		proto.MethodDeadlineRemind:             s.deadlineRemind,
 	}
 	return s
 }

@@ -48,6 +48,8 @@ const (
 	ScopeFullText  Scope = "fulltext"  // full claims text viewer
 	ScopeNotes     Scope = "notes"     // all-notes listing for a project
 	ScopeOrphans   Scope = "orphans"   // database-wide list of patents with no membership
+	ScopeMatterOA  Scope = "matter_oa" // the matter's office-action table
+	ScopeMatterOADetail Scope = "matter_oa_detail" // one office action's drill-down detail
 	ScopeOverlay   Scope = "overlay"   // a modal overlay is focused
 )
 

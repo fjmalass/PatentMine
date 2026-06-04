@@ -1,0 +1,202 @@
+package overlay
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"patentmine/internal/command"
+	"patentmine/internal/domain"
+	"patentmine/internal/proto"
+	"patentmine/internal/rpc"
+	"patentmine/internal/tui/render"
+)
+
+const (
+	dlWidthPct  = 80
+	dlHeightPct = 64
+	dlMinWidth  = 70
+	dlMinHeight = 14
+)
+
+type deadlinesLoadedMsg struct {
+	items []domain.Deadline
+	err   error
+}
+
+// Deadlines is the cross-matter docket: every pending deadline — office-action
+// responses and patent maintenance fees alike — soonest due first, with an
+// overdue / due-soon cue. p marks one done (paid/filed), x dismisses it; an
+// office-action response deadline (synthesized) is closed by responding, not here.
+type Deadlines struct {
+	client *rpc.Client
+	theme  render.Theme
+
+	items   []domain.Deadline
+	cursor  int
+	loading bool
+	loadErr string
+	msg     string
+}
+
+func NewDeadlines(client *rpc.Client, theme render.Theme) *Deadlines {
+	return &Deadlines{client: client, theme: theme, loading: true}
+}
+
+func (o *Deadlines) Title() string { return "Deadlines" }
+
+func (o *Deadlines) Handles() []command.ID { return nil }
+
+func (o *Deadlines) Command(command.ID, int) (Overlay, tea.Cmd) { return o, nil }
+
+func (o *Deadlines) OverlaySize(termW, termH int) (int, int) {
+	return PctSize(termW, termH, dlWidthPct, dlHeightPct, dlMinWidth, dlMinHeight)
+}
+
+func (o *Deadlines) Init() tea.Cmd { return o.loadCmd() }
+
+func (o *Deadlines) loadCmd() tea.Cmd {
+	client := o.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var res proto.DeadlineListResult
+		err := client.Call(ctx, proto.MethodDeadlineList, struct{}{}, &res)
+		return deadlinesLoadedMsg{items: res.Deadlines, err: err}
+	}
+}
+
+func (o *Deadlines) Update(msg tea.Msg) (Overlay, tea.Cmd) {
+	if m, ok := msg.(deadlinesLoadedMsg); ok {
+		o.loading = false
+		if m.err != nil {
+			o.loadErr = m.err.Error()
+			return o, nil
+		}
+		o.items = m.items
+		o.loadErr = ""
+		if o.cursor >= len(o.items) {
+			o.cursor = max(len(o.items)-1, 0)
+		}
+	}
+	return o, nil
+}
+
+func (o *Deadlines) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if o.loading {
+		return o, nil, true
+	}
+	switch msg.Type {
+	case tea.KeyEsc:
+		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	case tea.KeyUp:
+		o.move(-1)
+		return o, nil, true
+	case tea.KeyDown:
+		o.move(1)
+		return o, nil, true
+	case tea.KeyRunes:
+		switch msg.String() {
+		case "k":
+			o.move(-1)
+		case "j":
+			o.move(1)
+		case "p":
+			return o, o.setStatus(domain.DeadlineDone), true
+		case "x":
+			return o, o.setStatus(domain.DeadlineDismissed), true
+		case "q":
+			return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+		}
+		return o, nil, true
+	}
+	return o, nil, true
+}
+
+func (o *Deadlines) move(delta int) {
+	if len(o.items) == 0 {
+		return
+	}
+	o.cursor = max(0, min(o.cursor+delta, len(o.items)-1))
+}
+
+// setStatus marks the selected deadline done/dismissed. Synthesized office-action
+// response deadlines ("oa:<id>") are not stored rows — they clear when the
+// office action is responded to — so they cannot be set here.
+func (o *Deadlines) setStatus(status domain.DeadlineStatus) tea.Cmd {
+	if o.cursor < 0 || o.cursor >= len(o.items) {
+		return nil
+	}
+	d := o.items[o.cursor]
+	if strings.HasPrefix(d.ID, "oa:") {
+		o.msg = "respond to the office action to clear its deadline"
+		return nil
+	}
+	client, id := o.client, d.ID
+	reload := o.loadCmd()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var res proto.DeadlineListResult
+		if err := client.Call(ctx, proto.MethodDeadlineSetStatus,
+			proto.DeadlineStatusParams{ID: id, Status: status}, &res); err != nil {
+			return deadlinesLoadedMsg{err: err}
+		}
+		return reload()
+	}
+}
+
+func (o *Deadlines) View(maxW, maxH int) string {
+	if o.loading {
+		return o.theme.Dim.Render("loading deadlines…")
+	}
+	if o.loadErr != "" {
+		return o.theme.Error.Render("error: " + o.loadErr)
+	}
+	if len(o.items) == 0 {
+		return o.theme.Dim.Render(render.Truncate(
+			"No pending deadlines. Track patent renewals with :track.renewals <number>.", maxW))
+	}
+
+	var b strings.Builder
+	bodyRows := max(maxH-2, 1)
+	for i := 0; i < len(o.items) && i < bodyRows; i++ {
+		d := o.items[i]
+		row := fmt.Sprintf("%-16s %-13s %s", deadlineDueLabel(d), d.Kind.Label(), d.Title)
+		cell := render.Pad(render.Truncate(row, maxW), maxW)
+		if i == o.cursor {
+			b.WriteString(o.theme.Selected.Render(cell))
+		} else {
+			b.WriteString(o.theme.Row.Render(cell))
+		}
+		b.WriteByte('\n')
+	}
+	footer := "↑/↓ move · p mark done · x dismiss · esc close"
+	if o.msg != "" {
+		footer = o.msg + " · " + footer
+	}
+	b.WriteString(o.theme.Dim.Render(render.Truncate(footer, maxW)))
+	return b.String()
+}
+
+// deadlineDueLabel renders the urgency cue for a deadline's due date.
+func deadlineDueLabel(d domain.Deadline) string {
+	if d.DueDate.IsZero() {
+		return "—"
+	}
+	days := d.DaysUntilDue()
+	date := d.DueDate.Format(domain.DateLayout)
+	switch {
+	case days < 0:
+		return "OVERDUE " + date
+	case days == 0:
+		return "TODAY " + date
+	case days <= 30:
+		return fmt.Sprintf("%dd %s", days, date)
+	default:
+		return date
+	}
+}

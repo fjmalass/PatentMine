@@ -301,14 +301,19 @@ func (s *Server) timeLog(ctx context.Context, raw json.RawMessage) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	// A typed-in entry is validated on entry.
+	// A typed-in entry is validated on entry; an editor-captured (auto) entry is
+	// recorded unvalidated for the attorney to review.
+	source, validated := domain.TimeSourceManual, true
+	if p.Auto {
+		source, validated = domain.TimeSourceAuto, false
+	}
 	entry, err := s.engine.LogTime(ctx, engine.LogTimeInput{
 		Project:        p.Project,
 		OfficeActionID: p.OfficeActionID,
 		Activity:       p.Activity,
 		Seconds:        p.Seconds,
-		Source:         domain.TimeSourceManual,
-		Validated:      true,
+		Source:         source,
+		Validated:      validated,
 		Note:           p.Note,
 	})
 	if err != nil {
@@ -378,6 +383,45 @@ func (s *Server) timeSummary(ctx context.Context, raw json.RawMessage) (any, err
 		return nil, err
 	}
 	return proto.TimeSummaryResult{Time: timeSum, AI: aiSum}, nil
+}
+
+func (s *Server) deadlineList(ctx context.Context, _ json.RawMessage) (any, error) {
+	deadlines, err := s.engine.ListDeadlines(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DeadlineListResult{Deadlines: deadlines}, nil
+}
+
+func (s *Server) trackRenewals(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TrackRenewalsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	deadlines, err := s.engine.TrackRenewals(ctx, p.PatentNumber)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DeadlineListResult{Deadlines: deadlines}, nil
+}
+
+func (s *Server) deadlineSetStatus(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.DeadlineStatusParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.SetDeadlineStatus(ctx, p.ID, p.Status); err != nil {
+		return nil, err
+	}
+	return proto.DeadlineListResult{}, nil
+}
+
+func (s *Server) deadlineRemind(ctx context.Context, _ json.RawMessage) (any, error) {
+	sent, err := s.engine.SendDueReminders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DeadlineRemindResult{Sent: sent}, nil
 }
 
 func (s *Server) projectSetMatterType(ctx context.Context, raw json.RawMessage) (any, error) {

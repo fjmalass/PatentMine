@@ -302,6 +302,26 @@ type Repository interface {
 	// SummarizeAIUsage aggregates a project's AI usage.
 	SummarizeAIUsage(ctx context.Context, project domain.ProjectID) (domain.AIUsageSummary, error)
 
+	// SaveDeadline inserts or updates one tracked deadline.
+	SaveDeadline(ctx context.Context, d domain.Deadline) error
+	// Deadline returns one deadline, or ErrNotFound.
+	Deadline(ctx context.Context, id string) (domain.Deadline, error)
+	// ListPendingDeadlines returns every pending deadline, soonest due first.
+	ListPendingDeadlines(ctx context.Context) ([]domain.Deadline, error)
+	// ListDeadlinesForPatent returns a patent's deadlines.
+	ListDeadlinesForPatent(ctx context.Context, patentNumber string) ([]domain.Deadline, error)
+	// SetDeadlineStatus marks a deadline done/dismissed/pending.
+	SetDeadlineStatus(ctx context.Context, id string, status domain.DeadlineStatus) error
+	// DeleteDeadlinesForPatent removes a patent's deadlines of one kind.
+	DeleteDeadlinesForPatent(ctx context.Context, patentNumber string, kind domain.DeadlineKind) error
+	// ListOpenOfficeActions returns office actions awaiting a response (deadline set), all projects.
+	ListOpenOfficeActions(ctx context.Context) ([]domain.OfficeAction, error)
+
+	// ReminderSent reports whether a reminder was already sent for (subject, threshold, channel).
+	ReminderSent(ctx context.Context, subject string, thresholdDays int, channel string) (bool, error)
+	// MarkReminderSent records that a reminder was sent.
+	MarkReminderSent(ctx context.Context, subject string, thresholdDays int, channel string) error
+
 	// PatentNote returns one project-scoped patent note.
 	PatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.PatentNote, error)
 	// ListPatentNotes returns all project-scoped notes sorted by date (updated_at DESC) or patent number.
