@@ -6,102 +6,102 @@ import "maps"
 // lines are keyed by ID through CmdTitle/CmdHelp and need no constant here.
 const (
 	// Status-line messages.
-	StatusWelcome                 Key = "status.welcome"
-	StatusActiveProject           Key = "status.active_project"
-	StatusActiveProjectSaveErr    Key = "status.active_project_save_err"
-	StatusClearedProject          Key = "status.cleared_project"
-	StatusProjectNotFound         Key = "status.project_not_found"
-	StatusNoPatentSelected        Key = "status.no_patent_selected"
-	StatusNoActiveProject         Key = "status.no_active_project"
-	StatusDaemonUnavailable       Key = "status.daemon_unavailable"
-	StatusNoProjectSelection      Key = "status.no_project_selection"
-	StatusNoProjectSelected       Key = "status.no_project_selected"
-	StatusUnknownCommand          Key = "status.unknown_command"
-	StatusCommandNotHere          Key = "status.command_not_here"
-	StatusUsage                   Key = "status.usage"
-	StatusUnhandledCommand        Key = "status.unhandled_command"
-	StatusInvalidPatentNumber     Key = "status.invalid_patent_number"
-	StatusGeneric                 Key = "status.generic"
-	StatusLoadingPatent           Key = "status.loading_patent"
-	StatusDaemonClosed            Key = "status.daemon_closed"
-	StatusAIAnalysisStarted       Key = "status.ai_analysis_started"
-	StatusAIAnalysisFailed        Key = "status.ai_analysis_failed"
-	StatusAIAnalysisComplete      Key = "status.ai_analysis_complete"
-	StatusCrawlProgress           Key = "status.ingest_progress"
-	StatusCrawlFailed             Key = "status.ingest_failed"
-	StatusCrawlComplete           Key = "status.ingest_complete"
-	StatusCrawlStarted            Key = "status.ingest_started"
-	StatusCrawlStartFailed        Key = "status.ingest_start_failed"
-	StatusCrawlDepthMax           Key = "status.ingest_depth_max"
-	StatusAddFailed               Key = "status.add_failed"
-	StatusAdded                   Key = "status.added"
-	StatusAddedNoCrawl            Key = "status.added_no_ingest"
-	StatusXMLFetched              Key = "status.xml_fetched"
-	StatusXMLCached               Key = "status.xml_cached"
-	StatusXMLFetchFailed          Key = "status.xml_fetch_failed"
-	StatusXMLOpenFailed           Key = "status.xml_open_failed"
-	StatusXMLOpened               Key = "status.xml_opened"
-	StatusXMLBatchStarted         Key = "status.xml_batch_started"
-	StatusXMLBatchProgress        Key = "status.xml_batch_progress"
-	StatusXMLBatchDone            Key = "status.xml_batch_done"
-	StatusAddBatchStarted         Key = "status.add_batch_started"
-	StatusAddRelatedDone          Key = "status.add_related_done"
-	StatusAddRelatedFailed        Key = "status.add_related_failed"
-	StatusAssignmentsFetched      Key = "status.assignments_fetched"
-	StatusAssignmentsFetchFailed  Key = "status.assignments_fetch_failed"
-	StatusAssignmentsBatchFetched Key = "status.assignments_batch_fetched"
-	StatusOrphanLoadFailed        Key = "status.orphan_load_failed"
-	StatusSetStateFailed          Key = "status.set_state_failed"
-	StatusSetState                Key = "status.set_state"
-	StatusIDSUpdateFailed         Key = "status.ids_update_failed"
-	StatusIDSCycled               Key = "status.ids_cycled"
-	StatusNotesAdded              Key = "status.notes_added"
-	StatusNotesFlushed            Key = "status.notes_flushed"
-	StatusNotesSavedToPatentNote  Key = "status.notes_saved_to_patent_note"
-	StatusCopiedToClipboard       Key = "status.copied_to_clipboard"
-	StatusClipboardFailed         Key = "status.clipboard_failed"
-	StatusExportFailed            Key = "status.export_failed"
-	StatusExportDone              Key = "status.export_done"
-	StatusNotesExportDone         Key = "status.notes_export_done"
-	StatusNotesExportFailed       Key = "status.notes_export_failed"
-	StatusFamilyExportDone        Key = "status.family_export_done"
-	StatusFamilyExportFailed      Key = "status.family_export_failed"
+	StatusWelcome                   Key = "status.welcome"
+	StatusActiveProject             Key = "status.active_project"
+	StatusActiveProjectSaveErr      Key = "status.active_project_save_err"
+	StatusClearedProject            Key = "status.cleared_project"
+	StatusProjectNotFound           Key = "status.project_not_found"
+	StatusNoPatentSelected          Key = "status.no_patent_selected"
+	StatusNoActiveProject           Key = "status.no_active_project"
+	StatusDaemonUnavailable         Key = "status.daemon_unavailable"
+	StatusNoProjectSelection        Key = "status.no_project_selection"
+	StatusNoProjectSelected         Key = "status.no_project_selected"
+	StatusUnknownCommand            Key = "status.unknown_command"
+	StatusCommandNotHere            Key = "status.command_not_here"
+	StatusUsage                     Key = "status.usage"
+	StatusUnhandledCommand          Key = "status.unhandled_command"
+	StatusInvalidPatentNumber       Key = "status.invalid_patent_number"
+	StatusGeneric                   Key = "status.generic"
+	StatusLoadingPatent             Key = "status.loading_patent"
+	StatusDaemonClosed              Key = "status.daemon_closed"
+	StatusAIAnalysisStarted         Key = "status.ai_analysis_started"
+	StatusAIAnalysisFailed          Key = "status.ai_analysis_failed"
+	StatusAIAnalysisComplete        Key = "status.ai_analysis_complete"
+	StatusCrawlProgress             Key = "status.ingest_progress"
+	StatusCrawlFailed               Key = "status.ingest_failed"
+	StatusCrawlComplete             Key = "status.ingest_complete"
+	StatusCrawlStarted              Key = "status.ingest_started"
+	StatusCrawlStartFailed          Key = "status.ingest_start_failed"
+	StatusCrawlDepthMax             Key = "status.ingest_depth_max"
+	StatusAddFailed                 Key = "status.add_failed"
+	StatusAdded                     Key = "status.added"
+	StatusAddedNoCrawl              Key = "status.added_no_ingest"
+	StatusXMLFetched                Key = "status.xml_fetched"
+	StatusXMLCached                 Key = "status.xml_cached"
+	StatusXMLFetchFailed            Key = "status.xml_fetch_failed"
+	StatusXMLOpenFailed             Key = "status.xml_open_failed"
+	StatusXMLOpened                 Key = "status.xml_opened"
+	StatusXMLBatchStarted           Key = "status.xml_batch_started"
+	StatusXMLBatchProgress          Key = "status.xml_batch_progress"
+	StatusXMLBatchDone              Key = "status.xml_batch_done"
+	StatusAddBatchStarted           Key = "status.add_batch_started"
+	StatusAddRelatedDone            Key = "status.add_related_done"
+	StatusAddRelatedFailed          Key = "status.add_related_failed"
+	StatusAssignmentsFetched        Key = "status.assignments_fetched"
+	StatusAssignmentsFetchFailed    Key = "status.assignments_fetch_failed"
+	StatusAssignmentsBatchFetched   Key = "status.assignments_batch_fetched"
+	StatusOrphanLoadFailed          Key = "status.orphan_load_failed"
+	StatusSetStateFailed            Key = "status.set_state_failed"
+	StatusSetState                  Key = "status.set_state"
+	StatusIDSUpdateFailed           Key = "status.ids_update_failed"
+	StatusIDSCycled                 Key = "status.ids_cycled"
+	StatusNotesAdded                Key = "status.notes_added"
+	StatusNotesFlushed              Key = "status.notes_flushed"
+	StatusNotesSavedToPatentNote    Key = "status.notes_saved_to_patent_note"
+	StatusCopiedToClipboard         Key = "status.copied_to_clipboard"
+	StatusClipboardFailed           Key = "status.clipboard_failed"
+	StatusExportFailed              Key = "status.export_failed"
+	StatusExportDone                Key = "status.export_done"
+	StatusNotesExportDone           Key = "status.notes_export_done"
+	StatusNotesExportFailed         Key = "status.notes_export_failed"
+	StatusFamilyExportDone          Key = "status.family_export_done"
+	StatusFamilyExportFailed        Key = "status.family_export_failed"
 	StatusFamilyExportPDFOpenFailed Key = "status.family_export_pdf_open_failed"
-	StatusNotesLoadFailed         Key = "status.notes_load_failed"
-	StatusNotesSorted             Key = "status.notes_sorted"
-	StatusProjectCreateFailed     Key = "status.project_create_failed"
-	StatusProjectCreated          Key = "status.project_created"
-	StatusProjectNameEmpty        Key = "status.project_name_empty"
-	StatusImportFailed            Key = "status.import_failed"
-	StatusImported                Key = "status.imported"
-	StatusAddedExportDone         Key = "status.added_export_done"
-	StatusAddedExportFailed       Key = "status.added_export_failed"
-	StatusAddedImportFailed       Key = "status.added_import_failed"
-	StatusTagFailed               Key = "status.tag_failed"
-	StatusTagged                  Key = "status.tagged"
-	StatusUntagFailed             Key = "status.untag_failed"
-	StatusUntagged                Key = "status.untagged"
-	StatusDeleteFailed            Key = "status.delete_failed"
-	StatusDeleted                 Key = "status.deleted"
-	StatusBatchDeleted            Key = "status.batch_deleted"
-	StatusClearCacheFailed        Key = "status.clear_cache_failed"
-	StatusCacheCleared            Key = "status.cache_cleared"
-	StatusAllCacheCleared         Key = "status.all_cache_cleared"
-	StatusBatchSetState           Key = "status.batch_set_state"
-	StatusBatchAdded              Key = "status.batch_added"
-	StatusFilter                  Key = "status.filter"
-	StatusBrowserOpenFailed       Key = "status.browser_open_failed"
-	StatusBrowserOpened           Key = "status.browser_opened"
-	StatusTagTaxonomyAddFailed    Key = "status.tag_taxonomy_add_failed"
-	StatusTagTaxonomyAdded        Key = "status.tag_taxonomy_added"
-	StatusTagTaxonomyDeleteFailed Key = "status.tag_taxonomy_delete_failed"
-	StatusTagTaxonomyDeleted      Key = "status.tag_taxonomy_deleted"
-	StatusTagTaxonomyListFailed   Key = "status.tag_taxonomy_list_failed"
-	StatusTagPatentAddFailed      Key = "status.tag_patent_add_failed"
-	StatusTagPatentAdded          Key = "status.tag_patent_added"
-	StatusTagPatentDeleteFailed   Key = "status.tag_patent_delete_failed"
-	StatusTagPatentDeleted        Key = "status.tag_patent_deleted"
-	StatusTagPatentListFailed     Key = "status.tag_patent_list_failed"
+	StatusNotesLoadFailed           Key = "status.notes_load_failed"
+	StatusNotesSorted               Key = "status.notes_sorted"
+	StatusProjectCreateFailed       Key = "status.project_create_failed"
+	StatusProjectCreated            Key = "status.project_created"
+	StatusProjectNameEmpty          Key = "status.project_name_empty"
+	StatusImportFailed              Key = "status.import_failed"
+	StatusImported                  Key = "status.imported"
+	StatusAddedExportDone           Key = "status.added_export_done"
+	StatusAddedExportFailed         Key = "status.added_export_failed"
+	StatusAddedImportFailed         Key = "status.added_import_failed"
+	StatusTagFailed                 Key = "status.tag_failed"
+	StatusTagged                    Key = "status.tagged"
+	StatusUntagFailed               Key = "status.untag_failed"
+	StatusUntagged                  Key = "status.untagged"
+	StatusDeleteFailed              Key = "status.delete_failed"
+	StatusDeleted                   Key = "status.deleted"
+	StatusBatchDeleted              Key = "status.batch_deleted"
+	StatusClearCacheFailed          Key = "status.clear_cache_failed"
+	StatusCacheCleared              Key = "status.cache_cleared"
+	StatusAllCacheCleared           Key = "status.all_cache_cleared"
+	StatusBatchSetState             Key = "status.batch_set_state"
+	StatusBatchAdded                Key = "status.batch_added"
+	StatusFilter                    Key = "status.filter"
+	StatusBrowserOpenFailed         Key = "status.browser_open_failed"
+	StatusBrowserOpened             Key = "status.browser_opened"
+	StatusTagTaxonomyAddFailed      Key = "status.tag_taxonomy_add_failed"
+	StatusTagTaxonomyAdded          Key = "status.tag_taxonomy_added"
+	StatusTagTaxonomyDeleteFailed   Key = "status.tag_taxonomy_delete_failed"
+	StatusTagTaxonomyDeleted        Key = "status.tag_taxonomy_deleted"
+	StatusTagTaxonomyListFailed     Key = "status.tag_taxonomy_list_failed"
+	StatusTagPatentAddFailed        Key = "status.tag_patent_add_failed"
+	StatusTagPatentAdded            Key = "status.tag_patent_added"
+	StatusTagPatentDeleteFailed     Key = "status.tag_patent_delete_failed"
+	StatusTagPatentDeleted          Key = "status.tag_patent_deleted"
+	StatusTagPatentListFailed       Key = "status.tag_patent_list_failed"
 
 	// History navigation.
 	StatusHistoryEmpty             Key = "status.history_empty"
@@ -274,6 +274,8 @@ var cmdStrings = map[string][2]string{
 	"patent.lookup":                          {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":                          {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"patent.add-file":                        {"Add patents from file", "Bulk-add every patent number listed in a plain-text file into the active project, with manual provenance — the inverse of Export added list."},
+	"officeaction.add":                       {"Add office action", "Import a USPTO Office Action document into the active project — pass a path, or run with no argument to open a file picker. The file is copied into the docs export store and hashed."},
+	"officeaction.open":                      {"Open office actions", "Open the active project's office-action table; select one to open the split examiner-text / notes editor."},
 	"project.export-added":                   {"Export added list", "Write the active project's manually-added patents to a plain-text list file that Add patents from file can reload. Give a path to write there directly (warning first if it already exists), or omit it to confirm a default location first; a result popup reports how many patents were exported and where."},
 	"source.mode":                            {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
 	"source.compare":                         {"Compare sources", "Review and reconcile differences between data sources (e.g. USPTO vs Google) for the current patent. Opens the split comparison overlay (default choice = USPTO)."},
@@ -316,101 +318,101 @@ var cmdStrings = map[string][2]string{
 
 // englishNamed is the English text for every named key.
 var englishNamed = map[Key]string{
-	StatusWelcome:                 "select a project to begin — press ? for help",
-	StatusActiveProject:           "active project: %s",
-	StatusActiveProjectSaveErr:    "active project: %s (save failed: %s)",
-	StatusClearedProject:          "cleared active project",
-	StatusProjectNotFound:         "project not found: %s",
-	StatusNoPatentSelected:        "no patent selected",
-	StatusNoActiveProject:         "select an active project first",
-	StatusDaemonUnavailable:       "daemon connection unavailable",
-	StatusNoProjectSelection:      "focused pane has no project selection",
-	StatusNoProjectSelected:       "no project selected",
-	StatusUnknownCommand:          "unknown command: %s",
-	StatusCommandNotHere:          "%s is not available here",
-	StatusUsage:                   "usage: %s",
-	StatusUnhandledCommand:        "unhandled command: %s",
-	StatusInvalidPatentNumber:     "invalid patent number: %s",
-	StatusGeneric:                 "%s",
-	StatusLoadingPatent:           "loading patent %s...",
-	StatusDaemonClosed:            "daemon connection closed",
-	StatusAIAnalysisStarted:       "AI analysis starting on patent %s via %s...",
-	StatusAIAnalysisFailed:        "AI curation failed: %s",
-	StatusAIAnalysisComplete:      "AI analysis complete for %s. Report saved in session notes.",
-	StatusCrawlProgress:           "crawl %s — depth %d/%d, crawled %d, discovered %d: %s",
-	StatusCrawlFailed:             "crawl %s failed: %s  (see activity/logs for source details)",
-	StatusCrawlComplete:           "crawl %s complete",
-	StatusCrawlStarted:            "crawl started for %s (%s) depth %d",
-	StatusCrawlStartFailed:        "crawl failed: %s",
-	StatusCrawlDepthMax:           "crawl family depth max: %d",
-	StatusAddFailed:               "add to project failed: %s  (resolution details may be in the error or activity)",
-	StatusAdded:                   "added %s to %s",
-	StatusAddedNoCrawl:            "added %s — press L to lookup",
-	StatusXMLFetched:              "downloaded %s XML to %s (%d bytes, requested %d times)",
-	StatusXMLCached:               "%s XML already on disk: %s (%d bytes, requested %d times)",
-	StatusXMLFetchFailed:          "fetch USPTO XML failed: %s",
-	StatusXMLOpenFailed:           "open XML failed: %s",
-	StatusXMLOpened:               "opened %s",
-	StatusXMLBatchStarted:         "fetching %d USPTO %s XMLs in parallel…",
-	StatusXMLBatchProgress:        "USPTO XML batch: %d/%d (cached %d, downloaded %d, failed %d)",
-	StatusXMLBatchDone:            "USPTO XML batch done: %d total — downloaded %d, cached %d, failed %d",
-	StatusAddBatchStarted:         "adding %d patents via %s in parallel…",
-	StatusAddRelatedDone:          "add.related: granted membership to %d neighbor(s) of %s",
-	StatusAddRelatedFailed:        "add.related failed: %s",
-	StatusAssignmentsFetched:      "assignments fetched for %s: %d recorded, %d parties",
-	StatusAssignmentsFetchFailed:  "fetch assignments failed: %s",
-	StatusAssignmentsBatchFetched: "assignments batch: %d fetched, %d skipped, %d failed (%d recorded)",
-	StatusOrphanLoadFailed:        "load orphan patents failed: %s",
-	StatusSetStateFailed:          "set state failed: %s",
-	StatusSetState:                "set %s to %s review state in %s",
-	StatusIDSUpdateFailed:         "IDS update failed: %s",
-	StatusIDSCycled:               "cycled IDS status for %d patent(s)",
-	StatusExportFailed:            "IDS export failed: %s",
-	StatusExportDone:              "IDS for %q: %d disclosed reference(s)",
-	StatusNotesExportDone:         "exported %d note(s) to %s",
-	StatusNotesExportFailed:       "notes export failed: %s",
-	StatusFamilyExportDone:        "exported family graph to %s",
-	StatusFamilyExportFailed:      "export family graph failed: %s",
+	StatusWelcome:                   "select a project to begin — press ? for help",
+	StatusActiveProject:             "active project: %s",
+	StatusActiveProjectSaveErr:      "active project: %s (save failed: %s)",
+	StatusClearedProject:            "cleared active project",
+	StatusProjectNotFound:           "project not found: %s",
+	StatusNoPatentSelected:          "no patent selected",
+	StatusNoActiveProject:           "select an active project first",
+	StatusDaemonUnavailable:         "daemon connection unavailable",
+	StatusNoProjectSelection:        "focused pane has no project selection",
+	StatusNoProjectSelected:         "no project selected",
+	StatusUnknownCommand:            "unknown command: %s",
+	StatusCommandNotHere:            "%s is not available here",
+	StatusUsage:                     "usage: %s",
+	StatusUnhandledCommand:          "unhandled command: %s",
+	StatusInvalidPatentNumber:       "invalid patent number: %s",
+	StatusGeneric:                   "%s",
+	StatusLoadingPatent:             "loading patent %s...",
+	StatusDaemonClosed:              "daemon connection closed",
+	StatusAIAnalysisStarted:         "AI analysis starting on patent %s via %s...",
+	StatusAIAnalysisFailed:          "AI curation failed: %s",
+	StatusAIAnalysisComplete:        "AI analysis complete for %s. Report saved in session notes.",
+	StatusCrawlProgress:             "crawl %s — depth %d/%d, crawled %d, discovered %d: %s",
+	StatusCrawlFailed:               "crawl %s failed: %s  (see activity/logs for source details)",
+	StatusCrawlComplete:             "crawl %s complete",
+	StatusCrawlStarted:              "crawl started for %s (%s) depth %d",
+	StatusCrawlStartFailed:          "crawl failed: %s",
+	StatusCrawlDepthMax:             "crawl family depth max: %d",
+	StatusAddFailed:                 "add to project failed: %s  (resolution details may be in the error or activity)",
+	StatusAdded:                     "added %s to %s",
+	StatusAddedNoCrawl:              "added %s — press L to lookup",
+	StatusXMLFetched:                "downloaded %s XML to %s (%d bytes, requested %d times)",
+	StatusXMLCached:                 "%s XML already on disk: %s (%d bytes, requested %d times)",
+	StatusXMLFetchFailed:            "fetch USPTO XML failed: %s",
+	StatusXMLOpenFailed:             "open XML failed: %s",
+	StatusXMLOpened:                 "opened %s",
+	StatusXMLBatchStarted:           "fetching %d USPTO %s XMLs in parallel…",
+	StatusXMLBatchProgress:          "USPTO XML batch: %d/%d (cached %d, downloaded %d, failed %d)",
+	StatusXMLBatchDone:              "USPTO XML batch done: %d total — downloaded %d, cached %d, failed %d",
+	StatusAddBatchStarted:           "adding %d patents via %s in parallel…",
+	StatusAddRelatedDone:            "add.related: granted membership to %d neighbor(s) of %s",
+	StatusAddRelatedFailed:          "add.related failed: %s",
+	StatusAssignmentsFetched:        "assignments fetched for %s: %d recorded, %d parties",
+	StatusAssignmentsFetchFailed:    "fetch assignments failed: %s",
+	StatusAssignmentsBatchFetched:   "assignments batch: %d fetched, %d skipped, %d failed (%d recorded)",
+	StatusOrphanLoadFailed:          "load orphan patents failed: %s",
+	StatusSetStateFailed:            "set state failed: %s",
+	StatusSetState:                  "set %s to %s review state in %s",
+	StatusIDSUpdateFailed:           "IDS update failed: %s",
+	StatusIDSCycled:                 "cycled IDS status for %d patent(s)",
+	StatusExportFailed:              "IDS export failed: %s",
+	StatusExportDone:                "IDS for %q: %d disclosed reference(s)",
+	StatusNotesExportDone:           "exported %d note(s) to %s",
+	StatusNotesExportFailed:         "notes export failed: %s",
+	StatusFamilyExportDone:          "exported family graph to %s",
+	StatusFamilyExportFailed:        "export family graph failed: %s",
 	StatusFamilyExportPDFOpenFailed: "exported family graph to %s but failed to open: %s",
-	StatusNotesLoadFailed:         "load notes failed: %s",
-	StatusNotesSorted:             "sorted by %s",
-	StatusProjectCreateFailed:     "create project failed: %s",
-	StatusProjectCreated:          "created project %s",
-	StatusProjectNameEmpty:        "project name cannot be empty",
-	StatusImportFailed:            "import failed: %s",
-	StatusImported:                "imported %s",
-	StatusAddedExportDone:         "exported %d added patent(s) to %s",
-	StatusAddedExportFailed:       "export added list failed: %s",
-	StatusAddedImportFailed:       "load patent list failed: %s",
-	StatusTagFailed:               "tag failed: %s",
-	StatusTagged:                  "tagged %s as %q in %s",
-	StatusUntagFailed:             "untag failed: %s",
-	StatusUntagged:                "removed tag %q from %s",
-	StatusDeleteFailed:            "delete failed: %s",
-	StatusDeleted:                 "deleted %s",
-	StatusBatchDeleted:            "deleted %d patents",
-	StatusClearCacheFailed:        "clear cache failed: %s",
-	StatusCacheCleared:            "cleared parsed cache for %d patent(s) (%s reclaimed)",
-	StatusAllCacheCleared:         "cleared parsed cache for all %d patent(s) (%s reclaimed)",
-	StatusBatchSetState:           "set %d patents to %s in %s",
-	StatusBatchAdded:              "added %d patents to %s",
-	StatusFilter:                  "%s",
-	StatusBrowserOpenFailed:       "open browser failed: %s",
-	StatusBrowserOpened:           "opened %d patent page(s) in browser",
-	StatusNotesAdded:              "added %s to notes buffer",
-	StatusNotesFlushed:            "flushed notes for %s to IDS: %s",
-	StatusNotesSavedToPatentNote:  "saved notes for %s to patent note",
-	StatusCopiedToClipboard:       "copied to clipboard: %d bytes",
-	StatusClipboardFailed:         "clipboard: %s",
-	StatusTagTaxonomyAddFailed:    "add tag to taxonomy failed: %s",
-	StatusTagTaxonomyAdded:        "added taxonomy tag %q to %s",
-	StatusTagTaxonomyDeleteFailed: "delete tag from taxonomy failed: %s",
-	StatusTagTaxonomyDeleted:      "deleted taxonomy tag %q from %s",
-	StatusTagTaxonomyListFailed:   "list taxonomy tags failed: %s",
-	StatusTagPatentAddFailed:      "assign tag to patent failed: %s",
-	StatusTagPatentAdded:          "assigned tag %q to patent %s",
-	StatusTagPatentDeleteFailed:   "remove tag from patent failed: %s",
-	StatusTagPatentListFailed:     "list patent tags failed: %s",
+	StatusNotesLoadFailed:           "load notes failed: %s",
+	StatusNotesSorted:               "sorted by %s",
+	StatusProjectCreateFailed:       "create project failed: %s",
+	StatusProjectCreated:            "created project %s",
+	StatusProjectNameEmpty:          "project name cannot be empty",
+	StatusImportFailed:              "import failed: %s",
+	StatusImported:                  "imported %s",
+	StatusAddedExportDone:           "exported %d added patent(s) to %s",
+	StatusAddedExportFailed:         "export added list failed: %s",
+	StatusAddedImportFailed:         "load patent list failed: %s",
+	StatusTagFailed:                 "tag failed: %s",
+	StatusTagged:                    "tagged %s as %q in %s",
+	StatusUntagFailed:               "untag failed: %s",
+	StatusUntagged:                  "removed tag %q from %s",
+	StatusDeleteFailed:              "delete failed: %s",
+	StatusDeleted:                   "deleted %s",
+	StatusBatchDeleted:              "deleted %d patents",
+	StatusClearCacheFailed:          "clear cache failed: %s",
+	StatusCacheCleared:              "cleared parsed cache for %d patent(s) (%s reclaimed)",
+	StatusAllCacheCleared:           "cleared parsed cache for all %d patent(s) (%s reclaimed)",
+	StatusBatchSetState:             "set %d patents to %s in %s",
+	StatusBatchAdded:                "added %d patents to %s",
+	StatusFilter:                    "%s",
+	StatusBrowserOpenFailed:         "open browser failed: %s",
+	StatusBrowserOpened:             "opened %d patent page(s) in browser",
+	StatusNotesAdded:                "added %s to notes buffer",
+	StatusNotesFlushed:              "flushed notes for %s to IDS: %s",
+	StatusNotesSavedToPatentNote:    "saved notes for %s to patent note",
+	StatusCopiedToClipboard:         "copied to clipboard: %d bytes",
+	StatusClipboardFailed:           "clipboard: %s",
+	StatusTagTaxonomyAddFailed:      "add tag to taxonomy failed: %s",
+	StatusTagTaxonomyAdded:          "added taxonomy tag %q to %s",
+	StatusTagTaxonomyDeleteFailed:   "delete tag from taxonomy failed: %s",
+	StatusTagTaxonomyDeleted:        "deleted taxonomy tag %q from %s",
+	StatusTagTaxonomyListFailed:     "list taxonomy tags failed: %s",
+	StatusTagPatentAddFailed:        "assign tag to patent failed: %s",
+	StatusTagPatentAdded:            "assigned tag %q to patent %s",
+	StatusTagPatentDeleteFailed:     "remove tag from patent failed: %s",
+	StatusTagPatentListFailed:       "list patent tags failed: %s",
 
 	StatusHistoryEmpty:             "history is empty",
 	StatusHistoryAtEnd:             "reached the end of history",

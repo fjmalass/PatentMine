@@ -372,6 +372,25 @@ func (e *Engine) OfficeAction(ctx context.Context, id string) (domain.OfficeActi
 	return e.repo.OfficeAction(ctx, id)
 }
 
+// SaveOfficeActionNotes replaces the attorney notes on one office action and
+// returns the updated record. The rest of the office action is left untouched.
+func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (oa domain.OfficeAction, err error) {
+	defer e.observeDuration("engine.save_office_action_notes", time.Now(), &err)
+	if id == "" {
+		return domain.OfficeAction{}, errors.New("engine: office action id required")
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	oa.Notes = notes
+	if err := e.repo.SaveOfficeAction(ctx, oa); err != nil {
+		return domain.OfficeAction{}, err
+	}
+	e.announceChange()
+	return oa, nil
+}
+
 // ListOfficeActions returns a project's office actions, newest first.
 func (e *Engine) ListOfficeActions(ctx context.Context, project domain.ProjectID) ([]domain.OfficeAction, error) {
 	return e.repo.ListOfficeActions(ctx, project)

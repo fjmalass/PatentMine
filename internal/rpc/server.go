@@ -145,6 +145,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodOfficeActionImport:         s.officeActionImport,
 		proto.MethodOfficeActionList:           s.officeActionList,
 		proto.MethodOfficeActionGet:            s.officeActionGet,
+		proto.MethodOfficeActionSaveNotes:      s.officeActionSaveNotes,
 	}
 	return s
 }

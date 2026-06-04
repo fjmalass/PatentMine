@@ -346,7 +346,6 @@ func (a *App) cmdFamilyExportMermaid(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.ExportFamilyMermaid(a.client, number, projectID, path)
 }
 
-
 func (a *App) cmdOpenIDS(invocation) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
@@ -1324,6 +1323,68 @@ func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	return a, pane.AddFileCmd(a.client, a.activeProject.ID, inv.args[0])
+}
+
+// cmdAddOfficeAction imports an Office Action document from any directory into
+// the active project. With a path argument it imports directly; with none it
+// opens a file picker rooted at the user's home directory. Either way the daemon
+// copies the file into the project's office-action store — only the path travels
+// over RPC (client and daemon share a filesystem), so the picker browses locally.
+func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) > 1 {
+		return a.usageError(command.AddOfficeAction)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	if len(inv.args) == 1 {
+		return a, pane.AddOfficeActionCmd(a.client, a.activeProject.ID, absPath(inv.args[0]))
+	}
+	start, err := os.UserHomeDir()
+	if err != nil || start == "" {
+		start = "."
+	}
+	o := overlay.NewFilePicker(a.theme, "Add Office Action", overlay.PurposeAddOfficeAction, start, []string{".pdf", ".txt"})
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// cmdOpenOfficeAction opens the active project's office-action table. Selecting
+// a row opens the split examiner-text / notes editor.
+func (a *App) cmdOpenOfficeAction(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewOfficeActionList(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// handleFilePicked routes a file chosen in a FilePicker overlay to its action.
+func (a *App) handleFilePicked(m overlay.FilePickedMsg) (tea.Model, tea.Cmd) {
+	switch m.Purpose {
+	case overlay.PurposeAddOfficeAction:
+		if a.activeProject == nil {
+			a.setErr(text.StatusNoActiveProject)
+			return a, nil
+		}
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, nil
+		}
+		return a, pane.AddOfficeActionCmd(a.client, a.activeProject.ID, m.Path)
+	}
+	return a, nil
 }
 
 // cmdExportAdded writes the active project's manually-added patents to a

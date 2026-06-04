@@ -23,7 +23,7 @@ const (
 	OpenProjects            ID = "view.projects"
 	OpenAssignees           ID = "view.assignees"
 	OpenAssigneesProject    ID = "view.assignees-project"
-	OpenAllAssigneesHistory  ID = "view.all-assignees-history"
+	OpenAllAssigneesHistory ID = "view.all-assignees-history"
 	PatentExpirationDate    ID = "patent.expiration-date"
 	OpenClassificationStats ID = "view.classification-stats"
 	OpenInventors           ID = "view.inventors"
@@ -110,19 +110,21 @@ const (
 	ClearPatentCache ID = "patent.clear-cache"
 
 	// Crawling.
-	CrawlFamily    ID = "crawl.family"
-	CrawlDepthMax  ID = "crawl.depth.max"
-	CrawlCitations ID = "crawl.citations"
-	CrawlCitedBy   ID = "crawl.citedby"
-	CrawlAll       ID = "crawl.all"
-	CrawlCancel    ID = "crawl.cancel"
-	LookupPatent   ID = "patent.lookup"
-	Import         ID = "patent.import"
-	AddFile        ID = "patent.add-file"      // bulk-add patent numbers listed in a plain-text file into the active project
-	ExportAdded    ID = "project.export-added" // write the active project's manually-added patents to a plain-text list file
-	SourceMode     ID = "source.mode"
-	SourceCompare  ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
-	SourceBibs     ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data
+	CrawlFamily      ID = "crawl.family"
+	CrawlDepthMax    ID = "crawl.depth.max"
+	CrawlCitations   ID = "crawl.citations"
+	CrawlCitedBy     ID = "crawl.citedby"
+	CrawlAll         ID = "crawl.all"
+	CrawlCancel      ID = "crawl.cancel"
+	LookupPatent     ID = "patent.lookup"
+	Import           ID = "patent.import"
+	AddFile          ID = "patent.add-file"      // bulk-add patent numbers listed in a plain-text file into the active project
+	ExportAdded      ID = "project.export-added" // write the active project's manually-added patents to a plain-text list file
+	AddOfficeAction  ID = "officeaction.add"     // import an Office Action document from any directory into the active project
+	OpenOfficeAction ID = "officeaction.open"    // open the project's office-action table (text + notes split editor)
+	SourceMode       ID = "source.mode"
+	SourceCompare    ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
+	SourceBibs       ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data
 
 	// Projects.
 	ProjectCreate      ID = "project.create"
@@ -187,5 +189,6 @@ func Default() (*Registry, error) {
 	cmds = append(cmds, classificationCommands()...)
 	cmds = append(cmds, crawlCommands()...)
 	cmds = append(cmds, projectCommands()...)
+	cmds = append(cmds, draftingCommands()...)
 	return NewRegistry(cmds...)
 }

@@ -266,7 +266,7 @@ func (r *Repo) draftClaims(ctx context.Context, id domain.DraftID) ([]domain.Dra
 }
 
 const officeActionColumns = `id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-	blob_path, blob_hash, extracted_text, source, imported_at`
+	blob_path, blob_hash, extracted_text, notes, source, imported_at`
 
 // SaveOfficeAction inserts or updates an office action by its id.
 func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (err error) {
@@ -283,8 +283,8 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO office_action
 		 (id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-		  blob_path, blob_hash, extracted_text, source, imported_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+		  blob_path, blob_hash, extracted_text, notes, source, imported_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id,
 			application_number=excluded.application_number,
@@ -295,10 +295,11 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 			blob_path=excluded.blob_path,
 			blob_hash=excluded.blob_hash,
 			extracted_text=excluded.extracted_text,
+			notes=excluded.notes,
 			source=excluded.source,
 			imported_at=excluded.imported_at`,
 		oa.ID, string(oa.Project), oa.ApplicationNumber, encodeTime(oa.MailDate), string(oa.Type),
-		oa.Examiner, oa.ArtUnit, oa.BlobPath, oa.BlobHash, oa.ExtractedText, oa.Source, encodeTime(oa.ImportedAt))
+		oa.Examiner, oa.ArtUnit, oa.BlobPath, oa.BlobHash, oa.ExtractedText, oa.Notes, oa.Source, encodeTime(oa.ImportedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save office action %s: %w", oa.ID, err)
 	}
@@ -359,7 +360,7 @@ func scanOfficeAction(s rowScanner) (domain.OfficeAction, error) {
 		importedAt string
 	)
 	if err := s.Scan(&id, &project, &oa.ApplicationNumber, &mailDate, &oaType, &oa.Examiner, &oa.ArtUnit,
-		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Source, &importedAt); err != nil {
+		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &oa.Source, &importedAt); err != nil {
 		return domain.OfficeAction{}, err
 	}
 	oa.ID = id

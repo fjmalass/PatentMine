@@ -105,3 +105,9 @@ type OfficeActionListParams struct {
 type OfficeActionIDParams struct {
 	ID string `json:"id"`
 }
+
+// OfficeActionSaveNotesParams replaces the attorney notes on one office action.
+type OfficeActionSaveNotesParams struct {
+	ID    string `json:"id"`
+	Notes string `json:"notes"`
+}

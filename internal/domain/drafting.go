@@ -289,6 +289,9 @@ type OfficeAction struct {
 	BlobPath          string    `json:"blob_path,omitempty"`
 	BlobHash          string    `json:"blob_hash,omitempty"`
 	ExtractedText     string    `json:"extracted_text,omitempty"`
-	Source            string    `json:"source,omitempty"`
-	ImportedAt        time.Time `json:"imported_at"`
+	// Notes is the attorney's free-text annotation of this office action
+	// (markdown), edited in the TUI's split view while reading the examiner text.
+	Notes      string    `json:"notes,omitempty"`
+	Source     string    `json:"source,omitempty"`
+	ImportedAt time.Time `json:"imported_at"`
 }

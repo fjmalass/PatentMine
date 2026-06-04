@@ -203,6 +203,35 @@ func ExportAddedCmd(client *rpc.Client, project domain.ProjectID, path string) t
 	}
 }
 
+// OfficeActionImportedMsg reports a successful :add.officeaction import so the
+// app can show a result modal with the new office-action id and where the
+// document was copied.
+type OfficeActionImportedMsg struct {
+	ID       string
+	Source   string // the path the user imported from
+	StoredAt string // the copy inside the docs export store
+}
+
+// AddOfficeActionCmd imports an Office Action document at path into project. The
+// daemon copies the file into the project's office-action store (hashing it) and
+// records the row; path is sent absolute so the daemon resolves the same file.
+func AddOfficeActionCmd(client *rpc.Client, project domain.ProjectID, path string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.OfficeActionResult
+		if err := client.Call(ctx, proto.MethodOfficeActionImport,
+			proto.OfficeActionImportParams{Project: project, SourcePath: path}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action import failed: " + err.Error()}, Error: true}
+		}
+		return OfficeActionImportedMsg{
+			ID:       res.OfficeAction.ID,
+			Source:   path,
+			StoredAt: res.OfficeAction.BlobPath,
+		}
+	}
+}
+
 // AddUSPTOShowCandidatesMsg is returned when a broad search yields multiple candidate wrappers.
 type AddUSPTOShowCandidatesMsg struct {
 	Project    domain.ProjectID

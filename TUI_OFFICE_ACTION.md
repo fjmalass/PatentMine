@@ -218,41 +218,61 @@ provisions the local AI path; `cargo make draft-demo` runs an end-to-end smoke
 
 ---
 
-## 7. Planned TUI integration
+## 7. TUI integration
 
-> [!IMPORTANT]
-> The commands and bindings below are the **proposed** in-TUI surface, kept
-> consistent with the existing project/IDS/tag conventions (object-first typed
-> commands like `:project.create`, `:tag.add`). They are **not yet bound** — the
-> backend, RPC, and CLI exist today; the overlays are the next step.
+All typed commands follow the **`<verb>.<object>`** convention — the same family
+as `:add.file`, `:open.notes`, and `:export.ids.pdf` — so the verb leads
+(`add` / `open` / `export`), never the object.
 
 Intended flow, mirroring the AI curation overlay (`a`) and the IDS editor (`I`):
 
 ```mermaid
 flowchart LR
-    P["Projects pane"] -->|":oa.import"| OA["Import OA overlay\n(file picker + metadata)"]
-    P -->|":oa.list"| L["Office Actions list"]
-    L -->|"enter"| R["Response editor\n(claims + remarks)"]
-    R -->|"AI draft a section"| AI["AI overlay\n(grounded, pin spans)"]
-    R -->|":draft.export"| DX["Write .docx + show path"]
+    P["any pane (active project)"] -->|":add.officeaction PATH"| OA["Import OA from any dir\n→ copied to the docs export store"]
+    P -->|":open.officeaction"| L["Office Actions table"]
+    L -->|"enter / o"| R["OA view: examiner text (read-only)\n+ notes editor (split)"]
+    R -->|"a — AI draft, grounded + pinned"| AI["Response remarks"]
+    R -->|":export.draft"| DX["Write .docx + show path"]
 ```
 
-Proposed typed commands (verb-/object-consistent with siblings):
+Typed commands (verb-first):
 
-| Proposed command | Maps to RPC | Action |
+| Command | Maps to RPC | Action |
 | --- | --- | --- |
-| `:oa.import` | `office_action.import` | Open the import overlay (file + metadata). |
-| `:oa.list` | `office_action.list` | Open the project's Office Actions list. |
-| `:draft.create` | `draft.create` | Create a draft (kind picker: provisional / nonprovisional / oa-response). |
-| `:draft.ai` | `draft.section.ai` | AI-draft the focused section, with a pin-span affordance. |
-| `:draft.export` | `draft.export.docx` | Render the focused draft to .docx. |
+| `:add.officeaction <path>` | `office_action.import` | Import an OA file from **any directory** into the active project; the file is copied into the docs export store (`<base>/<project>/office-actions/`) and hashed. |
+| `:open.officeaction` | `office_action.list` | Open the project's Office Actions table. |
+| `:add.draft <kind>` | `draft.create` | Create a draft (`provisional` / `nonprovisional` / `oa-response`). |
+| `:export.draft <id>` | `draft.export.docx` | Render a draft to .docx and report the path. |
 
-Proposed editor affordances (consistent with the IDS pane in
-[README §9.G](./README.md#g-ids-curation-pane-bindings)): cycle a claim's
-amendment status, edit base/amended text, toggle a section's pinned spans, and a
-review badge when an AI draft still has unresolved guardrail problems. Wiring a
-new command follows the standard recipe in
-[README §6](./README.md#6-tui-key-binding-architecture).
+Inside the Office Actions table (`enter` / `o`): a **split view** — the examiner
+text on the left (read-only reference), an editable **notes** buffer on the right
+— for annotating the rejection while drafting the response. AI drafting of the
+response remarks is an in-view action (`a`), grounded in the OA text with
+pin-span verbatim enforcement (see §3.2). Editor affordances mirror the IDS pane
+in [README §9.G](./README.md#g-ids-curation-pane-bindings); wiring a new command
+follows the recipe in [README §6](./README.md#6-tui-key-binding-architecture).
+
+### Status
+
+- **`:add.officeaction [path]`** — implemented. With a path it imports directly;
+  with **no argument it opens a file picker** (`bubbles/filepicker`, a modal
+  overlay) rooted at your home directory — arrow/`j`/`k` to move, `enter` to
+  open/select, `←`/`backspace` to go up, `esc` to cancel; only `.pdf`/`.txt` are
+  selectable. The chosen file is copied into the docs export store, with a result
+  notice. Because the TUI and daemon share a filesystem (unix socket), the picker
+  browses **locally** and only the **path** travels over RPC — the daemon does
+  the copy.
+- **`:open.officeaction`** — implemented. Opens the project's office-action
+  **table** (type · mail date · examiner, `✎` marks ones with notes); `↑/↓` or
+  `j/k` move, `enter` opens the selected one, `esc` closes.
+- **Split text/notes editor** — implemented. Examiner **extracted text** on the
+  left (read-only, vim-navigable), the **notes** on the right (editable, opens in
+  vim NORMAL). **`ctrl-w h`** focuses the examiner, **`ctrl-w l`** the notes,
+  **`ctrl-w w`** toggles; **`ctrl+s`** saves the notes (`office_action.save_notes`),
+  **`esc`** closes (or leaves insert mode first). Both panes are the shared
+  `vimBuffer` — full vim motions/editing, one code path.
+- **`:add.draft` / `:export.draft`** (application & response drafting in the TUI)
+  — still CLI/RPC only; in progress.
 
 ---
 

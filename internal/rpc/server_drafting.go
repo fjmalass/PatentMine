@@ -167,6 +167,18 @@ func (s *Server) officeActionGet(ctx context.Context, raw json.RawMessage) (any,
 	return proto.OfficeActionResult{OfficeAction: oa}, nil
 }
 
+func (s *Server) officeActionSaveNotes(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionSaveNotesParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	oa, err := s.engine.SaveOfficeActionNotes(ctx, p.ID, p.Notes)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionResult{OfficeAction: oa}, nil
+}
+
 // parseFlexDate accepts either an RFC3339 timestamp or a YYYY-MM-DD date, and
 // returns the zero time for an empty string.
 func parseFlexDate(s string) (time.Time, error) {

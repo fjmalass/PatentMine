@@ -496,41 +496,81 @@ description = "Full check: formatting, vet, lint, tests."
 dependencies = ["fmt-check", "vet", "lint", "test"]
 
 [tasks.ollama-setup]
-description = "Install Ollama and pull the mistral LLM model."
+description = "Install Ollama, start the server, and pull the model — failing loudly if any step does not take."
 script = '''
+# set -e aborts on the first failing command, so the task cannot report success
+# when a step actually failed. The download is fetched to a file first (curl -f
+# fails on HTTP errors) rather than piped into sh, so a broken download aborts
+# instead of being masked by sh's exit code.
+set -e
+
+command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required to install Ollama."; exit 1; }
+
+# 1. Install (idempotent).
+if command -v ollama >/dev/null 2>&1; then
+  echo "Ollama already installed: $(ollama --version 2>/dev/null | head -1)"
+else
+  echo "Installing Ollama..."
+  installer="$(mktemp)"
+  curl -fsSL https://ollama.com/install.sh -o "$installer"
+  sh "$installer"
+  rm -f "$installer"
+fi
+
+# 2. Make sure the binary is actually on PATH now (else the install did not take).
 if ! command -v ollama >/dev/null 2>&1; then
-  echo "Ollama is not installed. Installing Ollama..."
-  curl -fsSL https://ollama.com/install.sh | sh
-else
-  echo "Ollama is already installed."
+  echo "ERROR: 'ollama' is not on PATH after install."
+  echo "The installer usually puts it in /usr/local/bin — open a new shell (or add it to PATH) and re-run 'cargo make ollama-setup'."
+  exit 1
 fi
 
-echo "Starting Ollama service (if not already running)..."
-if command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-active --quiet ollama; then
-    echo "Ollama service is active."
+# 3. Start the server if it is not already answering.
+if ! curl -fsS http://localhost:11434/ >/dev/null 2>&1; then
+  echo "Starting the Ollama server..."
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q '^ollama'; then
+    sudo systemctl enable --now ollama || true
   else
-    echo "Starting Ollama via systemd..."
-    sudo systemctl daemon-reload
-    sudo systemctl enable ollama
-    sudo systemctl start ollama
+    # No systemd (e.g. WSL without systemd) — start it detached.
+    nohup ollama serve >/tmp/ollama-serve.log 2>&1 &
   fi
-else
-  echo "systemd not detected. Please ensure 'ollama serve' is running in the background."
 fi
 
-echo "Waiting for Ollama to be ready..."
-for i in $(seq 1 10); do
-  if curl -s http://localhost:11434 >/dev/null; then
-    echo "Ollama is up and running!"
-    break
-  fi
+# 4. Wait for readiness, and FAIL if it never comes up.
+echo "Waiting for the Ollama server on http://localhost:11434 ..."
+ready=0
+for i in $(seq 1 30); do
+  if curl -fsS http://localhost:11434/ >/dev/null 2>&1; then ready=1; break; fi
   sleep 1
 done
+if [ "$ready" -ne 1 ]; then
+  echo "ERROR: Ollama server did not become ready."
+  echo "Check /tmp/ollama-serve.log, or run 'ollama serve' in another terminal, then re-run this task."
+  exit 1
+fi
 
-echo "Pulling the mistral LLM model..."
-ollama pull mistral
-echo "Ollama and mistral LLM are successfully configured!"
+# 5. Pull the model (honors OLLAMA_MODEL; defaults to the app default, mistral).
+model="${OLLAMA_MODEL:-mistral}"
+echo "Pulling model: $model"
+ollama pull "$model"
+
+# 6. The real "make sure": confirm the model is present after the pull.
+if ollama list | grep -q "$model"; then
+  echo "OK: Ollama is installed and model '$model' is ready for drafting."
+else
+  echo "ERROR: model '$model' is not present after pull."
+  exit 1
+fi
+'''
+
+[tasks.ollama-check]
+description = "Verify (without installing) that Ollama is installed, the server is up, and the model is pulled."
+script = '''
+set -e
+model="${OLLAMA_MODEL:-mistral}"
+command -v ollama >/dev/null 2>&1 || { echo "FAIL: ollama is not installed. Run: cargo make ollama-setup"; exit 1; }
+curl -fsS http://localhost:11434/ >/dev/null 2>&1 || { echo "FAIL: Ollama server is not reachable on http://localhost:11434. Start it: ollama serve"; exit 1; }
+ollama list | grep -q "$model" || { echo "FAIL: model '$model' is not pulled. Run: ollama pull $model"; exit 1; }
+echo "OK: ollama installed, server up, model '$model' present."
 '''
 
 [tasks.ollama-update]

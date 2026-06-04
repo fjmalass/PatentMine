@@ -763,6 +763,7 @@ CREATE TABLE IF NOT EXISTS office_action (
     blob_path          TEXT NOT NULL DEFAULT '',
     blob_hash          TEXT NOT NULL DEFAULT '',
     extracted_text     TEXT NOT NULL DEFAULT '',
+    notes              TEXT NOT NULL DEFAULT '',
     source             TEXT NOT NULL DEFAULT '',
     imported_at        TEXT NOT NULL DEFAULT ''
 );

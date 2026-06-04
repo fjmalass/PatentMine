@@ -128,6 +128,15 @@ func TestOfficeActionRoundTripAndDraftLink(t *testing.T) {
 		t.Errorf("office action round-trip wrong: %+v", got)
 	}
 
+	// Notes round-trip: save notes via re-upsert and confirm they persist.
+	got.Notes = "Smith is distinguishable; emphasize the coating."
+	if err := repo.SaveOfficeAction(ctx, got); err != nil {
+		t.Fatalf("SaveOfficeAction notes: %v", err)
+	}
+	if reloaded, err := repo.OfficeAction(ctx, "oa1"); err != nil || reloaded.Notes != got.Notes {
+		t.Fatalf("notes round-trip wrong: %q (err %v)", reloaded.Notes, err)
+	}
+
 	// A response draft links to the office action.
 	if err := repo.SaveDraft(ctx, domain.Draft{
 		ID: "resp", Project: "proj1", Kind: domain.DraftOAResponse, OfficeActionID: "oa1",

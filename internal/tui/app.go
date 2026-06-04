@@ -171,6 +171,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.Import:                     (*App).cmdImport,
 	command.AddFile:                    (*App).cmdAddFile,
 	command.ExportAdded:                (*App).cmdExportAdded,
+	command.AddOfficeAction:            (*App).cmdAddOfficeAction,
+	command.OpenOfficeAction:           (*App).cmdOpenOfficeAction,
 	command.SourceMode:                 (*App).cmdSourceMode,
 	command.SourceCompare:              (*App).cmdSourceCompare,
 	command.SourceBibs:                 (*App).cmdSourceBibs,
@@ -198,7 +200,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.SettingsAI:                 (*App).cmdSettingsAI,
 	command.OpenAssignees:              (*App).cmdOpenAssignees,
 	command.OpenAssigneesProject:       (*App).cmdOpenAssigneesProject,
-	command.OpenAllAssigneesHistory:     (*App).cmdOpenAllAssigneesHistory,
+	command.OpenAllAssigneesHistory:    (*App).cmdOpenAllAssigneesHistory,
 	command.PatentExpirationDate:       (*App).cmdPatentExpirationDate,
 	command.OpenClassificationStats:    (*App).cmdOpenClassificationStats,
 	command.OpenInventors:              (*App).cmdOpenInventors,
@@ -222,6 +224,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.Import:                  true,
 	command.AddFile:                 true,
 	command.ExportAdded:             true,
+	command.AddOfficeAction:         true,
 	command.FamilyExportMermaid:     true,
 	command.FetchAssignmentsProject: true,
 	command.SourceMode:              true,
@@ -277,22 +280,22 @@ type App struct {
 	focusStarted  time.Time
 	focusRecorded bool
 
-	aiProvider       ai.Provider
-	geminiAPIKey     string
-	ollamaHost       string
-	ollamaModel      string
-	aiTargetPatent   domain.Patent
-	usptoAPIKey      string
-	xmlBatch         *xmlBatchState
-	usptoConfigured  bool
+	aiProvider                ai.Provider
+	geminiAPIKey              string
+	ollamaHost                string
+	ollamaModel               string
+	aiTargetPatent            domain.Patent
+	usptoAPIKey               string
+	xmlBatch                  *xmlBatchState
+	usptoConfigured           bool
 	usptoConnection           serviceConnectionState
 	usptoAssignmentsActivated bool
 	backupConfigured          bool
-	backupConnection serviceConnectionState
-	backupBucket     string
-	backupRemote     string
-	geminiAnalyzer   ai.Analyzer
-	ollamaAnalyzer   ai.Analyzer
+	backupConnection          serviceConnectionState
+	backupBucket              string
+	backupRemote              string
+	geminiAnalyzer            ai.Analyzer
+	ollamaAnalyzer            ai.Analyzer
 
 	notesExportDir string
 	revertPatent   domain.PatentNumber
@@ -815,6 +818,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.TextSubmitMsg:
 		a.popOverlay()
 		return a.handleTextSubmit(m)
+	case overlay.FilePickedMsg:
+		a.popOverlay()
+		return a.handleFilePicked(m)
+	case overlay.OpenOfficeActionMsg:
+		// Open the split editor on top of the list, so closing it returns there.
+		a.overlays = append(a.overlays, overlay.NewOfficeActionEditor(a.client, a.theme, m.OA))
+		return a, nil
 	case overlay.IDSHeaderSubmitMsg:
 		a.popOverlay()
 		return a.handleIDSHeaderSubmit(m.Project)
@@ -1036,6 +1046,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.log().Info("added list exported",
 			slog.Int("count", m.Count),
 			slog.String("path", m.Path))
+		return a, nil
+	case pane.OfficeActionImportedMsg:
+		lines := []string{
+			"Imported office action " + m.ID,
+			"From:",
+			"  " + m.Source,
+		}
+		if m.StoredAt != "" {
+			lines = append(lines, "Copied to:", "  "+m.StoredAt)
+		}
+		a.overlays = append(a.overlays, overlay.NewNoticeOverlay(a.theme, "Office Action Imported", lines))
+		a.metrics.IncCounter("tui.officeaction.import.done", 1)
+		a.log().Info("office action imported",
+			slog.String("id", m.ID),
+			slog.String("source", m.Source),
+			slog.String("stored_at", m.StoredAt))
 		return a, nil
 	case pane.AddedImportDoneMsg:
 		lines := []string{

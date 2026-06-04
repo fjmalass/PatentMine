@@ -153,6 +153,10 @@ func (r *Repo) initSchema(ctx context.Context) error {
 	// databases created before they were added to schema.sql.
 	_ = r.ensureExpirationColumns(ctx)
 
+	// Best-effort: ensure office_action.notes exists for a v7 database created
+	// before the attorney-notes column was added.
+	_ = r.ensureOfficeActionNotesColumn(ctx)
+
 	// Best-effort: drop redundant uspto_xml_download.source_url for databases
 	// created before it was removed. The URL is derived from uspto_application
 	// at call time so the column is dead weight; an ALTER DROP COLUMN is safe.
@@ -195,6 +199,21 @@ func (r *Repo) ensureReconciledColumns(ctx context.Context) error {
 				return fmt.Errorf("ensure reconciled columns: %w", err)
 			}
 		}
+	}
+	return nil
+}
+
+// ensureOfficeActionNotesColumn adds office_action.notes if it is missing on a
+// v7 database created before the column existed. Non-fatal; "duplicate column"
+// (and "no such table", for a pre-v7 DB) are swallowed.
+func (r *Repo) ensureOfficeActionNotesColumn(ctx context.Context) error {
+	if _, err := r.writer.ExecContext(ctx,
+		`ALTER TABLE office_action ADD COLUMN notes TEXT NOT NULL DEFAULT ''`); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "no such table") {
+			return nil
+		}
+		return fmt.Errorf("ensure office_action.notes: %w", err)
 	}
 	return nil
 }
