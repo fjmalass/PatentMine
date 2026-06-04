@@ -317,6 +317,7 @@ type App struct {
 	notesExportDir string
 	revertPatent   domain.PatentNumber
 	sourceMode     string
+	lastPickerDirs map[string]string // key: projectID + ":" + purpose, value: last directory path
 }
 
 // xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
@@ -498,17 +499,18 @@ func New(client *rpc.Client, registry *command.Registry, keymaps *keymap.Keymaps
 		return nil, err
 	}
 	app := &App{
-		client:        client,
-		registry:      registry,
-		keymaps:       keymaps,
-		hints:         hints,
-		theme:         theme,
-		text:          catalog,
-		tuiVersion:    appversion.String(),
-		daemonVersion: "connecting",
-		openURL:       openExternalURL,
-		notes:         newNotesAccumulator(),
-		activityMin:   100 * time.Millisecond,
+		client:         client,
+		registry:       registry,
+		keymaps:        keymaps,
+		hints:          hints,
+		theme:          theme,
+		text:           catalog,
+		tuiVersion:     appversion.String(),
+		daemonVersion:  "connecting",
+		openURL:        openExternalURL,
+		notes:          newNotesAccumulator(),
+		activityMin:    100 * time.Millisecond,
+		lastPickerDirs: make(map[string]string),
 	}
 	app.status = catalog.T(text.StatusWelcome)
 	for _, opt := range opts {
@@ -845,9 +847,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.OfficeActionImportSubmitMsg:
 		a.popOverlay()
 		return a, pane.ImportOfficeActionCmd(a.client, m.Params)
+	case overlay.OfficeActionEditSubmitMsg:
+		a.popOverlay()
+		return a, pane.UpdateOfficeActionCmd(a.client, m.Params)
+	case overlay.OfficeActionDeleteConfirmMsg:
+		a.popOverlay()
+		return a, pane.DeleteOfficeActionCmd(a.client, m.OA.ID, m.DeleteFiles)
 	case overlay.OpenDocumentTextMsg:
 		// Open a read-only viewer on top of the document list.
 		a.overlays = append(a.overlays, overlay.NewTextViewer(a.theme, m.Title, m.Text))
+		return a, nil
+	case overlay.OpenDocumentFileMsg:
+		if m.Path != "" {
+			_ = openExternalURL(m.Path)
+		}
 		return a, nil
 	case pane.OpenResponseEditorMsg:
 		a.overlays = append(a.overlays, overlay.NewResponseEditor(a.client, a.theme, m.Draft, m.Docs))
@@ -873,6 +886,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.pushPane(pane.NewOfficeActionDetail(a.client, a.theme, m.OA).WithLogger(a.log()))
 	case pane.OpenOfficeActionEditorMsg:
 		a.overlays = append(a.overlays, overlay.NewOfficeActionEditor(a.client, a.theme, m.OA))
+		return a, nil
+	case pane.OpenOfficeActionEditFormMsg:
+		a.overlays = append(a.overlays, overlay.NewOfficeActionEditForm(a.theme, m.OA.Project, m.OA))
+		return a, nil
+	case pane.RequestDeleteOfficeActionMsg:
+		a.overlays = append(a.overlays, overlay.NewOfficeActionDeleteConfirm(a.theme, m.OA))
 		return a, nil
 	case overlay.IDSHeaderSubmitMsg:
 		a.popOverlay()

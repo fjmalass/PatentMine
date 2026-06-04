@@ -356,6 +356,9 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 		if oa.ExtractedText == "" {
 			oa.ExtractedText = extractDocText(path)
 		}
+		if oa.ExtractedText != "" {
+			saveExtractedTextFile(oa.BlobPath, oa.ExtractedText)
+		}
 	}
 
 	if err := e.repo.SaveOfficeAction(ctx, oa); err != nil {
@@ -419,6 +422,62 @@ func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (o
 	if err := e.repo.SaveOfficeAction(ctx, oa); err != nil {
 		return domain.OfficeAction{}, err
 	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionUpdate,
+		Entity:   "office_action",
+		EntityID: oa.ID,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project": string(oa.Project),
+			"notes":   true,
+		},
+	})
+	e.announceChange()
+	return oa, nil
+}
+
+// UpdateOfficeActionMeta updates an office action's metadata and recomputes its response due date.
+func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, examiner, mailDateStr string, oaType domain.OAType, artUnit, appNumber string) (oa domain.OfficeAction, err error) {
+	defer e.observeDuration("engine.update_office_action_meta", time.Now(), &err)
+	if id == "" {
+		return domain.OfficeAction{}, errors.New("engine: office action id required")
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+
+	mailDate, err := time.Parse(domain.DateLayout, mailDateStr)
+	if err != nil {
+		return domain.OfficeAction{}, fmt.Errorf("engine: invalid mail date format %q: %w", mailDateStr, err)
+	}
+
+	if !oaType.Valid() {
+		return domain.OfficeAction{}, fmt.Errorf("engine: invalid office action type %q", oaType)
+	}
+
+	oa.Examiner = examiner
+	oa.MailDate = mailDate
+	oa.Type = oaType
+	oa.ArtUnit = artUnit
+	oa.ApplicationNumber = appNumber
+	oa.ResponseDue = domain.ResponseDeadline(mailDate, oaType)
+
+	if err := e.repo.SaveOfficeAction(ctx, oa); err != nil {
+		return domain.OfficeAction{}, err
+	}
+
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionUpdate,
+		Entity:   "office_action",
+		EntityID: oa.ID,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project":   string(oa.Project),
+			"type":      string(oa.Type),
+			"mail_date": oa.MailDate.Format(domain.DateLayout),
+		},
+	})
 	e.announceChange()
 	return oa, nil
 }
@@ -488,6 +547,9 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 	doc.BlobPath = stored
 	doc.BlobHash = hash
 	doc.ExtractedText = extractDocText(path)
+	if doc.ExtractedText != "" {
+		saveExtractedTextFile(doc.BlobPath, doc.ExtractedText)
+	}
 
 	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
 		return domain.MatterDocument{}, err
@@ -501,6 +563,7 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 			"project":       string(in.Project),
 			"kind":          string(kind),
 			"office_action": in.OfficeActionID,
+			"name":          doc.DisplayName,
 		},
 	})
 	e.announceChange()
@@ -535,8 +598,14 @@ func (e *Engine) RenameMatterDocument(ctx context.Context, id, name string) (doc
 		return domain.MatterDocument{}, err
 	}
 	e.recordActivity(ctx, observability.Record{
-		Action: observability.ActionMatterDocumentRename, Entity: "matter_document",
-		EntityID: id, Status: "committed",
+		Action:   observability.ActionMatterDocumentRename,
+		Entity:   "matter_document",
+		EntityID: id,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project": string(doc.Project),
+			"name":    doc.DisplayName,
+		},
 	})
 	e.announceChange()
 	return doc, nil
@@ -565,11 +634,56 @@ func (e *Engine) DeleteMatterDocument(ctx context.Context, id string) (err error
 		}
 	}
 	e.recordActivity(ctx, observability.Record{
-		Action: observability.ActionMatterDocumentDelete, Entity: "matter_document",
-		EntityID: id, Status: "committed",
+		Action:   observability.ActionMatterDocumentDelete,
+		Entity:   "matter_document",
+		EntityID: id,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project": string(doc.Project),
+			"name":    doc.DisplayName,
+		},
 	})
 	e.announceChange()
 	return nil
+}
+
+func (e *Engine) DeleteOfficeAction(ctx context.Context, id string, deleteFiles bool) (oa domain.OfficeAction, err error) {
+	defer e.observeDuration("engine.delete_office_action", time.Now(), &err)
+	if id == "" {
+		return domain.OfficeAction{}, errors.New("engine: office action id required")
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+
+	if err := e.repo.DeleteOfficeAction(ctx, id); err != nil {
+		return domain.OfficeAction{}, err
+	}
+
+	_ = e.repo.DeleteMatterDocument(ctx, "mdoc-"+oa.ID)
+
+	if deleteFiles && oa.BlobPath != "" && e.docsExportDir != "" {
+		oaDir := filepath.Join(e.docsExportDir, sanitizeProjectID(string(oa.Project)), "office-actions")
+		if strings.HasPrefix(oa.BlobPath, oaDir+string(os.PathSeparator)) {
+			_ = os.Remove(oa.BlobPath)
+			if extPath := extractedTextPath(oa.BlobPath); extPath != "" {
+				_ = os.Remove(extPath)
+			}
+		}
+	}
+
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionDelete,
+		Entity:   "office_action",
+		EntityID: oa.ID,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project": string(oa.Project),
+		},
+	})
+	e.announceChange()
+	return oa, nil
 }
 
 // ExtractDocumentText (re-)derives a document's plain text with the configured
@@ -591,48 +705,82 @@ func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain
 	if doc.BlobPath == "" {
 		return domain.MatterDocument{}, errors.New("engine: document has no stored file to extract")
 	}
+
 	extractor, ok := e.drafter.(ai.Extractor)
 	if !ok {
 		return domain.MatterDocument{}, errors.New("engine: AI text extraction is not available with the configured provider (set a Gemini API key)")
 	}
-	data, err := os.ReadFile(doc.BlobPath)
-	if err != nil {
-		return domain.MatterDocument{}, fmt.Errorf("engine: read document file: %w", err)
+
+	var text string
+	extPath := extractedTextPath(doc.BlobPath)
+	if extPath != "" {
+		if diskData, err := os.ReadFile(extPath); err == nil && len(diskData) > 0 {
+			text = string(diskData)
+		}
 	}
-	aiStart := time.Now()
-	text, err := extractor.ExtractText(ctx, data, mimeForPath(doc.BlobPath))
-	if err != nil {
-		return domain.MatterDocument{}, fmt.Errorf("engine: extract document text: %w", err)
+
+	if text == "" {
+		data, err := os.ReadFile(doc.BlobPath)
+		if err != nil {
+			return domain.MatterDocument{}, fmt.Errorf("engine: read document file: %w", err)
+		}
+		aiStart := time.Now()
+		text, err = extractor.ExtractText(ctx, data, mimeForPath(doc.BlobPath))
+		if err != nil {
+			return domain.MatterDocument{}, fmt.Errorf("engine: extract document text: %w", err)
+		}
+		aiElapsed := time.Since(aiStart)
+		if strings.TrimSpace(text) == "" {
+			return domain.MatterDocument{}, errors.New("engine: no text could be extracted from the document")
+		}
+		doc.ExtractedText = text
+		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+			return domain.MatterDocument{}, err
+		}
+		saveExtractedTextFile(doc.BlobPath, text)
+
+		provider, model := string(extractor.Provider()), extractor.Model()
+		e.recordActivity(ctx, observability.Record{
+			Action:   observability.ActionMatterDocumentExtract,
+			Entity:   "matter_document",
+			EntityID: doc.ID,
+			Status:   "committed",
+			Attributes: map[string]any{
+				"project":  string(doc.Project),
+				"provider": provider,
+				"model":    model,
+				"chars":    len(text),
+				"name":     doc.DisplayName,
+			},
+		})
+		e.log(ctx, slog.LevelInfo, "extracted document text with AI",
+			slog.String("document_id", doc.ID),
+			slog.String("provider", provider),
+			slog.String("model", model),
+			slog.Int("chars", len(text)))
+		e.recordAICall(ctx, doc.Project, doc.OfficeActionID, "", provider, model, aiElapsed)
+	} else {
+		doc.ExtractedText = text
+		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+			return domain.MatterDocument{}, err
+		}
+		e.recordActivity(ctx, observability.Record{
+			Action:   observability.ActionMatterDocumentExtract,
+			Entity:   "matter_document",
+			EntityID: doc.ID,
+			Status:   "committed",
+			Attributes: map[string]any{
+				"project": string(doc.Project),
+				"source":  "filesystem_cache",
+				"chars":   len(text),
+				"name":    doc.DisplayName,
+			},
+		})
+		e.log(ctx, slog.LevelInfo, "loaded extracted document text from filesystem cache",
+			slog.String("document_id", doc.ID),
+			slog.Int("chars", len(text)))
 	}
-	aiElapsed := time.Since(aiStart)
-	if strings.TrimSpace(text) == "" {
-		return domain.MatterDocument{}, errors.New("engine: no text could be extracted from the document")
-	}
-	doc.ExtractedText = text
-	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
-		return domain.MatterDocument{}, err
-	}
-	provider, model := string(extractor.Provider()), extractor.Model()
-	// Activity record (persisted, billable provenance) + a log line for the
-	// external AI call. TODO(slice 4): also write an ai_usage row with tokens.
-	e.recordActivity(ctx, observability.Record{
-		Action:   observability.ActionMatterDocumentExtract,
-		Entity:   "matter_document",
-		EntityID: doc.ID,
-		Status:   "committed",
-		Attributes: map[string]any{
-			"project":  string(doc.Project),
-			"provider": provider,
-			"model":    model,
-			"chars":    len(text),
-		},
-	})
-	e.log(ctx, slog.LevelInfo, "extracted document text with AI",
-		slog.String("document_id", doc.ID),
-		slog.String("provider", provider),
-		slog.String("model", model),
-		slog.Int("chars", len(text)))
-	e.recordAICall(ctx, doc.Project, doc.OfficeActionID, "", provider, model, aiElapsed)
+
 	e.announceChange()
 	return doc, nil
 }
@@ -950,10 +1098,29 @@ func (e *Engine) recordAICall(ctx context.Context, project domain.ProjectID, oaI
 	}
 }
 
+func extractedTextPath(blobPath string) string {
+	if blobPath == "" {
+		return ""
+	}
+	return strings.TrimSuffix(blobPath, filepath.Ext(blobPath)) + "_extracted.txt"
+}
+
+func saveExtractedTextFile(blobPath, text string) {
+	if blobPath == "" || text == "" {
+		return
+	}
+	_ = os.WriteFile(extractedTextPath(blobPath), []byte(text), 0644)
+}
+
 // extractDocText returns the plain text of a local document for reading and
 // grounding: a text source is read inline, a PDF is run through the extractor,
 // and anything else (or an unreadable file) yields an empty string.
 func extractDocText(path string) string {
+	if extPath := extractedTextPath(path); extPath != "" {
+		if data, err := os.ReadFile(extPath); err == nil {
+			return string(data)
+		}
+	}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".txt", ".md", ".text":
 		if data, err := os.ReadFile(path); err == nil {

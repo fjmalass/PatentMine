@@ -99,7 +99,14 @@ func IsHistoryFeedAction(action string) bool {
 		ActionNotesExport,
 		ActionNotesSave,
 		ActionNotesDelete,
-		ActionUIClearCache:
+		ActionUIClearCache,
+		ActionOfficeActionImport,
+		ActionOfficeActionUpdate,
+		ActionOfficeActionDelete,
+		ActionMatterDocumentImport,
+		ActionMatterDocumentRename,
+		ActionMatterDocumentDelete,
+		ActionMatterDocumentExtract:
 		return true
 	default:
 		return false
@@ -132,7 +139,14 @@ func historyFeedPreservesEveryRecord(rec Record) bool {
 		ActionNotesDelete,
 		ActionSourceCompareOpen,
 		ActionSourceDiffsLoad,
-		ActionSourceResolveDiffs:
+		ActionSourceResolveDiffs,
+		ActionOfficeActionImport,
+		ActionOfficeActionUpdate,
+		ActionOfficeActionDelete,
+		ActionMatterDocumentImport,
+		ActionMatterDocumentRename,
+		ActionMatterDocumentDelete,
+		ActionMatterDocumentExtract:
 		return true
 	default:
 		return false

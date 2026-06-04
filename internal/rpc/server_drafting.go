@@ -179,6 +179,36 @@ func (s *Server) officeActionSaveNotes(ctx context.Context, raw json.RawMessage)
 	return proto.OfficeActionResult{OfficeAction: oa}, nil
 }
 
+func (s *Server) officeActionUpdate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionUpdateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	mailDate, err := parseFlexDate(p.MailDate)
+	if err != nil {
+		return nil, fmt.Errorf("%w: mail_date: %v", ErrBadParams, err)
+	}
+	mailDateStr := mailDate.Format(domain.DateLayout)
+
+	oa, err := s.engine.UpdateOfficeActionMeta(ctx, p.ID, p.Examiner, mailDateStr, p.Type, p.ArtUnit, p.ApplicationNumber)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionResult{OfficeAction: oa}, nil
+}
+
+func (s *Server) officeActionDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionDeleteParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	oa, err := s.engine.DeleteOfficeAction(ctx, p.ID, p.DeleteFiles)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionResult{OfficeAction: oa}, nil
+}
+
 func (s *Server) matterDocumentImport(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.MatterDocumentImportParams](raw)
 	if err != nil {

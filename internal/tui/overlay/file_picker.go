@@ -48,11 +48,15 @@ type FilePicker struct {
 	purpose Purpose
 	allowed []string // selectable file extensions (lowercase, with dot); empty = any
 
-	dir     string
-	entries []fileEntry
-	cursor  int
-	offset  int
-	err     string
+	dir        string
+	rawEntries []fileEntry
+	entries    []fileEntry
+	cursor     int
+	offset     int
+	err        string
+
+	showSearch  bool
+	searchQuery string
 }
 
 // NewFilePicker builds a browser rooted at startDir. allowedTypes restricts
@@ -74,6 +78,10 @@ func NewFilePicker(theme render.Theme, title string, purpose Purpose, startDir s
 
 func (o *FilePicker) Title() string { return o.title }
 
+func (o *FilePicker) Dir() string { return o.dir }
+
+func (o *FilePicker) Purpose() Purpose { return o.purpose }
+
 // Handles returns nil: the picker consumes its keys via HandleKey and binds no
 // catalog commands, so it needs no entry in the wiring validator.
 func (o *FilePicker) Handles() []command.ID { return nil }
@@ -91,7 +99,8 @@ func (o *FilePicker) load() {
 	entries, err := os.ReadDir(o.dir)
 	if err != nil {
 		o.err = err.Error()
-		o.entries = []fileEntry{{name: "..", isDir: true}}
+		o.rawEntries = []fileEntry{{name: "..", isDir: true}}
+		o.filter()
 		return
 	}
 	var dirs, files []fileEntry
@@ -113,7 +122,214 @@ func (o *FilePicker) load() {
 	}
 	byName(dirs)
 	byName(files)
-	o.entries = append([]fileEntry{{name: "..", isDir: true}}, append(dirs, files...)...)
+	o.rawEntries = append([]fileEntry{{name: "..", isDir: true}}, append(dirs, files...)...)
+	o.filter()
+}
+
+func (o *FilePicker) filter() {
+	if o.searchQuery == "" {
+		o.entries = o.rawEntries
+	} else {
+		o.entries = nil
+		q := strings.ToLower(o.searchQuery)
+		for _, e := range o.rawEntries {
+			if e.name == ".." {
+				o.entries = append(o.entries, e)
+				continue
+			}
+			if strings.Contains(strings.ToLower(e.name), q) {
+				o.entries = append(o.entries, e)
+			}
+		}
+	}
+	if o.cursor >= len(o.entries) {
+		o.cursor = max(len(o.entries)-1, 0)
+	}
+}
+
+func (o *FilePicker) activateQuery() (tea.Cmd, bool) {
+	cleanedQuery := strings.TrimSpace(o.searchQuery)
+	if cleanedQuery == "" {
+		return nil, false
+	}
+	path := cleanedQuery
+	if strings.HasPrefix(path, "~") {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, path[1:])
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(o.dir, path)
+	}
+
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			o.dir = path
+			o.searchQuery = ""
+			o.showSearch = false
+			o.load()
+			return nil, true
+		} else {
+			if o.allows(path) {
+				purpose := o.purpose
+				return func() tea.Msg { return FilePickedMsg{Purpose: purpose, Path: path} }, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (o *FilePicker) complete() {
+	if o.searchQuery == "" {
+		return
+	}
+
+	// 0. If the query is already a valid directory, navigate into it directly!
+	queryPath := strings.TrimSpace(o.searchQuery)
+	if strings.HasPrefix(queryPath, "~") {
+		home, _ := os.UserHomeDir()
+		queryPath = filepath.Join(home, queryPath[1:])
+	}
+	if !filepath.IsAbs(queryPath) {
+		queryPath = filepath.Join(o.dir, queryPath)
+	}
+	if info, err := os.Stat(queryPath); err == nil && info.IsDir() {
+		if abs, err := filepath.Abs(queryPath); err == nil {
+			o.dir = abs
+		} else {
+			o.dir = queryPath
+		}
+		o.searchQuery = ""
+		o.load()
+		return
+	}
+
+	hasSep := strings.ContainsRune(o.searchQuery, '/') || strings.ContainsRune(o.searchQuery, filepath.Separator)
+
+	if !hasSep {
+		q := strings.ToLower(o.searchQuery)
+		var matches []fileEntry
+		for _, e := range o.rawEntries {
+			if e.name == ".." {
+				continue
+			}
+			if strings.HasPrefix(strings.ToLower(e.name), q) {
+				matches = append(matches, e)
+			}
+		}
+
+		if len(matches) == 1 {
+			if matches[0].isDir {
+				o.dir = filepath.Join(o.dir, matches[0].name)
+				o.searchQuery = ""
+				o.load()
+			} else {
+				o.searchQuery = matches[0].name
+				o.filter()
+			}
+		} else if len(matches) > 1 {
+			var names []string
+			for _, m := range matches {
+				names = append(names, m.name)
+			}
+			lcp := longestCommonPrefix(names)
+			if lcp != "" {
+				o.searchQuery = lcp
+				o.filter()
+			}
+		}
+		return
+	}
+
+	dirPart := filepath.Dir(o.searchQuery)
+	filePart := filepath.Base(o.searchQuery)
+	if strings.HasSuffix(o.searchQuery, "/") || strings.HasSuffix(o.searchQuery, string(filepath.Separator)) {
+		dirPart = o.searchQuery
+		filePart = ""
+	}
+
+	resolvedDir := dirPart
+	if strings.HasPrefix(resolvedDir, "~") {
+		home, _ := os.UserHomeDir()
+		resolvedDir = filepath.Join(home, resolvedDir[1:])
+	}
+	if !filepath.IsAbs(resolvedDir) {
+		resolvedDir = filepath.Join(o.dir, resolvedDir)
+	}
+
+	entries, err := os.ReadDir(resolvedDir)
+	if err != nil {
+		return
+	}
+
+	var matches []os.DirEntry
+	q := strings.ToLower(filePart)
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(name), q) {
+			matches = append(matches, e)
+		}
+	}
+
+	if len(matches) == 1 {
+		name := matches[0].Name()
+		if matches[0].IsDir() {
+			path := filepath.Join(dirPart, name)
+			if strings.HasPrefix(path, "~") {
+				home, _ := os.UserHomeDir()
+				path = filepath.Join(home, path[1:])
+			}
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(o.dir, path)
+			}
+			if abs, err := filepath.Abs(path); err == nil {
+				o.dir = abs
+			} else {
+				o.dir = path
+			}
+			o.searchQuery = ""
+			o.load()
+		} else {
+			if strings.HasSuffix(dirPart, "/") || strings.HasSuffix(dirPart, string(filepath.Separator)) {
+				o.searchQuery = dirPart + name
+			} else {
+				o.searchQuery = dirPart + "/" + name
+			}
+			o.filter()
+		}
+	} else if len(matches) > 1 {
+		var names []string
+		for _, m := range matches {
+			names = append(names, m.Name())
+		}
+		lcp := longestCommonPrefix(names)
+		if lcp != "" {
+			if strings.HasSuffix(dirPart, "/") || strings.HasSuffix(dirPart, string(filepath.Separator)) {
+				o.searchQuery = dirPart + lcp
+			} else {
+				o.searchQuery = dirPart + "/" + lcp
+			}
+			o.filter()
+		}
+	}
+}
+
+func longestCommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	first := strs[0]
+	for i := 0; i < len(first); i++ {
+		c := first[i]
+		for j := 1; j < len(strs); j++ {
+			if i >= len(strs[j]) || strings.ToLower(string(strs[j][i])) != strings.ToLower(string(c)) {
+				return first[:i]
+			}
+		}
+	}
+	return first
 }
 
 func (o *FilePicker) allows(name string) bool {
@@ -130,6 +346,44 @@ func (o *FilePicker) allows(name string) bool {
 }
 
 func (o *FilePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if o.showSearch {
+		switch msg.Type {
+		case tea.KeyEsc:
+			o.showSearch = false
+			o.searchQuery = ""
+			o.filter()
+			return o, nil, true
+		case tea.KeyTab:
+			o.complete()
+			return o, nil, true
+		case tea.KeyEnter:
+			if cmd, handled := o.activateQuery(); handled {
+				return o, cmd, true
+			}
+			return o, o.activate(), true
+		case tea.KeyBackspace:
+			if len(o.searchQuery) > 0 {
+				o.searchQuery = o.searchQuery[:len(o.searchQuery)-1]
+				o.filter()
+			} else {
+				o.showSearch = false
+			}
+			return o, nil, true
+		case tea.KeyUp:
+			o.move(-1)
+			return o, nil, true
+		case tea.KeyDown:
+			o.move(1)
+			return o, nil, true
+		case tea.KeyRunes:
+			o.searchQuery += msg.String()
+			o.filter()
+			return o, nil, true
+		default:
+			return o, nil, true
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyEsc:
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -143,6 +397,10 @@ func (o *FilePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		o.ascend()
 	case tea.KeyRunes:
 		switch msg.String() {
+		case "/":
+			o.showSearch = true
+			o.searchQuery = ""
+			return o, nil, true
 		case "k":
 			o.move(-1)
 		case "j":
@@ -196,12 +454,24 @@ func (o *FilePicker) View(maxW, maxH int) string {
 	var b strings.Builder
 	b.WriteString(o.theme.Dim.Render(render.Truncate("dir: "+o.dir, maxW)))
 	b.WriteByte('\n')
+	if o.showSearch {
+		b.WriteString(o.theme.Selected.Render(render.Truncate("search/path: "+o.searchQuery+"█", maxW)))
+		b.WriteByte('\n')
+	}
 	if o.err != "" {
 		b.WriteString(o.theme.Warn.Render(render.Truncate(o.err, maxW)))
 		b.WriteByte('\n')
 	}
 
-	bodyRows := max(maxH-3, 1)
+	headerLines := 2
+	if o.showSearch {
+		headerLines++
+	}
+	if o.err != "" {
+		headerLines++
+	}
+	bodyRows := max(maxH-headerLines-1, 1)
+
 	o.scrollInto(bodyRows)
 	for i := o.offset; i < len(o.entries) && i < o.offset+bodyRows; i++ {
 		e := o.entries[i]
@@ -219,8 +489,12 @@ func (o *FilePicker) View(maxW, maxH int) string {
 		}
 		b.WriteByte('\n')
 	}
-	b.WriteString(o.theme.Dim.Render(render.Truncate(
-		"↑/↓ or j/k move · enter open/select · ←/backspace up · esc cancel", maxW)))
+
+	footerText := "/ search/path · ↑/↓ or j/k move · enter open/select · ←/backspace up · esc cancel"
+	if o.showSearch {
+		footerText = "tab autocomplete · esc exit search · enter open/select · backspace edit"
+	}
+	b.WriteString(o.theme.Dim.Render(render.Truncate(footerText, maxW)))
 	return b.String()
 }
 

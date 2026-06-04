@@ -101,6 +101,11 @@ type OfficeActionImportSubmitMsg struct {
 	Params proto.OfficeActionImportParams
 }
 
+// OfficeActionEditSubmitMsg carries the updated metadata for an existing office action.
+type OfficeActionEditSubmitMsg struct {
+	Params proto.OfficeActionUpdateParams
+}
+
 // MatterDocumentsChangedMsg asks the App to refresh anything showing the matter's
 // documents after one was added, renamed, or deleted.
 type MatterDocumentsChangedMsg struct{}
@@ -170,6 +175,11 @@ type ApplyClassificationFilterMsg struct {
 // OpenTagPatentOverlayMsg asks the app to open the patent tag manager.
 type OpenTagPatentOverlayMsg struct {
 	Patents []domain.PatentNumber
+}
+
+// OpenDocumentFileMsg asks the App to open the document's original file path using the system opener.
+type OpenDocumentFileMsg struct {
+	Path string
 }
 
 // PctSize computes an overlay size as a percentage of the terminal, clamped

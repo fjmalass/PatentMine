@@ -464,6 +464,40 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistIDS, label + ": " + pat
 	case observability.ActionIDSEntryDelete:
 		return theme.Glyphs.HistIDS, "IDS delete: " + pat
+	case observability.ActionOfficeActionImport:
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Import Office Action: %s", rec.EntityID)
+	case observability.ActionOfficeActionUpdate:
+		notesText := ""
+		if notes, ok := rec.Attributes["notes"].(bool); ok && notes {
+			notesText = " (Notes)"
+		}
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Update Office Action%s: %s", notesText, rec.EntityID)
+	case observability.ActionOfficeActionDelete:
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Delete Office Action: %s", rec.EntityID)
+	case observability.ActionMatterDocumentImport:
+		docName := rec.EntityID
+		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+			docName = name
+		}
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("Import Document: %s", docName)
+	case observability.ActionMatterDocumentRename:
+		docName := rec.EntityID
+		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+			docName = name
+		}
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("Rename Document: %s", docName)
+	case observability.ActionMatterDocumentDelete:
+		docName := rec.EntityID
+		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+			docName = name
+		}
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("Delete Document: %s", docName)
+	case observability.ActionMatterDocumentExtract:
+		docName := rec.EntityID
+		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+			docName = name
+		}
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("OCR Document: %s", docName)
 	}
 	return theme.Glyphs.HistUnknown, rec.EntityID
 }

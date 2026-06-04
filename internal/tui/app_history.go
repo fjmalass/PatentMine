@@ -102,6 +102,15 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 		return a.replayHistoryFilter(rec, confirmed)
 	case observability.ActionProjectSwitch:
 		return a.replayHistoryProjectSwitch(rec, confirmed)
+	case observability.ActionOfficeActionImport,
+		observability.ActionOfficeActionUpdate,
+		observability.ActionOfficeActionDelete:
+		return a.replayHistoryOfficeAction(rec)
+	case observability.ActionMatterDocumentImport,
+		observability.ActionMatterDocumentRename,
+		observability.ActionMatterDocumentDelete,
+		observability.ActionMatterDocumentExtract:
+		return a.replayHistoryMatterDocument(rec)
 	default:
 		return a, nil
 	}
@@ -239,4 +248,29 @@ func (a *App) replayHistoryProjectSwitch(rec observability.Record, confirmed boo
 	}
 	a.closeHistoryReplayOverlays()
 	return a.activateProjectByArg(rec.EntityID)
+}
+
+func (a *App) replayHistoryOfficeAction(rec observability.Record) (tea.Model, tea.Cmd) {
+	project := a.historyProjectID(rec)
+	switchCmd := a.switchHistoryProject(project)
+	a.closeHistoryReplayOverlays()
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, switchCmd
+	}
+	replayModel, replayCmd := a.pushPane(pane.NewOfficeActions(a.client, a.theme, project).WithLogger(a.log()))
+	return replayModel, tea.Batch(switchCmd, replayCmd)
+}
+
+func (a *App) replayHistoryMatterDocument(rec observability.Record) (tea.Model, tea.Cmd) {
+	project := a.historyProjectID(rec)
+	switchCmd := a.switchHistoryProject(project)
+	a.closeHistoryReplayOverlays()
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, switchCmd
+	}
+	o := overlay.NewMatterDocuments(a.client, a.theme, project)
+	a.overlays = append(a.overlays, o)
+	return a, tea.Batch(switchCmd, o.Init())
 }

@@ -66,6 +66,8 @@ const (
 	ActionDraftExportDocx    = "draft.export.docx"
 	ActionDraftSectionAI     = "draft.section.ai"
 	ActionOfficeActionImport = "office_action.import"
+	ActionOfficeActionUpdate = "office_action.update"
+	ActionOfficeActionDelete = "office_action.delete"
 
 	// Prosecution-matter workspace (matter-scoped documents and project stage).
 	ActionMatterDocumentImport  = "matter_document.import"
@@ -134,6 +136,8 @@ var AllActions = []string{
 	ActionDraftExportDocx,
 	ActionDraftSectionAI,
 	ActionOfficeActionImport,
+	ActionOfficeActionUpdate,
+	ActionOfficeActionDelete,
 	ActionMatterDocumentImport,
 	ActionMatterDocumentRename,
 	ActionMatterDocumentDelete,

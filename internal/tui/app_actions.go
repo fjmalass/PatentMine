@@ -520,6 +520,12 @@ func (a *App) focusedOverlay() overlay.Overlay { return a.overlays[len(a.overlay
 
 func (a *App) popOverlay() {
 	if n := len(a.overlays); n > 0 {
+		if fp, ok := a.overlays[n-1].(*overlay.FilePicker); ok {
+			if a.activeProject != nil {
+				key := string(a.activeProject.ID) + ":" + string(fp.Purpose())
+				a.lastPickerDirs[key] = fp.Dir()
+			}
+		}
 		if _, ok := a.overlays[n-1].(*overlay.Jump); ok {
 			if setter, ok := a.focusedPane().(interface{ SetJumpActive(bool) }); ok {
 				setter.SetJumpActive(false)

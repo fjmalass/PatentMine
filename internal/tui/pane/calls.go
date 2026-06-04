@@ -251,6 +251,33 @@ func ImportOfficeActionCmd(client *rpc.Client, params proto.OfficeActionImportPa
 	}
 }
 
+// UpdateOfficeActionCmd edits an existing Office Action's metadata.
+func UpdateOfficeActionCmd(client *rpc.Client, params proto.OfficeActionUpdateParams) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.OfficeActionResult
+		if err := client.Call(ctx, proto.MethodOfficeActionUpdate, params, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action update failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action updated"}}
+	}
+}
+
+// DeleteOfficeActionCmd deletes an existing Office Action.
+func DeleteOfficeActionCmd(client *rpc.Client, id string, deleteFiles bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.OfficeActionResult
+		if err := client.Call(ctx, proto.MethodOfficeActionDelete, proto.OfficeActionDeleteParams{ID: id, DeleteFiles: deleteFiles}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action delete failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action deleted"}}
+	}
+}
+
+
 // MatterDocumentImportedMsg reports a supporting document was filed under the
 // matter, so the app can confirm it and any open document list can refresh.
 type MatterDocumentImportedMsg struct {

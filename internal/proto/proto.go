@@ -102,6 +102,8 @@ const (
 	MethodOfficeActionList      Method = "office_action.list"
 	MethodOfficeActionGet       Method = "office_action.get"
 	MethodOfficeActionSaveNotes Method = "office_action.save_notes"
+	MethodOfficeActionUpdate    Method = "office_action.update"
+	MethodOfficeActionDelete    Method = "office_action.delete"
 
 	// Prosecution-matter workspace: matter-scoped documents and project stage.
 	MethodMatterDocumentImport  Method = "matter.document.import"

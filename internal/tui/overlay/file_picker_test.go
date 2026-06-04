@@ -98,3 +98,157 @@ func TestFilePickerBrowseIntoSubdir(t *testing.T) {
 		t.Fatalf("'..' should ascend to %q, got %q", dir, o.dir)
 	}
 }
+
+func TestFilePickerSearch(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "apple.txt"), []byte("apple"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "banana.txt"), []byte("banana"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := NewFilePicker(render.NewTheme(), "Pick", PurposeAddOfficeAction, dir, []string{".txt"})
+
+	// Start search
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if !o.showSearch {
+		t.Fatal("expected showSearch to be true after '/'")
+	}
+
+	// Type query
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if o.searchQuery != "ba" {
+		t.Fatalf("expected searchQuery 'ba', got %q", o.searchQuery)
+	}
+
+	// Verify filtered entries (should only be ".." and "banana.txt")
+	if len(o.entries) != 2 {
+		t.Fatalf("expected 2 filtered entries, got %d: %+v", len(o.entries), o.entries)
+	}
+	if o.entries[1].name != "banana.txt" {
+		t.Errorf("expected banana.txt, got %q", o.entries[1].name)
+	}
+
+	// Esc exits search
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if o.showSearch {
+		t.Error("expected showSearch to be false after Esc")
+	}
+	if len(o.entries) != 3 {
+		t.Fatalf("expected 3 entries after search cancel, got %d", len(o.entries))
+	}
+}
+
+func TestFilePickerDirectPathEntry(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "target")
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(subDir, "doc.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o := NewFilePicker(render.NewTheme(), "Pick", PurposeAddOfficeAction, dir, []string{".txt"})
+
+	// Enter search/path mode
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	
+	// Input absolute path of directory
+	o.searchQuery = subDir
+	_, cmd, _ := o.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatalf("expected nil command for directory navigation, got %T", cmd)
+	}
+	if o.dir != subDir {
+		t.Errorf("expected directory to be changed to %q, got %q", subDir, o.dir)
+	}
+
+	// Enter search/path mode again
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	// Input absolute path of file
+	o.searchQuery = filePath
+	_, cmd, _ = o.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected file picked command")
+	}
+	msg := cmd()
+	picked, ok := msg.(FilePickedMsg)
+	if !ok {
+		t.Fatalf("expected FilePickedMsg, got %T", msg)
+	}
+	if picked.Path != filePath {
+		t.Errorf("expected picked path %q, got %q", filePath, picked.Path)
+	}
+}
+
+func TestFilePickerTabCompletion(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "apple.txt"), []byte("apple"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "apricot.txt"), []byte("apricot"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "banana.txt"), []byte("banana"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o := NewFilePicker(render.NewTheme(), "Pick", PurposeAddOfficeAction, dir, []string{".txt"})
+
+	// Start search and type 'b'
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	// Press Tab -> unique match 'banana.txt'
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if o.searchQuery != "banana.txt" {
+		t.Errorf("expected complete to 'banana.txt', got %q", o.searchQuery)
+	}
+
+	// Exit search, start again and type 'ap'
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	// Press Tab -> matches 'apple.txt' and 'apricot.txt', LCP is 'ap'
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if o.searchQuery != "ap" {
+		t.Errorf("expected LCP 'ap', got %q", o.searchQuery)
+	}
+}
+
+func TestFilePickerTabCompletionDirectoryExpansion(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "photos")
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "pic.txt"), []byte("pic"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o := NewFilePicker(render.NewTheme(), "Pick", PurposeAddOfficeAction, dir, []string{".txt"})
+
+	// Type 'ph' and press Tab -> completes and descends into 'photos'
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+
+	if o.dir != subDir {
+		t.Errorf("expected directory to expand and change to %q, got %q", subDir, o.dir)
+	}
+	if o.searchQuery != "" {
+		t.Errorf("expected searchQuery to be reset to empty, got %q", o.searchQuery)
+	}
+
+	// Now in 'photos', type 'pi' and press Tab -> completes to 'pic.txt'
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	o.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if o.searchQuery != "pic.txt" {
+		t.Errorf("expected complete to 'pic.txt', got %q", o.searchQuery)
+	}
+}

@@ -21,14 +21,21 @@ type OpenOfficeActionEditorMsg struct {
 	OA domain.OfficeAction
 }
 
+// OpenOfficeActionEditFormMsg asks the app to open the office action metadata edit form.
+type OpenOfficeActionEditFormMsg struct {
+	OA domain.OfficeAction
+}
+
 type oaDetailLoadedMsg struct {
 	requestID uint64
+	oa        domain.OfficeAction
 	docs      int
 	comms     int
 	time      domain.TimeSummary
 	ai        domain.AIUsageSummary
 	err       error
 }
+
 
 // OfficeActionDetail is the drill-down for one office action: its metadata and
 // response deadline, plus the matter's document/communication counts and the
@@ -104,6 +111,24 @@ func (o *OfficeActionDetail) load() tea.Cmd {
 		}
 		out.time = summary.Time
 		out.ai = summary.AI
+
+		var oaList proto.OfficeActionListResult
+		if err := client.Call(ctx, proto.MethodOfficeActionList, proto.OfficeActionListParams{Project: project}, &oaList); err != nil {
+			out.err = err
+			return out
+		}
+		var found bool
+		for _, item := range oaList.OfficeActions {
+			if item.ID == o.oa.ID {
+				out.oa = item
+				found = true
+				break
+			}
+		}
+		if !found {
+			out.oa = o.oa
+		}
+
 		return out
 	}
 }
@@ -129,6 +154,7 @@ func (o *OfficeActionDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		o.loadErr = ""
 		o.docs, o.comms, o.time, o.ai = m.docs, m.comms, m.time, m.ai
+		o.oa = m.oa
 	}
 	return o, nil
 }
@@ -137,13 +163,14 @@ func (o *OfficeActionDetail) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
 }
 
-// HandleKey opens the notes editor on enter/n; other keys fall through to the
-// keymap (f documents, c comms, R respond, esc/h back, ctrl+r refresh).
 func (o *OfficeActionDetail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	switch msg.String() {
 	case "enter", "n":
 		oa := o.oa
 		return o, func() tea.Msg { return OpenOfficeActionEditorMsg{OA: oa} }, true
+	case "e":
+		oa := o.oa
+		return o, func() tea.Msg { return OpenOfficeActionEditFormMsg{OA: oa} }, true
 	}
 	return o, nil, false
 }
@@ -186,7 +213,7 @@ func (o *OfficeActionDetail) View(w, h int) string {
 
 	b.WriteByte('\n')
 	b.WriteString(o.theme.Dim.Render(render.Truncate(
-		"[enter] notes editor  [f] documents  [c] communications  [R] draft response  [esc] back", w)))
+		"[enter] notes editor  [e] edit  [f] documents  [c] communications  [R] draft response  [esc] back", w)))
 	return b.String()
 }
 

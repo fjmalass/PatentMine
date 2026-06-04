@@ -106,10 +106,27 @@ type OfficeActionIDParams struct {
 	ID string `json:"id"`
 }
 
+// OfficeActionDeleteParams contains parameters for deleting an office action.
+type OfficeActionDeleteParams struct {
+	ID          string `json:"id"`
+	DeleteFiles bool   `json:"delete_files"`
+}
+
+
 // OfficeActionSaveNotesParams replaces the attorney notes on one office action.
 type OfficeActionSaveNotesParams struct {
 	ID    string `json:"id"`
 	Notes string `json:"notes"`
+}
+
+// OfficeActionUpdateParams updates an existing office action's metadata.
+type OfficeActionUpdateParams struct {
+	ID                string        `json:"id"`
+	Examiner          string        `json:"examiner"`
+	MailDate          string        `json:"mail_date"`
+	Type              domain.OAType `json:"type"`
+	ArtUnit           string        `json:"art_unit"`
+	ApplicationNumber string        `json:"app_number"`
 }
 
 // MatterDocumentImportParams files a local document under a matter, optionally

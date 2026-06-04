@@ -152,6 +152,10 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 				o.confirmDelete = true
 				o.msg = ""
 			}
+		case "o":
+			if cmd := o.openSelected(); cmd != nil {
+				return o, cmd, true
+			}
 		case "e":
 			if cmd := o.extractSelected(); cmd != nil {
 				return o, cmd, true
@@ -163,6 +167,15 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	}
 	return o, nil, true
 }
+
+func (o *MatterDocuments) openSelected() tea.Cmd {
+	doc, ok := o.selected()
+	if !ok || doc.BlobPath == "" {
+		return nil
+	}
+	return func() tea.Msg { return OpenDocumentFileMsg{Path: doc.BlobPath} }
+}
+
 
 func (o *MatterDocuments) handleRenameKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.Type {
@@ -320,7 +333,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "↑/↓ move · enter view · e extract text · r rename · d delete · esc close"
+	footer := "↑/↓ move · enter view · o open file · e extract text · r rename · d delete · esc close"
 	switch {
 	case o.extracting:
 		footer = "extracting text with AI… (this can take a minute for a scanned PDF)"

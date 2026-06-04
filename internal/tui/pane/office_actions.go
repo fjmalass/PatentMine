@@ -28,6 +28,13 @@ type OpenOfficeActionDetailMsg struct {
 	OA domain.OfficeAction
 }
 
+// RequestDeleteOfficeActionMsg asks the app to prompt the user to confirm deleting
+// the specified office action.
+type RequestDeleteOfficeActionMsg struct {
+	OA domain.OfficeAction
+}
+
+
 // OfficeActions is the matter's office-action table — the home of the
 // prosecution workspace. Each row is one examiner action with its response-due
 // countdown and status; `enter` drills into the detail pane (documents, timing,
@@ -195,6 +202,12 @@ func (o *OfficeActions) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 			return o, nil, true
 		}
 		return o, func() tea.Msg { return OpenOfficeActionDetailMsg{OA: oa} }, true
+	case "D":
+		oa, ok := o.selected()
+		if !ok {
+			return o, nil, true
+		}
+		return o, func() tea.Msg { return RequestDeleteOfficeActionMsg{OA: oa} }, true
 	}
 	return o, nil, false
 }
@@ -253,7 +266,7 @@ func (o *OfficeActions) View(w, h int) string {
 		b.WriteString(o.theme.Selected.Render(render.Pad("/ "+o.searchQuery+"▋", w)))
 	} else {
 		b.WriteString(o.theme.Dim.Render(render.Pad(
-			"  [enter] open  [a] add  [R] respond  [/] filter  [esc] back", w)))
+			"  [enter] open  [a] add  [D] delete  [R] respond  [/] filter  [esc] back", w)))
 	}
 	return b.String()
 }

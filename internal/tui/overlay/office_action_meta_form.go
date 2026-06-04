@@ -12,15 +12,17 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-// OfficeActionMetaForm captures the office-action metadata at import time —
+// OfficeActionMetaForm captures the office-action metadata at import time or edit time —
 // crucially the examiner name, which the path-only import dropped — before the
 // daemon copies the file in. Tab/Shift+Tab (or ↑/↓) move between fields, Enter
-// imports, Esc cancels. The response deadline is computed from the mail date and
+// imports/saves, Esc cancels. The response deadline is computed from the mail date and
 // type by the engine, so it is not entered here.
 type OfficeActionMetaForm struct {
 	theme   render.Theme
 	project domain.ProjectID
-	source  string // the picked file path
+	source  string // the picked file path or "" if edit
+	oaID    string // the office action ID if edit
+	isEdit  bool
 	values  [5]string
 	focus   int
 }
@@ -53,7 +55,28 @@ func NewOfficeActionMetaForm(theme render.Theme, project domain.Project, source 
 	return o
 }
 
-func (o *OfficeActionMetaForm) Title() string { return "Import Office Action" }
+// NewOfficeActionEditForm builds the form for editing an existing office action.
+func NewOfficeActionEditForm(theme render.Theme, project domain.ProjectID, oa domain.OfficeAction) *OfficeActionMetaForm {
+	o := &OfficeActionMetaForm{
+		theme:   theme,
+		project: project,
+		oaID:    oa.ID,
+		isEdit:  true,
+	}
+	o.values[oamExaminer] = oa.Examiner
+	o.values[oamMailDate] = oa.MailDate.Format(domain.DateLayout)
+	o.values[oamType] = string(oa.Type)
+	o.values[oamArtUnit] = oa.ArtUnit
+	o.values[oamAppNumber] = oa.ApplicationNumber
+	return o
+}
+
+func (o *OfficeActionMetaForm) Title() string {
+	if o.isEdit {
+		return "Edit Office Action Details"
+	}
+	return "Import Office Action"
+}
 
 func (o *OfficeActionMetaForm) Handles() []command.ID { return nil }
 
@@ -88,6 +111,17 @@ func (o *OfficeActionMetaForm) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 }
 
 func (o *OfficeActionMetaForm) submit() tea.Cmd {
+	if o.isEdit {
+		params := proto.OfficeActionUpdateParams{
+			ID:                o.oaID,
+			Examiner:          strings.TrimSpace(o.values[oamExaminer]),
+			MailDate:          strings.TrimSpace(o.values[oamMailDate]),
+			Type:              domain.OAType(strings.TrimSpace(o.values[oamType])),
+			ArtUnit:           strings.TrimSpace(o.values[oamArtUnit]),
+			ApplicationNumber: strings.TrimSpace(o.values[oamAppNumber]),
+		}
+		return func() tea.Msg { return OfficeActionEditSubmitMsg{Params: params} }
+	}
 	params := proto.OfficeActionImportParams{
 		Project:           o.project,
 		SourcePath:        o.source,
@@ -102,8 +136,10 @@ func (o *OfficeActionMetaForm) submit() tea.Cmd {
 
 func (o *OfficeActionMetaForm) View(maxW, _ int) string {
 	var b strings.Builder
-	b.WriteString(o.theme.Dim.Render(render.Truncate("file: "+o.source, maxW)))
-	b.WriteString("\n\n")
+	if !o.isEdit {
+		b.WriteString(o.theme.Dim.Render(render.Truncate("file: "+o.source, maxW)))
+		b.WriteString("\n\n")
+	}
 	for i, label := range oamLabels {
 		marker := "  "
 		if i == o.focus {
@@ -118,7 +154,10 @@ func (o *OfficeActionMetaForm) View(maxW, _ int) string {
 		b.WriteByte('\n')
 	}
 	b.WriteByte('\n')
-	hint := "[tab] field · [enter] import · [esc] cancel · [ctrl+u] clear · deadline auto-set from mail date"
+	hint := "[tab] field · [enter] save · [esc] cancel · [ctrl+u] clear · deadline auto-recomputed from mail date"
+	if !o.isEdit {
+		hint = "[tab] field · [enter] import · [esc] cancel · [ctrl+u] clear · deadline auto-set from mail date"
+	}
 	b.WriteString(o.theme.Dim.Render(render.Truncate(hint, maxW)))
 	return b.String()
 }

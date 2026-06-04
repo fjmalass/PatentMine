@@ -1351,6 +1351,12 @@ func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
 	if err != nil || start == "" {
 		start = "."
 	}
+	if a.activeProject != nil {
+		key := string(a.activeProject.ID) + ":" + string(overlay.PurposeAddOfficeAction)
+		if last, ok := a.lastPickerDirs[key]; ok && last != "" {
+			start = last
+		}
+	}
 	o := overlay.NewFilePicker(a.theme, "Add Office Action", overlay.PurposeAddOfficeAction, start, []string{".pdf", ".txt"})
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
@@ -1390,6 +1396,12 @@ func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 	start, err := os.UserHomeDir()
 	if err != nil || start == "" {
 		start = "."
+	}
+	if a.activeProject != nil {
+		key := string(a.activeProject.ID) + ":" + string(overlay.PurposeAddMatterDocument)
+		if last, ok := a.lastPickerDirs[key]; ok && last != "" {
+			start = last
+		}
 	}
 	o := overlay.NewFilePicker(a.theme, "Add Document", overlay.PurposeAddMatterDocument, start, []string{".pdf", ".txt"})
 	a.overlays = append(a.overlays, o)
