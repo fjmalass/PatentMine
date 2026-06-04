@@ -12,6 +12,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/tui/render"
@@ -417,22 +418,22 @@ func (d *Detail) Selection() (domain.PatentNumber, bool) {
 // ActivityFocus implements ActivityFocusProvider.
 func (d *Detail) ActivityFocus() (ActivityFocus, bool) {
 	attrs := map[string]any{
-		"scope":           "detail",
-		"display_number":  numberToShow(d.patent).String(),
-		"title":           d.patent.Title,
-		"review_state":    d.state,
-		"tags":            d.tags,
-		"classifications": d.patent.Classifications,
-		"line":            d.page.Cursor(),
-		"inventors_short": formatInventorsShort(d.patent.Inventors),
+		observability.AttrScope:          "detail",
+		observability.AttrDisplayNumber:  numberToShow(d.patent).String(),
+		observability.AttrTitle:          d.patent.Title,
+		"review_state":                   d.state,
+		"tags":                           d.tags,
+		"classifications":                d.patent.Classifications,
+		observability.AttrLine:           d.page.Cursor(),
+		observability.AttrInventorsShort: formatInventorsShort(d.patent.Inventors),
 	}
 	if !d.patent.PublicationDate.IsZero() {
-		attrs["publication_date"] = d.patent.PublicationDate.Format(domain.DateLayout)
+		attrs[observability.AttrPublicationDate] = d.patent.PublicationDate.Format(domain.DateLayout)
 	}
 	if d.project != "" {
-		attrs["project"] = d.project
+		attrs[observability.AttrProject] = d.project
 	}
-	return ActivityFocus{Entity: "patent", EntityID: d.number.String(), Label: d.Title(), Attributes: attrs}, true
+	return ActivityFocus{Entity: observability.EntityPatent, EntityID: d.number.String(), Label: d.Title(), Attributes: attrs}, true
 }
 
 // View implements Pane. Long records scroll: the body is built in full, then
@@ -1171,8 +1172,6 @@ func expirationText(p domain.Patent) string {
 	}
 	return text
 }
-
-
 
 // dateText renders a date, or a dash when it is unset.
 func dateText(t time.Time) string {

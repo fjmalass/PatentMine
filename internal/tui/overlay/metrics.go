@@ -469,9 +469,6 @@ func metricsGroup(name string) string {
 	if strings.HasPrefix(name, "crawl.") {
 		return "crawl"
 	}
-	if strings.HasPrefix(name, "officeaction.") {
-		return "officeaction"
-	}
 	return string(observability.MetricNamespaceOther)
 }
 

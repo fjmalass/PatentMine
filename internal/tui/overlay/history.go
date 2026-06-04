@@ -190,13 +190,13 @@ func (h *HistoryOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString(renderSubtable(subtableParams{
-		Theme:        h.theme,
-		Columns:      cols,
-		Page:         &h.page,
-		Total:        n,
-		PageSize:     pageSize,
-		FocusActive:  true,
-		VisualMode:   h.page.VisualMode(),
+		Theme:       h.theme,
+		Columns:     cols,
+		Page:        &h.page,
+		Total:       n,
+		PageSize:    pageSize,
+		FocusActive: true,
+		VisualMode:  h.page.VisualMode(),
 		IsRowSelected: func(absIdx int) bool {
 			return h.page.IsRowSelected(absIdx)
 		},
@@ -292,7 +292,7 @@ func historyProjectName(rec observability.Record, projectNames map[string]string
 	isProjectPatentRec := IsProjectPatentAction(rec.Action)
 
 	projID := ""
-	if pid, ok := rec.Attributes["project"].(string); ok && pid != "" {
+	if pid, ok := rec.Attributes[observability.AttrProject].(string); ok && pid != "" {
 		projID = pid
 	} else if isProjectPatentRec && len(entityParts) >= 1 && entityParts[0] != "" {
 		projID = entityParts[0]
@@ -306,7 +306,7 @@ func historyProjectName(rec observability.Record, projectNames map[string]string
 	if name, ok := projectNames[projID]; ok && name != "" {
 		return name
 	}
-	if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
+	if name, ok := rec.Attributes[observability.AttrProjectName].(string); ok && name != "" {
 		return name
 	}
 	return projID
@@ -318,44 +318,44 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 	isProjectPatentRec := IsProjectPatentAction(rec.Action)
 
 	numStr := rec.EntityID
-	if reqNum, ok := rec.Attributes["requested_number"].(string); ok && reqNum != "" {
+	if reqNum, ok := rec.Attributes[observability.AttrRequestedNumber].(string); ok && reqNum != "" {
 		numStr = reqNum
-	} else if dn, ok := rec.Attributes["display_number"].(string); ok && dn != "" {
+	} else if dn, ok := rec.Attributes[observability.AttrDisplayNumber].(string); ok && dn != "" {
 		numStr = dn
 	} else if isProjectPatentRec && len(entityParts) >= 2 {
 		numStr = entityParts[1]
 	}
 
 	invs := "-"
-	if is, ok := rec.Attributes["inventors_short"].(string); ok && is != "" {
+	if is, ok := rec.Attributes[observability.AttrInventorsShort].(string); ok && is != "" {
 		invs = is
 	}
 	pubDate := "-"
-	if pd, ok := rec.Attributes["publication_date"].(string); ok && pd != "" {
+	if pd, ok := rec.Attributes[observability.AttrPublicationDate].(string); ok && pd != "" {
 		pubDate = pd
 	}
 	title := ""
-	if t, ok := rec.Attributes["title"].(string); ok && t != "" {
+	if t, ok := rec.Attributes[observability.AttrTitle].(string); ok && t != "" {
 		title = t
 	}
 	pat := patentSummary(numStr, invs, pubDate, title)
 
 	switch rec.Action {
 	case observability.ActionFilterApply:
-		if _, ok := rec.Attributes["search"].(string); ok {
-			if _, hasFilter := rec.Attributes["filter"]; !hasFilter {
+		if _, ok := rec.Attributes[observability.AttrSearch].(string); ok {
+			if _, hasFilter := rec.Attributes[observability.AttrFilter]; !hasFilter {
 				return theme.Glyphs.HistSearch, fmt.Sprintf("Search: %q", rec.EntityID)
 			}
 		}
 		return theme.Glyphs.HistSearch, fmt.Sprintf("Filter: %q", rec.EntityID)
 	case observability.ActionProjectSwitch:
 		pName := rec.EntityID
-		if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrProjectName].(string); ok && name != "" {
 			pName = name
 		}
 		return theme.Glyphs.HistProject, fmt.Sprintf("Switch Project to %q", pName)
 	case observability.ActionUIFocus:
-		scope, _ := rec.Attributes["scope"].(string)
+		scope, _ := rec.Attributes[observability.AttrScope].(string)
 		switch scope {
 		case "citations":
 			return theme.Glyphs.HistCitations, "Citations: " + pat
@@ -370,11 +370,11 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		}
 	case observability.ActionNotesExport:
 		projectName := rec.EntityID
-		if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrProjectName].(string); ok && name != "" {
 			projectName = name
 		}
-		count, _ := rec.Attributes["count"].(float64)
-		path, _ := rec.Attributes["path"].(string)
+		count, _ := rec.Attributes[observability.AttrCount].(float64)
+		path, _ := rec.Attributes[observability.AttrPath].(string)
 		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Export notes %q: %d note(s) → %s", projectName, int(count), path)
 	case observability.ActionNotesSave:
 		return theme.Glyphs.HistNotesExport, "Save Note: " + pat
@@ -382,7 +382,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistNotesExport, "Delete Note: " + pat
 	case observability.ActionMembershipAdd:
 		method := "manual"
-		if prov, ok := rec.Attributes["provenance"].(string); ok && prov != "" {
+		if prov, ok := rec.Attributes[observability.AttrProvenance].(string); ok && prov != "" {
 			switch prov {
 			case "direct", "manual":
 				method = "manual"
@@ -391,19 +391,19 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 			default:
 				method = prov
 			}
-		} else if isManualVal, ok := rec.Attributes["manual"].(bool); ok {
+		} else if isManualVal, ok := rec.Attributes[observability.AttrManual].(bool); ok {
 			if isManualVal {
 				method = "manual"
 			} else {
 				method = "system"
 			}
-		} else if isSystemVal, ok := rec.Attributes["system"].(bool); ok {
+		} else if isSystemVal, ok := rec.Attributes[observability.AttrSystem].(bool); ok {
 			if isSystemVal {
 				method = "system"
 			} else {
 				method = "manual"
 			}
-		} else if src, ok := rec.Attributes["source"].(string); ok {
+		} else if src, ok := rec.Attributes[observability.AttrSource].(string); ok {
 			if strings.HasPrefix(src, "auto") || strings.HasPrefix(src, "system") {
 				method = "system"
 			} else if src == "add.related" || src == "related" {
@@ -417,7 +417,7 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistPatent, fmt.Sprintf("Add Patent (%s): %s", method, pat)
 	case observability.ActionMembershipSetState:
 		rawState := ""
-		if s, ok := rec.Attributes["state"].(string); ok {
+		if s, ok := rec.Attributes[observability.AttrState].(string); ok {
 			rawState = s
 		} else if afterMap, ok := rec.After.(map[string]any); ok {
 			if s, ok := afterMap["review_state"].(string); ok {
@@ -448,11 +448,11 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		return theme.Glyphs.HistTagRemove, fmt.Sprintf("Untag %q: ", tagName) + pat
 	case observability.ActionIDSEntrySave:
 		status := ""
-		if s, ok := rec.Attributes["status"].(string); ok {
+		if s, ok := rec.Attributes[observability.AttrStatus].(string); ok {
 			status = s
 		}
 		prior := ""
-		if s, ok := rec.Attributes["prior_status"].(string); ok {
+		if s, ok := rec.Attributes[observability.AttrPriorStatus].(string); ok {
 			prior = s
 		}
 		label := "IDS save"
@@ -465,41 +465,60 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 	case observability.ActionIDSEntryDelete:
 		return theme.Glyphs.HistIDS, "IDS delete: " + pat
 	case observability.ActionOfficeActionImport:
-		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Import Office Action: %s", rec.EntityID)
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Import Office Action: %s", officeActionHistoryLabel(rec))
+	case observability.ActionOfficeActionSaveNotes:
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Update Office Action Notes: %s", officeActionHistoryLabel(rec))
 	case observability.ActionOfficeActionUpdate:
 		notesText := ""
-		if notes, ok := rec.Attributes["notes"].(bool); ok && notes {
+		if notes, ok := rec.Attributes[observability.AttrNotes].(bool); ok && notes {
 			notesText = " (Notes)"
 		}
-		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Update Office Action%s: %s", notesText, rec.EntityID)
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Update Office Action%s: %s", notesText, officeActionHistoryLabel(rec))
 	case observability.ActionOfficeActionDelete:
-		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Delete Office Action: %s", rec.EntityID)
+		return theme.Glyphs.HistNotesExport, fmt.Sprintf("Delete Office Action: %s", officeActionHistoryLabel(rec))
 	case observability.ActionMatterDocumentImport:
 		docName := rec.EntityID
-		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
 			docName = name
 		}
 		return theme.Glyphs.HistFulltext, fmt.Sprintf("Import Document: %s", docName)
 	case observability.ActionMatterDocumentRename:
 		docName := rec.EntityID
-		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
 			docName = name
 		}
 		return theme.Glyphs.HistFulltext, fmt.Sprintf("Rename Document: %s", docName)
 	case observability.ActionMatterDocumentDelete:
 		docName := rec.EntityID
-		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
 			docName = name
 		}
 		return theme.Glyphs.HistFulltext, fmt.Sprintf("Delete Document: %s", docName)
 	case observability.ActionMatterDocumentExtract:
 		docName := rec.EntityID
-		if name, ok := rec.Attributes["name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
 			docName = name
 		}
 		return theme.Glyphs.HistFulltext, fmt.Sprintf("OCR Document: %s", docName)
 	}
 	return theme.Glyphs.HistUnknown, rec.EntityID
+}
+
+func officeActionHistoryLabel(rec observability.Record) string {
+	label := rec.EntityID
+	mailDate, _ := rec.Attributes[observability.AttrMailDate].(string)
+	oaType, _ := rec.Attributes[observability.AttrType].(string)
+	appNumber, _ := rec.Attributes[observability.AttrApplicationNumber].(string)
+	if appNumber != "" {
+		label = appNumber
+	}
+	if mailDate != "" && oaType != "" {
+		return fmt.Sprintf("%s (%s, %s)", label, oaType, mailDate)
+	}
+	if mailDate != "" {
+		return fmt.Sprintf("%s (%s)", label, mailDate)
+	}
+	return label
 }
 
 func patentSummary(numStr, invs, pubDate, title string) string {

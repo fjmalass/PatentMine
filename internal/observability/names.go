@@ -1,0 +1,101 @@
+package observability
+
+const (
+	EntityCommand      = "command"
+	EntityFilter       = "filter"
+	EntityPatent       = "patent"
+	EntityPatents      = "patents"
+	EntityOfficeAction = "office_action"
+	EntityProject      = "project"
+	EntityTableFilter  = "table_filter"
+)
+
+const (
+	StatusCommitted = "committed"
+	StatusDone      = "done"
+	StatusError     = "error"
+	StatusOpened    = "opened"
+	StatusRequested = "requested"
+	StatusObserved  = "observed"
+)
+
+const (
+	AttrApplicationNumber = "application_number"
+	AttrArgs              = "args"
+	AttrCount             = "count"
+	AttrDeleteFiles       = "delete_files"
+	AttrDiffCount         = "diff_count"
+	AttrDisplayNumber     = "display_number"
+	AttrDurationMillis    = "duration_ms"
+	AttrFilter            = "filter"
+	AttrInventorsShort    = "inventors_short"
+	AttrLabel             = "label"
+	AttrLine              = "line"
+	AttrMailDate          = "mail_date"
+	AttrNotes             = "notes"
+	AttrManual            = "manual"
+	AttrName              = "name"
+	AttrPatents           = "patents"
+	AttrPatentsCount      = "patents_count"
+	AttrPath              = "path"
+	AttrPriorStatus       = "prior_status"
+	AttrProvenance        = "provenance"
+	AttrProject           = "project"
+	AttrProjectName       = "project_name"
+	AttrPublicationDate   = "publication_date"
+	AttrRequestedNumber   = "requested_number"
+	AttrRelation          = "relation"
+	AttrResultCount       = "result_count"
+	AttrRoot              = "root"
+	AttrScope             = "scope"
+	AttrSearch            = "search"
+	AttrSortAscending     = "sort_ascending"
+	AttrSource            = "source"
+	AttrSourceMode        = "source_mode"
+	AttrState             = "state"
+	AttrStatus            = "status"
+	AttrStored            = "stored"
+	AttrSystem            = "system"
+	AttrTitle             = "title"
+	AttrTotalCount        = "total_count"
+	AttrType              = "type"
+	AttrVia               = "via"
+)
+
+const (
+	ReplaySourceActivityOverlay   = "tui.activity_overlay"
+	TelemetrySourceHistoryOverlay = "tui.history_overlay"
+)
+
+const (
+	MetricEngineOfficeActionGet       = "engine.office_action"
+	MetricEngineOfficeActionList      = "engine.list_office_actions"
+	MetricEngineImportOfficeAction    = "engine.import_office_action"
+	MetricEngineSaveOfficeActionNotes = "engine.save_office_action_notes"
+	MetricEngineUpdateOfficeAction    = "engine.update_office_action_meta"
+	MetricEngineDeleteOfficeAction    = "engine.delete_office_action"
+
+	MetricObservabilityPruningDeletedBytes = "observability.pruning.deleted_bytes_total"
+	MetricObservabilityPruningDeletedFiles = "observability.pruning.deleted_files_total"
+	MetricObservabilityPruningDuration     = "observability.pruning.duration"
+	MetricObservabilityPruningFinalFiles   = "observability.pruning.final_files"
+	MetricObservabilityPruningFinalSize    = "observability.pruning.final_size_bytes"
+	MetricObservabilityPruningTotal        = "observability.pruning.total"
+
+	MetricOfficeActionImport         = "office_action.import"
+	MetricOfficeActionImportTotal    = "office_action.import.total"
+	MetricOfficeActionGet            = "office_action.get"
+	MetricOfficeActionGetTotal       = "office_action.get.total"
+	MetricOfficeActionList           = "office_action.list"
+	MetricOfficeActionListTotal      = "office_action.list.total"
+	MetricOfficeActionListReturned   = "office_action.list.returned"
+	MetricOfficeActionSaveNotes      = "office_action.save_notes"
+	MetricOfficeActionSaveNotesTotal = "office_action.save_notes.total"
+	MetricOfficeActionUpdate         = "office_action.update"
+	MetricOfficeActionUpdateTotal    = "office_action.update.total"
+	MetricOfficeActionDelete         = "office_action.delete"
+	MetricOfficeActionDeleteTotal    = "office_action.delete.total"
+
+	MetricTUIOfficeActionImportDone  = "tui.office_action.import.done"
+	MetricTUIOfficeActionRespondOpen = "tui.office_action.respond.open"
+)

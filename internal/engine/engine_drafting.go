@@ -306,7 +306,9 @@ type ImportOfficeActionInput struct {
 // bytes-on-disk — rather than stored in SQLite. This is the manual-import path
 // that always works; ODP auto-fetch can populate the same record later.
 func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionInput) (oa domain.OfficeAction, err error) {
-	defer e.observeDuration("engine.import_office_action", time.Now(), &err)
+	start := time.Now()
+	defer e.observeDuration(observability.MetricEngineImportOfficeAction, start, &err)
+	defer e.observeOfficeAction(observability.MetricOfficeActionImport, observability.MetricOfficeActionImportTotal, start, &err)
 	if in.Project == "" {
 		return domain.OfficeAction{}, errors.New("engine: office action requires a project")
 	}
@@ -391,13 +393,16 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 	}
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionOfficeActionImport,
-		Entity:   "office_action",
+		Entity:   observability.EntityOfficeAction,
 		EntityID: oa.ID,
-		Status:   "committed",
+		Status:   observability.StatusCommitted,
 		Attributes: map[string]any{
-			"project": string(in.Project),
-			"source":  source,
-			"stored":  oa.BlobPath != "",
+			observability.AttrProject:           string(in.Project),
+			observability.AttrSource:            source,
+			observability.AttrStored:            oa.BlobPath != "",
+			observability.AttrApplicationNumber: oa.ApplicationNumber,
+			observability.AttrMailDate:          oa.MailDate.Format(domain.DateLayout),
+			observability.AttrType:              string(oa.Type),
 		},
 	})
 	e.announceChange()
@@ -405,14 +410,32 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 }
 
 // OfficeAction returns one stored office action.
-func (e *Engine) OfficeAction(ctx context.Context, id string) (domain.OfficeAction, error) {
-	return e.repo.OfficeAction(ctx, id)
+func (e *Engine) OfficeAction(ctx context.Context, id string) (oa domain.OfficeAction, err error) {
+	start := time.Now()
+	defer e.observeDuration(observability.MetricEngineOfficeActionGet, start, &err)
+	defer e.observeOfficeAction(observability.MetricOfficeActionGet, observability.MetricOfficeActionGetTotal, start, &err)
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionGet,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: oa.ID,
+		Status:   observability.StatusObserved,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+		},
+	})
+	return oa, nil
 }
 
 // SaveOfficeActionNotes replaces the attorney notes on one office action and
 // returns the updated record. The rest of the office action is left untouched.
 func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (oa domain.OfficeAction, err error) {
-	defer e.observeDuration("engine.save_office_action_notes", time.Now(), &err)
+	start := time.Now()
+	defer e.observeDuration(observability.MetricEngineSaveOfficeActionNotes, start, &err)
+	defer e.observeOfficeAction(observability.MetricOfficeActionSaveNotes, observability.MetricOfficeActionSaveNotesTotal, start, &err)
 	if id == "" {
 		return domain.OfficeAction{}, errors.New("engine: office action id required")
 	}
@@ -425,13 +448,13 @@ func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (o
 		return domain.OfficeAction{}, err
 	}
 	e.recordActivity(ctx, observability.Record{
-		Action:   observability.ActionOfficeActionUpdate,
-		Entity:   "office_action",
+		Action:   observability.ActionOfficeActionSaveNotes,
+		Entity:   observability.EntityOfficeAction,
 		EntityID: oa.ID,
-		Status:   "committed",
+		Status:   observability.StatusCommitted,
 		Attributes: map[string]any{
-			"project": string(oa.Project),
-			"notes":   true,
+			observability.AttrProject: string(oa.Project),
+			observability.AttrNotes:   true,
 		},
 	})
 	e.announceChange()
@@ -440,7 +463,9 @@ func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (o
 
 // UpdateOfficeActionMeta updates an office action's metadata and recomputes its response due date.
 func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, examiner, mailDateStr string, oaType domain.OAType, artUnit, appNumber string) (oa domain.OfficeAction, err error) {
-	defer e.observeDuration("engine.update_office_action_meta", time.Now(), &err)
+	start := time.Now()
+	defer e.observeDuration(observability.MetricEngineUpdateOfficeAction, start, &err)
+	defer e.observeOfficeAction(observability.MetricOfficeActionUpdate, observability.MetricOfficeActionUpdateTotal, start, &err)
 	if id == "" {
 		return domain.OfficeAction{}, errors.New("engine: office action id required")
 	}
@@ -471,13 +496,14 @@ func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, examiner
 
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionOfficeActionUpdate,
-		Entity:   "office_action",
+		Entity:   observability.EntityOfficeAction,
 		EntityID: oa.ID,
-		Status:   "committed",
+		Status:   observability.StatusCommitted,
 		Attributes: map[string]any{
-			"project":   string(oa.Project),
-			"type":      string(oa.Type),
-			"mail_date": oa.MailDate.Format(domain.DateLayout),
+			observability.AttrProject:           string(oa.Project),
+			observability.AttrType:              string(oa.Type),
+			observability.AttrMailDate:          oa.MailDate.Format(domain.DateLayout),
+			observability.AttrApplicationNumber: oa.ApplicationNumber,
 		},
 	})
 	e.announceChange()
@@ -485,8 +511,31 @@ func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, examiner
 }
 
 // ListOfficeActions returns a project's office actions, newest first.
-func (e *Engine) ListOfficeActions(ctx context.Context, project domain.ProjectID) ([]domain.OfficeAction, error) {
-	return e.repo.ListOfficeActions(ctx, project)
+func (e *Engine) ListOfficeActions(ctx context.Context, project domain.ProjectID) (actions []domain.OfficeAction, err error) {
+	start := time.Now()
+	defer e.observeDuration(observability.MetricEngineOfficeActionList, start, &err)
+	defer e.observeOfficeAction(observability.MetricOfficeActionList, observability.MetricOfficeActionListTotal, start, &err)
+	actions, err = e.repo.ListOfficeActions(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	e.setGauge(observability.MetricOfficeActionListReturned, int64(len(actions)))
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionList,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: string(project),
+		Status:   observability.StatusObserved,
+		Attributes: map[string]any{
+			observability.AttrProject: string(project),
+			observability.AttrCount:   len(actions),
+		},
+	})
+	return actions, nil
+}
+
+func (e *Engine) observeOfficeAction(timingMetric, totalMetric string, start time.Time, errp *error) {
+	e.observeDuration(timingMetric, start, errp)
+	e.incCounter(totalMetric, 1)
 }
 
 // ImportMatterDocumentInput describes a file to file under a matter (a project).
@@ -650,7 +699,9 @@ func (e *Engine) DeleteMatterDocument(ctx context.Context, id string) (err error
 }
 
 func (e *Engine) DeleteOfficeAction(ctx context.Context, id string, deleteFiles bool) (oa domain.OfficeAction, err error) {
-	defer e.observeDuration("engine.delete_office_action", time.Now(), &err)
+	start := time.Now()
+	defer e.observeDuration(observability.MetricEngineDeleteOfficeAction, start, &err)
+	defer e.observeOfficeAction(observability.MetricOfficeActionDelete, observability.MetricOfficeActionDeleteTotal, start, &err)
 	if id == "" {
 		return domain.OfficeAction{}, errors.New("engine: office action id required")
 	}
@@ -677,11 +728,12 @@ func (e *Engine) DeleteOfficeAction(ctx context.Context, id string, deleteFiles 
 
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionOfficeActionDelete,
-		Entity:   "office_action",
+		Entity:   observability.EntityOfficeAction,
 		EntityID: oa.ID,
-		Status:   "committed",
+		Status:   observability.StatusCommitted,
 		Attributes: map[string]any{
-			"project": string(oa.Project),
+			observability.AttrProject:     string(oa.Project),
+			observability.AttrDeleteFiles: deleteFiles,
 		},
 	})
 	e.announceChange()

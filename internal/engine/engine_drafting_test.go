@@ -13,6 +13,7 @@ import (
 
 	"patentmine/internal/ai"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 )
 
 // fakeDrafter echoes a canned completion and records the last prompt it saw, so
@@ -249,6 +250,102 @@ func TestImportOfficeActionSeedsDeadlineAndDocument(t *testing.T) {
 	}
 	if docs[0].DisplayName != "OfficeAction.txt" {
 		t.Errorf("display name = %q, want the source base name", docs[0].DisplayName)
+	}
+}
+
+func TestOfficeActionObservability(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+	metrics := observability.NewMetrics()
+	observed, err := observability.Open(filepath.Join(t.TempDir(), "logs"), "test", "test-version")
+	if err != nil {
+		t.Fatalf("Open observability: %v", err)
+	}
+	t.Cleanup(func() { _ = observed.Close() })
+	WithMetrics(metrics)(eng)
+	WithActivityRecorder(observed.Activity)(eng)
+
+	src := filepath.Join(t.TempDir(), "OfficeAction.txt")
+	if err := os.WriteFile(src, []byte("rejection text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mailed := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
+	oa, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{
+		Project: proj, Type: domain.OANonFinal, MailDate: mailed, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportOfficeAction: %v", err)
+	}
+	if _, err := eng.OfficeAction(ctx, oa.ID); err != nil {
+		t.Fatalf("OfficeAction: %v", err)
+	}
+	if _, err := eng.ListOfficeActions(ctx, proj); err != nil {
+		t.Fatalf("ListOfficeActions: %v", err)
+	}
+	if _, err := eng.SaveOfficeActionNotes(ctx, oa.ID, "traverse"); err != nil {
+		t.Fatalf("SaveOfficeActionNotes: %v", err)
+	}
+	if _, err := eng.UpdateOfficeActionMeta(ctx, oa.ID, "Jane Doe", mailed.Format(domain.DateLayout), domain.OAFinal, "2151", "16/123,456"); err != nil {
+		t.Fatalf("UpdateOfficeActionMeta: %v", err)
+	}
+	if _, err := eng.DeleteOfficeAction(ctx, oa.ID, false); err != nil {
+		t.Fatalf("DeleteOfficeAction: %v", err)
+	}
+
+	snap := metrics.Snapshot()
+	for _, name := range []string{
+		observability.MetricOfficeActionImport,
+		observability.MetricOfficeActionGet,
+		observability.MetricOfficeActionList,
+		observability.MetricOfficeActionSaveNotes,
+		observability.MetricOfficeActionUpdate,
+		observability.MetricOfficeActionDelete,
+	} {
+		if snap.Timings[name].Count != 1 {
+			t.Fatalf("timing %s count = %d, want 1", name, snap.Timings[name].Count)
+		}
+	}
+	for _, name := range []string{
+		observability.MetricOfficeActionImportTotal,
+		observability.MetricOfficeActionGetTotal,
+		observability.MetricOfficeActionListTotal,
+		observability.MetricOfficeActionSaveNotesTotal,
+		observability.MetricOfficeActionUpdateTotal,
+		observability.MetricOfficeActionDeleteTotal,
+	} {
+		if snap.Counters[name] != 1 {
+			t.Fatalf("counter %s = %d, want 1", name, snap.Counters[name])
+		}
+	}
+	if snap.Gauges[observability.MetricOfficeActionListReturned] != 1 {
+		t.Fatalf("list returned gauge = %d, want 1", snap.Gauges[observability.MetricOfficeActionListReturned])
+	}
+
+	records, err := observability.ReadActivityRecords(observed.LogsDir, observability.ActivityQuery{
+		Limit:  10,
+		Entity: observability.EntityOfficeAction,
+	})
+	if err != nil {
+		t.Fatalf("ReadActivityRecords: %v", err)
+	}
+	seen := make(map[string]bool)
+	for _, rec := range records {
+		seen[rec.Action] = true
+		if rec.Status != observability.StatusCommitted && rec.Status != observability.StatusObserved {
+			t.Fatalf("unexpected office-action status %q", rec.Status)
+		}
+	}
+	for _, action := range []string{
+		observability.ActionOfficeActionImport,
+		observability.ActionOfficeActionGet,
+		observability.ActionOfficeActionList,
+		observability.ActionOfficeActionSaveNotes,
+		observability.ActionOfficeActionUpdate,
+		observability.ActionOfficeActionDelete,
+	} {
+		if !seen[action] {
+			t.Fatalf("missing activity action %s in %#v", action, records)
+		}
 	}
 }
 

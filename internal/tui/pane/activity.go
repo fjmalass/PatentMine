@@ -1,26 +1,29 @@
 package pane
 
-import "patentmine/internal/domain"
+import (
+	"patentmine/internal/domain"
+	"patentmine/internal/observability"
+)
 
 func patentRowActivity(scope, title string, row domain.PatentRow, project domain.ProjectID, filter PatentFilter) ActivityFocus {
 	attrs := map[string]any{
-		"scope":           scope,
-		"display_number":  row.DisplayNumber.String(),
-		"title":           row.Title,
-		"review_state":    row.ReviewState,
-		"tags":            row.Tags,
-		"classifications": row.Classifications,
-		"filter":           filter.Expression,
-		"search":           filter.Search,
-		"inventors_short":  formatInventorsShort(row.Inventors),
+		observability.AttrScope:          scope,
+		observability.AttrDisplayNumber:  row.DisplayNumber.String(),
+		observability.AttrTitle:          row.Title,
+		"review_state":                   row.ReviewState,
+		"tags":                           row.Tags,
+		"classifications":                row.Classifications,
+		observability.AttrFilter:         filter.Expression,
+		observability.AttrSearch:         filter.Search,
+		observability.AttrInventorsShort: formatInventorsShort(row.Inventors),
 	}
 	if !row.PublicationDate.IsZero() {
-		attrs["publication_date"] = row.PublicationDate.Format(domain.DateLayout)
+		attrs[observability.AttrPublicationDate] = row.PublicationDate.Format(domain.DateLayout)
 	}
 	if project != "" {
-		attrs["project"] = project
+		attrs[observability.AttrProject] = project
 	}
-	return ActivityFocus{Entity: "patent", EntityID: row.Number.String(), Label: title, Attributes: attrs}
+	return ActivityFocus{Entity: observability.EntityPatent, EntityID: row.Number.String(), Label: title, Attributes: attrs}
 }
 
 func activeProjectID(project *domain.Project) domain.ProjectID {

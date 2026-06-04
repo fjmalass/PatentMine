@@ -481,7 +481,7 @@ func (a *App) log() *slog.Logger {
 		l = slog.Default()
 	}
 	if a.sourceMode != "" {
-		return l.With(slog.String("source_mode", a.sourceMode))
+		return l.With(slog.String(observability.AttrSourceMode, a.sourceMode))
 	}
 	return l
 }
@@ -864,7 +864,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case pane.OpenResponseEditorMsg:
 		a.overlays = append(a.overlays, overlay.NewResponseEditor(a.client, a.theme, m.Draft, m.Docs))
-		a.metrics.IncCounter("tui.officeaction.respond.open", 1)
+		a.metrics.IncCounter(observability.MetricTUIOfficeActionRespondOpen, 1)
 		return a, nil
 	case overlay.MatterEventSubmitMsg:
 		a.popOverlay()
@@ -910,12 +910,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.recordActivity(observability.Record{
 			Action:   observability.ActionFilterApply,
-			Entity:   "filter",
+			Entity:   observability.EntityFilter,
 			EntityID: m.Query,
-			Status:   "requested",
+			Status:   observability.StatusRequested,
 			Attributes: map[string]any{
-				"search":  m.Query,
-				"project": projectID,
+				observability.AttrSearch:  m.Query,
+				observability.AttrProject: projectID,
 			},
 		})
 	case overlay.JumpSelectMsg:
@@ -963,19 +963,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		query := strings.TrimSpace(m.Query)
 		attrs := observability.TableFilter{
-			Source:      "tui.history_overlay",
+			Source:      observability.TelemetrySourceHistoryOverlay,
 			TableType:   string(domain.TableIDSActivityHistory),
 			Search:      query,
 			SearchTerms: len(strings.Fields(query)),
 		}.Attributes()
-		attrs["sort_ascending"] = m.SortAscending
-		attrs["result_count"] = m.ResultCount
-		attrs["total_count"] = m.TotalCount
+		attrs[observability.AttrSortAscending] = m.SortAscending
+		attrs[observability.AttrResultCount] = m.ResultCount
+		attrs[observability.AttrTotalCount] = m.TotalCount
 		return a, a.recordActivity(observability.Record{
 			Action:     observability.ActionTableFilterApply,
-			Entity:     "table_filter",
+			Entity:     observability.EntityTableFilter,
 			EntityID:   string(domain.TableIDSActivityHistory),
-			Status:     "requested",
+			Status:     observability.StatusRequested,
 			Attributes: attrs,
 		})
 	case overlay.ConfirmHistoryReplayMsg:
@@ -1062,12 +1062,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		a.recordActivity(observability.Record{
 			Action:   observability.ActionSourceResolveDiffs,
-			Entity:   "patent",
+			Entity:   observability.EntityPatent,
 			EntityID: m.Patent.String(),
-			Status:   "committed",
+			Status:   observability.StatusCommitted,
 			Attributes: map[string]any{
-				"diff_count": len(m.Diffs),
-				"via":        "tui",
+				observability.AttrDiffCount: len(m.Diffs),
+				observability.AttrVia:       "tui",
 			},
 		})
 
@@ -1125,7 +1125,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			lines = append(lines, "Copied to:", "  "+m.StoredAt)
 		}
 		a.overlays = append(a.overlays, overlay.NewNoticeOverlay(a.theme, "Office Action Imported", lines))
-		a.metrics.IncCounter("tui.officeaction.import.done", 1)
+		a.metrics.IncCounter(observability.MetricTUIOfficeActionImportDone, 1)
 		a.log().Info("office action imported",
 			slog.String("id", m.ID),
 			slog.String("source", m.Source),
@@ -1245,13 +1245,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, a.recordActivity(observability.Record{
 				Action:   observability.ActionNotesExport,
-				Entity:   "project",
+				Entity:   observability.EntityProject,
 				EntityID: string(projectID),
-				Status:   "done",
+				Status:   observability.StatusDone,
 				Attributes: map[string]any{
-					"count":        count,
-					"path":         path,
-					"project_name": projectName,
+					observability.AttrCount:       count,
+					observability.AttrPath:        path,
+					observability.AttrProjectName: projectName,
 				},
 			})
 		} else if m.Key == text.StatusNotesExportFailed {

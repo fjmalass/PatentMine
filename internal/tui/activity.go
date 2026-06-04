@@ -29,7 +29,7 @@ func (a *App) observeFocus() tea.Cmd {
 	if !ok || focus.Entity == "" || focus.EntityID == "" {
 		return nil
 	}
-	key := focus.Entity + ":" + focus.EntityID + ":" + fmt.Sprint(focus.Attributes["scope"]) + ":" + fmt.Sprint(focus.Attributes["line"])
+	key := focus.Entity + ":" + focus.EntityID + ":" + fmt.Sprint(focus.Attributes[observability.AttrScope]) + ":" + fmt.Sprint(focus.Attributes[observability.AttrLine])
 	if key == a.focusKey {
 		return nil
 	}
@@ -56,13 +56,13 @@ func (a *App) handleFocusDwell(m focusDwellMsg) tea.Cmd {
 	}
 	a.focusRecorded = true
 	attrs := cloneAttributes(focus.Attributes)
-	attrs["label"] = focus.Label
-	attrs["duration_ms"] = duration.Milliseconds()
+	attrs[observability.AttrLabel] = focus.Label
+	attrs[observability.AttrDurationMillis] = duration.Milliseconds()
 	return a.recordActivity(observability.Record{
-		Action:   observability.ActionUIFocus,
-		Entity:   focus.Entity,
-		EntityID: focus.EntityID,
-		Status:   "observed",
+		Action:     observability.ActionUIFocus,
+		Entity:     focus.Entity,
+		EntityID:   focus.EntityID,
+		Status:     observability.StatusObserved,
 		Attributes: attrs,
 	})
 }
@@ -76,10 +76,10 @@ func (a *App) currentActivityFocus() (pane.ActivityFocus, bool) {
 		return pane.ActivityFocus{}, false
 	}
 	return pane.ActivityFocus{
-		Entity:   "patent",
-		EntityID: number.String(),
-		Label:    a.focusedPane().Title(),
-		Attributes: map[string]any{"scope": string(a.focusedPane().Scope())},
+		Entity:     observability.EntityPatent,
+		EntityID:   number.String(),
+		Label:      a.focusedPane().Title(),
+		Attributes: map[string]any{observability.AttrScope: string(a.focusedPane().Scope())},
 	}, true
 }
 
@@ -87,21 +87,21 @@ func (a *App) recordTypedActivity(id command.ID, args []string) tea.Cmd {
 	if a.activity == nil {
 		return nil
 	}
-	action := "tui.command"
-	entity := "command"
+	action := observability.ActionUICommand
+	entity := observability.EntityCommand
 	entityID := string(id)
-	attrs := map[string]any{"scope": string(a.scope()), "args": args}
+	attrs := map[string]any{observability.AttrScope: string(a.scope()), observability.AttrArgs: args}
 	if id == command.Filter {
-		action = "filter.apply"
-		entity = "filter"
+		action = observability.ActionFilterApply
+		entity = observability.EntityFilter
 		entityID = strings.Join(args, " ")
-		attrs["filter"] = entityID
+		attrs[observability.AttrFilter] = entityID
 	}
 	return a.recordActivity(observability.Record{
-		Action:   action,
-		Entity:   entity,
-		EntityID: entityID,
-		Status:   "requested",
+		Action:     action,
+		Entity:     entity,
+		EntityID:   entityID,
+		Status:     observability.StatusRequested,
 		Attributes: attrs,
 	})
 }
@@ -114,8 +114,8 @@ func (a *App) recordActivity(rec observability.Record) tea.Cmd {
 			if rec.Attributes == nil {
 				rec.Attributes = map[string]any{}
 			}
-			rec.Attributes["project"] = string(a.activeProject.ID)
-			rec.Attributes["project_name"] = a.activeProject.Name
+			rec.Attributes[observability.AttrProject] = string(a.activeProject.ID)
+			rec.Attributes[observability.AttrProjectName] = a.activeProject.Name
 		}
 		if err := activity.Record(context.Background(), rec); err != nil {
 			logger.Warn("activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))
@@ -132,7 +132,7 @@ func (a *App) recordReplayHistory(rec observability.Record) tea.Cmd {
 			return nil
 		}
 		attrs := cloneAttributes(rec.Attributes)
-		attrs["source"] = "tui.activity_overlay"
+		attrs[observability.AttrSource] = observability.ReplaySourceActivityOverlay
 		entry := observability.ReplayHistoryEntry{
 			ActivityID:        rec.ID,
 			ActivityTimestamp: rec.Timestamp,
@@ -140,7 +140,7 @@ func (a *App) recordReplayHistory(rec observability.Record) tea.Cmd {
 			Entity:            rec.Entity,
 			EntityID:          rec.EntityID,
 			Status:            rec.Status,
-			Attributes:          attrs,
+			Attributes:        attrs,
 		}
 		if err := observability.AppendReplayHistory(logsDir, entry, replayHistoryCap); err != nil {
 			logger.Warn("replay history record failed", slog.String("activity_id", rec.ID), slog.String("error", err.Error()))

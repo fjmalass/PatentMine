@@ -103,6 +103,7 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 	case observability.ActionProjectSwitch:
 		return a.replayHistoryProjectSwitch(rec, confirmed)
 	case observability.ActionOfficeActionImport,
+		observability.ActionOfficeActionSaveNotes,
 		observability.ActionOfficeActionUpdate,
 		observability.ActionOfficeActionDelete:
 		return a.replayHistoryOfficeAction(rec)
@@ -125,7 +126,7 @@ func (a *App) replayHistoryPatentTarget(rec observability.Record) (tea.Model, te
 	project := a.historyProjectID(rec)
 	switchCmd := a.switchHistoryProject(project)
 	a.closeHistoryReplayOverlays()
-	scope, _ := rec.Attributes["scope"].(string)
+	scope, _ := rec.Attributes[observability.AttrScope].(string)
 	if replayScope := overlay.ReplayScope(rec.Action); replayScope != "" {
 		scope = replayScope
 	}
@@ -154,7 +155,7 @@ func historyPatentNumber(rec observability.Record) (domain.PatentNumber, bool) {
 }
 
 func (a *App) historyProjectID(rec observability.Record) domain.ProjectID {
-	if project, ok := rec.Attributes["project"].(string); ok && project != "" {
+	if project, ok := rec.Attributes[observability.AttrProject].(string); ok && project != "" {
 		return domain.ProjectID(project)
 	}
 	if overlay.IsProjectPatentAction(rec.Action) {
@@ -197,7 +198,7 @@ func (a *App) pushHistoryReplayPane(scope string, number domain.PatentNumber, pr
 	switch scope {
 	case "citations":
 		kind := domain.RelationCites
-		if relation, ok := attrs["relation"].(string); ok {
+		if relation, ok := attrs[observability.AttrRelation].(string); ok {
 			kind = domain.RelationKind(relation)
 		}
 		return a.pushPane(pane.NewCitations(a.client, a.theme, number, kind).WithLogger(a.log()))
@@ -240,7 +241,7 @@ func (a *App) replayHistoryProjectSwitch(rec observability.Record, confirmed boo
 	if !confirmed {
 		a.confirmCmd = func() tea.Msg { return overlay.ConfirmHistoryReplayMsg{Record: rec} }
 		projectName := rec.EntityID
-		if name, ok := rec.Attributes["project_name"].(string); ok && name != "" {
+		if name, ok := rec.Attributes[observability.AttrProjectName].(string); ok && name != "" {
 			projectName = name
 		}
 		a.overlays = append(a.overlays, overlay.NewConfirm(a.theme, fmt.Sprintf("Switch to project '%s'?", projectName)))

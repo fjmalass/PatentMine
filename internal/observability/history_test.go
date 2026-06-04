@@ -51,11 +51,11 @@ func TestReadHistoryFeedIncludesIDSSaveRecord(t *testing.T) {
 	t.Cleanup(func() { _ = rt.Close() })
 
 	rec := Record{
-		ID:       "2026-05-25-1779702888891050258-10",
-		Action:   ActionIDSEntrySave,
-		Entity:   "ids_entry",
-		EntityID: "p-1779646755967531735/US20080011946A1",
-		Status:   "committed",
+		ID:         "2026-05-25-1779702888891050258-10",
+		Action:     ActionIDSEntrySave,
+		Entity:     "ids_entry",
+		EntityID:   "p-1779646755967531735/US20080011946A1",
+		Status:     "committed",
 		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	}
 	if err := rt.Activity.Record(context.Background(), rec); err != nil {
@@ -71,5 +71,42 @@ func TestReadHistoryFeedIncludesIDSSaveRecord(t *testing.T) {
 	}
 	if feed.Records[0].Action != ActionIDSEntrySave || feed.Records[0].EntityID != rec.EntityID {
 		t.Fatalf("history feed record = %+v, want IDS save", feed.Records[0])
+	}
+}
+
+func TestHistoryFeedIncludesOfficeActionMutationsOnly(t *testing.T) {
+	logsDir := filepath.Join(t.TempDir(), "logs")
+	rt, err := Open(logsDir, "daemon", "test-version")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	for _, rec := range []Record{
+		{Action: ActionOfficeActionGet, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusObserved},
+		{Action: ActionOfficeActionList, Entity: EntityOfficeAction, EntityID: "p1", Status: StatusObserved},
+		{Action: ActionOfficeActionImport, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+		{Action: ActionOfficeActionSaveNotes, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+		{Action: ActionOfficeActionUpdate, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+		{Action: ActionOfficeActionDelete, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+	} {
+		if err := rt.Activity.Record(context.Background(), rec); err != nil {
+			t.Fatalf("Record: %v", err)
+		}
+	}
+
+	feed, err := ReadHistoryFeed(logsDir, HistoryQuery{RawLimit: 10})
+	if err != nil {
+		t.Fatalf("ReadHistoryFeed: %v", err)
+	}
+	if feed.Returned != 4 {
+		t.Fatalf("Returned = %d, want 4", feed.Returned)
+	}
+	for _, rec := range feed.Records {
+		switch rec.Action {
+		case ActionOfficeActionImport, ActionOfficeActionSaveNotes, ActionOfficeActionUpdate, ActionOfficeActionDelete:
+		default:
+			t.Fatalf("history included raw-only action %s", rec.Action)
+		}
 	}
 }

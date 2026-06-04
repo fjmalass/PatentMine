@@ -9,6 +9,7 @@ import (
 
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/observability"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
 	"patentmine/internal/text"
@@ -723,8 +724,8 @@ func (c *Citations) ActivityFocus() (ActivityFocus, bool) {
 		return ActivityFocus{}, false
 	}
 	focus := patentRowActivity("citations", c.Title(), c.patents[cur], activeProjectID(c.activeProject), c.filter)
-	focus.Attributes["root"] = c.root.String()
-	focus.Attributes["relation"] = c.kind
+	focus.Attributes[observability.AttrRoot] = c.root.String()
+	focus.Attributes[observability.AttrRelation] = c.kind
 	return focus, true
 }
 

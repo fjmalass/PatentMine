@@ -111,11 +111,11 @@ func (a *App) openSourceCompare(number domain.PatentNumber) (tea.Model, tea.Cmd)
 	a.metrics.IncCounter("tui.source.compare.initiated_total", 1)
 	a.recordActivity(observability.Record{
 		Action:   observability.ActionSourceCompareOpen,
-		Entity:   "patent",
+		Entity:   observability.EntityPatent,
 		EntityID: number.String(),
-		Status:   map[bool]string{true: "error", false: "opened"}[listErr != nil],
+		Status:   map[bool]string{true: observability.StatusError, false: observability.StatusOpened}[listErr != nil],
 		Attributes: map[string]any{
-			"diff_count": len(listRes.Diffs),
+			observability.AttrDiffCount: len(listRes.Diffs),
 		},
 	})
 
@@ -1205,9 +1205,9 @@ func (a *App) cmdClearPatentCache(inv invocation) (tea.Model, tea.Cmd) {
 		if len(inv.args) == 1 && strings.ToLower(inv.args[0]) == "all" {
 			recCmd := a.recordActivity(observability.Record{
 				Action:     observability.ActionUIClearCache,
-				Entity:     "patents",
-				Status:     "requested",
-				Attributes: map[string]any{"scope": "all"},
+				Entity:     observability.EntityPatents,
+				Status:     observability.StatusRequested,
+				Attributes: map[string]any{observability.AttrScope: "all"},
 			})
 			return a, tea.Batch(pane.ClearPatentCacheCmd(a.client, nil), recCmd)
 		}
@@ -1225,9 +1225,9 @@ func (a *App) cmdClearPatentCache(inv invocation) (tea.Model, tea.Cmd) {
 
 		recCmd := a.recordActivity(observability.Record{
 			Action:     observability.ActionUIClearCache,
-			Entity:     "patents",
-			Status:     "requested",
-			Attributes: map[string]any{"patents": inv.args},
+			Entity:     observability.EntityPatents,
+			Status:     observability.StatusRequested,
+			Attributes: map[string]any{observability.AttrPatents: inv.args},
 		})
 		return a, tea.Batch(pane.ClearPatentCacheCmd(a.client, patents), recCmd)
 	}
@@ -1237,9 +1237,9 @@ func (a *App) cmdClearPatentCache(inv invocation) (tea.Model, tea.Cmd) {
 	if len(numbers) > 0 {
 		recCmd := a.recordActivity(observability.Record{
 			Action:     observability.ActionUIClearCache,
-			Entity:     "patents",
-			Status:     "requested",
-			Attributes: map[string]any{"patents_count": len(numbers)},
+			Entity:     observability.EntityPatents,
+			Status:     observability.StatusRequested,
+			Attributes: map[string]any{observability.AttrPatentsCount: len(numbers)},
 		})
 		return a, tea.Batch(pane.ClearPatentCacheCmd(a.client, numbers), recCmd)
 	}
@@ -1248,9 +1248,9 @@ func (a *App) cmdClearPatentCache(inv invocation) (tea.Model, tea.Cmd) {
 	a.confirmCmd = pane.ClearPatentCacheCmd(a.client, nil)
 	recCmd := a.recordActivity(observability.Record{
 		Action:     observability.ActionUIClearCache,
-		Entity:     "patents",
-		Status:     "requested",
-		Attributes: map[string]any{"scope": "all_confirm"},
+		Entity:     observability.EntityPatents,
+		Status:     observability.StatusRequested,
+		Attributes: map[string]any{observability.AttrScope: "all_confirm"},
 	})
 
 	confirmMsg := "Are you sure you want to clear the parsed body cache for ALL patents in the database?"

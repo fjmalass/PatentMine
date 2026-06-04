@@ -314,7 +314,7 @@ func (e *Engine) log(ctx context.Context, level slog.Level, msg string, attrs ..
 	logger := observability.WithContextAttrs(ctx, e.logger)
 	args := make([]any, 0, len(attrs)+1)
 	if mode := e.currentSourceMode(); mode != "" {
-		args = append(args, slog.String("source_mode", mode))
+		args = append(args, slog.String(observability.AttrSourceMode, mode))
 	}
 	for _, attr := range attrs {
 		args = append(args, attr)
@@ -330,7 +330,7 @@ func (e *Engine) recordActivity(ctx context.Context, rec observability.Record) {
 		if rec.Attributes == nil {
 			rec.Attributes = make(map[string]any)
 		}
-		rec.Attributes["source_mode"] = mode
+		rec.Attributes[observability.AttrSourceMode] = mode
 	}
 	if err := e.activities.Record(ctx, rec); err != nil {
 		e.log(ctx, slog.LevelWarn, "activity record failed", slog.String("action", rec.Action), slog.String("error", err.Error()))

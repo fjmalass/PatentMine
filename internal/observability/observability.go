@@ -52,7 +52,7 @@ const (
 	MetricNamespaceUSPTO        MetricNamespace = "uspto"
 	MetricNamespaceService      MetricNamespace = "service"
 	MetricNamespaceTUI          MetricNamespace = "tui"
-	MetricNamespaceOfficeAction MetricNamespace = "officeaction"
+	MetricNamespaceOfficeAction MetricNamespace = "office_action"
 	MetricNamespaceOther        MetricNamespace = "other"
 )
 
@@ -327,12 +327,12 @@ func pruneOldLogs(logsDir string, now time.Time, logger *slog.Logger, metrics *M
 
 	// Telemetry/Metrics
 	if metrics != nil {
-		metrics.IncCounter("observability.pruning.total", 1)
-		metrics.IncCounter("observability.pruning.deleted_files_total", deletedFileCount)
-		metrics.IncCounter("observability.pruning.deleted_bytes_total", deletedSizeBytes)
-		metrics.SetGauge("observability.pruning.final_files", finalFileCount)
-		metrics.SetGauge("observability.pruning.final_size_bytes", finalSizeBytes)
-		metrics.ObserveDuration("observability.pruning.duration", duration, false)
+		metrics.IncCounter(MetricObservabilityPruningTotal, 1)
+		metrics.IncCounter(MetricObservabilityPruningDeletedFiles, deletedFileCount)
+		metrics.IncCounter(MetricObservabilityPruningDeletedBytes, deletedSizeBytes)
+		metrics.SetGauge(MetricObservabilityPruningFinalFiles, finalFileCount)
+		metrics.SetGauge(MetricObservabilityPruningFinalSize, finalSizeBytes)
+		metrics.ObserveDuration(MetricObservabilityPruningDuration, duration, false)
 	}
 }
 

@@ -13,10 +13,10 @@ import (
 
 func TestHistoryFilterActionDetails(t *testing.T) {
 	_, details := historyIconAndDetails(render.NewTheme(), observability.Record{
-		Action:   observability.ActionFilterApply,
-		Entity:   "filter",
-		EntityID: "ids_status:pending",
-		Status:   "requested",
+		Action:     observability.ActionFilterApply,
+		Entity:     "filter",
+		EntityID:   "ids_status:pending",
+		Status:     "requested",
 		Attributes: map[string]any{"filter": "ids_status:pending"},
 	})
 	if details != `Filter: "ids_status:pending"` {
@@ -24,10 +24,10 @@ func TestHistoryFilterActionDetails(t *testing.T) {
 	}
 
 	_, details = historyIconAndDetails(render.NewTheme(), observability.Record{
-		Action:   observability.ActionFilterApply,
-		Entity:   "filter",
-		EntityID: "needle",
-		Status:   "requested",
+		Action:     observability.ActionFilterApply,
+		Entity:     "filter",
+		EntityID:   "needle",
+		Status:     "requested",
 		Attributes: map[string]any{"search": "needle"},
 	})
 	if details != `Search: "needle"` {
@@ -37,14 +37,33 @@ func TestHistoryFilterActionDetails(t *testing.T) {
 
 func TestHistoryIDSSaveDetailsShowStatusTransition(t *testing.T) {
 	_, details := historyIconAndDetails(render.NewTheme(), observability.Record{
-		Action:   observability.ActionIDSEntrySave,
-		Entity:   "ids_entry",
-		EntityID: "p-1779646755967531735/US20080011946A1",
-		Status:   "committed",
+		Action:     observability.ActionIDSEntrySave,
+		Entity:     "ids_entry",
+		EntityID:   "p-1779646755967531735/US20080011946A1",
+		Status:     "committed",
 		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	})
 	if !strings.Contains(details, "IDS ignored") || !strings.Contains(details, "pending") || !strings.Contains(details, "US20080011946A1") {
 		t.Fatalf("IDS details = %q", details)
+	}
+}
+
+func TestHistoryOfficeActionDetailsUseAttrs(t *testing.T) {
+	_, details := historyIconAndDetails(render.NewTheme(), observability.Record{
+		Action:   observability.ActionOfficeActionSaveNotes,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: "oa-1",
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrApplicationNumber: "16/123,456",
+			observability.AttrMailDate:          "2026-01-09",
+			observability.AttrType:              "non_final",
+		},
+	})
+	for _, want := range []string{"Update Office Action Notes", "16/123,456", "2026-01-09", "non_final"} {
+		if !strings.Contains(details, want) {
+			t.Fatalf("office action details missing %q: %q", want, details)
+		}
 	}
 }
 
@@ -115,4 +134,3 @@ func TestHistoryAddMembershipDetailsShowsProvenance(t *testing.T) {
 		t.Fatalf("expected related provenance, got details: %q", details)
 	}
 }
-

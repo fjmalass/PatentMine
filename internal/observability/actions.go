@@ -32,6 +32,7 @@ const (
 	ActionTableViewSave         = "table_view.save"
 	ActionTableViewDelete       = "table_view.delete"
 	ActionUIBrowse              = "ui.browse"
+	ActionUICommand             = "ui.command"
 	ActionUIFocus               = "ui.focus"
 	ActionUIClearCache          = "ui.clear_cache"
 	ActionNotesExport           = "notes.export"
@@ -60,14 +61,17 @@ const (
 
 	// Drafting subsystem (provisional / non-provisional applications and
 	// office-action responses rendered to .docx).
-	ActionDraftCreate        = "draft.create"
-	ActionDraftSave          = "draft.save"
-	ActionDraftDelete        = "draft.delete"
-	ActionDraftExportDocx    = "draft.export.docx"
-	ActionDraftSectionAI     = "draft.section.ai"
-	ActionOfficeActionImport = "office_action.import"
-	ActionOfficeActionUpdate = "office_action.update"
-	ActionOfficeActionDelete = "office_action.delete"
+	ActionDraftCreate           = "draft.create"
+	ActionDraftSave             = "draft.save"
+	ActionDraftDelete           = "draft.delete"
+	ActionDraftExportDocx       = "draft.export.docx"
+	ActionDraftSectionAI        = "draft.section.ai"
+	ActionOfficeActionGet       = "office_action.get"
+	ActionOfficeActionImport    = "office_action.import"
+	ActionOfficeActionList      = "office_action.list"
+	ActionOfficeActionSaveNotes = "office_action.save_notes"
+	ActionOfficeActionUpdate    = "office_action.update"
+	ActionOfficeActionDelete    = "office_action.delete"
 
 	// Prosecution-matter workspace (matter-scoped documents and project stage).
 	ActionMatterDocumentImport  = "matter_document.import"
@@ -112,6 +116,7 @@ var AllActions = []string{
 	ActionTableViewSave,
 	ActionTableViewDelete,
 	ActionUIBrowse,
+	ActionUICommand,
 	ActionUIFocus,
 	ActionNotesExport,
 	ActionNotesSave,
@@ -135,7 +140,10 @@ var AllActions = []string{
 	ActionDraftDelete,
 	ActionDraftExportDocx,
 	ActionDraftSectionAI,
+	ActionOfficeActionGet,
 	ActionOfficeActionImport,
+	ActionOfficeActionList,
+	ActionOfficeActionSaveNotes,
 	ActionOfficeActionUpdate,
 	ActionOfficeActionDelete,
 	ActionMatterDocumentImport,

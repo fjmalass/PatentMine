@@ -131,21 +131,21 @@ func (a *App) pushPane(p pane.Pane) (tea.Model, tea.Cmd) {
 		a.recordHistory(num)
 		if a.activity != nil {
 			var attrs map[string]any
-			if focus, ok := a.currentActivityFocus(); ok && focus.Entity == "patent" && focus.EntityID == num.String() {
+			if focus, ok := a.currentActivityFocus(); ok && focus.Entity == observability.EntityPatent && focus.EntityID == num.String() {
 				attrs = cloneAttributes(focus.Attributes)
 			} else {
 				attrs = make(map[string]any)
 			}
-			attrs["scope"] = string(p.Scope())
+			attrs[observability.AttrScope] = string(p.Scope())
 			if a.activeProject != nil {
-				attrs["project"] = string(a.activeProject.ID)
-				attrs["project_name"] = a.activeProject.Name
+				attrs[observability.AttrProject] = string(a.activeProject.ID)
+				attrs[observability.AttrProjectName] = a.activeProject.Name
 			}
 			recCmd = a.recordActivity(observability.Record{
-				Action:   observability.ActionUIFocus,
-				Entity:   "patent",
-				EntityID: num.String(),
-				Status:   "requested",
+				Action:     observability.ActionUIFocus,
+				Entity:     observability.EntityPatent,
+				EntityID:   num.String(),
+				Status:     observability.StatusRequested,
 				Attributes: attrs,
 			})
 		}
@@ -278,11 +278,11 @@ func (a *App) useProject(project domain.Project) (tea.Model, tea.Cmd) {
 	if a.activity != nil {
 		recCmd = a.recordActivity(observability.Record{
 			Action:   observability.ActionProjectSwitch,
-			Entity:   "project",
+			Entity:   observability.EntityProject,
 			EntityID: string(project.ID),
-			Status:   "observed",
+			Status:   observability.StatusObserved,
 			Attributes: map[string]any{
-				"project_name": project.Name,
+				observability.AttrProjectName: project.Name,
 			},
 		})
 	}

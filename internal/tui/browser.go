@@ -149,15 +149,15 @@ func recordBrowseTelemetry(metrics *observability.Metrics, activity *observabili
 		metrics.ObserveDuration("tui.browse.duration", elapsed, !ok)
 	}
 	attrs := map[string]any{
-		"target":      string(target),
-		"provider":    resolution.Provider,
-		"kind":        resolution.Kind,
-		"url":         redactBrowseURL(resolution.URL),
-		"duration_ms": elapsed.Milliseconds(),
+		"target":                         string(target),
+		"provider":                       resolution.Provider,
+		"kind":                           resolution.Kind,
+		"url":                            redactBrowseURL(resolution.URL),
+		observability.AttrDurationMillis: elapsed.Milliseconds(),
 	}
 	if project != "" {
-		attrs["project"] = string(project)
-		attrs["project_name"] = projectName
+		attrs[observability.AttrProject] = string(project)
+		attrs[observability.AttrProjectName] = projectName
 	}
 	if errText != "" {
 		attrs["error"] = errText
@@ -168,7 +168,7 @@ func recordBrowseTelemetry(metrics *observability.Metrics, activity *observabili
 	if activity != nil {
 		_ = activity.Record(context.Background(), observability.Record{
 			Action:     observability.ActionUIBrowse,
-			Entity:     "patent",
+			Entity:     observability.EntityPatent,
 			EntityID:   number.Normalized(),
 			Status:     status,
 			Attributes: attrs,
