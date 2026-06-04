@@ -103,6 +103,25 @@ const (
 	MethodOfficeActionGet       Method = "office_action.get"
 	MethodOfficeActionSaveNotes Method = "office_action.save_notes"
 
+	// Prosecution-matter workspace: matter-scoped documents and project stage.
+	MethodMatterDocumentImport  Method = "matter.document.import"
+	MethodMatterDocumentList    Method = "matter.document.list"
+	MethodMatterDocumentRename  Method = "matter.document.rename"
+	MethodMatterDocumentDelete  Method = "matter.document.delete"
+	MethodMatterDocumentExtract Method = "matter.document.extract"
+	MethodMatterEventAdd        Method = "matter.event.add"
+	MethodMatterEventList       Method = "matter.event.list"
+	MethodMatterEventDelete     Method = "matter.event.delete"
+	MethodProjectSetMatterType  Method = "project.set_matter_type"
+
+	// Time tracking + AI usage (billing).
+	MethodTimeLog         Method = "time_entry.log"
+	MethodTimeList        Method = "time_entry.list"
+	MethodTimeUnvalidated Method = "time_entry.unvalidated"
+	MethodTimeUpdate      Method = "time_entry.update"
+	MethodTimeDelete      Method = "time_entry.delete"
+	MethodTimeSummary     Method = "time_entry.summary"
+
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"
 	MethodSourceDiffsList    Method = "source.diffs.list"

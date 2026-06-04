@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,9 @@ const (
 	geminiModel   = "gemini-2.5-flash"
 	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent"
 	httpTimeout   = 30 * time.Second
+	// extractTimeout is generous because multimodal OCR of a multi-page scanned
+	// document takes far longer than a text completion.
+	extractTimeout = 3 * time.Minute
 )
 
 // GeminiAnalyzer implements the Analyzer interface using Google's Gemini API.
@@ -37,8 +41,14 @@ func NewGeminiAnalyzer(apiKey string) *GeminiAnalyzer {
 	}
 }
 
+type geminiInlineData struct {
+	MimeType string `json:"mime_type"`
+	Data     string `json:"data"` // base64-encoded bytes
+}
+
 type geminiPart struct {
-	Text string `json:"text"`
+	Text       string            `json:"text,omitempty"`
+	InlineData *geminiInlineData `json:"inline_data,omitempty"`
 }
 
 type geminiContent struct {
@@ -108,13 +118,44 @@ func (g *GeminiAnalyzer) Complete(ctx context.Context, prompt string) (string, e
 // Model returns the identifier of the underlying model, for draft provenance.
 func (g *GeminiAnalyzer) Model() string { return geminiModel }
 
+// ExtractText transcribes the text of a binary document (a scanned PDF, an
+// image) using Gemini's multimodal input — OCR for documents with no text layer.
+// It uses a longer-running client than text completions, since transcribing a
+// multi-page scan is slow. Satisfies the ai.Extractor interface.
+func (g *GeminiAnalyzer) ExtractText(ctx context.Context, data []byte, mimeType string) (string, error) {
+	if g.apiKey == "" {
+		return "", errors.New("ai/gemini: API Key is required")
+	}
+	if len(data) == 0 {
+		return "", errors.New("ai/gemini: no document bytes to extract")
+	}
+	if mimeType == "" {
+		mimeType = "application/pdf"
+	}
+	const prompt = "Transcribe ALL text from this document exactly as written. " +
+		"Preserve line breaks, headings, claim numbers, and rejection paragraphs. " +
+		"Do not summarize, comment, or add anything — output only the document's text."
+	payload := geminiRequest{Contents: []geminiContent{{Parts: []geminiPart{
+		{Text: prompt},
+		{InlineData: &geminiInlineData{MimeType: mimeType, Data: base64.StdEncoding.EncodeToString(data)}},
+	}}}}
+	client := &http.Client{Timeout: extractTimeout, Transport: NewRedactedRoundTripper(nil)}
+	return g.postGenerate(ctx, client, payload)
+}
+
 // generate performs one generateContent call with the given prompt text.
 func (g *GeminiAnalyzer) generate(ctx context.Context, prompt string) (string, error) {
-	reqPayload := geminiRequest{
+	payload := geminiRequest{
 		Contents: []geminiContent{{Parts: []geminiPart{{Text: prompt}}}},
 	}
+	return g.postGenerate(ctx, g.client, payload)
+}
 
-	payloadBytes, err := json.Marshal(reqPayload)
+// postGenerate marshals and POSTs a generateContent request with the given HTTP
+// client and returns the first candidate's text. Shared by generate (text) and
+// ExtractText (multimodal).
+func (g *GeminiAnalyzer) postGenerate(ctx context.Context, client *http.Client, payload geminiRequest) (string, error) {
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("ai/gemini: encode request: %w", err)
 	}
@@ -126,7 +167,7 @@ func (g *GeminiAnalyzer) generate(ctx context.Context, prompt string) (string, e
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := g.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("ai/gemini: POST request: %w", err)
 	}

@@ -148,8 +148,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 7 {
-		t.Fatalf("schema_version = %d, want 7", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 8 {
+		t.Fatalf("schema_version = %d, want 8", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -226,8 +226,8 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "7" {
-		t.Fatalf("schema_version = %q, want 7", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "8" {
+		t.Fatalf("schema_version = %q, want 8", v)
 	}
 	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
 		t.Fatalf("grant document kind = %q, want B2", k)
@@ -246,6 +246,68 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 	}
 	if got := p.GrantedNumber().Normalized(); got != "US09658068B2" {
 		t.Fatalf("GrantedNumber() = %q, want US09658068B2", got)
+	}
+}
+
+func TestMigrateV7ToV8BackfillsMatterDocument(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v7.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v7 db: %v", err)
+	}
+	for _, stmt := range []string{
+		schemaSQL,
+		// Mark the database as v7 so Open() runs the v7→v8 migration. The column
+		// gates make the ALTERs no-ops here (the current schema already has them),
+		// exercising the matter_document backfill specifically.
+		`UPDATE schema_meta SET value = '7' WHERE key = 'schema_version'`,
+		`INSERT INTO project (id, name, created_at) VALUES ('p-1', 'Proj', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO office_action (id, project_id, mail_date, oa_type, examiner, blob_path, blob_hash, extracted_text, imported_at)
+		 VALUES ('oa-1', 'p-1', '2026-01-09T00:00:00Z', 'non_final', 'Smith', '/docs/oa-1.pdf', 'deadbeef', 'rejection text', '2026-01-10T00:00:00Z')`,
+		// An office action with no stored blob must NOT be backfilled.
+		`INSERT INTO office_action (id, project_id, mail_date, oa_type) VALUES ('oa-2', 'p-1', '2026-02-01T00:00:00Z', 'final')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v7: %v\n%s", err, stmt)
+		}
+	}
+	_ = db.Close()
+
+	repo, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (migrate v7→v8): %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	scan := func(q string) string {
+		var s string
+		if err := repo.reader.QueryRowContext(ctx, q).Scan(&s); err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		return s
+	}
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "8" {
+		t.Fatalf("schema_version = %q, want 8", v)
+	}
+
+	docs, err := repo.ListMatterDocuments(ctx, "p-1")
+	if err != nil {
+		t.Fatalf("ListMatterDocuments: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("matter documents = %d, want 1 (only the OA with a blob)", len(docs))
+	}
+	d := docs[0]
+	if d.OfficeActionID != "oa-1" || d.Kind != domain.MatterDocOA {
+		t.Fatalf("backfilled doc = {oa:%q kind:%q}, want {oa-1 oa}", d.OfficeActionID, d.Kind)
+	}
+	if d.BlobPath != "/docs/oa-1.pdf" || d.BlobHash != "deadbeef" || d.ExtractedText != "rejection text" {
+		t.Fatalf("backfilled doc blob/text not carried over: %+v", d)
+	}
+	if d.Project != "p-1" {
+		t.Fatalf("backfilled doc project = %q, want p-1", d.Project)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
+	"patentmine/internal/proto"
 	"patentmine/internal/text"
 	"patentmine/internal/tui/keymap"
 	"patentmine/internal/tui/render"
@@ -92,6 +93,30 @@ type TextSubmitMsg struct {
 
 // CloseOverlayMsg asks the app to close the focused overlay.
 type CloseOverlayMsg struct{}
+
+// OfficeActionImportSubmitMsg carries the metadata entered in the office-action
+// import form together with the chosen source file, so the App can import the
+// office action with its examiner and dates rather than path-only.
+type OfficeActionImportSubmitMsg struct {
+	Params proto.OfficeActionImportParams
+}
+
+// MatterDocumentsChangedMsg asks the App to refresh anything showing the matter's
+// documents after one was added, renamed, or deleted.
+type MatterDocumentsChangedMsg struct{}
+
+// OpenDocumentTextMsg asks the App to open a read-only viewer over one document's
+// extracted text.
+type OpenDocumentTextMsg struct {
+	Title string
+	Text  string
+}
+
+// MatterEventSubmitMsg carries a communications-log entry entered in the event
+// form, for the App to record via matter.event.add.
+type MatterEventSubmitMsg struct {
+	Params proto.MatterEventAddParams
+}
 
 // IDSHeaderSubmitMsg carries the values entered in the IDS-header overlay.
 // The App persists them via MethodProjectUpdate.

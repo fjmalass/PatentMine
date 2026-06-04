@@ -29,6 +29,17 @@ func (f *fakeDrafter) Complete(_ context.Context, prompt string) (string, error)
 func (f *fakeDrafter) Provider() ai.Provider { return ai.Provider("fake") }
 func (f *fakeDrafter) Model() string         { return "fake-1" }
 
+// fakeExtractor is a fakeDrafter that also satisfies ai.Extractor, so tests can
+// exercise the AI/OCR text-extraction path for scanned documents.
+type fakeExtractor struct {
+	fakeDrafter
+	extractReply string
+}
+
+func (f *fakeExtractor) ExtractText(_ context.Context, _ []byte, _ string) (string, error) {
+	return f.extractReply, nil
+}
+
 func newDraftEngine(t *testing.T, drafter ai.Drafter) (*Engine, domain.ProjectID) {
 	t.Helper()
 	eng, repo := newTestEngine(t, nil)
@@ -197,6 +208,176 @@ func TestImportOfficeActionStoresBlobAndLinks(t *testing.T) {
 	}
 	if !strings.Contains(fake.lastPrompt, "rejected under 35 U.S.C. 103 over Smith") {
 		t.Errorf("office action text not grounded into response prompt:\n%s", fake.lastPrompt)
+	}
+}
+
+func TestImportOfficeActionSeedsDeadlineAndDocument(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+
+	src := filepath.Join(t.TempDir(), "OfficeAction.txt")
+	if err := os.WriteFile(src, []byte("rejection text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mailed := time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC)
+	oa, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{
+		Project: proj, Type: domain.OANonFinal, MailDate: mailed, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportOfficeAction: %v", err)
+	}
+
+	// The response deadline is seeded three months out and the action opens.
+	wantDue := mailed.AddDate(0, 3, 0)
+	if !oa.ResponseDue.Equal(wantDue) {
+		t.Errorf("ResponseDue = %v, want %v", oa.ResponseDue, wantDue)
+	}
+	if oa.Status != domain.OAStatusOpen {
+		t.Errorf("Status = %q, want open", oa.Status)
+	}
+
+	// The examiner's letter shows up in the matter's document list.
+	docs, err := eng.ListMatterDocuments(ctx, proj)
+	if err != nil {
+		t.Fatalf("ListMatterDocuments: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("documents = %d, want 1", len(docs))
+	}
+	if docs[0].Kind != domain.MatterDocOA || docs[0].OfficeActionID != oa.ID {
+		t.Errorf("OA document = {kind:%q oa:%q}, want {oa %s}", docs[0].Kind, docs[0].OfficeActionID, oa.ID)
+	}
+	if docs[0].DisplayName != "OfficeAction.txt" {
+		t.Errorf("display name = %q, want the source base name", docs[0].DisplayName)
+	}
+}
+
+func TestExtractDocumentTextWithAI(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, &fakeExtractor{extractReply: "OCR: Claims 1-5 are rejected."})
+
+	// Import a document whose pure-Go extraction yields nothing (a non-PDF given
+	// a .pdf name stands in for a scanned, image-only office action).
+	src := filepath.Join(t.TempDir(), "scanned.pdf")
+	if err := os.WriteFile(src, []byte("%PDF-1.4 not-really-extractable"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+		Project: proj, Kind: domain.MatterDocOA, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportMatterDocument: %v", err)
+	}
+	if doc.ExtractedText != "" {
+		t.Fatalf("expected empty extracted text before OCR, got %q", doc.ExtractedText)
+	}
+
+	got, err := eng.ExtractDocumentText(ctx, doc.ID)
+	if err != nil {
+		t.Fatalf("ExtractDocumentText: %v", err)
+	}
+	if got.ExtractedText != "OCR: Claims 1-5 are rejected." {
+		t.Fatalf("extracted text = %q, want the OCR reply", got.ExtractedText)
+	}
+	// The text is persisted, not just returned.
+	reloaded, err := eng.MatterDocument(ctx, doc.ID)
+	if err != nil {
+		t.Fatalf("MatterDocument: %v", err)
+	}
+	if reloaded.ExtractedText != got.ExtractedText {
+		t.Fatalf("OCR text not persisted: %q", reloaded.ExtractedText)
+	}
+}
+
+func TestExtractDocumentTextWithoutExtractorErrors(t *testing.T) {
+	ctx := context.Background()
+	// A plain fakeDrafter implements Drafter but not ai.Extractor.
+	eng, proj := newDraftEngine(t, &fakeDrafter{})
+
+	src := filepath.Join(t.TempDir(), "ref.txt")
+	if err := os.WriteFile(src, []byte("plain text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+		Project: proj, Kind: domain.MatterDocReference, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportMatterDocument: %v", err)
+	}
+	if _, err := eng.ExtractDocumentText(ctx, doc.ID); err == nil {
+		t.Fatal("ExtractDocumentText without an ai.Extractor: want error, got nil")
+	}
+}
+
+func TestMatterEventAddListDelete(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+
+	ev, err := eng.AddMatterEvent(ctx, AddMatterEventInput{
+		Project: proj, Kind: domain.MatterEventPhone, Party: "Examiner Menefee",
+		Summary: "Interview re: 103 rejection", Comment: "Agreed to add the limitation from claim 5.",
+	})
+	if err != nil {
+		t.Fatalf("AddMatterEvent: %v", err)
+	}
+	if ev.OccurredAt.IsZero() {
+		t.Error("OccurredAt should default to now when unset")
+	}
+
+	events, err := eng.ListMatterEvents(ctx, proj)
+	if err != nil {
+		t.Fatalf("ListMatterEvents: %v", err)
+	}
+	if len(events) != 1 || events[0].Party != "Examiner Menefee" {
+		t.Fatalf("events = %+v, want one with party Examiner Menefee", events)
+	}
+
+	if err := eng.DeleteMatterEvent(ctx, ev.ID); err != nil {
+		t.Fatalf("DeleteMatterEvent: %v", err)
+	}
+	if events, _ := eng.ListMatterEvents(ctx, proj); len(events) != 0 {
+		t.Fatalf("events after delete = %d, want 0", len(events))
+	}
+}
+
+func TestMatterDocumentImportRenameDelete(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+
+	src := filepath.Join(t.TempDir(), "Smith.txt")
+	if err := os.WriteFile(src, []byte("prior art disclosure"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+		Project: proj, Kind: domain.MatterDocReference, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportMatterDocument: %v", err)
+	}
+	if doc.ExtractedText != "prior art disclosure" {
+		t.Errorf("extracted text = %q", doc.ExtractedText)
+	}
+	if _, err := os.Stat(doc.BlobPath); err != nil {
+		t.Errorf("blob not on disk: %v", err)
+	}
+
+	renamed, err := eng.RenameMatterDocument(ctx, doc.ID, "Smith 2019 (primary)")
+	if err != nil {
+		t.Fatalf("RenameMatterDocument: %v", err)
+	}
+	if renamed.DisplayName != "Smith 2019 (primary)" {
+		t.Errorf("rename did not take: %q", renamed.DisplayName)
+	}
+
+	if err := eng.DeleteMatterDocument(ctx, doc.ID); err != nil {
+		t.Fatalf("DeleteMatterDocument: %v", err)
+	}
+	if docs, _ := eng.ListMatterDocuments(ctx, proj); len(docs) != 0 {
+		t.Errorf("documents after delete = %d, want 0", len(docs))
+	}
+	// A standalone document owns its blob, so it is unlinked on delete.
+	if _, err := os.Stat(doc.BlobPath); !os.IsNotExist(err) {
+		t.Errorf("standalone blob should be removed on delete, stat err = %v", err)
 	}
 }
 

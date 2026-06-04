@@ -19,6 +19,17 @@ type Drafter interface {
 	Model() string
 }
 
+// Extractor pulls plain text out of a binary document (a scanned, image-only
+// PDF; an image) with a multimodal model — OCR for documents that carry no text
+// layer, which the pure-Go pdf extractor cannot read. A provider that cannot do
+// this (a text-only local model) simply does not implement it, and callers fall
+// back to "no extractable text" via a type assertion.
+type Extractor interface {
+	ExtractText(ctx context.Context, data []byte, mimeType string) (string, error)
+	Provider() Provider
+	Model() string
+}
+
 // DrafterConfig selects and configures the drafting provider. It is the same
 // shape as the analyzer credentials so the daemon can build a Drafter from
 // config without duplicating provider logic.

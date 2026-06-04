@@ -1343,7 +1343,9 @@ func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	if len(inv.args) == 1 {
-		return a, pane.AddOfficeActionCmd(a.client, a.activeProject.ID, absPath(inv.args[0]))
+		// A path argument skips the file picker but still collects the examiner
+		// and dates before importing.
+		return a.openOfficeActionMetaForm(absPath(inv.args[0]))
 	}
 	start, err := os.UserHomeDir()
 	if err != nil || start == "" {
@@ -1352,6 +1354,126 @@ func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
 	o := overlay.NewFilePicker(a.theme, "Add Office Action", overlay.PurposeAddOfficeAction, start, []string{".pdf", ".txt"})
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
+}
+
+// openOfficeActionMetaForm pushes the office-action metadata form for the chosen
+// source file, pre-filled from the active project, so the examiner name and dates
+// are captured before the daemon imports the document.
+func (a *App) openOfficeActionMetaForm(path string) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	o := overlay.NewOfficeActionMetaForm(a.theme, *a.activeProject, path)
+	a.overlays = append(a.overlays, o)
+	return a, nil
+}
+
+// cmdAddDocument files a supporting document (reference, response, …) under the
+// active matter. With a path it imports directly; with none it opens the file
+// picker rooted at the user's home directory.
+func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) > 1 {
+		return a.usageError(command.AddDocument)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	if len(inv.args) == 1 {
+		return a, pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, absPath(inv.args[0]), domain.MatterDocReference)
+	}
+	start, err := os.UserHomeDir()
+	if err != nil || start == "" {
+		start = "."
+	}
+	o := overlay.NewFilePicker(a.theme, "Add Document", overlay.PurposeAddMatterDocument, start, []string{".pdf", ".txt"})
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// cmdDraftResponse creates an office-action response draft for the active matter
+// (linked to the latest office action) and opens the split response editor to
+// copy from the matter's documents into it.
+func (a *App) cmdDraftResponse(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.CreateResponseCmd(a.client, a.activeProject.ID)
+}
+
+// cmdLogComm opens the form to record one communications-log entry.
+func (a *App) cmdLogComm(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewCommEventForm(a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, nil
+}
+
+// cmdOpenComms opens the active matter's communications log.
+func (a *App) cmdOpenComms(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewMatterComms(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// cmdOpenDocuments opens the active matter's document list.
+func (a *App) cmdOpenDocuments(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewMatterDocuments(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+// cmdSetMatterType records the active project's prosecution stage.
+func (a *App) cmdSetMatterType(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 1 {
+		return a.usageError(command.SetMatterType)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	mt, err := domain.ParseMatterType(inv.args[0])
+	if err != nil {
+		return a.usageError(command.SetMatterType)
+	}
+	return a, pane.SetMatterTypeCmd(a.client, a.activeProject.ID, mt)
 }
 
 // cmdOpenOfficeAction opens the active project's office-action table. Selecting
@@ -1374,6 +1496,9 @@ func (a *App) cmdOpenOfficeAction(invocation) (tea.Model, tea.Cmd) {
 func (a *App) handleFilePicked(m overlay.FilePickedMsg) (tea.Model, tea.Cmd) {
 	switch m.Purpose {
 	case overlay.PurposeAddOfficeAction:
+		// Collect the examiner and dates before importing the office action.
+		return a.openOfficeActionMetaForm(m.Path)
+	case overlay.PurposeAddMatterDocument:
 		if a.activeProject == nil {
 			a.setErr(text.StatusNoActiveProject)
 			return a, nil
@@ -1382,7 +1507,7 @@ func (a *App) handleFilePicked(m overlay.FilePickedMsg) (tea.Model, tea.Cmd) {
 			a.setErr(text.StatusDaemonUnavailable)
 			return a, nil
 		}
-		return a, pane.AddOfficeActionCmd(a.client, a.activeProject.ID, m.Path)
+		return a, pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, m.Path, domain.MatterDocReference)
 	}
 	return a, nil
 }

@@ -266,7 +266,7 @@ func (r *Repo) draftClaims(ctx context.Context, id domain.DraftID) ([]domain.Dra
 }
 
 const officeActionColumns = `id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-	blob_path, blob_hash, extracted_text, notes, source, imported_at`
+	blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at`
 
 // SaveOfficeAction inserts or updates an office action by its id.
 func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (err error) {
@@ -283,8 +283,8 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO office_action
 		 (id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-		  blob_path, blob_hash, extracted_text, notes, source, imported_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		  blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id,
 			application_number=excluded.application_number,
@@ -296,10 +296,13 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 			blob_hash=excluded.blob_hash,
 			extracted_text=excluded.extracted_text,
 			notes=excluded.notes,
+			response_due=excluded.response_due,
+			status=excluded.status,
 			source=excluded.source,
 			imported_at=excluded.imported_at`,
 		oa.ID, string(oa.Project), oa.ApplicationNumber, encodeTime(oa.MailDate), string(oa.Type),
-		oa.Examiner, oa.ArtUnit, oa.BlobPath, oa.BlobHash, oa.ExtractedText, oa.Notes, oa.Source, encodeTime(oa.ImportedAt))
+		oa.Examiner, oa.ArtUnit, oa.BlobPath, oa.BlobHash, oa.ExtractedText, oa.Notes,
+		encodeTime(oa.ResponseDue), string(oa.Status), oa.Source, encodeTime(oa.ImportedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save office action %s: %w", oa.ID, err)
 	}
@@ -352,29 +355,459 @@ func (r *Repo) DeleteOfficeAction(ctx context.Context, id string) (err error) {
 
 func scanOfficeAction(s rowScanner) (domain.OfficeAction, error) {
 	var (
-		oa         domain.OfficeAction
-		id         string
-		project    string
-		oaType     string
-		mailDate   string
-		importedAt string
+		oa          domain.OfficeAction
+		id          string
+		project     string
+		oaType      string
+		mailDate    string
+		responseDue string
+		status      string
+		importedAt  string
 	)
 	if err := s.Scan(&id, &project, &oa.ApplicationNumber, &mailDate, &oaType, &oa.Examiner, &oa.ArtUnit,
-		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &oa.Source, &importedAt); err != nil {
+		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &responseDue, &status, &oa.Source, &importedAt); err != nil {
 		return domain.OfficeAction{}, err
 	}
 	oa.ID = id
 	oa.Project = domain.ProjectID(project)
 	oa.Type = domain.OAType(oaType)
+	oa.Status = domain.OAStatus(status)
 	md, err := decodeTime(mailDate)
 	if err != nil {
 		return domain.OfficeAction{}, err
 	}
 	oa.MailDate = md
+	rd, err := decodeTime(responseDue)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	oa.ResponseDue = rd
 	ia, err := decodeTime(importedAt)
 	if err != nil {
 		return domain.OfficeAction{}, err
 	}
 	oa.ImportedAt = ia
 	return oa, nil
+}
+
+const matterDocumentColumns = `id, project_id, office_action_id, kind, display_name,
+	blob_path, blob_hash, extracted_text, added_at`
+
+// SaveMatterDocument inserts or updates one matter document by its id.
+func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) (err error) {
+	defer r.observeDuration("save_matter_document", time.Now(), &err)
+	if d.ID == "" {
+		return errors.New("store/sqlite: cannot save matter document with empty id")
+	}
+	if d.Project == "" {
+		return errors.New("store/sqlite: matter document requires a project id")
+	}
+	if d.Kind != "" && !d.Kind.Valid() {
+		return fmt.Errorf("store/sqlite: invalid matter document kind %q", d.Kind)
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO matter_document
+		 (id, project_id, office_action_id, kind, display_name, blob_path, blob_hash, extracted_text, added_at)
+		 VALUES (?,?,?,?,?,?,?,?,?)
+		 ON CONFLICT(id) DO UPDATE SET
+			project_id=excluded.project_id,
+			office_action_id=excluded.office_action_id,
+			kind=excluded.kind,
+			display_name=excluded.display_name,
+			blob_path=excluded.blob_path,
+			blob_hash=excluded.blob_hash,
+			extracted_text=excluded.extracted_text,
+			added_at=excluded.added_at`,
+		d.ID, string(d.Project), d.OfficeActionID, string(d.Kind), d.DisplayName,
+		d.BlobPath, d.BlobHash, d.ExtractedText, encodeTime(d.AddedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save matter document %s: %w", d.ID, err)
+	}
+	return nil
+}
+
+// MatterDocument returns one matter document, or store.ErrNotFound.
+func (r *Repo) MatterDocument(ctx context.Context, id string) (d domain.MatterDocument, err error) {
+	defer r.observeDuration("matter_document", time.Now(), &err)
+	row := r.reader.QueryRowContext(ctx, `SELECT `+matterDocumentColumns+` FROM matter_document WHERE id = ?`, id)
+	d, err = scanMatterDocument(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.MatterDocument{}, store.ErrNotFound
+	}
+	if err != nil {
+		return domain.MatterDocument{}, fmt.Errorf("store/sqlite: get matter document %s: %w", id, err)
+	}
+	return d, nil
+}
+
+// ListMatterDocuments returns a project's documents, newest first.
+func (r *Repo) ListMatterDocuments(ctx context.Context, project domain.ProjectID) (out []domain.MatterDocument, err error) {
+	defer r.observeDuration("list_matter_documents", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT `+matterDocumentColumns+` FROM matter_document WHERE project_id = ? ORDER BY added_at DESC`, string(project))
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list matter documents: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		d, err := scanMatterDocument(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan matter document: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// RenameMatterDocument updates only the display name of one matter document.
+func (r *Repo) RenameMatterDocument(ctx context.Context, id, name string) (err error) {
+	defer r.observeDuration("rename_matter_document", time.Now(), &err)
+	res, err := r.writer.ExecContext(ctx,
+		`UPDATE matter_document SET display_name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: rename matter document %s: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteMatterDocument removes one matter document row. The blob on disk is left
+// for the engine to unlink (it owns the filesystem layout).
+func (r *Repo) DeleteMatterDocument(ctx context.Context, id string) (err error) {
+	defer r.observeDuration("delete_matter_document", time.Now(), &err)
+	_, err = r.writer.ExecContext(ctx, `DELETE FROM matter_document WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete matter document %s: %w", id, err)
+	}
+	return nil
+}
+
+func scanMatterDocument(s rowScanner) (domain.MatterDocument, error) {
+	var (
+		d       domain.MatterDocument
+		id      string
+		project string
+		kind    string
+		addedAt string
+	)
+	if err := s.Scan(&id, &project, &d.OfficeActionID, &kind, &d.DisplayName,
+		&d.BlobPath, &d.BlobHash, &d.ExtractedText, &addedAt); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	d.ID = id
+	d.Project = domain.ProjectID(project)
+	d.Kind = domain.MatterDocKind(kind)
+	at, err := decodeTime(addedAt)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	d.AddedAt = at
+	return d, nil
+}
+
+const matterEventColumns = `id, project_id, office_action_id, kind, party,
+	occurred_at, due_at, summary, comment, created_at`
+
+// SaveMatterEvent inserts or updates one communications-log entry by its id.
+func (r *Repo) SaveMatterEvent(ctx context.Context, e domain.MatterEvent) (err error) {
+	defer r.observeDuration("save_matter_event", time.Now(), &err)
+	if e.ID == "" {
+		return errors.New("store/sqlite: cannot save matter event with empty id")
+	}
+	if e.Project == "" {
+		return errors.New("store/sqlite: matter event requires a project id")
+	}
+	if e.Kind != "" && !e.Kind.Valid() {
+		return fmt.Errorf("store/sqlite: invalid matter event kind %q", e.Kind)
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO matter_event
+		 (id, project_id, office_action_id, kind, party, occurred_at, due_at, summary, comment, created_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)
+		 ON CONFLICT(id) DO UPDATE SET
+			project_id=excluded.project_id,
+			office_action_id=excluded.office_action_id,
+			kind=excluded.kind,
+			party=excluded.party,
+			occurred_at=excluded.occurred_at,
+			due_at=excluded.due_at,
+			summary=excluded.summary,
+			comment=excluded.comment,
+			created_at=excluded.created_at`,
+		e.ID, string(e.Project), e.OfficeActionID, string(e.Kind), e.Party,
+		encodeTime(e.OccurredAt), encodeTime(e.DueAt), e.Summary, e.Comment, encodeTime(e.CreatedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save matter event %s: %w", e.ID, err)
+	}
+	return nil
+}
+
+// ListMatterEvents returns a project's communications-log entries, newest first.
+func (r *Repo) ListMatterEvents(ctx context.Context, project domain.ProjectID) (out []domain.MatterEvent, err error) {
+	defer r.observeDuration("list_matter_events", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT `+matterEventColumns+` FROM matter_event WHERE project_id = ? ORDER BY occurred_at DESC`, string(project))
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list matter events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		e, err := scanMatterEvent(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan matter event: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// DeleteMatterEvent removes one communications-log entry.
+func (r *Repo) DeleteMatterEvent(ctx context.Context, id string) (err error) {
+	defer r.observeDuration("delete_matter_event", time.Now(), &err)
+	_, err = r.writer.ExecContext(ctx, `DELETE FROM matter_event WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete matter event %s: %w", id, err)
+	}
+	return nil
+}
+
+func scanMatterEvent(s rowScanner) (domain.MatterEvent, error) {
+	var (
+		e          domain.MatterEvent
+		id         string
+		project    string
+		kind       string
+		occurredAt string
+		dueAt      string
+		createdAt  string
+	)
+	if err := s.Scan(&id, &project, &e.OfficeActionID, &kind, &e.Party,
+		&occurredAt, &dueAt, &e.Summary, &e.Comment, &createdAt); err != nil {
+		return domain.MatterEvent{}, err
+	}
+	e.ID = id
+	e.Project = domain.ProjectID(project)
+	e.Kind = domain.MatterEventKind(kind)
+	for dst, src := range map[*time.Time]string{&e.OccurredAt: occurredAt, &e.DueAt: dueAt, &e.CreatedAt: createdAt} {
+		t, err := decodeTime(src)
+		if err != nil {
+			return domain.MatterEvent{}, err
+		}
+		*dst = t
+	}
+	return e, nil
+}
+
+const timeEntryColumns = `id, project_id, office_action_id, activity, source,
+	started_at, ended_at, seconds, validated, validated_at, note, created_at, updated_at`
+
+// SaveTimeEntry inserts or updates one time entry by its id.
+func (r *Repo) SaveTimeEntry(ctx context.Context, e domain.TimeEntry) (err error) {
+	defer r.observeDuration("save_time_entry", time.Now(), &err)
+	if e.ID == "" {
+		return errors.New("store/sqlite: cannot save time entry with empty id")
+	}
+	if e.Project == "" {
+		return errors.New("store/sqlite: time entry requires a project id")
+	}
+	if e.Activity != "" && !e.Activity.Valid() {
+		return fmt.Errorf("store/sqlite: invalid time activity %q", e.Activity)
+	}
+	validated := 0
+	if e.Validated {
+		validated = 1
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO time_entry
+		 (id, project_id, office_action_id, activity, source, started_at, ended_at, seconds, validated, validated_at, note, created_at, updated_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		 ON CONFLICT(id) DO UPDATE SET
+			project_id=excluded.project_id,
+			office_action_id=excluded.office_action_id,
+			activity=excluded.activity,
+			source=excluded.source,
+			started_at=excluded.started_at,
+			ended_at=excluded.ended_at,
+			seconds=excluded.seconds,
+			validated=excluded.validated,
+			validated_at=excluded.validated_at,
+			note=excluded.note,
+			updated_at=excluded.updated_at`,
+		e.ID, string(e.Project), e.OfficeActionID, string(e.Activity), string(e.Source),
+		encodeTime(e.StartedAt), encodeTime(e.EndedAt), e.Seconds, validated,
+		encodeTime(e.ValidatedAt), e.Note, encodeTime(e.CreatedAt), encodeTime(e.UpdatedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save time entry %s: %w", e.ID, err)
+	}
+	return nil
+}
+
+// TimeEntry returns one time entry, or store.ErrNotFound.
+func (r *Repo) TimeEntry(ctx context.Context, id string) (e domain.TimeEntry, err error) {
+	defer r.observeDuration("time_entry", time.Now(), &err)
+	row := r.reader.QueryRowContext(ctx, `SELECT `+timeEntryColumns+` FROM time_entry WHERE id = ?`, id)
+	e, err = scanTimeEntry(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.TimeEntry{}, store.ErrNotFound
+	}
+	if err != nil {
+		return domain.TimeEntry{}, fmt.Errorf("store/sqlite: get time entry %s: %w", id, err)
+	}
+	return e, nil
+}
+
+// ListTimeEntries returns a project's time entries, newest first.
+func (r *Repo) ListTimeEntries(ctx context.Context, project domain.ProjectID) ([]domain.TimeEntry, error) {
+	return r.queryTimeEntries(ctx,
+		`SELECT `+timeEntryColumns+` FROM time_entry WHERE project_id = ? ORDER BY created_at DESC`, string(project))
+}
+
+// ListUnvalidatedTime returns a project's unvalidated time entries, oldest first
+// (the order an attorney reviews them).
+func (r *Repo) ListUnvalidatedTime(ctx context.Context, project domain.ProjectID) ([]domain.TimeEntry, error) {
+	return r.queryTimeEntries(ctx,
+		`SELECT `+timeEntryColumns+` FROM time_entry WHERE project_id = ? AND validated = 0 ORDER BY created_at`, string(project))
+}
+
+func (r *Repo) queryTimeEntries(ctx context.Context, query string, args ...any) (out []domain.TimeEntry, err error) {
+	defer r.observeDuration("list_time_entries", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list time entries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		e, err := scanTimeEntry(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan time entry: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// CountUnvalidatedTime returns how many of a project's time entries still await
+// validation — the trigger for the validate-on-reopen prompt.
+func (r *Repo) CountUnvalidatedTime(ctx context.Context, project domain.ProjectID) (n int, err error) {
+	defer r.observeDuration("count_unvalidated_time", time.Now(), &err)
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM time_entry WHERE project_id = ? AND validated = 0`, string(project)).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("store/sqlite: count unvalidated time: %w", err)
+	}
+	return n, nil
+}
+
+// DeleteTimeEntry removes one time entry.
+func (r *Repo) DeleteTimeEntry(ctx context.Context, id string) (err error) {
+	defer r.observeDuration("delete_time_entry", time.Now(), &err)
+	_, err = r.writer.ExecContext(ctx, `DELETE FROM time_entry WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: delete time entry %s: %w", id, err)
+	}
+	return nil
+}
+
+// SummarizeTime aggregates a project's recorded time by activity and review state.
+func (r *Repo) SummarizeTime(ctx context.Context, project domain.ProjectID) (s domain.TimeSummary, err error) {
+	defer r.observeDuration("summarize_time", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT activity, validated, COALESCE(SUM(seconds),0), COUNT(*)
+		 FROM time_entry WHERE project_id = ? GROUP BY activity, validated`, string(project))
+	if err != nil {
+		return domain.TimeSummary{}, fmt.Errorf("store/sqlite: summarize time: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	s.Seconds = make(map[domain.TimeActivity]int)
+	for rows.Next() {
+		var (
+			activity  string
+			validated int
+			secs      int
+			count     int
+		)
+		if err := rows.Scan(&activity, &validated, &secs, &count); err != nil {
+			return domain.TimeSummary{}, fmt.Errorf("store/sqlite: scan time summary: %w", err)
+		}
+		s.Seconds[domain.TimeActivity(activity)] += secs
+		if validated == 1 {
+			s.ValidatedSecs += secs
+		} else {
+			s.UnvalidatedSecs += secs
+			s.UnvalidatedCount += count
+		}
+	}
+	return s, rows.Err()
+}
+
+func scanTimeEntry(s rowScanner) (domain.TimeEntry, error) {
+	var (
+		e           domain.TimeEntry
+		id          string
+		project     string
+		activity    string
+		source      string
+		startedAt   string
+		endedAt     string
+		validated   int
+		validatedAt string
+		createdAt   string
+		updatedAt   string
+	)
+	if err := s.Scan(&id, &project, &e.OfficeActionID, &activity, &source,
+		&startedAt, &endedAt, &e.Seconds, &validated, &validatedAt, &e.Note, &createdAt, &updatedAt); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	e.ID = id
+	e.Project = domain.ProjectID(project)
+	e.Activity = domain.TimeActivity(activity)
+	e.Source = domain.TimeSource(source)
+	e.Validated = validated == 1
+	for dst, src := range map[*time.Time]string{
+		&e.StartedAt: startedAt, &e.EndedAt: endedAt,
+		&e.ValidatedAt: validatedAt, &e.CreatedAt: createdAt, &e.UpdatedAt: updatedAt,
+	} {
+		t, err := decodeTime(src)
+		if err != nil {
+			return domain.TimeEntry{}, err
+		}
+		*dst = t
+	}
+	return e, nil
+}
+
+// SaveAIUsage records one AI call against a matter.
+func (r *Repo) SaveAIUsage(ctx context.Context, u domain.AIUsage) (err error) {
+	defer r.observeDuration("save_ai_usage", time.Now(), &err)
+	if u.ID == "" {
+		return errors.New("store/sqlite: cannot save ai usage with empty id")
+	}
+	if u.Project == "" {
+		return errors.New("store/sqlite: ai usage requires a project id")
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO ai_usage
+		 (id, project_id, office_action_id, draft_id, provider, model, prompts, prompt_tokens, completion_tokens, total_tokens, created_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		u.ID, string(u.Project), u.OfficeActionID, u.DraftID, u.Provider, u.Model,
+		u.Prompts, u.PromptTokens, u.CompletionTokens, u.TotalTokens, encodeTime(u.CreatedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save ai usage %s: %w", u.ID, err)
+	}
+	return nil
+}
+
+// SummarizeAIUsage aggregates a project's AI usage.
+func (r *Repo) SummarizeAIUsage(ctx context.Context, project domain.ProjectID) (s domain.AIUsageSummary, err error) {
+	defer r.observeDuration("summarize_ai_usage", time.Now(), &err)
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0)
+		 FROM ai_usage WHERE project_id = ?`, string(project)).
+		Scan(&s.Calls, &s.PromptTokens, &s.CompletionTokens, &s.TotalTokens)
+	if err != nil {
+		return domain.AIUsageSummary{}, fmt.Errorf("store/sqlite: summarize ai usage: %w", err)
+	}
+	return s, nil
 }

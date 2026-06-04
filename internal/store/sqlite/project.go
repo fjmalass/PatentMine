@@ -12,7 +12,7 @@ import (
 )
 
 const projectColumns = `id, name, created_at,
-	application_number, filing_date, art_unit, attorney_docket_number`
+	application_number, filing_date, art_unit, attorney_docket_number, matter_type`
 
 // SaveProject inserts or updates a project by its id. The inventor list and
 // examiner history are persisted into their side tables in the same
@@ -36,18 +36,19 @@ func (r *Repo) SaveProject(ctx context.Context, p domain.Project) (err error) {
 
 	if _, err = tx.ExecContext(ctx,
 		`INSERT INTO project (id, name, created_at,
-			application_number, filing_date, art_unit, attorney_docket_number)
-		 VALUES (?,?,?,?,?,?,?)
+			application_number, filing_date, art_unit, attorney_docket_number, matter_type)
+		 VALUES (?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name,
 			created_at=excluded.created_at,
 			application_number=excluded.application_number,
 			filing_date=excluded.filing_date,
 			art_unit=excluded.art_unit,
-			attorney_docket_number=excluded.attorney_docket_number`,
+			attorney_docket_number=excluded.attorney_docket_number,
+			matter_type=excluded.matter_type`,
 		string(p.ID), p.Name, encodeTime(p.CreatedAt),
 		p.ApplicationNumber, encodeTime(p.FilingDate),
-		p.ArtUnit, p.AttorneyDocketNumber); err != nil {
+		p.ArtUnit, p.AttorneyDocketNumber, string(p.MatterType)); err != nil {
 		return fmt.Errorf("store/sqlite: save project %s: %w", p.ID, err)
 	}
 
@@ -139,12 +140,14 @@ func scanProject(s rowScanner) (domain.Project, error) {
 		id         string
 		createdAt  string
 		filingDate string
+		matterType string
 	)
 	if err := s.Scan(&id, &p.Name, &createdAt,
-		&p.ApplicationNumber, &filingDate, &p.ArtUnit, &p.AttorneyDocketNumber); err != nil {
+		&p.ApplicationNumber, &filingDate, &p.ArtUnit, &p.AttorneyDocketNumber, &matterType); err != nil {
 		return domain.Project{}, err
 	}
 	p.ID = domain.ProjectID(id)
+	p.MatterType = domain.MatterType(matterType)
 	t, err := decodeTime(createdAt)
 	if err != nil {
 		return domain.Project{}, err

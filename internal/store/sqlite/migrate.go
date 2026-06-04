@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // migrateF folds the legacy project_ids table into membership (as inline ids_*
@@ -197,8 +198,14 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "7"
 	}
-	if version != "7" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 7", version)
+	if version == "7" {
+		if err := r.migrateV7ToV8(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v7 to v8: %w", err)
+		}
+		version = "8"
+	}
+	if version != "8" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 8", version)
 	}
 	return nil
 }
@@ -286,6 +293,134 @@ var migrationV6ToV7Statements = []string{
 	    text       TEXT NOT NULL DEFAULT '',
 	    PRIMARY KEY (draft_id, ordinal)
 	)`,
+}
+
+// migrateV7ToV8 grows the office-action subsystem into a prosecution-matter
+// workspace. It is purely additive: a matter-scoped document table (with a
+// backfill of the existing single office-action blob into one document row), a
+// matter_type stage on project, and a response deadline + status on office
+// action. No data is destroyed; existing office-action blobs become their
+// project's first matter document.
+func (r *Repo) migrateV7ToV8(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v7-to-v8.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v7 to v8: backup: %w", err)
+	}
+	// The new columns are added with ALTER (not idempotent), so each is gated on
+	// its absence: a real v7 database lacks them, while a database carrying the
+	// current schema.sql with only the version marker rolled back already has
+	// them. Build the statement list accordingly, then create the new table and
+	// backfill in one transaction.
+	stmts := make([]string, 0, len(migrationV7ToV8Statements)+3)
+	for col, alter := range map[string]string{
+		"project.matter_type":        `ALTER TABLE project ADD COLUMN matter_type TEXT NOT NULL DEFAULT ''`,
+		"office_action.response_due": `ALTER TABLE office_action ADD COLUMN response_due TEXT NOT NULL DEFAULT ''`,
+		"office_action.status":       `ALTER TABLE office_action ADD COLUMN status TEXT NOT NULL DEFAULT 'open'`,
+	} {
+		table, column, _ := strings.Cut(col, ".")
+		has, err := r.columnExists(ctx, table, column)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: migrate v7 to v8: detect %s: %w", col, err)
+		}
+		if !has {
+			stmts = append(stmts, alter)
+		}
+	}
+	stmts = append(stmts, migrationV7ToV8Statements...)
+
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v7 to v8: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, stmt := range stmts {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v7 to v8: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '8' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v7 to v8: set version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v7 to v8: commit: %w", err)
+	}
+	return nil
+}
+
+// migrationV7ToV8Statements create the prosecution-matter workspace tables
+// (matter_document, matter_event) and backfill one matter document per existing
+// office action that has a stored blob. Kept in sync with schema.sql (idempotent
+// CREATE ... IF NOT EXISTS). The new project and office-action columns are added
+// separately in migrateV7ToV8 (column-gated ALTERs). response_due is left empty
+// for pre-existing actions — new imports compute it from the mail date and type
+// in the engine.
+var migrationV7ToV8Statements = []string{
+	`CREATE TABLE IF NOT EXISTS matter_document (
+	    id               TEXT PRIMARY KEY,
+	    project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+	    office_action_id TEXT NOT NULL DEFAULT '',
+	    kind             TEXT NOT NULL DEFAULT 'other',
+	    display_name     TEXT NOT NULL DEFAULT '',
+	    blob_path        TEXT NOT NULL DEFAULT '',
+	    blob_hash        TEXT NOT NULL DEFAULT '',
+	    extracted_text   TEXT NOT NULL DEFAULT '',
+	    added_at         TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_matter_document_project ON matter_document (project_id, added_at DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_matter_document_oa ON matter_document (office_action_id)`,
+	`CREATE TABLE IF NOT EXISTS matter_event (
+	    id               TEXT PRIMARY KEY,
+	    project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+	    office_action_id TEXT NOT NULL DEFAULT '',
+	    kind             TEXT NOT NULL DEFAULT 'note',
+	    party            TEXT NOT NULL DEFAULT '',
+	    occurred_at      TEXT NOT NULL DEFAULT '',
+	    due_at           TEXT NOT NULL DEFAULT '',
+	    summary          TEXT NOT NULL DEFAULT '',
+	    comment          TEXT NOT NULL DEFAULT '',
+	    created_at       TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_matter_event_project ON matter_event (project_id, occurred_at DESC)`,
+	`CREATE TABLE IF NOT EXISTS time_entry (
+	    id               TEXT PRIMARY KEY,
+	    project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+	    office_action_id TEXT NOT NULL DEFAULT '',
+	    activity         TEXT NOT NULL DEFAULT '',
+	    source           TEXT NOT NULL DEFAULT 'manual',
+	    started_at       TEXT NOT NULL DEFAULT '',
+	    ended_at         TEXT NOT NULL DEFAULT '',
+	    seconds          INTEGER NOT NULL DEFAULT 0,
+	    validated        INTEGER NOT NULL DEFAULT 0,
+	    validated_at     TEXT NOT NULL DEFAULT '',
+	    note             TEXT NOT NULL DEFAULT '',
+	    created_at       TEXT NOT NULL DEFAULT '',
+	    updated_at       TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_time_entry_project ON time_entry (project_id, validated)`,
+	`CREATE TABLE IF NOT EXISTS ai_usage (
+	    id                TEXT PRIMARY KEY,
+	    project_id        TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+	    office_action_id  TEXT NOT NULL DEFAULT '',
+	    draft_id          TEXT NOT NULL DEFAULT '',
+	    provider          TEXT NOT NULL DEFAULT '',
+	    model             TEXT NOT NULL DEFAULT '',
+	    prompts           INTEGER NOT NULL DEFAULT 0,
+	    prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+	    completion_tokens INTEGER NOT NULL DEFAULT 0,
+	    total_tokens      INTEGER NOT NULL DEFAULT 0,
+	    created_at        TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_ai_usage_project ON ai_usage (project_id, created_at DESC)`,
+	// Backfill: the existing single office-action blob becomes its first matter
+	// document so nothing imported under the old model is lost.
+	`INSERT INTO matter_document
+	    (id, project_id, office_action_id, kind, display_name, blob_path, blob_hash, extracted_text, added_at)
+	 SELECT 'mdoc-' || id, project_id, id, 'oa',
+	        CASE WHEN mail_date != '' THEN 'Office Action ' || substr(mail_date, 1, 10) ELSE 'Office Action' END,
+	        blob_path, blob_hash, extracted_text, imported_at
+	 FROM office_action
+	 WHERE blob_path != ''`,
 }
 
 // migrateV5ToV6 introduces the assignee_history table (the record.id-keyed

@@ -273,6 +273,48 @@ const (
 	OASourceODP    = "odp"    // fetched from the USPTO Open Data Portal
 )
 
+// OAStatus is the prosecution state of an office action. It governs deadline
+// reminders: an open action with a future response date is reminded; a responded
+// or closed one is not.
+type OAStatus string
+
+const (
+	OAStatusOpen      OAStatus = "open"      // awaiting a response
+	OAStatusResponded OAStatus = "responded" // a response has been filed
+	OAStatusClosed    OAStatus = "closed"    // no response needed/abandoned
+)
+
+// Valid reports whether the OAStatus is a known value.
+func (s OAStatus) Valid() bool {
+	switch s {
+	case OAStatusOpen, OAStatusResponded, OAStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+// ResponseDeadline returns the statutory deadline to respond to an office action
+// of the given type mailed on mailDate. Most actions run a 3-month shortened
+// statutory period (extendable to 6); a restriction requirement and an advisory
+// action also run shorter periods in practice, but 3 months is the safe default
+// the user can override. A type with no response (notice of allowance) returns
+// the zero time. The returned date is a starting point — the user can edit it.
+func ResponseDeadline(mailDate time.Time, t OAType) time.Time {
+	if mailDate.IsZero() {
+		return time.Time{}
+	}
+	switch t {
+	case OANoticeOfAllowance:
+		return time.Time{}
+	case OAAdvisory:
+		// An advisory action does not reset the period; default to no new date.
+		return time.Time{}
+	default:
+		return mailDate.AddDate(0, 3, 0)
+	}
+}
+
 // OfficeAction is the examiner's document that a response answers. The PDF bytes
 // live on disk (BlobPath, with BlobHash for integrity); ExtractedText is the
 // searchable/groundable plain text pulled from it. This mirrors the
@@ -291,7 +333,292 @@ type OfficeAction struct {
 	ExtractedText     string    `json:"extracted_text,omitempty"`
 	// Notes is the attorney's free-text annotation of this office action
 	// (markdown), edited in the TUI's split view while reading the examiner text.
-	Notes      string    `json:"notes,omitempty"`
+	Notes string `json:"notes,omitempty"`
+	// ResponseDue is the deadline to file a response. It is seeded from the mail
+	// date and type at import (see ResponseDeadline) and may be edited; the zero
+	// time means no deadline applies (e.g. a notice of allowance).
+	ResponseDue time.Time `json:"response_due"`
+	// Status governs deadline reminders — only an open action is reminded.
+	Status     OAStatus  `json:"status,omitempty"`
 	Source     string    `json:"source,omitempty"`
 	ImportedAt time.Time `json:"imported_at"`
+}
+
+// MatterDocKind classifies one document filed under a matter (a project). A
+// prosecution thread carries more than the examiner's letter — the response that
+// answers it, cited prior-art references, claim amendments — and a new
+// application carries its specification, drawings, and IDS. The kind drives how a
+// document is labelled and which ones a response draws from.
+type MatterDocKind string
+
+const (
+	MatterDocOA        MatterDocKind = "oa"        // an examiner's office action letter
+	MatterDocResponse  MatterDocKind = "response"  // a response/amendment answering an OA
+	MatterDocReference MatterDocKind = "reference" // a cited prior-art document
+	MatterDocAmendment MatterDocKind = "amendment" // a standalone claim amendment paper
+	MatterDocSpec      MatterDocKind = "spec"      // a specification draft/filing
+	MatterDocDrawings  MatterDocKind = "drawings"  // figures/drawings
+	MatterDocIDS       MatterDocKind = "ids"       // an information disclosure statement
+	MatterDocOther     MatterDocKind = "other"     // anything else in the matter
+)
+
+// Valid reports whether the MatterDocKind is a known value.
+func (k MatterDocKind) Valid() bool {
+	switch k {
+	case MatterDocOA, MatterDocResponse, MatterDocReference, MatterDocAmendment,
+		MatterDocSpec, MatterDocDrawings, MatterDocIDS, MatterDocOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label returns the human-readable name of a document kind for the TUI.
+func (k MatterDocKind) Label() string {
+	switch k {
+	case MatterDocOA:
+		return "Office Action"
+	case MatterDocResponse:
+		return "Response"
+	case MatterDocReference:
+		return "Reference"
+	case MatterDocAmendment:
+		return "Amendment"
+	case MatterDocSpec:
+		return "Specification"
+	case MatterDocDrawings:
+		return "Drawings"
+	case MatterDocIDS:
+		return "IDS"
+	case MatterDocOther:
+		return "Other"
+	default:
+		return string(k)
+	}
+}
+
+// ParseMatterDocKind converts a string into a MatterDocKind, defaulting an empty
+// string to MatterDocOther so an unspecified import is still recorded.
+func ParseMatterDocKind(s string) (MatterDocKind, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return MatterDocOther, nil
+	}
+	k := MatterDocKind(s)
+	if !k.Valid() {
+		return "", fmt.Errorf("domain: unknown matter document kind %q", s)
+	}
+	return k, nil
+}
+
+// MatterDocument is one file filed under a matter (a project), optionally linked
+// to a specific office action (OfficeActionID empty = matter-wide, e.g. a
+// specification or a shared reference). Like the office action it follows the
+// source_snapshot convention — the bytes live on disk (BlobPath, BlobHash for
+// integrity) while the row holds the metadata and the extracted plain text used
+// for reading and copy-into-response. DisplayName is the user-renameable label
+// shown in the document list (it defaults to the imported file's base name).
+type MatterDocument struct {
+	ID             string        `json:"id"`
+	Project        ProjectID     `json:"project"`
+	OfficeActionID string        `json:"office_action_id,omitempty"`
+	Kind           MatterDocKind `json:"kind"`
+	DisplayName    string        `json:"display_name"`
+	BlobPath       string        `json:"blob_path,omitempty"`
+	BlobHash       string        `json:"blob_hash,omitempty"`
+	ExtractedText  string        `json:"extracted_text,omitempty"`
+	AddedAt        time.Time     `json:"added_at"`
+}
+
+// MatterEventKind classifies one entry in a matter's communications log — the
+// running record of what happened during prosecution (examiner interviews,
+// client emails, filings, deadlines).
+type MatterEventKind string
+
+const (
+	MatterEventEmail     MatterEventKind = "email"
+	MatterEventPhone     MatterEventKind = "phone"
+	MatterEventInterview MatterEventKind = "interview"
+	MatterEventFiled     MatterEventKind = "filed"
+	MatterEventDeadline  MatterEventKind = "deadline"
+	MatterEventNote      MatterEventKind = "note"
+)
+
+// Valid reports whether the MatterEventKind is a known value.
+func (k MatterEventKind) Valid() bool {
+	switch k {
+	case MatterEventEmail, MatterEventPhone, MatterEventInterview,
+		MatterEventFiled, MatterEventDeadline, MatterEventNote:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label returns the human-readable name of an event kind for the TUI.
+func (k MatterEventKind) Label() string {
+	switch k {
+	case MatterEventEmail:
+		return "Email"
+	case MatterEventPhone:
+		return "Phone call"
+	case MatterEventInterview:
+		return "Interview"
+	case MatterEventFiled:
+		return "Filed"
+	case MatterEventDeadline:
+		return "Deadline"
+	case MatterEventNote:
+		return "Note"
+	default:
+		return string(k)
+	}
+}
+
+// ParseMatterEventKind converts a string into a MatterEventKind, defaulting an
+// empty string to MatterEventNote.
+func ParseMatterEventKind(s string) (MatterEventKind, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return MatterEventNote, nil
+	}
+	k := MatterEventKind(s)
+	if !k.Valid() {
+		return "", fmt.Errorf("domain: unknown matter event kind %q", s)
+	}
+	return k, nil
+}
+
+// MatterEvent is one entry in a matter's communications log: a phone call, an
+// email, an examiner interview, a filing, or a tracked deadline. It is
+// project-scoped and optionally tied to one office action. Party records who the
+// communication was with (the examiner, the client). DueAt is set for a deadline
+// entry; Comment is the free-text "what happened".
+type MatterEvent struct {
+	ID             string          `json:"id"`
+	Project        ProjectID       `json:"project"`
+	OfficeActionID string          `json:"office_action_id,omitempty"`
+	Kind           MatterEventKind `json:"kind"`
+	Party          string          `json:"party,omitempty"`
+	OccurredAt     time.Time       `json:"occurred_at"`
+	DueAt          time.Time       `json:"due_at,omitempty"`
+	Summary        string          `json:"summary,omitempty"`
+	Comment        string          `json:"comment,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
+// TimeActivity classifies a unit of billable work. Reading and writing are
+// captured automatically from the editor (time the source pane vs the response
+// pane held focus); ai is captured from AI calls; call and admin are entered
+// manually.
+type TimeActivity string
+
+const (
+	TimeReading TimeActivity = "reading"
+	TimeWriting TimeActivity = "writing"
+	TimeAI      TimeActivity = "ai"
+	TimeCall    TimeActivity = "call"
+	TimeAdmin   TimeActivity = "admin"
+)
+
+// Valid reports whether the TimeActivity is a known value.
+func (a TimeActivity) Valid() bool {
+	switch a {
+	case TimeReading, TimeWriting, TimeAI, TimeCall, TimeAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label returns the human-readable name of a time activity for the TUI.
+func (a TimeActivity) Label() string {
+	switch a {
+	case TimeReading:
+		return "Reading"
+	case TimeWriting:
+		return "Writing"
+	case TimeAI:
+		return "AI"
+	case TimeCall:
+		return "Call"
+	case TimeAdmin:
+		return "Admin"
+	default:
+		return string(a)
+	}
+}
+
+// ParseTimeActivity converts a string into a TimeActivity.
+func ParseTimeActivity(s string) (TimeActivity, error) {
+	a := TimeActivity(strings.TrimSpace(strings.ToLower(s)))
+	if !a.Valid() {
+		return "", fmt.Errorf("domain: unknown time activity %q", s)
+	}
+	return a, nil
+}
+
+// TimeSource records how a time entry was captured. Auto entries (editor focus,
+// AI calls) need attorney validation before they are billed; manual entries are
+// validated on entry.
+type TimeSource string
+
+const (
+	TimeSourceAuto   TimeSource = "auto"
+	TimeSourceManual TimeSource = "manual"
+)
+
+// TimeEntry is one unit of recorded work on a matter, the basis for billing.
+// Auto-captured entries start unvalidated; the attorney reviews and validates
+// (or corrects/deletes) them — captured time is a draft until a human confirms
+// it. Rates/amounts are intentionally absent for now; only durations are tracked.
+type TimeEntry struct {
+	ID             string       `json:"id"`
+	Project        ProjectID    `json:"project"`
+	OfficeActionID string       `json:"office_action_id,omitempty"`
+	Activity       TimeActivity `json:"activity"`
+	Source         TimeSource   `json:"source"`
+	StartedAt      time.Time    `json:"started_at,omitempty"`
+	EndedAt        time.Time    `json:"ended_at,omitempty"`
+	Seconds        int          `json:"seconds"`
+	Validated      bool         `json:"validated"`
+	ValidatedAt    time.Time    `json:"validated_at,omitempty"`
+	Note           string       `json:"note,omitempty"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+}
+
+// AIUsage records one AI call against a matter so AI work can be charged.
+// Token counts are populated when the provider returns usage (see ai.Drafter /
+// ai.Extractor); until then Prompts, Provider, and Model are captured.
+type AIUsage struct {
+	ID               string    `json:"id"`
+	Project          ProjectID `json:"project"`
+	OfficeActionID   string    `json:"office_action_id,omitempty"`
+	DraftID          string    `json:"draft_id,omitempty"`
+	Provider         string    `json:"provider"`
+	Model            string    `json:"model"`
+	Prompts          int       `json:"prompts"`
+	PromptTokens     int       `json:"prompt_tokens"`
+	CompletionTokens int       `json:"completion_tokens"`
+	TotalTokens      int       `json:"total_tokens"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// TimeSummary aggregates a matter's recorded time by activity, for a billing
+// readout. Seconds maps each activity to its total; Validated/Unvalidated split
+// the grand total by review state.
+type TimeSummary struct {
+	Seconds          map[TimeActivity]int `json:"seconds"`
+	ValidatedSecs    int                  `json:"validated_secs"`
+	UnvalidatedSecs  int                  `json:"unvalidated_secs"`
+	UnvalidatedCount int                  `json:"unvalidated_count"`
+}
+
+// AIUsageSummary aggregates a matter's AI usage for a billing readout.
+type AIUsageSummary struct {
+	Calls            int `json:"calls"`
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }

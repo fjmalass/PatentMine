@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/export/docx"
 	"patentmine/internal/observability"
+	"patentmine/internal/pdf"
 )
 
 // CreateDraft starts a new draft for a project, seeded with the conventional
@@ -251,6 +253,7 @@ func (e *Engine) DraftSection(ctx context.Context, in DraftAIInput) (res DraftAI
 		Instruction:      in.Instruction,
 	}
 	prompt := ai.BuildDraftPrompt(g)
+	aiStart := time.Now()
 	text, err := e.drafter.Complete(ctx, prompt)
 	if err != nil {
 		return DraftAIResult{}, fmt.Errorf("engine: draft section: %w", err)
@@ -274,6 +277,7 @@ func (e *Engine) DraftSection(ctx context.Context, in DraftAIInput) (res DraftAI
 			"problems": len(res.Problems),
 		},
 	})
+	e.recordAICall(ctx, d.Project, d.OfficeActionID, string(in.Draft), res.Provider, res.Model, time.Since(aiStart))
 	e.incCounter("engine.draft.section_ai_total", 1)
 	return res, nil
 }
@@ -325,10 +329,15 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 		Examiner:          in.Examiner,
 		ArtUnit:           in.ArtUnit,
 		ExtractedText:     in.ExtractedText,
-		Source:            source,
-		ImportedAt:        now,
+		// Seed the response deadline from the mail date and type; the user can
+		// edit it later. An action awaiting a response opens as such.
+		ResponseDue: domain.ResponseDeadline(in.MailDate, in.Type),
+		Status:      domain.OAStatusOpen,
+		Source:      source,
+		ImportedAt:  now,
 	}
 
+	var docName string
 	if path := strings.TrimSpace(in.SourcePath); path != "" {
 		base := e.docsExportDir
 		if base == "" {
@@ -341,16 +350,39 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 		}
 		oa.BlobPath = stored
 		oa.BlobHash = hash
-		// A plain-text source doubles as the extracted text when none was given.
-		if oa.ExtractedText == "" && strings.EqualFold(filepath.Ext(path), ".txt") {
-			if data, rErr := os.ReadFile(path); rErr == nil {
-				oa.ExtractedText = string(data)
-			}
+		docName = filepath.Base(path)
+		// Extract the searchable/groundable text when none was supplied (.txt
+		// inline, .pdf via the extractor).
+		if oa.ExtractedText == "" {
+			oa.ExtractedText = extractDocText(path)
 		}
 	}
 
 	if err := e.repo.SaveOfficeAction(ctx, oa); err != nil {
 		return domain.OfficeAction{}, err
+	}
+
+	// Surface the examiner's letter in the matter's document list. The blob is
+	// already stored on disk, so the document row just points at it (id derived
+	// from the OA id to match the v7→v8 backfill and stay idempotent).
+	if oa.BlobPath != "" {
+		if docName == "" {
+			docName = domain.MatterDocOA.Label()
+		}
+		doc := domain.MatterDocument{
+			ID:             "mdoc-" + oa.ID,
+			Project:        oa.Project,
+			OfficeActionID: oa.ID,
+			Kind:           domain.MatterDocOA,
+			DisplayName:    docName,
+			BlobPath:       oa.BlobPath,
+			BlobHash:       oa.BlobHash,
+			ExtractedText:  oa.ExtractedText,
+			AddedAt:        now,
+		}
+		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+			return domain.OfficeAction{}, fmt.Errorf("engine: record office action document: %w", err)
+		}
 	}
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionOfficeActionImport,
@@ -394,6 +426,545 @@ func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (o
 // ListOfficeActions returns a project's office actions, newest first.
 func (e *Engine) ListOfficeActions(ctx context.Context, project domain.ProjectID) ([]domain.OfficeAction, error) {
 	return e.repo.ListOfficeActions(ctx, project)
+}
+
+// ImportMatterDocumentInput describes a file to file under a matter (a project).
+// OfficeActionID is optional — empty for a matter-wide document (a specification,
+// a shared reference), set to relate the document to one office action.
+type ImportMatterDocumentInput struct {
+	Project        domain.ProjectID
+	OfficeActionID string
+	SourcePath     string
+	Kind           domain.MatterDocKind
+	DisplayName    string
+}
+
+// ImportMatterDocument copies a local file into the matter's document store
+// (bytes on disk, pointer + extracted text in the row) and records it. This is
+// the multi-document path: a matter accumulates the office action, the response,
+// references, and so on, and a response is drafted by copying from them.
+func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocumentInput) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.import_matter_document", time.Now(), &err)
+	if in.Project == "" {
+		return domain.MatterDocument{}, errors.New("engine: matter document requires a project")
+	}
+	if in.Kind != "" && !in.Kind.Valid() {
+		return domain.MatterDocument{}, fmt.Errorf("engine: invalid matter document kind %q", in.Kind)
+	}
+	if _, err := e.repo.Project(ctx, in.Project); err != nil {
+		return domain.MatterDocument{}, fmt.Errorf("engine: import matter document: %w", err)
+	}
+	path := strings.TrimSpace(in.SourcePath)
+	if path == "" {
+		return domain.MatterDocument{}, errors.New("engine: matter document requires a source path")
+	}
+	base := e.docsExportDir
+	if base == "" {
+		return domain.MatterDocument{}, errors.New("engine: docs export dir not configured")
+	}
+
+	now := time.Now().UTC()
+	kind := in.Kind
+	if kind == "" {
+		kind = domain.MatterDocOther
+	}
+	name := strings.TrimSpace(in.DisplayName)
+	if name == "" {
+		name = filepath.Base(path)
+	}
+	doc = domain.MatterDocument{
+		ID:             fmt.Sprintf("mdoc-%d", now.UnixNano()),
+		Project:        in.Project,
+		OfficeActionID: in.OfficeActionID,
+		Kind:           kind,
+		DisplayName:    name,
+		AddedAt:        now,
+	}
+	dir := filepath.Join(base, sanitizeProjectID(string(in.Project)), "documents")
+	stored, hash, err := copyWithHash(path, dir, doc.ID)
+	if err != nil {
+		return domain.MatterDocument{}, fmt.Errorf("engine: store matter document: %w", err)
+	}
+	doc.BlobPath = stored
+	doc.BlobHash = hash
+	doc.ExtractedText = extractDocText(path)
+
+	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterDocumentImport,
+		Entity:   "matter_document",
+		EntityID: doc.ID,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project":       string(in.Project),
+			"kind":          string(kind),
+			"office_action": in.OfficeActionID,
+		},
+	})
+	e.announceChange()
+	return doc, nil
+}
+
+// ListMatterDocuments returns a project's documents, newest first.
+func (e *Engine) ListMatterDocuments(ctx context.Context, project domain.ProjectID) ([]domain.MatterDocument, error) {
+	return e.repo.ListMatterDocuments(ctx, project)
+}
+
+// MatterDocument returns one stored matter document.
+func (e *Engine) MatterDocument(ctx context.Context, id string) (domain.MatterDocument, error) {
+	return e.repo.MatterDocument(ctx, id)
+}
+
+// RenameMatterDocument changes only the display label of a document and returns
+// the updated record.
+func (e *Engine) RenameMatterDocument(ctx context.Context, id, name string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.rename_matter_document", time.Now(), &err)
+	if id == "" {
+		return domain.MatterDocument{}, errors.New("engine: matter document id required")
+	}
+	if strings.TrimSpace(name) == "" {
+		return domain.MatterDocument{}, errors.New("engine: matter document name required")
+	}
+	if err := e.repo.RenameMatterDocument(ctx, id, name); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionMatterDocumentRename, Entity: "matter_document",
+		EntityID: id, Status: "committed",
+	})
+	e.announceChange()
+	return doc, nil
+}
+
+// DeleteMatterDocument removes a document. The blob on disk is unlinked only when
+// the document owns it (a standalone file under the matter's documents dir); an
+// office action's own document shares the office-action blob and is left intact
+// so deleting it never destroys the examiner's letter.
+func (e *Engine) DeleteMatterDocument(ctx context.Context, id string) (err error) {
+	defer e.observeDuration("engine.delete_matter_document", time.Now(), &err)
+	if id == "" {
+		return errors.New("engine: matter document id required")
+	}
+	doc, err := e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := e.repo.DeleteMatterDocument(ctx, id); err != nil {
+		return err
+	}
+	if doc.BlobPath != "" && e.docsExportDir != "" {
+		docsDir := filepath.Join(e.docsExportDir, sanitizeProjectID(string(doc.Project)), "documents")
+		if strings.HasPrefix(doc.BlobPath, docsDir+string(os.PathSeparator)) {
+			_ = os.Remove(doc.BlobPath)
+		}
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionMatterDocumentDelete, Entity: "matter_document",
+		EntityID: id, Status: "committed",
+	})
+	e.announceChange()
+	return nil
+}
+
+// ExtractDocumentText (re-)derives a document's plain text with the configured
+// multimodal AI provider — OCR for a scanned, image-only PDF the pure-Go
+// extractor could not read — and saves it back onto the document. It is a
+// deliberately separate, on-demand step (not part of import) because OCR of a
+// multi-page scan is slow and bills AI usage, so the user triggers it per
+// document. Requires an AI provider that satisfies ai.Extractor (cloud Gemini);
+// a text-only/local provider returns an actionable error.
+func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.extract_document_text", time.Now(), &err)
+	if id == "" {
+		return domain.MatterDocument{}, errors.New("engine: matter document id required")
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	if doc.BlobPath == "" {
+		return domain.MatterDocument{}, errors.New("engine: document has no stored file to extract")
+	}
+	extractor, ok := e.drafter.(ai.Extractor)
+	if !ok {
+		return domain.MatterDocument{}, errors.New("engine: AI text extraction is not available with the configured provider (set a Gemini API key)")
+	}
+	data, err := os.ReadFile(doc.BlobPath)
+	if err != nil {
+		return domain.MatterDocument{}, fmt.Errorf("engine: read document file: %w", err)
+	}
+	aiStart := time.Now()
+	text, err := extractor.ExtractText(ctx, data, mimeForPath(doc.BlobPath))
+	if err != nil {
+		return domain.MatterDocument{}, fmt.Errorf("engine: extract document text: %w", err)
+	}
+	aiElapsed := time.Since(aiStart)
+	if strings.TrimSpace(text) == "" {
+		return domain.MatterDocument{}, errors.New("engine: no text could be extracted from the document")
+	}
+	doc.ExtractedText = text
+	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	provider, model := string(extractor.Provider()), extractor.Model()
+	// Activity record (persisted, billable provenance) + a log line for the
+	// external AI call. TODO(slice 4): also write an ai_usage row with tokens.
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterDocumentExtract,
+		Entity:   "matter_document",
+		EntityID: doc.ID,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project":  string(doc.Project),
+			"provider": provider,
+			"model":    model,
+			"chars":    len(text),
+		},
+	})
+	e.log(ctx, slog.LevelInfo, "extracted document text with AI",
+		slog.String("document_id", doc.ID),
+		slog.String("provider", provider),
+		slog.String("model", model),
+		slog.Int("chars", len(text)))
+	e.recordAICall(ctx, doc.Project, doc.OfficeActionID, "", provider, model, aiElapsed)
+	e.announceChange()
+	return doc, nil
+}
+
+// mimeForPath maps a stored document's extension to the MIME type the multimodal
+// extractor expects, defaulting to PDF.
+func mimeForPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".webp":
+		return "image/webp"
+	case ".tif", ".tiff":
+		return "image/tiff"
+	default:
+		return "application/pdf"
+	}
+}
+
+// SetMatterType records the prosecution stage of a project (provisional,
+// non-provisional, in-prosecution, issued) and returns the updated project. An
+// empty value clears the classification.
+func (e *Engine) SetMatterType(ctx context.Context, project domain.ProjectID, mt domain.MatterType) (p domain.Project, err error) {
+	defer e.observeDuration("engine.set_matter_type", time.Now(), &err)
+	if project == "" {
+		return domain.Project{}, errors.New("engine: project id required")
+	}
+	if mt != "" && !mt.Valid() {
+		return domain.Project{}, fmt.Errorf("engine: invalid matter type %q", mt)
+	}
+	p, err = e.repo.Project(ctx, project)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	p.MatterType = mt
+	if err := e.repo.SaveProject(ctx, p); err != nil {
+		return domain.Project{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionProjectSetMatterType, Entity: "project",
+		EntityID: string(project), Status: "committed",
+		Attributes: map[string]any{"matter_type": string(mt)},
+	})
+	e.announceChange()
+	return p, nil
+}
+
+// AddMatterEventInput describes one communications-log entry to record.
+type AddMatterEventInput struct {
+	Project        domain.ProjectID
+	OfficeActionID string
+	Kind           domain.MatterEventKind
+	Party          string
+	OccurredAt     time.Time
+	DueAt          time.Time
+	Summary        string
+	Comment        string
+}
+
+// AddMatterEvent records one entry in a matter's communications log (a call, an
+// email, an examiner interview, a filing, a deadline). OccurredAt defaults to now
+// when unset.
+func (e *Engine) AddMatterEvent(ctx context.Context, in AddMatterEventInput) (ev domain.MatterEvent, err error) {
+	defer e.observeDuration("engine.add_matter_event", time.Now(), &err)
+	if in.Project == "" {
+		return domain.MatterEvent{}, errors.New("engine: matter event requires a project")
+	}
+	if in.Kind != "" && !in.Kind.Valid() {
+		return domain.MatterEvent{}, fmt.Errorf("engine: invalid matter event kind %q", in.Kind)
+	}
+	if _, err := e.repo.Project(ctx, in.Project); err != nil {
+		return domain.MatterEvent{}, fmt.Errorf("engine: add matter event: %w", err)
+	}
+	now := time.Now().UTC()
+	kind := in.Kind
+	if kind == "" {
+		kind = domain.MatterEventNote
+	}
+	occurred := in.OccurredAt
+	if occurred.IsZero() {
+		occurred = now
+	}
+	ev = domain.MatterEvent{
+		ID:             fmt.Sprintf("mev-%d", now.UnixNano()),
+		Project:        in.Project,
+		OfficeActionID: in.OfficeActionID,
+		Kind:           kind,
+		Party:          in.Party,
+		OccurredAt:     occurred,
+		DueAt:          in.DueAt,
+		Summary:        in.Summary,
+		Comment:        in.Comment,
+		CreatedAt:      now,
+	}
+	if err := e.repo.SaveMatterEvent(ctx, ev); err != nil {
+		return domain.MatterEvent{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterEventAdd,
+		Entity:   "matter_event",
+		EntityID: ev.ID,
+		Status:   "committed",
+		Attributes: map[string]any{
+			"project": string(in.Project),
+			"kind":    string(kind),
+		},
+	})
+	e.announceChange()
+	return ev, nil
+}
+
+// ListMatterEvents returns a project's communications-log entries, newest first.
+func (e *Engine) ListMatterEvents(ctx context.Context, project domain.ProjectID) ([]domain.MatterEvent, error) {
+	return e.repo.ListMatterEvents(ctx, project)
+}
+
+// DeleteMatterEvent removes one communications-log entry.
+func (e *Engine) DeleteMatterEvent(ctx context.Context, id string) (err error) {
+	defer e.observeDuration("engine.delete_matter_event", time.Now(), &err)
+	if id == "" {
+		return errors.New("engine: matter event id required")
+	}
+	if err := e.repo.DeleteMatterEvent(ctx, id); err != nil {
+		return err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionMatterEventDelete, Entity: "matter_event",
+		EntityID: id, Status: "committed",
+	})
+	e.announceChange()
+	return nil
+}
+
+// LogTimeInput describes one unit of work to record against a matter.
+type LogTimeInput struct {
+	Project        domain.ProjectID
+	OfficeActionID string
+	Activity       domain.TimeActivity
+	Seconds        int
+	Source         domain.TimeSource
+	Validated      bool
+	Note           string
+	StartedAt      time.Time
+	EndedAt        time.Time
+}
+
+// LogTime records one time entry. Manual entries are validated on entry; auto
+// entries (editor focus, AI calls) start unvalidated for the attorney to review.
+func (e *Engine) LogTime(ctx context.Context, in LogTimeInput) (entry domain.TimeEntry, err error) {
+	defer e.observeDuration("engine.log_time", time.Now(), &err)
+	if in.Project == "" {
+		return domain.TimeEntry{}, errors.New("engine: time entry requires a project")
+	}
+	if in.Activity != "" && !in.Activity.Valid() {
+		return domain.TimeEntry{}, fmt.Errorf("engine: invalid time activity %q", in.Activity)
+	}
+	if in.Seconds <= 0 {
+		return domain.TimeEntry{}, errors.New("engine: time entry needs a positive duration")
+	}
+	now := time.Now().UTC()
+	source := in.Source
+	if source == "" {
+		source = domain.TimeSourceManual
+	}
+	entry = domain.TimeEntry{
+		ID:             fmt.Sprintf("te-%d", now.UnixNano()),
+		Project:        in.Project,
+		OfficeActionID: in.OfficeActionID,
+		Activity:       in.Activity,
+		Source:         source,
+		StartedAt:      in.StartedAt,
+		EndedAt:        in.EndedAt,
+		Seconds:        in.Seconds,
+		Validated:      in.Validated,
+		Note:           in.Note,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if in.Validated {
+		entry.ValidatedAt = now
+	}
+	if err := e.repo.SaveTimeEntry(ctx, entry); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionTimeLog, Entity: "time_entry", EntityID: entry.ID, Status: "committed",
+		Attributes: map[string]any{
+			"project": string(in.Project), "activity": string(in.Activity),
+			"seconds": in.Seconds, "source": string(source),
+		},
+	})
+	e.announceChange()
+	return entry, nil
+}
+
+// ListTime returns a project's time entries, newest first.
+func (e *Engine) ListTime(ctx context.Context, project domain.ProjectID) ([]domain.TimeEntry, error) {
+	return e.repo.ListTimeEntries(ctx, project)
+}
+
+// ListUnvalidatedTime returns a project's unvalidated time entries (review queue).
+func (e *Engine) ListUnvalidatedTime(ctx context.Context, project domain.ProjectID) ([]domain.TimeEntry, error) {
+	return e.repo.ListUnvalidatedTime(ctx, project)
+}
+
+// UnvalidatedTimeCount returns how many of a project's time entries await
+// validation — the trigger for the validate-on-reopen prompt.
+func (e *Engine) UnvalidatedTimeCount(ctx context.Context, project domain.ProjectID) (int, error) {
+	return e.repo.CountUnvalidatedTime(ctx, project)
+}
+
+// TimeSummary aggregates a project's recorded time by activity and review state.
+func (e *Engine) TimeSummary(ctx context.Context, project domain.ProjectID) (domain.TimeSummary, error) {
+	return e.repo.SummarizeTime(ctx, project)
+}
+
+// AIUsageSummary aggregates a project's AI usage for billing.
+func (e *Engine) AIUsageSummary(ctx context.Context, project domain.ProjectID) (domain.AIUsageSummary, error) {
+	return e.repo.SummarizeAIUsage(ctx, project)
+}
+
+// UpdateTimeEntry applies an attorney's corrections to an auto-captured entry and
+// optionally marks it validated, the heart of the review-before-billing flow.
+func (e *Engine) UpdateTimeEntry(ctx context.Context, id string, seconds int, activity domain.TimeActivity, note string, validated bool) (entry domain.TimeEntry, err error) {
+	defer e.observeDuration("engine.update_time_entry", time.Now(), &err)
+	if id == "" {
+		return domain.TimeEntry{}, errors.New("engine: time entry id required")
+	}
+	if activity != "" && !activity.Valid() {
+		return domain.TimeEntry{}, fmt.Errorf("engine: invalid time activity %q", activity)
+	}
+	entry, err = e.repo.TimeEntry(ctx, id)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	now := time.Now().UTC()
+	if seconds > 0 {
+		entry.Seconds = seconds
+	}
+	if activity != "" {
+		entry.Activity = activity
+	}
+	entry.Note = note
+	if validated && !entry.Validated {
+		entry.ValidatedAt = now
+	}
+	entry.Validated = validated
+	entry.UpdatedAt = now
+	if err := e.repo.SaveTimeEntry(ctx, entry); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if validated {
+		e.recordActivity(ctx, observability.Record{
+			Action: observability.ActionTimeValidate, Entity: "time_entry", EntityID: id, Status: "committed",
+		})
+	}
+	e.announceChange()
+	return entry, nil
+}
+
+// DeleteTimeEntry removes one time entry (a mistaken auto-capture the attorney
+// rejects during review).
+func (e *Engine) DeleteTimeEntry(ctx context.Context, id string) (err error) {
+	defer e.observeDuration("engine.delete_time_entry", time.Now(), &err)
+	if id == "" {
+		return errors.New("engine: time entry id required")
+	}
+	if err := e.repo.DeleteTimeEntry(ctx, id); err != nil {
+		return err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionTimeDelete, Entity: "time_entry", EntityID: id, Status: "committed",
+	})
+	e.announceChange()
+	return nil
+}
+
+// recordAICall persists an AI call against a matter (for billing) and an auto,
+// unvalidated time entry for the time it took, so AI work shows up in both the
+// AI-usage and time summaries. Best-effort: a recording failure is logged but
+// does not fail the AI operation that triggered it.
+func (e *Engine) recordAICall(ctx context.Context, project domain.ProjectID, oaID, draftID, provider, model string, elapsed time.Duration) {
+	if project == "" {
+		return
+	}
+	now := time.Now().UTC()
+	usage := domain.AIUsage{
+		ID:             fmt.Sprintf("aiu-%d", now.UnixNano()),
+		Project:        project,
+		OfficeActionID: oaID,
+		DraftID:        draftID,
+		Provider:       provider,
+		Model:          model,
+		Prompts:        1,
+		CreatedAt:      now,
+	}
+	if err := e.repo.SaveAIUsage(ctx, usage); err != nil {
+		e.log(ctx, slog.LevelWarn, "record ai usage failed", slog.String("error", err.Error()))
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action: observability.ActionAIUsage, Entity: "ai_usage", EntityID: usage.ID, Status: "committed",
+		Attributes: map[string]any{"project": string(project), "provider": provider, "model": model},
+	})
+	secs := int(elapsed.Round(time.Second) / time.Second)
+	if secs <= 0 {
+		secs = 1
+	}
+	if _, err := e.LogTime(ctx, LogTimeInput{
+		Project: project, OfficeActionID: oaID, Activity: domain.TimeAI,
+		Source: domain.TimeSourceAuto, Seconds: secs, Note: provider + " " + model,
+	}); err != nil {
+		e.log(ctx, slog.LevelWarn, "record ai time failed", slog.String("error", err.Error()))
+	}
+}
+
+// extractDocText returns the plain text of a local document for reading and
+// grounding: a text source is read inline, a PDF is run through the extractor,
+// and anything else (or an unreadable file) yields an empty string.
+func extractDocText(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".txt", ".md", ".text":
+		if data, err := os.ReadFile(path); err == nil {
+			return string(data)
+		}
+	case ".pdf":
+		if txt, err := pdf.ExtractText(path); err == nil {
+			return txt
+		}
+	}
+	return ""
 }
 
 // copyWithHash copies src into dir, naming the file "<id><ext>", and returns the

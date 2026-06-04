@@ -179,6 +179,219 @@ func (s *Server) officeActionSaveNotes(ctx context.Context, raw json.RawMessage)
 	return proto.OfficeActionResult{OfficeAction: oa}, nil
 }
 
+func (s *Server) matterDocumentImport(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentImportParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.ImportMatterDocument(ctx, engine.ImportMatterDocumentInput{
+		Project:        p.Project,
+		OfficeActionID: p.OfficeActionID,
+		SourcePath:     p.SourcePath,
+		Kind:           p.Kind,
+		DisplayName:    p.DisplayName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	docs, err := s.engine.ListMatterDocuments(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentListResult{Documents: docs}, nil
+}
+
+func (s *Server) matterDocumentRename(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentRenameParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.RenameMatterDocument(ctx, p.ID, p.Name)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteMatterDocument(ctx, p.ID); err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{}, nil
+}
+
+func (s *Server) matterDocumentExtract(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.ExtractDocumentText(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterEventAdd(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterEventAddParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	occurred, err := parseFlexDate(p.OccurredAt)
+	if err != nil {
+		return nil, fmt.Errorf("%w: occurred_at: %v", ErrBadParams, err)
+	}
+	due, err := parseFlexDate(p.DueAt)
+	if err != nil {
+		return nil, fmt.Errorf("%w: due_at: %v", ErrBadParams, err)
+	}
+	ev, err := s.engine.AddMatterEvent(ctx, engine.AddMatterEventInput{
+		Project:        p.Project,
+		OfficeActionID: p.OfficeActionID,
+		Kind:           p.Kind,
+		Party:          p.Party,
+		OccurredAt:     occurred,
+		DueAt:          due,
+		Summary:        p.Summary,
+		Comment:        p.Comment,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterEventResult{Event: ev}, nil
+}
+
+func (s *Server) matterEventList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterEventListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	events, err := s.engine.ListMatterEvents(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterEventListResult{Events: events}, nil
+}
+
+func (s *Server) matterEventDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterEventIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteMatterEvent(ctx, p.ID); err != nil {
+		return nil, err
+	}
+	return proto.MatterEventResult{}, nil
+}
+
+func (s *Server) timeLog(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TimeLogParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	// A typed-in entry is validated on entry.
+	entry, err := s.engine.LogTime(ctx, engine.LogTimeInput{
+		Project:        p.Project,
+		OfficeActionID: p.OfficeActionID,
+		Activity:       p.Activity,
+		Seconds:        p.Seconds,
+		Source:         domain.TimeSourceManual,
+		Validated:      true,
+		Note:           p.Note,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.TimeEntryResult{Entry: entry}, nil
+}
+
+func (s *Server) timeList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TimeListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.engine.ListTime(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TimeListResult{Entries: entries}, nil
+}
+
+func (s *Server) timeUnvalidated(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TimeListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.engine.ListUnvalidatedTime(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TimeListResult{Entries: entries}, nil
+}
+
+func (s *Server) timeUpdate(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TimeUpdateParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	entry, err := s.engine.UpdateTimeEntry(ctx, p.ID, p.Seconds, p.Activity, p.Note, p.Validated)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TimeEntryResult{Entry: entry}, nil
+}
+
+func (s *Server) timeDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TimeIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteTimeEntry(ctx, p.ID); err != nil {
+		return nil, err
+	}
+	return proto.TimeEntryResult{}, nil
+}
+
+func (s *Server) timeSummary(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.TimeListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	timeSum, err := s.engine.TimeSummary(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	aiSum, err := s.engine.AIUsageSummary(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.TimeSummaryResult{Time: timeSum, AI: aiSum}, nil
+}
+
+func (s *Server) projectSetMatterType(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProjectSetMatterTypeParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	proj, err := s.engine.SetMatterType(ctx, p.Project, p.MatterType)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ProjectResult{Project: proj}, nil
+}
+
 // parseFlexDate accepts either an RFC3339 timestamp or a YYYY-MM-DD date, and
 // returns the zero time for an empty string.
 func parseFlexDate(s string) (time.Time, error) {

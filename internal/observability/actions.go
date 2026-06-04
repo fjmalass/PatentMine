@@ -66,6 +66,19 @@ const (
 	ActionDraftExportDocx    = "draft.export.docx"
 	ActionDraftSectionAI     = "draft.section.ai"
 	ActionOfficeActionImport = "office_action.import"
+
+	// Prosecution-matter workspace (matter-scoped documents and project stage).
+	ActionMatterDocumentImport  = "matter_document.import"
+	ActionMatterDocumentRename  = "matter_document.rename"
+	ActionMatterDocumentDelete  = "matter_document.delete"
+	ActionMatterDocumentExtract = "matter_document.extract" // AI/OCR text extraction (billable)
+	ActionProjectSetMatterType  = "project.set_matter_type"
+	ActionMatterEventAdd        = "matter_event.add"
+	ActionMatterEventDelete     = "matter_event.delete"
+	ActionTimeLog               = "time_entry.log"
+	ActionTimeValidate          = "time_entry.validate"
+	ActionTimeDelete            = "time_entry.delete"
+	ActionAIUsage               = "ai_usage.record" // an AI call recorded for billing
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -117,4 +130,15 @@ var AllActions = []string{
 	ActionDraftExportDocx,
 	ActionDraftSectionAI,
 	ActionOfficeActionImport,
+	ActionMatterDocumentImport,
+	ActionMatterDocumentRename,
+	ActionMatterDocumentDelete,
+	ActionMatterDocumentExtract,
+	ActionProjectSetMatterType,
+	ActionMatterEventAdd,
+	ActionMatterEventDelete,
+	ActionTimeLog,
+	ActionTimeValidate,
+	ActionTimeDelete,
+	ActionAIUsage,
 }

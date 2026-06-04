@@ -46,12 +46,18 @@ type OfficeActionEditor struct {
 }
 
 func NewOfficeActionEditor(client *rpc.Client, theme render.Theme, oa domain.OfficeAction) *OfficeActionEditor {
+	// One shared yank register so a passage yanked (yy) in the read-only examiner
+	// pane can be pasted (p) into the editable notes pane.
+	reg := &yankRegister{}
+
 	examiner := newVimBuffer(oa.ExtractedText)
 	examiner.vimMode = true
 	examiner.readOnly = true
+	examiner.yank = reg
 
 	notes := newVimBuffer(oa.Notes)
 	notes.vimMode = true // open in NORMAL — j/k navigate, i to edit
+	notes.yank = reg
 
 	return &OfficeActionEditor{
 		client:     client,

@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/google/uuid v1.6.0
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/pdfcpu/pdfcpu v0.12.1
 	github.com/rivo/uniseg v0.4.7
 	modernc.org/sqlite v1.50.1

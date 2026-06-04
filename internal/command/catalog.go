@@ -120,8 +120,14 @@ const (
 	Import           ID = "patent.import"
 	AddFile          ID = "patent.add-file"      // bulk-add patent numbers listed in a plain-text file into the active project
 	ExportAdded      ID = "project.export-added" // write the active project's manually-added patents to a plain-text list file
-	AddOfficeAction  ID = "officeaction.add"     // import an Office Action document from any directory into the active project
+	AddOfficeAction  ID = "officeaction.add"     // import an Office Action document (with examiner metadata) into the active project
 	OpenOfficeAction ID = "officeaction.open"    // open the project's office-action table (text + notes split editor)
+	AddDocument      ID = "matter.document.add"  // import a supporting document (reference, response, …) into the active matter
+	OpenDocuments    ID = "matter.document.open" // open the matter's document list (view / rename / delete)
+	SetMatterType    ID = "project.matter-type"  // set the project's prosecution stage (provisional / nonprovisional / …)
+	DraftResponse    ID = "officeaction.respond" // draft an office-action response, copying from the matter's documents
+	LogComm          ID = "matter.comm.log"      // record a communications-log entry (call/email/interview) for the matter
+	OpenComms        ID = "matter.comm.open"      // open the matter's communications log
 	SourceMode       ID = "source.mode"
 	SourceCompare    ID = "source.compare" // review & choose between USPTO/Google data when diffs exist (default USPTO)
 	SourceBibs       ID = "source.bibs"    // read-only all-fields side-by-side of every source's bibliographic data

@@ -173,6 +173,12 @@ var appHandlers = map[command.ID]appHandler{
 	command.ExportAdded:                (*App).cmdExportAdded,
 	command.AddOfficeAction:            (*App).cmdAddOfficeAction,
 	command.OpenOfficeAction:           (*App).cmdOpenOfficeAction,
+	command.AddDocument:                (*App).cmdAddDocument,
+	command.OpenDocuments:              (*App).cmdOpenDocuments,
+	command.SetMatterType:              (*App).cmdSetMatterType,
+	command.DraftResponse:              (*App).cmdDraftResponse,
+	command.LogComm:                    (*App).cmdLogComm,
+	command.OpenComms:                  (*App).cmdOpenComms,
 	command.SourceMode:                 (*App).cmdSourceMode,
 	command.SourceCompare:              (*App).cmdSourceCompare,
 	command.SourceBibs:                 (*App).cmdSourceBibs,
@@ -225,6 +231,8 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.AddFile:                 true,
 	command.ExportAdded:             true,
 	command.AddOfficeAction:         true,
+	command.AddDocument:             true,
+	command.SetMatterType:           true,
 	command.FamilyExportMermaid:     true,
 	command.FetchAssignmentsProject: true,
 	command.SourceMode:              true,
@@ -825,6 +833,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Open the split editor on top of the list, so closing it returns there.
 		a.overlays = append(a.overlays, overlay.NewOfficeActionEditor(a.client, a.theme, m.OA))
 		return a, nil
+	case overlay.OfficeActionImportSubmitMsg:
+		a.popOverlay()
+		return a, pane.ImportOfficeActionCmd(a.client, m.Params)
+	case overlay.OpenDocumentTextMsg:
+		// Open a read-only viewer on top of the document list.
+		a.overlays = append(a.overlays, overlay.NewTextViewer(a.theme, m.Title, m.Text))
+		return a, nil
+	case pane.OpenResponseEditorMsg:
+		a.overlays = append(a.overlays, overlay.NewResponseEditor(a.client, a.theme, m.Draft, m.Docs))
+		a.metrics.IncCounter("tui.officeaction.respond.open", 1)
+		return a, nil
+	case overlay.MatterEventSubmitMsg:
+		a.popOverlay()
+		return a, pane.AddMatterEventCmd(a.client, m.Params)
 	case overlay.IDSHeaderSubmitMsg:
 		a.popOverlay()
 		return a.handleIDSHeaderSubmit(m.Project)
@@ -1062,6 +1084,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("id", m.ID),
 			slog.String("source", m.Source),
 			slog.String("stored_at", m.StoredAt))
+		return a, nil
+	case pane.MatterDocumentImportedMsg:
+		a.metrics.IncCounter("tui.matter.document.import.done", 1)
+		a.log().Info("matter document imported",
+			slog.String("id", m.ID),
+			slog.String("name", m.Name),
+			slog.String("source", m.Source))
+		a.setStatus(text.StatusGeneric, "Added document: "+m.Name)
 		return a, nil
 	case pane.AddedImportDoneMsg:
 		lines := []string{

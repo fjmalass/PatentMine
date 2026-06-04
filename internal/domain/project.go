@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -8,6 +9,59 @@ import (
 // ProjectID is the stable identifier of a project. A distinct type (not a bare
 // string) keeps it from being mixed up with patent numbers or other IDs.
 type ProjectID string
+
+// MatterType classifies the stage of the patent matter a project represents, so
+// the workspace can show what kind of work it holds (a first filing vs an active
+// prosecution). It is optional — an empty value means unclassified.
+type MatterType string
+
+const (
+	MatterProvisional    MatterType = "provisional"    // a provisional application
+	MatterNonprovisional MatterType = "nonprovisional" // a non-provisional/utility filing
+	MatterInProsecution  MatterType = "in_prosecution" // an application under examination
+	MatterIssued         MatterType = "issued"         // an issued patent
+)
+
+// Valid reports whether the MatterType is a known value (the empty/unclassified
+// value is allowed everywhere and is not listed here).
+func (m MatterType) Valid() bool {
+	switch m {
+	case MatterProvisional, MatterNonprovisional, MatterInProsecution, MatterIssued:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label returns the human-readable name of a matter type for the TUI.
+func (m MatterType) Label() string {
+	switch m {
+	case MatterProvisional:
+		return "Provisional"
+	case MatterNonprovisional:
+		return "Non-provisional"
+	case MatterInProsecution:
+		return "In prosecution"
+	case MatterIssued:
+		return "Issued"
+	default:
+		return ""
+	}
+}
+
+// ParseMatterType converts a string into a MatterType. An empty string is the
+// valid unclassified value; any other unknown string is an error.
+func ParseMatterType(s string) (MatterType, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return "", nil
+	}
+	m := MatterType(s)
+	if !m.Valid() {
+		return "", fmt.Errorf("domain: unknown matter type %q", s)
+	}
+	return m, nil
+}
 
 // ProjectExaminer is one examiner assignment recorded for a project. A patent
 // application can be reassigned during prosecution, so examiners are kept as a
@@ -32,7 +86,10 @@ type Project struct {
 	ArtUnit              string            `json:"art_unit,omitempty"`
 	Examiners            []ProjectExaminer `json:"examiners,omitempty"`
 	AttorneyDocketNumber string            `json:"attorney_docket_number,omitempty"`
-	CachedCount          int               `json:"cached_count"`
+	// MatterType classifies the prosecution stage (provisional, non-provisional,
+	// in-prosecution, issued); empty until the user sets it.
+	MatterType  MatterType `json:"matter_type,omitempty"`
+	CachedCount int        `json:"cached_count"`
 }
 
 // FirstInventor returns the first-named inventor for the IDS header, or empty

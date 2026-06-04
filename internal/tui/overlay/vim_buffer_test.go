@@ -63,3 +63,64 @@ func TestReadOnlyBlocksEditsAllowsMotion(t *testing.T) {
 		t.Fatal("read-only buffer should never be dirty")
 	}
 }
+
+func TestYankPasteWithinBuffer(t *testing.T) {
+	b := newVimBuffer("one\ntwo\nthree")
+	b.vimMode = true
+	b.line, b.column = 0, 0
+
+	// yy on line 0, then p pastes a copy of "one" below it.
+	b.handleKey(runes("y"))
+	b.handleKey(runes("y"))
+	b.handleKey(runes("p"))
+	if want := "one\none\ntwo\nthree"; b.Value() != want {
+		t.Fatalf("yy/p = %q, want %q", b.Value(), want)
+	}
+	if b.line != 1 {
+		t.Fatalf("after paste cursor line = %d, want 1 (first pasted line)", b.line)
+	}
+}
+
+func TestYankFromReadOnlyPasteIntoEditableViaSharedRegister(t *testing.T) {
+	reg := &yankRegister{}
+	src := newVimBuffer("REJECTION: claim 1 is anticipated by Smith.\nmore")
+	src.vimMode = true
+	src.readOnly = true
+	src.yank = reg
+
+	dst := newVimBuffer("REMARKS\n")
+	dst.vimMode = true
+	dst.yank = reg
+	dst.line = 0
+
+	// Yank the first line from the read-only source…
+	src.line = 0
+	src.handleKey(runes("y"))
+	src.handleKey(runes("y"))
+	if reg.text != "REJECTION: claim 1 is anticipated by Smith.\n" {
+		t.Fatalf("shared register after yank = %q", reg.text)
+	}
+
+	// …and paste it into the editable response buffer (below the REMARKS heading;
+	// the trailing empty line of the seed remains last).
+	dst.handleKey(runes("p"))
+	if want := "REMARKS\nREJECTION: claim 1 is anticipated by Smith.\n"; dst.Value() != want {
+		t.Fatalf("cross-pane paste = %q, want %q", dst.Value(), want)
+	}
+	if !dst.dirty {
+		t.Fatal("paste should mark the destination dirty")
+	}
+}
+
+func TestCountYank(t *testing.T) {
+	b := newVimBuffer("a\nb\nc\nd")
+	b.vimMode = true
+	b.line = 0
+	// 2yy yanks two lines.
+	b.handleKey(runes("2"))
+	b.handleKey(runes("y"))
+	b.handleKey(runes("y"))
+	if b.reg().text != "a\nb\n" {
+		t.Fatalf("2yy register = %q, want %q", b.reg().text, "a\nb\n")
+	}
+}

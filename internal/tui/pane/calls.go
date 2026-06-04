@@ -232,6 +232,138 @@ func AddOfficeActionCmd(client *rpc.Client, project domain.ProjectID, path strin
 	}
 }
 
+// ImportOfficeActionCmd imports an Office Action with the metadata captured in
+// the import form (examiner, mail date, type, …), not just a path. The daemon
+// copies the file, computes the response deadline, and records the row.
+func ImportOfficeActionCmd(client *rpc.Client, params proto.OfficeActionImportParams) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.OfficeActionResult
+		if err := client.Call(ctx, proto.MethodOfficeActionImport, params, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action import failed: " + err.Error()}, Error: true}
+		}
+		return OfficeActionImportedMsg{
+			ID:       res.OfficeAction.ID,
+			Source:   params.SourcePath,
+			StoredAt: res.OfficeAction.BlobPath,
+		}
+	}
+}
+
+// MatterDocumentImportedMsg reports a supporting document was filed under the
+// matter, so the app can confirm it and any open document list can refresh.
+type MatterDocumentImportedMsg struct {
+	ID      string
+	Name    string
+	Source  string
+	Project domain.ProjectID
+}
+
+// AddMatterDocumentCmd files a supporting document (reference, response, …) under
+// the matter at path. Like the office-action import, only the path crosses RPC;
+// the daemon copies and text-extracts the file itself.
+func AddMatterDocumentCmd(client *rpc.Client, project domain.ProjectID, path string, kind domain.MatterDocKind) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.MatterDocumentResult
+		if err := client.Call(ctx, proto.MethodMatterDocumentImport,
+			proto.MatterDocumentImportParams{Project: project, SourcePath: path, Kind: kind}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Document import failed: " + err.Error()}, Error: true}
+		}
+		return MatterDocumentImportedMsg{
+			ID:      res.Document.ID,
+			Name:    res.Document.DisplayName,
+			Source:  path,
+			Project: project,
+		}
+	}
+}
+
+// OpenResponseEditorMsg asks the app to open the office-action response editor
+// over a freshly created (or existing) response draft, with the matter's
+// documents available as copy-from sources on the left.
+type OpenResponseEditorMsg struct {
+	Draft domain.Draft
+	Docs  []domain.MatterDocument
+}
+
+// CreateResponseCmd creates an office-action response draft for the project,
+// linking it to the most recent office action when one exists, and gathers the
+// matter's documents so the editor can copy from them. The response is a
+// first-class DraftOAResponse, so it reuses the drafting subsystem's .docx export
+// and section structure.
+func CreateResponseCmd(client *rpc.Client, project domain.ProjectID) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+
+		// Link to the newest office action, if any, and title from its mail date.
+		var oaList proto.OfficeActionListResult
+		_ = client.Call(ctx, proto.MethodOfficeActionList, proto.OfficeActionListParams{Project: project}, &oaList)
+		title := "Office Action Response"
+		var oaID string
+		if len(oaList.OfficeActions) > 0 {
+			oa := oaList.OfficeActions[0] // newest mail date first
+			oaID = oa.ID
+			if !oa.MailDate.IsZero() {
+				title = "Response to Office Action mailed " + oa.MailDate.Format(domain.DateLayout)
+			}
+		}
+
+		var created proto.DraftResult
+		if err := client.Call(ctx, proto.MethodDraftCreate,
+			proto.DraftCreateParams{Project: project, Kind: domain.DraftOAResponse, Title: title}, &created); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Create response failed: " + err.Error()}, Error: true}
+		}
+		d := created.Draft
+		if oaID != "" {
+			d.OfficeActionID = oaID
+			var saved proto.DraftResult
+			if err := client.Call(ctx, proto.MethodDraftSave, proto.DraftSaveParams{Draft: d}, &saved); err != nil {
+				return StatusMsg{Key: text.StatusGeneric, Args: []any{"Link response failed: " + err.Error()}, Error: true}
+			}
+			d = saved.Draft
+		}
+
+		var docs proto.MatterDocumentListResult
+		_ = client.Call(ctx, proto.MethodMatterDocumentList, proto.MatterDocumentListParams{Project: project}, &docs)
+		return OpenResponseEditorMsg{Draft: d, Docs: docs.Documents}
+	}
+}
+
+// AddMatterEventCmd records one communications-log entry from the event form.
+func AddMatterEventCmd(client *rpc.Client, params proto.MatterEventAddParams) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.MatterEventResult
+		if err := client.Call(ctx, proto.MethodMatterEventAdd, params, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Log communication failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{"Logged " + res.Event.Kind.Label()}}
+	}
+}
+
+// SetMatterTypeCmd records the prosecution stage of a project.
+func SetMatterTypeCmd(client *rpc.Client, project domain.ProjectID, mt domain.MatterType) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.ProjectResult
+		if err := client.Call(ctx, proto.MethodProjectSetMatterType,
+			proto.ProjectSetMatterTypeParams{Project: project, MatterType: mt}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Set matter type failed: " + err.Error()}, Error: true}
+		}
+		label := res.Project.MatterType.Label()
+		if label == "" {
+			label = "unclassified"
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{"Matter type: " + label}}
+	}
+}
+
 // AddUSPTOShowCandidatesMsg is returned when a broad search yields multiple candidate wrappers.
 type AddUSPTOShowCandidatesMsg struct {
 	Project    domain.ProjectID

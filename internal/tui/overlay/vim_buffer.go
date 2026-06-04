@@ -28,6 +28,12 @@ type vimUndo struct {
 	column int
 }
 
+// yankRegister is the linewise copy buffer. When two buffers share one register
+// (the split editor assigns the same pointer to both panes), text yanked in the
+// read-only source pane can be pasted into the editable response pane — the
+// copy-from-document-into-response path. text always ends with a newline.
+type yankRegister struct{ text string }
+
 // editorRow is one rendered display row of the buffer.
 type editorRow struct {
 	text     string
@@ -54,8 +60,14 @@ type vimBuffer struct {
 
 	// readOnly makes the buffer a navigable reference: vim motions and search
 	// work, but every mutation is a no-op and insert mode is never entered. Used
-	// for the examiner-text pane of the office-action split.
+	// for the examiner-text pane of the office-action split. A read-only buffer
+	// still yanks (yank does not mutate), so a source document can be copied from.
 	readOnly bool
+
+	// yank is the linewise copy register. Hosts that want copy-paste between two
+	// panes assign the same *yankRegister to both; otherwise it is lazily created
+	// per buffer (so yank/paste also works within a single editor).
+	yank *yankRegister
 
 	dirty bool
 }
@@ -237,6 +249,10 @@ func (b *vimBuffer) handleVimKey(msg tea.KeyMsg) (bool, editorIntent) {
 				b.vimPending = 'g'
 			case "G":
 				b.gotoLine(count, len(b.lines())-1)
+			case "y":
+				// Yank is non-mutating, so a read-only source pane supports it.
+				b.vimPending = 'y'
+				b.vimCount = count
 			}
 			return true, intentNone
 		}
@@ -301,6 +317,15 @@ func (b *vimBuffer) handleVimKey(msg tea.KeyMsg) (bool, editorIntent) {
 			b.gotoLine(count, len(b.lines())-1)
 		case "u":
 			b.undo()
+		case "y":
+			b.vimPending = 'y'
+			b.vimCount = count
+		case "p":
+			b.saveUndo()
+			b.pasteLinewise(false)
+		case "P":
+			b.saveUndo()
+			b.pasteLinewise(true)
 		}
 		return true, intentNone
 	}
@@ -332,8 +357,61 @@ func (b *vimBuffer) handleVimPending(msg tea.KeyMsg) (bool, editorIntent) {
 			b.saveUndo()
 			b.deleteToEndOfFile()
 		}
+	case 'y':
+		if msg.String() == "y" {
+			b.yankLines(count)
+		}
 	}
 	return true, intentNone
+}
+
+// reg returns the buffer's yank register, lazily allocating a private one so
+// yank/paste works within a single editor; the split editor overrides this by
+// assigning one shared register to both panes before use.
+func (b *vimBuffer) reg() *yankRegister {
+	if b.yank == nil {
+		b.yank = &yankRegister{}
+	}
+	return b.yank
+}
+
+// yankLines copies n lines (default 1) starting at the cursor into the register,
+// linewise (trailing newline), the way vim's yy / Nyy do.
+func (b *vimBuffer) yankLines(n int) {
+	if n <= 0 {
+		n = 1
+	}
+	lines := b.lines()
+	end := min(b.line+n, len(lines))
+	b.reg().text = strings.Join(lines[b.line:end], "\n") + "\n"
+}
+
+// pasteLinewise inserts the register's linewise text below the cursor line (or
+// above it when before is true), placing the cursor on the first pasted line —
+// vim's p / P. A no-op in a read-only buffer or with an empty register.
+func (b *vimBuffer) pasteLinewise(before bool) {
+	if b.readOnly {
+		return
+	}
+	text := b.reg().text
+	if text == "" {
+		return
+	}
+	paste := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	lines := b.lines()
+	at := b.line + 1
+	if before {
+		at = b.line
+	}
+	at = min(at, len(lines))
+	out := make([]string, 0, len(lines)+len(paste))
+	out = append(out, lines[:at]...)
+	out = append(out, paste...)
+	out = append(out, lines[at:]...)
+	b.value = strings.Join(out, "\n")
+	b.line = at
+	b.column = 0
+	b.markDirty()
 }
 
 // gotoLine jumps to the 1-based line count, or fallback when count==0. The

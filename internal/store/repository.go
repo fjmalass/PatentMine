@@ -264,6 +264,44 @@ type Repository interface {
 	// link reset to NULL.
 	DeleteOfficeAction(ctx context.Context, id string) error
 
+	// SaveMatterDocument inserts or updates one matter document.
+	SaveMatterDocument(ctx context.Context, d domain.MatterDocument) error
+	// MatterDocument returns one matter document, or ErrNotFound.
+	MatterDocument(ctx context.Context, id string) (domain.MatterDocument, error)
+	// ListMatterDocuments returns a project's documents, newest first.
+	ListMatterDocuments(ctx context.Context, project domain.ProjectID) ([]domain.MatterDocument, error)
+	// RenameMatterDocument updates only the display name of one document.
+	RenameMatterDocument(ctx context.Context, id, name string) error
+	// DeleteMatterDocument removes one matter document row.
+	DeleteMatterDocument(ctx context.Context, id string) error
+
+	// SaveMatterEvent inserts or updates one communications-log entry.
+	SaveMatterEvent(ctx context.Context, e domain.MatterEvent) error
+	// ListMatterEvents returns a project's communications-log entries, newest first.
+	ListMatterEvents(ctx context.Context, project domain.ProjectID) ([]domain.MatterEvent, error)
+	// DeleteMatterEvent removes one communications-log entry.
+	DeleteMatterEvent(ctx context.Context, id string) error
+
+	// SaveTimeEntry inserts or updates one time entry.
+	SaveTimeEntry(ctx context.Context, e domain.TimeEntry) error
+	// TimeEntry returns one time entry, or ErrNotFound.
+	TimeEntry(ctx context.Context, id string) (domain.TimeEntry, error)
+	// ListTimeEntries returns a project's time entries, newest first.
+	ListTimeEntries(ctx context.Context, project domain.ProjectID) ([]domain.TimeEntry, error)
+	// ListUnvalidatedTime returns a project's unvalidated time entries, oldest first.
+	ListUnvalidatedTime(ctx context.Context, project domain.ProjectID) ([]domain.TimeEntry, error)
+	// CountUnvalidatedTime returns how many time entries await validation.
+	CountUnvalidatedTime(ctx context.Context, project domain.ProjectID) (int, error)
+	// DeleteTimeEntry removes one time entry.
+	DeleteTimeEntry(ctx context.Context, id string) error
+	// SummarizeTime aggregates a project's time by activity and review state.
+	SummarizeTime(ctx context.Context, project domain.ProjectID) (domain.TimeSummary, error)
+
+	// SaveAIUsage records one AI call against a matter.
+	SaveAIUsage(ctx context.Context, u domain.AIUsage) error
+	// SummarizeAIUsage aggregates a project's AI usage.
+	SummarizeAIUsage(ctx context.Context, project domain.ProjectID) (domain.AIUsageSummary, error)
+
 	// PatentNote returns one project-scoped patent note.
 	PatentNote(ctx context.Context, project domain.ProjectID, patent domain.PatentNumber) (domain.PatentNote, error)
 	// ListPatentNotes returns all project-scoped notes sorted by date (updated_at DESC) or patent number.

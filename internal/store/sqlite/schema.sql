@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '7')
+VALUES ('schema_version', '8')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -597,7 +597,8 @@ CREATE TABLE IF NOT EXISTS project (
     application_number     TEXT NOT NULL DEFAULT '',
     filing_date            TEXT NOT NULL DEFAULT '',
     art_unit               TEXT NOT NULL DEFAULT '',
-    attorney_docket_number TEXT NOT NULL DEFAULT ''
+    attorney_docket_number TEXT NOT NULL DEFAULT '',
+    matter_type            TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS project_inventor (
@@ -764,11 +765,88 @@ CREATE TABLE IF NOT EXISTS office_action (
     blob_hash          TEXT NOT NULL DEFAULT '',
     extracted_text     TEXT NOT NULL DEFAULT '',
     notes              TEXT NOT NULL DEFAULT '',
+    response_due       TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL DEFAULT 'open',
     source             TEXT NOT NULL DEFAULT '',
     imported_at        TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_office_action_project ON office_action (project_id, mail_date DESC);
+
+-- matter_document is one file filed under a matter (a project), optionally linked
+-- to a specific office action. The bytes live on disk (blob_path/blob_hash) while
+-- the row holds metadata and the extracted plain text used for reading and
+-- copy-into-response. display_name is the user-renameable label.
+CREATE TABLE IF NOT EXISTS matter_document (
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    office_action_id TEXT NOT NULL DEFAULT '',
+    kind             TEXT NOT NULL DEFAULT 'other',
+    display_name     TEXT NOT NULL DEFAULT '',
+    blob_path        TEXT NOT NULL DEFAULT '',
+    blob_hash        TEXT NOT NULL DEFAULT '',
+    extracted_text   TEXT NOT NULL DEFAULT '',
+    added_at         TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_matter_document_project ON matter_document (project_id, added_at DESC);
+CREATE INDEX IF NOT EXISTS idx_matter_document_oa ON matter_document (office_action_id);
+
+-- matter_event is one entry in a matter's communications log: an email, a phone
+-- call, an examiner interview, a filing, or a tracked deadline. Project-scoped,
+-- optionally tied to one office action.
+CREATE TABLE IF NOT EXISTS matter_event (
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    office_action_id TEXT NOT NULL DEFAULT '',
+    kind             TEXT NOT NULL DEFAULT 'note',
+    party            TEXT NOT NULL DEFAULT '',
+    occurred_at      TEXT NOT NULL DEFAULT '',
+    due_at           TEXT NOT NULL DEFAULT '',
+    summary          TEXT NOT NULL DEFAULT '',
+    comment          TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_matter_event_project ON matter_event (project_id, occurred_at DESC);
+
+-- time_entry is one unit of recorded work on a matter, the basis for billing.
+-- Auto-captured entries (editor focus, AI calls) start unvalidated; the attorney
+-- validates or corrects them before they are billed.
+CREATE TABLE IF NOT EXISTS time_entry (
+    id               TEXT PRIMARY KEY,
+    project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    office_action_id TEXT NOT NULL DEFAULT '',
+    activity         TEXT NOT NULL DEFAULT '',
+    source           TEXT NOT NULL DEFAULT 'manual',
+    started_at       TEXT NOT NULL DEFAULT '',
+    ended_at         TEXT NOT NULL DEFAULT '',
+    seconds          INTEGER NOT NULL DEFAULT 0,
+    validated        INTEGER NOT NULL DEFAULT 0,
+    validated_at     TEXT NOT NULL DEFAULT '',
+    note             TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL DEFAULT '',
+    updated_at       TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_time_entry_project ON time_entry (project_id, validated);
+
+-- ai_usage records one AI call against a matter so AI work can be charged.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id                TEXT PRIMARY KEY,
+    project_id        TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    office_action_id  TEXT NOT NULL DEFAULT '',
+    draft_id          TEXT NOT NULL DEFAULT '',
+    provider          TEXT NOT NULL DEFAULT '',
+    model             TEXT NOT NULL DEFAULT '',
+    prompts           INTEGER NOT NULL DEFAULT 0,
+    prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens      INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_project ON ai_usage (project_id, created_at DESC);
 
 -- draft is a project-scoped, section-structured legal document rendered to .docx.
 -- One model unifies first-application drafting (provisional / non-provisional)
