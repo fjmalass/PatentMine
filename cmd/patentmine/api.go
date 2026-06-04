@@ -88,6 +88,7 @@ func runAPI(args []string) int {
 	sec := api.SecurityFromEnv()
 	opts := []api.Option{
 		api.WithActivity(telemetry, time.Duration(cfg.ActivityMinMS)*time.Millisecond),
+
 		api.WithSecurity(sec),
 		api.WithAI(api.AIConfigFromAppConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel)),
 	}

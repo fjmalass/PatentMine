@@ -41,10 +41,10 @@ func (c *OfficeActionDeleteConfirm) Handles() []command.ID { return nil }
 func (c *OfficeActionDeleteConfirm) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	key := msg.String()
 	switch key {
-	case "1", "y":
+	case "y":
 		oa := c.oa
 		return c, func() tea.Msg { return OfficeActionDeleteConfirmMsg{OA: oa, DeleteFiles: false} }, true
-	case "2", "Y":
+	case "Y":
 		oa := c.oa
 		return c, func() tea.Msg { return OfficeActionDeleteConfirmMsg{OA: oa, DeleteFiles: true} }, true
 	case "q", "esc", "n", "N":
@@ -68,13 +68,13 @@ func (c *OfficeActionDeleteConfirm) View(maxW, _ int) string {
 	b.WriteString("\n")
 
 	b.WriteString("  ")
-	b.WriteString(c.theme.HelpKey.Render("[1/y]"))
+	b.WriteString(c.theme.HelpKey.Render("[y]"))
 	b.WriteString(" ")
 	b.WriteString(c.theme.Row.Render("Delete database entry only (keep files on disk)"))
 	b.WriteByte('\n')
 
 	b.WriteString("  ")
-	b.WriteString(c.theme.HelpKey.Render("[2/Y]"))
+	b.WriteString(c.theme.HelpKey.Render("[Y]"))
 	b.WriteString(" ")
 	b.WriteString(c.theme.Row.Render("Delete entry and all cached files on disk"))
 	b.WriteString("\n\n")
