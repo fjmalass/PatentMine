@@ -20,3 +20,5 @@ samples/
 **/node_modules/**
 session-ses*
 
+*_bin
+
