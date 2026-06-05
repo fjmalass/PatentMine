@@ -19,6 +19,10 @@ const PurposeAddOfficeAction Purpose = "add-officeaction"
 // supporting document — reference, response, etc. — filed under the matter).
 const PurposeAddMatterDocument Purpose = "add-matter-document"
 
+// PurposeAddPatentList routes a picked file to the :add.file import (a
+// plain-text list of patent numbers bulk-added into the active project).
+const PurposeAddPatentList Purpose = "add-patent-list"
+
 // FilePickedMsg reports a file chosen in a FilePicker overlay. Purpose tells the
 // App which action to route the path to.
 type FilePickedMsg struct {

@@ -173,14 +173,16 @@ func (e *Engine) FetchUSPTOXML(ctx context.Context, n domain.PatentNumber, kind 
 }
 
 // USPTOGrantBody returns the parsed body of the given patent. When kind is
-// empty, the engine tries grant first, then pgpub.
-func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind proto.USPTOXMLKind) (domain.USPTOGrantBody, bool, error) {
+// empty, the engine tries grant first, then pgpub. It also reports the local
+// XML file the body was generated from (incl. directory) and the resolved kind,
+// so callers can show provenance.
+func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind proto.USPTOXMLKind) (body domain.USPTOGrantBody, sourcePath string, resolvedKind proto.USPTOXMLKind, present bool, err error) {
 	app, err := e.repo.USPTOApplication(ctx, n)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return domain.USPTOGrantBody{}, false, nil
+			return domain.USPTOGrantBody{}, "", "", false, nil
 		}
-		return domain.USPTOGrantBody{}, false, err
+		return domain.USPTOGrantBody{}, "", "", false, err
 	}
 	tryKinds := []proto.USPTOXMLKind{kind}
 	if kind == "" {
@@ -189,10 +191,10 @@ func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind
 	for _, k := range tryKinds {
 		body, err := e.repo.USPTOGrantBody(ctx, app.ApplicationNumber, string(k))
 		if err == nil {
-			return body, true, nil
+			return body, e.usptoXMLPath(ctx, app.ApplicationNumber, k), k, true, nil
 		}
 		if !errors.Is(err, store.ErrNotFound) {
-			return domain.USPTOGrantBody{}, false, err
+			return domain.USPTOGrantBody{}, "", "", false, err
 		}
 
 		// If not found in SQLite but XML has been downloaded on disk, ingest it now on-demand
@@ -201,13 +203,23 @@ func (e *Engine) USPTOGrantBody(ctx context.Context, n domain.PatentNumber, kind
 			if info, statErr := os.Stat(prior.LocalPath); statErr == nil && info.Size() > 0 {
 				if ingestErr := e.ingestUSPTOXML(ctx, n, k, app.ApplicationNumber, prior.LocalPath); ingestErr == nil {
 					if secondBody, secondErr := e.repo.USPTOGrantBody(ctx, app.ApplicationNumber, string(k)); secondErr == nil {
-						return secondBody, true, nil
+						return secondBody, prior.LocalPath, k, true, nil
 					}
 				}
 			}
 		}
 	}
-	return domain.USPTOGrantBody{}, false, nil
+	return domain.USPTOGrantBody{}, "", "", false, nil
+}
+
+// usptoXMLPath returns the local XML file an ingested body was generated from,
+// or "" when no download record is on hand.
+func (e *Engine) usptoXMLPath(ctx context.Context, applicationNumber string, kind proto.USPTOXMLKind) string {
+	prior, err := e.repo.USPTOXMLDownload(ctx, applicationNumber, string(kind))
+	if err != nil {
+		return ""
+	}
+	return prior.LocalPath
 }
 
 // recordXMLAccess updates the access timestamp + counter for a cached XML
@@ -1001,4 +1013,3 @@ func (e *Engine) ensureUSPTOApplication(ctx context.Context, n domain.PatentNumb
 	}
 	return app, err
 }
-

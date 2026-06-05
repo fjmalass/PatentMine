@@ -541,7 +541,18 @@ func (c *Catalog) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	case catalogTableViewMsg:
 		if m.filter != "" {
 			if expr, err := filterexpr.Parse(m.filter); err == nil {
+				// The built-in default (fetch_state:cached) is the baseline:
+				// keep un-fetched stubs hidden at startup unless the saved view
+				// explicitly chose a fetch_state. Without this, a saved default
+				// view silently drops the cached default.
+				if cached, cerr := filterexpr.Parse("fetch_state:cached"); cerr == nil &&
+					filterexpr.CanonicalString(filterexpr.RemoveField(expr, filterexpr.FieldFetchState)) == filterexpr.CanonicalString(expr) {
+					expr = filterexpr.JoinAnd(expr, cached)
+				}
 				c.filter.setExpression(expr)
+				c.loading = true
+				c.page.Top()
+				return c, c.load()
 			}
 		}
 		return c, nil

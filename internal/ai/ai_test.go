@@ -69,7 +69,7 @@ func TestGeminiAnalyzerSuccess(t *testing.T) {
 }
 
 func TestGeminiAnalyzerMissingAPIKey(t *testing.T) {
-	analyzer := NewGeminiAnalyzer("")
+	analyzer := NewGeminiAnalyzer("", "")
 	patent := domain.Patent{Number: domain.MustParsePatentNumber("US10000000B2")}
 	_, err := analyzer.AnalyzePatent(context.Background(), patent, "")
 	if err == nil || !strings.Contains(err.Error(), "API Key is required") {

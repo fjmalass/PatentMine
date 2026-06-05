@@ -36,6 +36,7 @@ type Extractor interface {
 type DrafterConfig struct {
 	Provider     string // "ollama" (local, privacy-preserving), "gemini" (cloud), or "openai"
 	GeminiAPIKey string
+	GeminiModel  string
 	OllamaHost   string
 	OllamaModel  string
 	OpenAIAPIKey string
@@ -54,7 +55,7 @@ func NewDrafter(c DrafterConfig) Drafter {
 		}
 	case string(ProviderGemini):
 		if c.GeminiAPIKey != "" {
-			return NewGeminiAnalyzer(c.GeminiAPIKey)
+			return NewGeminiAnalyzer(c.GeminiAPIKey, c.GeminiModel)
 		}
 	case string(ProviderOpenAI):
 		if c.OpenAIAPIKey != "" {
@@ -62,7 +63,7 @@ func NewDrafter(c DrafterConfig) Drafter {
 		}
 	}
 	if c.GeminiAPIKey != "" {
-		return NewGeminiAnalyzer(c.GeminiAPIKey)
+		return NewGeminiAnalyzer(c.GeminiAPIKey, c.GeminiModel)
 	}
 	if c.OpenAIAPIKey != "" {
 		return NewOpenAIAnalyzer(c.OpenAIAPIKey, c.OpenAIModel)

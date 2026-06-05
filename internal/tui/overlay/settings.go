@@ -17,11 +17,16 @@ type AIEditConfigMsg struct {
 	Field string
 }
 
+// settingsRowCount is the number of selectable config rows, kept in one place
+// so cursor wrap, jump navigation, and the Enter field map never drift.
+const settingsRowCount = 7
+
 // SettingsOverlay is an interactive popup overlay showing AI and crawl/search config.
 type SettingsOverlay struct {
 	theme           render.Theme
 	activeAI        ai.Provider
 	geminiKey       string
+	geminiModel     string
 	ollamaHost      string
 	ollamaModel     string
 	openaiKey       string
@@ -32,11 +37,12 @@ type SettingsOverlay struct {
 }
 
 // NewSettingsOverlay builds a settings overlay screen.
-func NewSettingsOverlay(theme render.Theme, activeAI ai.Provider, geminiKey, ollamaHost, ollamaModel, openaiKey, openaiModel string, usptoConfigured bool) *SettingsOverlay {
+func NewSettingsOverlay(theme render.Theme, activeAI ai.Provider, geminiKey, geminiModel, ollamaHost, ollamaModel, openaiKey, openaiModel string, usptoConfigured bool) *SettingsOverlay {
 	return &SettingsOverlay{
 		theme:           theme,
 		activeAI:        activeAI,
 		geminiKey:       geminiKey,
+		geminiModel:     geminiModel,
 		ollamaHost:      ollamaHost,
 		ollamaModel:     ollamaModel,
 		openaiKey:       openaiKey,
@@ -60,8 +66,9 @@ func (s *SettingsOverlay) SetActiveAI(provider ai.Provider) {
 }
 
 // UpdateValues updates the config values rendered by this overlay in-place.
-func (s *SettingsOverlay) UpdateValues(geminiKey, ollamaHost, ollamaModel, openaiKey, openaiModel string, usptoConfigured bool) {
+func (s *SettingsOverlay) UpdateValues(geminiKey, geminiModel, ollamaHost, ollamaModel, openaiKey, openaiModel string, usptoConfigured bool) {
 	s.geminiKey = geminiKey
+	s.geminiModel = geminiModel
 	s.ollamaHost = ollamaHost
 	s.ollamaModel = ollamaModel
 	s.openaiKey = openaiKey
@@ -71,7 +78,7 @@ func (s *SettingsOverlay) UpdateValues(geminiKey, ollamaHost, ollamaModel, opena
 
 // HandleKey processes keyboard toggles inside the settings overlay.
 func (s *SettingsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	if newCursor, handled := s.jump.HandleKey(msg, s.cursor, 6); handled {
+	if newCursor, handled := s.jump.HandleKey(msg, s.cursor, settingsRowCount); handled {
 		s.cursor = newCursor
 		return s, nil, true
 	}
@@ -79,6 +86,8 @@ func (s *SettingsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch rawKey {
 	case "K":
 		return s, func() tea.Msg { return AIEditConfigMsg{Field: "gemini_key"} }, true
+	case "G":
+		return s, func() tea.Msg { return AIEditConfigMsg{Field: "gemini_model"} }, true
 	case "H":
 		return s, func() tea.Msg { return AIEditConfigMsg{Field: "ollama_host"} }, true
 	case "M":
@@ -109,13 +118,13 @@ func (s *SettingsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	}
 	switch msg.Type {
 	case tea.KeyUp:
-		s.cursor = (s.cursor - 1 + 6) % 6
+		s.cursor = (s.cursor - 1 + settingsRowCount) % settingsRowCount
 		return s, nil, true
 	case tea.KeyDown:
-		s.cursor = (s.cursor + 1) % 6
+		s.cursor = (s.cursor + 1) % settingsRowCount
 		return s, nil, true
 	case tea.KeyEnter:
-		fields := []string{"gemini_key", "ollama_host", "ollama_model", "openai_key", "openai_model", "uspto_key"}
+		fields := []string{"gemini_key", "gemini_model", "ollama_host", "ollama_model", "openai_key", "openai_model", "uspto_key"}
 		return s, func() tea.Msg { return AIEditConfigMsg{Field: fields[s.cursor]} }, true
 	case tea.KeyRunes:
 		switch msg.String() {
@@ -125,10 +134,10 @@ func (s *SettingsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			s.jump.PendingG = false
 			return s, nil, true
 		case "k":
-			s.cursor = (s.cursor - 1 + 6) % 6
+			s.cursor = (s.cursor - 1 + settingsRowCount) % settingsRowCount
 			return s, nil, true
 		case "j":
-			s.cursor = (s.cursor + 1) % 6
+			s.cursor = (s.cursor + 1) % settingsRowCount
 			return s, nil, true
 		}
 	}
@@ -184,13 +193,15 @@ func (s *SettingsOverlay) View(maxW, _ int) string {
 
 	b.WriteString(renderRow(0, "Gemini API Key", maskKey(s.geminiKey)))
 	b.WriteString("\n")
-	b.WriteString(renderRow(1, "Ollama Host", s.ollamaHost))
+	b.WriteString(renderRow(1, "Gemini Model", s.geminiModel))
 	b.WriteString("\n")
-	b.WriteString(renderRow(2, "Ollama Model", s.ollamaModel))
+	b.WriteString(renderRow(2, "Ollama Host", s.ollamaHost))
 	b.WriteString("\n")
-	b.WriteString(renderRow(3, "OpenAI API Key", maskKey(s.openaiKey)))
+	b.WriteString(renderRow(3, "Ollama Model", s.ollamaModel))
 	b.WriteString("\n")
-	b.WriteString(renderRow(4, "OpenAI Model", s.openaiModel))
+	b.WriteString(renderRow(4, "OpenAI API Key", maskKey(s.openaiKey)))
+	b.WriteString("\n")
+	b.WriteString(renderRow(5, "OpenAI Model", s.openaiModel))
 	b.WriteString("\n\n")
 
 	// Crawl / Search Registry Panel
@@ -203,7 +214,7 @@ func (s *SettingsOverlay) View(maxW, _ int) string {
 	if s.usptoConfigured {
 		usptoVal = "Configured (Full Access)"
 	}
-	b.WriteString(renderRow(5, "USPTO API Key", usptoVal))
+	b.WriteString(renderRow(6, "USPTO API Key", usptoVal))
 	b.WriteString("\n\n")
 
 	// Toggle controls

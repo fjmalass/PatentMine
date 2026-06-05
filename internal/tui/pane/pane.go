@@ -61,9 +61,9 @@ type MultiSelector interface {
 
 // ActivityFocus is the replayable thing the user is currently looking at.
 type ActivityFocus struct {
-	Entity   string
-	EntityID string
-	Label    string
+	Entity     string
+	EntityID   string
+	Label      string
 	Attributes map[string]any
 }
 
@@ -84,6 +84,13 @@ type VisualSelectionSaver interface {
 // The App checks this interface before feeding the key to the chord reader.
 type KeyHandler interface {
 	HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool)
+}
+
+// FullTextNumberProvider is implemented by panes that can open a full-text
+// viewer for a patent other than their Selection() — e.g. an office action
+// targets its application. openFullText prefers this over Selection().
+type FullTextNumberProvider interface {
+	FullTextNumber() (domain.PatentNumber, bool)
 }
 
 // JumpProvider is implemented by panes that support jump mode — a quick scroll
@@ -212,6 +219,11 @@ type FullTextLoadedMsg struct {
 	Duration       time.Duration
 	Err            error
 	FallbackGoogle bool
+	// SourceXMLPath is the local USPTO XML file the body was generated from
+	// (incl. directory), empty for the Google fallback.
+	SourceXMLPath string
+	// Stage is the life-cycle stage that was resolved and loaded.
+	Stage domain.Stage
 }
 
 // status returns a tea.Cmd that emits a StatusMsg for key.

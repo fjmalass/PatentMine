@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"patentmine/internal/ai"
 	"patentmine/internal/crawl"
 	"patentmine/internal/domain"
 )
@@ -50,6 +51,7 @@ type Config struct {
 	USPTOAPIKey        string            // USPTO Open Data Portal API Key.
 	SourceMode         domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
 	GeminiAPIKey       string            // Google Gemini Developer API Key.
+	GeminiModel        string            // Google Gemini Model ("gemini-2.5-flash", etc.)
 	OpenAIAPIKey       string            // OpenAI API Key.
 	OpenAIModel        string            // OpenAI Model ("gpt-4o-mini", etc.)
 	AIProvider         string            // Chosen AI Provider ("gemini", "ollama", "openai")
@@ -251,6 +253,10 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: invalid PATENTMINE_SOURCE_MODE: %w", err)
 	}
 	geminiKey := os.Getenv("GEMINI_API_KEY")
+	geminiModel := os.Getenv("GEMINI_MODEL")
+	if geminiModel == "" {
+		geminiModel = ai.DefaultGeminiModel
+	}
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 	openaiModel := os.Getenv("OPENAI_MODEL")
 	if openaiModel == "" {
@@ -361,6 +367,7 @@ func Load() (Config, error) {
 		USPTOAPIKey:        usptoKey,
 		SourceMode:         sourceMode,
 		GeminiAPIKey:       geminiKey,
+		GeminiModel:        geminiModel,
 		OpenAIAPIKey:       openaiKey,
 		OpenAIModel:        openaiModel,
 		AIProvider:         aiProvider,

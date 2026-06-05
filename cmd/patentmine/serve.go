@@ -132,6 +132,7 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 	drafter := ai.NewDrafter(ai.DrafterConfig{
 		Provider:     cfg.AIProvider,
 		GeminiAPIKey: cfg.GeminiAPIKey,
+		GeminiModel:  cfg.GeminiModel,
 		OllamaHost:   cfg.OllamaHost,
 		OllamaModel:  cfg.OllamaModel,
 		OpenAIAPIKey: cfg.OpenAIAPIKey,

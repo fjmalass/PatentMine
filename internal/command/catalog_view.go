@@ -66,7 +66,9 @@ func viewCommands() []Command {
 
 		// --- filtering (view) ---
 		Command{ID: Filter, Name: "filter", Aliases: []string{"f", "filter.clear"}, Usage: ":filter <expr>", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},
-		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: FindOpen, Name: "find", Aliases: []string{"/"}, Usage: ":find", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFullText}},
+		Command{ID: FindNext, Name: "find.next", Aliases: []string{"next-match"}, Usage: ":find.next", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: FindPrev, Name: "find.prev", Aliases: []string{"prev-match", "find.previous"}, Usage: ":find.prev", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: IDSEditField, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 		Command{ID: IDSToggleFull, Kind: KindView, Scopes: []Scope{ScopeIDS}},
 		Command{ID: IDSCycleStatus, Name: "ids.cycle-status", Aliases: []string{"ids.cycle", "cycle-ids"}, Usage: ":ids.cycle-status", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeIDS}},
@@ -75,11 +77,14 @@ func viewCommands() []Command {
 		// --- application-wide (view) ---
 		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Kind: KindView},
 		Command{ID: Help, Name: "help", Aliases: []string{"?"}, Usage: ":help", Kind: KindView},
-		Command{ID: OpenFullText, Name: "open.fulltext", Aliases: []string{"fulltext", "claims", "all-claims"}, Usage: ":open.fulltext", Kind: KindView, Scopes: []Scope{ScopeDetail}},
+		Command{ID: OpenFullText, Name: "open.fulltext", Aliases: []string{"fulltext", "claims", "all-claims"}, Usage: ":open.fulltext", Kind: KindView, Scopes: []Scope{ScopeDetail, ScopeMatterOA, ScopeMatterOADetail}},
 		Command{ID: AIAnalyze, Name: "ai.analyze", Aliases: []string{"ai", "analyze"}, Usage: ":ai.analyze", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: SettingsAI, Name: "settings.ai", Aliases: []string{"settings", "config"}, Usage: ":settings.ai", Kind: KindView},
 		Command{ID: CopyYank, Name: "copy", Aliases: []string{"yank", "clipboard"}, Usage: ":copy", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: CopyYankMeta, Name: "copy.meta", Aliases: []string{"yank-meta", "copy-with-patent"}, Usage: ":copy.meta", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: CopyAll, Name: "copy.all", Aliases: []string{"yank.all", "copy-all", "yank-all"}, Usage: ":copy.all", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: FullTextStageNext, Name: "fulltext.stage.next", Aliases: []string{"stage.next", "next-stage"}, Usage: ":fulltext.stage.next", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: FullTextStagePrev, Name: "fulltext.stage.prev", Aliases: []string{"stage.prev", "prev-stage", "fulltext.stage.previous"}, Usage: ":fulltext.stage.prev", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: NoteAdd, Name: "note.add", Aliases: []string{"add-note", "note"}, Usage: ":note.add", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: NoteOpen, Name: "note.open", Aliases: []string{"show-notes"}, Usage: ":note.open", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 	}

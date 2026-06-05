@@ -14,6 +14,7 @@ import (
 type AIConfig struct {
 	Provider     string
 	GeminiAPIKey string
+	GeminiModel  string
 	OllamaHost   string
 	OllamaModel  string
 	OpenAIAPIKey string
@@ -32,11 +33,11 @@ func (s *Server) analyzer() ai.Analyzer {
 		}
 	case string(ai.ProviderGemini):
 		if s.ai.GeminiAPIKey != "" {
-			return ai.NewGeminiAnalyzer(s.ai.GeminiAPIKey)
+			return ai.NewGeminiAnalyzer(s.ai.GeminiAPIKey, s.ai.GeminiModel)
 		}
 	}
 	if s.ai.GeminiAPIKey != "" {
-		return ai.NewGeminiAnalyzer(s.ai.GeminiAPIKey)
+		return ai.NewGeminiAnalyzer(s.ai.GeminiAPIKey, s.ai.GeminiModel)
 	}
 	if s.ai.OpenAIAPIKey != "" {
 		return ai.NewOpenAIAnalyzer(s.ai.OpenAIAPIKey, s.ai.OpenAIModel)
@@ -44,7 +45,7 @@ func (s *Server) analyzer() ai.Analyzer {
 	if s.ai.OllamaHost != "" {
 		return ai.NewOllamaAnalyzer(s.ai.OllamaHost, s.ai.OllamaModel)
 	}
-	return ai.NewGeminiAnalyzer("")
+	return ai.NewGeminiAnalyzer("", s.ai.GeminiModel)
 }
 
 // handleAIConfig reports whether server-side AI is configured.
@@ -52,9 +53,9 @@ func (s *Server) handleAIConfig(w http.ResponseWriter, r *http.Request) {
 	analyzer := s.analyzer()
 	ok, hint := analyzer.IsConfigured()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"provider":    analyzer.Provider(),
-		"configured":  ok,
-		"setup_hint":  hint,
+		"provider":   analyzer.Provider(),
+		"configured": ok,
+		"setup_hint": hint,
 	})
 }
 

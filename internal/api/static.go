@@ -49,10 +49,11 @@ func SecurityFromEnv() SecurityConfig {
 }
 
 // AIConfigFromAppConfig maps application config into API AI settings.
-func AIConfigFromAppConfig(provider, geminiKey, ollamaHost, ollamaModel, openaiKey, openaiModel string) AIConfig {
+func AIConfigFromAppConfig(provider, geminiKey, geminiModel, ollamaHost, ollamaModel, openaiKey, openaiModel string) AIConfig {
 	return AIConfig{
 		Provider:     provider,
 		GeminiAPIKey: geminiKey,
+		GeminiModel:  geminiModel,
 		OllamaHost:   ollamaHost,
 		OllamaModel:  ollamaModel,
 		OpenAIAPIKey: openaiKey,

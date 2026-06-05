@@ -36,7 +36,6 @@ type oaDetailLoadedMsg struct {
 	err       error
 }
 
-
 // OfficeActionDetail is the drill-down for one office action: its metadata and
 // response deadline, plus the matter's document/communication counts and the
 // time + AI-usage tally. Action keys reach the matter's documents (f),
@@ -163,6 +162,12 @@ func (o *OfficeActionDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 
 func (o *OfficeActionDetail) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
+}
+
+// FullTextNumber returns this office action's application as a patent number, so
+// :open.fulltext (T) opens the application's full text.
+func (o *OfficeActionDetail) FullTextNumber() (domain.PatentNumber, bool) {
+	return officeActionFullTextNumber(o.oa)
 }
 
 func (o *OfficeActionDetail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {

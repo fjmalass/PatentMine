@@ -1309,9 +1309,11 @@ func isFixturePath(arg string) bool {
 
 // cmdAddFile bulk-adds every patent number listed in a plain-text file into the
 // active project, exactly as repeated :add would. The daemon reads, validates,
-// and parses the file; each number is added with manual provenance.
+// and parses the file; each number is added with manual provenance. With a path
+// it imports directly; with none it opens the file picker rooted at the user's
+// home directory, like :add.document.
 func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
-	if len(inv.args) != 1 {
+	if len(inv.args) > 1 {
 		return a.usageError(command.AddFile)
 	}
 	if a.activeProject == nil {
@@ -1322,7 +1324,24 @@ func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	return a, pane.AddFileCmd(a.client, a.activeProject.ID, inv.args[0])
+	if len(inv.args) == 1 {
+		return a, pane.AddFileCmd(a.client, a.activeProject.ID, absPath(inv.args[0]))
+	}
+	start := a.importFromDir
+	if start == "" {
+		var err error
+		start, err = os.UserHomeDir()
+		if err != nil || start == "" {
+			start = "."
+		}
+	}
+	key := string(a.activeProject.ID) + ":" + string(overlay.PurposeAddPatentList)
+	if last, ok := a.lastPickerDirs[key]; ok && last != "" {
+		start = last
+	}
+	o := overlay.NewFilePicker(a.theme, "Add Patent List", overlay.PurposeAddPatentList, start, []string{".txt", ".csv", ".lst", ".text", ".md"})
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
 }
 
 // cmdAddOfficeAction imports an Office Action document into the active project.
@@ -1676,6 +1695,16 @@ func (a *App) handleFilePicked(m overlay.FilePickedMsg) (tea.Model, tea.Cmd) {
 		loading := overlay.NewConverting(a.theme, "Adding Document", "Converting and adding document…")
 		a.overlays = append(a.overlays, loading)
 		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, m.Path, domain.MatterDocReference))
+	case overlay.PurposeAddPatentList:
+		if a.activeProject == nil {
+			a.setErr(text.StatusNoActiveProject)
+			return a, nil
+		}
+		if a.client == nil {
+			a.setErr(text.StatusDaemonUnavailable)
+			return a, nil
+		}
+		return a, pane.AddFileCmd(a.client, a.activeProject.ID, m.Path)
 	}
 	return a, nil
 }
@@ -1791,7 +1820,7 @@ func (a *App) cmdAIAnalyze(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdSettingsAI(invocation) (tea.Model, tea.Cmd) {
-	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.openaiAPIKey, a.openaiModel, a.usptoConfigured)
+	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.geminiModel, a.ollamaHost, a.ollamaModel, a.openaiAPIKey, a.openaiModel, a.usptoConfigured)
 	a.overlays = append(a.overlays, o)
 	return a, nil
 }

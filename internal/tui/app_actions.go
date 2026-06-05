@@ -38,6 +38,10 @@ func (a *App) handleTextSubmit(m overlay.TextSubmitMsg) (tea.Model, tea.Cmd) {
 		a.updateConfigValue("GEMINI_API_KEY", m.Value)
 		a.popOverlay()
 		return a, nil
+	case overlay.PurposeEditGeminiModel:
+		a.updateConfigValue("GEMINI_MODEL", m.Value)
+		a.popOverlay()
+		return a, nil
 	case overlay.PurposeEditOllamaHost:
 		a.updateConfigValue("OLLAMA_HOST", m.Value)
 		a.popOverlay()
@@ -202,9 +206,11 @@ func (a *App) openDetail() (tea.Model, tea.Cmd) {
 	return a.pushPane(pane.NewDetail(a.client, a.theme, number, project, bound).WithLogger(a.log()))
 }
 
-// openFullText pushes a full text viewer pane for the selected patent.
+// openFullText pushes a full text viewer pane for the selected patent. Panes
+// that implement FullTextNumberProvider (e.g. the office-action views, which
+// target their application) take precedence over the plain row Selection().
 func (a *App) openFullText() (tea.Model, tea.Cmd) {
-	number, ok := a.focusedPane().Selection()
+	number, ok := fullTextNumber(a.focusedPane())
 	if !ok {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
@@ -215,6 +221,15 @@ func (a *App) openFullText() (tea.Model, tea.Cmd) {
 	}
 	bound := a.keymaps.BoundLetters(command.ScopeFullText)
 	return a.pushPane(pane.NewFullText(a.client, a.theme, number, project, bound).WithLogger(a.log()))
+}
+
+// fullTextNumber resolves the patent a full-text viewer should open for: a pane's
+// explicit FullTextNumber when it provides one, else its row Selection.
+func fullTextNumber(p pane.Pane) (domain.PatentNumber, bool) {
+	if ft, ok := p.(pane.FullTextNumberProvider); ok {
+		return ft.FullTextNumber()
+	}
+	return p.Selection()
 }
 
 func (a *App) openIDS() (tea.Model, tea.Cmd) {
@@ -662,6 +677,8 @@ func (a *App) openConfigEditInput(field string) (tea.Model, tea.Cmd) {
 	switch field {
 	case "gemini_key":
 		purpose, title, caption = overlay.PurposeEditGeminiKey, text.EditGeminiKeyTitle, text.EditGeminiKeyCaption
+	case "gemini_model":
+		purpose, title, caption = overlay.PurposeEditGeminiModel, text.EditGeminiModelTitle, text.EditGeminiModelCaption
 	case "ollama_host":
 		purpose, title, caption = overlay.PurposeEditOllamaHost, text.EditOllamaHostTitle, text.EditOllamaHostCaption
 	case "ollama_model":
@@ -685,7 +702,10 @@ func (a *App) updateConfigValue(key string, value string) {
 	switch key {
 	case "GEMINI_API_KEY":
 		a.geminiAPIKey = value
-		a.geminiAnalyzer = ai.NewGeminiAnalyzer(value)
+		a.geminiAnalyzer = ai.NewGeminiAnalyzer(value, a.geminiModel)
+	case "GEMINI_MODEL":
+		a.geminiModel = value
+		a.geminiAnalyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey, value)
 	case "OLLAMA_HOST":
 		a.ollamaHost = value
 		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(value, a.ollamaModel)
@@ -706,7 +726,7 @@ func (a *App) updateConfigValue(key string, value string) {
 	if len(a.overlays) > 0 {
 		for _, ov := range a.overlays {
 			if settings, ok := ov.(*overlay.SettingsOverlay); ok {
-				settings.UpdateValues(a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.openaiAPIKey, a.openaiModel, a.usptoConfigured)
+				settings.UpdateValues(a.geminiAPIKey, a.geminiModel, a.ollamaHost, a.ollamaModel, a.openaiAPIKey, a.openaiModel, a.usptoConfigured)
 			}
 		}
 	}

@@ -84,6 +84,7 @@ const (
 	PurposeEditIDSPassages Purpose = "edit-ids-passages"
 	PurposeEditIDSNotes    Purpose = "edit-ids-notes"
 	PurposeEditGeminiKey   Purpose = "edit-gemini-key"
+	PurposeEditGeminiModel Purpose = "edit-gemini-model"
 	PurposeEditOllamaHost  Purpose = "edit-ollama-host"
 	PurposeEditOllamaModel Purpose = "edit-ollama-model"
 	PurposeEditOpenAIKey   Purpose = "edit-openai-key"
@@ -192,7 +193,6 @@ type OpenDocumentFileMsg struct {
 
 // StartDocumentImportMsg asks the App to launch the file picker to import/add a new document.
 type StartDocumentImportMsg struct{}
-
 
 // PctSize computes an overlay size as a percentage of the terminal, clamped
 // between min and term-2. Every overlay that implements DynamicSize should

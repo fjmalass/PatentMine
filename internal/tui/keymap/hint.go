@@ -137,9 +137,11 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 		},
 		command.ScopeFullText: {
-			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
+			{Commands: []command.ID{command.FullTextStagePrev, command.FullTextStageNext}, Label: text.HintStage},
+			{Commands: []command.ID{command.FindOpen, command.FindNext, command.FindPrev}, Label: text.HintFind},
 			{Commands: []command.ID{command.CopyYank, command.CopyYankMeta}, Label: text.HintCopy},
+			{Commands: []command.ID{command.CopyAll}, Label: text.HintCopyAll},
 			{Commands: []command.ID{command.NoteAdd}, Label: text.HintNoteAdd},
 			{Commands: []command.ID{command.NoteOpen}, Label: text.HintNoteOpen},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
@@ -154,11 +156,13 @@ func DefaultHints() map[command.Scope][]Hint {
 		command.ScopeMatterOA: {
 			{Commands: []command.ID{command.AddOfficeAction}, Label: text.HintOAAdd},
 			{Commands: []command.ID{command.DraftResponse}, Label: text.HintOAResponse},
+			{Commands: []command.ID{command.OpenFullText}, Label: text.HintFullText},
 		},
 		command.ScopeMatterOADetail: {
 			{Commands: []command.ID{command.OpenDocuments}, Label: text.HintDocuments},
 			{Commands: []command.ID{command.OpenComms}, Label: text.HintComms},
 			{Commands: []command.ID{command.DraftResponse}, Label: text.HintOAResponse},
+			{Commands: []command.ID{command.OpenFullText}, Label: text.HintFullText},
 		},
 	}
 }

@@ -150,6 +150,8 @@ const (
 	// Filtering.
 	Filter   ID = "view.filter"
 	FindOpen ID = "find.open"
+	FindNext ID = "find.next"
+	FindPrev ID = "find.prev"
 
 	// IDS entry editing.
 	IDSEditField   ID = "ids.edit-field"
@@ -158,13 +160,16 @@ const (
 	IDSDelete      ID = "ids.delete"
 
 	// Full text viewer.
-	OpenFullText ID = "view.fulltext"
-	AIAnalyze    ID = "view.ai-menu"
-	SettingsAI   ID = "view.settings-ai"
-	CopyYank     ID = "edit.copy"
-	CopyYankMeta ID = "edit.copy-meta"
-	NoteAdd      ID = "edit.note-add"
-	NoteOpen     ID = "edit.note-open"
+	OpenFullText      ID = "view.fulltext"
+	AIAnalyze         ID = "view.ai-menu"
+	SettingsAI        ID = "view.settings-ai"
+	CopyYank          ID = "edit.copy"
+	CopyYankMeta      ID = "edit.copy-meta"
+	CopyAll           ID = "edit.copy-all"
+	FullTextStageNext ID = "fulltext.stage-next"
+	FullTextStagePrev ID = "fulltext.stage-prev"
+	NoteAdd           ID = "edit.note-add"
+	NoteOpen          ID = "edit.note-open"
 
 	// History navigation and visual popup.
 	HistoryBack    ID = "history.back"

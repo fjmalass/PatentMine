@@ -76,7 +76,7 @@ func runTUI(args []string) int {
 		tui.WithLastProject(lastProjectID),
 		tui.WithTelemetry(telemetry),
 		tui.WithActivityMinDuration(time.Duration(cfg.ActivityMinMS)*time.Millisecond),
-		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel, cfg.OpenAIAPIKey, cfg.OpenAIModel),
+		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.GeminiModel, cfg.OllamaHost, cfg.OllamaModel, cfg.OpenAIAPIKey, cfg.OpenAIModel),
 		tui.WithUSPTOKey(cfg.USPTOAPIKey),
 		tui.WithBackupConfig(cfg.BackupConfigured(), cfg.BackupRcloneRemote, cfg.BackupBucket),
 		tui.WithNotesExportDir(exportDir),

@@ -251,10 +251,15 @@ func Default() *Keymaps {
 			"V":   command.SelectVisual,
 			"y":   command.CopyYank,
 			"Y":   command.CopyYankMeta,
-			"n":   command.NoteAdd,
-			"N":   command.NoteOpen,
+			"g y": command.CopyAll,
+			"/":   command.FindOpen,
+			"n":   command.FindNext,
+			"N":   command.FindPrev,
+			"]":   command.FullTextStageNext,
+			"[":   command.FullTextStagePrev,
+			"a":   command.NoteAdd,
+			"A":   command.NoteOpen,
 			"w":   command.OpenBrowser,
-			"/":   command.OpenSearch,
 			"h":   command.Back,
 			"esc": command.Back,
 			".":   command.FetchUSPTOGrant,
@@ -263,12 +268,12 @@ func Default() *Keymaps {
 	orphans := NewLayer("orphans", false).
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
-			"enter":  command.OpenDetail,
-			"l":      command.OpenDetail,
-			"right":  command.ColNext,
-			"left":   command.ColPrev,
-			".":      command.SortApply,
-			"/":      command.FindOpen,
+			"enter": command.OpenDetail,
+			"l":     command.OpenDetail,
+			"right": command.ColNext,
+			"left":  command.ColPrev,
+			".":     command.SortApply,
+			"/":     command.FindOpen,
 		})
 
 	matterOA := NewLayer("matter_oa", false).
@@ -278,6 +283,7 @@ func Default() *Keymaps {
 			"ctrl+r": command.Refresh,
 			"a":      command.AddOfficeAction,
 			"R":      command.DraftResponse,
+			"T":      command.OpenFullText,
 			// enter / l drill into the detail pane (intercepted by the pane).
 		})
 
@@ -286,6 +292,7 @@ func Default() *Keymaps {
 			"f":      command.OpenDocuments,
 			"c":      command.OpenComms,
 			"R":      command.DraftResponse,
+			"T":      command.OpenFullText,
 			"ctrl+r": command.Refresh,
 			"esc":    command.Back,
 			"h":      command.Back,
@@ -306,18 +313,18 @@ func Default() *Keymaps {
 	return &Keymaps{
 		base: base,
 		scopes: map[command.Scope]*Layer{
-			command.ScopeCatalog:   catalog,
-			command.ScopeDetail:    detail,
-			command.ScopeCitations: citations,
-			command.ScopeFamily:    family,
-			command.ScopeIDS:       ids,
-			command.ScopeProjects:  projects,
-			command.ScopeFullText:  fullText,
-			command.ScopeNotes:     notes,
-			command.ScopeOrphans:   orphans,
+			command.ScopeCatalog:        catalog,
+			command.ScopeDetail:         detail,
+			command.ScopeCitations:      citations,
+			command.ScopeFamily:         family,
+			command.ScopeIDS:            ids,
+			command.ScopeProjects:       projects,
+			command.ScopeFullText:       fullText,
+			command.ScopeNotes:          notes,
+			command.ScopeOrphans:        orphans,
 			command.ScopeMatterOA:       matterOA,
 			command.ScopeMatterOADetail: matterOADetail,
-			command.ScopeOverlay:   overlay,
+			command.ScopeOverlay:        overlay,
 		},
 	}
 }

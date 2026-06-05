@@ -34,7 +34,6 @@ type RequestDeleteOfficeActionMsg struct {
 	OA domain.OfficeAction
 }
 
-
 // OfficeActions is the matter's office-action table — the home of the
 // prosecution workspace. Each row is one examiner action with its response-due
 // countdown and status; `enter` drills into the detail pane (documents, timing,
@@ -143,6 +142,30 @@ func (o *OfficeActions) Update(msg tea.Msg) (Pane, tea.Cmd) {
 // Selection reports no patent — this pane lists office actions, not patents.
 func (o *OfficeActions) Selection() (domain.PatentNumber, bool) {
 	return domain.PatentNumber{}, false
+}
+
+// FullTextNumber returns the selected office action's application as a patent
+// number, so :open.fulltext (T) can open the application's full text.
+func (o *OfficeActions) FullTextNumber() (domain.PatentNumber, bool) {
+	oa, ok := o.selected()
+	if !ok {
+		return domain.PatentNumber{}, false
+	}
+	return officeActionFullTextNumber(oa)
+}
+
+// officeActionFullTextNumber parses an office action's application number into a
+// PatentNumber for the full-text viewer. ok is false when the OA carries no
+// usable application number.
+func officeActionFullTextNumber(oa domain.OfficeAction) (domain.PatentNumber, bool) {
+	if strings.TrimSpace(oa.ApplicationNumber) == "" {
+		return domain.PatentNumber{}, false
+	}
+	n, err := domain.ParsePatentNumber(oa.ApplicationNumber)
+	if err != nil {
+		return domain.PatentNumber{}, false
+	}
+	return n, true
 }
 
 func (o *OfficeActions) selected() (domain.OfficeAction, bool) {

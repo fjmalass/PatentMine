@@ -138,6 +138,9 @@ const (
 	HintNotes           Key = "hint.notes"
 	HintExportNotes     Key = "hint.export_notes"
 	HintCopy            Key = "hint.copy"
+	HintCopyAll         Key = "hint.copy_all"
+	HintStage           Key = "hint.stage"
+	HintFind            Key = "hint.find"
 	HintNoteAdd         Key = "hint.note_add"
 	HintNoteOpen        Key = "hint.note_open"
 	HintCrawl           Key = "hint.ingest"
@@ -189,18 +192,20 @@ const (
 	EditIDSNotesCaption    Key = "overlay.ids.notes.caption"
 	EditPatentNoteTitle    Key = "overlay.patent_note.title"
 	EditPatentNoteCaption  Key = "overlay.patent_note.caption"
-	EditGeminiKeyTitle        Key = "overlay.edit_gemini_key.title"
-	EditGeminiKeyCaption      Key = "overlay.edit_gemini_key.caption"
-	EditOllamaHostTitle       Key = "overlay.edit_ollama_host.title"
-	EditOllamaHostCaption     Key = "overlay.edit_ollama_host.caption"
-	EditOllamaModelTitle      Key = "overlay.edit_ollama_model.title"
-	EditOllamaModelCaption    Key = "overlay.edit_ollama_model.caption"
-	EditOpenAIKeyTitle        Key = "overlay.edit_openai_key.title"
-	EditOpenAIKeyCaption      Key = "overlay.edit_openai_key.caption"
-	EditOpenAIModelTitle      Key = "overlay.edit_openai_model.title"
-	EditOpenAIModelCaption    Key = "overlay.edit_openai_model.caption"
-	EditUSPTOKeyTitle         Key = "overlay.edit_uspto_key.title"
-	EditUSPTOKeyCaption       Key = "overlay.edit_uspto_key.caption"
+	EditGeminiKeyTitle     Key = "overlay.edit_gemini_key.title"
+	EditGeminiKeyCaption   Key = "overlay.edit_gemini_key.caption"
+	EditGeminiModelTitle   Key = "overlay.edit_gemini_model.title"
+	EditGeminiModelCaption Key = "overlay.edit_gemini_model.caption"
+	EditOllamaHostTitle    Key = "overlay.edit_ollama_host.title"
+	EditOllamaHostCaption  Key = "overlay.edit_ollama_host.caption"
+	EditOllamaModelTitle   Key = "overlay.edit_ollama_model.title"
+	EditOllamaModelCaption Key = "overlay.edit_ollama_model.caption"
+	EditOpenAIKeyTitle     Key = "overlay.edit_openai_key.title"
+	EditOpenAIKeyCaption   Key = "overlay.edit_openai_key.caption"
+	EditOpenAIModelTitle   Key = "overlay.edit_openai_model.title"
+	EditOpenAIModelCaption Key = "overlay.edit_openai_model.caption"
+	EditUSPTOKeyTitle      Key = "overlay.edit_uspto_key.title"
+	EditUSPTOKeyCaption    Key = "overlay.edit_uspto_key.caption"
 	TextInputHint          Key = "overlay.text_input.hint"
 )
 
@@ -291,23 +296,23 @@ var cmdStrings = map[string][2]string{
 	"crawl.all":                              {"Crawl all", "Crawl the full family graph including citations and cited-by."},
 	"patent.lookup":                          {"Lookup patent", "Fetch the selected patent's record from the web."},
 	"patent.import":                          {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
-	"patent.add-file":                        {"Add patents from file", "Bulk-add every patent number listed in a plain-text file into the active project, with manual provenance — the inverse of Export added list."},
+	"patent.add-file":                        {"Add patents from file", "Bulk-add every patent number listed in a plain-text file into the active project, with manual provenance — the inverse of Export added list. With no path, opens a file picker."},
 	"officeaction.add":                       {"Add office action", "Import a USPTO Office Action document into the active project — pass a path, or run with no argument to open a file picker. A form then captures the examiner and dates; the file is copied into the docs export store, hashed, text-extracted, and the response deadline is computed."},
 	"officeaction.list":                      {"List office actions", "Open the active project's office-action table; select one to open the split examiner-text / notes editor."},
 	"matter.document.add":                    {"Add document", "File a supporting document (a cited reference, a prior response, …) under the active matter — pass a path, or run with no argument to open a file picker. The file is copied into the docs store, hashed, and text-extracted so it can be read and copied from."},
 	"matter.document.open":                   {"Open documents", "Open the active matter's document list: every file filed under it (the office action, references, responses). Enter views a document's text, r renames it, d deletes it."},
 	"project.matter-type":                    {"Set matter type", "Record the active project's prosecution stage: provisional, nonprovisional, in_prosecution, or issued."},
-	"officeaction.respond":                    {"Draft response", "Create an office-action response (a DraftOAResponse linked to the latest office action) and open a split editor: the matter's documents on the left to copy from (ctrl-n/ctrl-p to cycle, yy/p to copy a passage), the REMARKS on the right. ctrl+s saves, ctrl-e exports the .docx."},
-	"matter.comm.log":                         {"Log communication", "Record one entry in the matter's communications log — an email, phone call, examiner interview, filing, or note — capturing who it was with and what happened."},
-	"matter.comm.open":                        {"Open communications", "Open the matter's communications log: every recorded email, call, interview, filing, and note, newest first. Enter views the full comment, d deletes an entry."},
-	"conflict.flag":                           {"Flag conflict", "Flag a record as conflicting within the active matter — material prior art, an interfering application, a reference reading on the claims. Pass the patent number and an optional reason, e.g. :flag.conflict US10000000B2 anticipates claim 1. Conflicting records show a ⚠ badge in the patent list."},
-	"conflict.list":                           {"List conflicts", "Open the matter's conflicts list: every record flagged as conflicting, newest first. Enter views the reason, r resolves, w waives, o re-opens, d deletes an entry. Only open conflicts drive the patent-list ⚠ badge."},
-	"time.log":                                {"Log time", "Record a manual time entry against the matter: an activity (reading/writing/ai/call/admin), a duration (e.g. 30m, 1h15m, 1:15, or plain minutes), and an optional note. Manual entries are validated on entry."},
-	"time.validate":                           {"Validate time", "Review auto-captured time before it is billed: correct each entry's activity/duration/note, then validate (or delete) it. Auto entries (editor focus, AI calls) start unvalidated."},
-	"time.show":                               {"Show time", "Show the matter's billing readout: recorded time by activity, the validated/unvalidated split, and AI usage (calls + tokens)."},
-	"deadline.show":                           {"Show deadlines", "Open the cross-matter deadlines docket: every pending office-action response and patent maintenance fee, soonest due first, with overdue/due-soon cues. p marks one done, x dismisses it."},
-	"deadline.track":                          {"Track renewals", "Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (due at 3.5 / 7.5 / 11.5 years). Pass the patent number and optionally the entity size (large, small, micro), e.g. :track.renewals US10000000B2 small."},
-	"deadline.untrack":                        {"Untrack renewals", "Stop tracking a patent's U.S. maintenance-fee/annuity deadlines. This will delete any pending maintenance deadlines and set the patent as untracked. Pass the patent number, e.g. :untrack.renewals US10000000B2."},
+	"officeaction.respond":                   {"Draft response", "Create an office-action response (a DraftOAResponse linked to the latest office action) and open a split editor: the matter's documents on the left to copy from (ctrl-n/ctrl-p to cycle, yy/p to copy a passage), the REMARKS on the right. ctrl+s saves, ctrl-e exports the .docx."},
+	"matter.comm.log":                        {"Log communication", "Record one entry in the matter's communications log — an email, phone call, examiner interview, filing, or note — capturing who it was with and what happened."},
+	"matter.comm.open":                       {"Open communications", "Open the matter's communications log: every recorded email, call, interview, filing, and note, newest first. Enter views the full comment, d deletes an entry."},
+	"conflict.flag":                          {"Flag conflict", "Flag a record as conflicting within the active matter — material prior art, an interfering application, a reference reading on the claims. Pass the patent number and an optional reason, e.g. :flag.conflict US10000000B2 anticipates claim 1. Conflicting records show a ⚠ badge in the patent list."},
+	"conflict.list":                          {"List conflicts", "Open the matter's conflicts list: every record flagged as conflicting, newest first. Enter views the reason, r resolves, w waives, o re-opens, d deletes an entry. Only open conflicts drive the patent-list ⚠ badge."},
+	"time.log":                               {"Log time", "Record a manual time entry against the matter: an activity (reading/writing/ai/call/admin), a duration (e.g. 30m, 1h15m, 1:15, or plain minutes), and an optional note. Manual entries are validated on entry."},
+	"time.validate":                          {"Validate time", "Review auto-captured time before it is billed: correct each entry's activity/duration/note, then validate (or delete) it. Auto entries (editor focus, AI calls) start unvalidated."},
+	"time.show":                              {"Show time", "Show the matter's billing readout: recorded time by activity, the validated/unvalidated split, and AI usage (calls + tokens)."},
+	"deadline.show":                          {"Show deadlines", "Open the cross-matter deadlines docket: every pending office-action response and patent maintenance fee, soonest due first, with overdue/due-soon cues. p marks one done, x dismisses it."},
+	"deadline.track":                         {"Track renewals", "Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (due at 3.5 / 7.5 / 11.5 years). Pass the patent number and optionally the entity size (large, small, micro), e.g. :track.renewals US10000000B2 small."},
+	"deadline.untrack":                       {"Untrack renewals", "Stop tracking a patent's U.S. maintenance-fee/annuity deadlines. This will delete any pending maintenance deadlines and set the patent as untracked. Pass the patent number, e.g. :untrack.renewals US10000000B2."},
 	"project.export-added":                   {"Export added list", "Write the active project's manually-added patents to a plain-text list file that Add patents from file can reload. Give a path to write there directly (warning first if it already exists), or omit it to confirm a default location first; a result popup reports how many patents were exported and where."},
 	"source.mode":                            {"Source mode", "Show or set provider policy: compare (USPTO + Google cross-check), uspto-first (USPTO, Google fallback), uspto-only, or google-only."},
 	"source.compare":                         {"Compare sources", "Review and reconcile differences between data sources (e.g. USPTO vs Google) for the current patent. Opens the split comparison overlay (default choice = USPTO)."},
@@ -318,6 +323,8 @@ var cmdStrings = map[string][2]string{
 	"project.clear-active":                   {"Clear active project", "Clear the active project filter and target."},
 	"view.filter":                            {"Filter", "Apply a boolean filter to the current list (e.g. :filter tag:prior_art and not state:under_review, :filter class:S04*, :filter inventor:\"Ada Lovelace\" and assignee:Acme* and search:\"widget sensor\")."},
 	"find.open":                              {"Find", "Open the inline find bar; type to search, n/N to navigate, Enter to keep, Esc to cancel."},
+	"find.next":                              {"Next match", "Jump to the next search match in the full-text viewer."},
+	"find.prev":                              {"Previous match", "Jump to the previous search match in the full-text viewer."},
 	"ids.edit-field":                         {"Edit IDS field", "Edit the selected IDS field."},
 	"ids.toggle-full":                        {"Toggle IDS full", "Toggle whether the full document is cited on the IDS."},
 	"ids.cycle-status":                       {"Cycle IDS status", "Cycle the IDS entry status through pending, submitted, and accepted."},
@@ -325,6 +332,9 @@ var cmdStrings = map[string][2]string{
 	"view.fulltext":                          {"Full text", "Open the full claims text viewer for the selected patent."},
 	"edit.copy":                              {"Copy/yank", "Copy the selection to the clipboard with its locator and capture timestamp."},
 	"edit.copy-meta":                         {"Copy with patent info", "Copy the selection to the clipboard with locator, timestamp, and patent attrs."},
+	"edit.copy-all":                          {"Copy entire document", "Copy the whole patent (all claims and disclosure) to the clipboard with the patent attrs header — the full document, not just the visible page."},
+	"fulltext.stage-next":                    {"Next stage", "Show the next life-cycle stage's full text (application → publication → grant)."},
+	"fulltext.stage-prev":                    {"Previous stage", "Show the previous life-cycle stage's full text (grant → publication → application)."},
 	"edit.note-add":                          {"Add to notes", "Add the selected passage and its locator to the session notes buffer."},
 	"edit.note-open":                         {"Open notes", "Show the accumulated notes buffer for this patent."},
 	"tag.add":                                {"Create taxonomy tag", "Register a new tag in the project's taxonomy (the `tag.create` command). Distinct from `tag`/`tag.patent.add`, which assign an existing tag to a patent."},
@@ -478,6 +488,9 @@ var englishNamed = map[Key]string{
 	HintNotes:           "all notes",
 	HintExportNotes:     "export notes",
 	HintCopy:            "copy",
+	HintCopyAll:         "copy all",
+	HintStage:           "stage",
+	HintFind:            "find",
 	HintNoteAdd:         "add to notes",
 	HintNoteOpen:        "open notes",
 	HintFullText:        "full text",
@@ -528,18 +541,20 @@ var englishNamed = map[Key]string{
 	EditIDSNotesCaption:    "Enter any IDS note for this patent.",
 	EditPatentNoteTitle:    "Patent notes",
 	EditPatentNoteCaption:  "Edit the project-scoped markdown note for this patent.",
-	EditGeminiKeyTitle:        "Gemini API Key",
-	EditGeminiKeyCaption:      "Enter your Google Gemini Developer API Key (or path starting with file:)",
-	EditOllamaHostTitle:       "Ollama Server Host",
-	EditOllamaHostCaption:     "Enter the local Ollama server address (e.g. http://localhost:11434)",
-	EditOllamaModelTitle:      "Ollama Model",
-	EditOllamaModelCaption:    "Enter the Ollama model name (e.g. mistral or llama3.1)",
-	EditOpenAIKeyTitle:        "OpenAI API Key",
-	EditOpenAIKeyCaption:      "Enter your OpenAI API Key (or path starting with file:)",
-	EditOpenAIModelTitle:      "OpenAI Model",
-	EditOpenAIModelCaption:    "Enter the OpenAI model name (e.g. gpt-4o-mini or gpt-4o)",
-	EditUSPTOKeyTitle:         "USPTO API Key",
-	EditUSPTOKeyCaption:       "Enter your USPTO Open Data Portal API Key (or path starting with file:)",
+	EditGeminiKeyTitle:     "Gemini API Key",
+	EditGeminiKeyCaption:   "Enter your Google Gemini Developer API Key (or path starting with file:)",
+	EditGeminiModelTitle:   "Gemini Model",
+	EditGeminiModelCaption: "Enter the Gemini model name (e.g. gemini-2.5-flash or gemini-2.5-pro)",
+	EditOllamaHostTitle:    "Ollama Server Host",
+	EditOllamaHostCaption:  "Enter the local Ollama server address (e.g. http://localhost:11434)",
+	EditOllamaModelTitle:   "Ollama Model",
+	EditOllamaModelCaption: "Enter the Ollama model name (e.g. mistral or llama3.1)",
+	EditOpenAIKeyTitle:     "OpenAI API Key",
+	EditOpenAIKeyCaption:   "Enter your OpenAI API Key (or path starting with file:)",
+	EditOpenAIModelTitle:   "OpenAI Model",
+	EditOpenAIModelCaption: "Enter the OpenAI model name (e.g. gpt-4o-mini or gpt-4o)",
+	EditUSPTOKeyTitle:      "USPTO API Key",
+	EditUSPTOKeyCaption:    "Enter your USPTO Open Data Portal API Key (or path starting with file:)",
 	TextInputHint:          "enter confirms · esc cancels",
 }
 

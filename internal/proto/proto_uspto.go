@@ -17,9 +17,13 @@ type USPTOGrantBodyParams struct {
 
 // USPTOGrantBodyResult carries the body parsed from XML, when one has been
 // ingested. Present is false when nothing has been parsed for this patent.
+// SourcePath is the local XML file the body was generated from (incl. directory)
+// and Kind reports which document (grant/pgpub) it came from.
 type USPTOGrantBodyResult struct {
-	Present bool                  `json:"present"`
-	Body    domain.USPTOGrantBody `json:"body,omitempty"`
+	Present    bool                  `json:"present"`
+	Body       domain.USPTOGrantBody `json:"body,omitempty"`
+	SourcePath string                `json:"source_path,omitempty"`
+	Kind       USPTOXMLKind          `json:"kind,omitempty"`
 }
 
 // USPTOXMLKind selects which XML document to fetch for a USPTO application.

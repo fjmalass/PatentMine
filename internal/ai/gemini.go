@@ -15,10 +15,13 @@ import (
 	"patentmine/internal/domain"
 )
 
+// DefaultGeminiModel is the model used when none is configured. It is the
+// single source of truth for the default so config and the analyzer never drift.
+const DefaultGeminiModel = "gemini-2.5-flash"
+
 const (
-	geminiModel   = "gemini-2.5-flash"
-	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel + ":generateContent"
-	httpTimeout   = 30 * time.Second
+	geminiBaseURLFmt = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
+	httpTimeout      = 30 * time.Second
 	// extractTimeout is generous because multimodal OCR of a multi-page scanned
 	// document takes far longer than a text completion.
 	extractTimeout = 3 * time.Minute
@@ -27,13 +30,19 @@ const (
 // GeminiAnalyzer implements the Analyzer interface using Google's Gemini API.
 type GeminiAnalyzer struct {
 	apiKey string
+	model  string
 	client *http.Client
 }
 
-// NewGeminiAnalyzer builds a new Gemini API-backed patent analyzer.
-func NewGeminiAnalyzer(apiKey string) *GeminiAnalyzer {
+// NewGeminiAnalyzer builds a new Gemini API-backed patent analyzer. An empty
+// model falls back to DefaultGeminiModel.
+func NewGeminiAnalyzer(apiKey, model string) *GeminiAnalyzer {
+	if strings.TrimSpace(model) == "" {
+		model = DefaultGeminiModel
+	}
 	return &GeminiAnalyzer{
 		apiKey: apiKey,
+		model:  model,
 		client: &http.Client{
 			Timeout:   httpTimeout,
 			Transport: NewRedactedRoundTripper(nil),
@@ -116,7 +125,7 @@ func (g *GeminiAnalyzer) Complete(ctx context.Context, prompt string) (string, e
 }
 
 // Model returns the identifier of the underlying model, for draft provenance.
-func (g *GeminiAnalyzer) Model() string { return geminiModel }
+func (g *GeminiAnalyzer) Model() string { return g.model }
 
 // ExtractText transcribes the text of a binary document (a scanned PDF, an
 // image) using Gemini's multimodal input — OCR for documents with no text layer.
@@ -160,7 +169,7 @@ func (g *GeminiAnalyzer) postGenerate(ctx context.Context, client *http.Client, 
 		return "", fmt.Errorf("ai/gemini: encode request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s?key=%s", geminiBaseURL, g.apiKey)
+	url := fmt.Sprintf(geminiBaseURLFmt, g.model) + "?key=" + g.apiKey
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return "", fmt.Errorf("ai/gemini: build request: %w", err)

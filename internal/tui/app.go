@@ -302,6 +302,7 @@ type App struct {
 
 	aiProvider                ai.Provider
 	geminiAPIKey              string
+	geminiModel               string
 	ollamaHost                string
 	ollamaModel               string
 	openaiAPIKey              string
@@ -351,15 +352,16 @@ func WithLastProjectSaver(save func(domain.ProjectID) error) Option {
 	return func(a *App) { a.saveLastProject = save }
 }
 
-func WithAIConfig(provider string, geminiKey string, ollamaHost string, ollamaModel string, openaiKey string, openaiModel string) Option {
+func WithAIConfig(provider string, geminiKey string, geminiModel string, ollamaHost string, ollamaModel string, openaiKey string, openaiModel string) Option {
 	return func(a *App) {
 		a.aiProvider = ai.Provider(provider)
 		a.geminiAPIKey = geminiKey
+		a.geminiModel = geminiModel
 		a.ollamaHost = ollamaHost
 		a.ollamaModel = ollamaModel
 		a.openaiAPIKey = openaiKey
 		a.openaiModel = openaiModel
-		a.geminiAnalyzer = ai.NewGeminiAnalyzer(geminiKey)
+		a.geminiAnalyzer = ai.NewGeminiAnalyzer(geminiKey, geminiModel)
 		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(ollamaHost, ollamaModel)
 		a.openaiAnalyzer = ai.NewOpenAIAnalyzer(openaiKey, openaiModel)
 	}
@@ -370,7 +372,7 @@ func (a *App) buildAnalyzer() ai.Analyzer {
 	switch a.aiProvider {
 	case ai.ProviderGemini:
 		if a.geminiAnalyzer == nil {
-			a.geminiAnalyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
+			a.geminiAnalyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey, a.geminiModel)
 		}
 		return a.geminiAnalyzer
 	case ai.ProviderOpenAI:

@@ -28,11 +28,11 @@ func (s *Server) usptoGrantBody(ctx context.Context, raw json.RawMessage) (any, 
 	if err != nil {
 		return nil, err
 	}
-	body, present, err := s.engine.USPTOGrantBody(ctx, p.Number, p.Kind)
+	body, sourcePath, kind, present, err := s.engine.USPTOGrantBody(ctx, p.Number, p.Kind)
 	if err != nil {
 		return nil, err
 	}
-	return proto.USPTOGrantBodyResult{Present: present, Body: body}, nil
+	return proto.USPTOGrantBodyResult{Present: present, Body: body, SourcePath: sourcePath, Kind: kind}, nil
 }
 
 func (s *Server) sourceResolveDiffs(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -11,7 +11,7 @@ import (
 
 func TestSettingsOverlay_HandleKey(t *testing.T) {
 	theme := render.NewTheme()
-	s := NewSettingsOverlay(theme, ai.ProviderGemini, "fake-gemini-key", "http://localhost:11434", "mistral", "fake-openai-key", "gpt-4o-mini", true)
+	s := NewSettingsOverlay(theme, ai.ProviderGemini, "fake-gemini-key", "gemini-2.5-flash", "http://localhost:11434", "mistral", "fake-openai-key", "gpt-4o-mini", true)
 
 	if s.activeAI != ai.ProviderGemini {
 		t.Errorf("expected initial provider to be gemini, got %s", s.activeAI)
