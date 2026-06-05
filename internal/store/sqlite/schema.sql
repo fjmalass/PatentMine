@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '11')
+VALUES ('schema_version', '12')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -784,6 +784,11 @@ CREATE TABLE IF NOT EXISTS matter_document (
     project_id       TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
     office_action_id TEXT NOT NULL DEFAULT '',
     kind             TEXT NOT NULL DEFAULT 'other',
+    -- origin = who produced it / where from (office, firm, client, third_party);
+    -- stage = lifecycle point (received, draft, under_review, approved, filed).
+    -- Both are orthogonal to kind and distinct from the patent review_state.
+    origin           TEXT NOT NULL DEFAULT '',
+    stage            TEXT NOT NULL DEFAULT '',
     display_name     TEXT NOT NULL DEFAULT '',
     blob_path        TEXT NOT NULL DEFAULT '',
     blob_hash        TEXT NOT NULL DEFAULT '',
@@ -794,6 +799,7 @@ CREATE TABLE IF NOT EXISTS matter_document (
 
 CREATE INDEX IF NOT EXISTS idx_matter_document_project ON matter_document (project_id, added_at DESC);
 CREATE INDEX IF NOT EXISTS idx_matter_document_oa ON matter_document (office_action_id);
+CREATE INDEX IF NOT EXISTS idx_matter_document_stage ON matter_document (project_id, stage);
 
 CREATE TABLE IF NOT EXISTS matter_document_office_action (
     document_id      TEXT NOT NULL REFERENCES matter_document (id) ON DELETE CASCADE,
@@ -830,6 +836,30 @@ CREATE TABLE IF NOT EXISTS matter_event (
 );
 
 CREATE INDEX IF NOT EXISTS idx_matter_event_project ON matter_event (project_id, occurred_at DESC);
+
+-- conflict is a project-scoped, user-asserted edge flagging one record (a loaded
+-- patent/application/reference) as conflicting within a matter: material prior
+-- art, an interfering application, a reference reading on the claims. It is NOT
+-- the global family-graph `relation` table (that is global, immutable,
+-- record↔record); a conflict is project-scoped, annotated, and has a lifecycle.
+-- record_number/against_number/document_id are kept as plain text (not FK-
+-- enforced) so a number can be flagged even before its record row is fully
+-- loaded; the project FK cascades so a deleted project drops its conflicts.
+CREATE TABLE IF NOT EXISTS conflict (
+    id             TEXT PRIMARY KEY,
+    project_id     TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    record_number  TEXT NOT NULL DEFAULT '',
+    against_number TEXT NOT NULL DEFAULT '',
+    document_id    TEXT NOT NULL DEFAULT '',
+    reason         TEXT NOT NULL DEFAULT '',
+    status         TEXT NOT NULL DEFAULT 'open',
+    flagged_by     TEXT NOT NULL DEFAULT '',
+    flagged_at     TEXT NOT NULL DEFAULT '',
+    resolved_at    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_conflict_project ON conflict (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_conflict_record ON conflict (project_id, record_number, status);
 
 -- time_entry is one unit of recorded work on a matter, the basis for billing.
 -- Auto-captured entries (editor focus, AI calls) start unvalidated; the attorney

@@ -138,6 +138,8 @@ type MatterDocumentImportParams struct {
 	OfficeActionID  string               `json:"office_action_id,omitempty"`
 	OfficeActionIDs []string             `json:"office_action_ids,omitempty"`
 	Kind            domain.MatterDocKind `json:"kind,omitempty"`
+	Origin          domain.DocOrigin     `json:"origin,omitempty"`
+	Stage           domain.DocStage      `json:"stage,omitempty"`
 	DisplayName     string               `json:"display_name,omitempty"`
 	SourcePath      string               `json:"source_path"`
 	Tags            []string             `json:"tags,omitempty"`
@@ -162,6 +164,15 @@ type MatterDocumentListResult struct {
 type MatterDocumentRenameParams struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// MatterDocumentMetaParams updates a document's tracking axes — origin (who
+// produced it) and stage (lifecycle point). An empty field leaves that axis
+// unchanged.
+type MatterDocumentMetaParams struct {
+	ID     string           `json:"id"`
+	Origin domain.DocOrigin `json:"origin,omitempty"`
+	Stage  domain.DocStage  `json:"stage,omitempty"`
 }
 
 // MatterDocumentIDParams identifies one matter document.
@@ -300,4 +311,42 @@ type DeadlineStatusParams struct {
 // DeadlineRemindResult reports how many reminders were delivered.
 type DeadlineRemindResult struct {
 	Sent int `json:"sent"`
+}
+
+// ConflictFlagParams flags one record as conflicting within a matter. Record is
+// the conflicting patent/application/reference number; Against and DocumentID are
+// optional second endpoints; Reason is free text.
+type ConflictFlagParams struct {
+	Project    domain.ProjectID `json:"project"`
+	Record     string           `json:"record"`
+	Against    string           `json:"against,omitempty"`
+	DocumentID string           `json:"document_id,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
+	FlaggedBy  string           `json:"flagged_by,omitempty"`
+}
+
+// ConflictResolveParams changes a conflict's status (open/resolved/waived).
+type ConflictResolveParams struct {
+	ID     string                `json:"id"`
+	Status domain.ConflictStatus `json:"status"`
+}
+
+// ConflictIDParams identifies one conflict edge.
+type ConflictIDParams struct {
+	ID string `json:"id"`
+}
+
+// ConflictResult carries one conflict edge.
+type ConflictResult struct {
+	Conflict domain.Conflict `json:"conflict"`
+}
+
+// ConflictListParams selects a project's conflicts.
+type ConflictListParams struct {
+	Project domain.ProjectID `json:"project"`
+}
+
+// ConflictListResult carries a project's conflicts.
+type ConflictListResult struct {
+	Conflicts []domain.Conflict `json:"conflicts"`
 }

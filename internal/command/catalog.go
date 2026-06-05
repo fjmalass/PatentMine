@@ -128,6 +128,8 @@ const (
 	DraftResponse     ID = "officeaction.respond" // draft an office-action response, copying from the matter's documents
 	LogComm           ID = "matter.comm.log"      // record a communications-log entry (call/email/interview) for the matter
 	OpenComms         ID = "matter.comm.open"     // open the matter's communications log
+	FlagConflict      ID = "conflict.flag"        // flag a record as conflicting (material prior art) in the active matter
+	ListConflicts     ID = "conflict.list"        // open the matter's conflicts list (resolve / waive / delete)
 	LogTime           ID = "time.log"             // record a manual time entry for the matter
 	ValidateTime      ID = "time.validate"        // review + validate auto-captured time before billing
 	ShowTime          ID = "time.show"            // show the matter's time + AI-usage summary

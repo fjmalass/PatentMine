@@ -179,6 +179,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.DraftResponse:              (*App).cmdDraftResponse,
 	command.LogComm:                    (*App).cmdLogComm,
 	command.OpenComms:                  (*App).cmdOpenComms,
+	command.FlagConflict:               (*App).cmdFlagConflict,
+	command.ListConflicts:              (*App).cmdListConflicts,
 	command.LogTime:                    (*App).cmdLogTime,
 	command.ValidateTime:               (*App).cmdValidateTime,
 	command.ShowTime:                   (*App).cmdShowTime,
@@ -238,6 +240,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.ExportAdded:             true,
 	command.AddOfficeAction:         true,
 	command.AddDocument:             true,
+	command.FlagConflict:            true,
 	command.SetMatterType:           true,
 	command.LogTime:                 true,
 	command.TrackRenewals:           true,
@@ -1141,6 +1144,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Int("count", m.Count),
 			slog.String("path", m.Path))
 		return a, nil
+	case pane.ConflictFlaggedMsg:
+		if m.Err != nil {
+			a.setStatus(text.StatusGeneric, "Flag conflict failed: "+m.Err.Error())
+			return a, nil
+		}
+		a.setStatus(text.StatusGeneric, "Flagged "+m.Number+" as conflicting")
+		// Reload panes so the ⚠ badge appears on the flagged record.
+		return a, a.refreshPanes()
 	case pane.OfficeActionImportedMsg:
 		a.popConvertingOverlay()
 		lines := []string{

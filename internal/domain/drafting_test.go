@@ -32,6 +32,66 @@ func TestParseDraftKind(t *testing.T) {
 	}
 }
 
+func TestDocOriginValidParseAndCycle(t *testing.T) {
+	if !OriginOffice.Valid() || !OriginThirdParty.Valid() || DocOrigin("bogus").Valid() {
+		t.Fatal("DocOrigin validity wrong")
+	}
+	if o, err := ParseDocOrigin(" Office "); err != nil || o != OriginOffice {
+		t.Fatalf("ParseDocOrigin(Office)=%q,%v", o, err)
+	}
+	if o, err := ParseDocOrigin(""); err != nil || o != "" {
+		t.Fatalf("ParseDocOrigin(empty)=%q,%v want empty", o, err)
+	}
+	if _, err := ParseDocOrigin("nope"); err == nil {
+		t.Fatal("ParseDocOrigin(nope) should error")
+	}
+	// Cycle wraps and starts at the first value for an unset origin.
+	if got := DocOrigin("").Cycle(1); got != OriginOffice {
+		t.Fatalf("empty.Cycle(1)=%q want office", got)
+	}
+	if got := OriginThirdParty.Cycle(1); got != OriginOffice {
+		t.Fatalf("third_party.Cycle(1)=%q want office (wrap)", got)
+	}
+	if got := OriginOffice.Cycle(-1); got != OriginThirdParty {
+		t.Fatalf("office.Cycle(-1)=%q want third_party (wrap back)", got)
+	}
+}
+
+func TestDocStageValidParseAndCycle(t *testing.T) {
+	if !StageReceived.Valid() || !StageFiled.Valid() || DocStage("bogus").Valid() {
+		t.Fatal("DocStage validity wrong")
+	}
+	if s, err := ParseDocStage(" Under_Review "); err != nil || s != StageUnderReview {
+		t.Fatalf("ParseDocStage(under_review)=%q,%v", s, err)
+	}
+	if got := StageFiled.Cycle(1); got != StageReceived {
+		t.Fatalf("filed.Cycle(1)=%q want received (wrap)", got)
+	}
+	if got := StageReceived.Cycle(1); got != StageDraft {
+		t.Fatalf("received.Cycle(1)=%q want draft", got)
+	}
+}
+
+func TestInferOriginStage(t *testing.T) {
+	cases := []struct {
+		kind   MatterDocKind
+		origin DocOrigin
+		stage  DocStage
+	}{
+		{MatterDocOA, OriginOffice, StageReceived},
+		{MatterDocReference, OriginThirdParty, StageReceived},
+		{MatterDocResponse, OriginFirm, StageDraft},
+		{MatterDocIDS, OriginFirm, StageFiled},
+		{MatterDocKind("unknown"), OriginFirm, StageReceived},
+	}
+	for _, c := range cases {
+		o, s := InferOriginStage(c.kind)
+		if o != c.origin || s != c.stage {
+			t.Errorf("InferOriginStage(%q)=(%q,%q) want (%q,%q)", c.kind, o, s, c.origin, c.stage)
+		}
+	}
+}
+
 func TestAmendmentStatusLabelAndMarkup(t *testing.T) {
 	if got := AmendCurrentlyAmended.Label(); got != "(Currently Amended)" {
 		t.Errorf("label=%q", got)

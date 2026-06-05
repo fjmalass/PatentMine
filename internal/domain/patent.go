@@ -183,6 +183,11 @@ type PatentRow struct {
 	Classifications []string     `json:"classifications"`
 	FetchState      FetchState   `json:"fetch_state"`
 	ReviewState     ReviewState  `json:"review_state,omitempty"`
+	// Conflicting is set, per active project, when the record has an open conflict
+	// edge in that matter (material prior art, interfering application). It is
+	// applied onto rows in the TUI from the conflict store rather than stored on
+	// the record, so it is project-scoped like ReviewState.
+	Conflicting     bool         `json:"conflicting,omitempty"`
 	IDSEntry        *IDSEntry    `json:"ids_entry,omitempty"`
 	CitationsCount  int          `json:"citations_count,omitempty"`
 	CitedByCount    int          `json:"cited_by_count,omitempty"`

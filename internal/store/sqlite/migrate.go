@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"patentmine/internal/domain"
 )
 
 // migrateF folds the legacy project_ids table into membership (as inline ids_*
@@ -222,8 +224,14 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "11"
 	}
-	if version != "11" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 11", version)
+	if version == "11" {
+		if err := r.migrateV11ToV12(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v11 to v12: %w", err)
+		}
+		version = "12"
+	}
+	if version != "12" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 12", version)
 	}
 	return nil
 }
@@ -846,6 +854,66 @@ func (r *Repo) migrateV10ToV11(ctx context.Context) error {
 		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("store/sqlite: migrate v10 to v11: %w", err)
 		}
+	}
+	return nil
+}
+
+// matterDocKinds enumerates the matter-document kinds backfilled in v12. Keeping
+// the list here (rather than enumerating in domain) is intentional: the
+// migration freezes the kinds known at v12, so a later kind never silently
+// changes how old rows are backfilled.
+var matterDocKinds = []domain.MatterDocKind{
+	domain.MatterDocOA, domain.MatterDocResponse, domain.MatterDocReference,
+	domain.MatterDocAmendment, domain.MatterDocSpec, domain.MatterDocDrawings,
+	domain.MatterDocIDS, domain.MatterDocCorrespondence, domain.MatterDocOther,
+}
+
+// migrateV11ToV12 adds the origin and stage columns to matter_document and
+// backfills existing rows by inferring both from each row's kind
+// (domain.InferOriginStage), so documents created before these axes existed land
+// on sensible defaults. Purely additive; the bytes on disk are untouched.
+func (r *Repo) migrateV11ToV12(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v11-to-v12.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v11 to v12: backup: %w", err)
+	}
+	for _, col := range []struct{ name, alter string }{
+		{"origin", `ALTER TABLE matter_document ADD COLUMN origin TEXT NOT NULL DEFAULT ''`},
+		{"stage", `ALTER TABLE matter_document ADD COLUMN stage TEXT NOT NULL DEFAULT ''`},
+	} {
+		has, err := r.columnExists(ctx, "matter_document", col.name)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: migrate v11 to v12: detect matter_document.%s: %w", col.name, err)
+		}
+		if !has {
+			if _, err := r.writer.ExecContext(ctx, col.alter); err != nil {
+				return fmt.Errorf("store/sqlite: migrate v11 to v12: add %s: %w", col.name, err)
+			}
+		}
+	}
+	if _, err := r.writer.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_matter_document_stage ON matter_document (project_id, stage)`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v11 to v12: index: %w", err)
+	}
+	// Backfill origin/stage from kind, only for rows that have neither set yet.
+	for _, kind := range matterDocKinds {
+		origin, stage := domain.InferOriginStage(kind)
+		if _, err := r.writer.ExecContext(ctx,
+			`UPDATE matter_document SET origin = ?, stage = ?
+			 WHERE kind = ? AND origin = '' AND stage = ''`,
+			string(origin), string(stage), string(kind)); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v11 to v12: backfill %s: %w", kind, err)
+		}
+	}
+	// Catch any rows with an empty/unknown kind left unset by the loop above.
+	defOrigin, defStage := domain.InferOriginStage("")
+	if _, err := r.writer.ExecContext(ctx,
+		`UPDATE matter_document SET origin = ?, stage = ? WHERE origin = '' AND stage = ''`,
+		string(defOrigin), string(defStage)); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v11 to v12: backfill default: %w", err)
+	}
+	if _, err := r.writer.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '12' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v11 to v12: bump version: %w", err)
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ const (
 	EntityPatents      = "patents"
 	EntityOfficeAction = "office_action"
 	EntityProject      = "project"
+	EntityConflict     = "conflict"
 	EntityTableFilter  = "table_filter"
 )
 

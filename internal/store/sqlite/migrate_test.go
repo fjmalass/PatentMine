@@ -148,8 +148,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 11 {
-		t.Fatalf("schema_version = %d, want 11", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 12 {
+		t.Fatalf("schema_version = %d, want 12", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -226,8 +226,8 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "11" {
-		t.Fatalf("schema_version = %q, want 11", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "12" {
+		t.Fatalf("schema_version = %q, want 12", v)
 	}
 	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
 		t.Fatalf("grant document kind = %q, want B2", k)
@@ -288,8 +288,8 @@ func TestMigrateV7ToV8BackfillsMatterDocument(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "11" {
-		t.Fatalf("schema_version = %q, want 11", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "12" {
+		t.Fatalf("schema_version = %q, want 12", v)
 	}
 
 	docs, err := repo.ListMatterDocuments(ctx, "p-1")
@@ -359,8 +359,8 @@ func TestMigrateV10ToV11(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "11" {
-		t.Fatalf("schema_version = %q, want 11", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "12" {
+		t.Fatalf("schema_version = %q, want 12", v)
 	}
 
 	// Verify columns were added with empty string default values
@@ -372,5 +372,65 @@ func TestMigrateV10ToV11(t *testing.T) {
 	}
 	if lo := scan(`SELECT last_opened_at FROM matter_document WHERE id='doc-1'`); lo != "" {
 		t.Fatalf("matter_document last_opened_at = %q, want empty string", lo)
+	}
+}
+
+func TestMigrateV11ToV12BackfillsOriginStage(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v11.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v11 db: %v", err)
+	}
+	for _, stmt := range []string{
+		schemaSQL,
+		`UPDATE schema_meta SET value = '11' WHERE key = 'schema_version'`,
+		// Simulate the pre-v12 shape: the origin/stage axes did not exist yet.
+		`DROP INDEX IF EXISTS idx_matter_document_stage`,
+		`ALTER TABLE matter_document DROP COLUMN origin`,
+		`ALTER TABLE matter_document DROP COLUMN stage`,
+		`INSERT INTO project (id, name, created_at) VALUES ('p-1', 'Proj', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO matter_document (id, project_id, kind, display_name) VALUES ('d-oa', 'p-1', 'oa', 'oa')`,
+		`INSERT INTO matter_document (id, project_id, kind, display_name) VALUES ('d-ref', 'p-1', 'reference', 'ref')`,
+		`INSERT INTO matter_document (id, project_id, kind, display_name) VALUES ('d-resp', 'p-1', 'response', 'resp')`,
+		`INSERT INTO matter_document (id, project_id, kind, display_name) VALUES ('d-ids', 'p-1', 'ids', 'ids')`,
+		`INSERT INTO matter_document (id, project_id, kind, display_name) VALUES ('d-weird', 'p-1', 'weirdkind', 'weird')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v11: %v\n%s", err, stmt)
+		}
+	}
+	_ = db.Close()
+
+	repo, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (migrate v11→v12): %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	scan := func(q string) string {
+		var s string
+		if err := repo.reader.QueryRowContext(ctx, q).Scan(&s); err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		return s
+	}
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "12" {
+		t.Fatalf("schema_version = %q, want 12", v)
+	}
+	// Each row's origin/stage is inferred from its kind (domain.InferOriginStage).
+	for _, tc := range []struct{ id, origin, stage string }{
+		{"d-oa", "office", "received"},
+		{"d-ref", "third_party", "received"},
+		{"d-resp", "firm", "draft"},
+		{"d-ids", "firm", "filed"},
+		{"d-weird", "firm", "received"}, // unknown kind → default catch-all
+	} {
+		o := scan(`SELECT origin FROM matter_document WHERE id='` + tc.id + `'`)
+		s := scan(`SELECT stage FROM matter_document WHERE id='` + tc.id + `'`)
+		if o != tc.origin || s != tc.stage {
+			t.Fatalf("%s backfilled to {origin:%q stage:%q}, want {%q %q}", tc.id, o, s, tc.origin, tc.stage)
+		}
 	}
 }

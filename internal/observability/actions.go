@@ -82,6 +82,7 @@ const (
 	ActionMatterDocumentUntag      = "matter_document.untag"
 	ActionMatterDocumentAssignOA   = "matter_document.assign_office_action"
 	ActionMatterDocumentUnassignOA = "matter_document.unassign_office_action"
+	ActionMatterDocumentSetMeta    = "matter_document.set_meta" // change origin/stage axes
 	ActionProjectSetMatterType     = "project.set_matter_type"
 	ActionMatterEventAdd           = "matter_event.add"
 	ActionMatterEventDelete        = "matter_event.delete"
@@ -93,6 +94,9 @@ const (
 	ActionRenewalsUntrack          = "deadline.untrack_renewals"
 	ActionDeadlineStatus           = "deadline.set_status"
 	ActionDeadlineRemind           = "deadline.remind"
+	ActionConflictFlag             = "conflict.flag"    // flag a record as conflicting in a matter
+	ActionConflictResolve          = "conflict.resolve" // mark a conflict resolved/waived
+	ActionConflictDelete           = "conflict.delete"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -158,6 +162,7 @@ var AllActions = []string{
 	ActionMatterDocumentUntag,
 	ActionMatterDocumentAssignOA,
 	ActionMatterDocumentUnassignOA,
+	ActionMatterDocumentSetMeta,
 	ActionProjectSetMatterType,
 	ActionMatterEventAdd,
 	ActionMatterEventDelete,
@@ -169,4 +174,7 @@ var AllActions = []string{
 	ActionRenewalsUntrack,
 	ActionDeadlineStatus,
 	ActionDeadlineRemind,
+	ActionConflictFlag,
+	ActionConflictResolve,
+	ActionConflictDelete,
 }

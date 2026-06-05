@@ -188,3 +188,104 @@ func TestListDraftsNewestFirst(t *testing.T) {
 		t.Fatalf("ListDrafts order wrong: %+v", list)
 	}
 }
+
+func TestConflictRoundTripAndDelete(t *testing.T) {
+	ctx := context.Background()
+	repo := openTestRepo(t)
+	seedProject(t, repo, "proj1")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	c := domain.Conflict{
+		ID:        "conf-1",
+		Project:   "proj1",
+		Record:    domain.MustParsePatentNumber("US11611785B2"),
+		Reason:    "anticipates claim 1",
+		Status:    domain.ConflictOpen,
+		FlaggedBy: "examiner",
+		FlaggedAt: now,
+	}
+	if err := repo.SaveConflict(ctx, c); err != nil {
+		t.Fatalf("SaveConflict: %v", err)
+	}
+
+	got, err := repo.Conflict(ctx, "conf-1")
+	if err != nil {
+		t.Fatalf("Conflict: %v", err)
+	}
+	if got.Reason != "anticipates claim 1" || got.Status != domain.ConflictOpen ||
+		got.Record.Normalized() != "US11611785B2" || got.FlaggedBy != "examiner" {
+		t.Fatalf("conflict round-trip wrong: %+v", got)
+	}
+
+	list, err := repo.ListConflicts(ctx, "proj1")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("ListConflicts = %d,%v want 1", len(list), err)
+	}
+
+	if _, err := repo.Conflict(ctx, "missing"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Conflict(missing) err = %v, want ErrNotFound", err)
+	}
+
+	if err := repo.DeleteConflict(ctx, "conf-1"); err != nil {
+		t.Fatalf("DeleteConflict: %v", err)
+	}
+	if list, _ := repo.ListConflicts(ctx, "proj1"); len(list) != 0 {
+		t.Fatalf("after delete, ListConflicts = %d want 0", len(list))
+	}
+}
+
+// TestListPatentsSetsConflictingBadge proves the daemon computes the ⚠ badge:
+// ListPatents sets PatentRow.Conflicting for project members with an OPEN
+// conflict, and clears it once the conflict is resolved.
+func TestListPatentsSetsConflictingBadge(t *testing.T) {
+	ctx := context.Background()
+	repo := openTestRepo(t)
+	seedProject(t, repo, "proj1")
+
+	flagged := samplePatent("US11611785B2")
+	clean := samplePatent("US9999999B2")
+	for _, p := range []domain.Patent{flagged, clean} {
+		if err := repo.SavePatent(ctx, p); err != nil {
+			t.Fatalf("SavePatent %s: %v", p.Number, err)
+		}
+		if err := repo.AddMembership(ctx, domain.Membership{
+			Project: "proj1", Patent: p.Number, ReviewState: domain.ReviewStateUnderReview, AddedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("AddMembership %s: %v", p.Number, err)
+		}
+	}
+	if err := repo.SaveConflict(ctx, domain.Conflict{
+		ID: "conf-1", Project: "proj1", Record: flagged.Number,
+		Status: domain.ConflictOpen, FlaggedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveConflict: %v", err)
+	}
+
+	conflictingOf := func() map[string]bool {
+		rows, err := repo.ListPatents(ctx, store.PatentQuery{Project: "proj1", Limit: 50})
+		if err != nil {
+			t.Fatalf("ListPatents: %v", err)
+		}
+		out := make(map[string]bool, len(rows))
+		for _, r := range rows {
+			out[r.Number.Normalized()] = r.Conflicting
+		}
+		return out
+	}
+
+	got := conflictingOf()
+	if !got["US11611785B2"] || got["US9999999B2"] {
+		t.Fatalf("conflicting badges = %v; want only US11611785B2", got)
+	}
+
+	// Resolving the conflict clears the badge.
+	if err := repo.SaveConflict(ctx, domain.Conflict{
+		ID: "conf-1", Project: "proj1", Record: flagged.Number,
+		Status: domain.ConflictResolved, FlaggedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveConflict resolve: %v", err)
+	}
+	if got := conflictingOf(); got["US11611785B2"] {
+		t.Fatalf("badge still set after resolve: %v", got)
+	}
+}

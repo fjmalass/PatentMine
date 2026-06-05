@@ -233,9 +233,23 @@ func (s *Server) matterDocumentImport(ctx context.Context, raw json.RawMessage) 
 		OfficeActionIDs: p.OfficeActionIDs,
 		SourcePath:      p.SourcePath,
 		Kind:            p.Kind,
+		Origin:          p.Origin,
+		Stage:           p.Stage,
 		DisplayName:     p.DisplayName,
 		Tags:            p.Tags,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentSetMeta(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentMetaParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.SetMatterDocumentMeta(ctx, p.ID, p.Origin, p.Stage)
 	if err != nil {
 		return nil, err
 	}
@@ -563,4 +577,58 @@ func parseFlexDate(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Parse(domain.DateLayout, s)
+}
+
+func (s *Server) conflictFlag(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ConflictFlagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.engine.FlagConflict(ctx, engine.FlagConflictInput{
+		Project:    p.Project,
+		Record:     p.Record,
+		Against:    p.Against,
+		DocumentID: p.DocumentID,
+		Reason:     p.Reason,
+		FlaggedBy:  p.FlaggedBy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return proto.ConflictResult{Conflict: c}, nil
+}
+
+func (s *Server) conflictResolve(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ConflictResolveParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.engine.ResolveConflict(ctx, p.ID, p.Status)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ConflictResult{Conflict: c}, nil
+}
+
+func (s *Server) conflictList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ConflictListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	conflicts, err := s.engine.ListConflicts(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ConflictListResult{Conflicts: conflicts}, nil
+}
+
+func (s *Server) conflictDelete(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ConflictIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.DeleteConflict(ctx, p.ID); err != nil {
+		return nil, err
+	}
+	return proto.ConflictResult{}, nil
 }

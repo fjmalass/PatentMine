@@ -43,7 +43,13 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 		`, COALESCE((SELECT MIN(window_opens) FROM deadline WHERE patent_number = p.number AND (kind = 'maintenance_fee' OR kind = 'annuity') AND status = 'pending'), '')` +
 		`, COALESCE((SELECT MIN(grace_ends) FROM deadline WHERE patent_number = p.number AND (kind = 'maintenance_fee' OR kind = 'annuity') AND status = 'pending'), '')`
 
+	// conflicting is true when the record has an open conflict edge in the
+	// project — a project-scoped flag computed here (like ReviewState) so it
+	// travels down with the row rather than being re-fetched by the client. Its
+	// project bind is returned in extraArgs because the SELECT clause is bound
+	// before the WHERE join args.
 	if project != "" {
+		const conflictingCol = `, EXISTS(SELECT 1 FROM conflict cf WHERE cf.project_id = ? AND cf.record_number = p.number AND cf.status = 'open')`
 		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_in_full, 0), ` +
@@ -52,15 +58,15 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 				relationCounts + `, p.classifications, COALESCE(mp.added_method, 'direct')` +
 				`, COALESCE((SELECT is_tracked FROM patent_renewal WHERE patent_number = p.number), 0)` +
 				`, COALESCE((SELECT entity_size FROM patent_renewal WHERE patent_number = p.number), '')` +
-				renewalDateQueries,
-			nil
+				renewalDateQueries + conflictingCol,
+			[]any{string(project)}
 	}
 	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
 		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', 0, '', '', '', '', ''` +
 		relationCounts + `, p.classifications, 'direct'` +
 		`, COALESCE((SELECT is_tracked FROM patent_renewal WHERE patent_number = p.number), 0)` +
 		`, COALESCE((SELECT entity_size FROM patent_renewal WHERE patent_number = p.number), '')` +
-		renewalDateQueries, nil
+		renewalDateQueries + `, 0`, nil
 }
 
 // SavePatent inserts or updates a patent by its number.
@@ -542,18 +548,20 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		renewalTrackedVal               int
 		renewalEntitySize               string
 		nextDueStr, windowStr, graceStr string
+		conflicting                     int
 	)
 	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
 		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
 		&idsKindCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt, &idsSubmittedAt,
 		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON, &addedMethod,
 		&renewalTrackedVal, &renewalEntitySize,
-		&nextDueStr, &windowStr, &graceStr); err != nil {
+		&nextDueStr, &windowStr, &graceStr, &conflicting); err != nil {
 		return domain.PatentRow{}, err
 	}
 	row.Number = domain.PatentNumber{Country: country, Serial: serial, Kind: kind}
 	row.FetchState = domain.FetchState(fetchState)
 	row.ReviewState = domain.ReviewState(reviewState)
+	row.Conflicting = conflicting != 0
 	row.AddedMethod = addedMethod
 	if t, err := decodeTime(pubDate); err == nil {
 		row.PublicationDate = t

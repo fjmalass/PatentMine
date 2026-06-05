@@ -291,6 +291,15 @@ type Repository interface {
 	// MatterDocumentOfficeActionsByDocument returns office-action ids for multiple preparation documents keyed by id.
 	MatterDocumentOfficeActionsByDocument(ctx context.Context, documentIDs []string) (map[string][]string, error)
 
+	// SaveConflict inserts or updates one project-scoped conflict edge.
+	SaveConflict(ctx context.Context, c domain.Conflict) error
+	// Conflict returns one conflict by id, or ErrNotFound.
+	Conflict(ctx context.Context, id string) (domain.Conflict, error)
+	// ListConflicts returns a project's conflicts, newest first.
+	ListConflicts(ctx context.Context, project domain.ProjectID) ([]domain.Conflict, error)
+	// DeleteConflict removes one conflict edge.
+	DeleteConflict(ctx context.Context, id string) error
+
 	// SaveMatterEvent inserts or updates one communications-log entry.
 	SaveMatterEvent(ctx context.Context, e domain.MatterEvent) error
 	// ListMatterEvents returns a project's communications-log entries, newest first.

@@ -454,6 +454,27 @@ func UntrackRenewalsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
 	}
 }
 
+// ConflictFlaggedMsg reports a :flag.conflict result so the app can refresh the
+// patent list (so the ⚠ badge appears) and show a status line.
+type ConflictFlaggedMsg struct {
+	Number string
+	Err    error
+}
+
+// FlagConflictCmd flags one record as conflicting in the active matter.
+func FlagConflictCmd(client *rpc.Client, project domain.ProjectID, number, reason string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.ConflictResult
+		if err := client.Call(ctx, proto.MethodConflictFlag,
+			proto.ConflictFlagParams{Project: project, Record: number, Reason: reason}, &res); err != nil {
+			return ConflictFlaggedMsg{Number: number, Err: err}
+		}
+		return ConflictFlaggedMsg{Number: res.Conflict.Record.DisplayString()}
+	}
+}
+
 // DueDeadlineMsg reports how many pending deadlines are overdue or due soon, for
 // the in-app banner shown when a matter is opened.
 type DueDeadlineMsg struct {

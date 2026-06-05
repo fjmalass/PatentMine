@@ -1570,6 +1570,39 @@ func (a *App) cmdOpenComms(invocation) (tea.Model, tea.Cmd) {
 	return a, o.Init()
 }
 
+// cmdFlagConflict flags a record as conflicting (material prior art, interfering
+// application) within the active matter: :flag.conflict <patent-number> [reason].
+func (a *App) cmdFlagConflict(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) < 1 {
+		return a.usageError(command.FlagConflict)
+	}
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	reason := strings.Join(inv.args[1:], " ")
+	return a, pane.FlagConflictCmd(a.client, a.activeProject.ID, inv.args[0], reason)
+}
+
+// cmdListConflicts opens the active matter's conflicts list (resolve/waive/delete).
+func (a *App) cmdListConflicts(invocation) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewConflictList(a.client, a.theme, a.activeProject.ID)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
 // cmdOpenDocuments opens the active matter's document list.
 func (a *App) cmdOpenDocuments(invocation) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {

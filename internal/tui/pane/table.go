@@ -221,6 +221,10 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 				s = "🟢 " + s
 			}
 		}
+		// Flag records with an open conflict in the active project (project-scoped).
+		if projectID != "" && row.Conflicting {
+			s = "⚠ " + s
+		}
 		return s
 	case domain.PatentColumnKind:
 		num := numberToShowRow(row)

@@ -398,7 +398,7 @@ func scanOfficeAction(s rowScanner) (domain.OfficeAction, error) {
 	return oa, nil
 }
 
-const matterDocumentColumns = `id, project_id, office_action_id, kind, display_name,
+const matterDocumentColumns = `id, project_id, office_action_id, kind, origin, stage, display_name,
 	blob_path, blob_hash, extracted_text, added_at, last_opened_at`
 
 // SaveMatterDocument inserts or updates one matter document by its id.
@@ -413,6 +413,12 @@ func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) 
 	if d.Kind != "" && !d.Kind.Valid() {
 		return fmt.Errorf("store/sqlite: invalid matter document kind %q", d.Kind)
 	}
+	if d.Origin != "" && !d.Origin.Valid() {
+		return fmt.Errorf("store/sqlite: invalid matter document origin %q", d.Origin)
+	}
+	if d.Stage != "" && !d.Stage.Valid() {
+		return fmt.Errorf("store/sqlite: invalid matter document stage %q", d.Stage)
+	}
 	tx, err := r.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save matter document %s: begin: %w", d.ID, err)
@@ -424,19 +430,21 @@ func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) 
 	}()
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO matter_document
-		 (id, project_id, office_action_id, kind, display_name, blob_path, blob_hash, extracted_text, added_at, last_opened_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?)
+		 (id, project_id, office_action_id, kind, origin, stage, display_name, blob_path, blob_hash, extracted_text, added_at, last_opened_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id,
 			office_action_id=excluded.office_action_id,
 			kind=excluded.kind,
+			origin=excluded.origin,
+			stage=excluded.stage,
 			display_name=excluded.display_name,
 			blob_path=excluded.blob_path,
 			blob_hash=excluded.blob_hash,
 			extracted_text=excluded.extracted_text,
 			added_at=excluded.added_at,
 			last_opened_at=excluded.last_opened_at`,
-		d.ID, string(d.Project), d.OfficeActionID, string(d.Kind), d.DisplayName,
+		d.ID, string(d.Project), d.OfficeActionID, string(d.Kind), string(d.Origin), string(d.Stage), d.DisplayName,
 		d.BlobPath, d.BlobHash, d.ExtractedText, encodeTime(d.AddedAt), encodeTime(d.LastOpenedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save matter document %s: %w", d.ID, err)
@@ -563,16 +571,20 @@ func scanMatterDocument(s rowScanner) (domain.MatterDocument, error) {
 		id           string
 		project      string
 		kind         string
+		origin       string
+		stage        string
 		addedAt      string
 		lastOpenedAt string
 	)
-	if err := s.Scan(&id, &project, &d.OfficeActionID, &kind, &d.DisplayName,
+	if err := s.Scan(&id, &project, &d.OfficeActionID, &kind, &origin, &stage, &d.DisplayName,
 		&d.BlobPath, &d.BlobHash, &d.ExtractedText, &addedAt, &lastOpenedAt); err != nil {
 		return domain.MatterDocument{}, err
 	}
 	d.ID = id
 	d.Project = domain.ProjectID(project)
 	d.Kind = domain.MatterDocKind(kind)
+	d.Origin = domain.DocOrigin(origin)
+	d.Stage = domain.DocStage(stage)
 	if d.OfficeActionID != "" {
 		d.OfficeActionIDs = []string{d.OfficeActionID}
 	}

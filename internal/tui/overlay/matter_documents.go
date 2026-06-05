@@ -29,6 +29,8 @@ type col0Type int
 const (
 	col0Name col0Type = iota
 	col0Kind
+	col0Origin
+	col0Stage
 	col0LoadDate
 	col0LoadTime
 	col0LastOpened
@@ -37,12 +39,18 @@ const (
 	col0OtherOAs
 )
 
-var sortKeys0 = []string{"name", "kind", "load_date", "load_time", "last_opened", "tags", "notes", "other_oas"}
+// col0Count is the number of columns in the associated-documents table; used for
+// wrapping the column cursor.
+const col0Count = 10
+
+var sortKeys0 = []string{"name", "kind", "origin", "stage", "load_date", "load_time", "last_opened", "tags", "notes", "other_oas"}
 
 type col1Type int
 
 const (
 	col1Name col1Type = iota
+	col1Origin
+	col1Stage
 	col1Project
 	col1OAs
 	col1LoadDateTime
@@ -50,7 +58,10 @@ const (
 	col1Tags
 )
 
-var sortKeys1 = []string{"name", "project", "office_actions", "loaded", "last_opened", "tags"}
+// col1Count is the number of columns in the all-documents table.
+const col1Count = 8
+
+var sortKeys1 = []string{"name", "origin", "stage", "project", "office_actions", "loaded", "last_opened", "tags"}
 
 type matterDocsLoadedMsg struct {
 	projectItems []domain.MatterDocument
@@ -295,18 +306,18 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	case tea.KeyLeft:
 		if o.oa != nil {
 			if o.activeTable == 0 {
-				o.activeCol0 = (o.activeCol0 - 1 + 8) % 8
+				o.activeCol0 = (o.activeCol0 - 1 + col0Count) % col0Count
 			} else {
-				o.activeCol1 = (o.activeCol1 - 1 + 6) % 6
+				o.activeCol1 = (o.activeCol1 - 1 + col1Count) % col1Count
 			}
 		}
 		return o, nil, true
 	case tea.KeyRight:
 		if o.oa != nil {
 			if o.activeTable == 0 {
-				o.activeCol0 = (o.activeCol0 + 1) % 8
+				o.activeCol0 = (o.activeCol0 + 1) % col0Count
 			} else {
-				o.activeCol1 = (o.activeCol1 + 1) % 6
+				o.activeCol1 = (o.activeCol1 + 1) % col1Count
 			}
 		}
 		return o, nil, true
@@ -349,6 +360,14 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			}
 		case "r":
 			o.beginRename()
+		case "s":
+			if cmd := o.cycleStage(1); cmd != nil {
+				return o, cmd, true
+			}
+		case "O":
+			if cmd := o.cycleOrigin(1); cmd != nil {
+				return o, cmd, true
+			}
 		case "t":
 			o.beginTag(false)
 		case "u":
@@ -632,6 +651,41 @@ func (o *MatterDocuments) commitTag() tea.Cmd {
 	}
 }
 
+// cycleStage advances the selected document's lifecycle stage by delta and
+// persists it. cycleOrigin does the same for its origin. Both reuse setMeta.
+func (o *MatterDocuments) cycleStage(delta int) tea.Cmd {
+	doc, ok := o.selected()
+	if !ok {
+		return nil
+	}
+	return o.setMeta(doc.ID, "", doc.Stage.Cycle(delta))
+}
+
+func (o *MatterDocuments) cycleOrigin(delta int) tea.Cmd {
+	doc, ok := o.selected()
+	if !ok {
+		return nil
+	}
+	return o.setMeta(doc.ID, doc.Origin.Cycle(delta), "")
+}
+
+// setMeta persists an origin and/or stage change for one document, then reloads.
+// An empty origin or stage leaves that axis unchanged (see engine.SetMatterDocumentMeta).
+func (o *MatterDocuments) setMeta(id string, origin domain.DocOrigin, stage domain.DocStage) tea.Cmd {
+	client := o.client
+	reload := o.loadCmd()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var res proto.MatterDocumentResult
+		if err := client.Call(ctx, proto.MethodMatterDocumentSetMeta,
+			proto.MatterDocumentMetaParams{ID: id, Origin: origin, Stage: stage}, &res); err != nil {
+			return matterDocsLoadedMsg{err: err}
+		}
+		return reload()
+	}
+}
+
 func (o *MatterDocuments) commitAssign() tea.Cmd {
 	doc, ok := o.selected()
 	if !ok {
@@ -738,8 +792,8 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		h1 := totalBodyHeight - h0
 
 		colsW := maxW - o.theme.TablePrefixWidth()
-		colWidths0 := getColWidths(colsW, []int{0, 10, 10, 8, 12, 12, 5, 10})
-		colWidths1 := getColWidths(colsW, []int{0, 10, 12, 16, 12, 12})
+		colWidths0 := getColWidths(colsW, []int{0, 14, 13, 12, 10, 8, 12, 12, 5, 10})
+		colWidths1 := getColWidths(colsW, []int{0, 13, 12, 10, 12, 16, 12, 12})
 
 		// 1. Table 0 (Associated Documents)
 		b.WriteString(o.theme.Title.Render("Associated with Current Office Action:") + "\n")
@@ -757,12 +811,14 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		columns0 := []render.TableColumn{
 			{Key: "name", Label: "Name", Width: colWidths0[0], SortKey: "name"},
 			{Key: "kind", Label: "Kind", Width: colWidths0[1], SortKey: "kind"},
-			{Key: "load_date", Label: "Load Date", Width: colWidths0[2], SortKey: "load_date"},
-			{Key: "load_time", Label: "Load Time", Width: colWidths0[3], SortKey: "load_time"},
-			{Key: "last_opened", Label: "Last Opened", Width: colWidths0[4], SortKey: "last_opened"},
-			{Key: "tags", Label: "Tags", Width: colWidths0[5], SortKey: "tags"},
-			{Key: "notes", Label: "Notes", Width: colWidths0[6], SortKey: "notes"},
-			{Key: "other_oas", Label: "Other OAs", Width: colWidths0[7], SortKey: "other_oas"},
+			{Key: "origin", Label: "Origin", Width: colWidths0[2], SortKey: "origin"},
+			{Key: "stage", Label: "Stage", Width: colWidths0[3], SortKey: "stage"},
+			{Key: "load_date", Label: "Load Date", Width: colWidths0[4], SortKey: "load_date"},
+			{Key: "load_time", Label: "Load Time", Width: colWidths0[5], SortKey: "load_time"},
+			{Key: "last_opened", Label: "Last Opened", Width: colWidths0[6], SortKey: "last_opened"},
+			{Key: "tags", Label: "Tags", Width: colWidths0[7], SortKey: "tags"},
+			{Key: "notes", Label: "Notes", Width: colWidths0[8], SortKey: "notes"},
+			{Key: "other_oas", Label: "Other OAs", Width: colWidths0[9], SortKey: "other_oas"},
 		}
 
 		params0 := render.TableParams{
@@ -783,8 +839,8 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 				return ""
 			}
 			doc := o.items0[o.offset0+rowIdx]
-			switch colIdx {
-			case 0:
+			switch col0Type(colIdx) {
+			case col0Name:
 				lineNum := o.offset0 + rowIdx + 1
 				gutter := ""
 				if o.activeTable == 0 {
@@ -793,22 +849,26 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 					gutter = fmt.Sprintf(" %d ", lineNum)
 				}
 				return gutter + doc.DisplayName
-			case 1:
+			case col0Kind:
 				return doc.Kind.Label()
-			case 2:
+			case col0Origin:
+				return doc.Origin.Label()
+			case col0Stage:
+				return doc.Stage.Label()
+			case col0LoadDate:
 				return doc.AddedAt.Format("2006-01-02")
-			case 3:
+			case col0LoadTime:
 				return doc.AddedAt.Format("15:04:05")
-			case 4:
+			case col0LastOpened:
 				if doc.LastOpenedAt.IsZero() {
 					return "-"
 				}
 				return doc.LastOpenedAt.Local().Format("01-02 15:04")
-			case 5:
+			case col0Tags:
 				return tagNames(doc.Tags)
-			case 6:
+			case col0NotesCount:
 				return "0"
-			case 7:
+			case col0OtherOAs:
 				return otherOAs(doc, o.oa.ID)
 			default:
 				return ""
@@ -833,11 +893,13 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 
 		columns1 := []render.TableColumn{
 			{Key: "name", Label: "Name", Width: colWidths1[0], SortKey: "name"},
-			{Key: "project", Label: "Project", Width: colWidths1[1], SortKey: "project"},
-			{Key: "office_actions", Label: "Office Actions", Width: colWidths1[2], SortKey: "office_actions"},
-			{Key: "loaded", Label: "Loaded", Width: colWidths1[3], SortKey: "loaded"},
-			{Key: "last_opened", Label: "Last Opened", Width: colWidths1[4], SortKey: "last_opened"},
-			{Key: "tags", Label: "Tags", Width: colWidths1[5], SortKey: "tags"},
+			{Key: "origin", Label: "Origin", Width: colWidths1[1], SortKey: "origin"},
+			{Key: "stage", Label: "Stage", Width: colWidths1[2], SortKey: "stage"},
+			{Key: "project", Label: "Project", Width: colWidths1[3], SortKey: "project"},
+			{Key: "office_actions", Label: "Office Actions", Width: colWidths1[4], SortKey: "office_actions"},
+			{Key: "loaded", Label: "Loaded", Width: colWidths1[5], SortKey: "loaded"},
+			{Key: "last_opened", Label: "Last Opened", Width: colWidths1[6], SortKey: "last_opened"},
+			{Key: "tags", Label: "Tags", Width: colWidths1[7], SortKey: "tags"},
 		}
 
 		params1 := render.TableParams{
@@ -858,8 +920,8 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 				return ""
 			}
 			doc := o.items1[o.offset1+rowIdx]
-			switch colIdx {
-			case 0:
+			switch col1Type(colIdx) {
+			case col1Name:
 				lineNum := o.offset1 + rowIdx + 1
 				gutter := ""
 				if o.activeTable == 1 {
@@ -868,18 +930,22 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 					gutter = fmt.Sprintf(" %d ", lineNum)
 				}
 				return gutter + doc.DisplayName
-			case 1:
+			case col1Origin:
+				return doc.Origin.Label()
+			case col1Stage:
+				return doc.Stage.Label()
+			case col1Project:
 				return string(doc.Project)
-			case 2:
+			case col1OAs:
 				return strings.Join(doc.OfficeActionIDs, ",")
-			case 3:
+			case col1LoadDateTime:
 				return doc.AddedAt.Format("2006-01-02 15:04")
-			case 4:
+			case col1LastOpened:
 				if doc.LastOpenedAt.IsZero() {
 					return "-"
 				}
 				return doc.LastOpenedAt.Local().Format("01-02 15:04")
-			case 5:
+			case col1Tags:
 				return tagNames(doc.Tags)
 			default:
 				return ""
@@ -889,7 +955,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 
 		b.WriteString("\n")
 
-		footer := "↑/↓ move · tab switch table · ←/→ move col cursor · . sort col · enter view · i load · o open · e extract · r rename · d delete · esc close"
+		footer := "↑/↓ move · tab switch table · ←/→ move col cursor · . sort col · enter view · i load · o open · e extract · s stage · O origin · r rename · d delete · esc close"
 		if o.activeTable == 0 {
 			footer += " · a assign OA · x remove from current OA"
 		} else {
@@ -950,7 +1016,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		}
 		lineNum := i + 1
 		gutter := o.jump.GutterPrefix(lineNum)
-		row := fmt.Sprintf("%s%-13s %s", gutter, d.Kind.Label(), name)
+		row := fmt.Sprintf("%s%-14s %-12s %-13s %s", gutter, d.Kind.Label(), d.Stage.Label(), d.Origin.Label(), name)
 		cell := render.Pad(render.Truncate(row, maxW), maxW)
 		if i == o.cursor {
 			b.WriteString(o.theme.Selected.Render(cell))
@@ -960,7 +1026,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "↑/↓ move · enter view · i load · o open · e extract · t tag · u untag · a assign OA · x unassign OA · r rename · d delete · esc close · [;] jump mode"
+	footer := "↑/↓ move · enter view · i load · o open · e extract · s stage · O origin · t tag · u untag · a assign OA · x unassign OA · r rename · d delete · esc close · [;] jump mode"
 	switch {
 	case o.extracting:
 		footer = "converting embedded text…"
@@ -1066,6 +1132,10 @@ func sortItems0(items []domain.MatterDocument, col col0Type, desc bool, currentO
 			less = strings.ToLower(d1.DisplayName) < strings.ToLower(d2.DisplayName)
 		case col0Kind:
 			less = strings.ToLower(d1.Kind.Label()) < strings.ToLower(d2.Kind.Label())
+		case col0Origin:
+			less = strings.ToLower(d1.Origin.Label()) < strings.ToLower(d2.Origin.Label())
+		case col0Stage:
+			less = strings.ToLower(d1.Stage.Label()) < strings.ToLower(d2.Stage.Label())
 		case col0LoadDate, col0LoadTime:
 			less = d1.AddedAt.Before(d2.AddedAt)
 		case col0LastOpened:
@@ -1091,6 +1161,10 @@ func sortItems1(items []domain.MatterDocument, col col1Type, desc bool) {
 		switch col {
 		case col1Name:
 			less = strings.ToLower(d1.DisplayName) < strings.ToLower(d2.DisplayName)
+		case col1Origin:
+			less = strings.ToLower(d1.Origin.Label()) < strings.ToLower(d2.Origin.Label())
+		case col1Stage:
+			less = strings.ToLower(d1.Stage.Label()) < strings.ToLower(d2.Stage.Label())
 		case col1Project:
 			less = strings.ToLower(string(d1.Project)) < strings.ToLower(string(d2.Project))
 		case col1OAs:

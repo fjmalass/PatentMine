@@ -366,14 +366,18 @@ const (
 	MatterDocSpec      MatterDocKind = "spec"      // a specification draft/filing
 	MatterDocDrawings  MatterDocKind = "drawings"  // figures/drawings
 	MatterDocIDS       MatterDocKind = "ids"       // an information disclosure statement
-	MatterDocOther     MatterDocKind = "other"     // anything else in the matter
+	// MatterDocCorrespondence is an email/letter/text artifact exchanged during
+	// prosecution. The communication event itself is a MatterEvent; an attached
+	// file or saved text is filed as a correspondence document.
+	MatterDocCorrespondence MatterDocKind = "correspondence"
+	MatterDocOther          MatterDocKind = "other" // anything else in the matter
 )
 
 // Valid reports whether the MatterDocKind is a known value.
 func (k MatterDocKind) Valid() bool {
 	switch k {
 	case MatterDocOA, MatterDocResponse, MatterDocReference, MatterDocAmendment,
-		MatterDocSpec, MatterDocDrawings, MatterDocIDS, MatterDocOther:
+		MatterDocSpec, MatterDocDrawings, MatterDocIDS, MatterDocCorrespondence, MatterDocOther:
 		return true
 	default:
 		return false
@@ -397,6 +401,8 @@ func (k MatterDocKind) Label() string {
 		return "Drawings"
 	case MatterDocIDS:
 		return "IDS"
+	case MatterDocCorrespondence:
+		return "Correspondence"
 	case MatterDocOther:
 		return "Other"
 	default:
@@ -418,6 +424,193 @@ func ParseMatterDocKind(s string) (MatterDocKind, error) {
 	return k, nil
 }
 
+// DocOrigin records who produced a matter document, or where it came from. It is
+// orthogonal to MatterDocKind (what the document is) and DocStage (where it is in
+// its lifecycle). It is deliberately named "origin" — not "provenance" — to stay
+// distinct from the patent Provenance display, and applies only to matter
+// documents, never to the patents loaded into a project.
+type DocOrigin string
+
+const (
+	OriginOffice     DocOrigin = "office"      // the patent office (USPTO): examiner letters, official notices
+	OriginFirm       DocOrigin = "firm"        // our side: attorney/agent drafts, responses, amendments
+	OriginClient     DocOrigin = "client"      // supplied by the client
+	OriginThirdParty DocOrigin = "third_party" // a third party: cited prior art, opposing submissions
+)
+
+// DocOrigins lists every origin in canonical cycle order, for iteration and for
+// the TUI's cycle-through-values control.
+var DocOrigins = []DocOrigin{OriginOffice, OriginFirm, OriginClient, OriginThirdParty}
+
+// Valid reports whether the DocOrigin is a known value.
+func (o DocOrigin) Valid() bool {
+	switch o {
+	case OriginOffice, OriginFirm, OriginClient, OriginThirdParty:
+		return true
+	default:
+		return false
+	}
+}
+
+// Cycle returns the next origin after o (wrapping), advancing by delta steps. An
+// unset/unknown origin starts the cycle at the first value.
+func (o DocOrigin) Cycle(delta int) DocOrigin {
+	return DocOrigin(cycleEnum(string(o), docOriginStrings(), delta))
+}
+
+// Label returns the human-readable origin for the TUI.
+func (o DocOrigin) Label() string {
+	switch o {
+	case OriginOffice:
+		return "Patent Office"
+	case OriginFirm:
+		return "Our Firm"
+	case OriginClient:
+		return "Client"
+	case OriginThirdParty:
+		return "Third Party"
+	default:
+		return string(o)
+	}
+}
+
+// ParseDocOrigin converts a string into a DocOrigin. The empty string is
+// accepted and returns an empty origin (callers infer a default via
+// InferOriginStage), so an unspecified import is still recorded.
+func ParseDocOrigin(s string) (DocOrigin, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return "", nil
+	}
+	o := DocOrigin(s)
+	if !o.Valid() {
+		return "", fmt.Errorf("domain: unknown document origin %q", s)
+	}
+	return o, nil
+}
+
+// DocStage records where a matter document sits in its lifecycle, from arrival to
+// filing. It is deliberately named "stage" — not "review_state" — to stay
+// distinct from the per-patent ReviewState, which means something else entirely
+// (patent triage within a project).
+type DocStage string
+
+const (
+	StageReceived    DocStage = "received"     // arrived as-is from outside (office, third party); not ours to draft
+	StageDraft       DocStage = "draft"        // being worked on
+	StageUnderReview DocStage = "under_review" // awaiting human review/approval
+	StageApproved    DocStage = "approved"     // reviewed and ready to file
+	StageFiled       DocStage = "filed"        // submitted to the patent office
+)
+
+// DocStages lists every stage in canonical lifecycle order, for iteration and
+// for the TUI's cycle-through-values control.
+var DocStages = []DocStage{StageReceived, StageDraft, StageUnderReview, StageApproved, StageFiled}
+
+// Valid reports whether the DocStage is a known value.
+func (s DocStage) Valid() bool {
+	switch s {
+	case StageReceived, StageDraft, StageUnderReview, StageApproved, StageFiled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Cycle returns the next stage after s (wrapping), advancing by delta steps. An
+// unset/unknown stage starts the cycle at the first value.
+func (s DocStage) Cycle(delta int) DocStage {
+	return DocStage(cycleEnum(string(s), docStageStrings(), delta))
+}
+
+// Label returns the human-readable stage for the TUI.
+func (s DocStage) Label() string {
+	switch s {
+	case StageReceived:
+		return "Received"
+	case StageDraft:
+		return "Draft"
+	case StageUnderReview:
+		return "Under Review"
+	case StageApproved:
+		return "Approved"
+	case StageFiled:
+		return "Filed"
+	default:
+		return string(s)
+	}
+}
+
+// ParseDocStage converts a string into a DocStage. The empty string is accepted
+// and returns an empty stage (callers infer a default via InferOriginStage).
+func ParseDocStage(s string) (DocStage, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return "", nil
+	}
+	st := DocStage(s)
+	if !st.Valid() {
+		return "", fmt.Errorf("domain: unknown document stage %q", s)
+	}
+	return st, nil
+}
+
+func docOriginStrings() []string {
+	out := make([]string, len(DocOrigins))
+	for i, o := range DocOrigins {
+		out[i] = string(o)
+	}
+	return out
+}
+
+func docStageStrings() []string {
+	out := make([]string, len(DocStages))
+	for i, s := range DocStages {
+		out[i] = string(s)
+	}
+	return out
+}
+
+// cycleEnum returns the value delta steps after current in the ordered values
+// slice, wrapping around. A current value not found in values (empty/unknown)
+// is treated as position -1, so Cycle(1) lands on the first value.
+func cycleEnum(current string, values []string, delta int) string {
+	if len(values) == 0 {
+		return current
+	}
+	idx := -1
+	for i, v := range values {
+		if v == current {
+			idx = i
+			break
+		}
+	}
+	n := len(values)
+	next := ((idx+delta)%n + n) % n
+	return values[next]
+}
+
+// InferOriginStage derives sensible default Origin and Stage values from a
+// document's Kind, for imports that leave them unset and for backfilling rows
+// created before these axes existed. The mapping reflects who normally produces
+// each kind and the lifecycle point at which it typically enters the matter.
+func InferOriginStage(kind MatterDocKind) (DocOrigin, DocStage) {
+	switch kind {
+	case MatterDocOA:
+		return OriginOffice, StageReceived
+	case MatterDocResponse, MatterDocAmendment, MatterDocSpec, MatterDocDrawings:
+		return OriginFirm, StageDraft
+	case MatterDocIDS:
+		return OriginFirm, StageFiled
+	case MatterDocReference:
+		return OriginThirdParty, StageReceived
+	case MatterDocCorrespondence:
+		return OriginFirm, StageReceived
+	default:
+		return OriginFirm, StageReceived
+	}
+}
+
 // MatterDocument is one file filed under a matter (a project), optionally linked
 // to a specific office action (OfficeActionID empty = matter-wide, e.g. a
 // specification or a shared reference). Like the office action it follows the
@@ -431,7 +624,14 @@ type MatterDocument struct {
 	OfficeActionID  string        `json:"office_action_id,omitempty"`
 	OfficeActionIDs []string      `json:"office_action_ids,omitempty"`
 	Kind            MatterDocKind `json:"kind"`
-	DisplayName     string        `json:"display_name"`
+	// Origin records who produced the document / where it came from (the patent
+	// office, our firm, the client, a third party) — orthogonal to Kind. Stage
+	// records where it sits in its lifecycle (received → draft → under_review →
+	// approved → filed). Both are deliberately distinct from the patent
+	// ReviewState/Provenance so the two never get confused (see [DocOrigin]).
+	Origin      DocOrigin `json:"origin,omitempty"`
+	Stage       DocStage  `json:"stage,omitempty"`
+	DisplayName string    `json:"display_name"`
 	BlobPath        string        `json:"blob_path,omitempty"`
 	BlobHash        string        `json:"blob_hash,omitempty"`
 	ExtractedText   string        `json:"extracted_text,omitempty"`

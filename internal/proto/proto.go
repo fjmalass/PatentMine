@@ -110,6 +110,7 @@ const (
 	MethodMatterDocumentImport   Method = "matter.document.import"
 	MethodMatterDocumentList     Method = "matter.document.list"
 	MethodMatterDocumentRename   Method = "matter.document.rename"
+	MethodMatterDocumentSetMeta  Method = "matter.document.set_meta"
 	MethodMatterDocumentDelete   Method = "matter.document.delete"
 	MethodMatterDocumentExtract  Method = "matter.document.extract"
 	MethodMatterDocumentTag      Method = "matter.document.tag"
@@ -121,6 +122,14 @@ const (
 	MethodMatterEventList        Method = "matter.event.list"
 	MethodMatterEventDelete      Method = "matter.event.delete"
 	MethodProjectSetMatterType   Method = "project.set_matter_type"
+
+	// Conflict edges: flag a record as conflicting within a matter and manage them.
+	// The patent-list ⚠ badge is computed in the daemon (ListPatents sets
+	// PatentRow.Conflicting), so no separate "records" RPC is needed.
+	MethodConflictFlag    Method = "conflict.flag"
+	MethodConflictResolve Method = "conflict.resolve"
+	MethodConflictList    Method = "conflict.list"
+	MethodConflictDelete  Method = "conflict.delete"
 
 	// Time tracking + AI usage (billing).
 	MethodTimeLog         Method = "time_entry.log"

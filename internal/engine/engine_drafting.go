@@ -388,6 +388,8 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 			Project:        oa.Project,
 			OfficeActionID: oa.ID,
 			Kind:           domain.MatterDocOA,
+			Origin:         domain.OriginOffice,
+			Stage:          domain.StageReceived,
 			DisplayName:    docName,
 			BlobPath:       oa.BlobPath,
 			BlobHash:       oa.BlobHash,
@@ -481,6 +483,53 @@ func (e *Engine) OpenMatterDocument(ctx context.Context, id string) (doc domain.
 			"name":    doc.DisplayName,
 		},
 	})
+	return doc, nil
+}
+
+// SetMatterDocumentMeta updates a document's tracking axes — its origin (who
+// produced it) and stage (where it is in its lifecycle) — leaving the bytes,
+// extracted text, tags, and office-action links untouched. An empty origin or
+// stage leaves that axis as-is, so a caller can change one axis without
+// disturbing the other.
+func (e *Engine) SetMatterDocumentMeta(ctx context.Context, id string, origin domain.DocOrigin, stage domain.DocStage) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.set_matter_document_meta", time.Now(), &err)
+	if id == "" {
+		return domain.MatterDocument{}, errors.New("engine: matter document id required")
+	}
+	if origin != "" && !origin.Valid() {
+		return domain.MatterDocument{}, fmt.Errorf("engine: invalid matter document origin %q", origin)
+	}
+	if stage != "" && !stage.Valid() {
+		return domain.MatterDocument{}, fmt.Errorf("engine: invalid matter document stage %q", stage)
+	}
+	if origin == "" && stage == "" {
+		return domain.MatterDocument{}, errors.New("engine: set matter document meta requires an origin or a stage")
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	if origin != "" {
+		doc.Origin = origin
+	}
+	if stage != "" {
+		doc.Stage = stage
+	}
+	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterDocumentSetMeta,
+		Entity:   "matter_document",
+		EntityID: doc.ID,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			"project": string(doc.Project),
+			"origin":  string(doc.Origin),
+			"stage":   string(doc.Stage),
+		},
+	})
+	e.announceChange()
 	return doc, nil
 }
 
@@ -602,8 +651,12 @@ type ImportMatterDocumentInput struct {
 	OfficeActionIDs []string
 	SourcePath      string
 	Kind            domain.MatterDocKind
-	DisplayName     string
-	Tags            []string
+	// Origin and Stage are optional; when left empty they are inferred from Kind
+	// (domain.InferOriginStage) so a quick import still lands on sensible axes.
+	Origin      domain.DocOrigin
+	Stage       domain.DocStage
+	DisplayName string
+	Tags        []string
 }
 
 // ImportMatterDocument copies a local file into the matter's document store
@@ -617,6 +670,12 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 	}
 	if in.Kind != "" && !in.Kind.Valid() {
 		return domain.MatterDocument{}, fmt.Errorf("engine: invalid matter document kind %q", in.Kind)
+	}
+	if in.Origin != "" && !in.Origin.Valid() {
+		return domain.MatterDocument{}, fmt.Errorf("engine: invalid matter document origin %q", in.Origin)
+	}
+	if in.Stage != "" && !in.Stage.Valid() {
+		return domain.MatterDocument{}, fmt.Errorf("engine: invalid matter document stage %q", in.Stage)
 	}
 	if _, err := e.repo.Project(ctx, in.Project); err != nil {
 		return domain.MatterDocument{}, fmt.Errorf("engine: import matter document: %w", err)
@@ -645,6 +704,18 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 	if kind == "" {
 		kind = domain.MatterDocOther
 	}
+	// Fill any unset axis from the kind so every document carries an origin and a
+	// stage even on a quick import.
+	origin, stage := in.Origin, in.Stage
+	if origin == "" || stage == "" {
+		inferredOrigin, inferredStage := domain.InferOriginStage(kind)
+		if origin == "" {
+			origin = inferredOrigin
+		}
+		if stage == "" {
+			stage = inferredStage
+		}
+	}
 	name := strings.TrimSpace(in.DisplayName)
 	if name == "" {
 		name = filepath.Base(path)
@@ -655,6 +726,8 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 		OfficeActionID:  firstString(assignedOAs),
 		OfficeActionIDs: assignedOAs,
 		Kind:            kind,
+		Origin:          origin,
+		Stage:           stage,
 		DisplayName:     name,
 		AddedAt:         now,
 	}
