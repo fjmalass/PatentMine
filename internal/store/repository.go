@@ -278,6 +278,18 @@ type Repository interface {
 	RenameMatterDocument(ctx context.Context, id, name string) error
 	// DeleteMatterDocument removes one matter document row.
 	DeleteMatterDocument(ctx context.Context, id string) error
+	// TagMatterDocument assigns a project taxonomy tag to one preparation document.
+	TagMatterDocument(ctx context.Context, tagID int64, documentID string, assignedAt time.Time) error
+	// UntagMatterDocument removes one tag from one preparation document.
+	UntagMatterDocument(ctx context.Context, tagID int64, documentID string) error
+	// MatterDocumentTags returns tags assigned to one preparation document.
+	MatterDocumentTags(ctx context.Context, project domain.ProjectID, documentID string) ([]domain.Tag, error)
+	// MatterDocumentTagsByDocument returns tags for multiple preparation documents keyed by id.
+	MatterDocumentTagsByDocument(ctx context.Context, project domain.ProjectID, documentIDs []string) (map[string][]domain.Tag, error)
+	// MatterDocumentOfficeActions returns office-action ids assigned to one preparation document.
+	MatterDocumentOfficeActions(ctx context.Context, documentID string) ([]string, error)
+	// MatterDocumentOfficeActionsByDocument returns office-action ids for multiple preparation documents keyed by id.
+	MatterDocumentOfficeActionsByDocument(ctx context.Context, documentIDs []string) (map[string][]string, error)
 
 	// SaveMatterEvent inserts or updates one communications-log entry.
 	SaveMatterEvent(ctx context.Context, e domain.MatterEvent) error

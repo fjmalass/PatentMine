@@ -1,11 +1,9 @@
 package engine
 
 import (
-	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -16,10 +14,10 @@ import (
 	"time"
 
 	"patentmine/internal/ai"
+	"patentmine/internal/doctext"
 	"patentmine/internal/domain"
 	"patentmine/internal/export/docx"
 	"patentmine/internal/observability"
-	"patentmine/internal/pdf"
 )
 
 // CreateDraft starts a new draft for a project, seeded with the conventional
@@ -355,10 +353,13 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 		oa.BlobPath = stored
 		oa.BlobHash = hash
 		docName = filepath.Base(path)
-		// Extract the searchable/groundable text when none was supplied (.txt
-		// inline, .pdf via the extractor).
+		// Extract the searchable/groundable text when none was supplied.
 		if oa.ExtractedText == "" {
-			oa.ExtractedText = extractDocText(path)
+			text, err := extractDocText(path)
+			if err != nil {
+				return domain.OfficeAction{}, fmt.Errorf("engine: extract office action text: %w", err)
+			}
+			oa.ExtractedText = text
 		}
 		if oa.ExtractedText != "" {
 			saveExtractedTextFile(oa.BlobPath, oa.ExtractedText)
@@ -542,11 +543,13 @@ func (e *Engine) observeOfficeAction(timingMetric, totalMetric string, start tim
 // OfficeActionID is optional — empty for a matter-wide document (a specification,
 // a shared reference), set to relate the document to one office action.
 type ImportMatterDocumentInput struct {
-	Project        domain.ProjectID
-	OfficeActionID string
-	SourcePath     string
-	Kind           domain.MatterDocKind
-	DisplayName    string
+	Project         domain.ProjectID
+	OfficeActionID  string
+	OfficeActionIDs []string
+	SourcePath      string
+	Kind            domain.MatterDocKind
+	DisplayName     string
+	Tags            []string
 }
 
 // ImportMatterDocument copies a local file into the matter's document store
@@ -563,6 +566,16 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 	}
 	if _, err := e.repo.Project(ctx, in.Project); err != nil {
 		return domain.MatterDocument{}, fmt.Errorf("engine: import matter document: %w", err)
+	}
+	assignedOAs := officeActionIDs(in.OfficeActionID, in.OfficeActionIDs)
+	for _, oaID := range assignedOAs {
+		oa, err := e.repo.OfficeAction(ctx, oaID)
+		if err != nil {
+			return domain.MatterDocument{}, fmt.Errorf("engine: import matter document: office action %s: %w", oaID, err)
+		}
+		if oa.Project != in.Project {
+			return domain.MatterDocument{}, errors.New("engine: office action belongs to a different project")
+		}
 	}
 	path := strings.TrimSpace(in.SourcePath)
 	if path == "" {
@@ -583,12 +596,13 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 		name = filepath.Base(path)
 	}
 	doc = domain.MatterDocument{
-		ID:             fmt.Sprintf("mdoc-%d", now.UnixNano()),
-		Project:        in.Project,
-		OfficeActionID: in.OfficeActionID,
-		Kind:           kind,
-		DisplayName:    name,
-		AddedAt:        now,
+		ID:              fmt.Sprintf("mdoc-%d", now.UnixNano()),
+		Project:         in.Project,
+		OfficeActionID:  firstString(assignedOAs),
+		OfficeActionIDs: assignedOAs,
+		Kind:            kind,
+		DisplayName:     name,
+		AddedAt:         now,
 	}
 	dir := filepath.Join(base, sanitizeProjectID(string(in.Project)), "documents")
 	stored, hash, err := copyWithHash(path, dir, doc.ID)
@@ -597,7 +611,10 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 	}
 	doc.BlobPath = stored
 	doc.BlobHash = hash
-	doc.ExtractedText = extractDocText(path)
+	doc.ExtractedText, err = extractDocText(path)
+	if err != nil {
+		return domain.MatterDocument{}, fmt.Errorf("engine: extract matter document text: %w", err)
+	}
 	if doc.ExtractedText != "" {
 		saveExtractedTextFile(doc.BlobPath, doc.ExtractedText)
 	}
@@ -605,20 +622,216 @@ func (e *Engine) ImportMatterDocument(ctx context.Context, in ImportMatterDocume
 	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
 		return domain.MatterDocument{}, err
 	}
+	for _, tag := range in.Tags {
+		if strings.TrimSpace(tag) == "" {
+			continue
+		}
+		doc, err = e.TagMatterDocument(ctx, doc.ID, tag)
+		if err != nil {
+			return domain.MatterDocument{}, err
+		}
+	}
 	e.recordActivity(ctx, observability.Record{
 		Action:   observability.ActionMatterDocumentImport,
 		Entity:   "matter_document",
 		EntityID: doc.ID,
 		Status:   "committed",
 		Attributes: map[string]any{
-			"project":       string(in.Project),
-			"kind":          string(kind),
-			"office_action": in.OfficeActionID,
-			"name":          doc.DisplayName,
+			"project":        string(in.Project),
+			"kind":           string(kind),
+			"office_action":  in.OfficeActionID,
+			"office_actions": doc.OfficeActionIDs,
+			"name":           doc.DisplayName,
 		},
 	})
 	e.announceChange()
 	return doc, nil
+}
+
+// TagMatterDocument assigns a project taxonomy tag to a preparation document,
+// creating the tag if needed.
+func (e *Engine) TagMatterDocument(ctx context.Context, id, name string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.tag_matter_document", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if id == "" {
+		return domain.MatterDocument{}, errors.New("engine: document id required")
+	}
+	if err := domain.ValidateTagName(name); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	tag, err := e.repo.CreateTag(ctx, doc.Project, name)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	if err := e.repo.TagMatterDocument(ctx, tag.ID, id, time.Now().UTC()); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterDocumentTag,
+		Entity:   "preparation_document",
+		EntityID: id,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			"project": string(doc.Project),
+			"name":    doc.DisplayName,
+			"tag":     tag.Name,
+		},
+	})
+	e.announceChange()
+	return doc, nil
+}
+
+// UntagMatterDocument removes one project taxonomy tag from a preparation document.
+func (e *Engine) UntagMatterDocument(ctx context.Context, id, name string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.untag_matter_document", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if id == "" {
+		return domain.MatterDocument{}, errors.New("engine: document id required")
+	}
+	if name == "" {
+		return domain.MatterDocument{}, errors.New("engine: tag name must not be empty")
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	tag, err := e.repo.TagByName(ctx, doc.Project, name)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	if err := e.repo.UntagMatterDocument(ctx, tag.ID, id); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterDocumentUntag,
+		Entity:   "preparation_document",
+		EntityID: id,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			"project": string(doc.Project),
+			"name":    doc.DisplayName,
+			"tag":     tag.Name,
+		},
+	})
+	e.announceChange()
+	return doc, nil
+}
+
+// AssignMatterDocumentOfficeAction links a preparation document to one office action.
+func (e *Engine) AssignMatterDocumentOfficeAction(ctx context.Context, id, oaID string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.assign_matter_document_office_action", time.Now(), &err)
+	id, oaID = strings.TrimSpace(id), strings.TrimSpace(oaID)
+	if id == "" || oaID == "" {
+		return domain.MatterDocument{}, errors.New("engine: document id and office action id required")
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	oa, err := e.repo.OfficeAction(ctx, oaID)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	if oa.Project != doc.Project {
+		return domain.MatterDocument{}, errors.New("engine: office action belongs to a different project")
+	}
+	doc.OfficeActionIDs = officeActionIDs(doc.OfficeActionID, append(doc.OfficeActionIDs, oaID))
+	if doc.OfficeActionID == "" && len(doc.OfficeActionIDs) > 0 {
+		doc.OfficeActionID = doc.OfficeActionIDs[0]
+	}
+	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:     observability.ActionMatterDocumentAssignOA,
+		Entity:     "preparation_document",
+		EntityID:   id,
+		Status:     observability.StatusCommitted,
+		Attributes: map[string]any{"project": string(doc.Project), "name": doc.DisplayName, "office_action": oaID},
+	})
+	e.announceChange()
+	return doc, nil
+}
+
+// UnassignMatterDocumentOfficeAction removes one office-action link from a preparation document.
+func (e *Engine) UnassignMatterDocumentOfficeAction(ctx context.Context, id, oaID string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.unassign_matter_document_office_action", time.Now(), &err)
+	id, oaID = strings.TrimSpace(id), strings.TrimSpace(oaID)
+	if id == "" || oaID == "" {
+		return domain.MatterDocument{}, errors.New("engine: document id and office action id required")
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	var next []string
+	for _, cur := range officeActionIDs(doc.OfficeActionID, doc.OfficeActionIDs) {
+		if cur != oaID {
+			next = append(next, cur)
+		}
+	}
+	doc.OfficeActionIDs = next
+	doc.OfficeActionID = ""
+	if len(next) > 0 {
+		doc.OfficeActionID = next[0]
+	}
+	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:     observability.ActionMatterDocumentUnassignOA,
+		Entity:     "preparation_document",
+		EntityID:   id,
+		Status:     observability.StatusCommitted,
+		Attributes: map[string]any{"project": string(doc.Project), "name": doc.DisplayName, "office_action": oaID},
+	})
+	e.announceChange()
+	return doc, nil
+}
+
+func officeActionIDs(primary string, extra []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	add(primary)
+	for _, id := range extra {
+		add(id)
+	}
+	return out
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 // ListMatterDocuments returns a project's documents, newest first.
@@ -740,13 +953,9 @@ func (e *Engine) DeleteOfficeAction(ctx context.Context, id string, deleteFiles 
 	return oa, nil
 }
 
-// ExtractDocumentText (re-)derives a document's plain text with the configured
-// multimodal AI provider — OCR for a scanned, image-only PDF the pure-Go
-// extractor could not read — and saves it back onto the document. It is a
-// deliberately separate, on-demand step (not part of import) because OCR of a
-// multi-page scan is slow and bills AI usage, so the user triggers it per
-// document. Requires an AI provider that satisfies ai.Extractor (cloud Gemini);
-// a text-only/local provider returns an actionable error.
+// ExtractDocumentText (re-)derives a document's plain text with the built-in
+// parsers and saves it back onto the document. It does not perform OCR or call an
+// AI extractor; scanned/image-only documents report a clear no-text error.
 func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain.MatterDocument, err error) {
 	defer e.observeDuration("engine.extract_document_text", time.Now(), &err)
 	if id == "" {
@@ -769,7 +978,11 @@ func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain
 	}
 
 	if text == "" {
-		if stdTxt := extractDocText(doc.BlobPath); stdTxt != "" {
+		stdTxt, err := extractDocText(doc.BlobPath)
+		if err != nil {
+			return domain.MatterDocument{}, fmt.Errorf("engine: extract document text: %w", err)
+		}
+		if stdTxt != "" {
 			text = stdTxt
 			doc.ExtractedText = text
 			if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
@@ -799,50 +1012,7 @@ func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain
 			return doc, nil
 		}
 
-		extractor, ok := e.drafter.(ai.Extractor)
-		if !ok {
-			return domain.MatterDocument{}, errors.New("engine: standard extraction found no text, and AI text extraction is not available with the configured provider (set a Gemini API key)")
-		}
-
-		data, err := os.ReadFile(doc.BlobPath)
-		if err != nil {
-			return domain.MatterDocument{}, fmt.Errorf("engine: read document file: %w", err)
-		}
-		aiStart := time.Now()
-		text, err = extractor.ExtractText(ctx, data, mimeForPath(doc.BlobPath))
-		if err != nil {
-			return domain.MatterDocument{}, fmt.Errorf("engine: extract document text: %w", err)
-		}
-		aiElapsed := time.Since(aiStart)
-		if strings.TrimSpace(text) == "" {
-			return domain.MatterDocument{}, errors.New("engine: no text could be extracted from the document")
-		}
-		doc.ExtractedText = text
-		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
-			return domain.MatterDocument{}, err
-		}
-		saveExtractedTextFile(doc.BlobPath, text)
-
-		provider, model := string(extractor.Provider()), extractor.Model()
-		e.recordActivity(ctx, observability.Record{
-			Action:   observability.ActionMatterDocumentExtract,
-			Entity:   "matter_document",
-			EntityID: doc.ID,
-			Status:   "committed",
-			Attributes: map[string]any{
-				"project":  string(doc.Project),
-				"provider": provider,
-				"model":    model,
-				"chars":    len(text),
-				"name":     doc.DisplayName,
-			},
-		})
-		e.log(ctx, slog.LevelInfo, "extracted document text with AI",
-			slog.String("document_id", doc.ID),
-			slog.String("provider", provider),
-			slog.String("model", model),
-			slog.Int("chars", len(text)))
-		e.recordAICall(ctx, doc.Project, doc.OfficeActionID, "", provider, model, aiElapsed)
+		return domain.MatterDocument{}, errors.New("engine: no embedded text could be extracted from the document; OCR appears needed but is not implemented")
 	} else {
 		doc.ExtractedText = text
 		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
@@ -1196,82 +1366,16 @@ func saveExtractedTextFile(blobPath, text string) {
 	_ = os.WriteFile(extractedTextPath(blobPath), []byte(text), 0644)
 }
 
-// extractDocText returns the plain text of a local document for reading and
-// grounding: a text source is read inline, a PDF is run through the extractor,
-// and anything else (or an unreadable file) yields an empty string.
-func extractDocText(path string) string {
+// extractDocText returns the embedded text of a local document for reading and
+// grounding. Scanned/image-only documents return an empty string with no error;
+// malformed or unsupported files return the parser error so callers can report it.
+func extractDocText(path string) (string, error) {
 	if extPath := extractedTextPath(path); extPath != "" {
 		if data, err := os.ReadFile(extPath); err == nil {
-			return string(data)
+			return string(data), nil
 		}
 	}
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".txt", ".md", ".text":
-		if data, err := os.ReadFile(path); err == nil {
-			return string(data)
-		}
-	case ".pdf":
-		if txt, err := pdf.ExtractText(path); err == nil {
-			return txt
-		}
-	case ".docx":
-		if txt, err := extractDocxText(path); err == nil {
-			return txt
-		}
-	}
-	return ""
-}
-
-func extractDocxText(path string) (string, error) {
-	zr, err := zip.OpenReader(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = zr.Close() }()
-
-	for _, f := range zr.File {
-		if f.Name == "word/document.xml" {
-			rc, err := f.Open()
-			if err != nil {
-				return "", err
-			}
-			defer func() { _ = rc.Close() }()
-			return parseDocxXML(rc)
-		}
-	}
-	return "", fmt.Errorf("word/document.xml not found in docx")
-}
-
-func parseDocxXML(r io.Reader) (string, error) {
-	dec := xml.NewDecoder(r)
-	var b strings.Builder
-	var inText bool
-	for {
-		t, err := dec.Token()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return "", err
-		}
-		switch se := t.(type) {
-		case xml.StartElement:
-			if se.Name.Local == "t" {
-				inText = true
-			} else if se.Name.Local == "p" || se.Name.Local == "br" || se.Name.Local == "cr" {
-				b.WriteByte('\n')
-			}
-		case xml.EndElement:
-			if se.Name.Local == "t" {
-				inText = false
-			}
-		case xml.CharData:
-			if inText {
-				b.Write(se)
-			}
-		}
-	}
-	return b.String(), nil
+	return doctext.ExtractText(path)
 }
 
 // copyWithHash copies src into dir, naming the file "<id><ext>", and returns the

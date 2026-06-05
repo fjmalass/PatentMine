@@ -110,7 +110,11 @@ func (a *App) handleHistoryReplay(rec observability.Record, confirmed bool) (tea
 	case observability.ActionMatterDocumentImport,
 		observability.ActionMatterDocumentRename,
 		observability.ActionMatterDocumentDelete,
-		observability.ActionMatterDocumentExtract:
+		observability.ActionMatterDocumentExtract,
+		observability.ActionMatterDocumentTag,
+		observability.ActionMatterDocumentUntag,
+		observability.ActionMatterDocumentAssignOA,
+		observability.ActionMatterDocumentUnassignOA:
 		return a.replayHistoryMatterDocument(rec)
 	default:
 		return a, nil

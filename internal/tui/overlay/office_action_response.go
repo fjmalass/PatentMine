@@ -115,7 +115,7 @@ func documentText(docs []domain.MatterDocument, i int) string {
 		return "(no documents — add sources with :add.document, then ctrl-n to cycle them)"
 	}
 	if strings.TrimSpace(docs[i].ExtractedText) == "" {
-		return "(no extractable text — for a scanned PDF, run :open.documents and press e to OCR it)"
+		return "(no embedded text; OCR appears needed but is not implemented)"
 	}
 	return docs[i].ExtractedText
 }

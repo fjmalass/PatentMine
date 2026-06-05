@@ -106,15 +106,19 @@ const (
 	MethodOfficeActionDelete    Method = "office_action.delete"
 
 	// Prosecution-matter workspace: matter-scoped documents and project stage.
-	MethodMatterDocumentImport  Method = "matter.document.import"
-	MethodMatterDocumentList    Method = "matter.document.list"
-	MethodMatterDocumentRename  Method = "matter.document.rename"
-	MethodMatterDocumentDelete  Method = "matter.document.delete"
-	MethodMatterDocumentExtract Method = "matter.document.extract"
-	MethodMatterEventAdd        Method = "matter.event.add"
-	MethodMatterEventList       Method = "matter.event.list"
-	MethodMatterEventDelete     Method = "matter.event.delete"
-	MethodProjectSetMatterType  Method = "project.set_matter_type"
+	MethodMatterDocumentImport   Method = "matter.document.import"
+	MethodMatterDocumentList     Method = "matter.document.list"
+	MethodMatterDocumentRename   Method = "matter.document.rename"
+	MethodMatterDocumentDelete   Method = "matter.document.delete"
+	MethodMatterDocumentExtract  Method = "matter.document.extract"
+	MethodMatterDocumentTag      Method = "matter.document.tag"
+	MethodMatterDocumentUntag    Method = "matter.document.untag"
+	MethodMatterDocumentAssign   Method = "matter.document.assign_oa"
+	MethodMatterDocumentUnassign Method = "matter.document.unassign_oa"
+	MethodMatterEventAdd         Method = "matter.event.add"
+	MethodMatterEventList        Method = "matter.event.list"
+	MethodMatterEventDelete      Method = "matter.event.delete"
+	MethodProjectSetMatterType   Method = "project.set_matter_type"
 
 	// Time tracking + AI usage (billing).
 	MethodTimeLog         Method = "time_entry.log"
@@ -125,11 +129,11 @@ const (
 	MethodTimeSummary     Method = "time_entry.summary"
 
 	// Deadlines + reminders (OA responses, patent maintenance fees).
-	MethodDeadlineList       Method = "deadline.list"
-	MethodTrackRenewals      Method = "deadline.track_renewals"
-	MethodUntrackRenewals    Method = "deadline.untrack_renewals"
-	MethodDeadlineSetStatus  Method = "deadline.set_status"
-	MethodDeadlineRemind     Method = "deadline.remind"
+	MethodDeadlineList      Method = "deadline.list"
+	MethodTrackRenewals     Method = "deadline.track_renewals"
+	MethodUntrackRenewals   Method = "deadline.untrack_renewals"
+	MethodDeadlineSetStatus Method = "deadline.set_status"
+	MethodDeadlineRemind    Method = "deadline.remind"
 
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"

@@ -210,8 +210,14 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "9"
 	}
-	if version != "9" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 9", version)
+	if version == "9" {
+		if err := r.migrateV9ToV10(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v9 to v10: %w", err)
+		}
+		version = "10"
+	}
+	if version != "10" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 10", version)
 	}
 	return nil
 }
@@ -770,6 +776,41 @@ func (r *Repo) migrateV8ToV9(ctx context.Context) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store/sqlite: migrate v8 to v9: commit: %w", err)
+	}
+	return nil
+}
+
+// migrateV9ToV10 lets preparation documents share the project tag taxonomy.
+func (r *Repo) migrateV9ToV10(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v9-to-v10.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v9 to v10: backup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS matter_document_office_action (
+		    document_id      TEXT NOT NULL REFERENCES matter_document (id) ON DELETE CASCADE,
+		    office_action_id TEXT NOT NULL REFERENCES office_action (id) ON DELETE CASCADE,
+		    created_at       TEXT NOT NULL,
+		    PRIMARY KEY (document_id, office_action_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_matter_document_office_action_oa ON matter_document_office_action (office_action_id)`,
+		`INSERT INTO matter_document_office_action (document_id, office_action_id, created_at)
+		 SELECT id, office_action_id, added_at
+		 FROM matter_document
+		 WHERE office_action_id != ''
+		 ON CONFLICT(document_id, office_action_id) DO NOTHING`,
+		`CREATE TABLE IF NOT EXISTS matter_document_tag (
+		    tag_id      INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+		    document_id TEXT NOT NULL REFERENCES matter_document (id) ON DELETE CASCADE,
+		    created_at  TEXT NOT NULL,
+		    PRIMARY KEY (tag_id, document_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_matter_document_tag_document ON matter_document_tag (document_id)`,
+		`UPDATE schema_meta SET value = '10' WHERE key = 'schema_version'`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v9 to v10: %w", err)
+		}
 	}
 	return nil
 }

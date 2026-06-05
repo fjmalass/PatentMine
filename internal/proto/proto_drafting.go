@@ -73,7 +73,7 @@ type DraftSectionAIResult struct {
 }
 
 // OfficeActionImportParams records an office action against a project, optionally
-// copying a local PDF/text file into the project's office-action store.
+// copying a local PDF/DOCX/spreadsheet/text file into the project's office-action store.
 type OfficeActionImportParams struct {
 	Project           domain.ProjectID `json:"project"`
 	ApplicationNumber string           `json:"application_number,omitempty"`
@@ -112,7 +112,6 @@ type OfficeActionDeleteParams struct {
 	DeleteFiles bool   `json:"delete_files"`
 }
 
-
 // OfficeActionSaveNotesParams replaces the attorney notes on one office action.
 type OfficeActionSaveNotesParams struct {
 	ID    string `json:"id"`
@@ -133,11 +132,13 @@ type OfficeActionUpdateParams struct {
 // linking it to one office action. Only the path travels over RPC (client and
 // daemon share a filesystem); the daemon copies the bytes itself.
 type MatterDocumentImportParams struct {
-	Project        domain.ProjectID     `json:"project"`
-	OfficeActionID string               `json:"office_action_id,omitempty"`
-	Kind           domain.MatterDocKind `json:"kind,omitempty"`
-	DisplayName    string               `json:"display_name,omitempty"`
-	SourcePath     string               `json:"source_path"`
+	Project         domain.ProjectID     `json:"project"`
+	OfficeActionID  string               `json:"office_action_id,omitempty"`
+	OfficeActionIDs []string             `json:"office_action_ids,omitempty"`
+	Kind            domain.MatterDocKind `json:"kind,omitempty"`
+	DisplayName     string               `json:"display_name,omitempty"`
+	SourcePath      string               `json:"source_path"`
+	Tags            []string             `json:"tags,omitempty"`
 }
 
 // MatterDocumentResult carries one matter document.
@@ -164,6 +165,20 @@ type MatterDocumentRenameParams struct {
 // MatterDocumentIDParams identifies one matter document.
 type MatterDocumentIDParams struct {
 	ID string `json:"id"`
+}
+
+// MatterDocumentTagParams assigns/removes one project taxonomy tag on a
+// preparation document.
+type MatterDocumentTagParams struct {
+	ID  string `json:"id"`
+	Tag string `json:"tag"`
+}
+
+// MatterDocumentOfficeActionParams assigns/removes one office-action link on a
+// preparation document.
+type MatterDocumentOfficeActionParams struct {
+	ID             string `json:"id"`
+	OfficeActionID string `json:"office_action_id"`
 }
 
 // ProjectSetMatterTypeParams records the prosecution stage of a project. The

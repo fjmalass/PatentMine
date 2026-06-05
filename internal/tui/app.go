@@ -846,7 +846,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case overlay.OfficeActionImportSubmitMsg:
 		a.popOverlay()
-		return a, pane.ImportOfficeActionCmd(a.client, m.Params)
+		loading := overlay.NewConverting(a.theme, "Importing Office Action", "Converting and importing office action…")
+		a.overlays = append(a.overlays, loading)
+		return a, tea.Batch(loading.Init(), pane.ImportOfficeActionCmd(a.client, m.Params))
 	case overlay.OfficeActionEditSubmitMsg:
 		a.popOverlay()
 		return a, pane.UpdateOfficeActionCmd(a.client, m.Params)
@@ -1116,6 +1118,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("path", m.Path))
 		return a, nil
 	case pane.OfficeActionImportedMsg:
+		a.popConvertingOverlay()
 		lines := []string{
 			"Imported office action " + m.ID,
 			"From:",
@@ -1123,6 +1126,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.StoredAt != "" {
 			lines = append(lines, "Copied to:", "  "+m.StoredAt)
+		}
+		if m.ExtractedChars > 0 {
+			lines = append(lines, fmt.Sprintf("Converted text: %d line(s), %d chars in %s", m.ExtractedLines, m.ExtractedChars, formatDurationShort(m.Duration)))
+		} else if m.NeedsOCR {
+			lines = append(lines, fmt.Sprintf("Converted text: none found in %s; OCR appears needed but is not implemented", formatDurationShort(m.Duration)))
+		} else {
+			lines = append(lines, fmt.Sprintf("Converted text: none found in %s", formatDurationShort(m.Duration)))
 		}
 		a.overlays = append(a.overlays, overlay.NewNoticeOverlay(a.theme, "Office Action Imported", lines))
 		a.metrics.IncCounter(observability.MetricTUIOfficeActionImportDone, 1)
@@ -1132,12 +1142,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.String("stored_at", m.StoredAt))
 		return a, nil
 	case pane.MatterDocumentImportedMsg:
+		a.popConvertingOverlay()
 		a.metrics.IncCounter("tui.matter.document.import.done", 1)
 		a.log().Info("matter document imported",
 			slog.String("id", m.ID),
 			slog.String("name", m.Name),
 			slog.String("source", m.Source))
-		a.setStatus(text.StatusGeneric, "Added document: "+m.Name)
+		status := "Added document: " + m.Name
+		if m.ExtractedChars > 0 {
+			status += fmt.Sprintf(" (%d line(s), %d chars converted in %s)", m.ExtractedLines, m.ExtractedChars, formatDurationShort(m.Duration))
+		} else if m.NeedsOCR {
+			status += fmt.Sprintf(" (no embedded text in %s; OCR appears needed but is not implemented)", formatDurationShort(m.Duration))
+		} else {
+			status += fmt.Sprintf(" (no extracted text in %s)", formatDurationShort(m.Duration))
+		}
+		a.setStatus(text.StatusGeneric, status)
 		return a, nil
 	case pane.AddedImportDoneMsg:
 		lines := []string{
@@ -1226,6 +1245,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(cmds...)
 	case pane.StatusMsg:
+		if m.Error {
+			a.popConvertingOverlay()
+		}
 		if m.Key == text.StatusCrawlStarted && len(m.Args) >= 3 {
 			if d, ok := m.Args[2].(int); ok && d < 0 {
 				m.Args[2] = 4 // default family crawl depth

@@ -1357,7 +1357,7 @@ func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
 			start = last
 		}
 	}
-	o := overlay.NewFilePicker(a.theme, "Add Office Action", overlay.PurposeAddOfficeAction, start, []string{".pdf", ".txt"})
+	o := overlay.NewFilePicker(a.theme, "Add Office Action", overlay.PurposeAddOfficeAction, start, []string{".pdf", ".docx", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".txt", ".csv", ".tsv", ".md"})
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
 }
@@ -1391,7 +1391,9 @@ func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	if len(inv.args) == 1 {
-		return a, pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, absPath(inv.args[0]), domain.MatterDocReference)
+		loading := overlay.NewConverting(a.theme, "Adding Document", "Converting and adding document…")
+		a.overlays = append(a.overlays, loading)
+		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, absPath(inv.args[0]), domain.MatterDocReference))
 	}
 	start, err := os.UserHomeDir()
 	if err != nil || start == "" {
@@ -1403,7 +1405,7 @@ func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 			start = last
 		}
 	}
-	o := overlay.NewFilePicker(a.theme, "Add Document", overlay.PurposeAddMatterDocument, start, []string{".pdf", ".txt"})
+	o := overlay.NewFilePicker(a.theme, "Add Document", overlay.PurposeAddMatterDocument, start, []string{".pdf", ".docx", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".txt", ".csv", ".tsv", ".md"})
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
 }
@@ -1644,7 +1646,9 @@ func (a *App) handleFilePicked(m overlay.FilePickedMsg) (tea.Model, tea.Cmd) {
 			a.setErr(text.StatusDaemonUnavailable)
 			return a, nil
 		}
-		return a, pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, m.Path, domain.MatterDocReference)
+		loading := overlay.NewConverting(a.theme, "Adding Document", "Converting and adding document…")
+		a.overlays = append(a.overlays, loading)
+		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, m.Path, domain.MatterDocReference))
 	}
 	return a, nil
 }

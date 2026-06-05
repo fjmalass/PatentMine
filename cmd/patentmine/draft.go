@@ -263,7 +263,7 @@ func draftAI(args []string) int {
 func draftOAImport(args []string) int {
 	fs := flag.NewFlagSet("draft oa-import", flag.ContinueOnError)
 	project := fs.String("project", "", "project id")
-	file := fs.String("file", "", "path to the office action PDF/text to import")
+	file := fs.String("file", "", "path to the office action PDF/DOCX/spreadsheet/text to import")
 	oaType := fs.String("type", "", "non_final | final | restriction | advisory | notice_of_allowance")
 	examiner := fs.String("examiner", "", "examiner name")
 	artUnit := fs.String("art-unit", "", "art unit")

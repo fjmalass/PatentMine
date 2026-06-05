@@ -351,6 +351,11 @@ type OfficeAction struct {
 // document is labelled and which ones a response draws from.
 type MatterDocKind string
 
+// PreparationDocKind is the user-facing name for project preparation documents.
+// It aliases MatterDocKind to avoid conflicting with the patent life-stage
+// Document type and to keep existing storage compatible.
+type PreparationDocKind = MatterDocKind
+
 const (
 	MatterDocOA        MatterDocKind = "oa"        // an examiner's office action letter
 	MatterDocResponse  MatterDocKind = "response"  // a response/amendment answering an OA
@@ -419,16 +424,24 @@ func ParseMatterDocKind(s string) (MatterDocKind, error) {
 // for reading and copy-into-response. DisplayName is the user-renameable label
 // shown in the document list (it defaults to the imported file's base name).
 type MatterDocument struct {
-	ID             string        `json:"id"`
-	Project        ProjectID     `json:"project"`
-	OfficeActionID string        `json:"office_action_id,omitempty"`
-	Kind           MatterDocKind `json:"kind"`
-	DisplayName    string        `json:"display_name"`
-	BlobPath       string        `json:"blob_path,omitempty"`
-	BlobHash       string        `json:"blob_hash,omitempty"`
-	ExtractedText  string        `json:"extracted_text,omitempty"`
-	AddedAt        time.Time     `json:"added_at"`
+	ID              string        `json:"id"`
+	Project         ProjectID     `json:"project"`
+	OfficeActionID  string        `json:"office_action_id,omitempty"`
+	OfficeActionIDs []string      `json:"office_action_ids,omitempty"`
+	Kind            MatterDocKind `json:"kind"`
+	DisplayName     string        `json:"display_name"`
+	BlobPath        string        `json:"blob_path,omitempty"`
+	BlobHash        string        `json:"blob_hash,omitempty"`
+	ExtractedText   string        `json:"extracted_text,omitempty"`
+	Tags            []Tag         `json:"tags,omitempty"`
+	AddedAt         time.Time     `json:"added_at"`
 }
+
+// PreparationDocument is the clearer name for files used while preparing a
+// response or application, including additional references. It aliases the
+// existing type so older RPC/storage names keep working while user-facing code
+// can use the simpler term.
+type PreparationDocument = MatterDocument
 
 // MatterEventKind classifies one entry in a matter's communications log — the
 // running record of what happened during prosecution (examiner interviews,

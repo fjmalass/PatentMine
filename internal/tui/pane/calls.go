@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"patentmine/internal/doctext"
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
@@ -207,9 +208,13 @@ func ExportAddedCmd(client *rpc.Client, project domain.ProjectID, path string) t
 // app can show a result modal with the new office-action id and where the
 // document was copied.
 type OfficeActionImportedMsg struct {
-	ID       string
-	Source   string // the path the user imported from
-	StoredAt string // the copy inside the docs export store
+	ID             string
+	Source         string // the path the user imported from
+	StoredAt       string // the copy inside the docs export store
+	ExtractedChars int
+	ExtractedLines int
+	Duration       time.Duration
+	NeedsOCR       bool
 }
 
 // AddOfficeActionCmd imports an Office Action document at path into project. The
@@ -217,6 +222,7 @@ type OfficeActionImportedMsg struct {
 // records the row; path is sent absolute so the daemon resolves the same file.
 func AddOfficeActionCmd(client *rpc.Client, project domain.ProjectID, path string) tea.Cmd {
 	return func() tea.Msg {
+		start := time.Now()
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.OfficeActionResult
@@ -225,9 +231,13 @@ func AddOfficeActionCmd(client *rpc.Client, project domain.ProjectID, path strin
 			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action import failed: " + err.Error()}, Error: true}
 		}
 		return OfficeActionImportedMsg{
-			ID:       res.OfficeAction.ID,
-			Source:   path,
-			StoredAt: res.OfficeAction.BlobPath,
+			ID:             res.OfficeAction.ID,
+			Source:         path,
+			StoredAt:       res.OfficeAction.BlobPath,
+			ExtractedChars: len(res.OfficeAction.ExtractedText),
+			ExtractedLines: convertedLineCount(res.OfficeAction.ExtractedText),
+			Duration:       time.Since(start),
+			NeedsOCR:       doctext.NeedsOCR(path, res.OfficeAction.ExtractedText),
 		}
 	}
 }
@@ -237,6 +247,7 @@ func AddOfficeActionCmd(client *rpc.Client, project domain.ProjectID, path strin
 // copies the file, computes the response deadline, and records the row.
 func ImportOfficeActionCmd(client *rpc.Client, params proto.OfficeActionImportParams) tea.Cmd {
 	return func() tea.Msg {
+		start := time.Now()
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.OfficeActionResult
@@ -244,9 +255,13 @@ func ImportOfficeActionCmd(client *rpc.Client, params proto.OfficeActionImportPa
 			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Office action import failed: " + err.Error()}, Error: true}
 		}
 		return OfficeActionImportedMsg{
-			ID:       res.OfficeAction.ID,
-			Source:   params.SourcePath,
-			StoredAt: res.OfficeAction.BlobPath,
+			ID:             res.OfficeAction.ID,
+			Source:         params.SourcePath,
+			StoredAt:       res.OfficeAction.BlobPath,
+			ExtractedChars: len(res.OfficeAction.ExtractedText),
+			ExtractedLines: convertedLineCount(res.OfficeAction.ExtractedText),
+			Duration:       time.Since(start),
+			NeedsOCR:       doctext.NeedsOCR(params.SourcePath, res.OfficeAction.ExtractedText),
 		}
 	}
 }
@@ -277,14 +292,17 @@ func DeleteOfficeActionCmd(client *rpc.Client, id string, deleteFiles bool) tea.
 	}
 }
 
-
 // MatterDocumentImportedMsg reports a supporting document was filed under the
 // matter, so the app can confirm it and any open document list can refresh.
 type MatterDocumentImportedMsg struct {
-	ID      string
-	Name    string
-	Source  string
-	Project domain.ProjectID
+	ID             string
+	Name           string
+	Source         string
+	Project        domain.ProjectID
+	ExtractedChars int
+	ExtractedLines int
+	Duration       time.Duration
+	NeedsOCR       bool
 }
 
 // AddMatterDocumentCmd files a supporting document (reference, response, …) under
@@ -292,6 +310,7 @@ type MatterDocumentImportedMsg struct {
 // the daemon copies and text-extracts the file itself.
 func AddMatterDocumentCmd(client *rpc.Client, project domain.ProjectID, path string, kind domain.MatterDocKind) tea.Cmd {
 	return func() tea.Msg {
+		start := time.Now()
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.MatterDocumentResult
@@ -300,12 +319,24 @@ func AddMatterDocumentCmd(client *rpc.Client, project domain.ProjectID, path str
 			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Document import failed: " + err.Error()}, Error: true}
 		}
 		return MatterDocumentImportedMsg{
-			ID:      res.Document.ID,
-			Name:    res.Document.DisplayName,
-			Source:  path,
-			Project: project,
+			ID:             res.Document.ID,
+			Name:           res.Document.DisplayName,
+			Source:         path,
+			Project:        project,
+			ExtractedChars: len(res.Document.ExtractedText),
+			ExtractedLines: convertedLineCount(res.Document.ExtractedText),
+			Duration:       time.Since(start),
+			NeedsOCR:       doctext.NeedsOCR(path, res.Document.ExtractedText),
 		}
 	}
+}
+
+func convertedLineCount(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
 }
 
 // OpenResponseEditorMsg asks the app to open the office-action response editor

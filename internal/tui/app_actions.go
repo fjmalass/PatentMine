@@ -535,6 +535,15 @@ func (a *App) popOverlay() {
 	}
 }
 
+func (a *App) popConvertingOverlay() {
+	for i := len(a.overlays) - 1; i >= 0; i-- {
+		if _, ok := a.overlays[i].(*overlay.Converting); ok {
+			a.overlays = append(a.overlays[:i], a.overlays[i+1:]...)
+			return
+		}
+	}
+}
+
 // setStatus and setErr resolve a catalog key into the status line.
 func (a *App) setStatus(key text.Key, args ...any) {
 	a.status, a.statusErr = a.text.Tf(key, args...), false

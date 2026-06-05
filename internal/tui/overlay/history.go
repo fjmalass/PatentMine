@@ -499,7 +499,35 @@ func historyIconAndDetails(theme render.Theme, rec observability.Record) (string
 		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
 			docName = name
 		}
-		return theme.Glyphs.HistFulltext, fmt.Sprintf("OCR Document: %s", docName)
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("Extract Document Text: %s", docName)
+	case observability.ActionMatterDocumentTag, observability.ActionMatterDocumentUntag:
+		docName := rec.EntityID
+		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
+			docName = name
+		}
+		tag, _ := rec.Attributes["tag"].(string)
+		verb := "Tag Document"
+		if rec.Action == observability.ActionMatterDocumentUntag {
+			verb = "Untag Document"
+		}
+		if tag != "" {
+			return theme.Glyphs.HistTagAdd, fmt.Sprintf("%s %q: %s", verb, tag, docName)
+		}
+		return theme.Glyphs.HistTagAdd, fmt.Sprintf("%s: %s", verb, docName)
+	case observability.ActionMatterDocumentAssignOA, observability.ActionMatterDocumentUnassignOA:
+		docName := rec.EntityID
+		if name, ok := rec.Attributes[observability.AttrName].(string); ok && name != "" {
+			docName = name
+		}
+		oa, _ := rec.Attributes["office_action"].(string)
+		verb := "Assign Document"
+		if rec.Action == observability.ActionMatterDocumentUnassignOA {
+			verb = "Unassign Document"
+		}
+		if oa != "" {
+			return theme.Glyphs.HistFulltext, fmt.Sprintf("%s to OA %s: %s", verb, oa, docName)
+		}
+		return theme.Glyphs.HistFulltext, fmt.Sprintf("%s: %s", verb, docName)
 	}
 	return theme.Glyphs.HistUnknown, rec.EntityID
 }

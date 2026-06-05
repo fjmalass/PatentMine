@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '9')
+VALUES ('schema_version', '10')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -791,6 +791,24 @@ CREATE TABLE IF NOT EXISTS matter_document (
 
 CREATE INDEX IF NOT EXISTS idx_matter_document_project ON matter_document (project_id, added_at DESC);
 CREATE INDEX IF NOT EXISTS idx_matter_document_oa ON matter_document (office_action_id);
+
+CREATE TABLE IF NOT EXISTS matter_document_office_action (
+    document_id      TEXT NOT NULL REFERENCES matter_document (id) ON DELETE CASCADE,
+    office_action_id TEXT NOT NULL REFERENCES office_action (id) ON DELETE CASCADE,
+    created_at       TEXT NOT NULL,
+    PRIMARY KEY (document_id, office_action_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_matter_document_office_action_oa ON matter_document_office_action (office_action_id);
+
+CREATE TABLE IF NOT EXISTS matter_document_tag (
+    tag_id      INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+    document_id TEXT NOT NULL REFERENCES matter_document (id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    PRIMARY KEY (tag_id, document_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_matter_document_tag_document ON matter_document_tag (document_id);
 
 -- matter_event is one entry in a matter's communications log: an email, a phone
 -- call, an examiner interview, a filing, or a tracked deadline. Project-scoped,

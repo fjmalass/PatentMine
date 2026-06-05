@@ -215,11 +215,13 @@ func (s *Server) matterDocumentImport(ctx context.Context, raw json.RawMessage) 
 		return nil, err
 	}
 	doc, err := s.engine.ImportMatterDocument(ctx, engine.ImportMatterDocumentInput{
-		Project:        p.Project,
-		OfficeActionID: p.OfficeActionID,
-		SourcePath:     p.SourcePath,
-		Kind:           p.Kind,
-		DisplayName:    p.DisplayName,
+		Project:         p.Project,
+		OfficeActionID:  p.OfficeActionID,
+		OfficeActionIDs: p.OfficeActionIDs,
+		SourcePath:      p.SourcePath,
+		Kind:            p.Kind,
+		DisplayName:     p.DisplayName,
+		Tags:            p.Tags,
 	})
 	if err != nil {
 		return nil, err
@@ -268,6 +270,54 @@ func (s *Server) matterDocumentExtract(ctx context.Context, raw json.RawMessage)
 		return nil, err
 	}
 	doc, err := s.engine.ExtractDocumentText(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentTag(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentTagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.TagMatterDocument(ctx, p.ID, p.Tag)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentUntag(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentTagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.UntagMatterDocument(ctx, p.ID, p.Tag)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentAssign(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentOfficeActionParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.AssignMatterDocumentOfficeAction(ctx, p.ID, p.OfficeActionID)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentUnassign(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentOfficeActionParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.UnassignMatterDocumentOfficeAction(ctx, p.ID, p.OfficeActionID)
 	if err != nil {
 		return nil, err
 	}

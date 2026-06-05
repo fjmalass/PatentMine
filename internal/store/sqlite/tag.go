@@ -99,7 +99,6 @@ func (r *Repo) TagByName(ctx context.Context, project domain.ProjectID, name str
 	return t, nil
 }
 
-
 // TagPatents assigns a tag to multiple patents in a single transaction.
 func (r *Repo) TagPatents(ctx context.Context, tagID int64, patents []domain.PatentNumber, assignedAt time.Time) (err error) {
 	defer r.observeDuration("tag_patents", time.Now(), &err)
@@ -217,6 +216,73 @@ func (r *Repo) PatentTags(ctx context.Context, project domain.ProjectID, patent 
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store/sqlite: list patent tags: %w", err)
+	}
+	return out, nil
+}
+
+// TagMatterDocument assigns a project taxonomy tag to one preparation document.
+func (r *Repo) TagMatterDocument(ctx context.Context, tagID int64, documentID string, assignedAt time.Time) (err error) {
+	defer r.observeDuration("tag_matter_document", time.Now(), &err)
+	if assignedAt.IsZero() {
+		assignedAt = time.Now()
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO matter_document_tag (tag_id, document_id, created_at)
+		 VALUES (?,?,?) ON CONFLICT(tag_id, document_id) DO NOTHING`,
+		tagID, documentID, encodeTime(assignedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: tag matter document: %w", err)
+	}
+	return nil
+}
+
+// UntagMatterDocument removes one tag from one preparation document.
+func (r *Repo) UntagMatterDocument(ctx context.Context, tagID int64, documentID string) (err error) {
+	defer r.observeDuration("untag_matter_document", time.Now(), &err)
+	_, err = r.writer.ExecContext(ctx,
+		`DELETE FROM matter_document_tag WHERE tag_id = ? AND document_id = ?`, tagID, documentID)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: untag matter document: %w", err)
+	}
+	return nil
+}
+
+// MatterDocumentTags returns tags assigned to one preparation document.
+func (r *Repo) MatterDocumentTags(ctx context.Context, project domain.ProjectID, documentID string) (out []domain.Tag, err error) {
+	defer r.observeDuration("matter_document_tags", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT t.id, t.project_id, t.name, t.created_at, mdt.created_at
+		 FROM tag t
+		 JOIN matter_document_tag mdt ON mdt.tag_id = t.id
+		 WHERE t.project_id = ? AND mdt.document_id = ?
+		 ORDER BY t.name`, string(project), documentID)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list matter document tags: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		t, err := scanAssignedTag(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan matter document tag: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// MatterDocumentTagsByDocument returns tags for multiple preparation documents keyed by id.
+func (r *Repo) MatterDocumentTagsByDocument(ctx context.Context, project domain.ProjectID, documentIDs []string) (out map[string][]domain.Tag, err error) {
+	defer r.observeDuration("matter_document_tags_by_document", time.Now(), &err)
+	out = make(map[string][]domain.Tag, len(documentIDs))
+	if len(documentIDs) == 0 {
+		return out, nil
+	}
+	for _, id := range documentIDs {
+		tags, err := r.MatterDocumentTags(ctx, project, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = tags
 	}
 	return out, nil
 }

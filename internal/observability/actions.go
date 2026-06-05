@@ -74,21 +74,25 @@ const (
 	ActionOfficeActionDelete    = "office_action.delete"
 
 	// Prosecution-matter workspace (matter-scoped documents and project stage).
-	ActionMatterDocumentImport  = "matter_document.import"
-	ActionMatterDocumentRename  = "matter_document.rename"
-	ActionMatterDocumentDelete  = "matter_document.delete"
-	ActionMatterDocumentExtract = "matter_document.extract" // AI/OCR text extraction (billable)
-	ActionProjectSetMatterType  = "project.set_matter_type"
-	ActionMatterEventAdd        = "matter_event.add"
-	ActionMatterEventDelete     = "matter_event.delete"
-	ActionTimeLog               = "time_entry.log"
-	ActionTimeValidate          = "time_entry.validate"
-	ActionTimeDelete            = "time_entry.delete"
-	ActionAIUsage               = "ai_usage.record" // an AI call recorded for billing
-	ActionRenewalsTrack         = "deadline.track_renewals"
-	ActionRenewalsUntrack       = "deadline.untrack_renewals"
-	ActionDeadlineStatus        = "deadline.set_status"
-	ActionDeadlineRemind        = "deadline.remind"
+	ActionMatterDocumentImport     = "matter_document.import"
+	ActionMatterDocumentRename     = "matter_document.rename"
+	ActionMatterDocumentDelete     = "matter_document.delete"
+	ActionMatterDocumentExtract    = "matter_document.extract" // deterministic text extraction
+	ActionMatterDocumentTag        = "matter_document.tag"
+	ActionMatterDocumentUntag      = "matter_document.untag"
+	ActionMatterDocumentAssignOA   = "matter_document.assign_office_action"
+	ActionMatterDocumentUnassignOA = "matter_document.unassign_office_action"
+	ActionProjectSetMatterType     = "project.set_matter_type"
+	ActionMatterEventAdd           = "matter_event.add"
+	ActionMatterEventDelete        = "matter_event.delete"
+	ActionTimeLog                  = "time_entry.log"
+	ActionTimeValidate             = "time_entry.validate"
+	ActionTimeDelete               = "time_entry.delete"
+	ActionAIUsage                  = "ai_usage.record" // an AI call recorded for billing
+	ActionRenewalsTrack            = "deadline.track_renewals"
+	ActionRenewalsUntrack          = "deadline.untrack_renewals"
+	ActionDeadlineStatus           = "deadline.set_status"
+	ActionDeadlineRemind           = "deadline.remind"
 )
 
 // AllActions is the canonical list of every emitted action. Tests iterate this
@@ -150,6 +154,10 @@ var AllActions = []string{
 	ActionMatterDocumentRename,
 	ActionMatterDocumentDelete,
 	ActionMatterDocumentExtract,
+	ActionMatterDocumentTag,
+	ActionMatterDocumentUntag,
+	ActionMatterDocumentAssignOA,
+	ActionMatterDocumentUnassignOA,
 	ActionProjectSetMatterType,
 	ActionMatterEventAdd,
 	ActionMatterEventDelete,

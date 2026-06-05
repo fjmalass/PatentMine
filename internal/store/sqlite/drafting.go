@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"patentmine/internal/domain"
@@ -405,7 +406,16 @@ func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) 
 	if d.Kind != "" && !d.Kind.Valid() {
 		return fmt.Errorf("store/sqlite: invalid matter document kind %q", d.Kind)
 	}
-	_, err = r.writer.ExecContext(ctx,
+	tx, err := r.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save matter document %s: begin: %w", d.ID, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO matter_document
 		 (id, project_id, office_action_id, kind, display_name, blob_path, blob_hash, extracted_text, added_at)
 		 VALUES (?,?,?,?,?,?,?,?,?)
@@ -423,6 +433,20 @@ func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) 
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save matter document %s: %w", d.ID, err)
 	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM matter_document_office_action WHERE document_id = ?`, d.ID); err != nil {
+		return fmt.Errorf("store/sqlite: replace matter document office actions: %w", err)
+	}
+	for _, oaID := range matterDocumentOfficeActionIDs(d) {
+		if _, err = tx.ExecContext(ctx,
+			`INSERT INTO matter_document_office_action (document_id, office_action_id, created_at)
+			 VALUES (?,?,?) ON CONFLICT(document_id, office_action_id) DO NOTHING`,
+			d.ID, oaID, encodeTime(time.Now().UTC())); err != nil {
+			return fmt.Errorf("store/sqlite: save matter document office action: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("store/sqlite: save matter document %s: commit: %w", d.ID, err)
+	}
 	return nil
 }
 
@@ -436,6 +460,17 @@ func (r *Repo) MatterDocument(ctx context.Context, id string) (d domain.MatterDo
 	}
 	if err != nil {
 		return domain.MatterDocument{}, fmt.Errorf("store/sqlite: get matter document %s: %w", id, err)
+	}
+	d.Tags, err = r.MatterDocumentTags(ctx, d.Project, d.ID)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	d.OfficeActionIDs, err = r.MatterDocumentOfficeActions(ctx, d.ID)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	if d.OfficeActionID == "" && len(d.OfficeActionIDs) > 0 {
+		d.OfficeActionID = d.OfficeActionIDs[0]
 	}
 	return d, nil
 }
@@ -456,7 +491,31 @@ func (r *Repo) ListMatterDocuments(ctx context.Context, project domain.ProjectID
 		}
 		out = append(out, d)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(out))
+	for _, d := range out {
+		ids = append(ids, d.ID)
+	}
+	tags, err := r.MatterDocumentTagsByDocument(ctx, project, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Tags = tags[out[i].ID]
+	}
+	oas, err := r.MatterDocumentOfficeActionsByDocument(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].OfficeActionIDs = oas[out[i].ID]
+		if out[i].OfficeActionID == "" && len(out[i].OfficeActionIDs) > 0 {
+			out[i].OfficeActionID = out[i].OfficeActionIDs[0]
+		}
+	}
+	return out, nil
 }
 
 // RenameMatterDocument updates only the display name of one matter document.
@@ -499,12 +558,66 @@ func scanMatterDocument(s rowScanner) (domain.MatterDocument, error) {
 	d.ID = id
 	d.Project = domain.ProjectID(project)
 	d.Kind = domain.MatterDocKind(kind)
+	if d.OfficeActionID != "" {
+		d.OfficeActionIDs = []string{d.OfficeActionID}
+	}
 	at, err := decodeTime(addedAt)
 	if err != nil {
 		return domain.MatterDocument{}, err
 	}
 	d.AddedAt = at
 	return d, nil
+}
+
+func matterDocumentOfficeActionIDs(d domain.MatterDocument) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	add(d.OfficeActionID)
+	for _, id := range d.OfficeActionIDs {
+		add(id)
+	}
+	return out
+}
+
+// MatterDocumentOfficeActions returns office-action ids assigned to one preparation document.
+func (r *Repo) MatterDocumentOfficeActions(ctx context.Context, documentID string) (out []string, err error) {
+	defer r.observeDuration("matter_document_office_actions", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT office_action_id FROM matter_document_office_action WHERE document_id = ? ORDER BY created_at, office_action_id`, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list matter document office actions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// MatterDocumentOfficeActionsByDocument returns office-action ids for multiple preparation documents keyed by id.
+func (r *Repo) MatterDocumentOfficeActionsByDocument(ctx context.Context, documentIDs []string) (out map[string][]string, err error) {
+	defer r.observeDuration("matter_document_office_actions_by_document", time.Now(), &err)
+	out = make(map[string][]string, len(documentIDs))
+	for _, id := range documentIDs {
+		ids, err := r.MatterDocumentOfficeActions(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = ids
+	}
+	return out, nil
 }
 
 const matterEventColumns = `id, project_id, office_action_id, kind, party,

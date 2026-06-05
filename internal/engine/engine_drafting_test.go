@@ -30,17 +30,6 @@ func (f *fakeDrafter) Complete(_ context.Context, prompt string) (string, error)
 func (f *fakeDrafter) Provider() ai.Provider { return ai.Provider("fake") }
 func (f *fakeDrafter) Model() string         { return "fake-1" }
 
-// fakeExtractor is a fakeDrafter that also satisfies ai.Extractor, so tests can
-// exercise the AI/OCR text-extraction path for scanned documents.
-type fakeExtractor struct {
-	fakeDrafter
-	extractReply string
-}
-
-func (f *fakeExtractor) ExtractText(_ context.Context, _ []byte, _ string) (string, error) {
-	return f.extractReply, nil
-}
-
 func newDraftEngine(t *testing.T, drafter ai.Drafter) (*Engine, domain.ProjectID) {
 	t.Helper()
 	eng, repo := newTestEngine(t, nil)
@@ -349,14 +338,12 @@ func TestOfficeActionObservability(t *testing.T) {
 	}
 }
 
-func TestExtractDocumentTextWithAI(t *testing.T) {
+func TestExtractDocumentTextReportsNoEmbeddedTextWithoutAI(t *testing.T) {
 	ctx := context.Background()
-	eng, proj := newDraftEngine(t, &fakeExtractor{extractReply: "OCR: Claims 1-5 are rejected."})
+	eng, proj := newDraftEngine(t, &fakeDrafter{})
 
-	// Import a document whose pure-Go extraction yields nothing (a non-PDF given
-	// a .pdf name stands in for a scanned, image-only office action).
-	src := filepath.Join(t.TempDir(), "scanned.pdf")
-	if err := os.WriteFile(src, []byte("%PDF-1.4 not-really-extractable"), 0o644); err != nil {
+	src := filepath.Join(t.TempDir(), "empty.txt")
+	if err := os.WriteFile(src, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
@@ -366,43 +353,27 @@ func TestExtractDocumentTextWithAI(t *testing.T) {
 		t.Fatalf("ImportMatterDocument: %v", err)
 	}
 	if doc.ExtractedText != "" {
-		t.Fatalf("expected empty extracted text before OCR, got %q", doc.ExtractedText)
+		t.Fatalf("expected empty extracted text, got %q", doc.ExtractedText)
 	}
 
-	got, err := eng.ExtractDocumentText(ctx, doc.ID)
-	if err != nil {
-		t.Fatalf("ExtractDocumentText: %v", err)
-	}
-	if got.ExtractedText != "OCR: Claims 1-5 are rejected." {
-		t.Fatalf("extracted text = %q, want the OCR reply", got.ExtractedText)
-	}
-	// The text is persisted, not just returned.
-	reloaded, err := eng.MatterDocument(ctx, doc.ID)
-	if err != nil {
-		t.Fatalf("MatterDocument: %v", err)
-	}
-	if reloaded.ExtractedText != got.ExtractedText {
-		t.Fatalf("OCR text not persisted: %q", reloaded.ExtractedText)
+	if _, err := eng.ExtractDocumentText(ctx, doc.ID); err == nil || !strings.Contains(err.Error(), "no embedded text") {
+		t.Fatalf("ExtractDocumentText error = %v, want no embedded text", err)
 	}
 }
 
-func TestExtractDocumentTextWithoutExtractorErrors(t *testing.T) {
+func TestMatterDocumentImportReportsParserErrors(t *testing.T) {
 	ctx := context.Background()
-	// A plain fakeDrafter implements Drafter but not ai.Extractor.
-	eng, proj := newDraftEngine(t, &fakeDrafter{})
+	eng, proj := newDraftEngine(t, nil)
 
-	src := filepath.Join(t.TempDir(), "ref.png")
+	src := filepath.Join(t.TempDir(), "legacy.xls")
 	if err := os.WriteFile(src, []byte("plain text"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+	_, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
 		Project: proj, Kind: domain.MatterDocReference, SourcePath: src,
 	})
-	if err != nil {
-		t.Fatalf("ImportMatterDocument: %v", err)
-	}
-	if _, err := eng.ExtractDocumentText(ctx, doc.ID); err == nil {
-		t.Fatal("ExtractDocumentText without an ai.Extractor: want error, got nil")
+	if err == nil || !strings.Contains(err.Error(), "legacy .xls") {
+		t.Fatalf("ImportMatterDocument error = %v, want legacy .xls parser error", err)
 	}
 }
 
@@ -478,6 +449,126 @@ func TestMatterDocumentImportRenameDelete(t *testing.T) {
 	}
 }
 
+func TestMatterDocumentTags(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+
+	src := filepath.Join(t.TempDir(), "Jones.txt")
+	if err := os.WriteFile(src, []byte("secondary prior art"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+		Project: proj, Kind: domain.MatterDocReference, SourcePath: src, Tags: []string{"prior_art"},
+	})
+	if err != nil {
+		t.Fatalf("ImportMatterDocument: %v", err)
+	}
+	if got := tagNamesForTest(doc.Tags); got != "prior_art" {
+		t.Fatalf("import tags = %q, want prior_art", got)
+	}
+
+	doc, err = eng.TagMatterDocument(ctx, doc.ID, "primary_ref")
+	if err != nil {
+		t.Fatalf("TagMatterDocument: %v", err)
+	}
+	if got := tagNamesForTest(doc.Tags); got != "primary_ref,prior_art" {
+		t.Fatalf("tags after add = %q", got)
+	}
+
+	docs, err := eng.ListMatterDocuments(ctx, proj)
+	if err != nil {
+		t.Fatalf("ListMatterDocuments: %v", err)
+	}
+	if len(docs) != 1 || tagNamesForTest(docs[0].Tags) != "primary_ref,prior_art" {
+		t.Fatalf("listed docs = %+v", docs)
+	}
+
+	doc, err = eng.UntagMatterDocument(ctx, doc.ID, "prior_art")
+	if err != nil {
+		t.Fatalf("UntagMatterDocument: %v", err)
+	}
+	if got := tagNamesForTest(doc.Tags); got != "primary_ref" {
+		t.Fatalf("tags after remove = %q", got)
+	}
+}
+
+func TestMatterDocumentMultipleOfficeActions(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+
+	oaSrc1 := filepath.Join(t.TempDir(), "oa1.txt")
+	oaSrc2 := filepath.Join(t.TempDir(), "oa2.txt")
+	if err := os.WriteFile(oaSrc1, []byte("first action"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oaSrc2, []byte("second action"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oa1, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{Project: proj, Type: domain.OANonFinal, SourcePath: oaSrc1})
+	if err != nil {
+		t.Fatalf("ImportOfficeAction oa1: %v", err)
+	}
+	oa2, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{Project: proj, Type: domain.OAFinal, SourcePath: oaSrc2})
+	if err != nil {
+		t.Fatalf("ImportOfficeAction oa2: %v", err)
+	}
+
+	refSrc := filepath.Join(t.TempDir(), "shared-ref.txt")
+	if err := os.WriteFile(refSrc, []byte("shared reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+		Project: proj, Kind: domain.MatterDocReference, SourcePath: refSrc, OfficeActionIDs: []string{oa1.ID, oa2.ID},
+	})
+	if err != nil {
+		t.Fatalf("ImportMatterDocument: %v", err)
+	}
+	if got := strings.Join(doc.OfficeActionIDs, ","); got != oa1.ID+","+oa2.ID {
+		t.Fatalf("office action ids = %q", got)
+	}
+
+	doc, err = eng.UnassignMatterDocumentOfficeAction(ctx, doc.ID, oa1.ID)
+	if err != nil {
+		t.Fatalf("UnassignMatterDocumentOfficeAction: %v", err)
+	}
+	if got := strings.Join(doc.OfficeActionIDs, ","); got != oa2.ID {
+		t.Fatalf("office action ids after unassign = %q", got)
+	}
+
+	doc, err = eng.AssignMatterDocumentOfficeAction(ctx, doc.ID, oa1.ID)
+	if err != nil {
+		t.Fatalf("AssignMatterDocumentOfficeAction: %v", err)
+	}
+	if !sameStrings(doc.OfficeActionIDs, []string{oa1.ID, oa2.ID}) {
+		t.Fatalf("office action ids after reassign = %q", strings.Join(doc.OfficeActionIDs, ","))
+	}
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		seen[s]--
+		if seen[s] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func tagNamesForTest(tags []domain.Tag) string {
+	names := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		names = append(names, tag.Name)
+	}
+	return strings.Join(names, ",")
+}
+
 // validDocxContains unzips a .docx and reports whether document.xml contains s.
 func validDocxContains(t *testing.T, data []byte, s string) bool {
 	t.Helper()
@@ -496,7 +587,7 @@ func validDocxContains(t *testing.T, data []byte, s string) bool {
 	return false
 }
 
-func TestExtractDocxText(t *testing.T) {
+func TestExtractDocTextReadsDocx(t *testing.T) {
 	// Create a mock docx in memory
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -517,10 +608,9 @@ func TestExtractDocxText(t *testing.T) {
 	defer tmpFile.Close()
 	_, _ = tmpFile.Write(buf.Bytes())
 
-	// Call extractDocxText
-	txt, err := extractDocxText(tmpFile.Name())
+	txt, err := extractDocText(tmpFile.Name())
 	if err != nil {
-		t.Fatalf("extractDocxText failed: %v", err)
+		t.Fatalf("extractDocText failed: %v", err)
 	}
 	if !strings.Contains(txt, "Hello World from Docx") {
 		t.Errorf("expected 'Hello World from Docx' in %q", txt)
