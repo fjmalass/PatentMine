@@ -101,7 +101,7 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 	}
 
 	// 5. Test Tab key focuses patents list
-	if o.focus != focusInventors {
+	if o.focus != focusStats {
 		t.Errorf("Expected initial focus on inventors")
 	}
 	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
@@ -157,7 +157,7 @@ func TestInventorStatsOverlayNavigationAndRendering(t *testing.T) {
 
 	// Test structural pane side-by-side navigation using 'h'
 	_, _, handled = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
-	if !handled || o.focus != focusInventors {
+	if !handled || o.focus != focusStats {
 		t.Fatal("Expected key 'h' to move focus back to inventors list")
 	}
 

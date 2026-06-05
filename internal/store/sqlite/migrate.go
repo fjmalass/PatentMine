@@ -216,8 +216,14 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "10"
 	}
-	if version != "10" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 10", version)
+	if version == "10" {
+		if err := r.migrateV10ToV11(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v10 to v11: %w", err)
+		}
+		version = "11"
+	}
+	if version != "11" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 11", version)
 	}
 	return nil
 }
@@ -814,3 +820,33 @@ func (r *Repo) migrateV9ToV10(ctx context.Context) error {
 	}
 	return nil
 }
+
+// migrateV10ToV11 adds name and last_opened_at to office_action, and last_opened_at to matter_document.
+func (r *Repo) migrateV10ToV11(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v10-to-v11.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v10 to v11: backup: %w", err)
+	}
+	var stmts []string
+	for col, alter := range map[string]string{
+		"office_action.name":             `ALTER TABLE office_action ADD COLUMN name TEXT NOT NULL DEFAULT ''`,
+		"office_action.last_opened_at":   `ALTER TABLE office_action ADD COLUMN last_opened_at TEXT NOT NULL DEFAULT ''`,
+		"matter_document.last_opened_at": `ALTER TABLE matter_document ADD COLUMN last_opened_at TEXT NOT NULL DEFAULT ''`,
+	} {
+		table, column, _ := strings.Cut(col, ".")
+		has, err := r.columnExists(ctx, table, column)
+		if err != nil {
+			return fmt.Errorf("store/sqlite: migrate v10 to v11: detect %s: %w", col, err)
+		}
+		if !has {
+			stmts = append(stmts, alter)
+		}
+	}
+	stmts = append(stmts, `UPDATE schema_meta SET value = '11' WHERE key = 'schema_version'`)
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v10 to v11: %w", err)
+		}
+	}
+	return nil
+}
+

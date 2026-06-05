@@ -63,6 +63,7 @@ type AllAssigneesHistoryOverlay struct {
 	statsSortAsc       bool
 	statsFocusedColIdx int
 	filterToPatent     bool
+	jump               JumpNavigator
 }
 
 func NewAllAssigneesHistoryOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID, filterToPatent bool) (*AllAssigneesHistoryOverlay, tea.Cmd) {
@@ -73,7 +74,7 @@ func NewAllAssigneesHistoryOverlay(client *rpc.Client, theme render.Theme, catal
 		patent:         patent,
 		project:        project,
 		loading:        true,
-		focus:          focusAssignees,
+		focus:          focusStats,
 		patentsPage:    render.NewPaginator(5),
 		activeSort:     domain.SortByNumber,
 		sortAscending:  true,
@@ -87,8 +88,6 @@ func NewAllAssigneesHistoryOverlay(client *rpc.Client, theme render.Theme, catal
 	}
 	return o, o.loadStatsCmd()
 }
-
-const focusAssignees = focusInventors
 
 func (o *AllAssigneesHistoryOverlay) Title() string { return "Assignee Analytics" }
 
@@ -181,6 +180,28 @@ func (o *AllAssigneesHistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 	o.err = nil
 	o.patentsErr = nil
 
+	if !o.searchActive && !o.patentsSearchActive {
+		var currentFocus, numFields int
+		if o.focus == focusStats {
+			currentFocus = o.selected
+			numFields = len(o.stats)
+		} else {
+			currentFocus = o.patentsPage.Cursor()
+			numFields = o.patentsPage.Total()
+		}
+		if newCursor, handled := o.jump.HandleKey(msg, currentFocus, numFields); handled {
+			if o.focus == focusStats {
+				o.selected = newCursor
+				o.patentsLoading = true
+				o.patentsErr = nil
+				return o, o.loadPatentsCmd(o.stats[o.selected].Assignee, o.loadID), true
+			} else {
+				o.patentsPage.ScrollTo(newCursor)
+				return o, nil, true
+			}
+		}
+	}
+
 	if o.searchActive {
 		switch msg.Type {
 		case tea.KeyTab:
@@ -248,20 +269,27 @@ func (o *AllAssigneesHistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 	}
 
 	switch msg.String() {
+	case ";":
+		if !o.searchActive && !o.patentsSearchActive {
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
+		}
 	case "q", "Q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "tab":
-		if o.focus == focusAssignees {
+		if o.focus == focusStats {
 			o.focus = focusPatents
 			o.focusedColIdx = 0
 		} else {
-			o.focus = focusAssignees
+			o.focus = focusStats
 			o.focusedColIdx = -1
 		}
 		return o, nil, true
 	}
 
-	if o.focus == focusAssignees {
+	if o.focus == focusStats {
 		switch msg.String() {
 		case "j", "down":
 			if len(o.stats) > 0 {
@@ -339,7 +367,7 @@ func (o *AllAssigneesHistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 		o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, 1)
 		return o, nil, true
 	case "h":
-		o.focus = focusAssignees
+		o.focus = focusStats
 		o.focusedColIdx = -1
 		return o, nil, true
 	case ".":
@@ -579,7 +607,7 @@ func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 		FocusedColIdx: o.statsFocusedColIdx,
 		ActiveSort:    o.statsSortCol,
 		SortAscending: o.statsSortAsc,
-		FocusActive:   o.focus == focusAssignees,
+		FocusActive:   o.focus == focusStats,
 		IsRowCursor: func(rowIdx int) bool {
 			return startStats+rowIdx == o.selected
 		},
@@ -591,7 +619,14 @@ func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 		s := o.stats[absIdx]
 		switch statsCols[colIdx].Key {
 		case "name":
-			return s.Assignee
+			lineNum := startStats + rowIdx + 1
+			gutter := ""
+			if o.focus == focusStats {
+				gutter = o.jump.GutterPrefix(lineNum)
+			} else {
+				gutter = fmt.Sprintf(" %d ", lineNum)
+			}
+			return gutter + s.Assignee
 		case "total":
 			return strconv.Itoa(s.Total)
 		case "unknown":
@@ -652,7 +687,8 @@ func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 				idx := absIdx - offset
 				return idx >= 0 && idx < len(o.patents) && o.patents[idx].Number == o.patent.Number
 			},
-		}, targetW, func(_ int, rowIdx, colIdx int) string {
+			Jump:          &o.jump,
+		}, targetW, func(absIdx, rowIdx, colIdx int) string {
 			if rowIdx < 0 || rowIdx >= len(o.patents) {
 				return ""
 			}
@@ -702,12 +738,18 @@ func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 	} else if o.patentsSearchActive {
 		searchLine := "/ " + o.patentsSearchQuery + "▋ (patents)"
 		b.WriteString(o.theme.Selected.Render(render.Pad(searchLine, targetW)))
-	} else if o.focus == focusAssignees {
+	} else if o.jump.Active {
+		curr := o.selected
+		if o.focus == focusPatents {
+			curr = o.patentsPage.Cursor()
+		}
+		b.WriteString(o.theme.Dim.Render(render.Truncate(o.jump.HintSuffix(curr, -1, false), targetW)))
+	} else if o.focus == focusStats {
 		status := fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))
-		b.WriteString(o.theme.Dim.Render(render.Truncate(fmt.Sprintf("%s  [Tab/l/Enter] Focus Patents  [/] Search  [j/k/↑/↓] Scroll  [←/→] Focus Col  [.] Sort  [q/Q/Esc] Close", status), targetW)))
+		b.WriteString(o.theme.Dim.Render(render.Truncate(fmt.Sprintf("%s  [Tab/l/Enter] Focus Patents  [/] Search  [j/k/↑/↓] Scroll  [←/→] Focus Col  [.] Sort  [q/Q/Esc] Close · [;] jump mode", status), targetW)))
 	} else {
 		status := subtableStatus(o.patentsPage)
-		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Assignees  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [/] Search  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close", status)
+		footnote := fmt.Sprintf("%s  [Tab/h/←] Focus Assignees  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [ga] All  [←/→] Focus Col  [.] Sort  [/] Search  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close · [;] jump mode", status)
 		if o.patentsPage.VisualMode() {
 			footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [ga] All  [s/r/i/x] Review  [t] Tag  [I] IDS  [v/q/Q/Esc] Clear", status)
 		}

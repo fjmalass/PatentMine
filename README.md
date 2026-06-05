@@ -339,8 +339,9 @@ The `?` help overlay (`internal/tui/overlay/help.go`) groups bindings as:
 PatentMine incorporates a multi-provider AI Curation engine designed to generate automated novelty summaries, claims analyses, legal/risk assessments, and custom-instructed evaluations. The engine operates entirely locally or via secure cloud API gateways.
 
 ### Key Capabilities
-* **Dual-Provider Architecture**:
+* **Multi-Provider Architecture**:
   * **Google Gemini (Cloud)**: High-speed, high-context curation powered by the `gemini-2.5-flash` model.
+  * **OpenAI (Cloud)**: Industry-standard model completions powered by ChatGPT models (defaults to `gpt-4o-mini`).
   * **Local Ollama (Offline)**: Private, offline technical curation powered by a local Ollama instance running the `mistral` model by default.
 * **TUI Integration & Workflow**:
   * Pressing `a` in the **Detail View** opens the AI Popup Menu overlay.
@@ -348,7 +349,7 @@ PatentMine incorporates a multi-provider AI Curation engine designed to generate
   * Generated reports are instantly added to your session notes buffer under descriptive headings (e.g. `AI Novelty Summary`) and displayed in the notes popup overlay (`o` key in Detail view).
   * You can copy AI notes to your clipboard (`y`/`Y` in the notes overlay) or flush them directly to your project's Information Disclosure Statement (IDS) reference passage list (`F` key).
 * **Onboarding & Credential Recovery**:
-  * If your API keys are not configured or the local Ollama daemon is unreachable, the TUI displays a friendly onboarding view outlining the exact steps and Makefile commands required to get started.
+  * If your API keys are not configured or the local Ollama daemon is unreachable, the TUI displays a friendly onboarding view outlining the exact steps and Makefile commands required to get started. You can also configure credentials directly from the settings overlay in the TUI.
 
 ### Step-by-Step Usage Guide
 
@@ -360,11 +361,15 @@ Define your AI preferences in your `.env` file. The application automatically se
 
 Create or edit your `.env` file with the following variables:
 ```ini
-# Choose active provider: "gemini" or "ollama"
+# Choose active provider: "gemini", "ollama", or "openai"
 PATENTMINE_AI_PROVIDER=gemini
 
 # Google Gemini API key (Required if using "gemini")
-GEMINI_API_KEY=AIzaSyYourSecretAPIKeyHere
+GEMINI_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/gemini_api_key
+
+# OpenAI API Key & Model (Required if using "openai")
+OPENAI_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/openai_api_key
+OPENAI_MODEL=gpt-4o-mini
 
 # Local Ollama configuration (Required if using "ollama")
 OLLAMA_MODEL=mistral
@@ -387,7 +392,7 @@ OLLAMA_HOST=http://localhost:11434
 
 #### Step 3: Trigger the AI Curation Overlay
 1. Press **`a`** inside the Detail View. This will open the **AI Patent Curation & Analysis** popup menu.
-2. If the chosen provider is unconfigured or offline, the menu will show a **Warning Onboarding View** with recovery steps. You can press **`g`** to switch to Gemini or **`o`** to switch to Ollama instantly.
+2. If the chosen provider is unconfigured or offline, the menu will show a **Warning Onboarding View** with recovery steps. You can switch providers instantly by pressing **`g`** (Gemini), **`o`** (Ollama), or **`p`** (OpenAI).
 3. If configured correctly, select one of the analysis templates:
    - **`1`**: Novelty & Legal/Tech takeaways summary.
    - **`2`**: Deep Claims & Technical boundaries breakdown.
@@ -403,6 +408,12 @@ OLLAMA_HOST=http://localhost:11434
    - **`F`**: Flush the summary directly to your project's Information Disclosure Statement (IDS) references list.
    - **`q`** or **`esc`**: Close the overlay and return to the patent details.
 
+#### How to Grab, View, and Export Notes
+All notes (both manual annotations and AI-generated novelty/risk reports) can be viewed, copied, and exported in the TUI:
+- **Notes Buffer Overlay (`o` Key)**: Inside any patent's **Detail View**, press **`o`** to open the visual notes buffer. Press **`y`** to copy the highlighted note segment to your system clipboard, or press **`Y`** to copy all session notes.
+- **All Notes View (`:open.notes` Command)**: Type **`:open.notes`** (or use alias **`:notes`**) in the command bar to open a spreadsheet-like view of all notes across the active project.
+- **Export to Markdown (`e` Key)**: In the **All Notes View**, press **`e`** to export all compiled notes to a clean, structured Markdown file (`patentmine-notes-*.md`) saved directly to your `PATENTMINE_NOTES_EXPORT_DIR`.
+
 > [!NOTE]
 > For a highly detailed overview of the system architecture, logging redaction mechanisms, pros/cons, and advanced troubleshooting, read the [AI.md Architectural & Setup Guide](file:///mnt/d/Repos/PatentMineNew/AI.md).
 
@@ -412,13 +423,20 @@ Keys are securely loaded using a zero-dependency environment variables loader th
 2. Secure home directory `~/.ssh/patentmine/.env`
 3. Default user home directory `~/.config/patentmine/.env`
 
+> [!TIP]
+> **In-App Editing**: You can also configure all keys, hosts, and models directly inside the TUI settings screen (**`s`** key) using edit hotkeys like **`Shift+K`** (Gemini Key), **`Shift+O`** (OpenAI Key), **`Shift+H`** (Ollama Host), etc.
+
 Define the following environment variables to configure your provider:
 ```ini
-# Choose active provider: "gemini" or "ollama"
+# Choose active provider: "gemini", "ollama", or "openai"
 PATENTMINE_AI_PROVIDER=gemini
 
 # Google Gemini API key
-GEMINI_API_KEY=AIzaSy...
+GEMINI_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/gemini_api_key
+
+# OpenAI API Key & Model (if using openai provider)
+OPENAI_API_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/openai_api_key
+OPENAI_MODEL=gpt-4o-mini
 
 # Local Ollama config (if using ollama provider)
 OLLAMA_MODEL=mistral

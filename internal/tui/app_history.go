@@ -275,7 +275,7 @@ func (a *App) replayHistoryMatterDocument(rec observability.Record) (tea.Model, 
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, switchCmd
 	}
-	o := overlay.NewMatterDocuments(a.client, a.theme, project)
+	o := overlay.NewMatterDocuments(a.client, a.theme, project, nil)
 	a.overlays = append(a.overlays, o)
 	return a, tea.Batch(switchCmd, o.Init())
 }

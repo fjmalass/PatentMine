@@ -90,7 +90,7 @@ func runAPI(args []string) int {
 		api.WithActivity(telemetry, time.Duration(cfg.ActivityMinMS)*time.Millisecond),
 
 		api.WithSecurity(sec),
-		api.WithAI(api.AIConfigFromAppConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel)),
+		api.WithAI(api.AIConfigFromAppConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel, cfg.OpenAIAPIKey, cfg.OpenAIModel)),
 	}
 	if webDir != "" {
 		opts = append(opts, api.WithWebDir(webDir))

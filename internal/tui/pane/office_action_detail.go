@@ -79,6 +79,8 @@ func (o *OfficeActionDetail) Title() string {
 	return t
 }
 
+func (o *OfficeActionDetail) OfficeAction() domain.OfficeAction { return o.oa }
+
 func (o *OfficeActionDetail) Init() tea.Cmd { return o.load() }
 
 func (o *OfficeActionDetail) load() tea.Cmd {

@@ -38,17 +38,20 @@ type tagDeletedMsg struct {
 // -----------------------------------------------------------------------------
 
 type TagTaxonomyOverlay struct {
-	client      *rpc.Client
-	theme       render.Theme
-	catalog     *text.Catalog
-	project     domain.ProjectID
-	tags        []domain.Tag
-	selected    int
-	adding      bool
-	inputValue  string
+	client  *rpc.Client
+	theme   render.Theme
+	catalog *text.Catalog
+	project domain.ProjectID
+
+	tags     []domain.Tag
+	selected int
+	err      error
+	msg      string
+
+	adding      bool   // when true, typing edits inputValue
+	inputValue  string // value being entered for new tag name
 	inputCursor int
-	err         error
-	msg         string
+	jump        JumpNavigator
 }
 
 func NewTagTaxonomyOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, project domain.ProjectID) (*TagTaxonomyOverlay, tea.Cmd) {
@@ -131,6 +134,13 @@ func (o *TagTaxonomyOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) 
 	o.err = nil
 	o.msg = ""
 
+	if !o.adding {
+		if newSelected, handled := o.jump.HandleKey(msg, o.selected, len(o.tags)); handled {
+			o.selected = newSelected
+			return o, nil, true
+		}
+	}
+
 	if o.adding {
 		switch msg.Type {
 		case tea.KeyEsc:
@@ -188,6 +198,13 @@ func (o *TagTaxonomyOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) 
 	}
 
 	switch msg.String() {
+	case ";":
+		if !o.adding {
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
+		}
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "j", "down":
@@ -241,7 +258,7 @@ func (o *TagTaxonomyOverlay) View(maxW, maxH int) string {
 		b.WriteString(o.theme.Dim.Render(fmt.Sprintf("Total Tags: %d", len(o.tags))))
 		b.WriteString("\n\n")
 
-		header := fmt.Sprintf("  %-3s %-20s %-12s", "#", "Tag Name", "Created At")
+		header := fmt.Sprintf("   %-4s %-20s %-12s", "Line", "Tag Name", "Created At")
 		b.WriteString(o.theme.Header.Underline(true).Render(render.Truncate(header, maxW)))
 		b.WriteString("\n")
 
@@ -264,11 +281,13 @@ func (o *TagTaxonomyOverlay) View(maxW, maxH int) string {
 			var line string
 			prefix := "  "
 			if i == o.selected {
-				prefix = "→ "
+				prefix = "▸ "
 			}
 
+			lineNum := i + 1
+			gutter := o.jump.GutterPrefix(lineNum)
 			createdStr := t.CreatedAt.Format(domain.DateLayout)
-			line = fmt.Sprintf("%s%-3d %-20s %-12s", prefix, i+1, t.Name, createdStr)
+			line = fmt.Sprintf("%s%s%-20s %-12s", prefix, gutter, t.Name, createdStr)
 
 			if i == o.selected {
 				b.WriteString(o.theme.Selected.Render(render.Truncate(line, maxW)))
@@ -296,7 +315,13 @@ func (o *TagTaxonomyOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n\n")
 		b.WriteString(o.theme.Dim.Render("[Enter] Save  [Esc] Cancel"))
 	} else {
-		b.WriteString(o.theme.Dim.Render("[j/k/↑/↓] Scroll  [a/n] Add  [d/x/Del] Delete  [q/Esc] Close"))
+		var hint string
+		if o.jump.Active {
+			hint = o.jump.HintSuffix(o.selected, -1, false)
+		} else {
+			hint = "[j/k/↑/↓] Scroll  [a/n] Add  [d/x/Del] Delete  [q/Esc] Close · [;] jump mode"
+		}
+		b.WriteString(o.theme.Dim.Render(hint))
 	}
 
 	return b.String()
@@ -340,6 +365,7 @@ type TagPatentOverlay struct {
 	err         error
 	msg         string
 	applying    bool
+	jump        JumpNavigator
 }
 
 func NewTagPatentOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, project domain.ProjectID, patents []domain.PatentNumber) (*TagPatentOverlay, tea.Cmd) {
@@ -463,6 +489,13 @@ func (o *TagPatentOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	o.err = nil
 	o.msg = ""
 
+	if !o.adding {
+		if newSelected, handled := o.jump.HandleKey(msg, o.selected, len(o.available)); handled {
+			o.selected = newSelected
+			return o, nil, true
+		}
+	}
+
 	if o.adding {
 		switch msg.Type {
 		case tea.KeyEsc:
@@ -520,6 +553,13 @@ func (o *TagPatentOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	}
 
 	switch msg.String() {
+	case ";":
+		if !o.adding {
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
+		}
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "I":
@@ -661,9 +701,11 @@ func (o *TagPatentOverlay) View(maxW, maxH int) string {
 			var line string
 			prefix := "  "
 			if i == o.selected {
-				prefix = "→ "
+				prefix = "▸ "
 			}
 
+			lineNum := i + 1
+			gutter := o.jump.GutterPrefix(lineNum)
 			checkedChar := "[ ]"
 			switch o.checked[t.Name] {
 			case CheckChecked:
@@ -672,7 +714,7 @@ func (o *TagPatentOverlay) View(maxW, maxH int) string {
 				checkedChar = "[-]"
 			}
 
-			line = fmt.Sprintf("%s%s %s", prefix, checkedChar, t.Name)
+			line = fmt.Sprintf("%s%s%s %s", prefix, gutter, checkedChar, t.Name)
 
 			if i == o.selected {
 				b.WriteString(o.theme.Selected.Render(render.Truncate(line, maxW)))
@@ -706,7 +748,13 @@ func (o *TagPatentOverlay) View(maxW, maxH int) string {
 		b.WriteString("\n\n")
 		b.WriteString(o.theme.Dim.Render("[Enter] Save  [Esc] Cancel"))
 	} else {
-		b.WriteString(o.theme.Dim.Render("[j/k/↑/↓] Scroll  [Space] Toggle  [a/n] Add Tag  [I] IDS  [N] Note  [Enter] Apply  [q/Esc] Cancel"))
+		var hint string
+		if o.jump.Active {
+			hint = o.jump.HintSuffix(o.selected, -1, false)
+		} else {
+			hint = "[j/k/↑/↓] Scroll  [Space] Toggle  [a/n] Add Tag  [I] IDS  [N] Note  [Enter] Apply  [q/Esc] Cancel · [;] jump mode"
+		}
+		b.WriteString(o.theme.Dim.Render(hint))
 	}
 
 	return b.String()

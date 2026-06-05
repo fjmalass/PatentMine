@@ -272,8 +272,8 @@ func (r *Repo) requireSchemaVersion(ctx context.Context) error {
 		`SELECT value FROM schema_meta WHERE key = 'schema_version'`).Scan(&version); err != nil {
 		return fmt.Errorf("store/sqlite: read schema version: %w", err)
 	}
-	if version != "10" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 10", version)
+	if version != "11" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 11", version)
 	}
 	return nil
 }

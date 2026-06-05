@@ -94,6 +94,9 @@ func (a *AIMenu) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if keyStr == "g" {
 		return a, func() tea.Msg { return AISwitchProviderMsg{NewProvider: "gemini"} }, true
 	}
+	if keyStr == "p" {
+		return a, func() tea.Msg { return AISwitchProviderMsg{NewProvider: "openai"} }, true
+	}
 
 	// If the provider is not configured, we only allow switching providers or exiting
 	if !a.configured {
@@ -136,7 +139,7 @@ func (a *AIMenu) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		}, true
 	}
 
-	return a, nil, true
+	return a, nil, false
 }
 
 // View draws the AI Menu or the Credential Recovery dialog.
@@ -145,9 +148,12 @@ func (a *AIMenu) View(maxW, _ int) string {
 
 	// Header displaying current provider
 	b.WriteString(a.theme.Dim.Render("Active Provider: "))
-	if a.provider == ai.ProviderOllama {
+	switch a.provider {
+	case ai.ProviderOllama:
 		b.WriteString(a.theme.Title.Render("Local Ollama (Mistral LLM)"))
-	} else {
+	case ai.ProviderOpenAI:
+		b.WriteString(a.theme.Title.Render("OpenAI API"))
+	default:
 		b.WriteString(a.theme.Title.Render("Google Gemini API"))
 	}
 	b.WriteString("\n\n")
@@ -171,7 +177,9 @@ func (a *AIMenu) View(maxW, _ int) string {
 		b.WriteString(a.theme.HelpKey.Render("[g]"))
 		b.WriteString(a.theme.Row.Render(" Switch to Gemini Cloud API    "))
 		b.WriteString(a.theme.HelpKey.Render("[o]"))
-		b.WriteString(a.theme.Row.Render(" Switch to Local Ollama"))
+		b.WriteString(a.theme.Row.Render(" Switch to Local Ollama    "))
+		b.WriteString(a.theme.HelpKey.Render("[p]"))
+		b.WriteString(a.theme.Row.Render(" Switch to OpenAI API"))
 		b.WriteString("\n")
 		b.WriteString(a.theme.HelpKey.Render("[q/esc]"))
 		b.WriteString(a.theme.Row.Render(" Close Menu"))
@@ -205,17 +213,36 @@ func (a *AIMenu) View(maxW, _ int) string {
 	b.WriteString(a.theme.Header.Render("Settings & Providers:"))
 	b.WriteString("\n\n")
 
-	if a.provider == ai.ProviderGemini {
+	switch a.provider {
+	case ai.ProviderGemini:
+		b.WriteString("  ")
+		b.WriteString(a.theme.HelpKey.Render("[o]"))
+		b.WriteString(" ")
+		b.WriteString(a.theme.Row.Render("Switch to Local LLM (Ollama)\n"))
+		b.WriteString("  ")
+		b.WriteString(a.theme.HelpKey.Render("[p]"))
+		b.WriteString(" ")
+		b.WriteString(a.theme.Row.Render("Switch to OpenAI API"))
+		b.WriteString("\n")
+	case ai.ProviderOllama:
+		b.WriteString("  ")
+		b.WriteString(a.theme.HelpKey.Render("[g]"))
+		b.WriteString(" ")
+		b.WriteString(a.theme.Row.Render("Switch to Google Gemini Cloud API\n"))
+		b.WriteString("  ")
+		b.WriteString(a.theme.HelpKey.Render("[p]"))
+		b.WriteString(" ")
+		b.WriteString(a.theme.Row.Render("Switch to OpenAI API"))
+		b.WriteString("\n")
+	case ai.ProviderOpenAI:
+		b.WriteString("  ")
+		b.WriteString(a.theme.HelpKey.Render("[g]"))
+		b.WriteString(" ")
+		b.WriteString(a.theme.Row.Render("Switch to Google Gemini Cloud API\n"))
 		b.WriteString("  ")
 		b.WriteString(a.theme.HelpKey.Render("[o]"))
 		b.WriteString(" ")
 		b.WriteString(a.theme.Row.Render("Switch to Local LLM (Ollama)"))
-		b.WriteString("\n")
-	} else {
-		b.WriteString("  ")
-		b.WriteString(a.theme.HelpKey.Render("[g]"))
-		b.WriteString(" ")
-		b.WriteString(a.theme.Row.Render("Switch to Google Gemini Cloud API"))
 		b.WriteString("\n")
 	}
 

@@ -83,6 +83,12 @@ const (
 	PurposeEditIDSCountry  Purpose = "edit-ids-country"
 	PurposeEditIDSPassages Purpose = "edit-ids-passages"
 	PurposeEditIDSNotes    Purpose = "edit-ids-notes"
+	PurposeEditGeminiKey   Purpose = "edit-gemini-key"
+	PurposeEditOllamaHost  Purpose = "edit-ollama-host"
+	PurposeEditOllamaModel Purpose = "edit-ollama-model"
+	PurposeEditOpenAIKey   Purpose = "edit-openai-key"
+	PurposeEditOpenAIModel Purpose = "edit-openai-model"
+	PurposeEditUSPTOKey    Purpose = "edit-uspto-key"
 )
 
 // TextSubmitMsg carries a value entered in a TextInput overlay.
@@ -113,6 +119,7 @@ type MatterDocumentsChangedMsg struct{}
 // OpenDocumentTextMsg asks the App to open a read-only viewer over one document's
 // extracted text.
 type OpenDocumentTextMsg struct {
+	ID    string
 	Title string
 	Text  string
 }
@@ -179,8 +186,13 @@ type OpenTagPatentOverlayMsg struct {
 
 // OpenDocumentFileMsg asks the App to open the document's original file path using the system opener.
 type OpenDocumentFileMsg struct {
+	ID   string
 	Path string
 }
+
+// StartDocumentImportMsg asks the App to launch the file picker to import/add a new document.
+type StartDocumentImportMsg struct{}
+
 
 // PctSize computes an overlay size as a percentage of the terminal, clamped
 // between min and term-2. Every overlay that implements DynamicSize should

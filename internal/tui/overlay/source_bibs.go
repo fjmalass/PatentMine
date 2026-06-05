@@ -57,6 +57,7 @@ type SourceBibsOverlay struct {
 	patent domain.PatentNumber
 	bibs   []domain.SourceBib
 	cursor int // focused field row
+	jump   JumpNavigator
 }
 
 func NewSourceBibsOverlay(theme render.Theme, patent domain.PatentNumber, bibs []domain.SourceBib) *SourceBibsOverlay {
@@ -76,6 +77,10 @@ func (o *SourceBibsOverlay) OverlaySize(termW, termH int) (int, int) {
 }
 
 func (o *SourceBibsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if newCursor, handled := o.jump.HandleKey(msg, o.cursor, len(bibFields)); handled {
+		o.cursor = newCursor
+		return o, nil, true
+	}
 	switch msg.String() {
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -87,6 +92,11 @@ func (o *SourceBibsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		if o.cursor < len(bibFields)-1 {
 			o.cursor++
 		}
+	case ";":
+		o.jump.Active = true
+		o.jump.PendingCount = 0
+		o.jump.PendingG = false
+		return o, nil, true
 	}
 	return o, nil, true
 }
@@ -104,7 +114,7 @@ func (o *SourceBibsOverlay) View(maxW, _ int) string {
 		return b.String()
 	}
 
-	const fieldW = 12
+	const fieldW = 16
 	// Split the remaining width evenly across the source columns.
 	valW := (maxW - fieldW - 4) / len(o.bibs)
 	if valW < 12 {
@@ -121,9 +131,14 @@ func (o *SourceBibsOverlay) View(maxW, _ int) string {
 
 	for i, f := range bibFields {
 		prefix := "  "
-		labelStyle := o.theme.Row
 		if i == o.cursor {
 			prefix = "> "
+		}
+
+		lineNum := i + 1
+		gutter := o.jump.GutterPrefix(lineNum)
+		labelStyle := o.theme.Row
+		if i == o.cursor {
 			labelStyle = o.theme.Selected
 		}
 
@@ -136,7 +151,7 @@ func (o *SourceBibsOverlay) View(maxW, _ int) string {
 		}
 		differs := len(distinct) > 1
 
-		line := prefix + labelStyle.Render(render.Pad(f.label, fieldW-len(prefix)))
+		line := prefix + gutter + labelStyle.Render(render.Pad(f.label, fieldW-len(prefix)-len(gutter)))
 		for _, v := range vals {
 			cell := render.Truncate(v, valW)
 			if differs {
@@ -149,6 +164,12 @@ func (o *SourceBibsOverlay) View(maxW, _ int) string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(o.theme.Dim.Render("[↑/↓] move  •  [q/esc] close"))
+	var hint string
+	if o.jump.Active {
+		hint = o.jump.HintSuffix(o.cursor, -1, false)
+	} else {
+		hint = "[↑/↓] move  •  [q/esc] close  ·  [;] jump mode"
+	}
+	b.WriteString(o.theme.Dim.Render(hint))
 	return b.String()
 }

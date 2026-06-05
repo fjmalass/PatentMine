@@ -34,10 +34,12 @@ type Extractor interface {
 // shape as the analyzer credentials so the daemon can build a Drafter from
 // config without duplicating provider logic.
 type DrafterConfig struct {
-	Provider     string // "ollama" (local, privacy-preserving) or "gemini" (cloud)
+	Provider     string // "ollama" (local, privacy-preserving), "gemini" (cloud), or "openai"
 	GeminiAPIKey string
 	OllamaHost   string
 	OllamaModel  string
+	OpenAIAPIKey string
+	OpenAIModel  string
 }
 
 // NewDrafter builds a Drafter honoring the chosen provider, falling back to
@@ -54,9 +56,16 @@ func NewDrafter(c DrafterConfig) Drafter {
 		if c.GeminiAPIKey != "" {
 			return NewGeminiAnalyzer(c.GeminiAPIKey)
 		}
+	case string(ProviderOpenAI):
+		if c.OpenAIAPIKey != "" {
+			return NewOpenAIAnalyzer(c.OpenAIAPIKey, c.OpenAIModel)
+		}
 	}
 	if c.GeminiAPIKey != "" {
 		return NewGeminiAnalyzer(c.GeminiAPIKey)
+	}
+	if c.OpenAIAPIKey != "" {
+		return NewOpenAIAnalyzer(c.OpenAIAPIKey, c.OpenAIModel)
 	}
 	if c.OllamaHost != "" {
 		return NewOllamaAnalyzer(c.OllamaHost, c.OllamaModel)

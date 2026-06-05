@@ -57,6 +57,7 @@ type FilePicker struct {
 
 	showSearch  bool
 	searchQuery string
+	jump        JumpNavigator
 }
 
 // NewFilePicker builds a browser rooted at startDir. allowedTypes restricts
@@ -346,6 +347,12 @@ func (o *FilePicker) allows(name string) bool {
 }
 
 func (o *FilePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if !o.showSearch {
+		if newCursor, handled := o.jump.HandleKey(msg, o.cursor, len(o.entries)); handled {
+			o.cursor = newCursor
+			return o, nil, true
+		}
+	}
 	if o.showSearch {
 		switch msg.Type {
 		case tea.KeyEsc:
@@ -397,6 +404,13 @@ func (o *FilePicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		o.ascend()
 	case tea.KeyRunes:
 		switch msg.String() {
+		case ";":
+			if !o.showSearch {
+				o.jump.Active = true
+				o.jump.PendingCount = 0
+				o.jump.PendingG = false
+				return o, nil, true
+			}
 		case "/":
 			o.showSearch = true
 			o.searchQuery = ""
@@ -479,6 +493,9 @@ func (o *FilePicker) View(maxW, maxH int) string {
 		if e.isDir && e.name != ".." {
 			label += "/"
 		}
+		lineNum := i + 1
+		gutter := o.jump.GutterPrefix(lineNum)
+		label = gutter + label
 		cell := render.Pad(render.Truncate(label, maxW), maxW)
 		if i == o.cursor {
 			b.WriteString(o.theme.Selected.Render(cell))
@@ -490,9 +507,11 @@ func (o *FilePicker) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footerText := "/ search/path · ↑/↓ or j/k move · enter open/select · ←/backspace up · esc cancel"
+	footerText := "/ search/path · ↑/↓ or j/k move · enter open/select · ←/backspace up · esc cancel · [;] jump mode"
 	if o.showSearch {
 		footerText = "tab autocomplete · esc exit search · enter open/select · backspace edit"
+	} else if o.jump.Active {
+		footerText = o.jump.HintSuffix(o.cursor, -1, false)
 	}
 	b.WriteString(o.theme.Dim.Render(render.Truncate(footerText, maxW)))
 	return b.String()

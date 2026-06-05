@@ -3,6 +3,7 @@ package overlay
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,19 +13,49 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/tui/pane"
 	"patentmine/internal/tui/render"
 )
 
 const (
-	mdListWidthPct  = 72
-	mdListHeightPct = 62
-	mdListMinWidth  = 64
-	mdListMinHeight = 12
+	mdListWidthPct  = 85
+	mdListHeightPct = 75
+	mdListMinWidth  = 80
+	mdListMinHeight = 16
 )
 
+type col0Type int
+
+const (
+	col0Name col0Type = iota
+	col0Kind
+	col0LoadDate
+	col0LoadTime
+	col0LastOpened
+	col0Tags
+	col0NotesCount
+	col0OtherOAs
+)
+
+var sortKeys0 = []string{"name", "kind", "load_date", "load_time", "last_opened", "tags", "notes", "other_oas"}
+
+type col1Type int
+
+const (
+	col1Name col1Type = iota
+	col1Project
+	col1OAs
+	col1LoadDateTime
+	col1LastOpened
+	col1Tags
+)
+
+var sortKeys1 = []string{"name", "project", "office_actions", "loaded", "last_opened", "tags"}
+
 type matterDocsLoadedMsg struct {
-	items []domain.MatterDocument
-	err   error
+	projectItems []domain.MatterDocument
+	allItems     []domain.MatterDocument
+	err          error
 }
 
 type matterDocExtractedMsg struct {
@@ -42,9 +73,32 @@ type MatterDocuments struct {
 	client  *rpc.Client
 	theme   render.Theme
 	project domain.ProjectID
+	oa      *domain.OfficeAction // current office action context if opened from one
 
+	// Single-table state (if oa == nil)
 	items   []domain.MatterDocument
 	cursor  int
+	offset  int
+
+	// Dual-table state (if oa != nil)
+	items0      []domain.MatterDocument
+	rawItems0   []domain.MatterDocument
+	cursor0     int
+	offset0     int
+	activeCol0  int
+	sortCol0    col0Type
+	sortDesc0   bool
+
+	items1      []domain.MatterDocument
+	rawItems1   []domain.MatterDocument
+	cursor1     int
+	offset1     int
+	activeCol1  int
+	sortCol1    col1Type
+	sortDesc1   bool
+
+	activeTable int // 0 = associated, 1 = all
+
 	loading bool
 	loadErr string
 
@@ -60,13 +114,30 @@ type MatterDocuments struct {
 	confirmDelete bool // d pressed, awaiting y/n
 	extracting    bool // a text extraction is in flight
 	msg           string
+	jump          JumpNavigator
 }
 
-func NewMatterDocuments(client *rpc.Client, theme render.Theme, project domain.ProjectID) *MatterDocuments {
-	return &MatterDocuments{client: client, theme: theme, project: project, loading: true}
+func NewMatterDocuments(client *rpc.Client, theme render.Theme, project domain.ProjectID, oa *domain.OfficeAction) *MatterDocuments {
+	return &MatterDocuments{
+		client:      client,
+		theme:       theme,
+		project:     project,
+		oa:          oa,
+		loading:     true,
+		activeTable: 0,
+		sortCol0:    col0LoadDate,
+		sortDesc0:   true,
+		sortCol1:    col1LoadDateTime,
+		sortDesc1:   true,
+	}
 }
 
-func (o *MatterDocuments) Title() string { return "Documents" }
+func (o *MatterDocuments) Title() string {
+	if o.oa != nil {
+		return fmt.Sprintf("Document Loaded for Office Action - %s %s", o.project, o.oa.Name)
+	}
+	return "Documents"
+}
 
 func (o *MatterDocuments) Handles() []command.ID { return nil }
 
@@ -84,9 +155,21 @@ func (o *MatterDocuments) loadCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		var res proto.MatterDocumentListResult
-		err := client.Call(ctx, proto.MethodMatterDocumentList, proto.MatterDocumentListParams{Project: project}, &res)
-		return matterDocsLoadedMsg{items: res.Documents, err: err}
+		var resProject proto.MatterDocumentListResult
+		err := client.Call(ctx, proto.MethodMatterDocumentList, proto.MatterDocumentListParams{Project: project}, &resProject)
+		if err != nil {
+			return matterDocsLoadedMsg{err: err}
+		}
+		var allDocs []domain.MatterDocument
+		if o.oa != nil {
+			var resAll proto.MatterDocumentListResult
+			err = client.Call(ctx, proto.MethodMatterDocumentList, proto.MatterDocumentListParams{Project: ""}, &resAll)
+			if err != nil {
+				return matterDocsLoadedMsg{err: err}
+			}
+			allDocs = resAll.Documents
+		}
+		return matterDocsLoadedMsg{projectItems: resProject.Documents, allItems: allDocs, err: nil}
 	}
 }
 
@@ -99,11 +182,36 @@ func (o *MatterDocuments) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			o.loadErr = m.err.Error()
 			return o, nil
 		}
-		o.items = m.items
-		o.loadErr = ""
-		if o.cursor >= len(o.items) {
-			o.cursor = max(len(o.items)-1, 0)
+		if o.oa != nil {
+			o.rawItems0 = nil
+			for _, d := range m.projectItems {
+				if isAssociatedWith(d, o.oa.ID) {
+					o.rawItems0 = append(o.rawItems0, d)
+				}
+			}
+			o.items0 = make([]domain.MatterDocument, len(o.rawItems0))
+			copy(o.items0, o.rawItems0)
+			sortItems0(o.items0, o.sortCol0, o.sortDesc0, o.oa.ID)
+
+			o.rawItems1 = make([]domain.MatterDocument, len(m.allItems))
+			copy(o.rawItems1, m.allItems)
+			o.items1 = make([]domain.MatterDocument, len(o.rawItems1))
+			copy(o.items1, o.rawItems1)
+			sortItems1(o.items1, o.sortCol1, o.sortDesc1)
+
+			if o.cursor0 >= len(o.items0) {
+				o.cursor0 = max(len(o.items0)-1, 0)
+			}
+			if o.cursor1 >= len(o.items1) {
+				o.cursor1 = max(len(o.items1)-1, 0)
+			}
+		} else {
+			o.items = m.projectItems
+			if o.cursor >= len(o.items) {
+				o.cursor = max(len(o.items)-1, 0)
+			}
 		}
+		o.loadErr = ""
 	case matterDocExtractedMsg:
 		o.extracting = false
 		if m.err != nil {
@@ -112,6 +220,9 @@ func (o *MatterDocuments) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		}
 		o.msg = fmt.Sprintf("converted %d line(s), %d chars from %s", convertedLineCount(m.text), len(m.text), m.name)
 		return o, o.loadCmd()
+	case pane.MatterDocumentImportedMsg:
+		o.msg = "loaded document: " + m.Name
+		return o, o.loadCmd()
 	}
 	return o, nil
 }
@@ -119,6 +230,33 @@ func (o *MatterDocuments) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if o.loading {
 		return o, nil, true
+	}
+	if !o.renaming && !o.tagging && !o.assigning && !o.confirmDelete {
+		var currentFocus, numFields int
+		if o.oa != nil {
+			if o.activeTable == 0 {
+				currentFocus = o.cursor0
+				numFields = len(o.items0)
+			} else {
+				currentFocus = o.cursor1
+				numFields = len(o.items1)
+			}
+		} else {
+			currentFocus = o.cursor
+			numFields = len(o.items)
+		}
+		if newCursor, handled := o.jump.HandleKey(msg, currentFocus, numFields); handled {
+			if o.oa != nil {
+				if o.activeTable == 0 {
+					o.cursor0 = newCursor
+				} else {
+					o.cursor1 = newCursor
+				}
+			} else {
+				o.cursor = newCursor
+			}
+			return o, nil, true
+		}
 	}
 	if o.renaming {
 		return o.handleRenameKey(msg)
@@ -143,20 +281,72 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	case tea.KeyTab:
+		if o.oa != nil {
+			o.activeTable = 1 - o.activeTable
+		}
+		return o, nil, true
 	case tea.KeyUp:
 		o.moveCursor(-1)
 		return o, nil, true
 	case tea.KeyDown:
 		o.moveCursor(1)
 		return o, nil, true
+	case tea.KeyLeft:
+		if o.oa != nil {
+			if o.activeTable == 0 {
+				o.activeCol0 = (o.activeCol0 - 1 + 8) % 8
+			} else {
+				o.activeCol1 = (o.activeCol1 - 1 + 6) % 6
+			}
+		}
+		return o, nil, true
+	case tea.KeyRight:
+		if o.oa != nil {
+			if o.activeTable == 0 {
+				o.activeCol0 = (o.activeCol0 + 1) % 8
+			} else {
+				o.activeCol1 = (o.activeCol1 + 1) % 6
+			}
+		}
+		return o, nil, true
 	case tea.KeyEnter:
 		return o, o.viewSelected(), true
 	case tea.KeyRunes:
 		switch msg.String() {
+		case ";":
+			if !o.renaming && !o.tagging && !o.assigning && !o.confirmDelete {
+				o.jump.Active = true
+				o.jump.PendingCount = 0
+				o.jump.PendingG = false
+				return o, nil, true
+			}
 		case "k":
 			o.moveCursor(-1)
 		case "j":
 			o.moveCursor(1)
+		case ".":
+			if o.oa != nil {
+				if o.activeTable == 0 {
+					col := col0Type(o.activeCol0)
+					if o.sortCol0 == col {
+						o.sortDesc0 = !o.sortDesc0
+					} else {
+						o.sortCol0 = col
+						o.sortDesc0 = false
+					}
+					sortItems0(o.items0, o.sortCol0, o.sortDesc0, o.oa.ID)
+				} else {
+					col := col1Type(o.activeCol1)
+					if o.sortCol1 == col {
+						o.sortDesc1 = !o.sortDesc1
+					} else {
+						o.sortCol1 = col
+						o.sortDesc1 = false
+					}
+					sortItems1(o.items1, o.sortCol1, o.sortDesc1)
+				}
+			}
 		case "r":
 			o.beginRename()
 		case "t":
@@ -164,14 +354,42 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		case "u":
 			o.beginTag(true)
 		case "a":
-			o.beginAssign(false)
+			if o.oa != nil && o.activeTable == 1 {
+				// Instantly associate to the current OA
+				if doc, ok := o.selected(); ok {
+					return o, o.commitAssignFor(doc, o.oa.ID, false), true
+				}
+			} else {
+				// Prompt to assign selected doc to another OA
+				o.beginAssign(false)
+			}
 		case "x":
-			o.beginAssign(true)
+			if o.oa != nil && o.activeTable == 0 {
+				// Instantly remove from the current OA
+				if doc, ok := o.selected(); ok {
+					return o, o.commitAssignFor(doc, o.oa.ID, true), true
+				}
+			} else {
+				// Prompt to unassign from another OA
+				o.beginAssign(true)
+			}
 		case "d":
-			if len(o.items) > 0 {
+			hasSelection := false
+			if o.oa != nil {
+				if o.activeTable == 0 {
+					hasSelection = len(o.items0) > 0
+				} else {
+					hasSelection = len(o.items1) > 0
+				}
+			} else {
+				hasSelection = len(o.items) > 0
+			}
+			if hasSelection {
 				o.confirmDelete = true
 				o.msg = ""
 			}
+		case "l":
+			return o, func() tea.Msg { return StartDocumentImportMsg{} }, true
 		case "o":
 			if cmd := o.openSelected(); cmd != nil {
 				return o, cmd, true
@@ -193,7 +411,7 @@ func (o *MatterDocuments) openSelected() tea.Cmd {
 	if !ok || doc.BlobPath == "" {
 		return nil
 	}
-	return func() tea.Msg { return OpenDocumentFileMsg{Path: doc.BlobPath} }
+	return func() tea.Msg { return OpenDocumentFileMsg{ID: doc.ID, Path: doc.BlobPath} }
 }
 
 func (o *MatterDocuments) handleRenameKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
@@ -274,17 +492,45 @@ func (o *MatterDocuments) handleAssignKey(msg tea.KeyMsg) (Overlay, tea.Cmd, boo
 }
 
 func (o *MatterDocuments) moveCursor(delta int) {
-	if len(o.items) == 0 {
-		return
+	if o.oa != nil {
+		if o.activeTable == 0 {
+			if len(o.items0) == 0 {
+				return
+			}
+			o.cursor0 = max(0, min(o.cursor0+delta, len(o.items0)-1))
+		} else {
+			if len(o.items1) == 0 {
+				return
+			}
+			o.cursor1 = max(0, min(o.cursor1+delta, len(o.items1)-1))
+		}
+	} else {
+		if len(o.items) == 0 {
+			return
+		}
+		o.cursor = max(0, min(o.cursor+delta, len(o.items)-1))
 	}
-	o.cursor = max(0, min(o.cursor+delta, len(o.items)-1))
 }
 
 func (o *MatterDocuments) selected() (domain.MatterDocument, bool) {
-	if o.cursor < 0 || o.cursor >= len(o.items) {
-		return domain.MatterDocument{}, false
+	if o.oa != nil {
+		if o.activeTable == 0 {
+			if o.cursor0 < 0 || o.cursor0 >= len(o.items0) {
+				return domain.MatterDocument{}, false
+			}
+			return o.items0[o.cursor0], true
+		} else {
+			if o.cursor1 < 0 || o.cursor1 >= len(o.items1) {
+				return domain.MatterDocument{}, false
+			}
+			return o.items1[o.cursor1], true
+		}
+	} else {
+		if o.cursor < 0 || o.cursor >= len(o.items) {
+			return domain.MatterDocument{}, false
+		}
+		return o.items[o.cursor], true
 	}
-	return o.items[o.cursor], true
 }
 
 func (o *MatterDocuments) viewSelected() tea.Cmd {
@@ -296,7 +542,7 @@ func (o *MatterDocuments) viewSelected() tea.Cmd {
 	if strings.TrimSpace(text) == "" {
 		text = "(no embedded text; OCR appears needed but is not implemented; open the file directly to read it)"
 	}
-	return func() tea.Msg { return OpenDocumentTextMsg{Title: title, Text: text} }
+	return func() tea.Msg { return OpenDocumentTextMsg{ID: doc.ID, Title: title, Text: text} }
 }
 
 func (o *MatterDocuments) beginRename() {
@@ -412,6 +658,24 @@ func (o *MatterDocuments) commitAssign() tea.Cmd {
 	}
 }
 
+func (o *MatterDocuments) commitAssignFor(doc domain.MatterDocument, oaID string, remove bool) tea.Cmd {
+	client, id := o.client, doc.ID
+	reload := o.loadCmd()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var res proto.MatterDocumentResult
+		method := proto.MethodMatterDocumentAssign
+		if remove {
+			method = proto.MethodMatterDocumentUnassign
+		}
+		if err := client.Call(ctx, method, proto.MatterDocumentOfficeActionParams{ID: id, OfficeActionID: oaID}, &res); err != nil {
+			return matterDocsLoadedMsg{err: err}
+		}
+		return reload()
+	}
+}
+
 // extractSelected re-runs the built-in document text parser on the selected
 // document. Scanned/image-only files still require OCR, which is not implemented,
 // and return a no-text error.
@@ -461,6 +725,210 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 	if o.loadErr != "" {
 		return o.theme.Error.Render("error: " + o.loadErr)
 	}
+
+	if o.oa != nil {
+		var b strings.Builder
+
+		// Determine split heights
+		totalBodyHeight := maxH - 6 // margins/titles/borders/footers
+		if totalBodyHeight < 6 {
+			totalBodyHeight = 6
+		}
+		h0 := totalBodyHeight / 2
+		h1 := totalBodyHeight - h0
+
+		colsW := maxW - o.theme.TablePrefixWidth()
+		colWidths0 := getColWidths(colsW, []int{0, 10, 10, 8, 12, 12, 5, 10})
+		colWidths1 := getColWidths(colsW, []int{0, 10, 12, 16, 12, 12})
+
+		// 1. Table 0 (Associated Documents)
+		b.WriteString(o.theme.Title.Render("Associated with Current Office Action:") + "\n")
+		bodyH0 := max(1, h0-1)
+		if o.cursor0 < o.offset0 {
+			o.offset0 = o.cursor0
+		} else if o.cursor0 >= o.offset0+bodyH0 {
+			o.offset0 = o.cursor0 - bodyH0 + 1
+		}
+		renderRows0 := min(bodyH0, len(o.items0)-o.offset0)
+		if renderRows0 < 0 {
+			renderRows0 = 0
+		}
+
+		columns0 := []render.TableColumn{
+			{Key: "name", Label: "Name", Width: colWidths0[0], SortKey: "name"},
+			{Key: "kind", Label: "Kind", Width: colWidths0[1], SortKey: "kind"},
+			{Key: "load_date", Label: "Load Date", Width: colWidths0[2], SortKey: "load_date"},
+			{Key: "load_time", Label: "Load Time", Width: colWidths0[3], SortKey: "load_time"},
+			{Key: "last_opened", Label: "Last Opened", Width: colWidths0[4], SortKey: "last_opened"},
+			{Key: "tags", Label: "Tags", Width: colWidths0[5], SortKey: "tags"},
+			{Key: "notes", Label: "Notes", Width: colWidths0[6], SortKey: "notes"},
+			{Key: "other_oas", Label: "Other OAs", Width: colWidths0[7], SortKey: "other_oas"},
+		}
+
+		params0 := render.TableParams{
+			Theme:         o.theme,
+			Columns:       columns0,
+			RowCount:      renderRows0,
+			FocusedColIdx: o.activeCol0,
+			ActiveSort:    sortKeys0[o.sortCol0],
+			SortAscending: !o.sortDesc0,
+			FocusActive:   o.activeTable == 0,
+			IsRowCursor: func(rIdx int) bool {
+				return o.offset0+rIdx == o.cursor0
+			},
+		}
+
+		t0Str := render.RenderTable(params0, maxW, func(rowIdx, colIdx int) string {
+			if o.offset0+rowIdx >= len(o.items0) {
+				return ""
+			}
+			doc := o.items0[o.offset0+rowIdx]
+			switch colIdx {
+			case 0:
+				lineNum := o.offset0 + rowIdx + 1
+				gutter := ""
+				if o.activeTable == 0 {
+					gutter = o.jump.GutterPrefix(lineNum)
+				} else {
+					gutter = fmt.Sprintf(" %d ", lineNum)
+				}
+				return gutter + doc.DisplayName
+			case 1:
+				return doc.Kind.Label()
+			case 2:
+				return doc.AddedAt.Format("2006-01-02")
+			case 3:
+				return doc.AddedAt.Format("15:04:05")
+			case 4:
+				if doc.LastOpenedAt.IsZero() {
+					return "-"
+				}
+				return doc.LastOpenedAt.Local().Format("01-02 15:04")
+			case 5:
+				return tagNames(doc.Tags)
+			case 6:
+				return "0"
+			case 7:
+				return otherOAs(doc, o.oa.ID)
+			default:
+				return ""
+			}
+		})
+		b.WriteString(t0Str)
+
+		b.WriteString("\n")
+
+		// 2. Table 1 (All Documents)
+		b.WriteString(o.theme.Title.Render("All Loaded Documents:") + "\n")
+		bodyH1 := max(1, h1-1)
+		if o.cursor1 < o.offset1 {
+			o.offset1 = o.cursor1
+		} else if o.cursor1 >= o.offset1+bodyH1 {
+			o.offset1 = o.cursor1 - bodyH1 + 1
+		}
+		renderRows1 := min(bodyH1, len(o.items1)-o.offset1)
+		if renderRows1 < 0 {
+			renderRows1 = 0
+		}
+
+		columns1 := []render.TableColumn{
+			{Key: "name", Label: "Name", Width: colWidths1[0], SortKey: "name"},
+			{Key: "project", Label: "Project", Width: colWidths1[1], SortKey: "project"},
+			{Key: "office_actions", Label: "Office Actions", Width: colWidths1[2], SortKey: "office_actions"},
+			{Key: "loaded", Label: "Loaded", Width: colWidths1[3], SortKey: "loaded"},
+			{Key: "last_opened", Label: "Last Opened", Width: colWidths1[4], SortKey: "last_opened"},
+			{Key: "tags", Label: "Tags", Width: colWidths1[5], SortKey: "tags"},
+		}
+
+		params1 := render.TableParams{
+			Theme:         o.theme,
+			Columns:       columns1,
+			RowCount:      renderRows1,
+			FocusedColIdx: o.activeCol1,
+			ActiveSort:    sortKeys1[o.sortCol1],
+			SortAscending: !o.sortDesc1,
+			FocusActive:   o.activeTable == 1,
+			IsRowCursor: func(rIdx int) bool {
+				return o.offset1+rIdx == o.cursor1
+			},
+		}
+
+		t1Str := render.RenderTable(params1, maxW, func(rowIdx, colIdx int) string {
+			if o.offset1+rowIdx >= len(o.items1) {
+				return ""
+			}
+			doc := o.items1[o.offset1+rowIdx]
+			switch colIdx {
+			case 0:
+				lineNum := o.offset1 + rowIdx + 1
+				gutter := ""
+				if o.activeTable == 1 {
+					gutter = o.jump.GutterPrefix(lineNum)
+				} else {
+					gutter = fmt.Sprintf(" %d ", lineNum)
+				}
+				return gutter + doc.DisplayName
+			case 1:
+				return string(doc.Project)
+			case 2:
+				return strings.Join(doc.OfficeActionIDs, ",")
+			case 3:
+				return doc.AddedAt.Format("2006-01-02 15:04")
+			case 4:
+				if doc.LastOpenedAt.IsZero() {
+					return "-"
+				}
+				return doc.LastOpenedAt.Local().Format("01-02 15:04")
+			case 5:
+				return tagNames(doc.Tags)
+			default:
+				return ""
+			}
+		})
+		b.WriteString(t1Str)
+
+		b.WriteString("\n")
+
+		footer := "↑/↓ move · tab switch table · ←/→ move col cursor · . sort col · enter view · i load · o open · e extract · r rename · d delete · esc close"
+		if o.activeTable == 0 {
+			footer += " · a assign OA · x remove from current OA"
+		} else {
+			footer += " · a add to current OA · x unassign OA"
+		}
+
+		switch {
+		case o.extracting:
+			footer = "converting embedded text…"
+		case o.renaming:
+			footer = "rename: type · enter save · esc cancel"
+		case o.tagging:
+			action := "tag"
+			if o.untag {
+				action = "untag"
+			}
+			footer = action + ": " + o.tagInput + "▏ · enter save · esc cancel · use lowercase snake_case"
+		case o.assigning:
+			action := "assign OA id"
+			if o.unassign {
+				action = "unassign OA id"
+			}
+			footer = action + ": " + o.oaInput + "▏ · enter save · esc cancel"
+		case o.confirmDelete:
+			footer = "delete this document? y to confirm, any key to cancel"
+		case o.msg != "":
+			footer = o.msg + " · " + footer
+		}
+		if o.jump.Active {
+			curr := o.cursor0
+			if o.activeTable == 1 {
+				curr = o.cursor1
+			}
+			footer = o.jump.HintSuffix(curr, -1, false)
+		}
+		b.WriteString(o.theme.Dim.Render(render.Truncate(footer, maxW)))
+		return b.String()
+	}
+
 	if len(o.items) == 0 {
 		return o.theme.Dim.Render(render.Truncate(
 			"No documents yet. Add one with :add.officeaction or :add.document", maxW))
@@ -480,7 +948,9 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		if len(d.OfficeActionIDs) > 1 {
 			name += fmt.Sprintf(" (oa:%d)", len(d.OfficeActionIDs))
 		}
-		row := fmt.Sprintf("%-13s %s", d.Kind.Label(), name)
+		lineNum := i + 1
+		gutter := o.jump.GutterPrefix(lineNum)
+		row := fmt.Sprintf("%s%-13s %s", gutter, d.Kind.Label(), name)
 		cell := render.Pad(render.Truncate(row, maxW), maxW)
 		if i == o.cursor {
 			b.WriteString(o.theme.Selected.Render(cell))
@@ -490,18 +960,18 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "↑/↓ move · enter view · o open · e extract · t tag · u untag · a assign OA · x unassign OA · r rename · d delete · esc close"
+	footer := "↑/↓ move · enter view · i load · o open · e extract · t tag · u untag · a assign OA · x unassign OA · r rename · d delete · esc close · [;] jump mode"
 	switch {
 	case o.extracting:
-		footer = "converting embedded text… OCR is not implemented"
+		footer = "converting embedded text…"
 	case o.renaming:
 		footer = "rename: type · enter save · esc cancel"
 	case o.tagging:
 		action := "tag"
 		if o.untag {
 			action = "untag"
+			footer = action + ": " + o.tagInput + "▏ · enter save · esc cancel · use lowercase snake_case"
 		}
-		footer = action + ": " + o.tagInput + "▏ · enter save · esc cancel · use lowercase snake_case"
 	case o.assigning:
 		action := "assign OA id"
 		if o.unassign {
@@ -512,6 +982,9 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		footer = "delete this document? y to confirm, any key to cancel"
 	case o.msg != "":
 		footer = o.msg + " · " + footer
+	}
+	if o.jump.Active {
+		footer = o.jump.HintSuffix(o.cursor, -1, false)
 	}
 	b.WriteString(o.theme.Dim.Render(render.Truncate(footer, maxW)))
 	return b.String()
@@ -536,4 +1009,102 @@ func convertedLineCount(s string) int {
 		return 0
 	}
 	return strings.Count(s, "\n") + 1
+}
+
+func isAssociatedWith(doc domain.MatterDocument, oaID string) bool {
+	if doc.OfficeActionID == oaID {
+		return true
+	}
+	for _, id := range doc.OfficeActionIDs {
+		if id == oaID {
+			return true
+		}
+	}
+	return false
+}
+
+func otherOAs(doc domain.MatterDocument, currentOAID string) string {
+	var list []string
+	for _, id := range doc.OfficeActionIDs {
+		if id != currentOAID {
+			list = append(list, id)
+		}
+	}
+	return strings.Join(list, ", ")
+}
+
+func getColWidths(totalWidth int, widths []int) []int {
+	out := make([]int, len(widths))
+	copy(out, widths)
+	fixedSum := 0
+	flexibleIdx := -1
+	for i, w := range widths {
+		if w == 0 {
+			flexibleIdx = i
+		} else {
+			fixedSum += w
+		}
+	}
+	// add 1 space between columns
+	fixedSum += len(widths) - 1
+	flexWidth := totalWidth - fixedSum
+	if flexWidth < 8 {
+		flexWidth = 8 // minimum safety
+	}
+	if flexibleIdx != -1 {
+		out[flexibleIdx] = flexWidth
+	}
+	return out
+}
+
+func sortItems0(items []domain.MatterDocument, col col0Type, desc bool, currentOAID string) {
+	sort.SliceStable(items, func(i, j int) bool {
+		var less bool
+		d1, d2 := items[i], items[j]
+		switch col {
+		case col0Name:
+			less = strings.ToLower(d1.DisplayName) < strings.ToLower(d2.DisplayName)
+		case col0Kind:
+			less = strings.ToLower(d1.Kind.Label()) < strings.ToLower(d2.Kind.Label())
+		case col0LoadDate, col0LoadTime:
+			less = d1.AddedAt.Before(d2.AddedAt)
+		case col0LastOpened:
+			less = d1.LastOpenedAt.Before(d2.LastOpenedAt)
+		case col0Tags:
+			less = strings.ToLower(tagNames(d1.Tags)) < strings.ToLower(tagNames(d2.Tags))
+		case col0NotesCount:
+			less = false // always 0 placeholder
+		case col0OtherOAs:
+			less = strings.ToLower(otherOAs(d1, currentOAID)) < strings.ToLower(otherOAs(d2, currentOAID))
+		}
+		if desc {
+			return !less
+		}
+		return less
+	})
+}
+
+func sortItems1(items []domain.MatterDocument, col col1Type, desc bool) {
+	sort.SliceStable(items, func(i, j int) bool {
+		var less bool
+		d1, d2 := items[i], items[j]
+		switch col {
+		case col1Name:
+			less = strings.ToLower(d1.DisplayName) < strings.ToLower(d2.DisplayName)
+		case col1Project:
+			less = strings.ToLower(string(d1.Project)) < strings.ToLower(string(d2.Project))
+		case col1OAs:
+			less = strings.ToLower(strings.Join(d1.OfficeActionIDs, ",")) < strings.ToLower(strings.Join(d2.OfficeActionIDs, ","))
+		case col1LoadDateTime:
+			less = d1.AddedAt.Before(d2.AddedAt)
+		case col1LastOpened:
+			less = d1.LastOpenedAt.Before(d2.LastOpenedAt)
+		case col1Tags:
+			less = strings.ToLower(tagNames(d1.Tags)) < strings.ToLower(tagNames(d2.Tags))
+		}
+		if desc {
+			return !less
+		}
+		return less
+	})
 }

@@ -267,7 +267,7 @@ func (r *Repo) draftClaims(ctx context.Context, id domain.DraftID) ([]domain.Dra
 }
 
 const officeActionColumns = `id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-	blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at`
+	blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at, name, last_opened_at`
 
 // SaveOfficeAction inserts or updates an office action by its id.
 func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (err error) {
@@ -284,8 +284,8 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO office_action
 		 (id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-		  blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		  blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at, name, last_opened_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id,
 			application_number=excluded.application_number,
@@ -300,10 +300,12 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 			response_due=excluded.response_due,
 			status=excluded.status,
 			source=excluded.source,
-			imported_at=excluded.imported_at`,
+			imported_at=excluded.imported_at,
+			name=excluded.name,
+			last_opened_at=excluded.last_opened_at`,
 		oa.ID, string(oa.Project), oa.ApplicationNumber, encodeTime(oa.MailDate), string(oa.Type),
 		oa.Examiner, oa.ArtUnit, oa.BlobPath, oa.BlobHash, oa.ExtractedText, oa.Notes,
-		encodeTime(oa.ResponseDue), string(oa.Status), oa.Source, encodeTime(oa.ImportedAt))
+		encodeTime(oa.ResponseDue), string(oa.Status), oa.Source, encodeTime(oa.ImportedAt), oa.Name, encodeTime(oa.LastOpenedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save office action %s: %w", oa.ID, err)
 	}
@@ -356,17 +358,18 @@ func (r *Repo) DeleteOfficeAction(ctx context.Context, id string) (err error) {
 
 func scanOfficeAction(s rowScanner) (domain.OfficeAction, error) {
 	var (
-		oa          domain.OfficeAction
-		id          string
-		project     string
-		oaType      string
-		mailDate    string
-		responseDue string
-		status      string
-		importedAt  string
+		oa           domain.OfficeAction
+		id           string
+		project      string
+		oaType       string
+		mailDate     string
+		responseDue  string
+		status       string
+		importedAt   string
+		lastOpenedAt string
 	)
 	if err := s.Scan(&id, &project, &oa.ApplicationNumber, &mailDate, &oaType, &oa.Examiner, &oa.ArtUnit,
-		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &responseDue, &status, &oa.Source, &importedAt); err != nil {
+		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &responseDue, &status, &oa.Source, &importedAt, &oa.Name, &lastOpenedAt); err != nil {
 		return domain.OfficeAction{}, err
 	}
 	oa.ID = id
@@ -388,11 +391,15 @@ func scanOfficeAction(s rowScanner) (domain.OfficeAction, error) {
 		return domain.OfficeAction{}, err
 	}
 	oa.ImportedAt = ia
+	lo, err := decodeTime(lastOpenedAt)
+	if err == nil {
+		oa.LastOpenedAt = lo
+	}
 	return oa, nil
 }
 
 const matterDocumentColumns = `id, project_id, office_action_id, kind, display_name,
-	blob_path, blob_hash, extracted_text, added_at`
+	blob_path, blob_hash, extracted_text, added_at, last_opened_at`
 
 // SaveMatterDocument inserts or updates one matter document by its id.
 func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) (err error) {
@@ -417,8 +424,8 @@ func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) 
 	}()
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO matter_document
-		 (id, project_id, office_action_id, kind, display_name, blob_path, blob_hash, extracted_text, added_at)
-		 VALUES (?,?,?,?,?,?,?,?,?)
+		 (id, project_id, office_action_id, kind, display_name, blob_path, blob_hash, extracted_text, added_at, last_opened_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id,
 			office_action_id=excluded.office_action_id,
@@ -427,9 +434,10 @@ func (r *Repo) SaveMatterDocument(ctx context.Context, d domain.MatterDocument) 
 			blob_path=excluded.blob_path,
 			blob_hash=excluded.blob_hash,
 			extracted_text=excluded.extracted_text,
-			added_at=excluded.added_at`,
+			added_at=excluded.added_at,
+			last_opened_at=excluded.last_opened_at`,
 		d.ID, string(d.Project), d.OfficeActionID, string(d.Kind), d.DisplayName,
-		d.BlobPath, d.BlobHash, d.ExtractedText, encodeTime(d.AddedAt))
+		d.BlobPath, d.BlobHash, d.ExtractedText, encodeTime(d.AddedAt), encodeTime(d.LastOpenedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save matter document %s: %w", d.ID, err)
 	}
@@ -478,8 +486,14 @@ func (r *Repo) MatterDocument(ctx context.Context, id string) (d domain.MatterDo
 // ListMatterDocuments returns a project's documents, newest first.
 func (r *Repo) ListMatterDocuments(ctx context.Context, project domain.ProjectID) (out []domain.MatterDocument, err error) {
 	defer r.observeDuration("list_matter_documents", time.Now(), &err)
-	rows, err := r.reader.QueryContext(ctx,
-		`SELECT `+matterDocumentColumns+` FROM matter_document WHERE project_id = ? ORDER BY added_at DESC`, string(project))
+	var rows *sql.Rows
+	if project == "" {
+		rows, err = r.reader.QueryContext(ctx,
+			`SELECT `+matterDocumentColumns+` FROM matter_document ORDER BY added_at DESC`)
+	} else {
+		rows, err = r.reader.QueryContext(ctx,
+			`SELECT `+matterDocumentColumns+` FROM matter_document WHERE project_id = ? ORDER BY added_at DESC`, string(project))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list matter documents: %w", err)
 	}
@@ -545,14 +559,15 @@ func (r *Repo) DeleteMatterDocument(ctx context.Context, id string) (err error) 
 
 func scanMatterDocument(s rowScanner) (domain.MatterDocument, error) {
 	var (
-		d       domain.MatterDocument
-		id      string
-		project string
-		kind    string
-		addedAt string
+		d            domain.MatterDocument
+		id           string
+		project      string
+		kind         string
+		addedAt      string
+		lastOpenedAt string
 	)
 	if err := s.Scan(&id, &project, &d.OfficeActionID, &kind, &d.DisplayName,
-		&d.BlobPath, &d.BlobHash, &d.ExtractedText, &addedAt); err != nil {
+		&d.BlobPath, &d.BlobHash, &d.ExtractedText, &addedAt, &lastOpenedAt); err != nil {
 		return domain.MatterDocument{}, err
 	}
 	d.ID = id
@@ -566,6 +581,10 @@ func scanMatterDocument(s rowScanner) (domain.MatterDocument, error) {
 		return domain.MatterDocument{}, err
 	}
 	d.AddedAt = at
+	lo, err := decodeTime(lastOpenedAt)
+	if err == nil {
+		d.LastOpenedAt = lo
+	}
 	return d, nil
 }
 

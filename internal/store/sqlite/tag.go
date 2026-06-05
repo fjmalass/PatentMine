@@ -250,12 +250,22 @@ func (r *Repo) UntagMatterDocument(ctx context.Context, tagID int64, documentID 
 // MatterDocumentTags returns tags assigned to one preparation document.
 func (r *Repo) MatterDocumentTags(ctx context.Context, project domain.ProjectID, documentID string) (out []domain.Tag, err error) {
 	defer r.observeDuration("matter_document_tags", time.Now(), &err)
-	rows, err := r.reader.QueryContext(ctx,
-		`SELECT t.id, t.project_id, t.name, t.created_at, mdt.created_at
-		 FROM tag t
-		 JOIN matter_document_tag mdt ON mdt.tag_id = t.id
-		 WHERE t.project_id = ? AND mdt.document_id = ?
-		 ORDER BY t.name`, string(project), documentID)
+	var rows *sql.Rows
+	if project == "" {
+		rows, err = r.reader.QueryContext(ctx,
+			`SELECT t.id, t.project_id, t.name, t.created_at, mdt.created_at
+			 FROM tag t
+			 JOIN matter_document_tag mdt ON mdt.tag_id = t.id
+			 WHERE mdt.document_id = ?
+			 ORDER BY t.name`, documentID)
+	} else {
+		rows, err = r.reader.QueryContext(ctx,
+			`SELECT t.id, t.project_id, t.name, t.created_at, mdt.created_at
+			 FROM tag t
+			 JOIN matter_document_tag mdt ON mdt.tag_id = t.id
+			 WHERE t.project_id = ? AND mdt.document_id = ?
+			 ORDER BY t.name`, string(project), documentID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("store/sqlite: list matter document tags: %w", err)
 	}

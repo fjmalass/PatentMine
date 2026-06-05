@@ -274,7 +274,7 @@ func TestOfficeActionObservability(t *testing.T) {
 	if _, err := eng.SaveOfficeActionNotes(ctx, oa.ID, "traverse"); err != nil {
 		t.Fatalf("SaveOfficeActionNotes: %v", err)
 	}
-	if _, err := eng.UpdateOfficeActionMeta(ctx, oa.ID, "Jane Doe", mailed.Format(domain.DateLayout), domain.OAFinal, "2151", "16/123,456"); err != nil {
+	if _, err := eng.UpdateOfficeActionMeta(ctx, oa.ID, "New Name", "Jane Doe", mailed.Format(domain.DateLayout), domain.OAFinal, "2151", "16/123,456"); err != nil {
 		t.Fatalf("UpdateOfficeActionMeta: %v", err)
 	}
 	if _, err := eng.DeleteOfficeAction(ctx, oa.ID, false); err != nil {
@@ -358,6 +358,45 @@ func TestExtractDocumentTextReportsNoEmbeddedTextWithoutAI(t *testing.T) {
 
 	if _, err := eng.ExtractDocumentText(ctx, doc.ID); err == nil || !strings.Contains(err.Error(), "no embedded text") {
 		t.Fatalf("ExtractDocumentText error = %v, want no embedded text", err)
+	}
+}
+
+type fakeExtractor struct {
+	fakeDrafter
+	ocrReply string
+	called   bool
+}
+
+func (f *fakeExtractor) ExtractText(ctx context.Context, data []byte, mimeType string) (string, error) {
+	f.called = true
+	return f.ocrReply, nil
+}
+
+func TestExtractDocumentTextWithAIExtractor(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeExtractor{ocrReply: "Extracted via OCR"}
+	eng, proj := newDraftEngine(t, fake)
+
+	src := filepath.Join(t.TempDir(), "scanned.txt")
+	if err := os.WriteFile(src, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := eng.ImportMatterDocument(ctx, ImportMatterDocumentInput{
+		Project: proj, Kind: domain.MatterDocOA, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportMatterDocument: %v", err)
+	}
+
+	res, err := eng.ExtractDocumentText(ctx, doc.ID)
+	if err != nil {
+		t.Fatalf("ExtractDocumentText: %v", err)
+	}
+	if !fake.called {
+		t.Error("expected AI extractor to be called, but was not")
+	}
+	if res.ExtractedText != "Extracted via OCR" {
+		t.Errorf("extracted text = %q, want %q", res.ExtractedText, "Extracted via OCR")
 	}
 }
 

@@ -104,6 +104,7 @@ const (
 	MethodOfficeActionSaveNotes Method = "office_action.save_notes"
 	MethodOfficeActionUpdate    Method = "office_action.update"
 	MethodOfficeActionDelete    Method = "office_action.delete"
+	MethodOfficeActionOpen      Method = "office_action.open"
 
 	// Prosecution-matter workspace: matter-scoped documents and project stage.
 	MethodMatterDocumentImport   Method = "matter.document.import"
@@ -115,6 +116,7 @@ const (
 	MethodMatterDocumentUntag    Method = "matter.document.untag"
 	MethodMatterDocumentAssign   Method = "matter.document.assign_oa"
 	MethodMatterDocumentUnassign Method = "matter.document.unassign_oa"
+	MethodMatterDocumentOpen     Method = "matter.document.open"
 	MethodMatterEventAdd         Method = "matter.event.add"
 	MethodMatterEventList        Method = "matter.event.list"
 	MethodMatterEventDelete      Method = "matter.event.delete"

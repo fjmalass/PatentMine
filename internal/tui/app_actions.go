@@ -3,10 +3,12 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"patentmine/internal/ai"
 	"patentmine/internal/command"
 	"patentmine/internal/domain"
 	"patentmine/internal/observability"
@@ -32,6 +34,30 @@ func (a *App) handleTextSubmit(m overlay.TextSubmitMsg) (tea.Model, tea.Cmd) {
 		return a.applyIDSFieldEdit("passages", m.Value)
 	case overlay.PurposeEditIDSNotes:
 		return a.applyIDSFieldEdit("notes", m.Value)
+	case overlay.PurposeEditGeminiKey:
+		a.updateConfigValue("GEMINI_API_KEY", m.Value)
+		a.popOverlay()
+		return a, nil
+	case overlay.PurposeEditOllamaHost:
+		a.updateConfigValue("OLLAMA_HOST", m.Value)
+		a.popOverlay()
+		return a, nil
+	case overlay.PurposeEditOllamaModel:
+		a.updateConfigValue("OLLAMA_MODEL", m.Value)
+		a.popOverlay()
+		return a, nil
+	case overlay.PurposeEditOpenAIKey:
+		a.updateConfigValue("OPENAI_API_KEY", m.Value)
+		a.popOverlay()
+		return a, nil
+	case overlay.PurposeEditOpenAIModel:
+		a.updateConfigValue("OPENAI_MODEL", m.Value)
+		a.popOverlay()
+		return a, nil
+	case overlay.PurposeEditUSPTOKey:
+		a.updateConfigValue("PATENTMINE_USPTO_API_KEY", m.Value)
+		a.popOverlay()
+		return a, nil
 	default:
 		return a, nil
 	}
@@ -625,4 +651,90 @@ func (a *App) navigateHistory(number domain.PatentNumber) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, nextPane.Init())
 	}
 	return a, tea.Batch(cmds...)
+}
+
+func (a *App) openConfigEditInput(field string) (tea.Model, tea.Cmd) {
+	var (
+		purpose overlay.Purpose
+		title   text.Key
+		caption text.Key
+	)
+	switch field {
+	case "gemini_key":
+		purpose, title, caption = overlay.PurposeEditGeminiKey, text.EditGeminiKeyTitle, text.EditGeminiKeyCaption
+	case "ollama_host":
+		purpose, title, caption = overlay.PurposeEditOllamaHost, text.EditOllamaHostTitle, text.EditOllamaHostCaption
+	case "ollama_model":
+		purpose, title, caption = overlay.PurposeEditOllamaModel, text.EditOllamaModelTitle, text.EditOllamaModelCaption
+	case "openai_key":
+		purpose, title, caption = overlay.PurposeEditOpenAIKey, text.EditOpenAIKeyTitle, text.EditOpenAIKeyCaption
+	case "openai_model":
+		purpose, title, caption = overlay.PurposeEditOpenAIModel, text.EditOpenAIModelTitle, text.EditOpenAIModelCaption
+	case "uspto_key":
+		purpose, title, caption = overlay.PurposeEditUSPTOKey, text.EditUSPTOKeyTitle, text.EditUSPTOKeyCaption
+	default:
+		return a, nil
+	}
+	a.overlays = append(a.overlays, overlay.NewTextInput(a.theme, a.text, purpose, title, caption))
+	return a, nil
+}
+
+func (a *App) updateConfigValue(key string, value string) {
+	_ = updateDotEnv(key, value)
+
+	switch key {
+	case "GEMINI_API_KEY":
+		a.geminiAPIKey = value
+		a.geminiAnalyzer = ai.NewGeminiAnalyzer(value)
+	case "OLLAMA_HOST":
+		a.ollamaHost = value
+		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(value, a.ollamaModel)
+	case "OLLAMA_MODEL":
+		a.ollamaModel = value
+		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(a.ollamaHost, value)
+	case "OPENAI_API_KEY":
+		a.openaiAPIKey = value
+		a.openaiAnalyzer = ai.NewOpenAIAnalyzer(value, a.openaiModel)
+	case "OPENAI_MODEL":
+		a.openaiModel = value
+		a.openaiAnalyzer = ai.NewOpenAIAnalyzer(a.openaiAPIKey, value)
+	case "PATENTMINE_USPTO_API_KEY":
+		a.usptoAPIKey = value
+		a.usptoConfigured = (value != "")
+	}
+
+	if len(a.overlays) > 0 {
+		for _, ov := range a.overlays {
+			if settings, ok := ov.(*overlay.SettingsOverlay); ok {
+				settings.UpdateValues(a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.openaiAPIKey, a.openaiModel, a.usptoConfigured)
+			}
+		}
+	}
+}
+
+func updateDotEnv(key string, value string) error {
+	path := ".env"
+	var lines []string
+	found := false
+	data, err := os.ReadFile(path)
+	if err == nil {
+		content := string(data)
+		for _, line := range strings.Split(content, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, key+"=") {
+				lines = append(lines, key+"="+value)
+				found = true
+			} else {
+				lines = append(lines, line)
+			}
+		}
+	}
+	if !found {
+		lines = append(lines, key+"="+value)
+	}
+	newContent := strings.Join(lines, "\n")
+	if !strings.HasSuffix(newContent, "\n") {
+		newContent += "\n"
+	}
+	return os.WriteFile(path, []byte(newContent), 0o600)
 }

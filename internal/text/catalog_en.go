@@ -189,6 +189,18 @@ const (
 	EditIDSNotesCaption    Key = "overlay.ids.notes.caption"
 	EditPatentNoteTitle    Key = "overlay.patent_note.title"
 	EditPatentNoteCaption  Key = "overlay.patent_note.caption"
+	EditGeminiKeyTitle        Key = "overlay.edit_gemini_key.title"
+	EditGeminiKeyCaption      Key = "overlay.edit_gemini_key.caption"
+	EditOllamaHostTitle       Key = "overlay.edit_ollama_host.title"
+	EditOllamaHostCaption     Key = "overlay.edit_ollama_host.caption"
+	EditOllamaModelTitle      Key = "overlay.edit_ollama_model.title"
+	EditOllamaModelCaption    Key = "overlay.edit_ollama_model.caption"
+	EditOpenAIKeyTitle        Key = "overlay.edit_openai_key.title"
+	EditOpenAIKeyCaption      Key = "overlay.edit_openai_key.caption"
+	EditOpenAIModelTitle      Key = "overlay.edit_openai_model.title"
+	EditOpenAIModelCaption    Key = "overlay.edit_openai_model.caption"
+	EditUSPTOKeyTitle         Key = "overlay.edit_uspto_key.title"
+	EditUSPTOKeyCaption       Key = "overlay.edit_uspto_key.caption"
 	TextInputHint          Key = "overlay.text_input.hint"
 )
 
@@ -281,7 +293,7 @@ var cmdStrings = map[string][2]string{
 	"patent.import":                          {"Import patent", "Fetch a patent by number (add 'force' to bypass the cache) or load a fixture file by path."},
 	"patent.add-file":                        {"Add patents from file", "Bulk-add every patent number listed in a plain-text file into the active project, with manual provenance — the inverse of Export added list."},
 	"officeaction.add":                       {"Add office action", "Import a USPTO Office Action document into the active project — pass a path, or run with no argument to open a file picker. A form then captures the examiner and dates; the file is copied into the docs export store, hashed, text-extracted, and the response deadline is computed."},
-	"officeaction.open":                      {"Open office actions", "Open the active project's office-action table; select one to open the split examiner-text / notes editor."},
+	"officeaction.list":                      {"List office actions", "Open the active project's office-action table; select one to open the split examiner-text / notes editor."},
 	"matter.document.add":                    {"Add document", "File a supporting document (a cited reference, a prior response, …) under the active matter — pass a path, or run with no argument to open a file picker. The file is copied into the docs store, hashed, and text-extracted so it can be read and copied from."},
 	"matter.document.open":                   {"Open documents", "Open the active matter's document list: every file filed under it (the office action, references, responses). Enter views a document's text, r renames it, d deletes it."},
 	"project.matter-type":                    {"Set matter type", "Record the active project's prosecution stage: provisional, nonprovisional, in_prosecution, or issued."},
@@ -514,6 +526,18 @@ var englishNamed = map[Key]string{
 	EditIDSNotesCaption:    "Enter any IDS note for this patent.",
 	EditPatentNoteTitle:    "Patent notes",
 	EditPatentNoteCaption:  "Edit the project-scoped markdown note for this patent.",
+	EditGeminiKeyTitle:        "Gemini API Key",
+	EditGeminiKeyCaption:      "Enter your Google Gemini Developer API Key (or path starting with file:)",
+	EditOllamaHostTitle:       "Ollama Server Host",
+	EditOllamaHostCaption:     "Enter the local Ollama server address (e.g. http://localhost:11434)",
+	EditOllamaModelTitle:      "Ollama Model",
+	EditOllamaModelCaption:    "Enter the Ollama model name (e.g. mistral or llama3.1)",
+	EditOpenAIKeyTitle:        "OpenAI API Key",
+	EditOpenAIKeyCaption:      "Enter your OpenAI API Key (or path starting with file:)",
+	EditOpenAIModelTitle:      "OpenAI Model",
+	EditOpenAIModelCaption:    "Enter the OpenAI model name (e.g. gpt-4o-mini or gpt-4o)",
+	EditUSPTOKeyTitle:         "USPTO API Key",
+	EditUSPTOKeyCaption:       "Enter your USPTO Open Data Portal API Key (or path starting with file:)",
 	TextInputHint:          "enter confirms · esc cancels",
 }
 

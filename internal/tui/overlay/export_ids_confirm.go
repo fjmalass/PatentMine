@@ -36,18 +36,6 @@ type IDSExportSubmitMsg struct {
 	SignerRegNumber string
 }
 
-// ExportIDSConfirm asks the user to review the export target + summary before
-// any PDF is written, and to fill in the 08c signer / deposit-account fields
-// when they apply. Required IDS header fields that are still empty are flagged
-// here too — the export is not run while any are missing.
-type ExportIDSConfirm struct {
-	theme   render.Theme
-	project domain.Project
-	summary IDSExportSummary
-	values  [5]string
-	focus   int
-}
-
 const (
 	ecFieldFeeAmount = iota
 	ecFieldDeposit
@@ -56,18 +44,32 @@ const (
 	ecFieldRegNumber
 )
 
-var ecLabels = [5]string{
-	"Fee Amount (USD)",
-	"Deposit Account #",
-	"Signer Name (printed)",
-	"Signer Signature  (/Doe/)",
-	"Registration Number",
+// ecFields are the labeled PTO/SB/08c signer-block fields.
+var ecFields = []fieldFormField{
+	{Label: "Fee Amount (USD)", Kind: fieldText},
+	{Label: "Deposit Account #", Kind: fieldText},
+	{Label: "Signer Name (printed)", Kind: fieldText},
+	{Label: "Signer Signature  (/Doe/)", Kind: fieldText},
+	{Label: "Registration Number", Kind: fieldText},
+}
+
+// ExportIDSConfirm asks the user to review the export target + summary before
+// any PDF is written, and to fill in the 08c signer / deposit-account fields
+// when they apply. Required IDS header fields that are still empty are flagged
+// here too — the export is not run while any are missing. It uses the shared
+// view/edit field model: Ctrl+S exports, Esc cancels, and 'y' is a view-mode
+// quick-export when nothing needs filling.
+type ExportIDSConfirm struct {
+	theme   render.Theme
+	project domain.Project
+	summary IDSExportSummary
+	form    fieldForm
 }
 
 // NewExportIDSConfirm builds the overlay. base is the directory the export
 // will land in (a timestamped subdir of this is created at write time).
 func NewExportIDSConfirm(theme render.Theme, project domain.Project, summary IDSExportSummary) *ExportIDSConfirm {
-	return &ExportIDSConfirm{theme: theme, project: project, summary: summary}
+	return &ExportIDSConfirm{theme: theme, project: project, summary: summary, form: newFieldForm(ecFields)}
 }
 
 // Title implements Overlay.
@@ -81,53 +83,39 @@ func (o *ExportIDSConfirm) Handles() []command.ID { return nil }
 
 // HandleKey implements KeyHandler.
 func (o *ExportIDSConfirm) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	switch msg.Type {
-	case tea.KeyEsc:
-		return o, func() tea.Msg { return ConfirmRejectMsg{} }, true
-	case tea.KeyTab, tea.KeyDown:
-		o.focus = (o.focus + 1) % len(o.values)
-		return o, nil, true
-	case tea.KeyShiftTab, tea.KeyUp:
-		o.focus = (o.focus - 1 + len(o.values)) % len(o.values)
-		return o, nil, true
-	case tea.KeyBackspace:
-		if len(o.values[o.focus]) > 0 {
-			r := []rune(o.values[o.focus])
-			o.values[o.focus] = string(r[:len(r)-1])
-		}
-		return o, nil, true
-	case tea.KeyCtrlU:
-		o.values[o.focus] = ""
-		return o, nil, true
-	case tea.KeyEnter:
-		// Block confirm when required header fields are missing — the
-		// generated PDFs would be unusable for filing.
+	// View-mode quick-export: 'y' confirms when nothing in the form needs
+	// filling and no required header fields are missing.
+	if !o.form.Editing() && (msg.String() == "y" || msg.String() == "Y") &&
+		o.form.Focus() == ecFieldFeeAmount && o.form.Value(ecFieldFeeAmount) == "" &&
+		len(o.summary.MissingFields) == 0 {
+		return o, func() tea.Msg { return IDSExportSubmitMsg{} }, true
+	}
+
+	switch action, _ := o.form.HandleKey(msg); action {
+	case fieldFormSubmit:
+		// Block export when required header fields are missing — the generated
+		// PDFs would be unusable for filing.
 		if len(o.summary.MissingFields) > 0 {
 			return o, nil, true
 		}
-		return o, func() tea.Msg {
-			return IDSExportSubmitMsg{
-				FeeAmount:       strings.TrimSpace(o.values[ecFieldFeeAmount]),
-				DepositAccount:  strings.TrimSpace(o.values[ecFieldDeposit]),
-				SignerName:      strings.TrimSpace(o.values[ecFieldSignerName]),
-				SignerSignature: strings.TrimSpace(o.values[ecFieldSignerSig]),
-				SignerRegNumber: strings.TrimSpace(o.values[ecFieldRegNumber]),
-			}
-		}, true
-	case tea.KeyRunes, tea.KeySpace:
-		// On a typeable key with no field focused yet, also accept 'y'/'Y' as
-		// quick confirm when nothing in the form needs filling.
-		s := msg.String()
-		if (s == "y" || s == "Y") && o.focus == ecFieldFeeAmount && o.values[ecFieldFeeAmount] == "" &&
-			len(o.summary.MissingFields) == 0 {
-			return o, func() tea.Msg {
-				return IDSExportSubmitMsg{}
-			}, true
-		}
-		o.values[o.focus] += s
+		return o, o.submit(), true
+	case fieldFormCancel:
+		return o, func() tea.Msg { return ConfirmRejectMsg{} }, true
+	default:
 		return o, nil, true
 	}
-	return o, nil, true
+}
+
+func (o *ExportIDSConfirm) submit() tea.Cmd {
+	return func() tea.Msg {
+		return IDSExportSubmitMsg{
+			FeeAmount:       strings.TrimSpace(o.form.Value(ecFieldFeeAmount)),
+			DepositAccount:  strings.TrimSpace(o.form.Value(ecFieldDeposit)),
+			SignerName:      strings.TrimSpace(o.form.Value(ecFieldSignerName)),
+			SignerSignature: strings.TrimSpace(o.form.Value(ecFieldSignerSig)),
+			SignerRegNumber: strings.TrimSpace(o.form.Value(ecFieldRegNumber)),
+		}
+	}
 }
 
 // View implements Overlay.
@@ -172,25 +160,18 @@ func (o *ExportIDSConfirm) View(maxW, _ int) string {
 	}
 
 	writeRow("PTO/SB/08c signer block (fields stay blank if left empty):", o.theme.Dim.Render)
-	for i, label := range ecLabels {
-		marker := "  "
-		if i == o.focus {
-			marker = "▸ "
-		}
-		line := fmt.Sprintf("%s%-26s %s", marker, label+":", o.values[i])
-		if i == o.focus {
-			b.WriteString(o.theme.Title.Render(render.Truncate(line, maxW)))
-		} else {
-			b.WriteString(o.theme.Row.Render(render.Truncate(line, maxW)))
-		}
-		b.WriteByte('\n')
-	}
+	b.WriteString(o.form.RenderFields(o.theme, maxW, 26))
 	b.WriteByte('\n')
 
-	if len(o.summary.MissingFields) > 0 {
-		writeRow("[esc] Cancel  ·  [enter] blocked by missing fields", o.theme.Dim.Render)
-	} else {
-		writeRow("[tab]/[shift+tab] field  ·  [enter] Export  ·  [esc] Cancel  ·  [y] quick-export", o.theme.Dim.Render)
+	var hint string
+	switch {
+	case o.form.Editing():
+		hint = o.form.Hint()
+	case len(o.summary.MissingFields) > 0:
+		hint = "[esc] cancel  ·  [ctrl+s] blocked until missing header fields are fixed  ·  [;] jump"
+	default:
+		hint = o.form.Hint() + "  ·  [y] quick-export"
 	}
+	writeRow(hint, o.theme.Dim.Render)
 	return b.String()
 }

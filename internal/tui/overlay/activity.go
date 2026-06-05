@@ -19,6 +19,7 @@ type Activity struct {
 	records  []observability.Record
 	page     render.Paginator
 	vimCount int
+	jump     JumpNavigator
 }
 
 // NewActivity builds an activity journal overlay.
@@ -42,11 +43,22 @@ func (a *Activity) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if len(a.records) == 0 {
 		return a, func() tea.Msg { return CloseOverlayMsg{} }, true
 	}
+	if newCursor, handled := a.jump.HandleKey(msg, a.page.Cursor(), len(a.records)); handled {
+		a.page.ScrollTo(newCursor)
+		return a, nil, true
+	}
 	if handleSubtableMotionKey(&a.page, msg, &a.vimCount) {
 		return a, nil, true
 	}
 
 	s := msg.String()
+	switch s {
+	case ";":
+		a.jump.Active = true
+		a.jump.PendingCount = 0
+		a.jump.PendingG = false
+		return a, nil, true
+	}
 	switch s {
 	case "enter":
 		rec := a.records[a.page.Cursor()]
@@ -72,7 +84,7 @@ func (a *Activity) View(maxW, maxH int) string {
 
 	pageSize := max(maxH-4, 1)
 
-	gutterW := max(render.GutterWidth(n)-1, 1)
+	const gutterW = 6
 	const timeW = 8
 	const compW = 9
 	const actW = 22
@@ -81,7 +93,7 @@ func (a *Activity) View(maxW, maxH int) string {
 	entityW := max(maxW-fixed, 10)
 
 	cols := []render.TableColumn{
-		{Key: "ln", Label: strings.Repeat(" ", gutterW), Width: gutterW},
+		{Key: "ln", Label: "Line", Width: gutterW},
 		{Key: "time", Label: "Time", Width: timeW},
 		{Key: "component", Label: "Component", Width: compW},
 		{Key: "action", Label: "Action", Width: actW},
@@ -95,7 +107,7 @@ func (a *Activity) View(maxW, maxH int) string {
 		rec := a.records[absIdx]
 		switch cols[colIdx].Key {
 		case "ln":
-			return fmt.Sprintf("%*d", gutterW, absIdx+1)
+			return ""
 		case "time":
 			return localClock(rec.Timestamp)
 		case "component":
@@ -116,13 +128,19 @@ func (a *Activity) View(maxW, maxH int) string {
 		Total:        n,
 		PageSize:     pageSize,
 		FocusActive:  true,
+		Jump:         &a.jump,
 	}, maxW, getCell))
 	b.WriteByte('\n')
 	selected := a.records[a.page.Cursor()]
 	detail := fmt.Sprintf("  %s %s", selected.Status, activitySummary(selected))
 	b.WriteString(a.theme.Dim.Render(render.Pad(detail, maxW)))
 	b.WriteByte('\n')
-	help := fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Open patent  [q/Esc] Close", subtableStatus(a.page))
+	var help string
+	if a.jump.Active {
+		help = "  " + a.jump.HintSuffix(a.page.Cursor(), -1, false)
+	} else {
+		help = fmt.Sprintf("  %s  [j/k] Move  [ctrl+u/d] Page  [g/G] Top/Bot  [Enter] Open patent  [q/Esc] Close · [;] jump mode", subtableStatus(a.page))
+	}
 	b.WriteString(a.theme.Dim.Render(render.Pad(help, maxW)))
 	return b.String()
 }

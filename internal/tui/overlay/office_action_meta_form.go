@@ -1,7 +1,7 @@
 package overlay
 
 import (
-	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,62 +12,83 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-// OfficeActionMetaForm captures the office-action metadata at import time or edit time —
-// crucially the examiner name, which the path-only import dropped — before the
-// daemon copies the file in. Tab/Shift+Tab (or ↑/↓) move between fields, Enter
-// imports/saves, Esc cancels. The response deadline is computed from the mail date and
-// type by the engine, so it is not entered here.
-type OfficeActionMetaForm struct {
-	theme   render.Theme
-	project domain.ProjectID
-	source  string // the picked file path or "" if edit
-	oaID    string // the office action ID if edit
-	isEdit  bool
-	values  [5]string
-	focus   int
+var oaTypes = []domain.OAType{
+	domain.OANonFinal,
+	domain.OAFinal,
+	domain.OARestriction,
+	domain.OAAdvisory,
+	domain.OANoticeOfAllowance,
 }
 
+// Field indices into the office-action meta form.
 const (
-	oamExaminer = iota
-	oamMailDate
-	oamType
-	oamArtUnit
-	oamAppNumber
+	oaFieldName = iota
+	oaFieldType
+	oaFieldMailDate
+	oaFieldAppNumber
 )
 
-var oamLabels = [5]string{
-	"Examiner",
-	"Mail Date (YYYY-MM-DD)",
-	"Type (non_final/final/restriction/advisory/notice_of_allowance)",
-	"Art Unit",
-	"Application Number",
+// oaMetaFields are the labeled fields shared by the import and edit forms. The
+// Type field cycles through oaTypes (see cycleOAType); the rest are free text.
+var oaMetaFields = []fieldFormField{
+	{Label: "Action Name", Kind: fieldText},
+	{Label: "Type", Kind: fieldChoice, Cycle: cycleOAType},
+	{Label: "Mail Date", Kind: fieldText},
+	{Label: "Application Number", Kind: fieldText},
 }
 
-// NewOfficeActionMetaForm builds the form for the picked source file, pre-filled
-// from the active project where the office action inherits the same examiner, art
-// unit, and application number.
+// OfficeActionMetaForm captures the office-action metadata at import time or edit time —
+// crucially the examiner name, which the path-only import dropped — before the
+// daemon copies the file in. It uses the shared view/edit field model: arrive on
+// a field in view mode, Enter to edit (a cursor shows where input lands), Enter
+// to validate, Ctrl+S to save, Esc to cancel. The response deadline is computed
+// from the mail date and type by the engine, so it is not entered here.
+type OfficeActionMetaForm struct {
+	theme            render.Theme
+	project          domain.ProjectID
+	oaID             string // the office action ID if edit
+	isEdit           bool
+	form             fieldForm
+	originalExaminer string
+	originalArtUnit  string
+}
+
+// NewOfficeActionMetaForm builds the form for creating/loading an office action, pre-filled
+// from the active project.
 func NewOfficeActionMetaForm(theme render.Theme, project domain.Project, source string) *OfficeActionMetaForm {
-	o := &OfficeActionMetaForm{theme: theme, project: project.ID, source: source}
-	o.values[oamExaminer] = project.LatestExaminer()
-	o.values[oamType] = string(domain.OANonFinal)
-	o.values[oamArtUnit] = project.ArtUnit
-	o.values[oamAppNumber] = project.ApplicationNumber
+	o := &OfficeActionMetaForm{
+		theme:            theme,
+		project:          project.ID,
+		isEdit:           false,
+		form:             newFieldForm(oaMetaFields),
+		originalExaminer: project.LatestExaminer(),
+		originalArtUnit:  project.ArtUnit,
+	}
+	if source != "" {
+		base := filepath.Base(source)
+		ext := filepath.Ext(base)
+		o.form.SetValue(oaFieldName, strings.TrimSuffix(base, ext))
+	}
+	o.form.SetValue(oaFieldType, string(domain.OANonFinal))
+	o.form.SetValue(oaFieldAppNumber, project.ApplicationNumber)
 	return o
 }
 
 // NewOfficeActionEditForm builds the form for editing an existing office action.
 func NewOfficeActionEditForm(theme render.Theme, project domain.ProjectID, oa domain.OfficeAction) *OfficeActionMetaForm {
 	o := &OfficeActionMetaForm{
-		theme:   theme,
-		project: project,
-		oaID:    oa.ID,
-		isEdit:  true,
+		theme:            theme,
+		project:          project,
+		oaID:             oa.ID,
+		isEdit:           true,
+		form:             newFieldForm(oaMetaFields),
+		originalExaminer: oa.Examiner,
+		originalArtUnit:  oa.ArtUnit,
 	}
-	o.values[oamExaminer] = oa.Examiner
-	o.values[oamMailDate] = oa.MailDate.Format(domain.DateLayout)
-	o.values[oamType] = string(oa.Type)
-	o.values[oamArtUnit] = oa.ArtUnit
-	o.values[oamAppNumber] = oa.ApplicationNumber
+	o.form.SetValue(oaFieldName, oa.Name)
+	o.form.SetValue(oaFieldType, string(oa.Type))
+	o.form.SetValue(oaFieldMailDate, oa.MailDate.Format(domain.DateLayout))
+	o.form.SetValue(oaFieldAppNumber, oa.ApplicationNumber)
 	return o
 }
 
@@ -75,7 +96,7 @@ func (o *OfficeActionMetaForm) Title() string {
 	if o.isEdit {
 		return "Edit Office Action Details"
 	}
-	return "Import Office Action"
+	return "Load Office Action"
 }
 
 func (o *OfficeActionMetaForm) Handles() []command.ID { return nil }
@@ -83,53 +104,69 @@ func (o *OfficeActionMetaForm) Handles() []command.ID { return nil }
 func (o *OfficeActionMetaForm) Command(command.ID, int) (Overlay, tea.Cmd) { return o, nil }
 
 func (o *OfficeActionMetaForm) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
-	switch msg.Type {
-	case tea.KeyEsc:
-		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
-	case tea.KeyEnter:
+	switch action, _ := o.form.HandleKey(msg); action {
+	case fieldFormSubmit:
 		return o, o.submit(), true
-	case tea.KeyTab, tea.KeyDown:
-		o.focus = (o.focus + 1) % len(o.values)
-		return o, nil, true
-	case tea.KeyShiftTab, tea.KeyUp:
-		o.focus = (o.focus - 1 + len(o.values)) % len(o.values)
-		return o, nil, true
-	case tea.KeyBackspace:
-		if len(o.values[o.focus]) > 0 {
-			r := []rune(o.values[o.focus])
-			o.values[o.focus] = string(r[:len(r)-1])
-		}
-		return o, nil, true
-	case tea.KeyCtrlU:
-		o.values[o.focus] = ""
-		return o, nil, true
-	case tea.KeyRunes, tea.KeySpace:
-		o.values[o.focus] += msg.String()
+	case fieldFormCancel:
+		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	default:
 		return o, nil, true
 	}
-	return o, nil, true
+}
+
+// cycleOAType advances the office-action type. A first-letter key sets a type
+// directly (f→final, r→restriction, a→advisory, o/l→notice of allowance, n
+// toggles non-final ↔ notice of allowance); space or any other key advances to
+// the next type in canonical order.
+func cycleOAType(current, key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "f":
+		return string(domain.OAFinal)
+	case "r":
+		return string(domain.OARestriction)
+	case "a":
+		return string(domain.OAAdvisory)
+	case "o", "l":
+		return string(domain.OANoticeOfAllowance)
+	case "n":
+		if domain.OAType(current) == domain.OANonFinal {
+			return string(domain.OANoticeOfAllowance)
+		}
+		return string(domain.OANonFinal)
+	}
+	idx := -1
+	for i, t := range oaTypes {
+		if t == domain.OAType(current) {
+			idx = i
+			break
+		}
+	}
+	return string(oaTypes[(idx+1)%len(oaTypes)])
 }
 
 func (o *OfficeActionMetaForm) submit() tea.Cmd {
 	if o.isEdit {
 		params := proto.OfficeActionUpdateParams{
 			ID:                o.oaID,
-			Examiner:          strings.TrimSpace(o.values[oamExaminer]),
-			MailDate:          strings.TrimSpace(o.values[oamMailDate]),
-			Type:              domain.OAType(strings.TrimSpace(o.values[oamType])),
-			ArtUnit:           strings.TrimSpace(o.values[oamArtUnit]),
-			ApplicationNumber: strings.TrimSpace(o.values[oamAppNumber]),
+			Name:              strings.TrimSpace(o.form.Value(oaFieldName)),
+			Examiner:          o.originalExaminer,
+			MailDate:          strings.TrimSpace(o.form.Value(oaFieldMailDate)),
+			Type:              domain.OAType(strings.TrimSpace(o.form.Value(oaFieldType))),
+			ArtUnit:           o.originalArtUnit,
+			ApplicationNumber: strings.TrimSpace(o.form.Value(oaFieldAppNumber)),
 		}
 		return func() tea.Msg { return OfficeActionEditSubmitMsg{Params: params} }
 	}
+
 	params := proto.OfficeActionImportParams{
 		Project:           o.project,
-		SourcePath:        o.source,
-		Examiner:          strings.TrimSpace(o.values[oamExaminer]),
-		MailDate:          strings.TrimSpace(o.values[oamMailDate]),
-		Type:              domain.OAType(strings.TrimSpace(o.values[oamType])),
-		ArtUnit:           strings.TrimSpace(o.values[oamArtUnit]),
-		ApplicationNumber: strings.TrimSpace(o.values[oamAppNumber]),
+		Name:              strings.TrimSpace(o.form.Value(oaFieldName)),
+		SourcePath:        "",
+		Examiner:          o.originalExaminer,
+		MailDate:          strings.TrimSpace(o.form.Value(oaFieldMailDate)),
+		Type:              domain.OAType(strings.TrimSpace(o.form.Value(oaFieldType))),
+		ArtUnit:           o.originalArtUnit,
+		ApplicationNumber: strings.TrimSpace(o.form.Value(oaFieldAppNumber)),
 	}
 	return func() tea.Msg { return OfficeActionImportSubmitMsg{Params: params} }
 }
@@ -140,62 +177,18 @@ func (o *OfficeActionMetaForm) OverlaySize(termW, termH int) (int, int) {
 
 func (o *OfficeActionMetaForm) View(maxW, _ int) string {
 	var b strings.Builder
-	if !o.isEdit {
-		fileLabel := "file: " + o.source
-		for _, line := range wrapTextOrPath(fileLabel, maxW) {
-			b.WriteString(o.theme.Dim.Render(line))
-			b.WriteByte('\n')
-		}
-		b.WriteByte('\n')
-	}
-	for i, label := range oamLabels {
-		marker := "  "
-		if i == o.focus {
-			marker = "▸ "
-		}
-		line := fmt.Sprintf("%s%-22s %s", marker, shortLabel(label)+":", o.values[i])
-		if i == o.focus {
-			b.WriteString(o.theme.Title.Render(render.Truncate(line, maxW)))
-		} else {
-			b.WriteString(o.theme.Row.Render(render.Truncate(line, maxW)))
-		}
-		b.WriteByte('\n')
-	}
+	b.WriteString(o.form.RenderFields(o.theme, maxW, 22))
 	b.WriteByte('\n')
-	hint := "[tab] field · [enter] save · [esc] cancel · [ctrl+u] clear · deadline auto-recomputed from mail date"
-	if !o.isEdit {
-		hint = "[tab] field · [enter] import · [esc] cancel · [ctrl+u] clear · deadline auto-set from mail date"
+
+	hint := o.form.Hint()
+	if o.form.Focus() == oaFieldType && o.form.Editing() {
+		hint += " · f/r/a/o/n set type directly"
+	} else if !o.form.Editing() {
+		hint += " · deadline auto-set from mail date"
 	}
 	for _, line := range wrapText(hint, maxW) {
 		b.WriteString(o.theme.Dim.Render(line))
 		b.WriteByte('\n')
 	}
 	return b.String()
-}
-
-// shortLabel trims the parenthetical help off a field label for the aligned
-// left column; the full label (with the help) is shown in the type field's hint.
-func shortLabel(label string) string {
-	if i := strings.IndexByte(label, '('); i > 0 {
-		return strings.TrimSpace(label[:i])
-	}
-	return label
-}
-
-func wrapTextOrPath(text string, width int) []string {
-	if width <= 0 {
-		return []string{text}
-	}
-	if strings.Contains(text, " ") {
-		return wrapText(text, width)
-	}
-	var lines []string
-	for len(text) > width {
-		lines = append(lines, text[:width])
-		text = text[width:]
-	}
-	if len(text) > 0 {
-		lines = append(lines, text)
-	}
-	return lines
 }

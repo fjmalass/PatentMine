@@ -128,6 +128,7 @@ func (s *Server) officeActionImport(ctx context.Context, raw json.RawMessage) (a
 	}
 	oa, err := s.engine.ImportOfficeAction(ctx, engine.ImportOfficeActionInput{
 		Project:           p.Project,
+		Name:              p.Name,
 		ApplicationNumber: p.ApplicationNumber,
 		MailDate:          mailDate,
 		Type:              p.Type,
@@ -167,6 +168,18 @@ func (s *Server) officeActionGet(ctx context.Context, raw json.RawMessage) (any,
 	return proto.OfficeActionResult{OfficeAction: oa}, nil
 }
 
+func (s *Server) officeActionOpen(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	oa, err := s.engine.OpenOfficeAction(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionResult{OfficeAction: oa}, nil
+}
+
 func (s *Server) officeActionSaveNotes(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.OfficeActionSaveNotesParams](raw)
 	if err != nil {
@@ -190,7 +203,7 @@ func (s *Server) officeActionUpdate(ctx context.Context, raw json.RawMessage) (a
 	}
 	mailDateStr := mailDate.Format(domain.DateLayout)
 
-	oa, err := s.engine.UpdateOfficeActionMeta(ctx, p.ID, p.Examiner, mailDateStr, p.Type, p.ArtUnit, p.ApplicationNumber)
+	oa, err := s.engine.UpdateOfficeActionMeta(ctx, p.ID, p.Name, p.Examiner, mailDateStr, p.Type, p.ArtUnit, p.ApplicationNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -294,6 +307,18 @@ func (s *Server) matterDocumentUntag(ctx context.Context, raw json.RawMessage) (
 		return nil, err
 	}
 	doc, err := s.engine.UntagMatterDocument(ctx, p.ID, p.Tag)
+	if err != nil {
+		return nil, err
+	}
+	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) matterDocumentOpen(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.MatterDocumentIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.engine.OpenMatterDocument(ctx, p.ID)
 	if err != nil {
 		return nil, err
 	}

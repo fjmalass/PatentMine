@@ -31,6 +31,7 @@ type Provider string
 const (
 	ProviderGemini Provider = "gemini"
 	ProviderOllama Provider = "ollama"
+	ProviderOpenAI Provider = "openai"
 )
 
 // Analyzer defines the technical contract for performing AI-driven patent

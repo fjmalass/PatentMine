@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '10')
+VALUES ('schema_version', '11')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -768,7 +768,9 @@ CREATE TABLE IF NOT EXISTS office_action (
     response_due       TEXT NOT NULL DEFAULT '',
     status             TEXT NOT NULL DEFAULT 'open',
     source             TEXT NOT NULL DEFAULT '',
-    imported_at        TEXT NOT NULL DEFAULT ''
+    imported_at        TEXT NOT NULL DEFAULT '',
+    name               TEXT NOT NULL DEFAULT '',
+    last_opened_at     TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_office_action_project ON office_action (project_id, mail_date DESC);
@@ -786,7 +788,8 @@ CREATE TABLE IF NOT EXISTS matter_document (
     blob_path        TEXT NOT NULL DEFAULT '',
     blob_hash        TEXT NOT NULL DEFAULT '',
     extracted_text   TEXT NOT NULL DEFAULT '',
-    added_at         TEXT NOT NULL DEFAULT ''
+    added_at         TEXT NOT NULL DEFAULT '',
+    last_opened_at   TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_matter_document_project ON matter_document (project_id, added_at DESC);

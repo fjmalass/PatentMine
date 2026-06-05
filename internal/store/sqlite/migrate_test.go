@@ -148,8 +148,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 10 {
-		t.Fatalf("schema_version = %d, want 10", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 11 {
+		t.Fatalf("schema_version = %d, want 11", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -226,8 +226,8 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "10" {
-		t.Fatalf("schema_version = %q, want 10", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "11" {
+		t.Fatalf("schema_version = %q, want 11", v)
 	}
 	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
 		t.Fatalf("grant document kind = %q, want B2", k)
@@ -288,8 +288,8 @@ func TestMigrateV7ToV8BackfillsMatterDocument(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "10" {
-		t.Fatalf("schema_version = %q, want 10", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "11" {
+		t.Fatalf("schema_version = %q, want 11", v)
 	}
 
 	docs, err := repo.ListMatterDocuments(ctx, "p-1")
@@ -319,5 +319,58 @@ func TestObsoleteSchemaFailsClearly(t *testing.T) {
 	_, err := Open(ctx, path)
 	if err == nil || !strings.Contains(err.Error(), "obsolete database schema") {
 		t.Fatalf("Open legacy schema err = %v, want obsolete schema error", err)
+	}
+}
+
+func TestMigrateV10ToV11(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v10.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v10 db: %v", err)
+	}
+	for _, stmt := range []string{
+		schemaSQL,
+		`UPDATE schema_meta SET value = '10' WHERE key = 'schema_version'`,
+		`ALTER TABLE office_action DROP COLUMN name`,
+		`ALTER TABLE office_action DROP COLUMN last_opened_at`,
+		`ALTER TABLE matter_document DROP COLUMN last_opened_at`,
+		`INSERT INTO project (id, name, created_at) VALUES ('p-1', 'Proj', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO office_action (id, project_id, mail_date, oa_type) VALUES ('oa-1', 'p-1', '2026-01-09T00:00:00Z', 'non_final')`,
+		`INSERT INTO matter_document (id, project_id, office_action_id, kind, display_name) VALUES ('doc-1', 'p-1', 'oa-1', 'reference', 'doc1')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v10: %v\n%s", err, stmt)
+		}
+	}
+	_ = db.Close()
+
+	repo, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (migrate v10→v11): %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	scan := func(q string) string {
+		var s string
+		if err := repo.reader.QueryRowContext(ctx, q).Scan(&s); err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		return s
+	}
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "11" {
+		t.Fatalf("schema_version = %q, want 11", v)
+	}
+
+	// Verify columns were added with empty string default values
+	if n := scan(`SELECT name FROM office_action WHERE id='oa-1'`); n != "" {
+		t.Fatalf("office_action name = %q, want empty string", n)
+	}
+	if lo := scan(`SELECT last_opened_at FROM office_action WHERE id='oa-1'`); lo != "" {
+		t.Fatalf("office_action last_opened_at = %q, want empty string", lo)
+	}
+	if lo := scan(`SELECT last_opened_at FROM matter_document WHERE id='doc-1'`); lo != "" {
+		t.Fatalf("matter_document last_opened_at = %q, want empty string", lo)
 	}
 }

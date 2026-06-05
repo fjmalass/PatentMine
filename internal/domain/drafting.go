@@ -340,8 +340,10 @@ type OfficeAction struct {
 	ResponseDue time.Time `json:"response_due"`
 	// Status governs deadline reminders — only an open action is reminded.
 	Status     OAStatus  `json:"status,omitempty"`
-	Source     string    `json:"source,omitempty"`
-	ImportedAt time.Time `json:"imported_at"`
+	Source       string    `json:"source,omitempty"`
+	ImportedAt   time.Time `json:"imported_at"`
+	Name         string    `json:"name,omitempty"`
+	LastOpenedAt time.Time `json:"last_opened_at,omitempty"`
 }
 
 // MatterDocKind classifies one document filed under a matter (a project). A
@@ -435,6 +437,7 @@ type MatterDocument struct {
 	ExtractedText   string        `json:"extracted_text,omitempty"`
 	Tags            []Tag         `json:"tags,omitempty"`
 	AddedAt         time.Time     `json:"added_at"`
+	LastOpenedAt    time.Time     `json:"last_opened_at,omitempty"`
 }
 
 // PreparationDocument is the clearer name for files used while preparing a

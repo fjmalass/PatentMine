@@ -50,12 +50,15 @@ type Config struct {
 	USPTOAPIKey        string            // USPTO Open Data Portal API Key.
 	SourceMode         domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
 	GeminiAPIKey       string            // Google Gemini Developer API Key.
-	AIProvider         string            // Chosen AI Provider ("gemini", "ollama")
+	OpenAIAPIKey       string            // OpenAI API Key.
+	OpenAIModel        string            // OpenAI Model ("gpt-4o-mini", etc.)
+	AIProvider         string            // Chosen AI Provider ("gemini", "ollama", "openai")
 	OllamaModel        string            // Local Ollama Model ("mistral", etc.)
 	OllamaHost         string            // Local Ollama server host
 	CrawlWorkers       int               // Concurrent crawl goroutines; 0 means use engine default.
 	ActivityMinMS      int               // Minimum UI look/hover duration to record.
 	NotesExportDir     string            // Directory for exported notes .md files; empty means user home dir.
+	ImportFromDir      string            // Directory to import documents from; configured in .env or environment.
 	DocsExportDir      string            // Base for rendered project documents (IDS PDF bundles, drafts, office-action files); empty means $HomeDir/exports.
 	BackupProvider     string            // Backup provider name, e.g. b2.
 	BackupBucket       string            // Remote backup bucket/container name.
@@ -248,6 +251,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: invalid PATENTMINE_SOURCE_MODE: %w", err)
 	}
 	geminiKey := os.Getenv("GEMINI_API_KEY")
+	openaiKey := os.Getenv("OPENAI_API_KEY")
+	openaiModel := os.Getenv("OPENAI_MODEL")
+	if openaiModel == "" {
+		openaiModel = "gpt-4o-mini"
+	}
 
 	aiProvider := os.Getenv("PATENTMINE_AI_PROVIDER")
 	if aiProvider == "" {
@@ -331,6 +339,18 @@ func Load() (Config, error) {
 		logMaxSizeBytes = 100 * 1024 * 1024 // Default: 100MB
 	}
 
+	importFromDir := os.Getenv("PATENTMINE_IMPORT_FROM_DIR")
+	if importFromDir == "" {
+		importFromDir = os.Getenv("import_from")
+	}
+	if importFromDir != "" {
+		importFromDir = expandHomePath(expandBraceEnv(importFromDir))
+		if abs, err := filepath.Abs(importFromDir); err == nil {
+			importFromDir = abs
+		}
+		_ = os.MkdirAll(importFromDir, dirPerm)
+	}
+
 	return Config{
 		HomeDir:            Path(home),
 		DBPath:             Path(filepath.Join(home, dbFileName)),
@@ -341,12 +361,15 @@ func Load() (Config, error) {
 		USPTOAPIKey:        usptoKey,
 		SourceMode:         sourceMode,
 		GeminiAPIKey:       geminiKey,
+		OpenAIAPIKey:       openaiKey,
+		OpenAIModel:        openaiModel,
 		AIProvider:         aiProvider,
 		OllamaModel:        ollamaModel,
 		OllamaHost:         ollamaHost,
 		CrawlWorkers:       crawlWorkers,
 		ActivityMinMS:      activityMinMS,
 		NotesExportDir:     notesExportDir,
+		ImportFromDir:      importFromDir,
 		DocsExportDir:      docsExportDir,
 		BackupProvider:     backupProvider,
 		BackupBucket:       backupBucket,

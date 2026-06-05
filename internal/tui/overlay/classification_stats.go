@@ -59,6 +59,7 @@ type ClassificationStatsOverlay struct {
 	statsSortCol       string
 	statsSortAsc       bool
 	statsFocusedColIdx int
+	jump               JumpNavigator
 }
 
 func NewClassificationStatsOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID) (*ClassificationStatsOverlay, tea.Cmd) {
@@ -76,7 +77,7 @@ func NewClassificationStatsOverlay(client *rpc.Client, theme render.Theme, catal
 		patent:             patent,
 		project:            project,
 		loading:            true,
-		focus:              focusInventors,
+		focus:              focusStats,
 		patentsPage:        render.NewPaginator(5),
 		activeSort:         domain.SortByNumber,
 		sortAscending:      true,
@@ -180,6 +181,28 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 	o.err = nil
 	o.patentsErr = nil
 
+	if !o.searchActive && !o.patentsSearchActive {
+		var currentFocus, numFields int
+		if o.focus == focusStats {
+			currentFocus = o.selected
+			numFields = len(o.stats)
+		} else {
+			currentFocus = o.patentsPage.Cursor()
+			numFields = o.patentsPage.Total()
+		}
+		if newCursor, handled := o.jump.HandleKey(msg, currentFocus, numFields); handled {
+			if o.focus == focusStats {
+				o.selected = newCursor
+				o.patentsLoading = true
+				o.patentsErr = nil
+				return o, o.loadPatentsCmd(o.stats[o.selected].Classification.Code, o.loadSeq), true // loadSeq is fine or loadID
+			} else {
+				o.patentsPage.ScrollTo(newCursor)
+				return o, nil, true
+			}
+		}
+	}
+
 	if o.searchActive {
 		switch msg.Type {
 		case tea.KeyTab:
@@ -244,19 +267,26 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 		return o, nil, true
 	}
 	switch msg.String() {
+	case ";":
+		if !o.searchActive && !o.patentsSearchActive {
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
+		}
 	case "q", "Q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "tab":
-		if o.focus == focusInventors {
+		if o.focus == focusStats {
 			o.focus = focusPatents
 			o.focusedColIdx = 0
 		} else {
-			o.focus = focusInventors
+			o.focus = focusStats
 			o.focusedColIdx = -1
 		}
 		return o, nil, true
 	}
-	if o.focus == focusInventors {
+	if o.focus == focusStats {
 		switch msg.String() {
 		case "j", "down":
 			if len(o.stats) > 0 {
@@ -333,7 +363,7 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 		o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, 1)
 		return o, nil, true
 	case "h":
-		o.focus = focusInventors
+		o.focus = focusStats
 		o.focusedColIdx = -1
 		return o, nil, true
 	case ".":
@@ -547,7 +577,7 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		FocusedColIdx: o.statsFocusedColIdx,
 		ActiveSort:    o.statsSortCol,
 		SortAscending: o.statsSortAsc,
-		FocusActive:   o.focus == focusInventors,
+		FocusActive:   o.focus == focusStats,
 		IsRowCursor: func(rowIdx int) bool {
 			return startStats+rowIdx == o.selected
 		},
@@ -559,7 +589,14 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 		s := o.stats[absIdx]
 		switch statsCols[colIdx].Key {
 		case "name":
-			return classificationStatsLabel(s.Classification)
+			lineNum := startStats + rowIdx + 1
+			gutter := ""
+			if o.focus == focusStats {
+				gutter = o.jump.GutterPrefix(lineNum)
+			} else {
+				gutter = fmt.Sprintf(" %d ", lineNum)
+			}
+			return gutter + classificationStatsLabel(s.Classification)
 		case "total":
 			return strconv.Itoa(s.Total)
 		case "unknown":
@@ -612,10 +649,18 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 			p := o.patents[rowIdx]
 			switch cols[colIdx].Key {
 			case "number":
-				if !p.DisplayNumber.IsZero() {
-					return p.DisplayNumber.String()
+				lineNum := startPat + rowIdx + 1
+				gutter := ""
+				if focusPatents {
+					gutter = o.jump.GutterPrefix(lineNum)
+				} else {
+					gutter = fmt.Sprintf(" %d ", lineNum)
 				}
-				return p.Number.String()
+				numStr := p.Number.String()
+				if !p.DisplayNumber.IsZero() {
+					numStr = p.DisplayNumber.String()
+				}
+				return gutter + numStr
 			case "kind":
 				num := p.Number
 				if !p.DisplayNumber.IsZero() {
@@ -654,17 +699,23 @@ func (o *ClassificationStatsOverlay) View(maxW, maxH int) string {
 	} else if o.patentsSearchActive {
 		searchLine := "/ " + o.patentsSearchQuery + "▋ (patents)"
 		b.WriteString(o.theme.Selected.Render(render.Pad(searchLine, targetW)))
+	} else if o.jump.Active {
+		curr := o.selected
+		if o.focus == focusPatents {
+			curr = o.patentsPage.Cursor()
+		}
+		b.WriteString(o.theme.Dim.Render(render.Truncate(o.jump.HintSuffix(curr, -1, false), targetW)))
 	} else {
 		var footnote string
-		if o.focus == focusInventors {
+		if o.focus == focusStats {
 			status := fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))
-			footnote = fmt.Sprintf("%s  [Tab/l/Enter] Focus Patents  [/] Search  [j/k/↑/↓] Scroll  [←/→] Focus Col  [.] Sort  [q/Q/Esc] Close", status)
+			footnote = fmt.Sprintf("%s  [Tab/l/Enter] Focus Patents  [/] Search  [j/k/↑/↓] Scroll  [←/→] Focus Col  [.] Sort  [q/Q/Esc] Close · [;] jump mode", status)
 		} else {
 			status := "[0/0]"
 			if o.patentsPage.Total() > 0 {
 				status = fmt.Sprintf("[%d/%d]", o.patentsPage.Cursor()+1, o.patentsPage.Total())
 			}
-			footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Classifications  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [/] Search  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close", status)
+			footnote = fmt.Sprintf("%s  [Tab/h/←] Focus Classifications  [j/k/↑/↓] Scroll  [l/Enter] View  [v] Visual  [←/→] Focus Col  [.] Sort  [/] Search  [ctrl+u/d] Page  [s/r/i/x] Review  [t] Tag  [I] IDS  [q/Q/Esc] Close · [;] jump mode", status)
 			if o.patentsPage.VisualMode() {
 				footnote = fmt.Sprintf("%s VISUAL MODE  [j/k/↑/↓] Select  [s/r/i/x] Review  [t] Tag  [I] IDS  [v/q/Q/Esc] Clear", status)
 			}

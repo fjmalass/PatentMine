@@ -288,6 +288,7 @@ func (e *Engine) DraftSection(ctx context.Context, in DraftAIInput) (res DraftAI
 // grounding (a .txt SourcePath is read in automatically).
 type ImportOfficeActionInput struct {
 	Project           domain.ProjectID
+	Name              string
 	ApplicationNumber string
 	MailDate          time.Time
 	Type              domain.OAType
@@ -322,9 +323,14 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 	if source == "" {
 		source = domain.OASourceManual
 	}
+	name := in.Name
+	if name == "" && in.SourcePath != "" {
+		name = strings.TrimSuffix(filepath.Base(in.SourcePath), filepath.Ext(in.SourcePath))
+	}
 	oa = domain.OfficeAction{
 		ID:                fmt.Sprintf("oa-%d", now.UnixNano()),
 		Project:           in.Project,
+		Name:              name,
 		ApplicationNumber: in.ApplicationNumber,
 		MailDate:          in.MailDate,
 		Type:              in.Type,
@@ -431,6 +437,53 @@ func (e *Engine) OfficeAction(ctx context.Context, id string) (oa domain.OfficeA
 	return oa, nil
 }
 
+// OpenOfficeAction updates last_opened_at to the current time and saves it.
+func (e *Engine) OpenOfficeAction(ctx context.Context, id string) (oa domain.OfficeAction, err error) {
+	defer e.observeDuration("engine.open_office_action", time.Now(), &err)
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	oa.LastOpenedAt = time.Now().UTC()
+	if err := e.repo.SaveOfficeAction(ctx, oa); err != nil {
+		return domain.OfficeAction{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionGet,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: oa.ID,
+		Status:   observability.StatusObserved,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+		},
+	})
+	return oa, nil
+}
+
+// OpenMatterDocument updates last_opened_at to the current time and saves it.
+func (e *Engine) OpenMatterDocument(ctx context.Context, id string) (doc domain.MatterDocument, err error) {
+	defer e.observeDuration("engine.open_matter_document", time.Now(), &err)
+	doc, err = e.repo.MatterDocument(ctx, id)
+	if err != nil {
+		return domain.MatterDocument{}, err
+	}
+	doc.LastOpenedAt = time.Now().UTC()
+	if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+		return domain.MatterDocument{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionMatterDocumentExtract, // reuse or just log
+		Entity:   "preparation_document",
+		EntityID: doc.ID,
+		Status:   observability.StatusObserved,
+		Attributes: map[string]any{
+			"project": string(doc.Project),
+			"name":    doc.DisplayName,
+		},
+	})
+	return doc, nil
+}
+
 // SaveOfficeActionNotes replaces the attorney notes on one office action and
 // returns the updated record. The rest of the office action is left untouched.
 func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (oa domain.OfficeAction, err error) {
@@ -463,7 +516,7 @@ func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (o
 }
 
 // UpdateOfficeActionMeta updates an office action's metadata and recomputes its response due date.
-func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, examiner, mailDateStr string, oaType domain.OAType, artUnit, appNumber string) (oa domain.OfficeAction, err error) {
+func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, name, examiner, mailDateStr string, oaType domain.OAType, artUnit, appNumber string) (oa domain.OfficeAction, err error) {
 	start := time.Now()
 	defer e.observeDuration(observability.MetricEngineUpdateOfficeAction, start, &err)
 	defer e.observeOfficeAction(observability.MetricOfficeActionUpdate, observability.MetricOfficeActionUpdateTotal, start, &err)
@@ -484,6 +537,7 @@ func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, examiner
 		return domain.OfficeAction{}, fmt.Errorf("engine: invalid office action type %q", oaType)
 	}
 
+	oa.Name = name
 	oa.Examiner = examiner
 	oa.MailDate = mailDate
 	oa.Type = oaType
@@ -954,8 +1008,9 @@ func (e *Engine) DeleteOfficeAction(ctx context.Context, id string, deleteFiles 
 }
 
 // ExtractDocumentText (re-)derives a document's plain text with the built-in
-// parsers and saves it back onto the document. It does not perform OCR or call an
-// AI extractor; scanned/image-only documents report a clear no-text error.
+// parsers and saves it back onto the document. If standard extraction yields no
+// text (e.g. for image-only or scanned PDFs) and an AI extractor is configured,
+// it runs multimodal AI/OCR extraction and charges it against the project.
 func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain.MatterDocument, err error) {
 	defer e.observeDuration("engine.extract_document_text", time.Now(), &err)
 	if id == "" {
@@ -1012,7 +1067,59 @@ func (e *Engine) ExtractDocumentText(ctx context.Context, id string) (doc domain
 			return doc, nil
 		}
 
-		return domain.MatterDocument{}, errors.New("engine: no embedded text could be extracted from the document; OCR appears needed but is not implemented")
+		// Fallback to AI OCR extractor if available.
+		extractor, ok := e.drafter.(ai.Extractor)
+		if !ok {
+			return domain.MatterDocument{}, errors.New("engine: no embedded text could be extracted from the document")
+		}
+
+		data, err := os.ReadFile(doc.BlobPath)
+		if err != nil {
+			return domain.MatterDocument{}, fmt.Errorf("engine: read document for OCR: %w", err)
+		}
+
+		mimeType := mimeForPath(doc.BlobPath)
+		aiStart := time.Now()
+		ocrTxt, err := extractor.ExtractText(ctx, data, mimeType)
+		if err != nil {
+			return domain.MatterDocument{}, fmt.Errorf("engine: OCR extraction failed: %w", err)
+		}
+
+		text = ocrTxt
+		doc.ExtractedText = text
+		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {
+			return domain.MatterDocument{}, err
+		}
+		if doc.Kind == domain.MatterDocOA && doc.OfficeActionID != "" {
+			if oa, err := e.repo.OfficeAction(ctx, doc.OfficeActionID); err == nil {
+				oa.ExtractedText = text
+				_ = e.repo.SaveOfficeAction(ctx, oa)
+			}
+		}
+		saveExtractedTextFile(doc.BlobPath, text)
+
+		e.recordActivity(ctx, observability.Record{
+			Action:   observability.ActionMatterDocumentExtract,
+			Entity:   "matter_document",
+			EntityID: doc.ID,
+			Status:   "committed",
+			Attributes: map[string]any{
+				"project": string(doc.Project),
+				"source":  "ai_extractor",
+				"chars":   len(text),
+				"name":    doc.DisplayName,
+			},
+		})
+		e.recordAICall(ctx, doc.Project, doc.OfficeActionID, "", string(extractor.Provider()), extractor.Model(), time.Since(aiStart))
+
+		e.log(ctx, slog.LevelInfo, "extracted scanned document text with AI extractor",
+			slog.String("document_id", doc.ID),
+			slog.String("provider", string(extractor.Provider())),
+			slog.String("model", extractor.Model()),
+			slog.Int("chars", len(text)))
+
+		e.announceChange()
+		return doc, nil
 	} else {
 		doc.ExtractedText = text
 		if err := e.repo.SaveMatterDocument(ctx, doc); err != nil {

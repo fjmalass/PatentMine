@@ -16,6 +16,8 @@ type AIConfig struct {
 	GeminiAPIKey string
 	OllamaHost   string
 	OllamaModel  string
+	OpenAIAPIKey string
+	OpenAIModel  string
 }
 
 func (s *Server) analyzer() ai.Analyzer {
@@ -24,13 +26,20 @@ func (s *Server) analyzer() ai.Analyzer {
 		if s.ai.OllamaHost != "" {
 			return ai.NewOllamaAnalyzer(s.ai.OllamaHost, s.ai.OllamaModel)
 		}
-	default:
+	case string(ai.ProviderOpenAI):
+		if s.ai.OpenAIAPIKey != "" {
+			return ai.NewOpenAIAnalyzer(s.ai.OpenAIAPIKey, s.ai.OpenAIModel)
+		}
+	case string(ai.ProviderGemini):
 		if s.ai.GeminiAPIKey != "" {
 			return ai.NewGeminiAnalyzer(s.ai.GeminiAPIKey)
 		}
 	}
 	if s.ai.GeminiAPIKey != "" {
 		return ai.NewGeminiAnalyzer(s.ai.GeminiAPIKey)
+	}
+	if s.ai.OpenAIAPIKey != "" {
+		return ai.NewOpenAIAnalyzer(s.ai.OpenAIAPIKey, s.ai.OpenAIModel)
 	}
 	if s.ai.OllamaHost != "" {
 		return ai.NewOllamaAnalyzer(s.ai.OllamaHost, s.ai.OllamaModel)

@@ -172,7 +172,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.AddFile:                    (*App).cmdAddFile,
 	command.ExportAdded:                (*App).cmdExportAdded,
 	command.AddOfficeAction:            (*App).cmdAddOfficeAction,
-	command.OpenOfficeAction:           (*App).cmdOpenOfficeAction,
+	command.ListOfficeActions:          (*App).cmdListOfficeActions,
 	command.AddDocument:                (*App).cmdAddDocument,
 	command.OpenDocuments:              (*App).cmdOpenDocuments,
 	command.SetMatterType:              (*App).cmdSetMatterType,
@@ -301,6 +301,8 @@ type App struct {
 	geminiAPIKey              string
 	ollamaHost                string
 	ollamaModel               string
+	openaiAPIKey              string
+	openaiModel               string
 	aiTargetPatent            domain.Patent
 	usptoAPIKey               string
 	xmlBatch                  *xmlBatchState
@@ -313,8 +315,10 @@ type App struct {
 	backupRemote              string
 	geminiAnalyzer            ai.Analyzer
 	ollamaAnalyzer            ai.Analyzer
+	openaiAnalyzer            ai.Analyzer
 
 	notesExportDir string
+	importFromDir  string
 	revertPatent   domain.PatentNumber
 	sourceMode     string
 	lastPickerDirs map[string]string // key: projectID + ":" + purpose, value: last directory path
@@ -344,29 +348,39 @@ func WithLastProjectSaver(save func(domain.ProjectID) error) Option {
 	return func(a *App) { a.saveLastProject = save }
 }
 
-func WithAIConfig(provider string, geminiKey string, ollamaHost string, ollamaModel string) Option {
+func WithAIConfig(provider string, geminiKey string, ollamaHost string, ollamaModel string, openaiKey string, openaiModel string) Option {
 	return func(a *App) {
 		a.aiProvider = ai.Provider(provider)
 		a.geminiAPIKey = geminiKey
 		a.ollamaHost = ollamaHost
 		a.ollamaModel = ollamaModel
+		a.openaiAPIKey = openaiKey
+		a.openaiModel = openaiModel
 		a.geminiAnalyzer = ai.NewGeminiAnalyzer(geminiKey)
 		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(ollamaHost, ollamaModel)
+		a.openaiAnalyzer = ai.NewOpenAIAnalyzer(openaiKey, openaiModel)
 	}
 }
 
 // buildAnalyzer returns the cached analyzer for the active provider.
 func (a *App) buildAnalyzer() ai.Analyzer {
-	if a.aiProvider == ai.ProviderGemini {
+	switch a.aiProvider {
+	case ai.ProviderGemini:
 		if a.geminiAnalyzer == nil {
 			a.geminiAnalyzer = ai.NewGeminiAnalyzer(a.geminiAPIKey)
 		}
 		return a.geminiAnalyzer
+	case ai.ProviderOpenAI:
+		if a.openaiAnalyzer == nil {
+			a.openaiAnalyzer = ai.NewOpenAIAnalyzer(a.openaiAPIKey, a.openaiModel)
+		}
+		return a.openaiAnalyzer
+	default:
+		if a.ollamaAnalyzer == nil {
+			a.ollamaAnalyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
+		}
+		return a.ollamaAnalyzer
 	}
-	if a.ollamaAnalyzer == nil {
-		a.ollamaAnalyzer = ai.NewOllamaAnalyzer(a.ollamaHost, a.ollamaModel)
-	}
-	return a.ollamaAnalyzer
 }
 
 func WithUSPTOKey(key string) Option {
@@ -469,6 +483,11 @@ func WithActivityMinDuration(d time.Duration) Option {
 // Empty string falls back to the user's home directory.
 func WithNotesExportDir(dir string) Option {
 	return func(a *App) { a.notesExportDir = dir }
+}
+
+// WithImportFromDir sets the default starting directory for the file picker.
+func WithImportFromDir(dir string) Option {
+	return func(a *App) { a.importFromDir = dir }
 }
 
 // log returns the App's structured logger, or the process default when no
@@ -758,6 +777,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		return a.openAssigneesProject(m.patent)
+	case overlay.AIEditConfigMsg:
+		return a.openConfigEditInput(m.Field)
 	case overlay.AISwitchProviderMsg:
 		a.aiProvider = ai.Provider(m.NewProvider)
 		if len(a.overlays) > 0 {
@@ -858,12 +879,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.OpenDocumentTextMsg:
 		// Open a read-only viewer on top of the document list.
 		a.overlays = append(a.overlays, overlay.NewTextViewer(a.theme, m.Title, m.Text))
-		return a, nil
+		return a, a.recordDocumentOpen(m.ID)
 	case overlay.OpenDocumentFileMsg:
 		if m.Path != "" {
 			_ = openExternalURL(m.Path)
 		}
-		return a, nil
+		return a, a.recordDocumentOpen(m.ID)
 	case pane.OpenResponseEditorMsg:
 		a.overlays = append(a.overlays, overlay.NewResponseEditor(a.client, a.theme, m.Draft, m.Docs))
 		a.metrics.IncCounter(observability.MetricTUIOfficeActionRespondOpen, 1)
@@ -885,7 +906,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case pane.OpenOfficeActionDetailMsg:
-		return a.pushPane(pane.NewOfficeActionDetail(a.client, a.theme, m.OA).WithLogger(a.log()))
+		updated, cmd := a.pushPane(pane.NewOfficeActionDetail(a.client, a.theme, m.OA).WithLogger(a.log()))
+		return updated, tea.Batch(cmd, a.recordOfficeActionOpen(m.OA.ID))
 	case pane.OpenOfficeActionEditorMsg:
 		a.overlays = append(a.overlays, overlay.NewOfficeActionEditor(a.client, a.theme, m.OA))
 		return a, nil
@@ -1021,6 +1043,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.popOverlay()
 		return a, nil
+	case overlay.StartDocumentImportMsg:
+		return a.cmdAddDocument(invocation{})
 
 	case overlay.LoadingCompareSourcesMsg:
 		number, err := domain.ParsePatentNumber(m.Patent)
@@ -1130,7 +1154,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ExtractedChars > 0 {
 			lines = append(lines, fmt.Sprintf("Converted text: %d line(s), %d chars in %s", m.ExtractedLines, m.ExtractedChars, formatDurationShort(m.Duration)))
 		} else if m.NeedsOCR {
-			lines = append(lines, fmt.Sprintf("Converted text: none found in %s; OCR appears needed but is not implemented", formatDurationShort(m.Duration)))
+			lines = append(lines, fmt.Sprintf("Converted text: none found in %s", formatDurationShort(m.Duration)), "OCR appears needed but is not implemented")
 		} else {
 			lines = append(lines, fmt.Sprintf("Converted text: none found in %s", formatDurationShort(m.Duration)))
 		}
@@ -1157,7 +1181,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			status += fmt.Sprintf(" (no extracted text in %s)", formatDurationShort(m.Duration))
 		}
 		a.setStatus(text.StatusGeneric, status)
-		return a, nil
+		return a, a.broadcastOverlays(m)
 	case pane.AddedImportDoneMsg:
 		lines := []string{
 			fmt.Sprintf("Added %d of %d patent(s) from:", m.Added, m.Total),
@@ -1720,6 +1744,34 @@ func (a *App) checkPatentExists(targetIndex int, number domain.PatentNumber) tea
 			exists:      exists,
 			err:         err,
 		}
+	}
+}
+
+func (a *App) recordOfficeActionOpen(id string) tea.Cmd {
+	client := a.client
+	return func() tea.Msg {
+		if client == nil || id == "" {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.OfficeActionResult
+		_ = client.Call(ctx, proto.MethodOfficeActionOpen, proto.OfficeActionIDParams{ID: id}, &res)
+		return nil
+	}
+}
+
+func (a *App) recordDocumentOpen(id string) tea.Cmd {
+	client := a.client
+	return func() tea.Msg {
+		if client == nil || id == "" {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.MatterDocumentResult
+		_ = client.Call(ctx, proto.MethodMatterDocumentOpen, proto.MatterDocumentIDParams{ID: id}, &res)
+		return nil
 	}
 }
 

@@ -1325,11 +1325,10 @@ func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.AddFileCmd(a.client, a.activeProject.ID, inv.args[0])
 }
 
-// cmdAddOfficeAction imports an Office Action document from any directory into
-// the active project. With a path argument it imports directly; with none it
-// opens a file picker rooted at the user's home directory. Either way the daemon
-// copies the file into the project's office-action store — only the path travels
-// over RPC (client and daemon share a filesystem), so the picker browses locally.
+// cmdAddOfficeAction imports an Office Action document into the active project.
+// Rather than opening a file picker first, it directly opens the metadata form overlay,
+// where the File Path is an editable field. If a path argument is provided, it is
+// resolved to an absolute path and pre-filled.
 func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) > 1 {
 		return a.usageError(command.AddOfficeAction)
@@ -1342,29 +1341,15 @@ func (a *App) cmdAddOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
+	path := ""
 	if len(inv.args) == 1 {
-		// A path argument skips the file picker but still collects the examiner
-		// and dates before importing.
-		return a.openOfficeActionMetaForm(absPath(inv.args[0]))
+		path = absPath(inv.args[0])
 	}
-	start, err := os.UserHomeDir()
-	if err != nil || start == "" {
-		start = "."
-	}
-	if a.activeProject != nil {
-		key := string(a.activeProject.ID) + ":" + string(overlay.PurposeAddOfficeAction)
-		if last, ok := a.lastPickerDirs[key]; ok && last != "" {
-			start = last
-		}
-	}
-	o := overlay.NewFilePicker(a.theme, "Add Office Action", overlay.PurposeAddOfficeAction, start, []string{".pdf", ".docx", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".txt", ".csv", ".tsv", ".md"})
-	a.overlays = append(a.overlays, o)
-	return a, o.Init()
+	return a.openOfficeActionMetaForm(path)
 }
 
-// openOfficeActionMetaForm pushes the office-action metadata form for the chosen
-// source file, pre-filled from the active project, so the examiner name and dates
-// are captured before the daemon imports the document.
+// openOfficeActionMetaForm pushes the office-action metadata form, pre-filled
+// from the active project.
 func (a *App) openOfficeActionMetaForm(path string) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
@@ -1395,9 +1380,13 @@ func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 		a.overlays = append(a.overlays, loading)
 		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, absPath(inv.args[0]), domain.MatterDocReference))
 	}
-	start, err := os.UserHomeDir()
-	if err != nil || start == "" {
-		start = "."
+	start := a.importFromDir
+	if start == "" {
+		var err error
+		start, err = os.UserHomeDir()
+		if err != nil || start == "" {
+			start = "."
+		}
 	}
 	if a.activeProject != nil {
 		key := string(a.activeProject.ID) + ":" + string(overlay.PurposeAddMatterDocument)
@@ -1591,7 +1580,12 @@ func (a *App) cmdOpenDocuments(invocation) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusDaemonUnavailable)
 		return a, nil
 	}
-	o := overlay.NewMatterDocuments(a.client, a.theme, a.activeProject.ID)
+	var oa *domain.OfficeAction
+	if detail, ok := a.focusedPane().(*pane.OfficeActionDetail); ok {
+		currentOA := detail.OfficeAction()
+		oa = &currentOA
+	}
+	o := overlay.NewMatterDocuments(a.client, a.theme, a.activeProject.ID, oa)
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
 }
@@ -1616,10 +1610,10 @@ func (a *App) cmdSetMatterType(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.SetMatterTypeCmd(a.client, a.activeProject.ID, mt)
 }
 
-// cmdOpenOfficeAction opens the active matter's office-action table as a pane.
+// cmdListOfficeActions opens the active matter's office-action table as a pane.
 // Each row drills into the detail pane (documents · timing · communications ·
 // response); `a` imports a new office action.
-func (a *App) cmdOpenOfficeAction(invocation) (tea.Model, tea.Cmd) {
+func (a *App) cmdListOfficeActions(invocation) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
 		return a, nil
@@ -1764,7 +1758,7 @@ func (a *App) cmdAIAnalyze(invocation) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) cmdSettingsAI(invocation) (tea.Model, tea.Cmd) {
-	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.usptoConfigured)
+	o := overlay.NewSettingsOverlay(a.theme, a.aiProvider, a.geminiAPIKey, a.ollamaHost, a.ollamaModel, a.openaiAPIKey, a.openaiModel, a.usptoConfigured)
 	a.overlays = append(a.overlays, o)
 	return a, nil
 }

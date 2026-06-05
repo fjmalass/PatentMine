@@ -33,11 +33,16 @@ type loadedPatentListMsg struct {
 	err       error
 }
 
+// statsFocus is the focused pane in a two-pane "stats" overlay (inventor stats,
+// assignee history, classification stats): the left-hand stat list, or the
+// right-hand patents list. The values are shared across those overlays because
+// Go const names are package-unique, so they are named neutrally rather than
+// after any one overlay's domain.
 type statsFocus int
 
 const (
-	focusInventors statsFocus = iota
-	focusPatents
+	focusStats   statsFocus = iota // the left pane: the stat list (inventors / assignees / classifications)
+	focusPatents                   // the right pane: the patents for the selected stat
 )
 
 // statsTableMargin is the horizontal padding kept inside the overlay borders
@@ -106,7 +111,7 @@ func NewInventorStatsOverlay(client *rpc.Client, theme render.Theme, catalog *te
 		o.focus = focusPatents
 		o.focusedColIdx = 0 // Initial column focus on Number
 	} else {
-		o.focus = focusInventors
+		o.focus = focusStats
 	}
 	return o, o.loadStatsCmd()
 }
@@ -278,17 +283,17 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 	case "q", "Q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "tab":
-		if o.focus == focusInventors {
+		if o.focus == focusStats {
 			o.focus = focusPatents
 			o.focusedColIdx = 0 // Initial column focus on Number
 		} else {
-			o.focus = focusInventors
+			o.focus = focusStats
 			o.focusedColIdx = -1
 		}
 		return o, nil, true
 	}
 
-	if o.focus == focusInventors {
+	if o.focus == focusStats {
 		switch msg.String() {
 		case "j", "down":
 			if len(o.stats) > 0 {
@@ -365,7 +370,7 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, 1)
 			return o, nil, true
 		case "h":
-			o.focus = focusInventors
+			o.focus = focusStats
 			o.focusedColIdx = -1
 			return o, nil, true
 		case ".":
@@ -606,7 +611,7 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 		FocusedColIdx: o.statsFocusedColIdx,
 		ActiveSort:    o.statsSortCol,
 		SortAscending: o.statsSortAsc,
-		FocusActive:   o.focus == focusInventors,
+		FocusActive:   o.focus == focusStats,
 		IsRowCursor: func(rowIdx int) bool {
 			return startStats+rowIdx == o.selected
 		},
@@ -740,7 +745,7 @@ func (o *InventorStatsOverlay) View(maxW, maxH int) string {
 		b.WriteString(o.theme.Selected.Render(render.Pad(searchLine, targetW)))
 	} else {
 		var footnote string
-		if o.focus == focusInventors {
+		if o.focus == focusStats {
 			status := "[0/0]"
 			if len(o.stats) > 0 {
 				status = fmt.Sprintf("[%d/%d]", o.selected+1, len(o.stats))

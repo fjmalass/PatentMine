@@ -21,7 +21,8 @@ type subtableParams struct {
 	VisualMode    bool
 	IsRowSelected func(absIdx int) bool
 	IsRowMarked   func(absIdx int) bool
-	MarkGlyph     string // override mark glyph (defaults to Theme.Glyphs.RowMark)
+	MarkGlyph     string         // override mark glyph (defaults to Theme.Glyphs.RowMark)
+	Jump          *JumpNavigator // for Vim-like jump mode
 }
 
 func renderSubtable(params subtableParams, maxW int, getCellValue func(absIdx, rowIdx, colIdx int) string) string {
@@ -57,7 +58,18 @@ func renderSubtable(params subtableParams, maxW int, getCellValue func(absIdx, r
 	}
 
 	return render.RenderTable(tableParams, maxW, func(rowIdx, colIdx int) string {
-		return getCellValue(start+rowIdx, rowIdx, colIdx)
+		val := getCellValue(start+rowIdx, rowIdx, colIdx)
+		if colIdx == 0 && params.Jump != nil {
+			lineNum := start + rowIdx + 1
+			gutter := ""
+			if params.FocusActive {
+				gutter = params.Jump.GutterPrefix(lineNum)
+			} else {
+				gutter = fmt.Sprintf(" %d ", lineNum)
+			}
+			val = gutter + val
+		}
+		return val
 	})
 }
 

@@ -76,6 +76,7 @@ type DraftSectionAIResult struct {
 // copying a local PDF/DOCX/spreadsheet/text file into the project's office-action store.
 type OfficeActionImportParams struct {
 	Project           domain.ProjectID `json:"project"`
+	Name              string           `json:"name,omitempty"`
 	ApplicationNumber string           `json:"application_number,omitempty"`
 	MailDate          string           `json:"mail_date,omitempty"` // RFC3339 or YYYY-MM-DD
 	Type              domain.OAType    `json:"type,omitempty"`
@@ -121,6 +122,7 @@ type OfficeActionSaveNotesParams struct {
 // OfficeActionUpdateParams updates an existing office action's metadata.
 type OfficeActionUpdateParams struct {
 	ID                string        `json:"id"`
+	Name              string        `json:"name"`
 	Examiner          string        `json:"examiner"`
 	MailDate          string        `json:"mail_date"`
 	Type              domain.OAType `json:"type"`

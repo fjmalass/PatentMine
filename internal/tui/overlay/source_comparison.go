@@ -42,6 +42,7 @@ type SourceComparisonOverlay struct {
 	diffs   []domain.SourceDiff
 
 	cursor int // which diff row is focused
+	jump   JumpNavigator
 }
 
 func NewSourceComparisonOverlay(theme render.Theme, patent domain.PatentNumber, diffs []domain.SourceDiff) *SourceComparisonOverlay {
@@ -69,6 +70,10 @@ func (o *SourceComparisonOverlay) OverlaySize(termW, termH int) (int, int) {
 }
 
 func (o *SourceComparisonOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
+	if newCursor, handled := o.jump.HandleKey(msg, o.cursor, len(o.diffs)); handled {
+		o.cursor = newCursor
+		return o, nil, true
+	}
 	switch msg.String() {
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -90,6 +95,11 @@ func (o *SourceComparisonOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, b
 			o.diffs[o.cursor].ChosenValue = o.diffs[o.cursor].GoogleValue
 			o.diffs[o.cursor].ChosenSource = string(domain.SourceGoogle)
 		}
+	case ";":
+		o.jump.Active = true
+		o.jump.PendingCount = 0
+		o.jump.PendingG = false
+		return o, nil, true
 	case "enter", "c", "C": // choose all from USPTO (default)
 		for i := range o.diffs {
 			o.diffs[i].ChosenValue = o.diffs[i].USPTOValue
@@ -120,7 +130,13 @@ func (o *SourceComparisonOverlay) View(maxW, _ int) string {
 		b.WriteString(o.theme.Dim.Render("press q or esc to close"))
 		return b.String()
 	}
-	b.WriteString(o.theme.Dim.Render(fmt.Sprintf("[u] = choose USPTO  |  [g] = choose Google  |  [enter] = accept all as %s  |  [q/esc] = cancel", fmt.Sprintf(chosenSourceFormat, "USPTO"))))
+	var hintTop string
+	if o.jump.Active {
+		hintTop = o.jump.HintSuffix(o.cursor, -1, false)
+	} else {
+		hintTop = fmt.Sprintf("[u] = choose USPTO  |  [g] = choose Google  |  [enter] = accept all as %s  |  [q/esc] = cancel  ·  [;] jump mode", fmt.Sprintf(chosenSourceFormat, "USPTO"))
+	}
+	b.WriteString(o.theme.Dim.Render(render.Truncate(hintTop, maxW)))
 	b.WriteString("\n\n")
 
 	// Better aligned split-screen columns
@@ -135,6 +151,8 @@ func (o *SourceComparisonOverlay) View(maxW, _ int) string {
 			rowStyle = o.theme.Selected
 		}
 
+		lineNum := i + 1
+		gutter := o.jump.GutterPrefix(lineNum)
 		field := o.theme.HelpKey.Render(render.Pad(d.FieldPath, fieldW))
 
 		usptoVal := render.Truncate(d.USPTOValue, valW)
@@ -155,8 +173,9 @@ func (o *SourceComparisonOverlay) View(maxW, _ int) string {
 		chosenSourcePrefix := fmt.Sprintf(chosenSourceFormat, d.ChosenSource)
 		chosenDisplay := rowStyle.Render(chosenVal + " " + chosenSourcePrefix)
 
-		line := fmt.Sprintf("%s%s  U:%s %s  |  G:%s %s  |  %s",
+		line := fmt.Sprintf("%s%s%s  U:%s %s  |  G:%s %s  |  %s",
 			prefix,
+			gutter,
 			field,
 			usptoIcon, usptoVal,
 			googleIcon, googleVal,

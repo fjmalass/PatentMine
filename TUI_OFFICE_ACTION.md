@@ -69,6 +69,9 @@ bytes-on-disk convention PatentMine uses for crawl snapshots, so the database
 stays lean and backups stay fast. A `.txt` source doubles as the extracted text;
 otherwise extracted text may be supplied explicitly.
 
+**Default import directory.** The starting directory for the TUI file picker when importing office actions or supporting documents is configured via `PATENTMINE_IMPORT_FROM_DIR` in `.env` (e.g., `PATENTMINE_IMPORT_FROM_DIR=./import_from`). The TUI also tracks and opens at the last navigated folder during a session.
+
+
 ```bash
 # Manual import (the baseline path)
 patentmine draft oa-import --project p-123 \
@@ -178,11 +181,15 @@ artifact.
 
 ## 5. Confidentiality: local vs cloud AI
 
-A response is attorney work product and may quote an **unpublished**
-application, so the provider choice matters. PatentMine supports **both**: run
-**local Ollama** for privileged/pre-publication drafting, and opt into **cloud
-Gemini** for already-published matters. Selection is by config
-(`PATENTMINE_AI_PROVIDER`, `GEMINI_API_KEY`, `OLLAMA_HOST`/`OLLAMA_MODEL`).
+A response is attorney work product and may quote an **unpublished** application, so the provider choice matters. PatentMine supports local, Google, and OpenAI models:
+- **Local Ollama**: Run this for privileged/pre-publication drafting where absolute data privacy is required.
+- **Cloud Providers**: Opt into **Google Gemini** or **OpenAI (ChatGPT)** for already-published matters or when internet-based LLMs are preferred.
+
+Selection is configured by environment variables:
+- `PATENTMINE_AI_PROVIDER`: `"gemini"`, `"openai"`, or `"ollama"`
+- `GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENAI_MODEL`
+- `OLLAMA_HOST`, `OLLAMA_MODEL`
+
 Provision the local path once:
 
 ```bash
@@ -190,6 +197,15 @@ cargo make ollama-setup     # installs Ollama + pulls the model
 # or, aliased for drafting:
 cargo make draft-setup
 ```
+
+> [!TIP]
+> **In-App Editing**: You can view and edit these variables directly inside the TUI settings screen (**`s`** key) using edit hotkeys like **`Shift+K`** (Gemini Key), **`Shift+O`** (OpenAI Key), **`Shift+H`** (Ollama Host), etc.
+
+### How to View, Copy, and Export Notes
+All notes (attorney notes and generated AI reports) can be accessed and extracted in the TUI:
+1. **Notes Buffer Overlay (`o` Key)**: Inside any patent's **Detail View**, press **`o`** to open the notes buffer overlay. Press **`y`** to copy a single note, or **`Y`** to copy all session notes to your clipboard.
+2. **All Notes View (`:open.notes` Command)**: Type **`:open.notes`** (or alias **`:notes`**) in the command bar to open a spreadsheet of all notes in the active project.
+3. **Export to Markdown (`e` Key)**: In the **All Notes View**, press **`e`** to export all compiled project notes to a structured Markdown file (`patentmine-notes-*.md`) saved directly to your configured export directory.
 
 > The tool drafts; the practitioner reviews, signs, and is responsible. AI text
 > carries provenance (`ai_provider` / `ai_model`) and is never finalized for you.

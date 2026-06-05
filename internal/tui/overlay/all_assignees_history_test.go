@@ -44,7 +44,7 @@ func TestAllAssigneesHistoryOverlaySorting(t *testing.T) {
 		},
 		selected:           1, // originally IBM (index 1)
 		loading:            false,
-		focus:              focusAssignees,
+		focus:              focusStats,
 		patentsPage:        render.NewPaginator(5),
 		activeSort:         domain.SortByNumber,
 		sortAscending:      true,

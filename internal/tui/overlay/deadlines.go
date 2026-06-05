@@ -42,6 +42,7 @@ type Deadlines struct {
 	loading      bool
 	loadErr      string
 	msg          string
+	jump         JumpNavigator
 }
 
 func NewDeadlines(client *rpc.Client, theme render.Theme) *Deadlines {
@@ -105,6 +106,10 @@ func (o *Deadlines) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if o.loading {
 		return o, nil, true
 	}
+	if newCursor, handled := o.jump.HandleKey(msg, o.cursor, len(o.filtered)); handled {
+		o.cursor = newCursor
+		return o, nil, true
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -120,6 +125,11 @@ func (o *Deadlines) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		return o, nil, true
 	case tea.KeyRunes:
 		switch msg.String() {
+		case ";":
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
 		case "k":
 			o.move(-1)
 		case "j":
@@ -195,7 +205,9 @@ func (o *Deadlines) View(maxW, maxH int) string {
 		bodyRows := max(maxH-4, 1)
 		for i := 0; i < len(o.filtered) && i < bodyRows; i++ {
 			d := o.filtered[i]
-			row := fmt.Sprintf("%-16s %-13s %s", deadlineDueLabel(d), d.Kind.Label(), d.Title)
+			lineNum := i + 1
+			gutter := o.jump.GutterPrefix(lineNum)
+			row := fmt.Sprintf("%s%-16s %-13s %s", gutter, deadlineDueLabel(d), d.Kind.Label(), d.Title)
 			cell := render.Pad(render.Truncate(row, maxW), maxW)
 			if i == o.cursor {
 				b.WriteString(o.theme.Selected.Render(cell))
@@ -205,11 +217,16 @@ func (o *Deadlines) View(maxW, maxH int) string {
 			b.WriteByte('\n')
 		}
 	}
-	footer := "tab toggle filter · ↑/↓ move · p mark done · x dismiss · esc close"
-	if o.msg != "" {
-		footer = o.msg + " · " + footer
+	var hint string
+	if o.jump.Active {
+		hint = o.jump.HintSuffix(o.cursor, -1, false)
+	} else {
+		hint = "tab toggle filter · ↑/↓ move · p mark done · x dismiss · esc close · [;] jump mode"
 	}
-	b.WriteString(o.theme.Dim.Render(render.Truncate(footer, maxW)))
+	if o.msg != "" {
+		hint = o.msg + " · " + hint
+	}
+	b.WriteString(o.theme.Dim.Render(render.Truncate(hint, maxW)))
 	return b.String()
 }
 

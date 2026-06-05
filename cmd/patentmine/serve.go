@@ -134,6 +134,8 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		GeminiAPIKey: cfg.GeminiAPIKey,
 		OllamaHost:   cfg.OllamaHost,
 		OllamaModel:  cfg.OllamaModel,
+		OpenAIAPIKey: cfg.OpenAIAPIKey,
+		OpenAIModel:  cfg.OpenAIModel,
 	})
 	// Deadline reminders: an opt-in SMTP email notifier, otherwise a no-op (the
 	// in-app deadline surface is always available).

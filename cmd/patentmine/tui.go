@@ -76,10 +76,11 @@ func runTUI(args []string) int {
 		tui.WithLastProject(lastProjectID),
 		tui.WithTelemetry(telemetry),
 		tui.WithActivityMinDuration(time.Duration(cfg.ActivityMinMS)*time.Millisecond),
-		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel),
+		tui.WithAIConfig(cfg.AIProvider, cfg.GeminiAPIKey, cfg.OllamaHost, cfg.OllamaModel, cfg.OpenAIAPIKey, cfg.OpenAIModel),
 		tui.WithUSPTOKey(cfg.USPTOAPIKey),
 		tui.WithBackupConfig(cfg.BackupConfigured(), cfg.BackupRcloneRemote, cfg.BackupBucket),
 		tui.WithNotesExportDir(exportDir),
+		tui.WithImportFromDir(cfg.ImportFromDir),
 		tui.WithLastProjectSaver(func(id domain.ProjectID) error { return saveLastProject(cfg.HomeDir, id) }))
 	if err != nil {
 		telemetry.Logger.Error("build tui failed", slog.String("error", err.Error()))

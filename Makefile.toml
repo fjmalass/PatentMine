@@ -272,10 +272,12 @@ fi
 '''
 
 [tasks.run-tui]
-description = "Restart the daemon, then launch the terminal UI."
-dependencies = ["restart-daemon"]
+description = "Restart the daemon, then launch the terminal UI (configured to use local Ollama with Mistral)."
 script = '''
 eval "$PM_VERSION_SCRIPT"
+export OLLAMA_MODEL=mistral
+export PATENTMINE_AI_PROVIDER=ollama
+cargo make restart-daemon
 go run -ldflags "$PM_LDFLAGS" ${BINARY} tui
 '''
 
@@ -435,10 +437,12 @@ description = "Restart the background web API server."
 dependencies = ["start-api"]
 
 [tasks.run-tui-api]
-description = "Start daemon and web API in the background, then launch the TUI."
-dependencies = ["start-api"]
+description = "Start daemon and web API in the background, then launch the TUI (configured to use local Ollama with Mistral)."
 script = '''
 eval "$PM_VERSION_SCRIPT"
+export OLLAMA_MODEL=mistral
+export PATENTMINE_AI_PROVIDER=ollama
+cargo make start-api
 go run -ldflags "$PM_LDFLAGS" ${BINARY} tui
 '''
 
@@ -561,6 +565,26 @@ else
   exit 1
 fi
 '''
+
+[tasks.ollama-setup-llama]
+description = "Install Ollama and pull the llama3.1 model."
+env = { "OLLAMA_MODEL" = "llama3.1" }
+run_task = "ollama-setup"
+
+[tasks.ollama-setup-mistral]
+description = "Install Ollama and pull the mistral model."
+env = { "OLLAMA_MODEL" = "mistral" }
+run_task = "ollama-setup"
+
+[tasks.ollama-check-llama]
+description = "Verify that Ollama is running and the llama3.1 model is pulled."
+env = { "OLLAMA_MODEL" = "llama3.1" }
+run_task = "ollama-check"
+
+[tasks.ollama-check-mistral]
+description = "Verify that Ollama is running and the mistral model is pulled."
+env = { "OLLAMA_MODEL" = "mistral" }
+run_task = "ollama-check"
 
 [tasks.ollama-check]
 description = "Verify (without installing) that Ollama is installed, the server is up, and the model is pulled."

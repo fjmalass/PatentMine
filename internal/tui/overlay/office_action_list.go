@@ -44,6 +44,7 @@ type OfficeActionList struct {
 	cursor  int
 	loading bool
 	loadErr string
+	jump    JumpNavigator
 }
 
 func NewOfficeActionList(client *rpc.Client, theme render.Theme, project domain.ProjectID) *OfficeActionList {
@@ -90,6 +91,10 @@ func (o *OfficeActionList) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if o.loading {
 		return o, nil, true
 	}
+	if newCursor, handled := o.jump.HandleKey(msg, o.cursor, len(o.items)); handled {
+		o.cursor = newCursor
+		return o, nil, true
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
@@ -103,6 +108,11 @@ func (o *OfficeActionList) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		return o, o.openSelected(), true
 	case tea.KeyRunes:
 		switch msg.String() {
+		case ";":
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
 		case "k":
 			o.moveCursor(-1)
 		case "j":
@@ -142,22 +152,43 @@ func (o *OfficeActionList) View(maxW, maxH int) string {
 	}
 
 	var b strings.Builder
-	bodyRows := max(maxH-2, 1)
+	// col truncates then pads s to a fixed display width so the columns line up.
+	col := func(s string, w int) string { return render.Pad(render.Truncate(s, w), w) }
+	body := func(name, typ, mailed, added, examiner string) string {
+		return col(name, 22) + " " + col(typ, 14) + " " + col(mailed, 12) + " " + col(added, 12) + " " + examiner
+	}
+
+	// Header, aligned to the row prefix (gutter " N " + notes mark + space = 5).
+	header := "     " + body("Name", "Type", "Mailed", "Added", "Examiner")
+	b.WriteString(o.theme.Header.Render(render.Pad(render.Truncate(header, maxW), maxW)))
+	b.WriteByte('\n')
+
+	bodyRows := max(maxH-3, 1)
 	for i := 0; i < len(o.items) && i < bodyRows; i++ {
 		oa := o.items[i]
-		date := "—"
+		mailed := "—"
 		if !oa.MailDate.IsZero() {
-			date = oa.MailDate.Format(domain.DateLayout)
+			mailed = oa.MailDate.Format(domain.DateLayout)
+		}
+		added := "—"
+		if !oa.ImportedAt.IsZero() {
+			added = oa.ImportedAt.Format(domain.DateLayout)
 		}
 		typ := string(oa.Type)
 		if typ == "" {
 			typ = "—"
 		}
+		name := oa.Name
+		if strings.TrimSpace(name) == "" {
+			name = "(unnamed)"
+		}
 		notesMark := " "
 		if strings.TrimSpace(oa.Notes) != "" {
 			notesMark = "✎"
 		}
-		row := fmt.Sprintf("%s %-18s %-12s %s", notesMark, typ, date, oa.Examiner)
+		lineNum := i + 1
+		gutter := o.jump.GutterPrefix(lineNum)
+		row := fmt.Sprintf("%s%s %s", gutter, notesMark, body(name, typ, mailed, added, oa.Examiner))
 		cell := render.Pad(render.Truncate(row, maxW), maxW)
 		if i == o.cursor {
 			b.WriteString(o.theme.Selected.Render(cell))
@@ -166,6 +197,12 @@ func (o *OfficeActionList) View(maxW, maxH int) string {
 		}
 		b.WriteByte('\n')
 	}
-	b.WriteString(o.theme.Dim.Render(render.Truncate("↑/↓ or j/k move · enter open · esc close", maxW)))
+	var hint string
+	if o.jump.Active {
+		hint = o.jump.HintSuffix(o.cursor, -1, false)
+	} else {
+		hint = "↑/↓ or j/k move · enter open · esc close · [;] jump mode"
+	}
+	b.WriteString(o.theme.Dim.Render(render.Truncate(hint, maxW)))
 	return b.String()
 }
