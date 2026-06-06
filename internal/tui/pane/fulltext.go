@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"patentmine/internal/command"
 	"patentmine/internal/crawl"
@@ -82,6 +83,12 @@ type FullText struct {
 	matches  []int // body-line indices matching find.input, ascending
 	matchIdx int   // index into matches of the current match
 
+	// collapse ("quicklist") mode: when on, render only the matching lines.
+	collapsed         bool
+	renderedCollapsed bool  // collapse state baked into the current f.lines
+	collapseSrc       []int // for each collapsed line, its index in the full body
+	pendingCursorLine int   // full-body line to re-centre on after the next render (-1 = none)
+
 	// jump mode
 	jump        *JumpController
 	keymapBound []rune // keys reserved by the keymap, kept off jump anchors
@@ -101,14 +108,15 @@ func (f *FullText) log() *slog.Logger {
 // NewFullText builds a full-text viewer for one patent.
 func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNumber, project domain.ProjectID, boundLetters []rune) *FullText {
 	f := &FullText{
-		client:      client,
-		theme:       theme,
-		number:      number,
-		project:     project,
-		page:        render.NewPaginator(10),
-		loading:     true,
-		keymapBound: boundLetters,
-		jump:        NewJumpController(),
+		client:            client,
+		theme:             theme,
+		number:            number,
+		project:           project,
+		page:              render.NewPaginator(10),
+		loading:           true,
+		keymapBound:       boundLetters,
+		jump:              NewJumpController(),
+		pendingCursorLine: -1,
 	}
 	f.computeJumpKeys(boundLetters)
 	f.handlers = map[command.ID]cmdHandler{
@@ -128,19 +136,29 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 			}
 			return nil
 		},
-		command.NavPageDown:       func(Invocation) tea.Cmd { f.page.ScrollTo(f.page.Cursor() + f.page.PageSize()); return nil },
-		command.NavPageUp:         func(Invocation) tea.Cmd { f.page.ScrollTo(f.page.Cursor() - f.page.PageSize()); return nil },
-		command.NavTop:            func(inv Invocation) tea.Cmd { f.page.NavTop(inv.Repeat); return nil },
-		command.NavBottom:         func(inv Invocation) tea.Cmd { f.page.NavBottom(inv.Repeat); return nil },
-		command.SelectVisual:      func(Invocation) tea.Cmd { return f.toggleVisual() },
-		command.CopyYank:          func(Invocation) tea.Cmd { return f.copyYank(false) },
-		command.CopyYankMeta:      func(Invocation) tea.Cmd { return f.copyYank(true) },
-		command.CopyAll:           func(Invocation) tea.Cmd { return f.copyAll() },
-		command.FindOpen:          func(Invocation) tea.Cmd { f.find.open(""); return nil },
+		command.NavPageDown:  func(Invocation) tea.Cmd { f.page.ScrollTo(f.page.Cursor() + f.page.PageSize()); return nil },
+		command.NavPageUp:    func(Invocation) tea.Cmd { f.page.ScrollTo(f.page.Cursor() - f.page.PageSize()); return nil },
+		command.NavTop:       func(inv Invocation) tea.Cmd { f.page.NavTop(inv.Repeat); return nil },
+		command.NavBottom:    func(inv Invocation) tea.Cmd { f.page.NavBottom(inv.Repeat); return nil },
+		command.SelectVisual: func(Invocation) tea.Cmd { return f.toggleVisual() },
+		command.CopyYank:     func(Invocation) tea.Cmd { return f.copyYank(false) },
+		command.CopyYankMeta: func(Invocation) tea.Cmd { return f.copyYank(true) },
+		command.CopyAll:      func(Invocation) tea.Cmd { return f.copyAll() },
+		command.FindOpen: func(Invocation) tea.Cmd {
+			// Always search the full body; re-collapse with z once there are matches.
+			if f.collapsed {
+				f.collapsed = false
+				f.lines = nil
+			}
+			f.find.open("")
+			return nil
+		},
 		command.FindNext:          func(Invocation) tea.Cmd { return f.gotoMatch(1) },
 		command.FindPrev:          func(Invocation) tea.Cmd { return f.gotoMatch(-1) },
 		command.FullTextStageNext: func(Invocation) tea.Cmd { return f.cycleStage(1) },
 		command.FullTextStagePrev: func(Invocation) tea.Cmd { return f.cycleStage(-1) },
+		command.FullTextCollapse:  func(Invocation) tea.Cmd { return f.toggleCollapse() },
+		command.FullTextQuickList: func(Invocation) tea.Cmd { return f.openQuickList() },
 		command.NoteAdd:           func(Invocation) tea.Cmd { return f.noteAdd() },
 		command.NoteOpen:          func(Invocation) tea.Cmd { return f.noteOpen() },
 		command.Refresh:           func(Invocation) tea.Cmd { f.loading = true; return f.reload() },
@@ -311,6 +329,105 @@ func (f *FullText) cycleStage(dir int) tea.Cmd {
 	return f.reload()
 }
 
+// toggleCollapse switches the body between the full document and a collapsed
+// "quicklist" of only the matching lines. Entering collapse needs an active
+// search with at least one match; the cursor is carried onto the nearest match
+// and carried back to that match's real line when the body is expanded again.
+func (f *FullText) toggleCollapse() tea.Cmd {
+	if !f.collapsed {
+		if len(f.matches) == 0 {
+			f.recomputeMatches()
+		}
+		if len(f.matches) == 0 {
+			if strings.TrimSpace(f.find.input) == "" {
+				return status(text.StatusNoPatentSelected, false, "press / to search, then z to collapse")
+			}
+			return status(text.StatusNoPatentSelected, false, "no matches for "+f.find.input)
+		}
+		f.pendingCursorLine = f.page.Cursor() // expanded: cursor is a full-body line
+		f.collapsed = true
+	} else {
+		f.pendingCursorLine = f.cursorFullLine()
+		f.collapsed = false
+	}
+	f.lines = nil // force render to rebuild for the new mode
+	return nil
+}
+
+// cursorFullLine maps the cursor to its line index in the full (uncollapsed)
+// body, so the position survives a collapse toggle.
+func (f *FullText) cursorFullLine() int {
+	cur := f.page.Cursor()
+	if f.collapsed && cur >= 0 && cur < len(f.collapseSrc) {
+		return f.collapseSrc[cur]
+	}
+	return cur
+}
+
+// applyPendingCursor re-centres the cursor after a render that swapped the
+// display list (a collapse toggle). The stored target is a full-body line; in
+// collapse mode it resolves to the first match at or after that line. It also
+// re-syncs matchIdx so n/N continue from the cursor.
+func (f *FullText) applyPendingCursor() {
+	if f.pendingCursorLine < 0 {
+		return
+	}
+	target := f.pendingCursorLine
+	if f.collapsed {
+		target = 0
+		for i, src := range f.collapseSrc {
+			if src >= f.pendingCursorLine {
+				target = i
+				break
+			}
+		}
+	}
+	f.page.ScrollTo(target)
+	f.matchIdx = 0
+	for j, m := range f.matches {
+		if m >= f.page.Cursor() {
+			f.matchIdx = j
+			break
+		}
+	}
+	f.pendingCursorLine = -1
+}
+
+// MatchList snapshots the current search matches for the quicklist overlay.
+// Each entry's Line is an index into the full (uncollapsed) body so a jump
+// lands correctly whether or not the pane is collapsed when the user returns.
+func (f *FullText) MatchList() []FullTextMatch {
+	f.render(f.bodyWidth())
+	out := make([]FullTextMatch, 0, len(f.matches))
+	for k, idx := range f.matches {
+		full := idx
+		if f.collapsed && k < len(f.collapseSrc) {
+			full = f.collapseSrc[k]
+		}
+		out = append(out, FullTextMatch{
+			Line:    full,
+			Locator: f.lines[idx].locator,
+			Text:    strings.TrimSpace(stripANSI(f.lines[idx].text)),
+		})
+	}
+	return out
+}
+
+// openQuickList emits the message that opens the search-match quicklist overlay.
+func (f *FullText) openQuickList() tea.Cmd {
+	matches := f.MatchList()
+	if len(matches) == 0 {
+		if strings.TrimSpace(f.find.input) == "" {
+			return status(text.StatusNoPatentSelected, false, "press / to search first")
+		}
+		return status(text.StatusNoPatentSelected, false, "no matches for "+f.find.input)
+	}
+	number, query := f.number, strings.TrimSpace(f.find.input)
+	return func() tea.Msg {
+		return FullTextQuickListOpenMsg{Number: number, Query: query, Matches: matches}
+	}
+}
+
 func (f *FullText) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
 	if handler, ok := f.handlers[id]; ok {
 		return f, handler(inv)
@@ -348,6 +465,7 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		f.computeJumpKeys(f.keymapBound)
 		f.clearMatches()
+		f.pendingCursorLine = -1
 		f.lines = nil
 		f.page.Top()
 	case USPTOXMLFetchedMsg:
@@ -355,6 +473,16 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if m.Number == f.number && m.Err == "" {
 			f.loading = true
 			return f, f.reload()
+		}
+	case FullTextJumpMsg:
+		// The quicklist overlay picked a match: expand (so it reads in context)
+		// and scroll to it on the next render via the pending-cursor path.
+		if m.Number == f.number {
+			if f.collapsed {
+				f.collapsed = false
+				f.lines = nil
+			}
+			f.pendingCursorLine = m.Line
 		}
 	}
 	return f, nil
@@ -387,11 +515,13 @@ func (f *FullText) View(w, h int) string {
 	}
 	f.page.SetTotal(len(f.lines))
 	f.page.SetPageSize(bodyH)
+	f.applyPendingCursor()
 	start, end := f.page.Window()
 	cur := f.page.Cursor()
 	maxLines := len(f.lines)
 
 	out := make([]string, 0, end-start+1)
+	query := strings.TrimSpace(f.find.input)
 	for i := start; i < end; i++ {
 		line := f.lines[i].text
 		gutter := render.LineGutter(f.theme.Dim, i+1, maxLines)
@@ -399,7 +529,16 @@ func (f *FullText) View(w, h int) string {
 		isCursor := i == cur
 		inVis := f.visualMode && f.inVisualRange(i)
 		switch {
-		case inVis, isCursor, f.isMatchLine(i):
+		case f.isMatchLine(i) && query != "":
+			// Paint the row as selected and the matched text within it; the
+			// active match (always the cursor row after n/N) gets the brighter
+			// highlight so it stands out from the other matches.
+			hl := f.theme.Match
+			if isCursor {
+				hl = f.theme.MatchCurrent
+			}
+			out = append(out, highlightRow(gutter, stripANSI(line), query, f.theme.Selected, hl, w))
+		case inVis, isCursor:
 			plain := gutter + stripANSI(line)
 			out = append(out, f.theme.Selected.Render(render.Pad(plain, w)))
 		default:
@@ -418,10 +557,12 @@ func (f *FullText) render(w int) {
 	if w < 1 {
 		w = 1
 	}
-	if f.lines != nil && f.bodyW == w {
+	if f.lines != nil && f.bodyW == w && f.renderedCollapsed == f.collapsed {
 		return
 	}
 	f.bodyW = w
+	f.renderedCollapsed = f.collapsed
+	f.collapseSrc = nil
 	f.lines = f.lines[:0]
 	f.jump.ClearAnchors()
 
@@ -471,7 +612,10 @@ func (f *FullText) render(w int) {
 		add(f.theme.Dim.Render("  Source XML: "+f.sourceXMLPath), "")
 	}
 	add("", "")
-	add(f.theme.Dim.Render("  V: select  y: copy  Y: copy+info  g y: copy all  /: find  n/N: match  a/A: notes  ;: jump"), "")
+	rule := f.theme.Dim.Render(strings.Repeat("─", max(w, 1)))
+	add(rule, "")
+	add(f.theme.Dim.Render("  V: select  y: copy  Y: copy+info  g y: copy all  /: find  n/N: match  z: collapse  a/A: notes  ;: jump"), "")
+	add(rule, "")
 
 	// Claims.
 	for i, claim := range f.fullText.Claims {
@@ -507,6 +651,37 @@ func (f *FullText) render(w int) {
 
 	// Keep match indices in sync with the freshly-built lines.
 	f.recomputeMatches()
+
+	// In collapse mode, drop everything except the matching lines so the body
+	// reads as a quicklist. Falls back to the full body when nothing matches.
+	if f.collapsed && len(f.matches) > 0 {
+		f.applyCollapse()
+	}
+}
+
+// applyCollapse filters f.lines down to the matched lines, remembering each
+// line's original index in collapseSrc so the cursor can be mapped back to the
+// full body when collapse is turned off. After collapsing, every visible line
+// is a match, so f.matches becomes the full display range and jump anchors
+// (which point at now-hidden section headers) are cleared.
+func (f *FullText) applyCollapse() {
+	full := f.lines
+	matched := f.matches
+	lines := make([]bodyLine, len(matched))
+	src := make([]int, len(matched))
+	idents := make([]int, len(matched))
+	for k, idx := range matched {
+		lines[k] = full[idx]
+		src[k] = idx
+		idents[k] = k
+	}
+	f.lines = lines
+	f.collapseSrc = src
+	f.matches = idents
+	if f.matchIdx >= len(idents) {
+		f.matchIdx = 0
+	}
+	f.jump.ClearAnchors()
 }
 
 // addSectionHeader appends a section header line and registers a jump anchor
@@ -784,10 +959,13 @@ func (f *FullText) recomputeMatches() {
 	}
 }
 
-// clearMatches drops the search highlight and navigation state.
+// clearMatches drops the search highlight and navigation state. Collapse mode
+// depends on having matches, so clearing them also expands the body (the next
+// render rebuilds the full document because renderedCollapsed no longer agrees).
 func (f *FullText) clearMatches() {
 	f.matches = nil
 	f.matchIdx = 0
+	f.collapsed = false
 }
 
 // isMatchLine reports whether body line i is a current search match.
@@ -917,6 +1095,46 @@ func patentMeta(p domain.Patent, number domain.PatentNumber) string {
 		b.WriteString(fmt.Sprintf("Expiration:   %s%s\n", p.ExpirationDate.Format(domain.DateLayout), src))
 	}
 	b.WriteString(sep + "\n")
+	return b.String()
+}
+
+// highlightRow renders one matched body line: the line-number gutter and text
+// are painted with base (the selected-row background) while every
+// case-insensitive occurrence of query is painted with hl so the matched text
+// stands out within the row. The result is padded with base to fill width so
+// the row background runs the full pane width.
+func highlightRow(gutter, body, query string, base, hl lipgloss.Style, width int) string {
+	if query == "" {
+		return base.Render(render.Pad(gutter+body, width))
+	}
+	var b strings.Builder
+	b.WriteString(base.Render(gutter))
+	used := render.StringWidth(gutter)
+
+	lowerBody := strings.ToLower(body)
+	lowerQuery := strings.ToLower(query)
+	for i := 0; i < len(body); {
+		rel := strings.Index(lowerBody[i:], lowerQuery)
+		if rel < 0 {
+			seg := body[i:]
+			b.WriteString(base.Render(seg))
+			used += render.StringWidth(seg)
+			break
+		}
+		if rel > 0 {
+			seg := body[i : i+rel]
+			b.WriteString(base.Render(seg))
+			used += render.StringWidth(seg)
+		}
+		matched := body[i+rel : i+rel+len(lowerQuery)]
+		b.WriteString(hl.Render(matched))
+		used += render.StringWidth(matched)
+		i += rel + len(lowerQuery)
+	}
+
+	if pad := width - used; pad > 0 {
+		b.WriteString(base.Render(strings.Repeat(" ", pad)))
+	}
 	return b.String()
 }
 

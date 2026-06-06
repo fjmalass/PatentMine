@@ -10,19 +10,22 @@ import (
 
 // Theme colours, named so no raw colour code appears at a call site.
 const (
-	colorAccent   = "63"  // headings, highlights
-	colorAltRow   = "235" // alternating row background
-	colorFocus    = "22"  // focused sortable column background
-	colorFocusAlt = "28"  // focused column on alternating rows
-	colorFocusHdr = "29"  // focused column header background
-	colorFocusSel = "35"  // focused column on selected rows
-	colorSelected = "237" // selected-row background
-	colorVisual   = "17"  // visual-range background (dark navy)
-	colorDim      = "242" // de-emphasised text
-	colorWarn     = "220" // warning / under-review text
-	colorError    = "203" // error text
-	colorOK       = "78"  // success text
-	colorText     = "252" // default foreground
+	colorAccent       = "63"  // headings, highlights
+	colorAltRow       = "235" // alternating row background
+	colorFocus        = "22"  // focused sortable column background
+	colorFocusAlt     = "28"  // focused column on alternating rows
+	colorFocusHdr     = "29"  // focused column header background
+	colorFocusSel     = "35"  // focused column on selected rows
+	colorSelected     = "237" // selected-row background
+	colorVisual       = "17"  // visual-range background (dark navy)
+	colorMatch        = "58"  // search-match substring background (dark gold)
+	colorMatchCurrent = "208" // active search-match substring background (orange)
+	colorMatchFg      = "16"  // text on a search-match highlight (near-black)
+	colorDim          = "242" // de-emphasised text
+	colorWarn         = "220" // warning / under-review text
+	colorError        = "203" // error text
+	colorOK           = "78"  // success text
+	colorText         = "252" // default foreground
 
 	// Marked states for source/flagged items
 	colorMarked           = "99"  // soft violet text color for marked row
@@ -107,12 +110,12 @@ const (
 
 	// Table row prefix glyphs. Each is a single display-width character;
 	// table.go composes them as cursor+mark+" " for a fixed 3-char prefix.
-	glyphRowCursor  = ">" // cursor row in focused table
+	glyphRowCursor   = ">" // cursor row in focused table
 	glyphRowNoCursor = " " // not the cursor row
-	glyphRowActive  = "*" // active/current item mark (e.g. active project), passed via MarkGlyph
-	glyphRowMark    = "⚑"
-	glyphRowChosen  = "✓" // override for confirmed-selection rows
-	glyphRowNoMark  = " " // placeholder when row has no mark
+	glyphRowActive   = "*" // active/current item mark (e.g. active project), passed via MarkGlyph
+	glyphRowMark     = "⚑"
+	glyphRowChosen   = "✓" // override for confirmed-selection rows
+	glyphRowNoMark   = " " // placeholder when row has no mark
 
 	glyphCheckboxChecked   = "✅"
 	glyphCheckboxUnchecked = "☐"
@@ -130,13 +133,13 @@ const (
 	glyphStageGrant       = "🏆"
 	glyphStageUnknown     = "❓"
 
-	glyphProvManual   = "🔤"
-	glyphProvCitation = "🔗"
-	glyphProvCitedBy  = "👈"
-	glyphProvParent   = "⬆️"
-	glyphProvChild    = "⬇️"
-	glyphProvOther    = "❓"
-	glyphProvLoading  = "🔄"
+	glyphProvManual    = "🔤"
+	glyphProvCitation  = "🔗"
+	glyphProvCitedBy   = "👈"
+	glyphProvParent    = "⬆️"
+	glyphProvChild     = "⬇️"
+	glyphProvOther     = "❓"
+	glyphProvLoading   = "🔄"
 	glyphProvRelated   = "👪"
 	glyphProvNeighbors = "🏡"
 	glyphProvSystem    = "🤖"
@@ -163,6 +166,8 @@ type Theme struct {
 	FocusCellAlt  lipgloss.Style
 	FocusSelected lipgloss.Style
 	Visual        lipgloss.Style
+	Match         lipgloss.Style // search-match substring highlight
+	MatchCurrent  lipgloss.Style // active search-match substring highlight
 	Dim           lipgloss.Style
 	Info          lipgloss.Style
 	Status        lipgloss.Style
@@ -207,10 +212,10 @@ type Theme struct {
 	FocusRelationAnchor lipgloss.Style
 
 	// Jump Overlay Styles
-	JumpGlobalLabel lipgloss.Style
-	JumpGlobalValue lipgloss.Style
-	JumpLocalLabel  lipgloss.Style
-	JumpLocalValue  lipgloss.Style
+	JumpGlobalLabel       lipgloss.Style
+	JumpGlobalValue       lipgloss.Style
+	JumpLocalLabel        lipgloss.Style
+	JumpLocalValue        lipgloss.Style
 	StyleStageApplication lipgloss.Style
 	StyleStagePublication lipgloss.Style
 	StyleStageGrant       lipgloss.Style
@@ -346,6 +351,12 @@ func NewTheme() Theme {
 		Visual: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorText)).
 			Background(lipgloss.Color(colorVisual)),
+		Match: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorMatchFg)).
+			Background(lipgloss.Color(colorMatch)),
+		MatchCurrent: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(colorMatchFg)).
+			Background(lipgloss.Color(colorMatchCurrent)).Bold(true),
 		Dim: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(colorDim)),
 		Info: lipgloss.NewStyle().
@@ -656,4 +667,3 @@ func (t Theme) RelationTypeGlyph(relType string) string {
 		return t.Glyphs.RelOther
 	}
 }
-

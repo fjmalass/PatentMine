@@ -1523,6 +1523,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pane.NoteOpenMsg:
 		a.overlays = append(a.overlays, newNotesBufferOverlay(a.theme, m.Number, m.Patent, a))
 		return a, nil
+	case pane.FullTextQuickListOpenMsg:
+		a.overlays = append(a.overlays, newQuickListOverlay(a.theme, m.Number, m.Query, m.Matches))
+		return a, nil
 	case pane.PatentNoteOpenMsg:
 		if a.client == nil {
 			a.setErr(text.StatusDaemonUnavailable)

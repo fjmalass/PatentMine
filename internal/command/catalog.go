@@ -168,6 +168,8 @@ const (
 	CopyAll           ID = "edit.copy-all"
 	FullTextStageNext ID = "fulltext.stage-next"
 	FullTextStagePrev ID = "fulltext.stage-prev"
+	FullTextCollapse  ID = "fulltext.collapse-matches"
+	FullTextQuickList ID = "fulltext.quicklist"
 	NoteAdd           ID = "edit.note-add"
 	NoteOpen          ID = "edit.note-open"
 

@@ -141,6 +141,8 @@ const (
 	HintCopyAll         Key = "hint.copy_all"
 	HintStage           Key = "hint.stage"
 	HintFind            Key = "hint.find"
+	HintCollapse        Key = "hint.collapse"
+	HintQuickList       Key = "hint.quicklist"
 	HintNoteAdd         Key = "hint.note_add"
 	HintNoteOpen        Key = "hint.note_open"
 	HintCrawl           Key = "hint.ingest"
@@ -335,6 +337,8 @@ var cmdStrings = map[string][2]string{
 	"edit.copy-all":                          {"Copy entire document", "Copy the whole patent (all claims and disclosure) to the clipboard with the patent attrs header — the full document, not just the visible page."},
 	"fulltext.stage-next":                    {"Next stage", "Show the next life-cycle stage's full text (application → publication → grant)."},
 	"fulltext.stage-prev":                    {"Previous stage", "Show the previous life-cycle stage's full text (grant → publication → application)."},
+	"fulltext.collapse-matches":              {"Collapse to matches", "Toggle a collapsed view that shows only the lines matching the current search; press again to expand."},
+	"fulltext.quicklist":                     {"Match quicklist", "Open a navigable quickfix-style list of every search match; Enter jumps to the chosen line."},
 	"edit.note-add":                          {"Add to notes", "Add the selected passage and its locator to the session notes buffer."},
 	"edit.note-open":                         {"Open notes", "Show the accumulated notes buffer for this patent."},
 	"tag.add":                                {"Create taxonomy tag", "Register a new tag in the project's taxonomy (the `tag.create` command). Distinct from `tag`/`tag.patent.add`, which assign an existing tag to a patent."},
@@ -491,6 +495,8 @@ var englishNamed = map[Key]string{
 	HintCopyAll:         "copy all",
 	HintStage:           "stage",
 	HintFind:            "find",
+	HintCollapse:        "collapse matches",
+	HintQuickList:       "match list",
 	HintNoteAdd:         "add to notes",
 	HintNoteOpen:        "open notes",
 	HintFullText:        "full text",

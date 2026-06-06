@@ -140,6 +140,8 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.FullTextStagePrev, command.FullTextStageNext}, Label: text.HintStage},
 			{Commands: []command.ID{command.FindOpen, command.FindNext, command.FindPrev}, Label: text.HintFind},
+			{Commands: []command.ID{command.FullTextCollapse}, Label: text.HintCollapse},
+			{Commands: []command.ID{command.FullTextQuickList}, Label: text.HintQuickList},
 			{Commands: []command.ID{command.CopyYank, command.CopyYankMeta}, Label: text.HintCopy},
 			{Commands: []command.ID{command.CopyAll}, Label: text.HintCopyAll},
 			{Commands: []command.ID{command.NoteAdd}, Label: text.HintNoteAdd},

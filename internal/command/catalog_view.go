@@ -85,6 +85,8 @@ func viewCommands() []Command {
 		Command{ID: CopyAll, Name: "copy.all", Aliases: []string{"yank.all", "copy-all", "yank-all"}, Usage: ":copy.all", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: FullTextStageNext, Name: "fulltext.stage.next", Aliases: []string{"stage.next", "next-stage"}, Usage: ":fulltext.stage.next", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: FullTextStagePrev, Name: "fulltext.stage.prev", Aliases: []string{"stage.prev", "prev-stage", "fulltext.stage.previous"}, Usage: ":fulltext.stage.prev", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: FullTextCollapse, Name: "fulltext.collapse", Aliases: []string{"collapse-matches", "fold-matches"}, Usage: ":fulltext.collapse", Kind: KindView, Scopes: []Scope{ScopeFullText}},
+		Command{ID: FullTextQuickList, Name: "fulltext.quicklist", Aliases: []string{"quicklist", "match-list", "quickfix"}, Usage: ":fulltext.quicklist", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: NoteAdd, Name: "note.add", Aliases: []string{"add-note", "note"}, Usage: ":note.add", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 		Command{ID: NoteOpen, Name: "note.open", Aliases: []string{"show-notes"}, Usage: ":note.open", Kind: KindView, Scopes: []Scope{ScopeFullText}},
 	}
