@@ -125,6 +125,7 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodTableViewDelete:            s.tableViewDelete,
 		proto.MethodUSPTOFetchXML:              s.usptoFetchXML,
 		proto.MethodUSPTOGrantBody:             s.usptoGrantBody,
+		proto.MethodFullTextSearch:             s.fullTextSearch,
 		proto.MethodUSPTOLookup:                s.usptoLookup,
 		proto.MethodUSPTOFetchAssignments:      s.usptoFetchAssignments,
 		proto.MethodUSPTOFetchAssignmentsBatch: s.usptoFetchAssignmentsBatch,

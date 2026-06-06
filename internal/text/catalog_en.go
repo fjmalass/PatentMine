@@ -44,6 +44,11 @@ const (
 	StatusXMLBatchStarted           Key = "status.xml_batch_started"
 	StatusXMLBatchProgress          Key = "status.xml_batch_progress"
 	StatusXMLBatchDone              Key = "status.xml_batch_done"
+	StatusFullTextSearching         Key = "status.fulltext_searching"
+	StatusFullTextSearchFailed      Key = "status.fulltext_search_failed"
+	StatusFullTextNoMatches         Key = "status.fulltext_no_matches"
+	StatusFullTextNoBodies          Key = "status.fulltext_no_bodies"
+	StatusFullTextResults           Key = "status.fulltext_results"
 	StatusAddBatchStarted           Key = "status.add_batch_started"
 	StatusAddRelatedDone            Key = "status.add_related_done"
 	StatusAddRelatedFailed          Key = "status.add_related_failed"
@@ -143,6 +148,7 @@ const (
 	HintFind            Key = "hint.find"
 	HintCollapse        Key = "hint.collapse"
 	HintQuickList       Key = "hint.quicklist"
+	HintFullTextSearch  Key = "hint.fulltext_search"
 	HintNoteAdd         Key = "hint.note_add"
 	HintNoteOpen        Key = "hint.note_open"
 	HintCrawl           Key = "hint.ingest"
@@ -184,6 +190,8 @@ const (
 	HelpSectionAvailable   Key = "help.section.available"
 	NewProjectTitle        Key = "overlay.new_project.title"
 	NewProjectCaption      Key = "overlay.new_project.caption"
+	FullTextSearchTitle    Key = "overlay.fulltext_search.title"
+	FullTextSearchCaption  Key = "overlay.fulltext_search.caption"
 	EditIDSKindTitle       Key = "overlay.ids.kind.title"
 	EditIDSKindCaption     Key = "overlay.ids.kind.caption"
 	EditIDSCountryTitle    Key = "overlay.ids.country.title"
@@ -338,7 +346,8 @@ var cmdStrings = map[string][2]string{
 	"fulltext.stage-next":                    {"Next stage", "Show the next life-cycle stage's full text (application → publication → grant)."},
 	"fulltext.stage-prev":                    {"Previous stage", "Show the previous life-cycle stage's full text (grant → publication → application)."},
 	"fulltext.collapse-matches":              {"Collapse to matches", "Toggle a collapsed view that shows only the lines matching the current search; press again to expand."},
-	"fulltext.quicklist":                     {"Match quicklist", "Open a navigable quickfix-style list of every search match; Enter jumps to the chosen line."},
+	"fulltext.quicklist":                     {"Match quicklist", "Toggle a bottom split listing every search match; Tab focuses the list and the body follows the highlighted match. Esc closes it."},
+	"search.fulltext":                        {"Search full text", "Search the stored full text of the selected patents for a term and open a quicklist of every match; Enter opens that patent at the match."},
 	"edit.note-add":                          {"Add to notes", "Add the selected passage and its locator to the session notes buffer."},
 	"edit.note-open":                         {"Open notes", "Show the accumulated notes buffer for this patent."},
 	"tag.add":                                {"Create taxonomy tag", "Register a new tag in the project's taxonomy (the `tag.create` command). Distinct from `tag`/`tag.patent.add`, which assign an existing tag to a patent."},
@@ -402,6 +411,11 @@ var englishNamed = map[Key]string{
 	StatusXMLBatchStarted:           "fetching %d USPTO %s XMLs in parallel…",
 	StatusXMLBatchProgress:          "USPTO XML batch: %d/%d (cached %d, downloaded %d, failed %d)",
 	StatusXMLBatchDone:              "USPTO XML batch done: %d total — downloaded %d, cached %d, failed %d",
+	StatusFullTextSearching:         "searching full text of %d patent(s) for %q…",
+	StatusFullTextSearchFailed:      "full-text search failed: %s",
+	StatusFullTextNoMatches:         "no full-text matches for %q (scanned %d patent(s))",
+	StatusFullTextNoBodies:          "no ingested full text for the %d selected patent(s) — fetch USPTO XML first",
+	StatusFullTextResults:           "%d full-text match(es) across %d patent(s)%s",
 	StatusAddBatchStarted:           "adding %d patents via %s in parallel…",
 	StatusAddRelatedDone:            "add.related: granted membership to %d neighbor(s) of %s",
 	StatusAddRelatedFailed:          "add.related failed: %s",
@@ -497,6 +511,7 @@ var englishNamed = map[Key]string{
 	HintFind:            "find",
 	HintCollapse:        "collapse matches",
 	HintQuickList:       "match list",
+	HintFullTextSearch:  "search text",
 	HintNoteAdd:         "add to notes",
 	HintNoteOpen:        "open notes",
 	HintFullText:        "full text",
@@ -537,6 +552,8 @@ var englishNamed = map[Key]string{
 	HelpSectionAvailable:   "Available keys",
 	NewProjectTitle:        "New project",
 	NewProjectCaption:      "Enter a name for the new project.",
+	FullTextSearchTitle:    "Search full text",
+	FullTextSearchCaption:  "Enter a term to search the full text of the selected patents.",
 	EditIDSKindTitle:       "IDS kind code",
 	EditIDSKindCaption:     "Enter the patent kind code, such as B2 or A1.",
 	EditIDSCountryTitle:    "IDS country code",

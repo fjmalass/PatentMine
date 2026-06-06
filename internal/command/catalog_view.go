@@ -49,6 +49,7 @@ func viewCommands() []Command {
 		Command{ID: NotesExportMD, Name: "export.notes", Aliases: []string{"export-notes", "notes.export"}, Usage: ":export.notes", Kind: KindView, Scopes: []Scope{ScopeNotes}},
 		Command{ID: Refresh, Name: "refresh", Aliases: []string{"reload"}, Usage: ":refresh", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects, ScopeIDS}},
 		Command{ID: OpenSearch, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFamily, ScopeProjects}},
+		Command{ID: FullTextSearch, Name: "search.fulltext", Aliases: []string{"fulltext.search", "grep", "search-fulltext"}, Usage: ":search.fulltext [query]", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: OpenCommand, Kind: KindView},
 		Command{ID: JumpMode, Name: "jump", Aliases: []string{"jump-to-field"}, Usage: ":jump", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: SelectVisual, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeFamily}},

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -29,7 +28,19 @@ func nextFullTextID() uint64 {
 }
 
 // disclosureLocator is the locator prefix for description paragraphs.
-const disclosureLocator = "Disclosure"
+const disclosureLocator = domain.DisclosureLocator
+
+// Quicklist split geometry. The locator column is fixed-width so line numbers
+// and snippets line up; the list itself takes a fraction of the body, clamped
+// to [min,max] rows, and only splits when the body is tall enough to be useful.
+const (
+	quickListLocatorW = 18 // section-locator column width
+	quickListFraction = 3  // list takes ~1/quickListFraction of the body
+	quickListMinRows  = 4  // smallest the list shrinks to
+	quickListMaxRows  = 10 // largest the list grows to
+	quickListMinBody  = 8  // don't split a body shorter than this
+	quickListDivider  = 1  // the divider rule between body and list
+)
 
 // fullTextFetchTimeout bounds an on-demand full-text fetch from Google,
 // allowing for the polite rate-limiter wait plus the HTTP request itself.
@@ -89,6 +100,18 @@ type FullText struct {
 	collapseSrc       []int // for each collapsed line, its index in the full body
 	pendingCursorLine int   // full-body line to re-centre on after the next render (-1 = none)
 
+	// open-at: seed a search and a target section when the viewer is opened from
+	// the global full-text search. Consumed on the first successful load/render.
+	initialQuery      string
+	pendingLocator    string
+	pendingOccurrence int // which match within pendingLocator to land on
+
+	// quicklist: a persistent bottom split listing the search matches. listFocus
+	// routes navigation to the list (the body follows the highlighted match).
+	listOpen  bool
+	listFocus bool
+	listPage  render.Paginator
+
 	// jump mode
 	jump        *JumpController
 	keymapBound []rune // keys reserved by the keymap, kept off jump anchors
@@ -97,6 +120,25 @@ type FullText struct {
 
 // WithLogger attaches a logger so the pane can persist fetch errors.
 func (f *FullText) WithLogger(l *slog.Logger) *FullText { f.logger = l; return f }
+
+// OpenAt seeds the viewer to open with a live search (query) and land on a
+// specific match — the occurrence-th hit within the section named by locator.
+// Used when jumping in from the global full-text search; consumed on the first
+// successful load.
+func (f *FullText) OpenAt(query, locator string, occurrence int) *FullText {
+	f.initialQuery = strings.TrimSpace(query)
+	f.pendingLocator = locator
+	f.pendingOccurrence = occurrence
+	return f
+}
+
+// JumpToOccurrence re-targets an already-loaded viewer onto the occurrence-th
+// match within locator, without reloading. Used by the search dock when the
+// next result is in the same patent as the current preview.
+func (f *FullText) JumpToOccurrence(locator string, occurrence int) {
+	f.pendingLocator = locator
+	f.pendingOccurrence = occurrence
+}
 
 func (f *FullText) log() *slog.Logger {
 	if f.logger != nil {
@@ -113,6 +155,7 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 		number:            number,
 		project:           project,
 		page:              render.NewPaginator(10),
+		listPage:          render.NewPaginator(10),
 		loading:           true,
 		keymapBound:       boundLetters,
 		jump:              NewJumpController(),
@@ -121,25 +164,63 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 	f.computeJumpKeys(boundLetters)
 	f.handlers = map[command.ID]cmdHandler{
 		command.NavDown: func(inv Invocation) tea.Cmd {
-			if f.jump.Active && len(f.jump.Anchors) > 0 {
+			switch {
+			case f.listFocused():
+				f.listMove(inv.Repeat, 1)
+			case f.jump.Active && len(f.jump.Anchors) > 0:
 				f.page.ScrollTo(f.nextAnchorLine())
-			} else {
+			default:
 				f.move(inv.Repeat, 1)
 			}
 			return nil
 		},
 		command.NavUp: func(inv Invocation) tea.Cmd {
-			if f.jump.Active && len(f.jump.Anchors) > 0 {
+			switch {
+			case f.listFocused():
+				f.listMove(inv.Repeat, -1)
+			case f.jump.Active && len(f.jump.Anchors) > 0:
 				f.page.ScrollTo(f.prevAnchorLine())
-			} else {
+			default:
 				f.move(inv.Repeat, -1)
 			}
 			return nil
 		},
-		command.NavPageDown:  func(Invocation) tea.Cmd { f.page.ScrollTo(f.page.Cursor() + f.page.PageSize()); return nil },
-		command.NavPageUp:    func(Invocation) tea.Cmd { f.page.ScrollTo(f.page.Cursor() - f.page.PageSize()); return nil },
-		command.NavTop:       func(inv Invocation) tea.Cmd { f.page.NavTop(inv.Repeat); return nil },
-		command.NavBottom:    func(inv Invocation) tea.Cmd { f.page.NavBottom(inv.Repeat); return nil },
+		command.NavPageDown: func(Invocation) tea.Cmd {
+			if f.listFocused() {
+				f.listPage.PageDown()
+				f.syncBodyToList()
+				return nil
+			}
+			f.page.ScrollTo(f.page.Cursor() + f.page.PageSize())
+			return nil
+		},
+		command.NavPageUp: func(Invocation) tea.Cmd {
+			if f.listFocused() {
+				f.listPage.PageUp()
+				f.syncBodyToList()
+				return nil
+			}
+			f.page.ScrollTo(f.page.Cursor() - f.page.PageSize())
+			return nil
+		},
+		command.NavTop: func(inv Invocation) tea.Cmd {
+			if f.listFocused() {
+				f.listPage.Top()
+				f.syncBodyToList()
+				return nil
+			}
+			f.page.NavTop(inv.Repeat)
+			return nil
+		},
+		command.NavBottom: func(inv Invocation) tea.Cmd {
+			if f.listFocused() {
+				f.listPage.Bottom()
+				f.syncBodyToList()
+				return nil
+			}
+			f.page.NavBottom(inv.Repeat)
+			return nil
+		},
 		command.SelectVisual: func(Invocation) tea.Cmd { return f.toggleVisual() },
 		command.CopyYank:     func(Invocation) tea.Cmd { return f.copyYank(false) },
 		command.CopyYankMeta: func(Invocation) tea.Cmd { return f.copyYank(true) },
@@ -158,7 +239,7 @@ func NewFullText(client *rpc.Client, theme render.Theme, number domain.PatentNum
 		command.FullTextStageNext: func(Invocation) tea.Cmd { return f.cycleStage(1) },
 		command.FullTextStagePrev: func(Invocation) tea.Cmd { return f.cycleStage(-1) },
 		command.FullTextCollapse:  func(Invocation) tea.Cmd { return f.toggleCollapse() },
-		command.FullTextQuickList: func(Invocation) tea.Cmd { return f.openQuickList() },
+		command.FullTextQuickList: func(Invocation) tea.Cmd { return f.toggleQuickList() },
 		command.NoteAdd:           func(Invocation) tea.Cmd { return f.noteAdd() },
 		command.NoteOpen:          func(Invocation) tea.Cmd { return f.noteOpen() },
 		command.Refresh:           func(Invocation) tea.Cmd { f.loading = true; return f.reload() },
@@ -393,39 +474,61 @@ func (f *FullText) applyPendingCursor() {
 	f.pendingCursorLine = -1
 }
 
-// MatchList snapshots the current search matches for the quicklist overlay.
-// Each entry's Line is an index into the full (uncollapsed) body so a jump
-// lands correctly whether or not the pane is collapsed when the user returns.
-func (f *FullText) MatchList() []FullTextMatch {
-	f.render(f.bodyWidth())
-	out := make([]FullTextMatch, 0, len(f.matches))
-	for k, idx := range f.matches {
-		full := idx
-		if f.collapsed && k < len(f.collapseSrc) {
-			full = f.collapseSrc[k]
-		}
-		out = append(out, FullTextMatch{
-			Line:    full,
-			Locator: f.lines[idx].locator,
-			Text:    strings.TrimSpace(stripANSI(f.lines[idx].text)),
-		})
-	}
-	return out
-}
+// listFocused reports whether keyboard navigation is currently routed to the
+// quicklist split rather than the body.
+func (f *FullText) listFocused() bool { return f.listOpen && f.listFocus }
 
-// openQuickList emits the message that opens the search-match quicklist overlay.
-func (f *FullText) openQuickList() tea.Cmd {
-	matches := f.MatchList()
-	if len(matches) == 0 {
+// toggleQuickList opens or closes the bottom quicklist split. Opening requires
+// an active search with matches; the list takes focus and the body follows the
+// current match.
+func (f *FullText) toggleQuickList() tea.Cmd {
+	if f.listOpen {
+		f.listOpen = false
+		f.listFocus = false
+		return nil
+	}
+	if len(f.matches) == 0 {
+		f.recomputeMatches()
+	}
+	if len(f.matches) == 0 {
 		if strings.TrimSpace(f.find.input) == "" {
-			return status(text.StatusNoPatentSelected, false, "press / to search first")
+			return status(text.StatusNoPatentSelected, false, "press / to search, then ctrl+q for the match list")
 		}
 		return status(text.StatusNoPatentSelected, false, "no matches for "+f.find.input)
 	}
-	number, query := f.number, strings.TrimSpace(f.find.input)
-	return func() tea.Msg {
-		return FullTextQuickListOpenMsg{Number: number, Query: query, Matches: matches}
+	f.listOpen = true
+	f.listFocus = true
+	f.listPage.SetTotal(len(f.matches))
+	f.listPage.ScrollTo(f.matchIdx)
+	f.syncBodyToList()
+	return nil
+}
+
+// listMove moves the quicklist cursor by repeat in dir and scrolls the body to
+// the newly-focused match.
+func (f *FullText) listMove(repeat, dir int) {
+	for i := 0; i < max(repeat, 1); i++ {
+		if dir > 0 {
+			f.listPage.MoveDown(1)
+		} else {
+			f.listPage.MoveUp(1)
+		}
 	}
+	f.syncBodyToList()
+}
+
+// syncBodyToList scrolls the body to the match the quicklist cursor points at,
+// keeping matchIdx (the active-match highlight) in step.
+func (f *FullText) syncBodyToList() {
+	if len(f.matches) == 0 {
+		return
+	}
+	i := f.listPage.Cursor()
+	if i < 0 || i >= len(f.matches) {
+		return
+	}
+	f.matchIdx = i
+	f.page.ScrollTo(f.matches[i])
 }
 
 func (f *FullText) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
@@ -466,6 +569,14 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		f.computeJumpKeys(f.keymapBound)
 		f.clearMatches()
 		f.pendingCursorLine = -1
+		f.listOpen = false
+		f.listFocus = false
+		if f.initialQuery != "" {
+			// Opened from the global search: run the same query so the body
+			// highlights matches and n/N work; pendingLocator lands the cursor.
+			f.find.input = f.initialQuery
+			f.initialQuery = ""
+		}
 		f.lines = nil
 		f.page.Top()
 	case USPTOXMLFetchedMsg:
@@ -473,16 +584,6 @@ func (f *FullText) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if m.Number == f.number && m.Err == "" {
 			f.loading = true
 			return f, f.reload()
-		}
-	case FullTextJumpMsg:
-		// The quicklist overlay picked a match: expand (so it reads in context)
-		// and scroll to it on the next render via the pending-cursor path.
-		if m.Number == f.number {
-			if f.collapsed {
-				f.collapsed = false
-				f.lines = nil
-			}
-			f.pendingCursorLine = m.Line
 		}
 	}
 	return f, nil
@@ -508,11 +609,52 @@ func (f *FullText) View(w, h int) string {
 	}
 	f.render(contentW)
 
-	// Reserve the last row for the find bar while a search is open.
-	bodyH := max(h, 1)
-	if f.find.active {
-		bodyH = max(h-1, 1)
+	// Resolve a pending open-at target now that the body (and its line locators)
+	// exist: land on the occurrence-th matching line within the section, falling
+	// back to the section header, then the first match anywhere.
+	if f.pendingLocator != "" {
+		want, occ := f.pendingLocator, f.pendingOccurrence
+		f.pendingLocator = ""
+		f.pendingOccurrence = 0
+		target, seen := -1, 0
+		for _, idx := range f.matches {
+			if f.lines[idx].locator == want {
+				if seen == occ {
+					target = idx
+					break
+				}
+				seen++
+			}
+		}
+		if target < 0 {
+			for i, ln := range f.lines {
+				if ln.locator == want {
+					target = i
+					break
+				}
+			}
+		}
+		if target < 0 && len(f.matches) > 0 {
+			target = f.matches[0]
+		}
+		f.pendingCursorLine = target
 	}
+
+	// Lay out the rows: an optional find bar on the very last row, an optional
+	// bottom quicklist split above it, and the body filling the rest.
+	availH := max(h, 1)
+	if f.find.active {
+		availH = max(h-1, 1)
+	}
+	listH := 0
+	if f.listOpen && len(f.matches) > 0 && availH >= quickListMinBody {
+		listH = min(max(availH/quickListFraction, quickListMinRows), quickListMaxRows)
+	}
+	bodyH := availH
+	if listH > 0 {
+		bodyH = max(availH-listH-quickListDivider, 1)
+	}
+
 	f.page.SetTotal(len(f.lines))
 	f.page.SetPageSize(bodyH)
 	f.applyPendingCursor()
@@ -520,7 +662,7 @@ func (f *FullText) View(w, h int) string {
 	cur := f.page.Cursor()
 	maxLines := len(f.lines)
 
-	out := make([]string, 0, end-start+1)
+	out := make([]string, 0, availH+1)
 	query := strings.TrimSpace(f.find.input)
 	for i := start; i < end; i++ {
 		line := f.lines[i].text
@@ -545,10 +687,72 @@ func (f *FullText) View(w, h int) string {
 			out = append(out, gutter+line)
 		}
 	}
+	if listH > 0 {
+		// Pad the body to a fixed height so the split sits flush at the bottom.
+		for len(out) < bodyH {
+			out = append(out, "")
+		}
+		out = append(out, f.listDivider(w))
+		out = append(out, f.listRows(w, listH)...)
+	}
 	if f.find.active {
 		out = append(out, f.find.view(w, f.theme, len(f.matches)))
 	}
 	return strings.Join(out, "\n")
+}
+
+// listDivider renders the quicklist split's header rule with the match count
+// and the focus-dependent key hints.
+func (f *FullText) listDivider(w int) string {
+	label := fmt.Sprintf("Matches %d/%d", f.matchIdx+1, len(f.matches))
+	if q := strings.TrimSpace(f.find.input); q != "" {
+		label += " · /" + q
+	}
+	if f.listFocus {
+		label += "  [tab] body  [enter] read  [q] close"
+	} else {
+		label += "  [tab] list  [esc] close"
+	}
+	line := "─ " + label + " "
+	if pad := w - render.StringWidth(line); pad > 0 {
+		line += strings.Repeat("─", pad)
+	}
+	return f.theme.Header.Render(render.Truncate(line, max(w, 1)))
+}
+
+// listRows renders the quicklist split's rows (one per match). When the body
+// has focus the list tracks the active match; otherwise its own cursor leads.
+func (f *FullText) listRows(w, h int) []string {
+	f.listPage.SetTotal(len(f.matches))
+	f.listPage.SetPageSize(h)
+	// The active match (matchIdx) is the single source of truth — list focus
+	// moves it via listMove, n/N move it directly — so the list cursor always
+	// tracks it.
+	f.listPage.ScrollTo(f.matchIdx)
+	start, end := f.listPage.Window()
+	cur := f.listPage.Cursor()
+	rows := make([]string, 0, h)
+	for i := start; i < end; i++ {
+		idx := f.matches[i]
+		locator := f.lines[idx].locator
+		if locator == "" {
+			locator = "—"
+		}
+		body := strings.TrimSpace(stripANSI(f.lines[idx].text))
+		row := fmt.Sprintf("%-*s  L%-5d  %s", quickListLocatorW, render.Truncate(locator, quickListLocatorW), idx+1, body)
+		switch {
+		case i == cur && f.listFocus:
+			rows = append(rows, f.theme.Selected.Render(render.Pad(row, w)))
+		case i == cur:
+			rows = append(rows, f.theme.Visual.Render(render.Pad(row, w)))
+		default:
+			rows = append(rows, f.theme.Row.Render(render.Truncate(row, w)))
+		}
+	}
+	for len(rows) < h {
+		rows = append(rows, "")
+	}
+	return rows
 }
 
 // render builds f.lines and f.anchors for body width w. It is idempotent for a
@@ -614,12 +818,12 @@ func (f *FullText) render(w int) {
 	add("", "")
 	rule := f.theme.Dim.Render(strings.Repeat("─", max(w, 1)))
 	add(rule, "")
-	add(f.theme.Dim.Render("  V: select  y: copy  Y: copy+info  g y: copy all  /: find  n/N: match  z: collapse  a/A: notes  ;: jump"), "")
+	add(f.theme.Dim.Render("  V: select  y: copy  Y: copy+info  g y: copy all  /: find  n/N: match  z: collapse  ^q: match list  ^n: notes  ;: jump"), "")
 	add(rule, "")
 
 	// Claims.
 	for i, claim := range f.fullText.Claims {
-		label := fmt.Sprintf("Claim %d", claim.Number)
+		label := claim.Locator()
 		f.addSectionHeader(add, label, label)
 		for _, line := range wrapText(claim.Text, max(w-2, 1)) {
 			add(f.theme.Row.Render("  "+line), label)
@@ -634,7 +838,7 @@ func (f *FullText) render(w int) {
 		add("", "")
 		f.addSectionHeader(add, disclosureLocator, disclosureLocator)
 		for i, para := range f.fullText.Paragraphs {
-			locator := paragraphLocator(para, i)
+			locator := para.Locator(i)
 			tag := "¶ " + para.Number
 			if para.Number == "" {
 				tag = fmt.Sprintf("¶ %d", i+1)
@@ -694,14 +898,6 @@ func (f *FullText) addSectionHeader(add func(string, string), label, locator str
 		return
 	}
 	add(f.theme.Header.Render(label), locator)
-}
-
-// paragraphLocator returns the locator string for a disclosure paragraph.
-func paragraphLocator(p domain.DescriptionParagraph, index int) string {
-	if p.Number != "" {
-		return disclosureLocator + " ¶" + p.Number
-	}
-	return fmt.Sprintf("%s ¶%d", disclosureLocator, index+1)
 }
 
 // move scrolls and updates visual selection.
@@ -769,12 +965,12 @@ func (f *FullText) locatorAt(index int) string {
 // sectionText returns the source text of the claim or paragraph named by locator.
 func (f *FullText) sectionText(locator string) string {
 	for _, c := range f.fullText.Claims {
-		if fmt.Sprintf("Claim %d", c.Number) == locator {
+		if c.Locator() == locator {
 			return c.Text
 		}
 	}
 	for i, p := range f.fullText.Paragraphs {
-		if paragraphLocator(p, i) == locator {
+		if p.Locator(i) == locator {
 			return p.Text
 		}
 	}
@@ -911,6 +1107,34 @@ func (f *FullText) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	if f.find.active {
 		return f.handleFindKey(msg)
 	}
+	// While the quicklist split is open, Tab toggles focus body↔list, Esc
+	// dismisses the panel, and (with the list focused) q closes / Enter drops
+	// into the body. Navigation keys fall through to the keymap handlers, which
+	// route to the list when it has focus.
+	if f.listOpen {
+		switch msg.String() {
+		case "tab":
+			f.listFocus = !f.listFocus
+			if f.listFocus {
+				f.listPage.SetTotal(len(f.matches))
+				f.listPage.ScrollTo(f.matchIdx)
+			}
+			return f, nil, true
+		case "esc":
+			f.listOpen, f.listFocus = false, false
+			return f, nil, true
+		case "q":
+			if f.listFocus {
+				f.listOpen, f.listFocus = false, false
+				return f, nil, true
+			}
+		case "enter":
+			if f.listFocus {
+				f.listFocus = false
+				return f, nil, true
+			}
+		}
+	}
 	if !f.jump.JumpActive() {
 		return f, nil, false
 	}
@@ -966,6 +1190,8 @@ func (f *FullText) clearMatches() {
 	f.matches = nil
 	f.matchIdx = 0
 	f.collapsed = false
+	f.listOpen = false
+	f.listFocus = false
 }
 
 // isMatchLine reports whether body line i is a current search match.
@@ -1041,7 +1267,7 @@ func (f *FullText) prevAnchorLine() int {
 func (f *FullText) computeJumpKeys(bound []rune) {
 	labels := make([]string, 0, len(f.fullText.Claims)+1)
 	for _, c := range f.fullText.Claims {
-		labels = append(labels, fmt.Sprintf("Claim %d", c.Number))
+		labels = append(labels, c.Locator())
 	}
 	if len(f.fullText.Paragraphs) > 0 {
 		labels = append(labels, disclosureLocator)
@@ -1183,42 +1409,6 @@ func fetchUSPTOFullText(client *rpc.Client, number domain.PatentNumber, kind pro
 	if !res.Present {
 		return nil, ""
 	}
-	full := &domain.FullText{Number: number}
-	for _, c := range res.Body.Claims {
-		num := 0
-		if n, err := strconv.Atoi(strings.TrimLeft(c.Number, "0")); err == nil {
-			num = n
-		}
-		full.Claims = append(full.Claims, domain.ClaimSection{Number: num, Text: c.Text})
-	}
-	if res.Body.AbstractText != "" {
-		full.Paragraphs = append(full.Paragraphs, domain.DescriptionParagraph{
-			Number: "Abstract",
-			Text:   strings.TrimSpace(res.Body.AbstractText),
-		})
-	}
-	if d := strings.TrimSpace(res.Body.DescriptionText); d != "" {
-		// Split by double newlines to populate separate paragraphs and headings
-		for _, part := range strings.Split(d, "\n\n") {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			num := ""
-			text := part
-			// If it starts with a paragraph number like "[0001] ", extract it
-			if strings.HasPrefix(part, "[") {
-				idx := strings.Index(part, "]")
-				if idx > 1 {
-					num = part[1:idx]
-					text = strings.TrimSpace(part[idx+1:])
-				}
-			}
-			full.Paragraphs = append(full.Paragraphs, domain.DescriptionParagraph{
-				Number: num,
-				Text:   text,
-			})
-		}
-	}
-	return full, res.SourcePath
+	full := domain.FullTextFromGrantBody(number, res.Body)
+	return &full, res.SourcePath
 }

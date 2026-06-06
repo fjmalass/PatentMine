@@ -226,30 +226,6 @@ type FullTextLoadedMsg struct {
 	Stage domain.Stage
 }
 
-// FullTextMatch is one entry in the full-text quicklist: a body line that
-// matches the active search, identified by its index in the full (uncollapsed)
-// body so the pane can jump to it regardless of collapse state.
-type FullTextMatch struct {
-	Line    int    // index into the full body
-	Locator string // section locator, e.g. "Claim 5"
-	Text    string // plain text of the matching line
-}
-
-// FullTextQuickListOpenMsg tells the app to show the search-match quicklist
-// overlay for a full-text pane.
-type FullTextQuickListOpenMsg struct {
-	Number  domain.PatentNumber
-	Query   string
-	Matches []FullTextMatch
-}
-
-// FullTextJumpMsg asks the full-text pane for Number to scroll to a body line;
-// the quicklist overlay sends it to jump to a chosen match.
-type FullTextJumpMsg struct {
-	Number domain.PatentNumber
-	Line   int
-}
-
 // status returns a tea.Cmd that emits a StatusMsg for key.
 func status(key text.Key, isErr bool, args ...any) tea.Cmd {
 	return func() tea.Msg { return StatusMsg{Key: key, Args: args, Error: isErr} }

@@ -1269,6 +1269,54 @@ func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// fullTextSearchTimeout bounds a daemon full-text scan, which may ingest XML
+// from disk on demand for each selected patent that has not been parsed yet.
+const fullTextSearchTimeout = 90 * time.Second
+
+// cmdFullTextSearch searches the stored full text of the selected patents. With
+// a typed query it runs immediately; otherwise it opens a query prompt over the
+// current selection.
+func (a *App) cmdFullTextSearch(inv invocation) (tea.Model, tea.Cmd) {
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	if len(inv.args) > 0 {
+		return a.startFullTextSearch(numbers, strings.Join(inv.args, " "))
+	}
+	a.fullTextSearchTargets = numbers
+	a.overlays = append(a.overlays, overlay.NewTextInput(
+		a.theme, a.text, overlay.PurposeFullTextSearch, text.FullTextSearchTitle, text.FullTextSearchCaption))
+	return a, nil
+}
+
+// startFullTextSearch dispatches the daemon scan over numbers for query.
+func (a *App) startFullTextSearch(numbers []domain.PatentNumber, query string) (tea.Model, tea.Cmd) {
+	query = strings.TrimSpace(query)
+	if query == "" || len(numbers) == 0 {
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	a.setStatus(text.StatusFullTextSearching, len(numbers), query)
+	return a, a.runFullTextSearch(numbers, query)
+}
+
+func (a *App) runFullTextSearch(numbers []domain.PatentNumber, query string) tea.Cmd {
+	client := a.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fullTextSearchTimeout)
+		defer cancel()
+		var res proto.FullTextSearchResult
+		err := client.Call(ctx, proto.MethodFullTextSearch,
+			proto.FullTextSearchParams{Numbers: numbers, Query: query}, &res)
+		return fullTextSearchDoneMsg{res: res, err: err}
+	}
+}
+
 // cmdImport fetches a patent by number — optionally forcing past the file
 // cache — or loads a fixture file when the argument is a path.
 func (a *App) cmdImport(inv invocation) (tea.Model, tea.Cmd) {

@@ -170,6 +170,7 @@ const (
 	FullTextStagePrev ID = "fulltext.stage-prev"
 	FullTextCollapse  ID = "fulltext.collapse-matches"
 	FullTextQuickList ID = "fulltext.quicklist"
+	FullTextSearch    ID = "search.fulltext"
 	NoteAdd           ID = "edit.note-add"
 	NoteOpen          ID = "edit.note-open"
 

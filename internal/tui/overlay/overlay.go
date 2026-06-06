@@ -90,6 +90,9 @@ const (
 	PurposeEditOpenAIKey   Purpose = "edit-openai-key"
 	PurposeEditOpenAIModel Purpose = "edit-openai-model"
 	PurposeEditUSPTOKey    Purpose = "edit-uspto-key"
+	// PurposeFullTextSearch collects a query to search the full text of the
+	// patents selected in the catalog.
+	PurposeFullTextSearch Purpose = "fulltext-search"
 )
 
 // TextSubmitMsg carries a value entered in a TextInput overlay.

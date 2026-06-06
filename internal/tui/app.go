@@ -141,6 +141,7 @@ var appHandlers = map[command.ID]appHandler{
 	command.Back:                       (*App).cmdBack,
 	command.OpenDetail:                 (*App).cmdOpenDetail,
 	command.OpenFullText:               (*App).cmdOpenFullText,
+	command.FullTextSearch:             (*App).cmdFullTextSearch,
 	command.OpenBrowser:                (*App).cmdOpenBrowser,
 	command.OpenBrowserUSPTO:           (*App).cmdOpenBrowserUSPTO,
 	command.OpenBrowserUSPTOGrant:      (*App).cmdOpenBrowserUSPTOGrant,
@@ -326,6 +327,13 @@ type App struct {
 	revertPatent   domain.PatentNumber
 	sourceMode     string
 	lastPickerDirs map[string]string // key: projectID + ":" + purpose, value: last directory path
+
+	// fullTextSearchTargets holds the patents a pending full-text search will
+	// scan, captured when the query prompt opens (the prompt returns only text).
+	fullTextSearchTargets []domain.PatentNumber
+
+	// search is the active cross-patent full-text search dock (nil when closed).
+	search *searchSession
 }
 
 // xmlBatchState tracks an in-flight multi-patent XML fetch dispatched from
@@ -1523,9 +1531,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pane.NoteOpenMsg:
 		a.overlays = append(a.overlays, newNotesBufferOverlay(a.theme, m.Number, m.Patent, a))
 		return a, nil
-	case pane.FullTextQuickListOpenMsg:
-		a.overlays = append(a.overlays, newQuickListOverlay(a.theme, m.Number, m.Query, m.Matches))
-		return a, nil
+	case fullTextSearchDoneMsg:
+		return a.handleFullTextSearchDone(m)
 	case pane.PatentNoteOpenMsg:
 		if a.client == nil {
 			a.setErr(text.StatusDaemonUnavailable)
@@ -1589,6 +1596,24 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			updated, cmd, consumed := handler.HandleKey(m)
 			a.overlays[len(a.overlays)-1] = updated
 			if consumed {
+				return a, cmd
+			}
+		}
+	}
+	if a.search != nil && len(a.overlays) == 0 {
+		// Tab toggles focus between the preview and the results dock. While the
+		// dock has focus its keys drive the list (and the preview follows); while
+		// the preview has focus, keys fall through to the normal pane routing.
+		if m.String() == "tab" {
+			if a.search.focus == focusDock {
+				a.search.focus = focusPreview
+			} else {
+				a.search.focus = focusDock
+			}
+			return a, nil
+		}
+		if a.search.focus == focusDock {
+			if cmd, ok := a.handleDockKey(m); ok {
 				return a, cmd
 			}
 		}

@@ -175,7 +175,7 @@ func (o *OfficeActionDetail) FullTextNumber() (domain.PatentNumber, bool) {
 
 func (o *OfficeActionDetail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	switch msg.String() {
-	case "enter", "n":
+	case "enter", "ctrl+n":
 		oa := o.oa
 		return o, func() tea.Msg { return OpenOfficeActionEditorMsg{OA: oa} }, true
 	case "e":
@@ -224,7 +224,7 @@ func (o *OfficeActionDetail) View(w, h int) string {
 
 	b.WriteByte('\n')
 	b.WriteString(o.theme.Dim.Render(render.Truncate(
-		"[enter] notes editor  [e] edit  [f] documents  [c] communications  [R] draft response  [esc] back", w)))
+		"[enter/ctrl+n] notes editor  [e] edit  [f] documents  [c] communications  [R] draft response  [esc] back", w)))
 	return b.String()
 }
 

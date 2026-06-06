@@ -49,6 +49,7 @@ func DefaultHints() map[command.Scope][]Hint {
 		command.ScopeCatalog: {
 			{Commands: []command.ID{command.OpenSearch}, Label: text.HintCommands},
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
+			{Commands: []command.ID{command.FullTextSearch}, Label: text.HintFullTextSearch},
 			{Commands: []command.ID{command.OpenDetail}, Label: text.HintDetail},
 			{Commands: []command.ID{command.OpenIDS}, Label: text.HintIDS},
 			{Commands: []command.ID{command.OpenBrowser}, Label: text.HintBrowse},
@@ -144,7 +145,6 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.FullTextQuickList}, Label: text.HintQuickList},
 			{Commands: []command.ID{command.CopyYank, command.CopyYankMeta}, Label: text.HintCopy},
 			{Commands: []command.ID{command.CopyAll}, Label: text.HintCopyAll},
-			{Commands: []command.ID{command.NoteAdd}, Label: text.HintNoteAdd},
 			{Commands: []command.ID{command.NoteOpen}, Label: text.HintNoteOpen},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},
 		},

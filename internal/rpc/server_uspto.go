@@ -35,6 +35,14 @@ func (s *Server) usptoGrantBody(ctx context.Context, raw json.RawMessage) (any, 
 	return proto.USPTOGrantBodyResult{Present: present, Body: body, SourcePath: sourcePath, Kind: kind}, nil
 }
 
+func (s *Server) fullTextSearch(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.FullTextSearchParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.FullTextSearch(ctx, p.Numbers, p.Query)
+}
+
 func (s *Server) sourceResolveDiffs(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.SourceResolveDiffsParams](raw)
 	if err != nil {

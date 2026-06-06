@@ -81,6 +81,7 @@ const (
 	MethodTableViewDelete            Method = "table_view.delete"
 	MethodUSPTOFetchXML              Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody             Method = "uspto.grant_body"
+	MethodFullTextSearch             Method = "fulltext.search"
 	MethodUSPTOLookup                Method = "uspto.lookup"
 	MethodUSPTOFetchAssignments      Method = "uspto.fetch_assignments"
 	MethodUSPTOFetchAssignmentsBatch Method = "uspto.fetch_assignments.batch"

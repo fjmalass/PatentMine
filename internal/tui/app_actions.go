@@ -23,6 +23,10 @@ func (a *App) handleTextSubmit(m overlay.TextSubmitMsg) (tea.Model, tea.Cmd) {
 	switch m.Purpose {
 	case overlay.PurposeCreateProject:
 		return a.createProject(m.Value)
+	case overlay.PurposeFullTextSearch:
+		numbers := a.fullTextSearchTargets
+		a.fullTextSearchTargets = nil
+		return a.startFullTextSearch(numbers, m.Value)
 	case overlay.PurposeAIAnalyzeCustom:
 		a.setStatus(text.StatusAIAnalysisStarted, a.aiTargetPatent.Number.String(), string(a.aiProvider))
 		return a, a.runAIAnalysis(a.aiTargetPatent, "custom", m.Value)

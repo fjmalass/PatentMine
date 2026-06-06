@@ -17,6 +17,9 @@ func (a *App) View() string {
 	if a.width == 0 || a.height == 0 {
 		return "starting…"
 	}
+	if a.search != nil {
+		a.syncSearchDock() // drop the dock if the user navigated away from the preview
+	}
 	focused := a.focusedPane()
 	viewWidth := safeViewWidth(a.width)
 	header := a.headerBlock(focused)
@@ -27,6 +30,9 @@ func (a *App) View() string {
 	bodyHeight := max(a.height-headerLines-statusRows, 1)
 
 	body := fitBody(focused.View(viewWidth, bodyHeight), bodyHeight, viewWidth)
+	if a.search != nil {
+		body = a.searchView(focused, viewWidth, bodyHeight)
+	}
 
 	statusStyle := a.theme.Status
 	if a.statusErr {
