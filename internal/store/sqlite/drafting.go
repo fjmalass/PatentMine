@@ -267,7 +267,7 @@ func (r *Repo) draftClaims(ctx context.Context, id domain.DraftID) ([]domain.Dra
 }
 
 const officeActionColumns = `id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-	blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at, name, last_opened_at`
+	blob_path, blob_hash, extracted_text, notes, response_due, status, status_changed_at, source, imported_at, name, last_opened_at`
 
 // SaveOfficeAction inserts or updates an office action by its id.
 func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (err error) {
@@ -284,8 +284,8 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 	_, err = r.writer.ExecContext(ctx,
 		`INSERT INTO office_action
 		 (id, project_id, application_number, mail_date, oa_type, examiner, art_unit,
-		  blob_path, blob_hash, extracted_text, notes, response_due, status, source, imported_at, name, last_opened_at)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		  blob_path, blob_hash, extracted_text, notes, response_due, status, status_changed_at, source, imported_at, name, last_opened_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 			project_id=excluded.project_id,
 			application_number=excluded.application_number,
@@ -299,13 +299,14 @@ func (r *Repo) SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) (er
 			notes=excluded.notes,
 			response_due=excluded.response_due,
 			status=excluded.status,
+			status_changed_at=excluded.status_changed_at,
 			source=excluded.source,
 			imported_at=excluded.imported_at,
 			name=excluded.name,
 			last_opened_at=excluded.last_opened_at`,
 		oa.ID, string(oa.Project), oa.ApplicationNumber, encodeTime(oa.MailDate), string(oa.Type),
 		oa.Examiner, oa.ArtUnit, oa.BlobPath, oa.BlobHash, oa.ExtractedText, oa.Notes,
-		encodeTime(oa.ResponseDue), string(oa.Status), oa.Source, encodeTime(oa.ImportedAt), oa.Name, encodeTime(oa.LastOpenedAt))
+		encodeTime(oa.ResponseDue), string(oa.Status), encodeTime(oa.StatusChangedAt), oa.Source, encodeTime(oa.ImportedAt), oa.Name, encodeTime(oa.LastOpenedAt))
 	if err != nil {
 		return fmt.Errorf("store/sqlite: save office action %s: %w", oa.ID, err)
 	}
@@ -358,24 +359,28 @@ func (r *Repo) DeleteOfficeAction(ctx context.Context, id string) (err error) {
 
 func scanOfficeAction(s rowScanner) (domain.OfficeAction, error) {
 	var (
-		oa           domain.OfficeAction
-		id           string
-		project      string
-		oaType       string
-		mailDate     string
-		responseDue  string
-		status       string
-		importedAt   string
-		lastOpenedAt string
+		oa              domain.OfficeAction
+		id              string
+		project         string
+		oaType          string
+		mailDate        string
+		responseDue     string
+		status          string
+		statusChangedAt string
+		importedAt      string
+		lastOpenedAt    string
 	)
 	if err := s.Scan(&id, &project, &oa.ApplicationNumber, &mailDate, &oaType, &oa.Examiner, &oa.ArtUnit,
-		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &responseDue, &status, &oa.Source, &importedAt, &oa.Name, &lastOpenedAt); err != nil {
+		&oa.BlobPath, &oa.BlobHash, &oa.ExtractedText, &oa.Notes, &responseDue, &status, &statusChangedAt, &oa.Source, &importedAt, &oa.Name, &lastOpenedAt); err != nil {
 		return domain.OfficeAction{}, err
 	}
 	oa.ID = id
 	oa.Project = domain.ProjectID(project)
 	oa.Type = domain.OAType(oaType)
 	oa.Status = domain.OAStatus(status)
+	if sc, err := decodeTime(statusChangedAt); err == nil {
+		oa.StatusChangedAt = sc
+	}
 	md, err := decodeTime(mailDate)
 	if err != nil {
 		return domain.OfficeAction{}, err
@@ -884,6 +889,35 @@ func (r *Repo) SummarizeTime(ctx context.Context, project domain.ProjectID) (s d
 		}
 	}
 	return s, rows.Err()
+}
+
+// SummarizeValidatedTimeByOfficeAction returns each office action's billable
+// total: the sum of its validated time entries, in seconds, keyed by office
+// action id. Unvalidated (not-yet-reviewed) time and entries with no office
+// action are excluded.
+func (r *Repo) SummarizeValidatedTimeByOfficeAction(ctx context.Context, project domain.ProjectID) (out map[string]int, err error) {
+	defer r.observeDuration("summarize_validated_time_by_office_action", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT office_action_id, COALESCE(SUM(seconds),0)
+		 FROM time_entry
+		 WHERE project_id = ? AND validated = 1 AND office_action_id != ''
+		 GROUP BY office_action_id`, string(project))
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: summarize validated time by office action: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out = make(map[string]int)
+	for rows.Next() {
+		var (
+			oaID string
+			secs int
+		)
+		if err := rows.Scan(&oaID, &secs); err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan validated time by office action: %w", err)
+		}
+		out[oaID] = secs
+	}
+	return out, rows.Err()
 }
 
 func scanTimeEntry(s rowScanner) (domain.TimeEntry, error) {

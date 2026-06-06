@@ -341,8 +341,10 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 		// edit it later. An action awaiting a response opens as such.
 		ResponseDue: domain.ResponseDeadline(in.MailDate, in.Type),
 		Status:      domain.OAStatusOpen,
-		Source:      source,
-		ImportedAt:  now,
+		// The action enters the open state now; later transitions bump this.
+		StatusChangedAt: now,
+		Source:          source,
+		ImportedAt:      now,
 	}
 
 	var docName string
@@ -564,8 +566,10 @@ func (e *Engine) SaveOfficeActionNotes(ctx context.Context, id, notes string) (o
 	return oa, nil
 }
 
-// UpdateOfficeActionMeta updates an office action's metadata and recomputes its response due date.
-func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, name, examiner, mailDateStr string, oaType domain.OAType, artUnit, appNumber string) (oa domain.OfficeAction, err error) {
+// UpdateOfficeActionMeta updates an office action's metadata and recomputes its
+// response due date. An empty status leaves the current one unchanged; a new
+// status bumps StatusChangedAt so the list can show how long it has held.
+func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, name, examiner, mailDateStr string, oaType domain.OAType, artUnit, appNumber string, status domain.OAStatus) (oa domain.OfficeAction, err error) {
 	start := time.Now()
 	defer e.observeDuration(observability.MetricEngineUpdateOfficeAction, start, &err)
 	defer e.observeOfficeAction(observability.MetricOfficeActionUpdate, observability.MetricOfficeActionUpdateTotal, start, &err)
@@ -584,6 +588,16 @@ func (e *Engine) UpdateOfficeActionMeta(ctx context.Context, id string, name, ex
 
 	if !oaType.Valid() {
 		return domain.OfficeAction{}, fmt.Errorf("engine: invalid office action type %q", oaType)
+	}
+
+	if status != "" {
+		if !status.Valid() {
+			return domain.OfficeAction{}, fmt.Errorf("engine: invalid office action status %q", status)
+		}
+		if status != oa.Status {
+			oa.Status = status
+			oa.StatusChangedAt = time.Now().UTC()
+		}
 	}
 
 	oa.Name = name
@@ -635,6 +649,12 @@ func (e *Engine) ListOfficeActions(ctx context.Context, project domain.ProjectID
 		},
 	})
 	return actions, nil
+}
+
+// BillableTimeByOfficeAction returns each office action's billable (validated)
+// time in seconds, keyed by office action id, for the project's list readout.
+func (e *Engine) BillableTimeByOfficeAction(ctx context.Context, project domain.ProjectID) (map[string]int, error) {
+	return e.repo.SummarizeValidatedTimeByOfficeAction(ctx, project)
 }
 
 func (e *Engine) observeOfficeAction(timingMetric, totalMetric string, start time.Time, errp *error) {

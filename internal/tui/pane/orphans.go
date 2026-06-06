@@ -122,12 +122,12 @@ func (o *Orphans) load() tea.Cmd {
 }
 
 func (o *Orphans) focusNext() tea.Cmd {
-	o.focusedColIdx = (o.focusedColIdx + 1) % 3
+	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, 1)
 	return nil
 }
 
 func (o *Orphans) focusPrev() tea.Cmd {
-	o.focusedColIdx = (o.focusedColIdx - 1 + 3) % 3
+	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, -1)
 	return nil
 }
 

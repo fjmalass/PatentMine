@@ -145,12 +145,12 @@ func (a *AllNotes) load() tea.Cmd {
 }
 
 func (a *AllNotes) focusNext() tea.Cmd {
-	a.focusedColIdx = (a.focusedColIdx + 1) % 3
+	a.focusedColIdx = render.MoveSortableColumn(a.currentCols(80), a.focusedColIdx, 1)
 	return nil
 }
 
 func (a *AllNotes) focusPrev() tea.Cmd {
-	a.focusedColIdx = (a.focusedColIdx - 1 + 3) % 3
+	a.focusedColIdx = render.MoveSortableColumn(a.currentCols(80), a.focusedColIdx, -1)
 	return nil
 }
 
@@ -167,7 +167,11 @@ func (a *AllNotes) applySort() tea.Cmd {
 		a.sortAscending = !a.sortAscending
 	} else {
 		a.activeSort = col.SortKey
-		a.sortAscending = true
+		oSortAscending := true
+		if col.SortKey == "date" {
+			oSortAscending = false
+		}
+		a.sortAscending = oSortAscending
 	}
 	a.applyFilter()
 	return nil

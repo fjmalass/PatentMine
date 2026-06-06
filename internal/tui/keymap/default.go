@@ -284,6 +284,9 @@ func Default() *Keymaps {
 			"a":      command.AddOfficeAction,
 			"R":      command.DraftResponse,
 			"T":      command.OpenFullText,
+			"right":  command.ColNext,
+			"left":   command.ColPrev,
+			".":      command.SortApply,
 			// enter / l drill into the detail pane (intercepted by the pane).
 		})
 

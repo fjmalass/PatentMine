@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '12')
+VALUES ('schema_version', '13')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -767,6 +767,7 @@ CREATE TABLE IF NOT EXISTS office_action (
     notes              TEXT NOT NULL DEFAULT '',
     response_due       TEXT NOT NULL DEFAULT '',
     status             TEXT NOT NULL DEFAULT 'open',
+    status_changed_at  TEXT NOT NULL DEFAULT '',
     source             TEXT NOT NULL DEFAULT '',
     imported_at        TEXT NOT NULL DEFAULT '',
     name               TEXT NOT NULL DEFAULT '',

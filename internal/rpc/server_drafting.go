@@ -153,7 +153,11 @@ func (s *Server) officeActionList(ctx context.Context, raw json.RawMessage) (any
 	if err != nil {
 		return nil, err
 	}
-	return proto.OfficeActionListResult{OfficeActions: list}, nil
+	billable, err := s.engine.BillableTimeByOfficeAction(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionListResult{OfficeActions: list, BillableSecs: billable}, nil
 }
 
 func (s *Server) officeActionGet(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -203,7 +207,7 @@ func (s *Server) officeActionUpdate(ctx context.Context, raw json.RawMessage) (a
 	}
 	mailDateStr := mailDate.Format(domain.DateLayout)
 
-	oa, err := s.engine.UpdateOfficeActionMeta(ctx, p.ID, p.Name, p.Examiner, mailDateStr, p.Type, p.ArtUnit, p.ApplicationNumber)
+	oa, err := s.engine.UpdateOfficeActionMeta(ctx, p.ID, p.Name, p.Examiner, mailDateStr, p.Type, p.ArtUnit, p.ApplicationNumber, p.Status)
 	if err != nil {
 		return nil, err
 	}

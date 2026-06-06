@@ -191,8 +191,13 @@ type OpenDocumentFileMsg struct {
 	Path string
 }
 
-// StartDocumentImportMsg asks the App to launch the file picker to import/add a new document.
-type StartDocumentImportMsg struct{}
+// StartDocumentImportMsg asks the App to launch the file picker to import/add a
+// new document. OfficeActionID, when set, links the imported document to that
+// office action (the documents view was opened from one), so it lands in the
+// action's associated-documents list rather than only the matter-wide list.
+type StartDocumentImportMsg struct {
+	OfficeActionID string
+}
 
 // PctSize computes an overlay size as a percentage of the terminal, clamped
 // between min and term-2. Every overlay that implements DynamicSize should

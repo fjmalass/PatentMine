@@ -57,7 +57,7 @@ func NewTimeReview(client *rpc.Client, theme render.Theme, project domain.Projec
 	return &TimeReview{client: client, theme: theme, project: project, loading: true}
 }
 
-func (o *TimeReview) Title() string { return "Review Time — validate before billing" }
+func (o *TimeReview) Title() string { return "Review Worklog — validate before billing" }
 
 func (o *TimeReview) Handles() []command.ID { return nil }
 

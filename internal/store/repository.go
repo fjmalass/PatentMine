@@ -321,6 +321,9 @@ type Repository interface {
 	DeleteTimeEntry(ctx context.Context, id string) error
 	// SummarizeTime aggregates a project's time by activity and review state.
 	SummarizeTime(ctx context.Context, project domain.ProjectID) (domain.TimeSummary, error)
+	// SummarizeValidatedTimeByOfficeAction returns each office action's billable
+	// (validated) time in seconds, keyed by office action id.
+	SummarizeValidatedTimeByOfficeAction(ctx context.Context, project domain.ProjectID) (map[string]int, error)
 
 	// SaveAIUsage records one AI call against a matter.
 	SaveAIUsage(ctx context.Context, u domain.AIUsage) error

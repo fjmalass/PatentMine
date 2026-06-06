@@ -44,7 +44,7 @@ func NewTimeSummary(client *rpc.Client, theme render.Theme, project domain.Proje
 	return &TimeSummaryOverlay{client: client, theme: theme, project: project, loading: true}
 }
 
-func (o *TimeSummaryOverlay) Title() string { return "Time & AI Usage" }
+func (o *TimeSummaryOverlay) Title() string { return "Worklog & AI Usage" }
 
 func (o *TimeSummaryOverlay) Handles() []command.ID { return nil }
 
@@ -100,7 +100,7 @@ func (o *TimeSummaryOverlay) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	b.WriteString(o.theme.Header.Render(render.Pad("RECORDED TIME", maxW)))
+	b.WriteString(o.theme.Header.Render(render.Pad("WORKLOG", maxW)))
 	b.WriteByte('\n')
 	t := o.res.Time
 	order := []domain.TimeActivity{domain.TimeReading, domain.TimeWriting, domain.TimeAI, domain.TimeCall, domain.TimeAdmin}
@@ -131,7 +131,7 @@ func (o *TimeSummaryOverlay) View(maxW, maxH int) string {
 	}
 
 	b.WriteByte('\n')
-	b.WriteString(o.theme.Dim.Render(render.Truncate("esc close · durations only (rates later)", maxW)))
+	b.WriteString(o.theme.Dim.Render(render.Truncate("esc close · editable worklog · rates later", maxW)))
 	return b.String()
 }
 

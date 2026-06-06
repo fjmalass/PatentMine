@@ -24,10 +24,13 @@ const PurposeAddMatterDocument Purpose = "add-matter-document"
 const PurposeAddPatentList Purpose = "add-patent-list"
 
 // FilePickedMsg reports a file chosen in a FilePicker overlay. Purpose tells the
-// App which action to route the path to.
+// App which action to route the path to. OfficeActionID carries the picker's
+// optional context back to the handler (e.g. the office action a document import
+// should be linked to); it is empty when none was set.
 type FilePickedMsg struct {
-	Purpose Purpose
-	Path    string
+	Purpose        Purpose
+	Path           string
+	OfficeActionID string
 }
 
 // fileEntry is one row of the browser: a directory or a selectable file.
@@ -59,6 +62,10 @@ type FilePicker struct {
 	offset     int
 	err        string
 
+	// officeActionID, when set, is echoed back in FilePickedMsg so the import
+	// handler can link the picked document to that office action.
+	officeActionID string
+
 	showSearch  bool
 	searchQuery string
 	jump        JumpNavigator
@@ -78,6 +85,13 @@ func NewFilePicker(theme render.Theme, title string, purpose Purpose, startDir s
 	}
 	o := &FilePicker{theme: theme, title: title, purpose: purpose, allowed: lower, dir: dir}
 	o.load()
+	return o
+}
+
+// WithOfficeAction tags the picker with an office action id, echoed back in the
+// FilePickedMsg so a document import can be linked to that action.
+func (o *FilePicker) WithOfficeAction(id string) *FilePicker {
+	o.officeActionID = id
 	return o
 }
 
@@ -175,8 +189,8 @@ func (o *FilePicker) activateQuery() (tea.Cmd, bool) {
 			return nil, true
 		} else {
 			if o.allows(path) {
-				purpose := o.purpose
-				return func() tea.Msg { return FilePickedMsg{Purpose: purpose, Path: path} }, true
+				purpose, oaID := o.purpose, o.officeActionID
+				return func() tea.Msg { return FilePickedMsg{Purpose: purpose, Path: path, OfficeActionID: oaID} }, true
 			}
 		}
 	}
@@ -464,8 +478,8 @@ func (o *FilePicker) activate() tea.Cmd {
 		return nil
 	}
 	path := filepath.Join(o.dir, e.name)
-	purpose := o.purpose
-	return func() tea.Msg { return FilePickedMsg{Purpose: purpose, Path: path} }
+	purpose, oaID := o.purpose, o.officeActionID
+	return func() tea.Msg { return FilePickedMsg{Purpose: purpose, Path: path, OfficeActionID: oaID} }
 }
 
 func (o *FilePicker) View(maxW, maxH int) string {

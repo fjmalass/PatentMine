@@ -274,8 +274,15 @@ func TestOfficeActionObservability(t *testing.T) {
 	if _, err := eng.SaveOfficeActionNotes(ctx, oa.ID, "traverse"); err != nil {
 		t.Fatalf("SaveOfficeActionNotes: %v", err)
 	}
-	if _, err := eng.UpdateOfficeActionMeta(ctx, oa.ID, "New Name", "Jane Doe", mailed.Format(domain.DateLayout), domain.OAFinal, "2151", "16/123,456"); err != nil {
+	updated, err := eng.UpdateOfficeActionMeta(ctx, oa.ID, "New Name", "Jane Doe", mailed.Format(domain.DateLayout), domain.OAFinal, "2151", "16/123,456", domain.OAStatusResponded)
+	if err != nil {
 		t.Fatalf("UpdateOfficeActionMeta: %v", err)
+	}
+	if updated.Status != domain.OAStatusResponded {
+		t.Fatalf("updated status = %q, want responded", updated.Status)
+	}
+	if updated.StatusChangedAt.IsZero() || !updated.StatusChangedAt.After(oa.StatusChangedAt) {
+		t.Fatalf("StatusChangedAt not bumped on status change: was %v, now %v", oa.StatusChangedAt, updated.StatusChangedAt)
 	}
 	if _, err := eng.DeleteOfficeAction(ctx, oa.ID, false); err != nil {
 		t.Fatalf("DeleteOfficeAction: %v", err)

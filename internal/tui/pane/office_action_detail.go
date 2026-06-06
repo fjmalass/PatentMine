@@ -71,6 +71,9 @@ func (o *OfficeActionDetail) WithLogger(l *slog.Logger) *OfficeActionDetail { o.
 func (o *OfficeActionDetail) Scope() command.Scope { return command.ScopeMatterOADetail }
 
 func (o *OfficeActionDetail) Title() string {
+	if name := strings.TrimSpace(o.oa.Name); name != "" {
+		return "Office Action — " + name
+	}
 	t := "Office Action"
 	if !o.oa.MailDate.IsZero() {
 		t += " · " + o.oa.MailDate.Format(domain.DateLayout)
@@ -189,13 +192,14 @@ func (o *OfficeActionDetail) View(w, h int) string {
 		b.WriteString(o.theme.Row.Render(render.Truncate(orDash(value), max(w-16, 8))))
 		b.WriteByte('\n')
 	}
+	field("Name", o.oa.Name)
 	field("Examiner", o.oa.Examiner)
 	field("Application", o.oa.ApplicationNumber)
 	field("Type", oaTypeLabel(o.oa.Type))
 	field("Art unit", o.oa.ArtUnit)
 	field("Mailed", dateOrDash(o.oa.MailDate))
 	field("Response due", responseDueLabel(o.oa))
-	field("Status", statusLabel(o.oa.Status))
+	field("Status", statusAgeLabel(o.oa))
 	b.WriteByte('\n')
 
 	if o.loading {
@@ -209,9 +213,9 @@ func (o *OfficeActionDetail) View(w, h int) string {
 		b.WriteByte('\n')
 		field("Documents", fmt.Sprintf("%d", o.docs))
 		field("Communications", fmt.Sprintf("%d", o.comms))
-		field("Time recorded", formatTimeSummary(o.time))
+		field("Worklog", formatTimeSummary(o.time))
 		if o.time.UnvalidatedCount > 0 {
-			field("Unvalidated", fmt.Sprintf("%d entries (%s) — review before billing", o.time.UnvalidatedCount, fmtDuration(o.time.UnvalidatedSecs)))
+			field("Unreviewed", fmt.Sprintf("%d entries (%s) — review before billing", o.time.UnvalidatedCount, fmtDuration(o.time.UnvalidatedSecs)))
 		}
 		if o.ai.Calls > 0 {
 			field("AI usage", fmt.Sprintf("%d calls, %d tokens", o.ai.Calls, o.ai.TotalTokens))

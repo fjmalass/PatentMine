@@ -364,46 +364,23 @@ func renderStatusExtra(theme render.Theme, extra string) string {
 }
 
 func moveSortableColumn(cols []tableCol, current, step int) int {
-	if len(cols) == 0 {
-		return -1
-	}
-	hasSortable := false
-	for _, col := range cols {
-		if col.sortKey != "" {
-			hasSortable = true
-			break
+	renderCols := make([]render.TableColumn, len(cols))
+	for i, col := range cols {
+		renderCols[i] = render.TableColumn{
+			SortKey: string(col.sortKey),
 		}
 	}
-	if !hasSortable {
-		return -1
-	}
-	if current < -1 {
-		current = -1
-	}
-	if current >= len(cols) {
-		current = len(cols) - 1
-	}
-	idx := current
-	if current < 0 && step < 0 {
-		idx = 0
-	}
-	for range len(cols) {
-		idx = (idx + step + len(cols)) % len(cols)
-		if cols[idx].sortKey != "" {
-			return idx
-		}
-	}
-	return -1
+	return render.MoveSortableColumn(renderCols, current, step)
 }
 
 func clampFocusedSortableColumn(cols []tableCol, focusedColIdx int) int {
-	if focusedColIdx < 0 {
-		return -1
+	renderCols := make([]render.TableColumn, len(cols))
+	for i, col := range cols {
+		renderCols[i] = render.TableColumn{
+			SortKey: string(col.sortKey),
+		}
 	}
-	if focusedColIdx >= 0 && focusedColIdx < len(cols) && cols[focusedColIdx].sortKey != "" {
-		return focusedColIdx
-	}
-	return moveSortableColumn(cols, focusedColIdx, 1)
+	return render.ClampFocusedSortableColumn(renderCols, focusedColIdx)
 }
 
 func tableStateText(row domain.PatentRow, projectID domain.ProjectID) string {

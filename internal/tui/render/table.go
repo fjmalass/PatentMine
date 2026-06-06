@@ -157,3 +157,52 @@ func focusedCellStyleExtended(theme Theme, absoluteIndex int, cursorSelected, vi
 	}
 	return theme.FocusCell
 }
+
+// MoveSortableColumn moves the focused column index by step (usually 1 or -1)
+// among the sortable columns (those with a non-empty SortKey).
+// It returns the new focused index, or -1 if no columns are sortable.
+func MoveSortableColumn(cols []TableColumn, current, step int) int {
+	if len(cols) == 0 {
+		return -1
+	}
+	hasSortable := false
+	for _, col := range cols {
+		if col.SortKey != "" {
+			hasSortable = true
+			break
+		}
+	}
+	if !hasSortable {
+		return -1
+	}
+	if current < -1 {
+		current = -1
+	}
+	if current >= len(cols) {
+		current = len(cols) - 1
+	}
+	idx := current
+	if current < 0 && step < 0 {
+		idx = 0
+	}
+	for range len(cols) {
+		idx = (idx + step + len(cols)) % len(cols)
+		if cols[idx].SortKey != "" {
+			return idx
+		}
+	}
+	return -1
+}
+
+// ClampFocusedSortableColumn ensures the focused column index is on a sortable
+// column, or moves it to the first available sortable column.
+func ClampFocusedSortableColumn(cols []TableColumn, focusedColIdx int) int {
+	if focusedColIdx < 0 {
+		return -1
+	}
+	if focusedColIdx >= 0 && focusedColIdx < len(cols) && cols[focusedColIdx].SortKey != "" {
+		return focusedColIdx
+	}
+	return MoveSortableColumn(cols, focusedColIdx, 1)
+}
+

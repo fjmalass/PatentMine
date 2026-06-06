@@ -204,8 +204,15 @@ func (o *MatterDocuments) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			copy(o.items0, o.rawItems0)
 			sortItems0(o.items0, o.sortCol0, o.sortDesc0, o.oa.ID)
 
-			o.rawItems1 = make([]domain.MatterDocument, len(m.allItems))
-			copy(o.rawItems1, m.allItems)
+			// The "all documents" table is everything *except* what is already
+			// associated with this office action (shown in the table above), so no
+			// document appears in both lists.
+			o.rawItems1 = nil
+			for _, d := range m.allItems {
+				if !isAssociatedWith(d, o.oa.ID) {
+					o.rawItems1 = append(o.rawItems1, d)
+				}
+			}
 			o.items1 = make([]domain.MatterDocument, len(o.rawItems1))
 			copy(o.items1, o.rawItems1)
 			sortItems1(o.items1, o.sortCol1, o.sortDesc1)
@@ -408,7 +415,11 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 				o.msg = ""
 			}
 		case "l":
-			return o, func() tea.Msg { return StartDocumentImportMsg{} }, true
+			oaID := ""
+			if o.oa != nil {
+				oaID = o.oa.ID
+			}
+			return o, func() tea.Msg { return StartDocumentImportMsg{OfficeActionID: oaID} }, true
 		case "o":
 			if cmd := o.openSelected(); cmd != nil {
 				return o, cmd, true

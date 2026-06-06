@@ -1380,9 +1380,17 @@ func (a *App) openOfficeActionMetaForm(path string) (tea.Model, tea.Cmd) {
 }
 
 // cmdAddDocument files a supporting document (reference, response, …) under the
-// active matter. With a path it imports directly; with none it opens the file
-// picker rooted at the user's home directory.
+// active matter, unlinked to any office action (the typed :add.document command).
 func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
+	return a.cmdAddDocumentFor(inv, "")
+}
+
+// cmdAddDocumentFor files a supporting document under the active matter. With a
+// path it imports directly; with none it opens the file picker rooted at the
+// user's home directory. A non-empty oaID links the document to that office
+// action — the documents view was opened from one — so it lands in the action's
+// associated-documents list.
+func (a *App) cmdAddDocumentFor(inv invocation, oaID string) (tea.Model, tea.Cmd) {
 	if len(inv.args) > 1 {
 		return a.usageError(command.AddDocument)
 	}
@@ -1397,7 +1405,7 @@ func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 1 {
 		loading := overlay.NewConverting(a.theme, "Adding Document", "Converting and adding document…")
 		a.overlays = append(a.overlays, loading)
-		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, absPath(inv.args[0]), domain.MatterDocReference))
+		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, absPath(inv.args[0]), domain.MatterDocReference, oaID))
 	}
 	start := a.importFromDir
 	if start == "" {
@@ -1413,7 +1421,7 @@ func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 			start = last
 		}
 	}
-	o := overlay.NewFilePicker(a.theme, "Add Document", overlay.PurposeAddMatterDocument, start, []string{".pdf", ".docx", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".txt", ".csv", ".tsv", ".md"})
+	o := overlay.NewFilePicker(a.theme, "Add Document", overlay.PurposeAddMatterDocument, start, []string{".pdf", ".docx", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xls", ".txt", ".csv", ".tsv", ".md"}).WithOfficeAction(oaID)
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
 }
@@ -1694,7 +1702,7 @@ func (a *App) handleFilePicked(m overlay.FilePickedMsg) (tea.Model, tea.Cmd) {
 		}
 		loading := overlay.NewConverting(a.theme, "Adding Document", "Converting and adding document…")
 		a.overlays = append(a.overlays, loading)
-		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, m.Path, domain.MatterDocReference))
+		return a, tea.Batch(loading.Init(), pane.AddMatterDocumentCmd(a.client, a.activeProject.ID, m.Path, domain.MatterDocReference, m.OfficeActionID))
 	case overlay.PurposeAddPatentList:
 		if a.activeProject == nil {
 			a.setErr(text.StatusNoActiveProject)

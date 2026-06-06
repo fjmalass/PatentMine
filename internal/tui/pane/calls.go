@@ -307,15 +307,16 @@ type MatterDocumentImportedMsg struct {
 
 // AddMatterDocumentCmd files a supporting document (reference, response, …) under
 // the matter at path. Like the office-action import, only the path crosses RPC;
-// the daemon copies and text-extracts the file itself.
-func AddMatterDocumentCmd(client *rpc.Client, project domain.ProjectID, path string, kind domain.MatterDocKind) tea.Cmd {
+// the daemon copies and text-extracts the file itself. A non-empty oaID links the
+// document to that office action so it appears in the action's document list.
+func AddMatterDocumentCmd(client *rpc.Client, project domain.ProjectID, path string, kind domain.MatterDocKind, oaID string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		ctx, cancel := callContext()
 		defer cancel()
 		var res proto.MatterDocumentResult
 		if err := client.Call(ctx, proto.MethodMatterDocumentImport,
-			proto.MatterDocumentImportParams{Project: project, SourcePath: path, Kind: kind}, &res); err != nil {
+			proto.MatterDocumentImportParams{Project: project, SourcePath: path, Kind: kind, OfficeActionID: oaID}, &res); err != nil {
 			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Document import failed: " + err.Error()}, Error: true}
 		}
 		return MatterDocumentImportedMsg{

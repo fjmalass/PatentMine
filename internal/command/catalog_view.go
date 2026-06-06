@@ -58,9 +58,9 @@ func viewCommands() []Command {
 		Command{ID: HighlightCitations, Name: "highlight.citations", Aliases: []string{"hl-citations", "hl-references"}, Usage: ":highlight.citations", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: RelationFilterCollapse, Name: "relation-filter.collapse", Aliases: []string{"collapse", "fold", "relation_filter.collapse"}, Usage: ":relation-filter.collapse", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
 		Command{ID: RelationFilterExpand, Name: "relation-filter.expand", Aliases: []string{"expand", "unfold", "relation_filter.expand"}, Usage: ":relation-filter.expand", Kind: KindView, Scopes: []Scope{ScopeCatalog}},
-		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
-		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
-		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations}},
+		Command{ID: ColNext, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeNotes, ScopeOrphans, ScopeMatterOA}},
+		Command{ID: ColPrev, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeNotes, ScopeOrphans, ScopeMatterOA}},
+		Command{ID: SortApply, Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeCitations, ScopeNotes, ScopeOrphans, ScopeMatterOA}},
 		Command{ID: ProjectActivate, Name: "project.use", Aliases: []string{"use-project"}, Usage: ":project.use [PROJECT]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: ProjectClearActive, Name: "project.clear", Aliases: []string{"clear-project"}, Usage: ":project.clear", Kind: KindView, Scopes: projectScopes},
 

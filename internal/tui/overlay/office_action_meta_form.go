@@ -20,12 +20,21 @@ var oaTypes = []domain.OAType{
 	domain.OANoticeOfAllowance,
 }
 
-// Field indices into the office-action meta form.
+// oaStatuses is the order the Status field cycles through (see cycleOAStatus).
+var oaStatuses = []domain.OAStatus{
+	domain.OAStatusOpen,
+	domain.OAStatusResponded,
+	domain.OAStatusClosed,
+}
+
+// Field indices into the office-action meta form. oaFieldStatus exists only on
+// the edit form (oaEditFields); the import form omits it.
 const (
 	oaFieldName = iota
 	oaFieldType
 	oaFieldMailDate
 	oaFieldAppNumber
+	oaFieldStatus
 )
 
 // oaMetaFields are the labeled fields shared by the import and edit forms. The
@@ -36,6 +45,12 @@ var oaMetaFields = []fieldFormField{
 	{Label: "Mail Date", Kind: fieldText},
 	{Label: "Application Number", Kind: fieldText},
 }
+
+// oaEditFields extend the shared fields with Status, which only makes sense for
+// an existing action — a freshly imported one is always open. Cycling Status to
+// a new value bumps the action's status-change time (see UpdateOfficeActionMeta).
+var oaEditFields = append(append([]fieldFormField(nil), oaMetaFields...),
+	fieldFormField{Label: "Status", Kind: fieldChoice, Cycle: cycleOAStatus})
 
 // OfficeActionMetaForm captures the office-action metadata at import time or edit time —
 // crucially the examiner name, which the path-only import dropped — before the
@@ -81,7 +96,7 @@ func NewOfficeActionEditForm(theme render.Theme, project domain.ProjectID, oa do
 		project:          project,
 		oaID:             oa.ID,
 		isEdit:           true,
-		form:             newFieldForm(oaMetaFields),
+		form:             newFieldForm(oaEditFields),
 		originalExaminer: oa.Examiner,
 		originalArtUnit:  oa.ArtUnit,
 	}
@@ -89,6 +104,11 @@ func NewOfficeActionEditForm(theme render.Theme, project domain.ProjectID, oa do
 	o.form.SetValue(oaFieldType, string(oa.Type))
 	o.form.SetValue(oaFieldMailDate, oa.MailDate.Format(domain.DateLayout))
 	o.form.SetValue(oaFieldAppNumber, oa.ApplicationNumber)
+	status := oa.Status
+	if status == "" {
+		status = domain.OAStatusOpen
+	}
+	o.form.SetValue(oaFieldStatus, string(status))
 	return o
 }
 
@@ -144,6 +164,28 @@ func cycleOAType(current, key string) string {
 	return string(oaTypes[(idx+1)%len(oaTypes)])
 }
 
+// cycleOAStatus advances the office-action status. A first-letter key sets a
+// status directly (o→open, r→responded, c→closed); space or any other key
+// advances to the next status in canonical order.
+func cycleOAStatus(current, key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "o":
+		return string(domain.OAStatusOpen)
+	case "r":
+		return string(domain.OAStatusResponded)
+	case "c":
+		return string(domain.OAStatusClosed)
+	}
+	idx := -1
+	for i, s := range oaStatuses {
+		if s == domain.OAStatus(current) {
+			idx = i
+			break
+		}
+	}
+	return string(oaStatuses[(idx+1)%len(oaStatuses)])
+}
+
 func (o *OfficeActionMetaForm) submit() tea.Cmd {
 	if o.isEdit {
 		params := proto.OfficeActionUpdateParams{
@@ -154,6 +196,7 @@ func (o *OfficeActionMetaForm) submit() tea.Cmd {
 			Type:              domain.OAType(strings.TrimSpace(o.form.Value(oaFieldType))),
 			ArtUnit:           o.originalArtUnit,
 			ApplicationNumber: strings.TrimSpace(o.form.Value(oaFieldAppNumber)),
+			Status:            domain.OAStatus(strings.TrimSpace(o.form.Value(oaFieldStatus))),
 		}
 		return func() tea.Msg { return OfficeActionEditSubmitMsg{Params: params} }
 	}
@@ -181,9 +224,12 @@ func (o *OfficeActionMetaForm) View(maxW, _ int) string {
 	b.WriteByte('\n')
 
 	hint := o.form.Hint()
-	if o.form.Focus() == oaFieldType && o.form.Editing() {
+	switch {
+	case o.form.Focus() == oaFieldType && o.form.Editing():
 		hint += " · f/r/a/o/n set type directly"
-	} else if !o.form.Editing() {
+	case o.form.Focus() == oaFieldStatus && o.form.Editing():
+		hint += " · o/r/c set status directly"
+	case !o.form.Editing():
 		hint += " · deadline auto-set from mail date"
 	}
 	for _, line := range wrapText(hint, maxW) {

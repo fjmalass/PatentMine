@@ -3,6 +3,7 @@ package pane
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 type officeActionsLoadedMsg struct {
 	requestID uint64
 	items     []domain.OfficeAction
+	billable  map[string]int
 	err       error
 }
 
@@ -47,6 +49,7 @@ type OfficeActions struct {
 
 	allItems []domain.OfficeAction
 	items    []domain.OfficeAction
+	billable map[string]int // office action id → billable (validated) seconds
 	page     render.Paginator
 	loading  bool
 	loadErr  string
@@ -54,16 +57,22 @@ type OfficeActions struct {
 
 	searchActive bool
 	searchQuery  string
+
+	focusedColIdx int
+	activeSort    string
+	sortAscending bool
 }
 
 // NewOfficeActions builds the office-action table pane for a project.
 func NewOfficeActions(client *rpc.Client, theme render.Theme, project domain.ProjectID) *OfficeActions {
 	o := &OfficeActions{
-		client:  client,
-		theme:   theme,
-		project: project,
-		page:    render.NewPaginator(20),
-		loading: true,
+		client:        client,
+		theme:         theme,
+		project:       project,
+		page:          render.NewPaginator(20),
+		loading:       true,
+		focusedColIdx: -1,
+		sortAscending: true,
 	}
 	o.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(inv Invocation) tea.Cmd { o.page.MoveDown(inv.Repeat); return nil },
@@ -73,6 +82,9 @@ func NewOfficeActions(client *rpc.Client, theme render.Theme, project domain.Pro
 		command.NavTop:      func(inv Invocation) tea.Cmd { o.page.NavTop(inv.Repeat); return nil },
 		command.NavBottom:   func(inv Invocation) tea.Cmd { o.page.NavBottom(inv.Repeat); return nil },
 		command.Refresh:     func(Invocation) tea.Cmd { o.loading = true; return o.load() },
+		command.ColNext:     func(Invocation) tea.Cmd { return o.focusNext() },
+		command.ColPrev:     func(Invocation) tea.Cmd { return o.focusPrev() },
+		command.SortApply:   func(Invocation) tea.Cmd { return o.applySort() },
 		command.FindOpen: func(Invocation) tea.Cmd {
 			o.searchActive = true
 			o.searchQuery = ""
@@ -109,7 +121,7 @@ func (o *OfficeActions) load() tea.Cmd {
 		defer cancel()
 		var res proto.OfficeActionListResult
 		err := client.Call(ctx, proto.MethodOfficeActionList, proto.OfficeActionListParams{Project: project}, &res)
-		return officeActionsLoadedMsg{requestID: requestID, items: res.OfficeActions, err: err}
+		return officeActionsLoadedMsg{requestID: requestID, items: res.OfficeActions, billable: res.BillableSecs, err: err}
 	}
 }
 
@@ -134,6 +146,7 @@ func (o *OfficeActions) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		}
 		o.loadErr = ""
 		o.allItems = m.items
+		o.billable = m.billable
 		o.applyFilter()
 	}
 	return o, nil
@@ -178,21 +191,128 @@ func (o *OfficeActions) selected() (domain.OfficeAction, bool) {
 
 func (o *OfficeActions) applyFilter() {
 	if o.searchQuery == "" {
-		o.items = o.allItems
+		o.items = make([]domain.OfficeAction, len(o.allItems))
+		copy(o.items, o.allItems)
 	} else {
 		o.items = nil
 		q := strings.ToLower(o.searchQuery)
 		for _, oa := range o.allItems {
-			hay := strings.ToLower(string(oa.Type) + " " + oa.Examiner + " " + oa.ApplicationNumber)
+			hay := strings.ToLower(oa.Name + " " + string(oa.Type) + " " + oa.Examiner + " " + oa.ApplicationNumber)
 			if strings.Contains(hay, q) {
 				o.items = append(o.items, oa)
 			}
 		}
 	}
+	o.sortItems()
 	o.page.SetTotal(len(o.items))
 	if o.page.Cursor() >= len(o.items) {
 		o.page.NavTop(0)
 	}
+}
+
+func (o *OfficeActions) sortItems() {
+	if o.activeSort == "" {
+		return
+	}
+	slices.SortFunc(o.items, func(i, j domain.OfficeAction) int {
+		var cmp int
+		switch o.activeSort {
+		case "name":
+			cmp = strings.Compare(strings.ToLower(i.Name), strings.ToLower(j.Name))
+		case "type":
+			cmp = strings.Compare(strings.ToLower(string(i.Type)), strings.ToLower(string(j.Type)))
+		case "examiner":
+			cmp = strings.Compare(strings.ToLower(i.Examiner), strings.ToLower(j.Examiner))
+		case "due":
+			if i.ResponseDue.IsZero() && j.ResponseDue.IsZero() {
+				cmp = 0
+			} else if i.ResponseDue.IsZero() {
+				cmp = 1
+			} else if j.ResponseDue.IsZero() {
+				cmp = -1
+			} else if i.ResponseDue.Before(j.ResponseDue) {
+				cmp = -1
+			} else if i.ResponseDue.After(j.ResponseDue) {
+				cmp = 1
+			} else {
+				cmp = 0
+			}
+		case "status":
+			cmp = strings.Compare(strings.ToLower(string(i.Status)), strings.ToLower(string(j.Status)))
+		case "worklog":
+			secsI := o.billable[i.ID]
+			secsJ := o.billable[j.ID]
+			if secsI < secsJ {
+				cmp = -1
+			} else if secsI > secsJ {
+				cmp = 1
+			} else {
+				cmp = 0
+			}
+		}
+		if !o.sortAscending {
+			cmp = -cmp
+		}
+		if cmp == 0 {
+			if i.MailDate.IsZero() && j.MailDate.IsZero() {
+				cmp = strings.Compare(i.ID, j.ID)
+			} else if i.MailDate.IsZero() {
+				cmp = 1
+			} else if j.MailDate.IsZero() {
+				cmp = -1
+			} else if i.MailDate.Before(j.MailDate) {
+				cmp = 1
+			} else if i.MailDate.After(j.MailDate) {
+				cmp = -1
+			} else {
+				cmp = strings.Compare(i.ID, j.ID)
+			}
+		}
+		return cmp
+	})
+}
+
+func (o *OfficeActions) currentCols(w int) []render.TableColumn {
+	const colGap = 1
+	nameW, typeW, dueW, statusW, worklogW := 20, 12, 14, 16, 8
+	examinerW := max(10, w-o.theme.TablePrefixWidth()-nameW-typeW-dueW-statusW-worklogW-5*colGap)
+	return []render.TableColumn{
+		{Key: "name", Label: "NAME", SortKey: "name", Width: nameW},
+		{Key: "type", Label: "TYPE", SortKey: "type", Width: typeW},
+		{Key: "examiner", Label: "EXAMINER", SortKey: "examiner", Width: examinerW},
+		{Key: "due", Label: "RESPONSE DUE", SortKey: "due", Width: dueW},
+		{Key: "status", Label: "STATUS", SortKey: "status", Width: statusW},
+		{Key: "worklog", Label: "WORKLOG", SortKey: "worklog", Width: worklogW},
+	}
+}
+
+func (o *OfficeActions) focusNext() tea.Cmd {
+	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, 1)
+	return nil
+}
+
+func (o *OfficeActions) focusPrev() tea.Cmd {
+	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, -1)
+	return nil
+}
+
+func (o *OfficeActions) applySort() tea.Cmd {
+	if o.focusedColIdx < 0 {
+		return nil
+	}
+	cols := o.currentCols(80)
+	col := cols[o.focusedColIdx]
+	if col.SortKey == "" {
+		return nil
+	}
+	if o.activeSort == col.SortKey {
+		o.sortAscending = !o.sortAscending
+	} else {
+		o.activeSort = col.SortKey
+		o.sortAscending = true
+	}
+	o.applyFilter()
+	return nil
 }
 
 // HandleKey intercepts text entry while searching and the drill-in keys; every
@@ -246,23 +366,30 @@ func (o *OfficeActions) View(w, h int) string {
 	}
 	o.page.SetPageSize(max(h-headerRows-2, 1))
 
-	cols := []render.TableColumn{
-		{Key: "date", Label: "MAILED", Width: 12},
-		{Key: "type", Label: "TYPE", Width: 14},
-		{Key: "examiner", Label: "EXAMINER", Width: max(10, (w-12-14-14-10)/2)},
-		{Key: "due", Label: "RESPONSE DUE", Width: 16},
-		{Key: "status", Label: "STATUS", Width: 10},
+	var statusText string
+	if o.activeSort != "" {
+		statusText = "sort:" + o.activeSort
+		if o.sortAscending {
+			statusText += " (asc)"
+		} else {
+			statusText += " (desc)"
+		}
 	}
+
+	cols := o.currentCols(w)
 	start, end := o.page.Window()
 	var b strings.Builder
-	b.WriteString(renderTableStatusLine(o.theme, w, o.page.Cursor(), o.page.Total(), ""))
+	b.WriteString(renderTableStatusLine(o.theme, w, o.page.Cursor(), o.page.Total(), statusText))
 	b.WriteByte('\n')
 	b.WriteString(render.RenderTable(render.TableParams{
-		Theme:       o.theme,
-		Columns:     cols,
-		RowCount:    end - start,
-		FocusActive: true,
-		IsRowCursor: func(rowIdx int) bool { return start+rowIdx == o.page.Cursor() },
+		Theme:         o.theme,
+		Columns:       cols,
+		RowCount:      end - start,
+		FocusedColIdx: o.focusedColIdx,
+		ActiveSort:    o.activeSort,
+		SortAscending: o.sortAscending,
+		FocusActive:   true,
+		IsRowCursor:   func(rowIdx int) bool { return start+rowIdx == o.page.Cursor() },
 	}, w, func(rowIdx, colIdx int) string {
 		absIdx := start + rowIdx
 		if absIdx < 0 || absIdx >= len(o.items) {
@@ -270,8 +397,8 @@ func (o *OfficeActions) View(w, h int) string {
 		}
 		oa := o.items[absIdx]
 		switch cols[colIdx].Key {
-		case "date":
-			return dateOrDash(oa.MailDate)
+		case "name":
+			return nameLabel(oa)
 		case "type":
 			return oaTypeLabel(oa.Type)
 		case "examiner":
@@ -279,7 +406,9 @@ func (o *OfficeActions) View(w, h int) string {
 		case "due":
 			return responseDueLabel(oa)
 		case "status":
-			return statusLabel(oa.Status)
+			return statusAgeLabel(oa)
+		case "worklog":
+			return worklogLabel(o.billable[oa.ID])
 		default:
 			return ""
 		}
@@ -313,6 +442,49 @@ func statusLabel(s domain.OAStatus) string {
 		return string(domain.OAStatusOpen)
 	}
 	return string(s)
+}
+
+// nameLabel is the office action's name, or a placeholder when it has none.
+func nameLabel(oa domain.OfficeAction) string {
+	if strings.TrimSpace(oa.Name) == "" {
+		return "(unnamed)"
+	}
+	return oa.Name
+}
+
+// statusAgeLabel renders the current status together with how long it has held,
+// e.g. "open · 5d" or "responded · 2d". The age is omitted when unknown.
+func statusAgeLabel(oa domain.OfficeAction) string {
+	label := statusLabel(oa.Status)
+	if oa.StatusChangedAt.IsZero() {
+		return label
+	}
+	return label + " · " + shortAge(oa.StatusChangedAt)
+}
+
+// worklogLabel renders an office action's billable time, or a dash when none has
+// been validated yet.
+func worklogLabel(secs int) string {
+	if secs <= 0 {
+		return "—"
+	}
+	return fmtDuration(secs)
+}
+
+// shortAge renders a compact, human elapsed time since t: "just now", "12m",
+// "3h", or "5d". It is a coarse at-a-glance cue, not a precise duration.
+func shortAge(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // responseDueLabel renders the deadline with an at-a-glance urgency cue: overdue,

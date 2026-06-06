@@ -230,8 +230,14 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "12"
 	}
-	if version != "12" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 12", version)
+	if version == "12" {
+		if err := r.migrateV12ToV13(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v12 to v13: %w", err)
+		}
+		version = "13"
+	}
+	if version != "13" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 13", version)
 	}
 	return nil
 }
@@ -914,6 +920,37 @@ func (r *Repo) migrateV11ToV12(ctx context.Context) error {
 	if _, err := r.writer.ExecContext(ctx,
 		`UPDATE schema_meta SET value = '12' WHERE key = 'schema_version'`); err != nil {
 		return fmt.Errorf("store/sqlite: migrate v11 to v12: bump version: %w", err)
+	}
+	return nil
+}
+
+// migrateV12ToV13 adds status_changed_at to office_action and backfills existing
+// rows from imported_at, so the office-action list can show how long an action
+// has sat in its current status. Purely additive; the bytes on disk are
+// untouched.
+func (r *Repo) migrateV12ToV13(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v12-to-v13.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v12 to v13: backup: %w", err)
+	}
+	has, err := r.columnExists(ctx, "office_action", "status_changed_at")
+	if err != nil {
+		return fmt.Errorf("store/sqlite: migrate v12 to v13: detect office_action.status_changed_at: %w", err)
+	}
+	if !has {
+		if _, err := r.writer.ExecContext(ctx,
+			`ALTER TABLE office_action ADD COLUMN status_changed_at TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v12 to v13: add status_changed_at: %w", err)
+		}
+	}
+	// Seed the status-change time from the import time for existing rows, so the
+	// "since" age is meaningful rather than blank.
+	if _, err := r.writer.ExecContext(ctx,
+		`UPDATE office_action SET status_changed_at = imported_at WHERE status_changed_at = ''`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v12 to v13: backfill status_changed_at: %w", err)
+	}
+	if _, err := r.writer.ExecContext(ctx,
+		`UPDATE schema_meta SET value = '13' WHERE key = 'schema_version'`); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v12 to v13: bump version: %w", err)
 	}
 	return nil
 }

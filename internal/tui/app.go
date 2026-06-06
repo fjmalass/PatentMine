@@ -901,7 +901,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// On reopening a matter with unbilled auto-captured time, prompt the user
 		// to review it (only when it belongs to the still-active project).
 		if m.Count > 0 && a.activeProject != nil && a.activeProject.ID == m.Project {
-			a.setStatus(text.StatusGeneric, fmt.Sprintf("⚠ %d time entries need validation — run :validate.time", m.Count))
+			a.setStatus(text.StatusGeneric, fmt.Sprintf("⚠ %d worklog entries need review — run :review.worklog", m.Count))
 		}
 		return a, nil
 	case pane.DueDeadlineMsg:
@@ -1049,7 +1049,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.popOverlay()
 		return a, nil
 	case overlay.StartDocumentImportMsg:
-		return a.cmdAddDocument(invocation{})
+		return a.cmdAddDocumentFor(invocation{}, m.OfficeActionID)
 
 	case overlay.LoadingCompareSourcesMsg:
 		number, err := domain.ParsePatentNumber(m.Patent)

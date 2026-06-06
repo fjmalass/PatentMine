@@ -60,15 +60,119 @@ func TestFormatTimeSummaryOrdersActivities(t *testing.T) {
 
 func TestOfficeActionsTableRenders(t *testing.T) {
 	o := NewOfficeActions(nil, render.NewTheme(), "p1")
-	o, _ = asOfficeActions(o.Update(officeActionsLoadedMsg{items: []domain.OfficeAction{
-		{Examiner: "Menefee", Type: domain.OANonFinal, MailDate: time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC), Status: domain.OAStatusOpen},
-	}}))
+	o, _ = asOfficeActions(o.Update(officeActionsLoadedMsg{
+		items: []domain.OfficeAction{
+			{ID: "oa-1", Name: "Final Rejection", Examiner: "Menefee", Type: domain.OANonFinal,
+				MailDate: time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC), Status: domain.OAStatusOpen,
+				StatusChangedAt: time.Now().Add(-48 * time.Hour)},
+		},
+		billable: map[string]int{"oa-1": 222}, // 3:42 of validated time
+	}))
 	out := o.View(100, 20)
-	if !strings.Contains(out, "Menefee") || !strings.Contains(out, "2026-01-09") {
-		t.Fatalf("table view missing row content:\n%s", out)
+	// The row carries the name, examiner, status-with-age, and billable worklog.
+	for _, want := range []string{"NAME", "WORKLOG", "Final Rejection", "Menefee", "open · 2d", "3:42"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("table view missing %q:\n%s", want, out)
+		}
 	}
 }
 
 func asOfficeActions(p Pane, cmd interface{}) (*OfficeActions, interface{}) {
 	return p.(*OfficeActions), cmd
 }
+
+func TestOfficeActionsSortingAndFocus(t *testing.T) {
+	o := NewOfficeActions(nil, render.NewTheme(), "p1")
+	o, _ = asOfficeActions(o.Update(officeActionsLoadedMsg{
+		items: []domain.OfficeAction{
+			{ID: "oa-1", Name: "Final Rejection", Examiner: "Menefee", Type: domain.OAFinal,
+				MailDate: time.Date(2026, 1, 9, 0, 0, 0, 0, time.UTC), Status: domain.OAStatusOpen,
+				ResponseDue: time.Date(2026, 6, 9, 0, 0, 0, 0, time.UTC)},
+			{ID: "oa-2", Name: "Advisory Action", Examiner: "Alonzo", Type: domain.OAAdvisory,
+				MailDate: time.Date(2026, 2, 9, 0, 0, 0, 0, time.UTC), Status: domain.OAStatusResponded,
+				ResponseDue: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)},
+		},
+		billable: map[string]int{"oa-1": 100, "oa-2": 200},
+	}))
+
+	// Initial active sort is empty, so sorted by default (original order: oa-1, then oa-2)
+	if o.items[0].ID != "oa-1" || o.items[1].ID != "oa-2" {
+		t.Fatalf("unexpected initial order: %v", o.items)
+	}
+
+	// Focus next column: from -1 (none) to 0 (name)
+	o.focusNext()
+	if o.focusedColIdx != 0 {
+		t.Fatalf("expected focusedColIdx to be 0 after focusNext, got %d", o.focusedColIdx)
+	}
+
+	// Sort by name
+	o.applySort()
+	if o.activeSort != "name" || !o.sortAscending {
+		t.Fatalf("expected activeSort to be name, sortAscending true; got activeSort=%q, ascending=%v", o.activeSort, o.sortAscending)
+	}
+	// "Advisory Action" (oa-2) should come before "Final Rejection" (oa-1)
+	if o.items[0].ID != "oa-2" || o.items[1].ID != "oa-1" {
+		t.Fatalf("expected oa-2 then oa-1 when sorted by name asc, got %v", o.items)
+	}
+
+	// Sort by name again to toggle descending
+	o.applySort()
+	if o.activeSort != "name" || o.sortAscending {
+		t.Fatalf("expected activeSort to be name, sortAscending false; got activeSort=%q, ascending=%v", o.activeSort, o.sortAscending)
+	}
+	// Descending: "Final Rejection" (oa-1) before "Advisory Action" (oa-2)
+	if o.items[0].ID != "oa-1" || o.items[1].ID != "oa-2" {
+		t.Fatalf("expected oa-1 then oa-2 when sorted by name desc, got %v", o.items)
+	}
+
+	// Focus next column (1: type)
+	o.focusNext()
+	if o.focusedColIdx != 1 {
+		t.Fatalf("expected focusedColIdx to be 1 after focusNext, got %d", o.focusedColIdx)
+	}
+
+	// Sort by type
+	o.applySort()
+	// Advisory (oa-2) before Final (oa-1)
+	if o.items[0].ID != "oa-2" {
+		t.Fatalf("expected oa-2 to be first when sorted by type asc")
+	}
+
+	// Focus next column (2: examiner)
+	o.focusNext()
+	// Sort by examiner
+	o.applySort()
+	// Alonzo (oa-2) before Menefee (oa-1)
+	if o.items[0].ID != "oa-2" {
+		t.Fatalf("expected oa-2 to be first when sorted by examiner asc")
+	}
+
+	// Focus next column (3: due)
+	o.focusNext()
+	// Sort by response due date
+	o.applySort()
+	// 2026-05-09 (oa-2) before 2026-06-09 (oa-1)
+	if o.items[0].ID != "oa-2" {
+		t.Fatalf("expected oa-2 to be first when sorted by due date asc")
+	}
+
+	// Focus next column (4: status)
+	o.focusNext()
+	// Sort by status
+	o.applySort()
+	// Open (oa-1) before Responded (oa-2)
+	if o.items[0].ID != "oa-1" {
+		t.Fatalf("expected oa-1 to be first when sorted by status asc")
+	}
+
+	// Focus next column (5: worklog)
+	o.focusNext()
+	// Sort by worklog
+	o.applySort()
+	// 100s (oa-1) before 200s (oa-2)
+	if o.items[0].ID != "oa-1" {
+		t.Fatalf("expected oa-1 to be first when sorted by worklog asc")
+	}
+}
+

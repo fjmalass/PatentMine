@@ -339,11 +339,15 @@ type OfficeAction struct {
 	// time means no deadline applies (e.g. a notice of allowance).
 	ResponseDue time.Time `json:"response_due"`
 	// Status governs deadline reminders — only an open action is reminded.
-	Status     OAStatus  `json:"status,omitempty"`
-	Source       string    `json:"source,omitempty"`
-	ImportedAt   time.Time `json:"imported_at"`
-	Name         string    `json:"name,omitempty"`
-	LastOpenedAt time.Time `json:"last_opened_at,omitempty"`
+	Status OAStatus `json:"status,omitempty"`
+	// StatusChangedAt is when Status last changed. It is seeded at import (when
+	// the action enters the open state) and bumped on every later transition, so
+	// the UI can show how long an action has sat in its current status.
+	StatusChangedAt time.Time `json:"status_changed_at,omitempty"`
+	Source          string    `json:"source,omitempty"`
+	ImportedAt      time.Time `json:"imported_at"`
+	Name            string    `json:"name,omitempty"`
+	LastOpenedAt    time.Time `json:"last_opened_at,omitempty"`
 }
 
 // MatterDocKind classifies one document filed under a matter (a project). A

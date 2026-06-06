@@ -92,9 +92,13 @@ type OfficeActionResult struct {
 	OfficeAction domain.OfficeAction `json:"office_action"`
 }
 
-// OfficeActionListResult carries a project's office actions.
+// OfficeActionListResult carries a project's office actions. BillableSecs is the
+// per-action billable total — validated time entries summed and keyed by office
+// action id — so the list can show time spent without polluting the stored
+// OfficeAction with a computed field.
 type OfficeActionListResult struct {
 	OfficeActions []domain.OfficeAction `json:"office_actions"`
+	BillableSecs  map[string]int        `json:"billable_secs,omitempty"`
 }
 
 // OfficeActionListParams selects a project's office actions.
@@ -119,15 +123,17 @@ type OfficeActionSaveNotesParams struct {
 	Notes string `json:"notes"`
 }
 
-// OfficeActionUpdateParams updates an existing office action's metadata.
+// OfficeActionUpdateParams updates an existing office action's metadata. An empty
+// Status leaves the current status unchanged.
 type OfficeActionUpdateParams struct {
-	ID                string        `json:"id"`
-	Name              string        `json:"name"`
-	Examiner          string        `json:"examiner"`
-	MailDate          string        `json:"mail_date"`
-	Type              domain.OAType `json:"type"`
-	ArtUnit           string        `json:"art_unit"`
-	ApplicationNumber string        `json:"app_number"`
+	ID                string          `json:"id"`
+	Name              string          `json:"name"`
+	Examiner          string          `json:"examiner"`
+	MailDate          string          `json:"mail_date"`
+	Type              domain.OAType   `json:"type"`
+	ArtUnit           string          `json:"art_unit"`
+	ApplicationNumber string          `json:"app_number"`
+	Status            domain.OAStatus `json:"status,omitempty"`
 }
 
 // MatterDocumentImportParams files a local document under a matter, optionally

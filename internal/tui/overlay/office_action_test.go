@@ -226,13 +226,15 @@ func TestOfficeActionMetaFormEdit(t *testing.T) {
 		Type:              domain.OAFinal,
 		ArtUnit:           "1700",
 		ApplicationNumber: "11/222,333",
+		Status:            domain.OAStatusResponded,
 	}
 	o := NewOfficeActionEditForm(render.NewTheme(), "p1", oa)
 	if !o.isEdit {
 		t.Fatal("should be edit mode")
 	}
-	if len(o.form.values) != 4 {
-		t.Fatalf("expected 4 values for edit form, got %d", len(o.form.values))
+	// The edit form carries the four import fields plus an edit-only Status field.
+	if len(o.form.values) != 5 {
+		t.Fatalf("expected 5 values for edit form, got %d", len(o.form.values))
 	}
 	if o.form.Value(oaFieldName) != "My Edit" {
 		t.Fatalf("expected My Edit, got %q", o.form.Value(oaFieldName))
@@ -245,6 +247,9 @@ func TestOfficeActionMetaFormEdit(t *testing.T) {
 	}
 	if o.form.Value(oaFieldAppNumber) != "11/222,333" {
 		t.Fatalf("expected 11/222,333, got %q", o.form.Value(oaFieldAppNumber))
+	}
+	if o.form.Value(oaFieldStatus) != string(domain.OAStatusResponded) {
+		t.Fatalf("expected responded, got %q", o.form.Value(oaFieldStatus))
 	}
 }
 
