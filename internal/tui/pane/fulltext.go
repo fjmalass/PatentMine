@@ -491,17 +491,30 @@ func (f *FullText) toggleQuickList() tea.Cmd {
 		f.recomputeMatches()
 	}
 	if len(f.matches) == 0 {
-		if strings.TrimSpace(f.find.input) == "" {
-			return status(text.StatusNoPatentSelected, false, "press / to search, then ctrl+q for the match list")
+		// No matches yet: open the find bar with the list already armed, so this
+		// single ctrl+q starts a search whose results fill the split live as you
+		// type — then ctrl+q again (or Enter) jumps focus into the list.
+		if f.collapsed {
+			f.collapsed = false
+			f.lines = nil
 		}
-		return status(text.StatusNoPatentSelected, false, "no matches for "+f.find.input)
+		f.find.open("")
+		f.listOpen = true
+		f.listFocus = false
+		return nil
 	}
+	f.openList()
+	return nil
+}
+
+// openList opens the quicklist split focused, centring both the list and the
+// body on the active match.
+func (f *FullText) openList() {
 	f.listOpen = true
 	f.listFocus = true
 	f.listPage.SetTotal(len(f.matches))
 	f.listPage.ScrollTo(f.matchIdx)
 	f.syncBodyToList()
-	return nil
 }
 
 // listMove moves the quicklist cursor by repeat in dir and scrolls the body to
@@ -1145,6 +1158,21 @@ func (f *FullText) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 // handleFindKey routes raw keys into the find bar while it is open and keeps the
 // match set in sync as the query changes.
 func (f *FullText) handleFindKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
+	// ctrl+q straight from the find bar confirms the in-progress search and jumps
+	// into the match list — no Enter needed.
+	if msg.String() == "ctrl+q" {
+		f.recomputeMatches()
+		if len(f.matches) == 0 {
+			if strings.TrimSpace(f.find.input) == "" {
+				return f, nil, true // nothing to list yet — keep typing
+			}
+			return f, status(text.StatusNoPatentSelected, false, "no matches for "+f.find.input), true
+		}
+		f.find.active = false
+		f.jumpToNearestMatch()
+		f.openList()
+		return f, nil, true
+	}
 	_, action := f.find.handleKey(msg)
 	switch action {
 	case "reload", "confirm":

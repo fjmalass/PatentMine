@@ -17,6 +17,7 @@ Related docs:
 9. [Drafting: Applications & Office-Action Responses](./DRAFTING.md)
 10. [Office Actions & the Prosecution-Matter Workspace](./TUI_OFFICE_ACTION.md) — multi-document matters (with AI/OCR text extraction), a copy-from-documents response editor, a communications log, deadlines, and time/AI-usage tracking.
 11. [Patent Renewals & Maintenance-Fee Tracking](./TUI_RENEWALS.md) — designating patents to watch for renewal, the unified deadline model, and reminders (in progress; includes a TODO).
+12. [Database Implementation](./DATABASE.md) — the SQLite store: connection/concurrency model, the versioned embedded schema, the identity tables, and the pointer-in-row / bytes-on-disk convention.
 
 ---
 
@@ -164,24 +165,32 @@ sequenceDiagram
 
 PatentMine manages data deletion and graph integrity through cascade configurations and activity logs:
 
+> [!NOTE]
+> The **canonical, current** database schema, connection/concurrency model, and
+> table catalog live in **[DATABASE.md](./DATABASE.md)**. The SQL snippets in this
+> section are illustrative of the *mechanics*; treat DATABASE.md (and
+> [`schema.sql`](./internal/store/sqlite/schema.sql)) as the source of truth for
+> exact table and column names.
+
 ### A. Automated SQLite Cascades
-The database schema (`schema.sql`) enforces hard referential integrity. Deleting a patent row automatically purges all child metadata via `ON DELETE CASCADE` constraints:
+The database schema (`schema.sql`) enforces hard referential integrity. The entity table is `record` (the row behind a `domain.Patent` — see [DATABASE.md §4](./DATABASE.md#4-the-identity-model-record--document--relation)); deleting a `record` row automatically purges all child metadata via `ON DELETE CASCADE` constraints:
 
 ```sql
 CREATE TABLE IF NOT EXISTS document (
     number        TEXT PRIMARY KEY,
-    record_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    record_number TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
     ...
 );
 
 CREATE TABLE IF NOT EXISTS patent_tag (
     tag_id        INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
-    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+    patent_number TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
     ...
 );
 
-CREATE TABLE IF NOT EXISTS project_ids (
-    patent_number TEXT NOT NULL REFERENCES patent (number) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS membership (              -- project membership (+ per-patent IDS fields)
+    project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    patent_number TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
     ...
 );
 ```
@@ -197,16 +206,16 @@ CREATE TABLE IF NOT EXISTS project_ids (
 > 4. **Cascading Deletions**: Deleting a tag from the taxonomy automatically deletes all corresponding patent-tag assignments in that project via SQLite cascading foreign keys.
 
 ### B. Graph Topology Handling
-Because relations (`relation` table) can point to placeholders that aren't yet fully crawled, they do not use strict foreign key constraints. Two models exist for deleting family edges:
+The `relation` table stores family/citation edges as `(from_number, to_number, kind)` keyed on canonical record numbers, with **both** endpoints declared `REFERENCES record (number) ON DELETE CASCADE`. Deleting a `record` therefore drops its incident edges automatically. (Edges may still *name* not-yet-crawled stub records — those stubs are real rows in `record`, so the FK holds.) Two models exist for how that severing affects graph topology:
 
-1. **Hard Purge (Current Model)**: Deletes all incoming and outgoing relation edges involving the patent:
+1. **Hard Purge (Current Model)**: All incoming and outgoing relation edges involving the record are removed — the FK cascade does this on `record` delete, and `DeletePatent` also issues an explicit purge for the edges:
    ```sql
    DELETE FROM relation WHERE from_number = ? OR to_number = ?;
    ```
    This severs the relationship graph completely at this node, dividing a path ($A \to B \to C$) into isolated clusters ($A$ and $C$).
 2. **Soft Purge (Alternative / Graph Healing)**: Keep the topological structure of the graph intact by:
    * **Parent-Child Promotion**: Drawing direct shortcuts between all of a deleted node's parents and children ($A \to C$) before deletion.
-   * **Convert to FetchStub**: Keeping the node in the `patent` table but stripping all metadata and memberships, retaining only a lightweight stub to preserve the graph.
+   * **Convert to FetchStub**: Keeping the node in the `record` table but stripping all metadata and memberships, retaining only a lightweight stub to preserve the graph.
 
 ### C. Backup & Replay Architecture
 To guarantee auditability and data recovery during hard purges, PatentMine leverages its semantic activity journal (`observability.Record` in `observability.go`):
@@ -262,6 +271,7 @@ For engineers maintaining or extending the indirection and lifecycle systems, ke
 | **Stub Creation** | [`internal/engine/engine.go`](file:///mnt/d/Repos/PatentMineNew/internal/engine/engine.go) | `ensureRecord` | Creates a new stub patent and document when a candidate is first discovered. |
 | **Deletion Mechanics** | [`internal/store/sqlite/patent.go`](file:///mnt/d/Repos/PatentMineNew/internal/store/sqlite/patent.go) | `DeletePatent` | Hand-purges incoming/outgoing relations, and deletes the main patent row (cascading to other tables). |
 | **Activity Journal** | [`internal/observability/observability.go`](file:///mnt/d/Repos/PatentMineNew/internal/observability/observability.go) | `Record` | Declares the JSONL record structure used for backup and replay. |
+| **Schema & storage model** | [`DATABASE.md`](./DATABASE.md) · [`internal/store/sqlite/schema.sql`](./internal/store/sqlite/schema.sql) | `Open` / `initSchema` (`sqlite.go`) | Versioned embedded schema (v13), reader/writer connection pools, the full table catalog, and the pointer-in-row / bytes-on-disk convention. |
 
 ---
 
@@ -346,7 +356,7 @@ PatentMine incorporates a multi-provider AI Curation engine designed to generate
 * **TUI Integration & Workflow**:
   * Pressing `a` in the **Detail View** opens the AI Popup Menu overlay.
   * You can select from preset analysis templates (Novelty summary, Claims breakdown, Legal/risk takeaways) or type a custom prompt.
-  * Generated reports are instantly added to your session notes buffer under descriptive headings (e.g. `AI Novelty Summary`) and displayed in the notes popup overlay (`o` key in Detail view).
+  * Generated reports are instantly added to your session notes buffer under descriptive headings (e.g. `AI Novelty Summary`) and displayed in the notes buffer overlay (auto-shown after analysis; reopen it any time with **`Ctrl+N`** in the full-text viewer).
   * You can copy AI notes to your clipboard (`y`/`Y` in the notes overlay) or flush them directly to your project's Information Disclosure Statement (IDS) reference passage list (`F` key).
 * **Onboarding & Credential Recovery**:
   * If your API keys are not configured or the local Ollama daemon is unreachable, the TUI displays a friendly onboarding view outlining the exact steps and Makefile commands required to get started. You can also configure credentials directly from the settings overlay in the TUI.
@@ -409,9 +419,13 @@ OLLAMA_HOST=http://localhost:11434
    - **`q`** or **`esc`**: Close the overlay and return to the patent details.
 
 #### How to Grab, View, and Export Notes
-All notes (both manual annotations and AI-generated novelty/risk reports) can be viewed, copied, and exported in the TUI:
-- **Notes Buffer Overlay (`o` Key)**: Inside any patent's **Detail View**, press **`o`** to open the visual notes buffer. Press **`y`** to copy the highlighted note segment to your system clipboard, or press **`Y`** to copy all session notes.
-- **All Notes View (`:open.notes` Command)**: Type **`:open.notes`** (or use alias **`:notes`**) in the command bar to open a spreadsheet-like view of all notes across the active project.
+**`Ctrl+N` is the single notes key.** In the **full-text viewer** it opens the
+session notes buffer; in a **Catalog/Detail** view it opens the selected patent's
+persistent note; in an **Office Action** detail it opens the examiner/notes split
+editor. All notes (manual annotations and AI-generated novelty/risk reports) can
+be viewed, copied, and exported in the TUI:
+- **Notes Buffer Overlay (`Ctrl+N`)**: In the **full-text viewer** press **`Ctrl+N`** to open the session notes buffer (it also auto-opens after an AI analysis). Press **`y`** to copy the highlighted note segment, **`Y`** to copy all session notes, **`s`** to save them to the patent note, or **`F`** to flush them to the IDS.
+- **All Notes View (`:open.notes` Command)**: Type **`:open.notes`** (alias **`:notes`**, or press **`Z`** / **`g n`**) to open a spreadsheet-like view of all notes across the active project.
 - **Export to Markdown (`e` Key)**: In the **All Notes View**, press **`e`** to export all compiled notes to a clean, structured Markdown file (`patentmine-notes-*.md`) saved directly to your `PATENTMINE_NOTES_EXPORT_DIR`.
 
 > [!NOTE]
@@ -601,6 +615,9 @@ Use these TUI surfaces after loading a USPTO record:
 | Inspect source URL in-app | Open Detail with `enter` / `l`; the `Source URL`, `PGPub URL`, `Grant URL`, and XML filename rows appear when known. |
 | Fetch XML from Detail | Put the cursor on `PGPub URL`, `Grant URL`, `PGPub XML`, or `Grant XML`, then press `Enter`. |
 | View parsed claims/full text | In Detail, run `:open.fulltext` or use `T`; USPTO XML text is preferred when present. |
+| Search within the full text | In the viewer, `/` finds and `n`/`N` step matches — the row **and** the matched text are highlighted (the active match brighter). `z` collapses the body to only matching lines, and **`Ctrl+Q`** toggles a **match-list split** at the bottom (`Tab` focuses it; the body follows the highlighted match to its exact line). |
+| Search full text across patents | In the catalog, multi-select with `v` (extend with `j`/`k`) or `g a` / `Ctrl+A` (all loaded rows), then **`Ctrl+F`** (or `:search.fulltext <term>`). Each patent is searched at **both** its granted (`…B2`) and published (`…A1`) stage when present, and every hit is labeled with that stage's display number. Matches open in a **persistent bottom dock**: move through it to preview each hit at its **exact occurrence**, `Tab` to read the preview, `Enter` to keep that patent, `Esc` to close. The divider summarizes coverage — `N patent(s) · M no match · K not ingested` — and **`f`** fetches the granted XML for the not-ingested ones (re-run to include them). Searches **locally-ingested** USPTO text only; nothing is fetched mid-search. |
+| Capture / open notes from the full text | **`Ctrl+N`** opens the session notes buffer; `:note.add` captures the current selection (or section under the cursor) into it. |
 | View patents cited by this patent | Press `c` or run `:open.citations`. USPTO XML patent citations are loaded into the normal citation graph after XML ingest. |
 | View patents that cite this patent | Press `b` or run the cited-by command. This shows relation-graph data already known locally. |
 | Compute the statutory expiration date | Run `:patent.expiration-date` (aliases `:expiration-date`, `:expiration`, `:exp`). Opens the **Patent Expiration Analysis** overlay with the USPTO inputs (filing/grant dates, earliest-term source, PTA, PTE, terminal disclaimer), the computed date, and the Google comparison; press `r` inside to recompute with a live USPTO refresh. See [`EXPIRATION_DATE.md`](./EXPIRATION_DATE.md). |
@@ -732,6 +749,8 @@ This feature is supported across all major list/table views:
 * `p` : Toggle the Projects dashboard list.
 * `/` : Open the Find/Filter query prompt. Type search terms and press **`Tab`** to cycle search scopes (All Columns, Number, Title, Inventor, Class, Assignee, Tags).
 * `n` / `N` : Navigate forwards/backwards through Find/Filter pattern matches.
+* `ctrl+f` : **Full-text search** the selected patents (the visual selection, else the current row); matches open in the bottom search dock. See [§8.4](#84-view-source-xml-full-text-and-citations).
+* `ctrl+n` : Open the selected patent's persistent note editor.
 * `ctrl+r` : Hard refresh the catalog database view.
 * `v` : Enter line-based visual selection mode.
 * `esc` : Cancel visual selection.
@@ -743,7 +762,7 @@ This feature is supported across all major list/table views:
 * `/` : Open query prompt to search/highlight text inside details.
 * `;` : Open jump mode to instantly scroll to headings, claims, or section anchors.
 * `a` : Open the interactive **AI Patent Curation & Analysis** menu overlay.
-* `o` : Open the visual **Notes Buffer** overlay to view, copy, or export accumulated notes (including AI reports).
+* `ctrl+n` : Open the selected patent's **persistent note** editor. (The session **Notes Buffer** that holds AI reports auto-opens after an analysis and reopens with `ctrl+n` in the full-text viewer.)
 * `ctrl+r` : Refresh the current detail views.
 
 #### F. Family Graph Pane Bindings
@@ -778,7 +797,7 @@ communications log, deadlines, and tracked time. See
 [Office Actions & the Prosecution-Matter Workspace](./TUI_OFFICE_ACTION.md) for the full flow.
 
 * `:add.officeaction [path]` : Import an Office Action (file picker if no path); a metadata form captures the **examiner**, mail date, type, art unit, and application number before the file is copied, text-extracted, and its response deadline computed.
-* `:open.officeaction` : Open the **Office Actions pane** — a table (mailed · type · examiner · response-due countdown · status); `a` add, `R` respond, `/` filter, **`enter` drills into** the detail pane (documents · timing · communications · response). From the detail, `enter` opens the split examiner-text / notes editor (`yy`/`p` copies examiner text into the notes).
+* `:open.officeaction` : Open the **Office Actions pane** — a table (mailed · type · examiner · response-due countdown · status); `a` add, `R` respond, `/` filter, **`enter` drills into** the detail pane (documents · timing · communications · response). From the detail, **`enter` or `Ctrl+N`** opens the split examiner-text / notes editor (`yy`/`p` copies examiner text into the notes).
 * `:add.document [path]` / `:open.documents` : File and browse supporting documents (references, prior responses). In the list, `enter` views the text, **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes.
 * `:draft.response` : Create a response draft linked to the latest OA and open the split editor — matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; `yy`/`p` copy passages across, `ctrl+s` saves, `ctrl-e` exports the `.docx`.
 * `:log.comm` / `:open.comms` : Record and browse the communications log (email · phone · interview · filing · note).
@@ -788,6 +807,16 @@ communications log, deadlines, and tracked time. See
 * `:log.time <activity> <duration> [note]` : Add a manual (validated) time entry, e.g. `:log.time call 20m left a voicemail` (duration accepts `30m`, `1h15m`, `1:15`, or plain minutes).
 * `:show.deadlines` : Cross-matter docket — every pending office-action response and patent maintenance fee, soonest due first (overdue/due-soon cues; `p` marks done, `x` dismisses). Opening a matter banners anything due soon.
 * `:track.renewals <patent-number>` : Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (3.5 / 7.5 / 11.5 yr). Email reminders at 2 months / 15 days / 7 days are opt-in via `PATENTMINE_REMINDER_EMAIL_*` (SMTP); the in-app docket always works. Docketing assistance — verify all dates.
+
+#### J. Full-Text Viewer Bindings (`T` / `:open.fulltext`)
+*(The claims + disclosure viewer for one patent, opened from Detail or an Office Action.)*
+* `/` , `n` / `N` : Find, then step matches. The row **and** the matched text are highlighted (the active match brighter).
+* `z` : Collapse the body to **only the matching lines** (toggle).
+* `ctrl+q` : Toggle the bottom **match-list split**; `Tab` focuses it and the body follows the highlighted match to its exact line.
+* `[` / `]` : Switch the life-cycle stage shown (application / publication / grant).
+* `V` , `y` / `Y` , `g y` : Visual line select; copy the selection / copy with patent info / copy the whole document.
+* `ctrl+n` : Open the **session notes buffer**; `:note.add` captures the current selection (or section) into it.
+* `;` : Jump mode — scroll straight to a claim or the disclosure.
 
 ### TUI Command Prompt Commands (Via `:`)
 

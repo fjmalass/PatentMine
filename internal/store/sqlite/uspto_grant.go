@@ -349,6 +349,27 @@ func (r *Repo) USPTOGrantBody(ctx context.Context, applicationNumber, kind strin
 	return body, nil
 }
 
+// USPTOGrantBodySize returns the plain-text size (abstract + description +
+// claims, in bytes) of one (application_number, kind) body and whether such a
+// body exists. It reads only the lengths, never the (potentially large) text,
+// so it is cheap enough to call across a whole project for a coverage report.
+func (r *Repo) USPTOGrantBodySize(ctx context.Context, applicationNumber, kind string) (int, bool, error) {
+	var n int64
+	err := r.reader.QueryRowContext(ctx, `
+		SELECT length(coalesce(abstract_text,''))
+		     + length(coalesce(description_text,''))
+		     + length(coalesce(claims_text,''))
+		FROM uspto_grant_body
+		WHERE application_number = ? AND kind = ?`, applicationNumber, kind).Scan(&n)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("store/sqlite: query uspto grant body size: %w", err)
+	}
+	return int(n), true, nil
+}
+
 // ClearUSPTOGrantBodies clears cached parsed patent bodies in uspto_grant_body for the given application numbers.
 // If applicationNumbers is empty, it clears all cached patent bodies in the table.
 // It returns the number of rows deleted, total text memory (bytes) saved, and any error.

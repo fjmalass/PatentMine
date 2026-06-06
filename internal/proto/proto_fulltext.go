@@ -28,6 +28,27 @@ type FullTextSearchMatch struct {
 	Snippet    string `json:"snippet"`
 }
 
+// FullTextCoverageParams asks how much stored full text the given patents have.
+type FullTextCoverageParams struct {
+	Numbers []domain.PatentNumber `json:"numbers"`
+}
+
+// FullTextCoverageEntry reports one patent's stored full-text body: whether one
+// exists, which document (grant/pgpub) it came from, and its plain-text size.
+type FullTextCoverageEntry struct {
+	Number  domain.PatentNumber `json:"number"`
+	Present bool                `json:"present"`
+	Kind    USPTOXMLKind        `json:"kind,omitempty"`
+	Bytes   int                 `json:"bytes,omitempty"`
+}
+
+// FullTextCoverageResult carries per-patent coverage plus project-wide totals.
+type FullTextCoverageResult struct {
+	Entries    []FullTextCoverageEntry `json:"entries"`
+	Bodies     int                     `json:"bodies"`      // patents with a stored body
+	TotalBytes int64                   `json:"total_bytes"` // summed plain-text size, bytes
+}
+
 // FullTextSearchResult carries every match plus coverage bookkeeping: how many
 // patents had a local body to scan, and which selected patents had none (so the
 // caller can tell "no matches" apart from "nothing was searchable").
@@ -35,5 +56,9 @@ type FullTextSearchResult struct {
 	Query   string                `json:"query"`
 	Matches []FullTextSearchMatch `json:"matches"`
 	Scanned int                   `json:"scanned"`
+	// NoMatch lists patents that had an ingested body but no hit; Missing lists
+	// patents with no ingested body at all. Together with the matched patents
+	// they account for every selected patent.
+	NoMatch []domain.PatentNumber `json:"no_match,omitempty"`
 	Missing []domain.PatentNumber `json:"missing,omitempty"`
 }

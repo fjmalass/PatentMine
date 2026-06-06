@@ -202,9 +202,15 @@ cargo make draft-setup
 > **In-App Editing**: You can view and edit these variables directly inside the TUI settings screen (**`s`** key) using edit hotkeys like **`Shift+K`** (Gemini Key), **`Shift+O`** (OpenAI Key), **`Shift+H`** (Ollama Host), etc.
 
 ### How to View, Copy, and Export Notes
+**`Ctrl+N` is the single notes key across the TUI.** What it opens depends on the
+pane: in the **full-text viewer** it opens the **session notes buffer** (passages
+captured with `:note.add`); in a patent **Catalog/Detail** view it opens that
+patent's **persistent note**; in an **Office Action** detail it opens the
+examiner-text / notes split editor.
+
 All notes (attorney notes and generated AI reports) can be accessed and extracted in the TUI:
-1. **Notes Buffer Overlay (`o` Key)**: Inside any patent's **Detail View**, press **`o`** to open the notes buffer overlay. Press **`y`** to copy a single note, or **`Y`** to copy all session notes to your clipboard.
-2. **All Notes View (`:open.notes` Command)**: Type **`:open.notes`** (or alias **`:notes`**) in the command bar to open a spreadsheet of all notes in the active project.
+1. **Notes Buffer Overlay (`Ctrl+N`)**: In the **full-text viewer** press **`Ctrl+N`** to open the session notes buffer (it also auto-opens after an AI analysis). Press **`y`** to copy a single note, **`Y`** to copy all session notes, **`s`** to save them to the patent note, or **`F`** to flush them to the IDS.
+2. **All Notes View (`:open.notes` Command)**: Type **`:open.notes`** (or alias **`:notes`**, or press **`Z`** / **`g n`**) to open a spreadsheet of all notes in the active project.
 3. **Export to Markdown (`e` Key)**: In the **All Notes View**, press **`e`** to export all compiled project notes to a structured Markdown file (`patentmine-notes-*.md`) saved directly to your configured export directory.
 
 > The tool drafts; the practitioner reviews, signs, and is responsible. AI text
@@ -256,7 +262,7 @@ Intended flow, mirroring the AI curation overlay (`a`) and the IDS editor (`I`):
 flowchart LR
     P["any pane (active project)"] -->|":add.officeaction PATH"| OA["Import OA from any dir\n→ copied to the docs export store"]
     P -->|":open.officeaction"| L["Office Actions table"]
-    L -->|"enter / o"| R["OA view: examiner text (read-only)\n+ notes editor (split)"]
+    L -->|"enter / ctrl+n"| R["OA view: examiner text (read-only)\n+ notes editor (split)"]
     R -->|"a — AI draft, grounded + pinned"| AI["Response remarks"]
     R -->|":export.draft"| DX["Write .docx + show path"]
 ```
@@ -270,7 +276,8 @@ Typed commands (verb-first):
 | `:add.draft <kind>` | `draft.create` | Create a draft (`provisional` / `nonprovisional` / `oa-response`). |
 | `:export.draft <id>` | `draft.export.docx` | Render a draft to .docx and report the path. |
 
-Inside the Office Actions table (`enter` / `o`): a **split view** — the examiner
+Inside the Office Actions table, drill in with `enter`, then open the notes
+editor with `enter` / **`ctrl+n`**: a **split view** — the examiner
 text on the left (read-only reference), an editable **notes** buffer on the right
 — for annotating the rejection while drafting the response. AI drafting of the
 response remarks is an in-view action (`a`), grounded in the OA text with
@@ -310,8 +317,14 @@ per matter) and the project gains a **matter type** stage; office actions gain a
   plus a **detail pane** (`enter`) showing the OA's metadata and response
   deadline, the matter's document/communication counts, and the **time + AI-usage
   tally** (with an "unvalidated — review before billing" cue). Detail keys: `f`
-  documents · `c` communications · `R` draft response · `enter` notes editor ·
-  `esc` back.
+  documents · `c` communications · `R` draft response · `enter` / **`ctrl+n`**
+  notes editor · **`T`** open the application's full text · `esc` back.
+- **Full text while prosecuting** — `T` from the detail opens the application's
+  full-text viewer (`[`/`]` switches stage, `/` `n` `N` search, `Ctrl+Q` match
+  list). Across patents, the catalog's `Ctrl+F` full-text search scans **both**
+  the as-filed publication (`…A1`) and the granted (`…B2`) text, so prior-art and
+  claim-language searches cover either version — see
+  [README §8.4](./README.md#84-view-source-xml-full-text-and-citations).
 - **Time tracking + AI usage** — billable work is captured automatically: AI
   drafting and OCR calls log an `ai_usage` row + an auto, **unvalidated**
   `time_entry`, and the split editors record **reading** (left pane) vs

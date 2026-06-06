@@ -24,7 +24,7 @@ const (
 
 const (
 	// Dock list column widths.
-	searchDockNumW = 14 // patent-number column
+	searchDockNumW = 18 // patent-number column (comma-formatted display number)
 	searchDockLocW = 16 // section-locator column
 
 	// Dock list height: a fraction of the body, clamped to [min,max] rows, and
@@ -48,6 +48,7 @@ type searchSession struct {
 	preview       *pane.FullText
 	previewNumber domain.PatentNumber
 	baseDepth     int
+	hitPatents    int // distinct patents that produced matches
 }
 
 // fullTextSearchDoneMsg delivers the result of a daemon full-text scan.
@@ -86,11 +87,16 @@ func (a *App) handleFullTextSearchDone(m fullTextSearchDoneMsg) (tea.Model, tea.
 
 // openSearchDock starts a search session and shows the first match's preview.
 func (a *App) openSearchDock(res proto.FullTextSearchResult) tea.Cmd {
+	hits := map[domain.PatentNumber]bool{}
+	for _, mt := range res.Matches {
+		hits[mt.Number] = true
+	}
 	s := &searchSession{
-		res:       res,
-		page:      render.NewPaginator(10),
-		focus:     focusDock,
-		baseDepth: len(a.panes),
+		res:        res,
+		page:       render.NewPaginator(10),
+		focus:      focusDock,
+		baseDepth:  len(a.panes),
+		hitPatents: len(hits),
 	}
 	s.page.SetTotal(len(res.Matches))
 	a.search = s
@@ -158,6 +164,15 @@ func (a *App) handleDockKey(m tea.KeyMsg) (tea.Cmd, bool) {
 	case "enter", "l":
 		a.promoteSearch()
 		return nil, true
+	case "f":
+		// Fetch the granted XML for the not-ingested patents so a re-run can
+		// search them too. Pending applications without a grant are reported as
+		// failures by the batch; re-run the search once it finishes.
+		if len(s.res.Missing) > 0 {
+			_, cmd := a.fetchAndOpenUSPTOXML(s.res.Missing, proto.USPTOXMLKindGrant)
+			return cmd, true
+		}
+		return nil, true
 	case "esc", "q":
 		a.closeSearch()
 		return nil, true
@@ -217,14 +232,24 @@ func (a *App) searchView(focused pane.Pane, w, h int) string {
 // focus-dependent key hints.
 func (a *App) searchDivider(w int) string {
 	s := a.search
-	label := fmt.Sprintf("Full-text search %d/%d", s.page.Cursor()+1, len(s.res.Matches))
+	label := fmt.Sprintf("Full-text search %d/%d · %d patent(s)", s.page.Cursor()+1, len(s.res.Matches), s.hitPatents)
+	if len(s.res.NoMatch) > 0 {
+		label += fmt.Sprintf(" · %d no match", len(s.res.NoMatch))
+	}
+	if len(s.res.Missing) > 0 {
+		label += fmt.Sprintf(" · %d not ingested", len(s.res.Missing))
+	}
 	if s.res.Query != "" {
 		label += " · /" + s.res.Query
 	}
 	if s.focus == focusPreview {
 		label += "  [tab] list  [esc] back"
 	} else {
-		label += "  [tab] read  [enter] keep  [esc] close"
+		label += "  [tab] read  [enter] keep"
+		if len(s.res.Missing) > 0 {
+			label += "  [f] fetch missing"
+		}
+		label += "  [esc] close"
 	}
 	line := "─ " + label + " "
 	if pad := w - render.StringWidth(line); pad > 0 {
@@ -247,7 +272,7 @@ func (a *App) searchList(w, h int) string {
 			locator = "—"
 		}
 		row := fmt.Sprintf("%-*s  %-*s  %s",
-			searchDockNumW, render.Truncate(mt.Number.String(), searchDockNumW),
+			searchDockNumW, render.Truncate(mt.Number.DisplayString(), searchDockNumW),
 			searchDockLocW, render.Truncate(locator, searchDockLocW),
 			mt.Snippet)
 		switch {

@@ -12,12 +12,20 @@ import (
 // a match when building a result snippet.
 const fullTextSnippetPad = 48
 
+// fullTextStages are the document stages searched, newest first, so a granted
+// patent's final text leads and the as-filed publication follows.
+var fullTextStages = []proto.USPTOXMLKind{proto.USPTOXMLKindGrant, proto.USPTOXMLKindPGPub}
+
 // FullTextSearch scans the locally-stored USPTO bodies of the given patents for
-// query (case-insensitive substring) and returns every matching section. It
-// never fetches over the network: patents whose body has not been ingested are
-// reported in Missing so the caller can distinguish "no hits" from "nothing to
-// search". Bodies are projected with the same helper the viewer renders from,
-// so the returned locators address the same sections the pane shows.
+// query (case-insensitive substring) and returns every matching section. Each
+// patent is searched at *both* the granted and the published (pgpub) stage when
+// present, and every match is tagged with that stage's display number (the
+// final "…B2" grant or the "…A1" publication), so the same number the detail
+// view shows comes back — and so an office action can search either version.
+//
+// It never fetches over the network. Patents with no ingested body land in
+// Missing; ingested patents with no hit land in NoMatch — together with the
+// matched patents they account for every selected patent.
 func (e *Engine) FullTextSearch(ctx context.Context, numbers []domain.PatentNumber, query string) (proto.FullTextSearchResult, error) {
 	res := proto.FullTextSearchResult{Query: strings.TrimSpace(query)}
 	lower := strings.ToLower(res.Query)
@@ -28,18 +36,45 @@ func (e *Engine) FullTextSearch(ctx context.Context, numbers []domain.PatentNumb
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
-		body, _, kind, present, err := e.USPTOGrantBody(ctx, n, "")
-		if err != nil || !present {
-			// A load error here means we cannot search this patent; treat it the
-			// same as a missing body rather than failing the whole batch.
-			res.Missing = append(res.Missing, n)
-			continue
+		patent, _ := e.Patent(ctx, n) // best-effort, for the per-stage display numbers
+		anyPresent, patentMatches := false, 0
+		for _, kind := range fullTextStages {
+			body, _, _, present, err := e.USPTOGrantBody(ctx, n, kind)
+			if err != nil || !present {
+				continue
+			}
+			anyPresent = true
+			display := stageDisplayNumber(patent, kind, n)
+			full := domain.FullTextFromGrantBody(display, body)
+			ms := searchFullText(display, kind, full, lower)
+			patentMatches += len(ms)
+			res.Matches = append(res.Matches, ms...)
 		}
-		res.Scanned++
-		full := domain.FullTextFromGrantBody(n, body)
-		res.Matches = append(res.Matches, searchFullText(n, kind, full, lower)...)
+		switch {
+		case !anyPresent:
+			res.Missing = append(res.Missing, n)
+		case patentMatches == 0:
+			res.Scanned++
+			res.NoMatch = append(res.NoMatch, n)
+		default:
+			res.Scanned++
+		}
 	}
 	return res, nil
+}
+
+// stageDisplayNumber returns the patent's number for the given stage (the
+// granted or published document), falling back to the searched number when the
+// record carries no document for that stage.
+func stageDisplayNumber(p domain.Patent, kind proto.USPTOXMLKind, fallback domain.PatentNumber) domain.PatentNumber {
+	stage := domain.StagePublication
+	if kind == proto.USPTOXMLKindGrant {
+		stage = domain.StageGrant
+	}
+	if doc, ok := p.DocumentFor(stage); ok && !doc.Number.IsZero() {
+		return doc.Number
+	}
+	return fallback
 }
 
 // searchFullText returns one match per occurrence of lowerQuery across the

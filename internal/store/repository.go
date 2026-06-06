@@ -144,6 +144,9 @@ type Repository interface {
 	// USPTOGrantBody returns the body for one (application_number, kind), or
 	// ErrNotFound when the XML has not been ingested yet.
 	USPTOGrantBody(ctx context.Context, applicationNumber, kind string) (domain.USPTOGrantBody, error)
+	// USPTOGrantBodySize returns the plain-text byte size of one
+	// (application_number, kind) body and whether it exists, reading only lengths.
+	USPTOGrantBodySize(ctx context.Context, applicationNumber, kind string) (int, bool, error)
 	// USPTOGrantParties returns every applicant/inventor/assignee/agent row
 	// extracted from the XML for one (application_number, kind). An empty
 	// result is returned when no party rows exist (not an error).

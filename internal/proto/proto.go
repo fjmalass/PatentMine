@@ -82,6 +82,7 @@ const (
 	MethodUSPTOFetchXML              Method = "uspto.fetch_xml"
 	MethodUSPTOGrantBody             Method = "uspto.grant_body"
 	MethodFullTextSearch             Method = "fulltext.search"
+	MethodFullTextCoverage           Method = "fulltext.coverage"
 	MethodUSPTOLookup                Method = "uspto.lookup"
 	MethodUSPTOFetchAssignments      Method = "uspto.fetch_assignments"
 	MethodUSPTOFetchAssignmentsBatch Method = "uspto.fetch_assignments.batch"
