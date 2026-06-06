@@ -41,25 +41,25 @@ type Orphans struct {
 	loadID   uint64
 	logger   *slog.Logger
 
-	searchActive  bool
-	searchQuery   string
-	searchScope   int
-	focusedColIdx int
-	sortAscending bool
-	activeSort    string
+	searchActive bool
+	searchQuery  string
+	searchScope  int
+	table        render.TableState
 }
 
 // NewOrphans builds the orphan-patents pane.
 func NewOrphans(client *rpc.Client, theme render.Theme) *Orphans {
 	o := &Orphans{
-		client:        client,
-		theme:         theme,
-		page:          render.NewPaginator(20),
-		loading:       true,
-		focusedColIdx: -1,
-		sortAscending: true,
-		activeSort:    "number",
-		searchScope:   0,
+		client:      client,
+		theme:       theme,
+		page:        render.NewPaginator(20),
+		loading:     true,
+		table: render.TableState{
+			FocusedColIdx: -1,
+			SortAscending: true,
+			ActiveSort:    "number",
+		},
+		searchScope: 0,
 	}
 	o.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(inv Invocation) tea.Cmd { o.page.MoveDown(inv.Repeat); return nil },
@@ -122,31 +122,19 @@ func (o *Orphans) load() tea.Cmd {
 }
 
 func (o *Orphans) focusNext() tea.Cmd {
-	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, 1)
+	o.table.MoveFocus(o.currentCols(80), 1)
 	return nil
 }
 
 func (o *Orphans) focusPrev() tea.Cmd {
-	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, -1)
+	o.table.MoveFocus(o.currentCols(80), -1)
 	return nil
 }
 
 func (o *Orphans) applySort() tea.Cmd {
-	if o.focusedColIdx < 0 {
-		return nil
+	if o.table.ApplySort(o.currentCols(80)) {
+		o.applyFilter()
 	}
-	cols := o.currentCols(80)
-	col := cols[o.focusedColIdx]
-	if col.SortKey == "" {
-		return nil
-	}
-	if o.activeSort == col.SortKey {
-		o.sortAscending = !o.sortAscending
-	} else {
-		o.activeSort = col.SortKey
-		o.sortAscending = true
-	}
-	o.applyFilter()
 	return nil
 }
 
@@ -231,12 +219,12 @@ func (o *Orphans) applyFilter() {
 }
 
 func (o *Orphans) sortRows() {
-	if o.activeSort == "" {
+	if o.table.ActiveSort == "" {
 		return
 	}
 	slices.SortFunc(o.rows, func(i, j domain.PatentRow) int {
 		var cmp int
-		switch o.activeSort {
+		switch o.table.ActiveSort {
 		case "number":
 			cmp = strings.Compare(i.Number.String(), j.Number.String())
 		case "fetch_state":
@@ -246,7 +234,7 @@ func (o *Orphans) sortRows() {
 		default:
 			cmp = strings.Compare(i.Number.String(), j.Number.String())
 		}
-		if !o.sortAscending {
+		if !o.table.SortAscending {
 			cmp = -cmp
 		}
 		return cmp
@@ -311,8 +299,8 @@ func (o *Orphans) View(w, h int) string {
 	o.page.SetPageSize(max(h-headerRows-2, 1))
 
 	var b strings.Builder
-	statusText := fmt.Sprintf("total:%d  sort:%s", o.total, o.activeSort)
-	if o.sortAscending {
+	statusText := fmt.Sprintf("total:%d  sort:%s", o.total, o.table.ActiveSort)
+	if o.table.SortAscending {
 		statusText += " (asc)"
 	} else {
 		statusText += " (desc)"
@@ -327,9 +315,9 @@ func (o *Orphans) View(w, h int) string {
 		Theme:         o.theme,
 		Columns:       cols,
 		RowCount:      end - start,
-		FocusedColIdx: o.focusedColIdx,
-		ActiveSort:    o.activeSort,
-		SortAscending: o.sortAscending,
+		FocusedColIdx: o.table.FocusedColIdx,
+		ActiveSort:    o.table.ActiveSort,
+		SortAscending: o.table.SortAscending,
 		FocusActive:   true,
 		IsRowCursor: func(rowIdx int) bool {
 			return start+rowIdx == o.page.Cursor()

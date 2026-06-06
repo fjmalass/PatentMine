@@ -54,12 +54,10 @@ type AllNotes struct {
 	metrics       *observability.Metrics
 	exportDir     string // directory for exported .md files; empty = user home dir
 
-	searchActive  bool
-	searchQuery   string
-	searchScope   int
-	focusedColIdx int
-	sortAscending bool
-	activeSort    string
+	searchActive bool
+	searchQuery  string
+	searchScope  int
+	table        render.TableState
 }
 
 func (a *AllNotes) log() *slog.Logger {
@@ -77,10 +75,12 @@ func NewAllNotes(client *rpc.Client, theme render.Theme, project *domain.Project
 		activeProject: project,
 		page:          render.NewPaginator(20),
 		loading:       true,
-		focusedColIdx: -1,
-		sortAscending: true,
-		activeSort:    "date",
-		searchScope:   0,
+		table: render.TableState{
+			FocusedColIdx: -1,
+			SortAscending: false,
+			ActiveSort:    "date",
+		},
+		searchScope: 0,
 	}
 	a.handlers = map[command.ID]cmdHandler{
 		command.NavDown:         func(inv Invocation) tea.Cmd { a.page.MoveDown(inv.Repeat); return nil },
@@ -145,47 +145,31 @@ func (a *AllNotes) load() tea.Cmd {
 }
 
 func (a *AllNotes) focusNext() tea.Cmd {
-	a.focusedColIdx = render.MoveSortableColumn(a.currentCols(80), a.focusedColIdx, 1)
+	a.table.MoveFocus(a.currentCols(80), 1)
 	return nil
 }
 
 func (a *AllNotes) focusPrev() tea.Cmd {
-	a.focusedColIdx = render.MoveSortableColumn(a.currentCols(80), a.focusedColIdx, -1)
+	a.table.MoveFocus(a.currentCols(80), -1)
 	return nil
 }
 
 func (a *AllNotes) applySort() tea.Cmd {
-	if a.focusedColIdx < 0 {
-		return nil
+	if a.table.ApplySort(a.currentCols(80)) {
+		a.applyFilter()
 	}
-	cols := a.currentCols(80)
-	col := cols[a.focusedColIdx]
-	if col.SortKey == "" {
-		return nil
-	}
-	if a.activeSort == col.SortKey {
-		a.sortAscending = !a.sortAscending
-	} else {
-		a.activeSort = col.SortKey
-		oSortAscending := true
-		if col.SortKey == "date" {
-			oSortAscending = false
-		}
-		a.sortAscending = oSortAscending
-	}
-	a.applyFilter()
 	return nil
 }
 
 func (a *AllNotes) toggleSort() tea.Cmd {
-	if a.activeSort == "date" {
-		a.activeSort = "patent"
+	if a.table.ActiveSort == "date" {
+		a.table.ActiveSort = "patent"
 	} else {
-		a.activeSort = "date"
+		a.table.ActiveSort = "date"
 	}
 	a.applyFilter()
 	label := "patent number"
-	if a.activeSort == "date" {
+	if a.table.ActiveSort == "date" {
 		label = "date"
 	}
 	return func() tea.Msg { return StatusMsg{Key: text.StatusNotesSorted, Args: []any{label}} }
@@ -213,7 +197,7 @@ func (a *AllNotes) exportMD() tea.Cmd {
 		projectID = a.activeProject.ID
 		projectName = a.activeProject.Name
 	}
-	activeSort := a.activeSort
+	activeSort := a.table.ActiveSort
 	return func() tea.Msg {
 		dir := exportDir
 		if dir == "" {
@@ -365,7 +349,7 @@ func (a *AllNotes) applyFilter() {
 func (a *AllNotes) sortNotes() {
 	slices.SortFunc(a.notes, func(i, j domain.PatentNote) int {
 		var cmp int
-		switch a.activeSort {
+		switch a.table.ActiveSort {
 		case "patent":
 			cmp = strings.Compare(i.Patent.String(), j.Patent.String())
 		case "note":
@@ -387,7 +371,7 @@ func (a *AllNotes) sortNotes() {
 				cmp = 0
 			}
 		}
-		if !a.sortAscending {
+		if !a.table.SortAscending {
 			cmp = -cmp
 		}
 		return cmp
@@ -458,8 +442,8 @@ func (a *AllNotes) View(w, h int) string {
 
 	var b strings.Builder
 	// Render status line
-	statusText := "sort:" + a.activeSort
-	if a.sortAscending {
+	statusText := "sort:" + a.table.ActiveSort
+	if a.table.SortAscending {
 		statusText += " (asc)"
 	} else {
 		statusText += " (desc)"
@@ -474,9 +458,9 @@ func (a *AllNotes) View(w, h int) string {
 		Theme:         a.theme,
 		Columns:       cols,
 		RowCount:      end - start,
-		FocusedColIdx: a.focusedColIdx,
-		ActiveSort:    a.activeSort,
-		SortAscending: a.sortAscending,
+		FocusedColIdx: a.table.FocusedColIdx,
+		ActiveSort:    a.table.ActiveSort,
+		SortAscending: a.table.SortAscending,
 		FocusActive:   true,
 		IsRowCursor: func(rowIdx int) bool {
 			return start+rowIdx == a.page.Cursor()

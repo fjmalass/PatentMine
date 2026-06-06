@@ -306,7 +306,7 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 				o.patentsLoading = true
 				return o, o.loadPatentsCmd(o.stats[o.selected].Classification.Code, o.loadID), true
 			}
-		case "l", "enter":
+		case "enter":
 			o.focus = focusPatents
 			o.focusedColIdx = 0
 			return o, nil, true
@@ -315,11 +315,11 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 			o.searchQuery = ""
 			o.applyFilter()
 			return o, o.reloadPatentsCmd(), true
-		case "left":
+		case "left", "l":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, -1)
 			return o, nil, true
-		case "right":
+		case "right", "h":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, 1)
 			return o, nil, true
@@ -356,16 +356,16 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 		return o, nil, true
 	}
 	switch msg.String() {
-	case "left":
+	case "left", "h":
 		o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, -1)
 		return o, nil, true
-	case "right":
+	case "right", "l":
 		o.focusedColIdx = moveStatsColumn(o.currentCols(), o.focusedColIdx, 1)
 		return o, nil, true
-	case "h":
-		o.focus = focusStats
-		o.focusedColIdx = -1
-		return o, nil, true
+	// case "h":
+	// 	o.focus = focusStats
+	// 	o.focusedColIdx = -1
+	// 	return o, nil, true
 	case ".":
 		if o.focusedColIdx >= 0 {
 			cols := o.currentCols()
@@ -401,7 +401,7 @@ func (o *ClassificationStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 	}
 	selectedPatent := o.patents[cursor]
 	switch msg.String() {
-	case "l", "enter":
+	case "enter":
 		return o, func() tea.Msg { return OpenPatentDetailMsg{Number: selectedPatent.Number} }, true
 	case "j", "down":
 		before := o.patentsPage.Offset()

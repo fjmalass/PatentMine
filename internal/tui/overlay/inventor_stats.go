@@ -313,7 +313,7 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 				o.patentsLoading = true
 				return o, o.loadPatentsCmd(o.stats[o.selected].Inventor, o.loadID), true
 			}
-		case "l", "enter":
+		case "enter":
 			o.focus = focusPatents
 			o.focusedColIdx = 0
 			return o, nil, true
@@ -322,11 +322,11 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			o.searchQuery = ""
 			o.applyFilter()
 			return o, o.reloadPatentsCmd(), true
-		case "left":
+		case "left", "h":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, -1)
 			return o, nil, true
-		case "right":
+		case "right", "l":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, 1)
 			return o, nil, true
@@ -424,7 +424,7 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 		selectedPatent := o.patents[cursor]
 
 		switch msg.String() {
-		case "l", "enter":
+		case "enter":
 			return o, func() tea.Msg {
 				return OpenPatentDetailMsg{Number: selectedPatent.Number}
 			}, true
@@ -836,52 +836,12 @@ func formatInventorsShort(inventors []domain.Inventor) string {
 
 // moveStatsColumn navigates left/right among columns with a sortKey.
 func moveStatsColumn(cols []render.TableColumn, current, step int) int {
-	if len(cols) == 0 {
-		return -1
-	}
-	if current < 0 {
-		for i, c := range cols {
-			if c.SortKey != "" {
-				return i
-			}
-		}
-		return -1
-	}
-	idx := current
-	for range len(cols) {
-		idx = (idx + step + len(cols)) % len(cols)
-		if cols[idx].SortKey != "" {
-			return idx
-		}
-	}
-	return -1
+	return render.MoveSortableColumn(cols, current, step)
 }
 
 // clampFocusedStatsColumn ensures the focused column index remains in a valid sortable range.
 func clampFocusedStatsColumn(cols []render.TableColumn, current int) int {
-	if len(cols) == 0 {
-		return -1
-	}
-	if current < 0 {
-		return -1
-	}
-	if current >= len(cols) {
-		current = len(cols) - 1
-	}
-	if cols[current].SortKey != "" {
-		return current
-	}
-	for i := current; i >= 0; i-- {
-		if cols[i].SortKey != "" {
-			return i
-		}
-	}
-	for i := current; i < len(cols); i++ {
-		if cols[i].SortKey != "" {
-			return i
-		}
-	}
-	return -1
+	return render.ClampFocusedSortableColumn(cols, current)
 }
 
 func (o *InventorStatsOverlay) calcHeights(innerHeight int) (statsH, patentsH int) {

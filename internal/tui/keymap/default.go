@@ -123,9 +123,10 @@ func Default() *Keymaps {
 		BindAll(viewActions()).
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
-			"l":      command.OpenDetail,
+			"l":      command.ColNext,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
+			"h":      command.ColPrev,
 			".":      command.SortApply,
 			"/":      command.FindOpen,
 			"n":      command.NavDown,
@@ -165,9 +166,10 @@ func Default() *Keymaps {
 		BindAll(viewActions()).
 		BindAll(map[string]command.ID{
 			"enter":  command.OpenDetail,
-			"l":      command.OpenDetail,
+			"l":      command.ColNext,
 			"right":  command.ColNext,
 			"left":   command.ColPrev,
+			"h":      command.ColPrev,
 			".":      command.SortApply,
 			"/":      command.FindOpen,
 			"n":      command.NavDown,
@@ -269,9 +271,10 @@ func Default() *Keymaps {
 		BindAll(listMotions()).
 		BindAll(map[string]command.ID{
 			"enter": command.OpenDetail,
-			"l":     command.OpenDetail,
+			"l":     command.ColNext,
 			"right": command.ColNext,
 			"left":  command.ColPrev,
+			"h":     command.ColPrev,
 			".":     command.SortApply,
 			"/":     command.FindOpen,
 		})

@@ -125,7 +125,7 @@ func (o *MetricsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	case "tab", "l", "right":
 		o.advanceTab(1)
 		return o, nil, true
-	case "shift+tab", "h", "H", "left":
+	case "shift+tab", "h", "left":
 		o.advanceTab(-1)
 		return o, nil, true
 	case "r", "ctrl+r":

@@ -69,11 +69,9 @@ type Citations struct {
 	savedVisualAnchor  int
 	savedVisualCursor  int
 	gvHighlight        map[domain.PatentNumber]bool
-	activeSort         domain.SortColumn
-	sortAscending      bool
+	table              render.TableState
 	filter             PatentFilter
 	find               findBar
-	focusedColIdx      int
 	lastWidth          int
 	logger             *slog.Logger
 	classDescs         map[string]string
@@ -102,9 +100,11 @@ func NewCitations(client *rpc.Client, theme render.Theme, root domain.PatentNumb
 		columnsProject: "",
 		page:           render.NewPaginator(defaultPageSize),
 		loading:        true,
-		activeSort:     domain.SortByNumber,
-		sortAscending:  true,
-		focusedColIdx:  -1,
+		table: render.TableState{
+			FocusedColIdx: -1,
+			SortAscending: true,
+			ActiveSort:    string(domain.SortByNumber),
+		},
 	}
 	c.find.scopes = []SearchScope{
 		{"all", "All Columns"},
@@ -192,8 +192,8 @@ func (c *Citations) load() tea.Cmd {
 				SearchScope:   c.find.activeScopeKey(),
 				Limit:         limit,
 				Offset:        offset,
-				SortColumn:    c.activeSort,
-				SortAscending: c.sortAscending,
+				SortColumn:    domain.SortColumn(c.table.ActiveSort),
+				SortAscending: c.table.SortAscending,
 			}, &res)
 		return citationsLoadedMsg{
 			requestID: requestID,
@@ -278,32 +278,32 @@ func (c *Citations) applyFindInput(input string) {
 
 // focusNext moves the visual focus to the next column.
 func (c *Citations) focusNext() tea.Cmd {
-	c.focusedColIdx = moveSortableColumn(c.currentCols(), c.focusedColIdx, 1)
+	c.table.FocusedColIdx = moveSortableColumn(c.currentCols(), c.table.FocusedColIdx, 1)
 	return nil
 }
 
 // focusPrev moves the visual focus to the previous column.
 func (c *Citations) focusPrev() tea.Cmd {
-	c.focusedColIdx = moveSortableColumn(c.currentCols(), c.focusedColIdx, -1)
+	c.table.FocusedColIdx = moveSortableColumn(c.currentCols(), c.table.FocusedColIdx, -1)
 	return nil
 }
 
 // applySort applies sorting to the currently focused column.
 func (c *Citations) applySort() tea.Cmd {
-	if c.focusedColIdx < 0 {
+	if c.table.FocusedColIdx < 0 {
 		return nil
 	}
 	cols := c.currentCols()
-	col := cols[c.focusedColIdx]
+	col := cols[c.table.FocusedColIdx]
 	if col.sortKey == "" {
 		return nil // column not sortable
 	}
 
-	if c.activeSort == col.sortKey {
-		c.sortAscending = !c.sortAscending
+	if c.table.ActiveSort == string(col.sortKey) {
+		c.table.SortAscending = !c.table.SortAscending
 	} else {
-		c.activeSort = col.sortKey
-		c.sortAscending = true
+		c.table.ActiveSort = string(col.sortKey)
+		c.table.SortAscending = true
 	}
 	c.loading = true
 	c.clearVisual()
@@ -454,7 +454,7 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		return c, nil
 	case ResizeMsg:
 		pageSize := max(m.Height-headerRows, 1)
-		c.focusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.focusedColIdx)
+		c.table.FocusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.table.FocusedColIdx)
 		if pageSize != c.page.PageSize() {
 			before := c.page.Offset()
 			c.page.SetPageSize(pageSize)
@@ -527,7 +527,7 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 		if m.err == nil && len(m.columns) > 0 {
 			c.columns = m.columns
 			c.columnsProject = m.project
-			c.focusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.focusedColIdx)
+			c.table.FocusedColIdx = clampFocusedSortableColumn(c.currentCols(), c.table.FocusedColIdx)
 		}
 	case citationsLoadedMsg:
 		if m.requestID != c.loadID {
@@ -643,8 +643,8 @@ func (c *Citations) loadAllPages(total int) tea.Cmd {
 	filter := c.filter.Expression
 	search := c.filter.Search
 	scope := c.find.activeScopeKey()
-	sort := c.activeSort
-	asc := c.sortAscending
+	sort := domain.SortColumn(c.table.ActiveSort)
+	asc := c.table.SortAscending
 	return func() tea.Msg {
 		ctx, cancel := callContext()
 		defer cancel()
@@ -767,7 +767,7 @@ func (c *Citations) View(w, h int) string {
 	}
 	b.WriteString(renderTableStatusLine(c.theme, w, c.page.Cursor(), c.page.Total(), filterSummary))
 	b.WriteByte('\n')
-	b.WriteString(renderTableHeader(c.theme, cols, c.activeSort, c.sortAscending, c.focusedColIdx))
+	b.WriteString(renderTableHeader(c.theme, cols, domain.SortColumn(c.table.ActiveSort), c.table.SortAscending, c.table.FocusedColIdx))
 	for i, p := range c.patents {
 		absolute := c.loadedBase + i
 		isSelectedRow := absolute == c.page.Cursor()
@@ -775,7 +775,7 @@ func (c *Citations) View(w, h int) string {
 		if c.gvHighlight != nil && c.gvHighlight[p.Number] {
 			hl = HighlightGotoVisual
 		}
-		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.focusedColIdx, isSelectedRow, hl, c.classDescs)
+		line := renderStyledTableRow(c.theme, p, cols, projectID, absolute, c.table.FocusedColIdx, isSelectedRow, hl, c.classDescs)
 		rowStyle := tableRowStyle(c.theme, absolute)
 		b.WriteByte('\n')
 		switch {

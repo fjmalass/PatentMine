@@ -102,14 +102,14 @@ func TestOfficeActionsSortingAndFocus(t *testing.T) {
 
 	// Focus next column: from -1 (none) to 0 (name)
 	o.focusNext()
-	if o.focusedColIdx != 0 {
-		t.Fatalf("expected focusedColIdx to be 0 after focusNext, got %d", o.focusedColIdx)
+	if o.table.FocusedColIdx != 0 {
+		t.Fatalf("expected FocusedColIdx to be 0 after focusNext, got %d", o.table.FocusedColIdx)
 	}
 
 	// Sort by name
 	o.applySort()
-	if o.activeSort != "name" || !o.sortAscending {
-		t.Fatalf("expected activeSort to be name, sortAscending true; got activeSort=%q, ascending=%v", o.activeSort, o.sortAscending)
+	if o.table.ActiveSort != "name" || !o.table.SortAscending {
+		t.Fatalf("expected ActiveSort to be name, SortAscending true; got ActiveSort=%q, ascending=%v", o.table.ActiveSort, o.table.SortAscending)
 	}
 	// "Advisory Action" (oa-2) should come before "Final Rejection" (oa-1)
 	if o.items[0].ID != "oa-2" || o.items[1].ID != "oa-1" {
@@ -118,8 +118,8 @@ func TestOfficeActionsSortingAndFocus(t *testing.T) {
 
 	// Sort by name again to toggle descending
 	o.applySort()
-	if o.activeSort != "name" || o.sortAscending {
-		t.Fatalf("expected activeSort to be name, sortAscending false; got activeSort=%q, ascending=%v", o.activeSort, o.sortAscending)
+	if o.table.ActiveSort != "name" || o.table.SortAscending {
+		t.Fatalf("expected ActiveSort to be name, SortAscending false; got ActiveSort=%q, ascending=%v", o.table.ActiveSort, o.table.SortAscending)
 	}
 	// Descending: "Final Rejection" (oa-1) before "Advisory Action" (oa-2)
 	if o.items[0].ID != "oa-1" || o.items[1].ID != "oa-2" {
@@ -128,8 +128,8 @@ func TestOfficeActionsSortingAndFocus(t *testing.T) {
 
 	// Focus next column (1: type)
 	o.focusNext()
-	if o.focusedColIdx != 1 {
-		t.Fatalf("expected focusedColIdx to be 1 after focusNext, got %d", o.focusedColIdx)
+	if o.table.FocusedColIdx != 1 {
+		t.Fatalf("expected FocusedColIdx to be 1 after focusNext, got %d", o.table.FocusedColIdx)
 	}
 
 	// Sort by type

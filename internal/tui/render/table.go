@@ -206,3 +206,48 @@ func ClampFocusedSortableColumn(cols []TableColumn, focusedColIdx int) int {
 	return MoveSortableColumn(cols, focusedColIdx, 1)
 }
 
+// TableState manages the selection, focused column, and sorting state of a table view.
+type TableState struct {
+	FocusedColIdx int
+	ActiveSort    string
+	SortAscending bool
+}
+
+// NewTableState builds a default TableState.
+func NewTableState() TableState {
+	return TableState{
+		FocusedColIdx: -1,
+		SortAscending: true,
+	}
+}
+
+// MoveFocus moves the focused column index by step (usually 1 or -1)
+// among the sortable columns (those with a non-empty SortKey).
+func (s *TableState) MoveFocus(cols []TableColumn, step int) {
+	s.FocusedColIdx = MoveSortableColumn(cols, s.FocusedColIdx, step)
+}
+
+// ClampFocus ensures the focused column index is on a sortable column.
+func (s *TableState) ClampFocus(cols []TableColumn) {
+	s.FocusedColIdx = ClampFocusedSortableColumn(cols, s.FocusedColIdx)
+}
+
+// ApplySort applies sorting to the currently focused column.
+// It returns true if the sorting state was successfully updated.
+func (s *TableState) ApplySort(cols []TableColumn) bool {
+	if s.FocusedColIdx < 0 || s.FocusedColIdx >= len(cols) {
+		return false
+	}
+	col := cols[s.FocusedColIdx]
+	if col.SortKey == "" {
+		return false
+	}
+	if s.ActiveSort == col.SortKey {
+		s.SortAscending = !s.SortAscending
+	} else {
+		s.ActiveSort = col.SortKey
+		s.SortAscending = true
+	}
+	return true
+}
+

@@ -58,21 +58,18 @@ type OfficeActions struct {
 	searchActive bool
 	searchQuery  string
 
-	focusedColIdx int
-	activeSort    string
-	sortAscending bool
+	table render.TableState
 }
 
 // NewOfficeActions builds the office-action table pane for a project.
 func NewOfficeActions(client *rpc.Client, theme render.Theme, project domain.ProjectID) *OfficeActions {
 	o := &OfficeActions{
-		client:        client,
-		theme:         theme,
-		project:       project,
-		page:          render.NewPaginator(20),
-		loading:       true,
-		focusedColIdx: -1,
-		sortAscending: true,
+		client:  client,
+		theme:   theme,
+		project: project,
+		page:    render.NewPaginator(20),
+		loading: true,
+		table:   render.NewTableState(),
 	}
 	o.handlers = map[command.ID]cmdHandler{
 		command.NavDown:     func(inv Invocation) tea.Cmd { o.page.MoveDown(inv.Repeat); return nil },
@@ -211,12 +208,12 @@ func (o *OfficeActions) applyFilter() {
 }
 
 func (o *OfficeActions) sortItems() {
-	if o.activeSort == "" {
+	if o.table.ActiveSort == "" {
 		return
 	}
 	slices.SortFunc(o.items, func(i, j domain.OfficeAction) int {
 		var cmp int
-		switch o.activeSort {
+		switch o.table.ActiveSort {
 		case "name":
 			cmp = strings.Compare(strings.ToLower(i.Name), strings.ToLower(j.Name))
 		case "type":
@@ -250,7 +247,7 @@ func (o *OfficeActions) sortItems() {
 				cmp = 0
 			}
 		}
-		if !o.sortAscending {
+		if !o.table.SortAscending {
 			cmp = -cmp
 		}
 		if cmp == 0 {
@@ -287,31 +284,19 @@ func (o *OfficeActions) currentCols(w int) []render.TableColumn {
 }
 
 func (o *OfficeActions) focusNext() tea.Cmd {
-	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, 1)
+	o.table.MoveFocus(o.currentCols(80), 1)
 	return nil
 }
 
 func (o *OfficeActions) focusPrev() tea.Cmd {
-	o.focusedColIdx = render.MoveSortableColumn(o.currentCols(80), o.focusedColIdx, -1)
+	o.table.MoveFocus(o.currentCols(80), -1)
 	return nil
 }
 
 func (o *OfficeActions) applySort() tea.Cmd {
-	if o.focusedColIdx < 0 {
-		return nil
+	if o.table.ApplySort(o.currentCols(80)) {
+		o.applyFilter()
 	}
-	cols := o.currentCols(80)
-	col := cols[o.focusedColIdx]
-	if col.SortKey == "" {
-		return nil
-	}
-	if o.activeSort == col.SortKey {
-		o.sortAscending = !o.sortAscending
-	} else {
-		o.activeSort = col.SortKey
-		o.sortAscending = true
-	}
-	o.applyFilter()
 	return nil
 }
 
@@ -339,7 +324,7 @@ func (o *OfficeActions) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		return o, nil, true
 	}
 	switch msg.String() {
-	case "enter", "l", "right":
+	case "enter":
 		oa, ok := o.selected()
 		if !ok {
 			return o, nil, true
@@ -367,9 +352,9 @@ func (o *OfficeActions) View(w, h int) string {
 	o.page.SetPageSize(max(h-headerRows-2, 1))
 
 	var statusText string
-	if o.activeSort != "" {
-		statusText = "sort:" + o.activeSort
-		if o.sortAscending {
+	if o.table.ActiveSort != "" {
+		statusText = "sort:" + o.table.ActiveSort
+		if o.table.SortAscending {
 			statusText += " (asc)"
 		} else {
 			statusText += " (desc)"
@@ -385,9 +370,9 @@ func (o *OfficeActions) View(w, h int) string {
 		Theme:         o.theme,
 		Columns:       cols,
 		RowCount:      end - start,
-		FocusedColIdx: o.focusedColIdx,
-		ActiveSort:    o.activeSort,
-		SortAscending: o.sortAscending,
+		FocusedColIdx: o.table.FocusedColIdx,
+		ActiveSort:    o.table.ActiveSort,
+		SortAscending: o.table.SortAscending,
 		FocusActive:   true,
 		IsRowCursor:   func(rowIdx int) bool { return start+rowIdx == o.page.Cursor() },
 	}, w, func(rowIdx, colIdx int) string {

@@ -68,21 +68,21 @@ type AllAssigneesHistoryOverlay struct {
 
 func NewAllAssigneesHistoryOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, patent domain.Patent, project domain.ProjectID, filterToPatent bool) (*AllAssigneesHistoryOverlay, tea.Cmd) {
 	o := &AllAssigneesHistoryOverlay{
-		client:         client,
-		theme:          theme,
-		catalog:        catalog,
-		patent:         patent,
-		project:        project,
-		loading:        true,
-		focus:          focusStats,
-		patentsPage:    render.NewPaginator(5),
-		activeSort:     domain.SortByNumber,
-		sortAscending:  true,
-		focusedColIdx:  -1,
-		lastWidth:      90,
-		preselect:      strings.TrimSpace(patent.Assignee),
-		statsSortCol:   "patents",
-		statsSortAsc:   false,
+		client:             client,
+		theme:              theme,
+		catalog:            catalog,
+		patent:             patent,
+		project:            project,
+		loading:            true,
+		focus:              focusStats,
+		patentsPage:        render.NewPaginator(5),
+		activeSort:         domain.SortByNumber,
+		sortAscending:      true,
+		focusedColIdx:      -1,
+		lastWidth:          90,
+		preselect:          strings.TrimSpace(patent.Assignee),
+		statsSortCol:       "patents",
+		statsSortAsc:       false,
 		statsFocusedColIdx: 1,
 		filterToPatent:     filterToPatent,
 	}
@@ -91,7 +91,9 @@ func NewAllAssigneesHistoryOverlay(client *rpc.Client, theme render.Theme, catal
 
 func (o *AllAssigneesHistoryOverlay) Title() string { return "Assignee Analytics" }
 
-func (o *AllAssigneesHistoryOverlay) Handles() []command.ID { return []command.ID{command.CloseOverlay} }
+func (o *AllAssigneesHistoryOverlay) Handles() []command.ID {
+	return []command.ID{command.CloseOverlay}
+}
 
 func (o *AllAssigneesHistoryOverlay) Command(id command.ID, repeat int) (Overlay, tea.Cmd) {
 	if id == command.CloseOverlay {
@@ -309,7 +311,7 @@ func (o *AllAssigneesHistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 				o.patentsLoading = true
 				return o, o.loadPatentsCmd(o.stats[o.selected].Assignee, o.loadID), true
 			}
-		case "l", "enter":
+		case "enter":
 			o.focus = focusPatents
 			o.focusedColIdx = 0
 			return o, nil, true
@@ -318,11 +320,11 @@ func (o *AllAssigneesHistoryOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd
 			o.searchQuery = ""
 			o.applyFilter()
 			return o, o.reloadPatentsCmd(), true
-		case "left":
+		case "left", "h":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, -1)
 			return o, nil, true
-		case "right":
+		case "right", "l":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, 1)
 			return o, nil, true
@@ -687,7 +689,7 @@ func (o *AllAssigneesHistoryOverlay) View(maxW, maxH int) string {
 				idx := absIdx - offset
 				return idx >= 0 && idx < len(o.patents) && o.patents[idx].Number == o.patent.Number
 			},
-			Jump:          &o.jump,
+			Jump: &o.jump,
 		}, targetW, func(absIdx, rowIdx, colIdx int) string {
 			if rowIdx < 0 || rowIdx >= len(o.patents) {
 				return ""
