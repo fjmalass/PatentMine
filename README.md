@@ -616,7 +616,7 @@ Use these TUI surfaces after loading a USPTO record:
 | Fetch XML from Detail | Put the cursor on `PGPub URL`, `Grant URL`, `PGPub XML`, or `Grant XML`, then press `Enter`. |
 | View parsed claims/full text | In Detail, run `:open.fulltext` or use `T`; USPTO XML text is preferred when present. |
 | Search within the full text | In the viewer, `/` finds and `n`/`N` step matches — the row **and** the matched text are highlighted (the active match brighter). `z` collapses the body to only matching lines, and **`Ctrl+Q`** toggles a **match-list split** at the bottom (`Tab` focuses it; the body follows the highlighted match to its exact line). |
-| Search full text across patents | In the catalog, multi-select with `v` (extend with `j`/`k`) or `g a` / `Ctrl+A` (all loaded rows), then **`Ctrl+F`** (or `:search.fulltext <term>`). Each patent is searched at **both** its granted (`…B2`) and published (`…A1`) stage when present, and every hit is labeled with that stage's display number. Matches open in a **persistent bottom dock**: move through it to preview each hit at its **exact occurrence**, `Tab` to read the preview, `Enter` to keep that patent, `Esc` to close. The divider summarizes coverage — `N patent(s) · M no match · K not ingested` — and **`f`** fetches the granted XML for the not-ingested ones (re-run to include them). Searches **locally-ingested** USPTO text only; nothing is fetched mid-search. |
+| Search full text across patents | In the catalog, press **`Ctrl+F`** (or `:search.fulltext <term>`). It searches your **visual selection** (`v`, extend with `j`/`k`) when one is active, otherwise the **whole loaded catalog** — so it's never silently limited to the cursor row. Each patent is searched at **both** its granted (`…B2`) and published (`…A1`) stage when present, and every hit is labeled with that stage's display number. Matches open in a **persistent bottom dock**: move through it to preview each hit at its **exact occurrence**, `Tab` to read the preview, `Enter` to keep that patent, `Esc` to close. The divider summarizes coverage — `N patent(s) · M no match · K not ingested` — and **`f`** fetches the granted XML for the not-ingested ones (re-run to include them). Searches **locally-ingested** USPTO text only; nothing is fetched mid-search. |
 | Capture / open notes from the full text | **`Ctrl+N`** opens the session notes buffer; `:note.add` captures the current selection (or section under the cursor) into it. |
 | View patents cited by this patent | Press `c` or run `:open.citations`. USPTO XML patent citations are loaded into the normal citation graph after XML ingest. |
 | View patents that cite this patent | Press `b` or run the cited-by command. This shows relation-graph data already known locally. |
@@ -740,6 +740,7 @@ This feature is supported across all major list/table views:
 * `L` : Lookup current patent details (single-patent metadata lookup).
 #### D. Catalog Pane Bindings
 * `enter` / `l` : Open the patent detail pane for the selected record.
+* `T` : Open the selected patent's **full-text** viewer (claims + disclosure) directly — same as `:open.fulltext`.
 * `I` : Open the project's Information Disclosure Statement (IDS) editor.
 * `w` : Open the current patent's source web page in your default browser.
 * `right` / `left` : Navigate columns horizontally.
@@ -749,7 +750,7 @@ This feature is supported across all major list/table views:
 * `p` : Toggle the Projects dashboard list.
 * `/` : Open the Find/Filter query prompt. Type search terms and press **`Tab`** to cycle search scopes (All Columns, Number, Title, Inventor, Class, Assignee, Tags).
 * `n` / `N` : Navigate forwards/backwards through Find/Filter pattern matches.
-* `ctrl+f` : **Full-text search** the selected patents (the visual selection, else the current row); matches open in the bottom search dock. See [§8.4](#84-view-source-xml-full-text-and-citations).
+* `ctrl+f` : **Full-text search** — the visual selection when active, otherwise the whole loaded catalog; matches open in the bottom search dock. See [§8.4](#84-view-source-xml-full-text-and-citations).
 * `ctrl+n` : Open the selected patent's persistent note editor.
 * `ctrl+r` : Hard refresh the catalog database view.
 * `v` : Enter line-based visual selection mode.

@@ -297,6 +297,83 @@ func (r *Repo) MatterDocumentTagsByDocument(ctx context.Context, project domain.
 	return out, nil
 }
 
+// TagOfficeAction assigns a project taxonomy tag to one office action.
+func (r *Repo) TagOfficeAction(ctx context.Context, tagID int64, officeActionID string, assignedAt time.Time) (err error) {
+	defer r.observeDuration("tag_office_action", time.Now(), &err)
+	if assignedAt.IsZero() {
+		assignedAt = time.Now()
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO office_action_tag (tag_id, office_action_id, created_at)
+		 VALUES (?,?,?) ON CONFLICT(tag_id, office_action_id) DO NOTHING`,
+		tagID, officeActionID, encodeTime(assignedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: tag office action: %w", err)
+	}
+	return nil
+}
+
+// UntagOfficeAction removes one tag from one office action.
+func (r *Repo) UntagOfficeAction(ctx context.Context, tagID int64, officeActionID string) (err error) {
+	defer r.observeDuration("untag_office_action", time.Now(), &err)
+	_, err = r.writer.ExecContext(ctx,
+		`DELETE FROM office_action_tag WHERE tag_id = ? AND office_action_id = ?`, tagID, officeActionID)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: untag office action: %w", err)
+	}
+	return nil
+}
+
+// OfficeActionTags returns tags assigned to one office action.
+func (r *Repo) OfficeActionTags(ctx context.Context, project domain.ProjectID, officeActionID string) (out []domain.Tag, err error) {
+	defer r.observeDuration("office_action_tags", time.Now(), &err)
+	var rows *sql.Rows
+	if project == "" {
+		rows, err = r.reader.QueryContext(ctx,
+			`SELECT t.id, t.project_id, t.name, t.created_at, oat.created_at
+			 FROM tag t
+			 JOIN office_action_tag oat ON oat.tag_id = t.id
+			 WHERE oat.office_action_id = ?
+			 ORDER BY t.name`, officeActionID)
+	} else {
+		rows, err = r.reader.QueryContext(ctx,
+			`SELECT t.id, t.project_id, t.name, t.created_at, oat.created_at
+			 FROM tag t
+			 JOIN office_action_tag oat ON oat.tag_id = t.id
+			 WHERE t.project_id = ? AND oat.office_action_id = ?
+			 ORDER BY t.name`, string(project), officeActionID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list office action tags: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		t, err := scanAssignedTag(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan office action tag: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// OfficeActionTagsByOA returns tags for multiple office actions keyed by id.
+func (r *Repo) OfficeActionTagsByOA(ctx context.Context, project domain.ProjectID, officeActionIDs []string) (out map[string][]domain.Tag, err error) {
+	defer r.observeDuration("office_action_tags_by_oa", time.Now(), &err)
+	out = make(map[string][]domain.Tag, len(officeActionIDs))
+	if len(officeActionIDs) == 0 {
+		return out, nil
+	}
+	for _, id := range officeActionIDs {
+		tags, err := r.OfficeActionTags(ctx, project, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = tags
+	}
+	return out, nil
+}
+
 func scanAssignedTag(s rowScanner) (domain.Tag, error) {
 	var (
 		t          domain.Tag

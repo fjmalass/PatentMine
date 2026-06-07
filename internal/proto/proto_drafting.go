@@ -41,6 +41,50 @@ type DraftExportResult struct {
 	Path string `json:"path"`
 }
 
+// DraftSnapshotParams generates a draft's new_claims.md / response.md and records
+// an immutable revision behind the editable head. Kind classifies why the
+// snapshot was taken (ai / manual / export / filed); Label is an optional note.
+type DraftSnapshotParams struct {
+	Draft domain.DraftID      `json:"draft"`
+	Kind  domain.RevisionKind `json:"kind,omitempty"`
+	Label string              `json:"label,omitempty"`
+}
+
+// DraftSnapshotResult reports the recorded revision and where the two rendered
+// files were written (the BlobPath of each tracked MatterDocument).
+type DraftSnapshotResult struct {
+	Revision     domain.DraftRevision `json:"revision"`
+	ClaimsPath   string               `json:"claims_path"`
+	ResponsePath string               `json:"response_path"`
+}
+
+// DraftRevisionListParams selects a draft's revision history.
+type DraftRevisionListParams struct {
+	Draft domain.DraftID `json:"draft"`
+}
+
+// DraftRevisionListResult carries a draft's revisions, newest first, as
+// summaries (no structured/rendered bodies loaded).
+type DraftRevisionListResult struct {
+	Revisions []domain.DraftRevision `json:"revisions"`
+}
+
+// DraftRevisionIDParams identifies one revision.
+type DraftRevisionIDParams struct {
+	ID string `json:"id"`
+}
+
+// DraftRevisionResult carries one revision with its full content.
+type DraftRevisionResult struct {
+	Revision domain.DraftRevision `json:"revision"`
+}
+
+// DraftRestoreParams restores a draft's editable head from one of its revisions.
+type DraftRestoreParams struct {
+	Draft    domain.DraftID `json:"draft"`
+	Revision string         `json:"revision"`
+}
+
 // PriorArtRef is a cited reference offered as grounding for AI drafting. It
 // mirrors ai.PriorArtRef on the wire so the daemon can rebuild it without the
 // client importing the ai package.
@@ -90,6 +134,13 @@ type OfficeActionImportParams struct {
 // OfficeActionResult carries one office action.
 type OfficeActionResult struct {
 	OfficeAction domain.OfficeAction `json:"office_action"`
+}
+
+// OfficeActionTagParams assigns/removes one project taxonomy tag on an office
+// action. It mirrors MatterDocumentTagParams.
+type OfficeActionTagParams struct {
+	ID  string `json:"id"`
+	Tag string `json:"tag"`
 }
 
 // OfficeActionListResult carries a project's office actions. BillableSecs is the

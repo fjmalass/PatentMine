@@ -78,7 +78,7 @@ func viewCommands() []Command {
 		// --- application-wide (view) ---
 		Command{ID: Quit, Name: "quit", Aliases: []string{"exit"}, Usage: ":quit", Kind: KindView},
 		Command{ID: Help, Name: "help", Aliases: []string{"?"}, Usage: ":help", Kind: KindView},
-		Command{ID: OpenFullText, Name: "open.fulltext", Aliases: []string{"fulltext", "claims", "all-claims"}, Usage: ":open.fulltext", Kind: KindView, Scopes: []Scope{ScopeDetail, ScopeMatterOA, ScopeMatterOADetail}},
+		Command{ID: OpenFullText, Name: "open.fulltext", Aliases: []string{"fulltext", "claims", "all-claims"}, Usage: ":open.fulltext", Kind: KindView, Scopes: []Scope{ScopeCatalog, ScopeDetail, ScopeMatterOA, ScopeMatterOADetail}},
 		Command{ID: AIAnalyze, Name: "ai.analyze", Aliases: []string{"ai", "analyze"}, Usage: ":ai.analyze", Kind: KindView, Scopes: []Scope{ScopeDetail}},
 		Command{ID: SettingsAI, Name: "settings.ai", Aliases: []string{"settings", "config"}, Usage: ":settings.ai", Kind: KindView},
 		Command{ID: CopyYank, Name: "copy", Aliases: []string{"yank", "clipboard"}, Usage: ":copy", Kind: KindView, Scopes: []Scope{ScopeFullText}},

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"patentmine/internal/domain"
 	"patentmine/internal/tui/render"
 )
@@ -68,7 +70,7 @@ func TestOfficeActionsTableRenders(t *testing.T) {
 		},
 		billable: map[string]int{"oa-1": 222}, // 3:42 of validated time
 	}))
-	out := o.View(100, 20)
+	out := o.View(120, 20)
 	// The row carries the name, examiner, status-with-age, and billable worklog.
 	for _, want := range []string{"NAME", "WORKLOG", "Final Rejection", "Menefee", "open · 2d", "3:42"} {
 		if !strings.Contains(out, want) {
@@ -79,6 +81,53 @@ func TestOfficeActionsTableRenders(t *testing.T) {
 
 func asOfficeActions(p Pane, cmd interface{}) (*OfficeActions, interface{}) {
 	return p.(*OfficeActions), cmd
+}
+
+func TestOfficeActionsCtrlNOpensNotesEditor(t *testing.T) {
+	o := NewOfficeActions(nil, render.NewTheme(), "p1")
+	o, _ = asOfficeActions(o.Update(officeActionsLoadedMsg{
+		items: []domain.OfficeAction{{ID: "oa-1", Name: "Final Rejection"}},
+	}))
+	_, cmd, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlN})
+	if !handled || cmd == nil {
+		t.Fatalf("ctrl+n not handled (handled=%v cmd=%v)", handled, cmd)
+	}
+	if _, ok := cmd().(OpenOfficeActionEditorMsg); !ok {
+		t.Fatalf("ctrl+n did not emit OpenOfficeActionEditorMsg")
+	}
+}
+
+func TestOfficeActionsTagPrompt(t *testing.T) {
+	o := NewOfficeActions(nil, render.NewTheme(), "p1")
+	o, _ = asOfficeActions(o.Update(officeActionsLoadedMsg{
+		items: []domain.OfficeAction{{ID: "oa-1", Name: "Final Rejection"}},
+	}))
+
+	// 't' opens the inline tag prompt.
+	p, _, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	o = p.(*OfficeActions)
+	if !handled || !o.tagging {
+		t.Fatalf("'t' did not enter tagging mode (handled=%v tagging=%v)", handled, o.tagging)
+	}
+
+	// Typed runes accumulate and show in the footer prompt.
+	for _, r := range "prior_art" {
+		p, _, _ = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		o = p.(*OfficeActions)
+	}
+	if o.tagInput != "prior_art" {
+		t.Fatalf("tagInput = %q, want prior_art", o.tagInput)
+	}
+	if out := o.View(120, 20); !strings.Contains(out, "tag: prior_art") {
+		t.Fatalf("tag prompt missing from view:\n%s", out)
+	}
+
+	// Esc cancels without committing (no client needed).
+	p, _, _ = o.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	o = p.(*OfficeActions)
+	if o.tagging || o.tagInput != "" {
+		t.Fatalf("esc did not cancel tagging (tagging=%v input=%q)", o.tagging, o.tagInput)
+	}
 }
 
 func TestOfficeActionsSortingAndFocus(t *testing.T) {
@@ -166,7 +215,13 @@ func TestOfficeActionsSortingAndFocus(t *testing.T) {
 		t.Fatalf("expected oa-1 to be first when sorted by status asc")
 	}
 
-	// Focus next column (5: worklog)
+	// Focus next column (5: tags)
+	o.focusNext()
+	if o.table.FocusedColIdx != 5 {
+		t.Fatalf("expected FocusedColIdx to be 5 (tags) after focusNext, got %d", o.table.FocusedColIdx)
+	}
+
+	// Focus next column (6: worklog)
 	o.focusNext()
 	// Sort by worklog
 	o.applySort()

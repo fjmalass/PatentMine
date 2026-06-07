@@ -1273,11 +1273,36 @@ func (a *App) cmdProjectCreate(inv invocation) (tea.Model, tea.Cmd) {
 // from disk on demand for each selected patent that has not been parsed yet.
 const fullTextSearchTimeout = 90 * time.Second
 
+// fullTextSearchScope resolves which patents Ctrl+F searches: an explicit visual
+// multi-selection wins; otherwise it searches every loaded row of the focused
+// list (so the user isn't silently limited to the cursor row); failing that, the
+// single selected patent.
+func (a *App) fullTextSearchScope() []domain.PatentNumber {
+	p := a.focusedPane()
+	if ms, ok := p.(pane.MultiSelector); ok {
+		if sels := ms.Selections(); len(sels) >= 2 {
+			return sels
+		}
+	}
+	if lister, ok := p.(interface {
+		AllNumbers() []domain.PatentNumber
+	}); ok {
+		if all := lister.AllNumbers(); len(all) >= 2 {
+			return all
+		}
+	}
+	if number, ok := p.Selection(); ok {
+		return []domain.PatentNumber{number}
+	}
+	return nil
+}
+
 // cmdFullTextSearch searches the stored full text of the selected patents. With
-// a typed query it runs immediately; otherwise it opens a query prompt over the
-// current selection.
+// a typed query it runs immediately; otherwise it opens a query prompt. The
+// target set is the explicit visual selection when there is one, else the whole
+// loaded catalog (so Ctrl+F is never silently limited to the single cursor row).
 func (a *App) cmdFullTextSearch(inv invocation) (tea.Model, tea.Cmd) {
-	numbers := a.focusedSelections()
+	numbers := a.fullTextSearchScope()
 	if len(numbers) == 0 {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil

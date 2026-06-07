@@ -36,17 +36,22 @@ func (e *Engine) FullTextSearch(ctx context.Context, numbers []domain.PatentNumb
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
-		patent, _ := e.Patent(ctx, n) // best-effort, for the per-stage display numbers
+		var patent domain.Patent
+		patentLoaded := false
 		anyPresent, patentMatches := false, 0
 		for _, kind := range fullTextStages {
 			body, _, _, present, err := e.USPTOGrantBody(ctx, n, kind)
 			if err != nil || !present {
 				continue
 			}
+			if !patentLoaded {
+				patent, _ = e.Patent(ctx, n) // best-effort, for per-stage display numbers
+				patentLoaded = true
+			}
 			anyPresent = true
 			display := stageDisplayNumber(patent, kind, n)
-			full := domain.FullTextFromGrantBody(display, body)
-			ms := searchFullText(display, kind, full, lower)
+			full := domain.FullTextFromGrantBody(n, body)
+			ms := searchFullText(n, display, kind, full, lower)
 			patentMatches += len(ms)
 			res.Matches = append(res.Matches, ms...)
 		}
@@ -78,13 +83,14 @@ func stageDisplayNumber(p domain.Patent, kind proto.USPTOXMLKind, fallback domai
 }
 
 // searchFullText returns one match per occurrence of lowerQuery across the
-// claims and disclosure paragraphs of full, tagged with the section locator.
-func searchFullText(n domain.PatentNumber, kind proto.USPTOXMLKind, full domain.FullText, lowerQuery string) []proto.FullTextSearchMatch {
+// claims and disclosure paragraphs of full. Each match carries the canonical
+// number (for loading) and the stage display number (for the result row).
+func searchFullText(number, display domain.PatentNumber, kind proto.USPTOXMLKind, full domain.FullText, lowerQuery string) []proto.FullTextSearchMatch {
 	var out []proto.FullTextSearchMatch
 	collect := func(locator, text string) {
 		for occ, snip := range fullTextSnippets(text, lowerQuery) {
 			out = append(out, proto.FullTextSearchMatch{
-				Number: n, Kind: kind, Locator: locator, Occurrence: occ, Snippet: snip,
+				Number: number, Display: display, Kind: kind, Locator: locator, Occurrence: occ, Snippet: snip,
 			})
 		}
 	}

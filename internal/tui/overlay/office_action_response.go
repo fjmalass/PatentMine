@@ -34,6 +34,13 @@ type responseExportedMsg struct {
 	err  error
 }
 
+type responseSnapshotMsg struct {
+	rev          domain.DraftRevision
+	claimsPath   string
+	responsePath string
+	err          error
+}
+
 // ResponseEditor drafts an office-action response by copying from the matter's
 // documents into it. The left pane shows one source document (read-only,
 // vim-navigable; ctrl-n/ctrl-p cycle which document); the right pane is the
@@ -162,6 +169,16 @@ func (o *ResponseEditor) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		}
 		o.msg = "exported .docx → " + m.path
 		return o, nil
+	case responseSnapshotMsg:
+		if m.err != nil {
+			o.msg = "generate failed: " + m.err.Error()
+			return o, nil
+		}
+		o.response.dirty = false
+		o.msg = fmt.Sprintf("generated r%d → %s · %s", m.rev.Revno, m.claimsPath, m.responsePath)
+		return o, func() tea.Msg {
+			return pane.StatusMsg{Key: text.StatusFilter, Args: []any{fmt.Sprintf("generated new_claims.md / response.md (r%d)", m.rev.Revno)}}
+		}
 	}
 	return o, nil
 }
@@ -195,6 +212,8 @@ func (o *ResponseEditor) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 		return o, nil, true
 	case tea.KeyCtrlE:
 		return o, o.exportCmd(), true
+	case tea.KeyCtrlG:
+		return o, o.snapshotCmd(), true
 	case tea.KeyEsc:
 		if o.focusResponse && o.response.vimInsert {
 			o.response.handleKey(msg)
@@ -254,6 +273,27 @@ func (o *ResponseEditor) exportCmd() tea.Cmd {
 	}
 }
 
+// snapshotCmd saves the current remarks, then generates new_claims.md and
+// response.md as tracked matter documents and records a versioned revision (a
+// manual checkpoint) behind the draft's editable head.
+func (o *ResponseEditor) snapshotCmd() tea.Cmd {
+	o.draft.Sections[o.remarksIdx].Body = o.response.Value()
+	o.draft.Sections[o.remarksIdx].HumanEdited = true
+	client, d := o.client, o.draft
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		var saved proto.DraftResult
+		if err := client.Call(ctx, proto.MethodDraftSave, proto.DraftSaveParams{Draft: d}, &saved); err != nil {
+			return responseSnapshotMsg{err: err}
+		}
+		var res proto.DraftSnapshotResult
+		err := client.Call(ctx, proto.MethodDraftSnapshot,
+			proto.DraftSnapshotParams{Draft: d.ID, Kind: domain.RevisionManual}, &res)
+		return responseSnapshotMsg{rev: res.Revision, claimsPath: res.ClaimsPath, responsePath: res.ResponsePath, err: err}
+	}
+}
+
 func (o *ResponseEditor) View(maxW, maxH int) string {
 	const sep = " │ "
 	leftW := max((maxW-len(sep))/2, 8)
@@ -287,7 +327,7 @@ func (o *ResponseEditor) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "ctrl-w h/l pane · ctrl-n/p source · yy/p copy→paste · ctrl+s save · ctrl-e export .docx · esc close"
+	footer := "ctrl-w h/l pane · ctrl-n/p source · yy/p copy→paste · ctrl+s save · ctrl-g generate .md · ctrl-e export .docx · esc close"
 	if mode := o.response.modeLabel(); mode != "" && o.focusResponse {
 		footer = "-- " + mode + " -- · " + footer
 	}

@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -115,6 +117,137 @@ func (s *Server) draftSectionAI(ctx context.Context, raw json.RawMessage) (any, 
 		Provider: res.Provider,
 		Model:    res.Model,
 	}, nil
+}
+
+func (s *Server) draftSnapshot(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.DraftSnapshotParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.engine.SnapshotDraftResponse(ctx, p.Draft, p.Kind, p.Label)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DraftSnapshotResult{
+		Revision:     res.Revision,
+		ClaimsPath:   res.ClaimsDoc.BlobPath,
+		ResponsePath: res.ResponseDoc.BlobPath,
+	}, nil
+}
+
+func (s *Server) draftRevisionList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.DraftRevisionListParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	revs, err := s.engine.ListDraftRevisions(ctx, p.Draft)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DraftRevisionListResult{Revisions: revs}, nil
+}
+
+func (s *Server) draftRevisionGet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.DraftRevisionIDParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	rev, err := s.engine.DraftRevision(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DraftRevisionResult{Revision: rev}, nil
+}
+
+func (s *Server) draftRestore(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.DraftRestoreParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	d, err := s.engine.RestoreDraftRevision(ctx, p.Draft, p.Revision)
+	if err != nil {
+		return nil, err
+	}
+	return proto.DraftResult{Draft: d}, nil
+}
+
+// provisionalCoverSheetPreviewFilePattern names the temp file a cover-sheet preview is
+// written to (one printf verb for the project token).
+const provisionalCoverSheetPreviewFilePattern = "patentmine-sb16-%s.pdf"
+
+func (s *Server) provisionalCoverSheetGet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProvisionalCoverSheetGetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	cs, err := s.engine.ProvisionalCoverSheet(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ProvisionalCoverSheetResult{ProvisionalCoverSheet: cs}, nil
+}
+
+func (s *Server) provisionalCoverSheetSave(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProvisionalCoverSheetSaveParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	cs, err := s.engine.SaveProvisionalCoverSheet(ctx, p.ProvisionalCoverSheet)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ProvisionalCoverSheetResult{ProvisionalCoverSheet: cs}, nil
+}
+
+func (s *Server) provisionalCoverSheetPreview(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProvisionalCoverSheetGetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	pdf, err := s.engine.PreviewProvisionalCoverSheetPDF(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	// Client and daemon share a filesystem; write the preview to a temp path the
+	// client can open rather than shipping the bytes over the wire.
+	path := filepath.Join(os.TempDir(), fmt.Sprintf(provisionalCoverSheetPreviewFilePattern, sanitizeForFile(string(p.Project))))
+	if err := os.WriteFile(path, pdf, 0o644); err != nil {
+		return nil, fmt.Errorf("rpc: write cover sheet preview: %w", err)
+	}
+	return proto.ProvisionalCoverSheetPreviewResult{Path: path}, nil
+}
+
+func (s *Server) provisionalCoverSheetApprove(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.ProvisionalCoverSheetGetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.engine.ApproveProvisionalCoverSheetPDF(ctx, p.Project)
+	if err != nil {
+		return nil, err
+	}
+	return proto.ProvisionalCoverSheetApproveResult{
+		ProvisionalCoverSheet: res.ProvisionalCoverSheet,
+		Path:                  res.Path,
+		Missing:               res.Missing,
+	}, nil
+}
+
+// sanitizeForFile reduces an id to a filesystem-safe token for temp file names.
+func sanitizeForFile(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "project"
+	}
+	return b.String()
 }
 
 func (s *Server) officeActionImport(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -329,6 +462,30 @@ func (s *Server) matterDocumentUntag(ctx context.Context, raw json.RawMessage) (
 		return nil, err
 	}
 	return proto.MatterDocumentResult{Document: doc}, nil
+}
+
+func (s *Server) officeActionTag(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionTagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	oa, err := s.engine.TagOfficeAction(ctx, p.ID, p.Tag)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionResult{OfficeAction: oa}, nil
+}
+
+func (s *Server) officeActionUntag(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionTagParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	oa, err := s.engine.UntagOfficeAction(ctx, p.ID, p.Tag)
+	if err != nil {
+		return nil, err
+	}
+	return proto.OfficeActionResult{OfficeAction: oa}, nil
 }
 
 func (s *Server) matterDocumentOpen(ctx context.Context, raw json.RawMessage) (any, error) {

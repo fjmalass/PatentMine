@@ -876,6 +876,87 @@ func (e *Engine) UntagMatterDocument(ctx context.Context, id, name string) (doc 
 	return doc, nil
 }
 
+// TagOfficeAction assigns a project taxonomy tag to an office action, creating
+// the tag if needed. It mirrors TagMatterDocument.
+func (e *Engine) TagOfficeAction(ctx context.Context, id, name string) (oa domain.OfficeAction, err error) {
+	defer e.observeDuration("engine.tag_office_action", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if id == "" {
+		return domain.OfficeAction{}, errors.New("engine: office action id required")
+	}
+	if err := domain.ValidateTagName(name); err != nil {
+		return domain.OfficeAction{}, err
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	tag, err := e.repo.CreateTag(ctx, oa.Project, name)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	if err := e.repo.TagOfficeAction(ctx, tag.ID, id, time.Now().UTC()); err != nil {
+		return domain.OfficeAction{}, err
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionTag,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: id,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+			observability.AttrName:    oa.Name,
+			"tag":                     tag.Name,
+		},
+	})
+	e.announceChange()
+	return oa, nil
+}
+
+// UntagOfficeAction removes one project taxonomy tag from an office action.
+func (e *Engine) UntagOfficeAction(ctx context.Context, id, name string) (oa domain.OfficeAction, err error) {
+	defer e.observeDuration("engine.untag_office_action", time.Now(), &err)
+	name = strings.TrimSpace(name)
+	if id == "" {
+		return domain.OfficeAction{}, errors.New("engine: office action id required")
+	}
+	if name == "" {
+		return domain.OfficeAction{}, errors.New("engine: tag name must not be empty")
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	tag, err := e.repo.TagByName(ctx, oa.Project, name)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	if err := e.repo.UntagOfficeAction(ctx, tag.ID, id); err != nil {
+		return domain.OfficeAction{}, err
+	}
+	oa, err = e.repo.OfficeAction(ctx, id)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionUntag,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: id,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+			observability.AttrName:    oa.Name,
+			"tag":                     tag.Name,
+		},
+	})
+	e.announceChange()
+	return oa, nil
+}
+
 // AssignMatterDocumentOfficeAction links a preparation document to one office action.
 func (e *Engine) AssignMatterDocumentOfficeAction(ctx context.Context, id, oaID string) (doc domain.MatterDocument, err error) {
 	defer e.observeDuration("engine.assign_matter_document_office_action", time.Now(), &err)

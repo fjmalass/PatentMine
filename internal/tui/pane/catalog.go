@@ -1199,6 +1199,17 @@ func (c *Catalog) Selection() (domain.PatentNumber, bool) {
 	return c.patents[cur].Number, true
 }
 
+// AllNumbers returns every loaded row's patent number. It lets actions that
+// should span the whole list (e.g. full-text search) default to the catalog
+// when the user has not made an explicit visual selection.
+func (c *Catalog) AllNumbers() []domain.PatentNumber {
+	out := make([]domain.PatentNumber, 0, len(c.patents))
+	for _, p := range c.patents {
+		out = append(out, p.Number)
+	}
+	return out
+}
+
 func patentRowMatchesNumber(row domain.PatentRow, number domain.PatentNumber) bool {
 	return patentNumberMatches(row.Number, row.DisplayNumber, number)
 }

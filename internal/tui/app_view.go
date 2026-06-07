@@ -29,9 +29,14 @@ func (a *App) View() string {
 	}
 	bodyHeight := max(a.height-headerLines-statusRows, 1)
 
-	body := fitBody(focused.View(viewWidth, bodyHeight), bodyHeight, viewWidth)
+	var body string
 	if a.search != nil {
-		body = a.searchView(focused, viewWidth, bodyHeight)
+		// Render the preview once, at the dock's reduced height — calling the
+		// pane's View at full height first would consume the pending
+		// jump-to-occurrence and set the scroll offset for the wrong height.
+		body = a.searchView(viewWidth, bodyHeight)
+	} else {
+		body = fitBody(focused.View(viewWidth, bodyHeight), bodyHeight, viewWidth)
 	}
 
 	statusStyle := a.theme.Status

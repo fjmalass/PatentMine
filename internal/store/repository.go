@@ -261,6 +261,22 @@ type Repository interface {
 	// DeleteDraft removes a draft and, by cascade, its sections and claims.
 	DeleteDraft(ctx context.Context, id domain.DraftID) error
 
+	// SaveDraftRevision appends one immutable snapshot to a draft's history.
+	SaveDraftRevision(ctx context.Context, rev domain.DraftRevision) error
+	// ListDraftRevisions returns a draft's revisions newest first, as summaries
+	// (no structured sections/claims or rendered markdown bodies loaded).
+	ListDraftRevisions(ctx context.Context, draft domain.DraftID) ([]domain.DraftRevision, error)
+	// DraftRevision returns one revision with its full content, or ErrNotFound.
+	DraftRevision(ctx context.Context, id string) (domain.DraftRevision, error)
+	// NextDraftRevno returns the next per-draft revision sequence number (1-based).
+	NextDraftRevno(ctx context.Context, draft domain.DraftID) (int, error)
+
+	// SaveProvisionalCoverSheet inserts or updates a project's PTO/SB/16 cover sheet (one per
+	// project).
+	SaveProvisionalCoverSheet(ctx context.Context, cs domain.ProvisionalCoverSheet) error
+	// ProvisionalCoverSheet returns a project's cover sheet, or ErrNotFound.
+	ProvisionalCoverSheet(ctx context.Context, project domain.ProjectID) (domain.ProvisionalCoverSheet, error)
+
 	// SaveOfficeAction inserts or updates an imported office action.
 	SaveOfficeAction(ctx context.Context, oa domain.OfficeAction) error
 	// OfficeAction returns one office action, or ErrNotFound.
@@ -289,6 +305,14 @@ type Repository interface {
 	MatterDocumentTags(ctx context.Context, project domain.ProjectID, documentID string) ([]domain.Tag, error)
 	// MatterDocumentTagsByDocument returns tags for multiple preparation documents keyed by id.
 	MatterDocumentTagsByDocument(ctx context.Context, project domain.ProjectID, documentIDs []string) (map[string][]domain.Tag, error)
+	// TagOfficeAction assigns a project taxonomy tag to one office action.
+	TagOfficeAction(ctx context.Context, tagID int64, officeActionID string, assignedAt time.Time) error
+	// UntagOfficeAction removes one tag from one office action.
+	UntagOfficeAction(ctx context.Context, tagID int64, officeActionID string) error
+	// OfficeActionTags returns tags assigned to one office action.
+	OfficeActionTags(ctx context.Context, project domain.ProjectID, officeActionID string) ([]domain.Tag, error)
+	// OfficeActionTagsByOA returns tags for multiple office actions keyed by id.
+	OfficeActionTagsByOA(ctx context.Context, project domain.ProjectID, officeActionIDs []string) (map[string][]domain.Tag, error)
 	// MatterDocumentOfficeActions returns office-action ids assigned to one preparation document.
 	MatterDocumentOfficeActions(ctx context.Context, documentID string) ([]string, error)
 	// MatterDocumentOfficeActionsByDocument returns office-action ids for multiple preparation documents keyed by id.

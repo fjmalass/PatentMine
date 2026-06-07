@@ -216,6 +216,69 @@ type Draft struct {
 	Claims         []DraftClaim   `json:"claims,omitempty"`
 }
 
+// RevisionKind records why a draft revision was captured, so the history reads
+// as a prosecution audit trail: a machine generation, a human checkpoint, an
+// export, or the version actually filed.
+type RevisionKind string
+
+const (
+	RevisionAI     RevisionKind = "ai"     // a fresh AI generation of claims/remarks
+	RevisionManual RevisionKind = "manual" // a human-saved checkpoint
+	RevisionExport RevisionKind = "export" // captured at an export/render
+	RevisionFiled  RevisionKind = "filed"  // the version filed with the USPTO
+)
+
+// Valid reports whether the RevisionKind is a known value.
+func (k RevisionKind) Valid() bool {
+	switch k {
+	case RevisionAI, RevisionManual, RevisionExport, RevisionFiled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Label returns the human-readable name of a revision kind for the TUI.
+func (k RevisionKind) Label() string {
+	switch k {
+	case RevisionAI:
+		return "AI draft"
+	case RevisionManual:
+		return "Checkpoint"
+	case RevisionExport:
+		return "Export"
+	case RevisionFiled:
+		return "Filed"
+	default:
+		return string(k)
+	}
+}
+
+// DraftRevision is one immutable snapshot of a draft, captured each time its
+// new_claims.md / response.md are (re)generated, checkpointed, exported, or
+// filed. The live Draft is the editable head; revisions are the append-only
+// history behind it — the audit trail of what the AI produced versus what the
+// attorney changed versus what was filed. The structured Sections/Claims are
+// stored so a revision can be re-rendered or restored exactly, and the rendered
+// ClaimsMarkdown/ResponseMarkdown are stored so the exact human-readable text is
+// reproducible even without re-rendering. GitCommit, when set, points at the
+// commit in the per-matter git mirror that holds the same rendered files.
+type DraftRevision struct {
+	ID               string         `json:"id"`
+	Draft            DraftID        `json:"draft"`
+	Revno            int            `json:"revno"`
+	Label            string         `json:"label,omitempty"`
+	Kind             RevisionKind   `json:"kind"`
+	Sections         []DraftSection `json:"sections,omitempty"`
+	Claims           []DraftClaim   `json:"claims,omitempty"`
+	ClaimsMarkdown   string         `json:"claims_markdown,omitempty"`
+	ResponseMarkdown string         `json:"response_markdown,omitempty"`
+	Provider         string         `json:"provider,omitempty"`
+	Model            string         `json:"model,omitempty"`
+	GitCommit        string         `json:"git_commit,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+}
+
 // DefaultSections returns the conventional empty section skeleton for a draft of
 // the given kind. Seeding the skeleton at creation gives the author a structured
 // starting point and bounds where free-text (and AI drafting) can go — a
@@ -348,6 +411,10 @@ type OfficeAction struct {
 	ImportedAt      time.Time `json:"imported_at"`
 	Name            string    `json:"name,omitempty"`
 	LastOpenedAt    time.Time `json:"last_opened_at,omitempty"`
+	// Tags are the project-taxonomy labels assigned to this office action. Like a
+	// matter document, an action is tagged independently within its project; the
+	// tags are loaded when an action is read and never written through SaveOfficeAction.
+	Tags []Tag `json:"tags,omitempty"`
 }
 
 // MatterDocKind classifies one document filed under a matter (a project). A
@@ -370,6 +437,9 @@ const (
 	MatterDocSpec      MatterDocKind = "spec"      // a specification draft/filing
 	MatterDocDrawings  MatterDocKind = "drawings"  // figures/drawings
 	MatterDocIDS       MatterDocKind = "ids"       // an information disclosure statement
+	// MatterDocCoversheet is a filed cover/transmittal sheet — e.g. the provisional
+	// application cover sheet (PTO/SB/16) rendered from a ProvisionalCoverSheet record.
+	MatterDocCoversheet MatterDocKind = "coversheet"
 	// MatterDocCorrespondence is an email/letter/text artifact exchanged during
 	// prosecution. The communication event itself is a MatterEvent; an attached
 	// file or saved text is filed as a correspondence document.
@@ -381,7 +451,7 @@ const (
 func (k MatterDocKind) Valid() bool {
 	switch k {
 	case MatterDocOA, MatterDocResponse, MatterDocReference, MatterDocAmendment,
-		MatterDocSpec, MatterDocDrawings, MatterDocIDS, MatterDocCorrespondence, MatterDocOther:
+		MatterDocSpec, MatterDocDrawings, MatterDocIDS, MatterDocCoversheet, MatterDocCorrespondence, MatterDocOther:
 		return true
 	default:
 		return false
@@ -405,6 +475,8 @@ func (k MatterDocKind) Label() string {
 		return "Drawings"
 	case MatterDocIDS:
 		return "IDS"
+	case MatterDocCoversheet:
+		return "Cover Sheet"
 	case MatterDocCorrespondence:
 		return "Correspondence"
 	case MatterDocOther:
@@ -633,15 +705,15 @@ type MatterDocument struct {
 	// records where it sits in its lifecycle (received → draft → under_review →
 	// approved → filed). Both are deliberately distinct from the patent
 	// ReviewState/Provenance so the two never get confused (see [DocOrigin]).
-	Origin      DocOrigin `json:"origin,omitempty"`
-	Stage       DocStage  `json:"stage,omitempty"`
-	DisplayName string    `json:"display_name"`
-	BlobPath        string        `json:"blob_path,omitempty"`
-	BlobHash        string        `json:"blob_hash,omitempty"`
-	ExtractedText   string        `json:"extracted_text,omitempty"`
-	Tags            []Tag         `json:"tags,omitempty"`
-	AddedAt         time.Time     `json:"added_at"`
-	LastOpenedAt    time.Time     `json:"last_opened_at,omitempty"`
+	Origin        DocOrigin `json:"origin,omitempty"`
+	Stage         DocStage  `json:"stage,omitempty"`
+	DisplayName   string    `json:"display_name"`
+	BlobPath      string    `json:"blob_path,omitempty"`
+	BlobHash      string    `json:"blob_hash,omitempty"`
+	ExtractedText string    `json:"extracted_text,omitempty"`
+	Tags          []Tag     `json:"tags,omitempty"`
+	AddedAt       time.Time `json:"added_at"`
+	LastOpenedAt  time.Time `json:"last_opened_at,omitempty"`
 }
 
 // PreparationDocument is the clearer name for files used while preparing a

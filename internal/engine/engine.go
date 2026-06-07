@@ -81,6 +81,7 @@ type Engine struct {
 	crawlMaxDepth    int
 	crawlWorkerCount int
 	docsExportDir    string
+	templatesDir     string
 	drafter          ai.Drafter
 	usptoAPIKey      string
 	patentsDir       string
@@ -158,6 +159,14 @@ func WithCrawlWorkers(n int) Option {
 // leaves it unset; the IDS and draft exporters then return an error when called.
 func WithDocsExportDir(dir string) Option {
 	return func(e *Engine) { e.docsExportDir = dir }
+}
+
+// WithTemplatesDir sets the root of the user-managed document templates
+// (templates/officeactions/<type>/…) that the provisional/application flow
+// copies into a matter and that may override the embedded fillable forms. Empty
+// leaves the engine on the embedded templates only.
+func WithTemplatesDir(dir string) Option {
+	return func(e *Engine) { e.templatesDir = dir }
 }
 
 // WithDrafter wires the AI drafter (cloud Gemini or local Ollama) used by

@@ -61,17 +61,23 @@ const (
 
 	// Drafting subsystem (provisional / non-provisional applications and
 	// office-action responses rendered to .docx).
-	ActionDraftCreate           = "draft.create"
-	ActionDraftSave             = "draft.save"
-	ActionDraftDelete           = "draft.delete"
-	ActionDraftExportDocx       = "draft.export.docx"
-	ActionDraftSectionAI        = "draft.section.ai"
-	ActionOfficeActionGet       = "office_action.get"
-	ActionOfficeActionImport    = "office_action.import"
-	ActionOfficeActionList      = "office_action.list"
-	ActionOfficeActionSaveNotes = "office_action.save_notes"
-	ActionOfficeActionUpdate    = "office_action.update"
-	ActionOfficeActionDelete    = "office_action.delete"
+	ActionDraftCreate                  = "draft.create"
+	ActionDraftSave                    = "draft.save"
+	ActionDraftDelete                  = "draft.delete"
+	ActionDraftExportDocx              = "draft.export.docx"
+	ActionDraftSectionAI               = "draft.section.ai"
+	ActionDraftSnapshot                = "draft.snapshot"
+	ActionDraftRestore                 = "draft.restore"
+	ActionProvisionalCoverSheetSave    = "coversheet.provisional.save"
+	ActionProvisionalCoverSheetApprove = "coversheet.provisional.approve"
+	ActionOfficeActionGet              = "office_action.get"
+	ActionOfficeActionImport           = "office_action.import"
+	ActionOfficeActionList             = "office_action.list"
+	ActionOfficeActionSaveNotes        = "office_action.save_notes"
+	ActionOfficeActionUpdate           = "office_action.update"
+	ActionOfficeActionDelete           = "office_action.delete"
+	ActionOfficeActionTag              = "office_action.tag"
+	ActionOfficeActionUntag            = "office_action.untag"
 
 	// Prosecution-matter workspace (matter-scoped documents and project stage).
 	ActionMatterDocumentImport     = "matter_document.import"
@@ -148,12 +154,18 @@ var AllActions = []string{
 	ActionDraftDelete,
 	ActionDraftExportDocx,
 	ActionDraftSectionAI,
+	ActionDraftSnapshot,
+	ActionDraftRestore,
+	ActionProvisionalCoverSheetSave,
+	ActionProvisionalCoverSheetApprove,
 	ActionOfficeActionGet,
 	ActionOfficeActionImport,
 	ActionOfficeActionList,
 	ActionOfficeActionSaveNotes,
 	ActionOfficeActionUpdate,
 	ActionOfficeActionDelete,
+	ActionOfficeActionTag,
+	ActionOfficeActionUntag,
 	ActionMatterDocumentImport,
 	ActionMatterDocumentRename,
 	ActionMatterDocumentDelete,

@@ -18,7 +18,12 @@ type FullTextSearchParams struct {
 // ¶Abstract") so the viewer can jump straight to it; Snippet is a short window
 // of text around the match for display in the result list.
 type FullTextSearchMatch struct {
+	// Number is the canonical record number — the key the viewer loads the body
+	// by. Display is the stage's public number (the "…B2" grant or "…A1"
+	// publication) shown in the result row; loading by Display would fail because
+	// it names a document, not the record.
 	Number  domain.PatentNumber `json:"number"`
+	Display domain.PatentNumber `json:"display,omitempty"`
 	Kind    USPTOXMLKind        `json:"kind,omitempty"`
 	Locator string              `json:"locator"`
 	// Occurrence is the 0-based index of this hit among the matches in its

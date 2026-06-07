@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '13')
+VALUES ('schema_version', '16')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -820,6 +820,17 @@ CREATE TABLE IF NOT EXISTS matter_document_tag (
 
 CREATE INDEX IF NOT EXISTS idx_matter_document_tag_document ON matter_document_tag (document_id);
 
+-- office_action_tag assigns project taxonomy tags to an office action, mirroring
+-- matter_document_tag. An action is tagged independently within its project.
+CREATE TABLE IF NOT EXISTS office_action_tag (
+    tag_id           INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+    office_action_id TEXT NOT NULL REFERENCES office_action (id) ON DELETE CASCADE,
+    created_at       TEXT NOT NULL,
+    PRIMARY KEY (tag_id, office_action_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_office_action_tag_oa ON office_action_tag (office_action_id);
+
 -- matter_event is one entry in a matter's communications log: an email, a phone
 -- call, an examiner interview, a filing, or a tracked deadline. Project-scoped,
 -- optionally tied to one office action.
@@ -990,4 +1001,48 @@ CREATE TABLE IF NOT EXISTS draft_claim (
     base_text  TEXT NOT NULL DEFAULT '',
     text       TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (draft_id, ordinal)
+);
+
+-- draft_revision is the append-only history behind a draft's editable head: one
+-- immutable snapshot per generate / checkpoint / export / filing. sections_json
+-- and claims_json preserve the structured draft so a revision can be re-rendered
+-- or restored exactly; claims_md / response_md preserve the rendered output
+-- (new_claims.md / response.md) so the human-readable text is reproducible
+-- without re-rendering. git_commit, when set, points at the commit in the
+-- per-matter git mirror that holds the same rendered files. revno is the
+-- per-draft sequence number (1, 2, 3 …).
+CREATE TABLE IF NOT EXISTS draft_revision (
+    id            TEXT PRIMARY KEY,
+    draft_id      TEXT NOT NULL REFERENCES draft (id) ON DELETE CASCADE,
+    revno         INTEGER NOT NULL,
+    label         TEXT NOT NULL DEFAULT '',
+    kind          TEXT NOT NULL DEFAULT 'manual',
+    sections_json TEXT NOT NULL DEFAULT '[]',
+    claims_json   TEXT NOT NULL DEFAULT '[]',
+    claims_md     TEXT NOT NULL DEFAULT '',
+    response_md   TEXT NOT NULL DEFAULT '',
+    provider      TEXT NOT NULL DEFAULT '',
+    model         TEXT NOT NULL DEFAULT '',
+    git_commit    TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL,
+    UNIQUE (draft_id, revno)
+);
+
+CREATE INDEX IF NOT EXISTS idx_draft_revision_draft ON draft_revision (draft_id, revno DESC);
+
+-- provisional_cover_sheet is the structured data behind one project's USPTO Provisional
+-- Application for Patent Cover Sheet (PTO/SB/16): one record per project,
+-- rendered into the official fillable PDF on approval (mirrors the IDS bundle).
+-- The full structure lives in data_json; title and docket_number are mirrored
+-- into columns so a cover sheet is searchable without parsing the JSON.
+CREATE TABLE IF NOT EXISTS provisional_cover_sheet (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    title         TEXT NOT NULL DEFAULT '',
+    docket_number TEXT NOT NULL DEFAULT '',
+    approved      INTEGER NOT NULL DEFAULT 0,
+    data_json     TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    UNIQUE (project_id)
 );

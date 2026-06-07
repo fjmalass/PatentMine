@@ -538,6 +538,64 @@ func TestMatterDocumentTags(t *testing.T) {
 	}
 }
 
+func TestOfficeActionTags(t *testing.T) {
+	ctx := context.Background()
+	eng, proj := newDraftEngine(t, nil)
+
+	src := filepath.Join(t.TempDir(), "oa.txt")
+	if err := os.WriteFile(src, []byte("Claims 1-3 are rejected."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oa, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{
+		Project: proj, Type: domain.OANonFinal, SourcePath: src,
+	})
+	if err != nil {
+		t.Fatalf("ImportOfficeAction: %v", err)
+	}
+	if got := tagNamesForTest(oa.Tags); got != "" {
+		t.Fatalf("new office action tags = %q, want none", got)
+	}
+
+	oa, err = eng.TagOfficeAction(ctx, oa.ID, "needs_response")
+	if err != nil {
+		t.Fatalf("TagOfficeAction: %v", err)
+	}
+	if got := tagNamesForTest(oa.Tags); got != "needs_response" {
+		t.Fatalf("tags after add = %q", got)
+	}
+
+	// Tags survive a list round-trip.
+	oas, err := eng.ListOfficeActions(ctx, proj)
+	if err != nil {
+		t.Fatalf("ListOfficeActions: %v", err)
+	}
+	if len(oas) != 1 || tagNamesForTest(oas[0].Tags) != "needs_response" {
+		t.Fatalf("listed office actions = %+v", oas)
+	}
+
+	// Re-tagging the same name is idempotent (no duplicate).
+	oa, err = eng.TagOfficeAction(ctx, oa.ID, "needs_response")
+	if err != nil {
+		t.Fatalf("TagOfficeAction (repeat): %v", err)
+	}
+	if got := tagNamesForTest(oa.Tags); got != "needs_response" {
+		t.Fatalf("tags after repeat add = %q", got)
+	}
+
+	oa, err = eng.UntagOfficeAction(ctx, oa.ID, "needs_response")
+	if err != nil {
+		t.Fatalf("UntagOfficeAction: %v", err)
+	}
+	if got := tagNamesForTest(oa.Tags); got != "" {
+		t.Fatalf("tags after remove = %q", got)
+	}
+
+	// An invalid tag name is rejected.
+	if _, err := eng.TagOfficeAction(ctx, oa.ID, "Not Valid"); err == nil {
+		t.Fatalf("expected error tagging with invalid name")
+	}
+}
+
 func TestMatterDocumentMultipleOfficeActions(t *testing.T) {
 	ctx := context.Background()
 	eng, proj := newDraftEngine(t, nil)

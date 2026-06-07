@@ -236,8 +236,91 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "13"
 	}
-	if version != "13" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 13", version)
+	if version == "13" {
+		if err := r.migrateV13ToV14(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v13 to v14: %w", err)
+		}
+		version = "14"
+	}
+	if version == "14" {
+		if err := r.migrateV14ToV15(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v14 to v15: %w", err)
+		}
+		version = "15"
+	}
+	if version == "15" {
+		if err := r.migrateV15ToV16(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v15 to v16: %w", err)
+		}
+		version = "16"
+	}
+	if version != "16" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 16", version)
+	}
+	return nil
+}
+
+// migrateV15ToV16 adds the provisional_cover_sheet table — one structured PTO/SB/16 record
+// per project, rendered to the official fillable PDF on approval. Purely
+// additive: it creates an empty table, so there is nothing to backfill.
+func (r *Repo) migrateV15ToV16(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v15-to-v16.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v15 to v16: backup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS provisional_cover_sheet (
+			id            TEXT PRIMARY KEY,
+			project_id    TEXT NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+			title         TEXT NOT NULL DEFAULT '',
+			docket_number TEXT NOT NULL DEFAULT '',
+			approved      INTEGER NOT NULL DEFAULT 0,
+			data_json     TEXT NOT NULL DEFAULT '{}',
+			created_at    TEXT NOT NULL,
+			updated_at    TEXT NOT NULL,
+			UNIQUE (project_id)
+		)`,
+		`UPDATE schema_meta SET value = '16' WHERE key = 'schema_version'`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v15 to v16: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateV14ToV15 adds the draft_revision table — the append-only history
+// behind a draft's editable head, one snapshot per generate / checkpoint /
+// export / filing. Purely additive: it creates an empty table, so there is
+// nothing to backfill.
+func (r *Repo) migrateV14ToV15(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v14-to-v15.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v14 to v15: backup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS draft_revision (
+			id            TEXT PRIMARY KEY,
+			draft_id      TEXT NOT NULL REFERENCES draft (id) ON DELETE CASCADE,
+			revno         INTEGER NOT NULL,
+			label         TEXT NOT NULL DEFAULT '',
+			kind          TEXT NOT NULL DEFAULT 'manual',
+			sections_json TEXT NOT NULL DEFAULT '[]',
+			claims_json   TEXT NOT NULL DEFAULT '[]',
+			claims_md     TEXT NOT NULL DEFAULT '',
+			response_md   TEXT NOT NULL DEFAULT '',
+			provider      TEXT NOT NULL DEFAULT '',
+			model         TEXT NOT NULL DEFAULT '',
+			git_commit    TEXT NOT NULL DEFAULT '',
+			created_at    TEXT NOT NULL,
+			UNIQUE (draft_id, revno)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_draft_revision_draft ON draft_revision (draft_id, revno DESC)`,
+		`UPDATE schema_meta SET value = '15' WHERE key = 'schema_version'`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v14 to v15: %w", err)
+		}
 	}
 	return nil
 }
@@ -955,3 +1038,27 @@ func (r *Repo) migrateV12ToV13(ctx context.Context) error {
 	return nil
 }
 
+// migrateV13ToV14 adds the office_action_tag join table so office actions can
+// carry project taxonomy tags, mirroring matter_document_tag. Purely additive —
+// it creates an empty table, so there is nothing to backfill.
+func (r *Repo) migrateV13ToV14(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v13-to-v14.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v13 to v14: backup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS office_action_tag (
+			tag_id           INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+			office_action_id TEXT NOT NULL REFERENCES office_action (id) ON DELETE CASCADE,
+			created_at       TEXT NOT NULL,
+			PRIMARY KEY (tag_id, office_action_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_office_action_tag_oa ON office_action_tag (office_action_id)`,
+		`UPDATE schema_meta SET value = '14' WHERE key = 'schema_version'`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v13 to v14: %w", err)
+		}
+	}
+	return nil
+}

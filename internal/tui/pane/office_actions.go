@@ -13,6 +13,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/text"
 	"patentmine/internal/tui/render"
 )
 
@@ -57,6 +58,9 @@ type OfficeActions struct {
 
 	searchActive bool
 	searchQuery  string
+
+	tagging  bool   // editing a tag to toggle on the selected office action
+	tagInput string
 
 	table render.TableState
 }
@@ -186,6 +190,53 @@ func (o *OfficeActions) selected() (domain.OfficeAction, bool) {
 	return o.items[cur], true
 }
 
+// commitTag toggles the typed tag on the selected office action: it removes the
+// tag when the action already carries it, otherwise assigns it (creating the tag
+// in the project taxonomy if needed). It then reloads the list so the new tag
+// state shows. Mirrors MatterDocuments.commitTag.
+func (o *OfficeActions) commitTag() tea.Cmd {
+	oa, ok := o.selected()
+	if !ok {
+		return nil
+	}
+	name := strings.TrimSpace(o.tagInput)
+	if name == "" {
+		return nil
+	}
+	remove := false
+	for _, t := range oa.Tags {
+		if strings.EqualFold(t.Name, name) {
+			remove = true
+			break
+		}
+	}
+	client, id := o.client, oa.ID
+	reload := o.load()
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		method := proto.MethodOfficeActionTag
+		if remove {
+			method = proto.MethodOfficeActionUntag
+		}
+		var res proto.OfficeActionResult
+		if err := client.Call(ctx, method, proto.OfficeActionTagParams{ID: id, Tag: name}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"tag failed: " + err.Error()}, Error: true}
+		}
+		return reload()
+	}
+}
+
+// selectedTagsHint lists the selected action's current tags, so the toggle prompt
+// makes removal discoverable.
+func (o *OfficeActions) selectedTagsHint() string {
+	oa, ok := o.selected()
+	if !ok || len(oa.Tags) == 0 {
+		return ""
+	}
+	return "current: " + tagsText(oa.Tags)
+}
+
 func (o *OfficeActions) applyFilter() {
 	if o.searchQuery == "" {
 		o.items = make([]domain.OfficeAction, len(o.allItems))
@@ -236,6 +287,8 @@ func (o *OfficeActions) sortItems() {
 			}
 		case "status":
 			cmp = strings.Compare(strings.ToLower(string(i.Status)), strings.ToLower(string(j.Status)))
+		case "tags":
+			cmp = strings.Compare(strings.ToLower(tagsText(i.Tags)), strings.ToLower(tagsText(j.Tags)))
 		case "worklog":
 			secsI := o.billable[i.ID]
 			secsJ := o.billable[j.ID]
@@ -271,14 +324,15 @@ func (o *OfficeActions) sortItems() {
 
 func (o *OfficeActions) currentCols(w int) []render.TableColumn {
 	const colGap = 1
-	nameW, typeW, dueW, statusW, worklogW := 20, 12, 14, 16, 8
-	examinerW := max(10, w-o.theme.TablePrefixWidth()-nameW-typeW-dueW-statusW-worklogW-5*colGap)
+	nameW, typeW, dueW, statusW, tagsW, worklogW := 20, 12, 14, 16, 14, 8
+	examinerW := max(10, w-o.theme.TablePrefixWidth()-nameW-typeW-dueW-statusW-tagsW-worklogW-6*colGap)
 	return []render.TableColumn{
 		{Key: "name", Label: "NAME", SortKey: "name", Width: nameW},
 		{Key: "type", Label: "TYPE", SortKey: "type", Width: typeW},
 		{Key: "examiner", Label: "EXAMINER", SortKey: "examiner", Width: examinerW},
 		{Key: "due", Label: "RESPONSE DUE", SortKey: "due", Width: dueW},
 		{Key: "status", Label: "STATUS", SortKey: "status", Width: statusW},
+		{Key: "tags", Label: "TAGS", SortKey: "tags", Width: tagsW},
 		{Key: "worklog", Label: "WORKLOG", SortKey: "worklog", Width: worklogW},
 	}
 }
@@ -323,6 +377,26 @@ func (o *OfficeActions) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		}
 		return o, nil, true
 	}
+	if o.tagging {
+		switch msg.Type {
+		case tea.KeyEsc:
+			o.tagging = false
+			o.tagInput = ""
+		case tea.KeyEnter:
+			o.tagging = false
+			cmd := o.commitTag()
+			o.tagInput = ""
+			return o, cmd, true
+		case tea.KeyBackspace, tea.KeyDelete:
+			if len(o.tagInput) > 0 {
+				r := []rune(o.tagInput)
+				o.tagInput = string(r[:len(r)-1])
+			}
+		case tea.KeyRunes, tea.KeySpace:
+			o.tagInput += msg.String()
+		}
+		return o, nil, true
+	}
 	switch msg.String() {
 	case "enter":
 		oa, ok := o.selected()
@@ -330,6 +404,23 @@ func (o *OfficeActions) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 			return o, nil, true
 		}
 		return o, func() tea.Msg { return OpenOfficeActionDetailMsg{OA: oa} }, true
+	case "ctrl+n":
+		// Jump straight from the list into the selected action's notes editor,
+		// skipping the detail pane (which also offers ctrl+n).
+		oa, ok := o.selected()
+		if !ok {
+			return o, nil, true
+		}
+		return o, func() tea.Msg { return OpenOfficeActionEditorMsg{OA: oa} }, true
+	case "t":
+		// Open the inline tag prompt for the selected action; submitting toggles
+		// the typed tag (add if absent, remove if present).
+		if _, ok := o.selected(); !ok {
+			return o, nil, true
+		}
+		o.tagging = true
+		o.tagInput = ""
+		return o, nil, true
 	case "D":
 		oa, ok := o.selected()
 		if !ok {
@@ -392,6 +483,8 @@ func (o *OfficeActions) View(w, h int) string {
 			return responseDueLabel(oa)
 		case "status":
 			return statusAgeLabel(oa)
+		case "tags":
+			return tagsText(oa.Tags)
 		case "worklog":
 			return worklogLabel(o.billable[oa.ID])
 		default:
@@ -399,11 +492,18 @@ func (o *OfficeActions) View(w, h int) string {
 		}
 	}))
 	b.WriteByte('\n')
-	if o.searchActive {
+	switch {
+	case o.searchActive:
 		b.WriteString(o.theme.Selected.Render(render.Pad("/ "+o.searchQuery+"▋", w)))
-	} else {
+	case o.tagging:
+		prompt := "tag: " + o.tagInput + "▋"
+		if hint := o.selectedTagsHint(); hint != "" {
+			prompt += "   " + hint
+		}
+		b.WriteString(o.theme.Selected.Render(render.Pad(render.Truncate(prompt, w), w)))
+	default:
 		b.WriteString(o.theme.Dim.Render(render.Pad(
-			"  [enter] open  [a] add  [D] delete  [R] respond  [/] filter  [esc] back", w)))
+			"  [enter] open  [ctrl+n] notes  [t] tag  [a] add  [D] delete  [R] respond  [/] filter", w)))
 	}
 	return b.String()
 }

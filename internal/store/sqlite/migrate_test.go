@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"patentmine/internal/domain"
 )
@@ -148,8 +149,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 13 {
-		t.Fatalf("schema_version = %d, want 13", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 16 {
+		t.Fatalf("schema_version = %d, want 16", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -226,8 +227,8 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "13" {
-		t.Fatalf("schema_version = %q, want 13", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "16" {
+		t.Fatalf("schema_version = %q, want 16", v)
 	}
 	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
 		t.Fatalf("grant document kind = %q, want B2", k)
@@ -288,8 +289,8 @@ func TestMigrateV7ToV8BackfillsMatterDocument(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "13" {
-		t.Fatalf("schema_version = %q, want 13", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "16" {
+		t.Fatalf("schema_version = %q, want 16", v)
 	}
 
 	docs, err := repo.ListMatterDocuments(ctx, "p-1")
@@ -359,8 +360,8 @@ func TestMigrateV10ToV11(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "13" {
-		t.Fatalf("schema_version = %q, want 13", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "16" {
+		t.Fatalf("schema_version = %q, want 16", v)
 	}
 
 	// Verify columns were added with empty string default values
@@ -416,8 +417,8 @@ func TestMigrateV11ToV12BackfillsOriginStage(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "13" {
-		t.Fatalf("schema_version = %q, want 13", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "16" {
+		t.Fatalf("schema_version = %q, want 16", v)
 	}
 	// Each row's origin/stage is inferred from its kind (domain.InferOriginStage).
 	for _, tc := range []struct{ id, origin, stage string }{
@@ -471,8 +472,8 @@ func TestMigrateV12ToV13BackfillsStatusChangedAt(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "13" {
-		t.Fatalf("schema_version = %q, want 13", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "16" {
+		t.Fatalf("schema_version = %q, want 16", v)
 	}
 	// A row with an import time gets its status_changed_at backfilled from it.
 	if sc := scan(`SELECT status_changed_at FROM office_action WHERE id='oa-1'`); sc != "2026-01-10T00:00:00Z" {
@@ -481,5 +482,64 @@ func TestMigrateV12ToV13BackfillsStatusChangedAt(t *testing.T) {
 	// A row with no import time stays empty (nothing to seed from).
 	if sc := scan(`SELECT status_changed_at FROM office_action WHERE id='oa-2'`); sc != "" {
 		t.Fatalf("oa-2 status_changed_at = %q, want empty", sc)
+	}
+}
+
+func TestMigrateV13ToV14CreatesOfficeActionTag(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v13.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v13 db: %v", err)
+	}
+	for _, stmt := range []string{
+		schemaSQL,
+		`UPDATE schema_meta SET value = '13' WHERE key = 'schema_version'`,
+		// Simulate the pre-v14 shape: the office_action_tag table did not exist yet.
+		`DROP TABLE office_action_tag`,
+		`INSERT INTO project (id, name, created_at) VALUES ('p-1', 'Proj', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO office_action (id, project_id, mail_date, oa_type, imported_at) VALUES ('oa-1', 'p-1', '2026-01-09T00:00:00Z', 'non_final', '2026-01-10T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v13: %v\n%s", err, stmt)
+		}
+	}
+	_ = db.Close()
+
+	repo, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open (migrate v13→v14): %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+
+	scan := func(q string) string {
+		var s string
+		if err := repo.reader.QueryRowContext(ctx, q).Scan(&s); err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		return s
+	}
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "16" {
+		t.Fatalf("schema_version = %q, want 16", v)
+	}
+	// The office_action_tag table is recreated by the migration and is usable: a
+	// tag can be created and assigned to the seeded office action.
+	if name := scan(`SELECT name FROM sqlite_master WHERE type='table' AND name='office_action_tag'`); name != "office_action_tag" {
+		t.Fatalf("office_action_tag table missing after migrate, got %q", name)
+	}
+	tag, err := repo.CreateTag(ctx, "p-1", "needs_response")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	if err := repo.TagOfficeAction(ctx, tag.ID, "oa-1", time.Time{}); err != nil {
+		t.Fatalf("TagOfficeAction: %v", err)
+	}
+	tags, err := repo.OfficeActionTags(ctx, "p-1", "oa-1")
+	if err != nil {
+		t.Fatalf("OfficeActionTags: %v", err)
+	}
+	if len(tags) != 1 || tags[0].Name != "needs_response" {
+		t.Fatalf("office action tags = %+v, want [needs_response]", tags)
 	}
 }

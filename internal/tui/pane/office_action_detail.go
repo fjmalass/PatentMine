@@ -200,6 +200,7 @@ func (o *OfficeActionDetail) View(w, h int) string {
 	field("Mailed", dateOrDash(o.oa.MailDate))
 	field("Response due", responseDueLabel(o.oa))
 	field("Status", statusAgeLabel(o.oa))
+	field("Tags", tagsText(o.oa.Tags))
 	b.WriteByte('\n')
 
 	if o.loading {

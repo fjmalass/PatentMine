@@ -51,6 +51,7 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.OpenCommand}, Label: text.HintCommand},
 			{Commands: []command.ID{command.FullTextSearch}, Label: text.HintFullTextSearch},
 			{Commands: []command.ID{command.OpenDetail}, Label: text.HintDetail},
+			{Commands: []command.ID{command.OpenFullText}, Label: text.HintFullText},
 			{Commands: []command.ID{command.OpenIDS}, Label: text.HintIDS},
 			{Commands: []command.ID{command.OpenBrowser}, Label: text.HintBrowse},
 			{Commands: []command.ID{command.OpenCitations}, Label: text.HintCitations},

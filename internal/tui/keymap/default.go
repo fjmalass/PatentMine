@@ -130,6 +130,7 @@ func Default() *Keymaps {
 			".":      command.SortApply,
 			"/":      command.FindOpen,
 			"ctrl+f": command.FullTextSearch,
+			"T":      command.OpenFullText,
 			"n":      command.NavDown,
 			"g v":    command.ReselectLast,
 			"v":      command.SelectVisual,

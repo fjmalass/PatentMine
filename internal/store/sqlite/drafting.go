@@ -169,6 +169,141 @@ func (r *Repo) DeleteDraft(ctx context.Context, id domain.DraftID) (err error) {
 	return nil
 }
 
+// SaveDraftRevision appends one immutable snapshot to a draft's history. The
+// structured sections/claims and the rendered markdown are both stored so a
+// revision can be re-rendered/restored exactly and its human-readable text
+// reproduced without re-rendering.
+func (r *Repo) SaveDraftRevision(ctx context.Context, rev domain.DraftRevision) (err error) {
+	defer r.observeDuration("save_draft_revision", time.Now(), &err)
+	if rev.ID == "" {
+		return errors.New("store/sqlite: cannot save draft revision with empty id")
+	}
+	if rev.Draft == "" {
+		return errors.New("store/sqlite: draft revision requires a draft id")
+	}
+	if rev.Kind != "" && !rev.Kind.Valid() {
+		return fmt.Errorf("store/sqlite: invalid draft revision kind %q", rev.Kind)
+	}
+	sectionsJSON, err := json.Marshal(rev.Sections)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: encode revision sections: %w", err)
+	}
+	claimsJSON, err := json.Marshal(rev.Claims)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: encode revision claims: %w", err)
+	}
+	kind := rev.Kind
+	if kind == "" {
+		kind = domain.RevisionManual
+	}
+	_, err = r.writer.ExecContext(ctx,
+		`INSERT INTO draft_revision
+		 (id, draft_id, revno, label, kind, sections_json, claims_json, claims_md, response_md, provider, model, git_commit, created_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		rev.ID, string(rev.Draft), rev.Revno, rev.Label, string(kind),
+		string(sectionsJSON), string(claimsJSON), rev.ClaimsMarkdown, rev.ResponseMarkdown,
+		rev.Provider, rev.Model, rev.GitCommit, encodeTime(rev.CreatedAt))
+	if err != nil {
+		return fmt.Errorf("store/sqlite: save draft revision %s: %w", rev.ID, err)
+	}
+	return nil
+}
+
+const draftRevisionSummaryColumns = `id, draft_id, revno, label, kind, provider, model, git_commit, created_at`
+
+// ListDraftRevisions returns a draft's revisions newest first, as summaries
+// (the heavy sections/claims/markdown columns are not loaded).
+func (r *Repo) ListDraftRevisions(ctx context.Context, draft domain.DraftID) (out []domain.DraftRevision, err error) {
+	defer r.observeDuration("list_draft_revisions", time.Now(), &err)
+	rows, err := r.reader.QueryContext(ctx,
+		`SELECT `+draftRevisionSummaryColumns+` FROM draft_revision WHERE draft_id = ? ORDER BY revno DESC`, string(draft))
+	if err != nil {
+		return nil, fmt.Errorf("store/sqlite: list draft revisions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		rev, err := scanDraftRevisionSummary(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store/sqlite: scan draft revision: %w", err)
+		}
+		out = append(out, rev)
+	}
+	return out, rows.Err()
+}
+
+// DraftRevision returns one revision with its full content, or store.ErrNotFound.
+func (r *Repo) DraftRevision(ctx context.Context, id string) (rev domain.DraftRevision, err error) {
+	defer r.observeDuration("draft_revision", time.Now(), &err)
+	var (
+		draftID      string
+		kind         string
+		sectionsJSON string
+		claimsJSON   string
+		createdAt    string
+	)
+	row := r.reader.QueryRowContext(ctx,
+		`SELECT id, draft_id, revno, label, kind, sections_json, claims_json, claims_md, response_md, provider, model, git_commit, created_at
+		 FROM draft_revision WHERE id = ?`, id)
+	if err = row.Scan(&rev.ID, &draftID, &rev.Revno, &rev.Label, &kind,
+		&sectionsJSON, &claimsJSON, &rev.ClaimsMarkdown, &rev.ResponseMarkdown,
+		&rev.Provider, &rev.Model, &rev.GitCommit, &createdAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.DraftRevision{}, store.ErrNotFound
+		}
+		return domain.DraftRevision{}, fmt.Errorf("store/sqlite: get draft revision %s: %w", id, err)
+	}
+	rev.Draft = domain.DraftID(draftID)
+	rev.Kind = domain.RevisionKind(kind)
+	if sectionsJSON != "" {
+		if err := json.Unmarshal([]byte(sectionsJSON), &rev.Sections); err != nil {
+			return domain.DraftRevision{}, fmt.Errorf("store/sqlite: decode revision sections: %w", err)
+		}
+	}
+	if claimsJSON != "" {
+		if err := json.Unmarshal([]byte(claimsJSON), &rev.Claims); err != nil {
+			return domain.DraftRevision{}, fmt.Errorf("store/sqlite: decode revision claims: %w", err)
+		}
+	}
+	if rev.CreatedAt, err = decodeTime(createdAt); err != nil {
+		return domain.DraftRevision{}, err
+	}
+	return rev, nil
+}
+
+// NextDraftRevno returns one past the highest revno recorded for a draft (1 when
+// the draft has no revisions yet).
+func (r *Repo) NextDraftRevno(ctx context.Context, draft domain.DraftID) (n int, err error) {
+	defer r.observeDuration("next_draft_revno", time.Now(), &err)
+	var maxRev sql.NullInt64
+	err = r.reader.QueryRowContext(ctx,
+		`SELECT MAX(revno) FROM draft_revision WHERE draft_id = ?`, string(draft)).Scan(&maxRev)
+	if err != nil {
+		return 0, fmt.Errorf("store/sqlite: next draft revno: %w", err)
+	}
+	return int(maxRev.Int64) + 1, nil
+}
+
+func scanDraftRevisionSummary(s rowScanner) (domain.DraftRevision, error) {
+	var (
+		rev       domain.DraftRevision
+		draftID   string
+		kind      string
+		createdAt string
+	)
+	if err := s.Scan(&rev.ID, &draftID, &rev.Revno, &rev.Label, &kind,
+		&rev.Provider, &rev.Model, &rev.GitCommit, &createdAt); err != nil {
+		return domain.DraftRevision{}, err
+	}
+	rev.Draft = domain.DraftID(draftID)
+	rev.Kind = domain.RevisionKind(kind)
+	t, err := decodeTime(createdAt)
+	if err != nil {
+		return domain.DraftRevision{}, err
+	}
+	rev.CreatedAt = t
+	return rev, nil
+}
+
 func scanDraft(s rowScanner) (domain.Draft, error) {
 	var (
 		d         domain.Draft
@@ -324,6 +459,10 @@ func (r *Repo) OfficeAction(ctx context.Context, id string) (oa domain.OfficeAct
 	if err != nil {
 		return domain.OfficeAction{}, fmt.Errorf("store/sqlite: get office action %s: %w", id, err)
 	}
+	oa.Tags, err = r.OfficeActionTags(ctx, "", oa.ID)
+	if err != nil {
+		return domain.OfficeAction{}, err
+	}
 	return oa, nil
 }
 
@@ -343,7 +482,21 @@ func (r *Repo) ListOfficeActions(ctx context.Context, project domain.ProjectID) 
 		}
 		out = append(out, oa)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(out))
+	for _, oa := range out {
+		ids = append(ids, oa.ID)
+	}
+	tags, err := r.OfficeActionTagsByOA(ctx, project, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Tags = tags[out[i].ID]
+	}
+	return out, nil
 }
 
 // DeleteOfficeAction removes an office action. Drafts that referenced it have

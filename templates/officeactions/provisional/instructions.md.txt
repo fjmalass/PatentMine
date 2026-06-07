@@ -1,0 +1,12 @@
+# Provision Instructions
+# Date: 2026-06-07
+
+
+## USPTO [Instructions](https://www.uspto.gov/patents/basics/apply/provisional-application)
+* Electronic Filing [Patent-Center](https://www.uspto.gov/patents/apply/patent-center)
+* Application deadline (withing 12 months) of provisional filing. The application must claim precedent
+
+## Checklist
+
+* Cover Sheet (2 page) - sb 16 
+* Fee payment
