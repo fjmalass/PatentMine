@@ -720,3 +720,68 @@ func TestExtractDocTextReadsDocx(t *testing.T) {
 		t.Errorf("expected 'Hello World from Docx' in %q", txt)
 	}
 }
+
+// TestImportOfficeActionCopiesPreviousAssignments guards the prosecution-chain
+// carry-forward: a newly imported OA inherits the previous OA's reviewed-against
+// patents (reset to to_review), and the manual re-copy is idempotent.
+func TestImportOfficeActionCopiesPreviousAssignments(t *testing.T) {
+	ctx := context.Background()
+	eng, repo := newTestEngine(t, nil)
+	WithDocsExportDir(t.TempDir())(eng)
+	proj := domain.Project{ID: "p1", Name: "Matter", CreatedAt: time.Now().UTC()}
+	if err := repo.SaveProject(ctx, proj); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	p1 := domain.MustParsePatentNumber("US0000001B2")
+	p2 := domain.MustParsePatentNumber("US0000002B2")
+	for _, n := range []domain.PatentNumber{p1, p2} {
+		if err := repo.SavePatent(ctx, domain.Patent{Number: n, DisplayNumber: n, FetchState: domain.FetchCached}); err != nil {
+			t.Fatalf("SavePatent %s: %v", n, err)
+		}
+	}
+
+	// Non-final mailed earlier, with both references assigned.
+	oa1, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{
+		Project: proj.ID, ApplicationNumber: "16/123,456", Type: domain.OANonFinal,
+		MailDate: time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("import oa1: %v", err)
+	}
+	if _, err := eng.AssignPatentsToOfficeAction(ctx, oa1.ID, []domain.PatentNumber{p1, p2}); err != nil {
+		t.Fatalf("assign to oa1: %v", err)
+	}
+
+	// Final mailed later, same application (differently formatted) — auto-inherits.
+	oa2, err := eng.ImportOfficeAction(ctx, ImportOfficeActionInput{
+		Project: proj.ID, ApplicationNumber: "16123456", Type: domain.OAFinal,
+		MailDate: time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("import oa2: %v", err)
+	}
+	if oa2.AssignedPatents != 2 {
+		t.Errorf("oa2.AssignedPatents = %d, want 2 (auto-copied from oa1)", oa2.AssignedPatents)
+	}
+	res, err := eng.OfficeActionPatents(ctx, oa2.ID)
+	if err != nil {
+		t.Fatalf("OfficeActionPatents oa2: %v", err)
+	}
+	if len(res.Patents) != 2 {
+		t.Fatalf("oa2 has %d assigned patents, want 2", len(res.Patents))
+	}
+	for _, p := range res.Patents {
+		if p.Status != domain.OAReviewToReview {
+			t.Errorf("copied patent %s = %q, want to_review", p.Number, p.Status)
+		}
+	}
+
+	// Manual re-copy is idempotent.
+	if _, err := eng.CopyOfficeActionPatentsFromPrevious(ctx, oa2.ID); err != nil {
+		t.Fatalf("CopyOfficeActionPatentsFromPrevious: %v", err)
+	}
+	if res, _ = eng.OfficeActionPatents(ctx, oa2.ID); len(res.Patents) != 2 {
+		t.Fatalf("after manual re-copy oa2 has %d patents, want 2", len(res.Patents))
+	}
+}

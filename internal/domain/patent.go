@@ -19,6 +19,7 @@ const (
 	SortByTags           SortColumn = "tags"
 	SortByClassification SortColumn = "classification"
 	SortByProvenance     SortColumn = "provenance"
+	SortByOfficeActions  SortColumn = "office_actions"
 
 	// UI-only sort keys used by the per-patent classification overlay. They
 	// never travel over RPC — the overlay sorts its in-memory rows directly.
@@ -189,6 +190,10 @@ type PatentRow struct {
 	// the record, so it is project-scoped like ReviewState.
 	Conflicting     bool         `json:"conflicting,omitempty"`
 	IDSEntry        *IDSEntry    `json:"ids_entry,omitempty"`
+	// OfficeActions are the office actions this patent is assigned to for review
+	// within the active project. Like Tags/ReviewState/Conflicting it is a
+	// project-scoped annotation attached on list load, not stored on the record.
+	OfficeActions   []OfficeActionRef `json:"office_actions,omitempty"`
 	CitationsCount  int          `json:"citations_count,omitempty"`
 	CitedByCount    int          `json:"cited_by_count,omitempty"`
 	ParentsCount    int          `json:"parents_count,omitempty"`

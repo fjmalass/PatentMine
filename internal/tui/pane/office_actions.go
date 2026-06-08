@@ -13,7 +13,6 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
-	"patentmine/internal/text"
 	"patentmine/internal/tui/render"
 )
 
@@ -34,6 +33,14 @@ type OpenOfficeActionDetailMsg struct {
 // RequestDeleteOfficeActionMsg asks the app to prompt the user to confirm deleting
 // the specified office action.
 type RequestDeleteOfficeActionMsg struct {
+	OA domain.OfficeAction
+}
+
+// OpenOfficeActionTagOverlayMsg asks the app to open the shared tag-manager
+// overlay for one office action — the same overlay the catalog uses for patents,
+// so office-action tagging behaves identically. (The pane cannot import the
+// overlay package, so it signals the app.)
+type OpenOfficeActionTagOverlayMsg struct {
 	OA domain.OfficeAction
 }
 
@@ -58,9 +65,6 @@ type OfficeActions struct {
 
 	searchActive bool
 	searchQuery  string
-
-	tagging  bool   // editing a tag to toggle on the selected office action
-	tagInput string
 
 	table render.TableState
 }
@@ -188,53 +192,6 @@ func (o *OfficeActions) selected() (domain.OfficeAction, bool) {
 		return domain.OfficeAction{}, false
 	}
 	return o.items[cur], true
-}
-
-// commitTag toggles the typed tag on the selected office action: it removes the
-// tag when the action already carries it, otherwise assigns it (creating the tag
-// in the project taxonomy if needed). It then reloads the list so the new tag
-// state shows. Mirrors MatterDocuments.commitTag.
-func (o *OfficeActions) commitTag() tea.Cmd {
-	oa, ok := o.selected()
-	if !ok {
-		return nil
-	}
-	name := strings.TrimSpace(o.tagInput)
-	if name == "" {
-		return nil
-	}
-	remove := false
-	for _, t := range oa.Tags {
-		if strings.EqualFold(t.Name, name) {
-			remove = true
-			break
-		}
-	}
-	client, id := o.client, oa.ID
-	reload := o.load()
-	return func() tea.Msg {
-		ctx, cancel := callContext()
-		defer cancel()
-		method := proto.MethodOfficeActionTag
-		if remove {
-			method = proto.MethodOfficeActionUntag
-		}
-		var res proto.OfficeActionResult
-		if err := client.Call(ctx, method, proto.OfficeActionTagParams{ID: id, Tag: name}, &res); err != nil {
-			return StatusMsg{Key: text.StatusGeneric, Args: []any{"tag failed: " + err.Error()}, Error: true}
-		}
-		return reload()
-	}
-}
-
-// selectedTagsHint lists the selected action's current tags, so the toggle prompt
-// makes removal discoverable.
-func (o *OfficeActions) selectedTagsHint() string {
-	oa, ok := o.selected()
-	if !ok || len(oa.Tags) == 0 {
-		return ""
-	}
-	return "current: " + tagsText(oa.Tags)
 }
 
 func (o *OfficeActions) applyFilter() {
@@ -377,26 +334,6 @@ func (o *OfficeActions) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		}
 		return o, nil, true
 	}
-	if o.tagging {
-		switch msg.Type {
-		case tea.KeyEsc:
-			o.tagging = false
-			o.tagInput = ""
-		case tea.KeyEnter:
-			o.tagging = false
-			cmd := o.commitTag()
-			o.tagInput = ""
-			return o, cmd, true
-		case tea.KeyBackspace, tea.KeyDelete:
-			if len(o.tagInput) > 0 {
-				r := []rune(o.tagInput)
-				o.tagInput = string(r[:len(r)-1])
-			}
-		case tea.KeyRunes, tea.KeySpace:
-			o.tagInput += msg.String()
-		}
-		return o, nil, true
-	}
 	switch msg.String() {
 	case "enter":
 		oa, ok := o.selected()
@@ -413,14 +350,13 @@ func (o *OfficeActions) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 		}
 		return o, func() tea.Msg { return OpenOfficeActionEditorMsg{OA: oa} }, true
 	case "t":
-		// Open the inline tag prompt for the selected action; submitting toggles
-		// the typed tag (add if absent, remove if present).
-		if _, ok := o.selected(); !ok {
+		// Open the shared tag-manager overlay for the selected action — identical
+		// to patent tagging in the catalog.
+		oa, ok := o.selected()
+		if !ok {
 			return o, nil, true
 		}
-		o.tagging = true
-		o.tagInput = ""
-		return o, nil, true
+		return o, func() tea.Msg { return OpenOfficeActionTagOverlayMsg{OA: oa} }, true
 	case "D":
 		oa, ok := o.selected()
 		if !ok {
@@ -495,12 +431,6 @@ func (o *OfficeActions) View(w, h int) string {
 	switch {
 	case o.searchActive:
 		b.WriteString(o.theme.Selected.Render(render.Pad("/ "+o.searchQuery+"▋", w)))
-	case o.tagging:
-		prompt := "tag: " + o.tagInput + "▋"
-		if hint := o.selectedTagsHint(); hint != "" {
-			prompt += "   " + hint
-		}
-		b.WriteString(o.theme.Selected.Render(render.Pad(render.Truncate(prompt, w), w)))
 	default:
 		b.WriteString(o.theme.Dim.Render(render.Pad(
 			"  [enter] open  [ctrl+n] notes  [t] tag  [a] add  [D] delete  [R] respond  [/] filter", w)))

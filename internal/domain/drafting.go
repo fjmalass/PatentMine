@@ -415,6 +415,69 @@ type OfficeAction struct {
 	// matter document, an action is tagged independently within its project; the
 	// tags are loaded when an action is read and never written through SaveOfficeAction.
 	Tags []Tag `json:"tags,omitempty"`
+	// AssignedPatents is the number of prior-art / reference patents assigned to
+	// this action for review. It is a loaded-on-read count (see OfficeActionPatent),
+	// never written through SaveOfficeAction.
+	AssignedPatents int `json:"assigned_patents,omitempty"`
+}
+
+// OAReviewStatus tracks where a patent assigned to an office action stands in
+// review. A freshly assigned patent is OAReviewToReview; marking it done moves it
+// to OAReviewReviewed (which stamps ReviewedAt). Release removes the link
+// entirely rather than recording a terminal status.
+type OAReviewStatus string
+
+const (
+	OAReviewToReview OAReviewStatus = "to_review" // assigned, not yet reviewed
+	OAReviewReviewed OAReviewStatus = "reviewed"  // review complete
+)
+
+// Valid reports whether the OAReviewStatus is a known value.
+func (s OAReviewStatus) Valid() bool {
+	switch s {
+	case OAReviewToReview, OAReviewReviewed:
+		return true
+	default:
+		return false
+	}
+}
+
+// OfficeActionPatent links a prior-art / reference patent to an office action for
+// review. The office action behaves like an assignable label on patents (mirrors
+// a Tag, but a typed reference instead of free text). Patent is the canonical
+// record number, so the link follows the patent across re-stamps and is carried
+// to the surviving record on a MergeRecords reconciliation.
+type OfficeActionPatent struct {
+	OfficeActionID string         `json:"office_action_id"`
+	Patent         PatentNumber   `json:"patent"`
+	Status         OAReviewStatus `json:"status"`
+	AssignedAt     time.Time      `json:"assigned_at"`
+	ReviewedAt     time.Time      `json:"reviewed_at,omitempty"`
+}
+
+// OfficeActionRef is the row-level projection of an OfficeActionPatent joined with
+// its action's display Name — enough to label a patent-list row with the office
+// actions it is assigned to and their review state.
+type OfficeActionRef struct {
+	OfficeActionID string         `json:"office_action_id"`
+	Name           string         `json:"name,omitempty"`
+	Status         OAReviewStatus `json:"status"`
+}
+
+// DisplayLabel is the short human label for an office action: its Name, else the
+// mail date, else the type, else a generic fallback. Shared by the patent-list OA
+// column and the catalog annotation so both render an action the same way.
+func (oa OfficeAction) DisplayLabel() string {
+	if n := strings.TrimSpace(oa.Name); n != "" {
+		return n
+	}
+	if !oa.MailDate.IsZero() {
+		return oa.MailDate.Format(DateLayout)
+	}
+	if oa.Type != "" {
+		return strings.ReplaceAll(string(oa.Type), "_", " ")
+	}
+	return "office action"
 }
 
 // MatterDocKind classifies one document filed under a matter (a project). A

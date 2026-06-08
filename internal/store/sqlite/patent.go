@@ -193,9 +193,10 @@ const patentDemoteSQL = `UPDATE record SET
 WHERE number = ?`
 
 // SoftDeletePatent demotes a patent to FetchStub, dropping its documents,
-// memberships, notes, tags, and outbound relations. Inbound relations from
-// other patents survive so the family-graph topology stays intact. When no
-// inbound relation remains, the row is hard-purged to avoid orphan stubs.
+// memberships, notes, tags, renewals, office-action review links, and outbound
+// relations. Inbound relations from other patents survive so the family-graph
+// topology stays intact. When no inbound relation remains, the row is hard-purged
+// to avoid orphan stubs.
 func (r *Repo) SoftDeletePatent(ctx context.Context, n domain.PatentNumber) (err error) {
 	defer r.observeDuration("soft_delete_patent", time.Now(), &err)
 	return r.softDeletePatents(ctx, []domain.PatentNumber{n})
@@ -234,13 +235,18 @@ func (r *Repo) softDeletePatents(ctx context.Context, patents []domain.PatentNum
 		if exists == 0 {
 			return store.ErrNotFound
 		}
-		for _, q := range []string{
+		dependentDeletes := []string{
 			`DELETE FROM document WHERE record_number = ?`,
 			`DELETE FROM membership WHERE patent_number = ?`,
-			`DELETE FROM patent_tag WHERE patent_number = ?`,
-			`DELETE FROM project_patent_note WHERE patent_number = ?`,
 			`DELETE FROM relation WHERE from_number = ?`,
-		} {
+		}
+		// Drop the simple number-keyed user tables (tags, notes, renewals, OA review
+		// links) via the same centralized list MergeRecords repoints, so the demote
+		// and merge paths can never disagree on which child rows belong to a record.
+		for _, table := range recordNumberChildTables {
+			dependentDeletes = append(dependentDeletes, `DELETE FROM `+table+` WHERE patent_number = ?`)
+		}
+		for _, q := range dependentDeletes {
 			if _, err := tx.ExecContext(ctx, q, key); err != nil {
 				return fmt.Errorf("store/sqlite: soft delete dependents %s: %w", p, err)
 			}
@@ -396,6 +402,9 @@ func (r *Repo) ListPatents(ctx context.Context, q store.PatentQuery) (out []doma
 		if err := r.attachTags(ctx, q.Project, out); err != nil {
 			return nil, err
 		}
+		if err := r.attachOfficeActions(ctx, q.Project, out); err != nil {
+			return nil, err
+		}
 	}
 
 	r.recordFilterSortMetrics(ctx, q, compDur, queryDur, len(out))
@@ -523,6 +532,57 @@ func (r *Repo) attachTags(ctx context.Context, project domain.ProjectID, rows []
 	}
 	if err := res.Err(); err != nil {
 		return fmt.Errorf("store/sqlite: attach tags: %w", err)
+	}
+	return nil
+}
+
+// attachOfficeActions fills the OfficeActions field of every row in one query,
+// mirroring attachTags: the office actions each patent is assigned to for review
+// within the project, with the action's display label and review status. A patent
+// with no assignment keeps a nil slice.
+func (r *Repo) attachOfficeActions(ctx context.Context, project domain.ProjectID, rows []domain.PatentRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(rows)+1)
+	args = append(args, string(project))
+	placeholders := make([]string, len(rows))
+	index := make(map[string]int, len(rows))
+	for i, row := range rows {
+		n := row.Number.Normalized()
+		placeholders[i] = "?"
+		args = append(args, n)
+		index[n] = i
+	}
+	query := `SELECT poa.patent_number, poa.office_action_id, oa.name, oa.mail_date, oa.oa_type, poa.status
+		FROM patent_office_action poa
+		JOIN office_action oa ON oa.id = poa.office_action_id
+		WHERE oa.project_id = ? AND poa.patent_number IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY poa.assigned_at DESC, poa.office_action_id`
+	res, err := r.reader.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("store/sqlite: attach office actions: %w", err)
+	}
+	defer func() { _ = res.Close() }()
+	for res.Next() {
+		var number, oaID, name, mailDate, oaType, status string
+		if err := res.Scan(&number, &oaID, &name, &mailDate, &oaType, &status); err != nil {
+			return fmt.Errorf("store/sqlite: scan office action row: %w", err)
+		}
+		i, ok := index[number]
+		if !ok {
+			continue
+		}
+		md, _ := decodeTime(mailDate)
+		label := domain.OfficeAction{Name: name, MailDate: md, Type: domain.OAType(oaType)}.DisplayLabel()
+		rows[i].OfficeActions = append(rows[i].OfficeActions, domain.OfficeActionRef{
+			OfficeActionID: oaID,
+			Name:           label,
+			Status:         domain.OAReviewStatus(status),
+		})
+	}
+	if err := res.Err(); err != nil {
+		return fmt.Errorf("store/sqlite: attach office actions: %w", err)
 	}
 	return nil
 }
@@ -658,6 +718,13 @@ func patentSortExpr(q store.PatentQuery) (string, []any, error) {
 		return `COALESCE((SELECT group_concat(name, ' ') FROM (` +
 			`SELECT t.name AS name FROM patent_tag pt JOIN tag t ON t.id = pt.tag_id ` +
 			`WHERE t.project_id = ? AND pt.patent_number = p.number ORDER BY t.name` +
+			`)), '') ` + dir, []any{string(q.Project)}, nil
+	case domain.SortByOfficeActions:
+		// Sort by the assigned office actions' names (grouped), unassigned patents
+		// sorting as the empty string. Project-scoped, mirroring SortByTags.
+		return `COALESCE((SELECT group_concat(name, ' ') FROM (` +
+			`SELECT oa.name AS name FROM patent_office_action poa JOIN office_action oa ON oa.id = poa.office_action_id ` +
+			`WHERE oa.project_id = ? AND poa.patent_number = p.number ORDER BY oa.name` +
 			`)), '') ` + dir, []any{string(q.Project)}, nil
 	case domain.SortByClassification:
 		return "json_extract(p.classifications, '$[0]') " + dir, nil, nil
@@ -905,6 +972,9 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 		return `p.country = ?`, []any{term.Value}, nil
 	case filterexpr.FieldFetchState:
 		return `p.fetch_state = ?`, []any{term.Value}, nil
+	case filterexpr.FieldOA:
+		cond, args := officeActionFilterCondition(term.Value, q.Project)
+		return cond, args, nil
 	case filterexpr.FieldProvenance:
 		switch term.Value {
 		case "manual":
@@ -920,6 +990,27 @@ func compileFilterTerm(term filterexpr.TermExpr, q store.PatentQuery) (string, [
 		}
 	default:
 		return "", nil, fmt.Errorf("store/sqlite: unsupported filter field %q", term.Field)
+	}
+}
+
+// officeActionFilterCondition compiles an `oa:` filter term. The reserved
+// keywords none/any test for the absence/presence of any review assignment within
+// the project; to_review/reviewed test for an assignment in that review state;
+// any other value matches office actions by name (case-insensitive substring).
+// All forms are scoped to the active project via office_action.project_id.
+func officeActionFilterCondition(value string, project domain.ProjectID) (string, []any) {
+	const base = `SELECT 1 FROM patent_office_action poa
+		JOIN office_action oa ON oa.id = poa.office_action_id
+		WHERE oa.project_id = ? AND poa.patent_number = p.number`
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return "NOT EXISTS (" + base + ")", []any{string(project)}
+	case "any":
+		return "EXISTS (" + base + ")", []any{string(project)}
+	case string(domain.OAReviewToReview), string(domain.OAReviewReviewed):
+		return "EXISTS (" + base + " AND poa.status = ?)", []any{string(project), strings.ToLower(value)}
+	default:
+		return "EXISTS (" + base + " AND LOWER(oa.name) LIKE LOWER(?))", []any{string(project), "%" + value + "%"}
 	}
 }
 

@@ -557,6 +557,29 @@ func TestPatentTableColumnsResponsive(t *testing.T) {
 	}
 }
 
+func TestPatentTableColumnsOAColumnProjectOnly(t *testing.T) {
+	// No active project: the OA column is absent (assignments are matter-scoped).
+	for _, c := range patentTableColumns(150, domain.PatentTableColumns("")) {
+		if c.key == domain.PatentColumnOfficeActions {
+			t.Fatal("OA column present without an active project")
+		}
+	}
+
+	// Active project + wide terminal: the OA column appears, last, labelled "OA".
+	projectCols := patentTableColumns(150, domain.PatentTableColumns("p1"))
+	last := projectCols[len(projectCols)-1]
+	if last.key != domain.PatentColumnOfficeActions || last.label != "OA" {
+		t.Fatalf("last column = %q/%q, want office_actions/OA", last.key, last.label)
+	}
+
+	// Narrow terminal: omitted even with a project, to avoid crowding.
+	for _, c := range patentTableColumns(90, domain.PatentTableColumns("p1")) {
+		if c.key == domain.PatentColumnOfficeActions {
+			t.Fatal("OA column should be omitted on a narrow terminal")
+		}
+	}
+}
+
 func TestMoveSortableColumnSkipsUnsortableVisibleColumns(t *testing.T) {
 	cols := patentTableColumns(120, domain.PatentTableColumns(""))
 	if got := moveSortableColumn(cols, -1, 1); got != 1 {

@@ -78,6 +78,9 @@ const (
 	ActionOfficeActionDelete           = "office_action.delete"
 	ActionOfficeActionTag              = "office_action.tag"
 	ActionOfficeActionUntag            = "office_action.untag"
+	ActionOfficeActionAssignPatents    = "office_action.assign_patents"
+	ActionOfficeActionReleasePatents   = "office_action.release_patents"
+	ActionOfficeActionReviewStatus     = "office_action.review_status"
 
 	// Prosecution-matter workspace (matter-scoped documents and project stage).
 	ActionMatterDocumentImport     = "matter_document.import"
@@ -166,6 +169,9 @@ var AllActions = []string{
 	ActionOfficeActionDelete,
 	ActionOfficeActionTag,
 	ActionOfficeActionUntag,
+	ActionOfficeActionAssignPatents,
+	ActionOfficeActionReleasePatents,
+	ActionOfficeActionReviewStatus,
 	ActionMatterDocumentImport,
 	ActionMatterDocumentRename,
 	ActionMatterDocumentDelete,

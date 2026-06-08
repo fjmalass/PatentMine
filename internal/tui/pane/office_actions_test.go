@@ -97,36 +97,24 @@ func TestOfficeActionsCtrlNOpensNotesEditor(t *testing.T) {
 	}
 }
 
-func TestOfficeActionsTagPrompt(t *testing.T) {
+func TestOfficeActionsTagOpensSharedOverlay(t *testing.T) {
 	o := NewOfficeActions(nil, render.NewTheme(), "p1")
 	o, _ = asOfficeActions(o.Update(officeActionsLoadedMsg{
 		items: []domain.OfficeAction{{ID: "oa-1", Name: "Final Rejection"}},
 	}))
 
-	// 't' opens the inline tag prompt.
-	p, _, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
-	o = p.(*OfficeActions)
-	if !handled || !o.tagging {
-		t.Fatalf("'t' did not enter tagging mode (handled=%v tagging=%v)", handled, o.tagging)
+	// 't' opens the shared tag-manager overlay (same as patents), emitted as a
+	// message for the app to handle — no inline prompt.
+	_, cmd, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	if !handled || cmd == nil {
+		t.Fatalf("'t' not handled or emitted no command (handled=%v)", handled)
 	}
-
-	// Typed runes accumulate and show in the footer prompt.
-	for _, r := range "prior_art" {
-		p, _, _ = o.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		o = p.(*OfficeActions)
+	msg, ok := cmd().(OpenOfficeActionTagOverlayMsg)
+	if !ok {
+		t.Fatalf("'t' did not emit OpenOfficeActionTagOverlayMsg, got %T", cmd())
 	}
-	if o.tagInput != "prior_art" {
-		t.Fatalf("tagInput = %q, want prior_art", o.tagInput)
-	}
-	if out := o.View(120, 20); !strings.Contains(out, "tag: prior_art") {
-		t.Fatalf("tag prompt missing from view:\n%s", out)
-	}
-
-	// Esc cancels without committing (no client needed).
-	p, _, _ = o.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	o = p.(*OfficeActions)
-	if o.tagging || o.tagInput != "" {
-		t.Fatalf("esc did not cancel tagging (tagging=%v input=%q)", o.tagging, o.tagInput)
+	if msg.OA.ID != "oa-1" {
+		t.Fatalf("tag overlay opened for %q, want oa-1", msg.OA.ID)
 	}
 }
 

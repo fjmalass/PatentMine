@@ -254,8 +254,42 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "16"
 	}
-	if version != "16" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 16", version)
+	if version == "16" {
+		if err := r.migrateV16ToV17(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v16 to v17: %w", err)
+		}
+		version = "17"
+	}
+	if version != "17" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 17", version)
+	}
+	return nil
+}
+
+// migrateV16ToV17 adds the patent_office_action join — prior-art / reference
+// patents assigned to an office action for review (the office action behaves like
+// an assignable label on patents). Purely additive: it creates an empty table,
+// so there is nothing to backfill.
+func (r *Repo) migrateV16ToV17(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v16-to-v17.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v16 to v17: backup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS patent_office_action (
+			office_action_id TEXT NOT NULL REFERENCES office_action (id) ON DELETE CASCADE,
+			patent_number    TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
+			status           TEXT NOT NULL DEFAULT 'to_review',
+			assigned_at      TEXT NOT NULL,
+			reviewed_at      TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (patent_number, office_action_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_patent_office_action_oa ON patent_office_action (office_action_id)`,
+		`UPDATE schema_meta SET value = '17' WHERE key = 'schema_version'`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v16 to v17: %w", err)
+		}
 	}
 	return nil
 }

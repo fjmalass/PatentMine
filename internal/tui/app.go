@@ -930,6 +930,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pane.RequestDeleteOfficeActionMsg:
 		a.overlays = append(a.overlays, overlay.NewOfficeActionDeleteConfirm(a.theme, m.OA))
 		return a, nil
+	case pane.OpenOfficeActionTagOverlayMsg:
+		o, cmd := overlay.NewTagOfficeActionOverlay(a.client, a.theme, a.text, m.OA.Project, m.OA)
+		a.overlays = append(a.overlays, o)
+		return a, cmd
+	case pane.OpenOfficeActionPatentsMsg:
+		o := overlay.NewOfficeActionPatents(a.client, a.theme, m.OA.Project, m.OA)
+		a.overlays = append(a.overlays, o)
+		return a, o.Init()
 	case overlay.IDSHeaderSubmitMsg:
 		a.popOverlay()
 		return a.handleIDSHeaderSubmit(m.Project)

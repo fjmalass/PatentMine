@@ -349,12 +349,101 @@ type applyFinishedMsg struct {
 	status pane.StatusMsg
 }
 
+// tagTarget abstracts the subject a tag-assignment overlay manages — a set of
+// patents or one office action — so the checklist UI is shared between them. Each
+// target counts its subjects, reads their currently-assigned tags, and
+// assigns/unassigns a tag.
+type tagTarget interface {
+	title() string
+	desc() string
+	count() int
+	assignedCounts(ctx context.Context, client *rpc.Client, project domain.ProjectID) (map[string]int, error)
+	apply(ctx context.Context, client *rpc.Client, project domain.ProjectID, tag string, on bool) error
+}
+
+// patentTagTarget assigns project tags to one or more patents.
+type patentTagTarget struct{ patents []domain.PatentNumber }
+
+func (t patentTagTarget) count() int { return len(t.patents) }
+
+func (t patentTagTarget) title() string {
+	if len(t.patents) > 1 {
+		return fmt.Sprintf("Manage Tags for %d Patents", len(t.patents))
+	}
+	return fmt.Sprintf("Manage Tags for Patent %s", t.patents[0].String())
+}
+
+func (t patentTagTarget) desc() string {
+	if len(t.patents) > 1 {
+		return fmt.Sprintf("%d patents", len(t.patents))
+	}
+	return t.patents[0].String()
+}
+
+func (t patentTagTarget) assignedCounts(ctx context.Context, client *rpc.Client, project domain.ProjectID) (map[string]int, error) {
+	counts := make(map[string]int)
+	for _, pat := range t.patents {
+		var res proto.PatentTagListResult
+		if err := client.Call(ctx, proto.MethodPatentTagList, proto.PatentTagListParams{Project: project, Patent: pat}, &res); err != nil {
+			return nil, err
+		}
+		for _, tg := range res.Tags {
+			counts[tg.Name]++
+		}
+	}
+	return counts, nil
+}
+
+func (t patentTagTarget) apply(ctx context.Context, client *rpc.Client, project domain.ProjectID, tag string, on bool) error {
+	method := proto.MethodUntagPatent
+	if on {
+		method = proto.MethodTagPatent
+	}
+	var empty proto.Empty
+	return client.Call(ctx, method, proto.TagParams{Project: project, Patents: t.patents, Name: tag}, &empty)
+}
+
+// officeActionTagTarget assigns project tags to one office action. It uses the
+// same shared taxonomy as patents, so a tag created here is the same tag.
+type officeActionTagTarget struct {
+	id   string
+	name string
+}
+
+func (t officeActionTagTarget) count() int    { return 1 }
+func (t officeActionTagTarget) title() string { return "Manage Tags for Office Action " + t.name }
+func (t officeActionTagTarget) desc() string  { return t.name }
+
+func (t officeActionTagTarget) assignedCounts(ctx context.Context, client *rpc.Client, project domain.ProjectID) (map[string]int, error) {
+	var res proto.OfficeActionResult
+	if err := client.Call(ctx, proto.MethodOfficeActionGet, proto.OfficeActionIDParams{ID: t.id}, &res); err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, tg := range res.OfficeAction.Tags {
+		counts[tg.Name]++
+	}
+	return counts, nil
+}
+
+func (t officeActionTagTarget) apply(ctx context.Context, client *rpc.Client, project domain.ProjectID, tag string, on bool) error {
+	method := proto.MethodOfficeActionUntag
+	if on {
+		method = proto.MethodOfficeActionTag
+	}
+	var res proto.OfficeActionResult
+	return client.Call(ctx, method, proto.OfficeActionTagParams{ID: t.id, Tag: tag}, &res)
+}
+
+// TagPatentOverlay is the shared tag-assignment overlay: a checklist of the
+// project taxonomy with the target's currently-assigned tags pre-checked. Its
+// target is either patents or an office action (see tagTarget).
 type TagPatentOverlay struct {
 	client      *rpc.Client
 	theme       render.Theme
 	catalog     *text.Catalog
 	project     domain.ProjectID
-	patents     []domain.PatentNumber
+	target      tagTarget
 	available   []domain.Tag
 	checked     map[string]CheckState
 	initial     map[string]CheckState
@@ -368,25 +457,31 @@ type TagPatentOverlay struct {
 	jump        JumpNavigator
 }
 
-func NewTagPatentOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, project domain.ProjectID, patents []domain.PatentNumber) (*TagPatentOverlay, tea.Cmd) {
+func newTagOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, project domain.ProjectID, target tagTarget) (*TagPatentOverlay, tea.Cmd) {
 	o := &TagPatentOverlay{
 		client:  client,
 		theme:   theme,
 		catalog: catalog,
 		project: project,
-		patents: patents,
+		target:  target,
 		checked: make(map[string]CheckState),
 		initial: make(map[string]CheckState),
 	}
 	return o, o.loadTagsCmd()
 }
 
-func (o *TagPatentOverlay) Title() string {
-	if len(o.patents) > 1 {
-		return fmt.Sprintf("Manage Tags for %d Patents", len(o.patents))
-	}
-	return fmt.Sprintf("Manage Tags for Patent %s", o.patents[0].String())
+// NewTagPatentOverlay opens the tag manager for one or more patents.
+func NewTagPatentOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, project domain.ProjectID, patents []domain.PatentNumber) (*TagPatentOverlay, tea.Cmd) {
+	return newTagOverlay(client, theme, catalog, project, patentTagTarget{patents: patents})
 }
+
+// NewTagOfficeActionOverlay opens the same tag manager for one office action, so
+// office-action tagging behaves identically to patent tagging.
+func NewTagOfficeActionOverlay(client *rpc.Client, theme render.Theme, catalog *text.Catalog, project domain.ProjectID, oa domain.OfficeAction) (*TagPatentOverlay, tea.Cmd) {
+	return newTagOverlay(client, theme, catalog, project, officeActionTagTarget{id: oa.ID, name: oa.DisplayLabel()})
+}
+
+func (o *TagPatentOverlay) Title() string { return o.target.title() }
 
 func (o *TagPatentOverlay) Handles() []command.ID {
 	return []command.ID{
@@ -403,7 +498,7 @@ func (o *TagPatentOverlay) Command(id command.ID, repeat int) (Overlay, tea.Cmd)
 
 func (o *TagPatentOverlay) loadTagsCmd() tea.Cmd {
 	return func() tea.Msg {
-		timeout := 3*time.Second + time.Duration(len(o.patents))*500*time.Millisecond
+		timeout := 3*time.Second + time.Duration(o.target.count())*500*time.Millisecond
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
@@ -412,15 +507,9 @@ func (o *TagPatentOverlay) loadTagsCmd() tea.Cmd {
 			return loadedPatentTagsMsg{err: err}
 		}
 
-		counts := make(map[string]int)
-		for _, pat := range o.patents {
-			var patRes proto.PatentTagListResult
-			if err := o.client.Call(ctx, proto.MethodPatentTagList, proto.PatentTagListParams{Project: o.project, Patent: pat}, &patRes); err != nil {
-				return loadedPatentTagsMsg{err: err}
-			}
-			for _, t := range patRes.Tags {
-				counts[t.Name]++
-			}
+		counts, err := o.target.assignedCounts(ctx, o.client, o.project)
+		if err != nil {
+			return loadedPatentTagsMsg{err: err}
 		}
 
 		return loadedPatentTagsMsg{
@@ -442,7 +531,7 @@ func (o *TagPatentOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			for _, t := range o.available {
 				count := m.counts[t.Name]
 				var state CheckState
-				if count == len(o.patents) {
+				if count == o.target.count() {
 					state = CheckChecked
 				} else if count > 0 {
 					state = CheckIndeterminate
@@ -563,14 +652,23 @@ func (o *TagPatentOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	case "q", "esc":
 		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
 	case "I":
-		return o, pane.CycleIDSEntryStatusesCmd(o.client, o.project, o.patents), true
+		// IDS status cycling applies only to patents.
+		if pt, ok := o.target.(patentTagTarget); ok {
+			return o, pane.CycleIDSEntryStatusesCmd(o.client, o.project, pt.patents), true
+		}
+		return o, nil, true
 	case "N":
-		if len(o.patents) != 1 {
+		// Patent notes apply only to a single patent.
+		pt, ok := o.target.(patentTagTarget)
+		if !ok {
+			return o, nil, true
+		}
+		if len(pt.patents) != 1 {
 			return o, func() tea.Msg {
 				return pane.StatusMsg{Key: text.StatusFilter, Args: []any{"patent notes require a single selected patent"}, Error: true}
 			}, true
 		}
-		return o, func() tea.Msg { return pane.PatentNoteOpenMsg{Number: o.patents[0]} }, true
+		return o, func() tea.Msg { return pane.PatentNoteOpenMsg{Number: pt.patents[0]} }, true
 	case "j", "down":
 		if len(o.available) > 0 {
 			o.selected = (o.selected + 1) % len(o.available)
@@ -617,37 +715,19 @@ func (o *TagPatentOverlay) applyTagsCmd() tea.Cmd {
 			if finalState == initialState {
 				continue // No change
 			}
-
-			if finalState == CheckChecked {
-				// Assign tag to all selected patents using the batch method
-				var empty proto.Empty
-				if err := o.client.Call(ctx, proto.MethodTagPatent, proto.TagParams{
-					Project: o.project,
-					Patents: o.patents,
-					Name:    tagName,
-				}, &empty); err != nil {
+			switch finalState {
+			case CheckChecked:
+				if err := o.target.apply(ctx, o.client, o.project, tagName, true); err != nil {
 					return applyFinishedMsg{status: pane.StatusMsg{Key: text.StatusTagPatentAddFailed, Args: []any{err.Error()}, Error: true}}
 				}
-			} else if finalState == CheckUnchecked {
-				// Remove tag from all selected patents using the batch method
-				var empty proto.Empty
-				if err := o.client.Call(ctx, proto.MethodUntagPatent, proto.TagParams{
-					Project: o.project,
-					Patents: o.patents,
-					Name:    tagName,
-				}, &empty); err != nil {
+			case CheckUnchecked:
+				if err := o.target.apply(ctx, o.client, o.project, tagName, false); err != nil {
 					return applyFinishedMsg{status: pane.StatusMsg{Key: text.StatusTagPatentDeleteFailed, Args: []any{err.Error()}, Error: true}}
 				}
 			}
 		}
 
-		var summary string
-		if len(o.patents) > 1 {
-			summary = fmt.Sprintf("Tags updated for %d patents", len(o.patents))
-		} else {
-			summary = fmt.Sprintf("Tags updated for patent %s", o.patents[0].String())
-		}
-
+		summary := "Tags updated for " + o.target.desc()
 		return applyFinishedMsg{status: pane.StatusMsg{Key: text.StatusFilter, Args: []any{summary}}}
 	}
 }
@@ -668,11 +748,7 @@ func (o *TagPatentOverlay) View(maxW, maxH int) string {
 		return b.String()
 	}
 
-	targetDesc := o.patents[0].String()
-	if len(o.patents) > 1 {
-		targetDesc = fmt.Sprintf("%d patents", len(o.patents))
-	}
-	b.WriteString(o.theme.Dim.Render(fmt.Sprintf("Target: %s", targetDesc)))
+	b.WriteString(o.theme.Dim.Render(fmt.Sprintf("Target: %s", o.target.desc())))
 	b.WriteString("\n\n")
 	if len(o.available) == 0 {
 		b.WriteString(o.theme.MutedItalic.Render("No taxonomy tags defined in this project."))

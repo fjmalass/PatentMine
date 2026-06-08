@@ -322,13 +322,19 @@ func (o *InventorStatsOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool
 			o.searchQuery = ""
 			o.applyFilter()
 			return o, o.reloadPatentsCmd(), true
-		case "left", "h":
+		case "left":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, -1)
 			return o, nil, true
-		case "right", "l":
+		case "right":
 			statsCols := o.currentStatsCols()
 			o.statsFocusedColIdx = moveStatsColumn(statsCols, o.statsFocusedColIdx, 1)
+			return o, nil, true
+		case "l":
+			// Move focus to the right (patents) pane, mirroring the patents pane's
+			// h → stats. Panes switch with h/l; columns move with the arrow keys.
+			o.focus = focusPatents
+			o.focusedColIdx = 0
 			return o, nil, true
 		case ".":
 			if len(o.stats) > 0 {

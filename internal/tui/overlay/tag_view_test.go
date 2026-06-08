@@ -103,7 +103,7 @@ func TestTagPatentOverlayTogglingAndMultiSelection(t *testing.T) {
 		theme:   theme,
 		catalog: catalog,
 		project: projectID,
-		patents: patents,
+		target:  patentTagTarget{patents: patents},
 		available: []domain.Tag{
 			{ID: 1, Name: "tag_one"},
 			{ID: 2, Name: "tag_two"},

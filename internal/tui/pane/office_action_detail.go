@@ -26,6 +26,12 @@ type OpenOfficeActionEditFormMsg struct {
 	OA domain.OfficeAction
 }
 
+// OpenOfficeActionPatentsMsg asks the app to open the patent-assignment overlay
+// for one office action (the two-pane "assigned / all patents" view).
+type OpenOfficeActionPatentsMsg struct {
+	OA domain.OfficeAction
+}
+
 type oaDetailLoadedMsg struct {
 	requestID uint64
 	oa        domain.OfficeAction
@@ -181,6 +187,9 @@ func (o *OfficeActionDetail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	case "e":
 		oa := o.oa
 		return o, func() tea.Msg { return OpenOfficeActionEditFormMsg{OA: oa} }, true
+	case "p":
+		oa := o.oa
+		return o, func() tea.Msg { return OpenOfficeActionPatentsMsg{OA: oa} }, true
 	}
 	return o, nil, false
 }
@@ -225,7 +234,7 @@ func (o *OfficeActionDetail) View(w, h int) string {
 
 	b.WriteByte('\n')
 	b.WriteString(o.theme.Dim.Render(render.Truncate(
-		"[enter/ctrl+n] notes editor  [e] edit  [f] documents  [c] communications  [R] draft response  [esc] back", w)))
+		"[enter/ctrl+n] notes editor  [e] edit  [f] documents  [p] patents  [c] communications  [R] draft response  [esc] back", w)))
 	return b.String()
 }
 

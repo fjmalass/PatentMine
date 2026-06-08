@@ -117,6 +117,12 @@ const (
 	MethodOfficeActionOpen             Method = "office_action.open"
 	MethodOfficeActionTag              Method = "office_action.tag"
 	MethodOfficeActionUntag            Method = "office_action.untag"
+	MethodOfficeActionAssignPatents    Method = "office_action.assign_patents"
+	MethodOfficeActionReleasePatents   Method = "office_action.release_patents"
+	MethodOfficeActionReviewStatus     Method = "office_action.review_status"
+	MethodOfficeActionPatents          Method = "office_action.patents"
+	MethodOfficeActionCopyPatents      Method = "office_action.copy_patents"
+	MethodPatentOfficeActions          Method = "patent.office_actions"
 
 	// Prosecution-matter workspace: matter-scoped documents and project stage.
 	MethodMatterDocumentImport   Method = "matter.document.import"

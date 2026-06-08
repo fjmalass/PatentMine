@@ -2,7 +2,11 @@
 // office-action responses, plus office-action import.
 package proto
 
-import "patentmine/internal/domain"
+import (
+	"time"
+
+	"patentmine/internal/domain"
+)
 
 // DraftCreateParams starts a new draft for a project.
 type DraftCreateParams struct {
@@ -141,6 +145,75 @@ type OfficeActionResult struct {
 type OfficeActionTagParams struct {
 	ID  string `json:"id"`
 	Tag string `json:"tag"`
+}
+
+// OfficeActionAssignPatentsParams assigns reference patents to an office action
+// for review. Patents are canonical record numbers (PatentNumber, the catalog's
+// row identity). Re-assigning an already-linked patent preserves its progress.
+type OfficeActionAssignPatentsParams struct {
+	ID      string                `json:"id"`
+	Patents []domain.PatentNumber `json:"patents"`
+}
+
+// OfficeActionReleasePatentsParams removes the review assignment of the given
+// patents from an office action.
+type OfficeActionReleasePatentsParams struct {
+	ID      string                `json:"id"`
+	Patents []domain.PatentNumber `json:"patents"`
+}
+
+// OfficeActionReviewStatusParams sets the review status of one patent assigned to
+// an office action.
+type OfficeActionReviewStatusParams struct {
+	ID     string                `json:"id"`
+	Patent domain.PatentNumber   `json:"patent"`
+	Status domain.OAReviewStatus `json:"status"`
+}
+
+// OfficeActionPatentsParams selects the reference patents assigned to one office
+// action.
+type OfficeActionPatentsParams struct {
+	ID string `json:"id"`
+}
+
+// OfficeActionAssignedPatent is one reference patent assigned to an office action,
+// enriched for the review list: the canonical Number (load key) plus the public
+// Display number and Title, alongside the review state and dates.
+type OfficeActionAssignedPatent struct {
+	Number     domain.PatentNumber   `json:"number"`
+	Display    domain.PatentNumber   `json:"display,omitempty"`
+	Title      string                `json:"title,omitempty"`
+	Status     domain.OAReviewStatus `json:"status"`
+	AssignedAt time.Time             `json:"assigned_at"`
+	ReviewedAt time.Time             `json:"reviewed_at,omitempty"`
+}
+
+// OfficeActionPatentsResult carries the reference patents assigned to an office
+// action, newest assignment first.
+type OfficeActionPatentsResult struct {
+	Patents []OfficeActionAssignedPatent `json:"patents,omitempty"`
+}
+
+// PatentOfficeActionsParams asks which office actions the given patents (canonical
+// record numbers) are assigned to — used to annotate the catalog / patent detail.
+type PatentOfficeActionsParams struct {
+	Patents []domain.PatentNumber `json:"patents"`
+}
+
+// PatentOfficeActionRef names one office action a patent is assigned to, with the
+// review state, enough to label the patent list/detail without a second lookup.
+type PatentOfficeActionRef struct {
+	OfficeActionID string                `json:"office_action_id"`
+	Name           string                `json:"name,omitempty"`
+	Status         domain.OAReviewStatus `json:"status"`
+	AssignedAt     time.Time             `json:"assigned_at"`
+}
+
+// PatentOfficeActionsResult maps each patent's canonical record number
+// (PatentNumber.Normalized()) to the office actions it is assigned to. Patents
+// with no assignment are absent.
+type PatentOfficeActionsResult struct {
+	ByPatent map[string][]PatentOfficeActionRef `json:"by_patent,omitempty"`
 }
 
 // OfficeActionListResult carries a project's office actions. BillableSecs is the

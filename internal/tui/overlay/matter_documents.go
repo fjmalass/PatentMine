@@ -91,24 +91,16 @@ type MatterDocuments struct {
 	cursor  int
 	offset  int
 
-	// Dual-table state (if oa != nil)
-	items0      []domain.MatterDocument
-	rawItems0   []domain.MatterDocument
-	cursor0     int
-	offset0     int
-	activeCol0  int
-	sortCol0    col0Type
-	sortDesc0   bool
-
-	items1      []domain.MatterDocument
-	rawItems1   []domain.MatterDocument
-	cursor1     int
-	offset1     int
-	activeCol1  int
-	sortCol1    col1Type
-	sortDesc1   bool
-
-	activeTable int // 0 = associated, 1 = all
+	// Dual-table state (if oa != nil). The shared dualTable controller owns the
+	// active pane, per-pane row cursor / column cursor / sort, and jump; the scroll
+	// offsets stay here for this overlay's own (column-rich) render windowing.
+	items0    []domain.MatterDocument
+	rawItems0 []domain.MatterDocument
+	offset0   int
+	items1    []domain.MatterDocument
+	rawItems1 []domain.MatterDocument
+	offset1   int
+	dt        dualTable
 
 	loading bool
 	loadErr string
@@ -129,18 +121,18 @@ type MatterDocuments struct {
 }
 
 func NewMatterDocuments(client *rpc.Client, theme render.Theme, project domain.ProjectID, oa *domain.OfficeAction) *MatterDocuments {
-	return &MatterDocuments{
-		client:      client,
-		theme:       theme,
-		project:     project,
-		oa:          oa,
-		loading:     true,
-		activeTable: 0,
-		sortCol0:    col0LoadDate,
-		sortDesc0:   true,
-		sortCol1:    col1LoadDateTime,
-		sortDesc1:   true,
+	o := &MatterDocuments{
+		client:  client,
+		theme:   theme,
+		project: project,
+		oa:      oa,
+		loading: true,
+		dt:      newDualTable(),
 	}
+	// Preserve the historical default ordering (newest load first) per pane.
+	o.dt.initSort(0, int(col0LoadDate), true)
+	o.dt.initSort(1, int(col1LoadDateTime), true)
+	return o
 }
 
 func (o *MatterDocuments) Title() string {
@@ -202,7 +194,7 @@ func (o *MatterDocuments) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			}
 			o.items0 = make([]domain.MatterDocument, len(o.rawItems0))
 			copy(o.items0, o.rawItems0)
-			sortItems0(o.items0, o.sortCol0, o.sortDesc0, o.oa.ID)
+			sortItems0(o.items0, col0Type(o.dt.SortColIn(0)), o.dt.SortDescIn(0), o.oa.ID)
 
 			// The "all documents" table is everything *except* what is already
 			// associated with this office action (shown in the table above), so no
@@ -215,14 +207,9 @@ func (o *MatterDocuments) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			}
 			o.items1 = make([]domain.MatterDocument, len(o.rawItems1))
 			copy(o.items1, o.rawItems1)
-			sortItems1(o.items1, o.sortCol1, o.sortDesc1)
+			sortItems1(o.items1, col1Type(o.dt.SortColIn(1)), o.dt.SortDescIn(1))
 
-			if o.cursor0 >= len(o.items0) {
-				o.cursor0 = max(len(o.items0)-1, 0)
-			}
-			if o.cursor1 >= len(o.items1) {
-				o.cursor1 = max(len(o.items1)-1, 0)
-			}
+			o.dt.clamp([2]int{len(o.items0), len(o.items1)}, [2]int{col0Count, col1Count})
 		} else {
 			o.items = m.projectItems
 			if o.cursor >= len(o.items) {
@@ -249,33 +236,7 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	if o.loading {
 		return o, nil, true
 	}
-	if !o.renaming && !o.tagging && !o.assigning && !o.confirmDelete {
-		var currentFocus, numFields int
-		if o.oa != nil {
-			if o.activeTable == 0 {
-				currentFocus = o.cursor0
-				numFields = len(o.items0)
-			} else {
-				currentFocus = o.cursor1
-				numFields = len(o.items1)
-			}
-		} else {
-			currentFocus = o.cursor
-			numFields = len(o.items)
-		}
-		if newCursor, handled := o.jump.HandleKey(msg, currentFocus, numFields); handled {
-			if o.oa != nil {
-				if o.activeTable == 0 {
-					o.cursor0 = newCursor
-				} else {
-					o.cursor1 = newCursor
-				}
-			} else {
-				o.cursor = newCursor
-			}
-			return o, nil, true
-		}
-	}
+	// Text-input sub-modes consume keys first.
 	if o.renaming {
 		return o.handleRenameKey(msg)
 	}
@@ -296,144 +257,119 @@ func (o *MatterDocuments) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 			return o, nil, true
 		}
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
-		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
-	case tea.KeyTab:
-		if o.oa != nil {
-			o.activeTable = 1 - o.activeTable
-		}
-		return o, nil, true
-	case tea.KeyUp:
-		o.moveCursor(-1)
-		return o, nil, true
-	case tea.KeyDown:
-		o.moveCursor(1)
-		return o, nil, true
-	case tea.KeyLeft:
-		if o.oa != nil {
-			if o.activeTable == 0 {
-				o.activeCol0 = (o.activeCol0 - 1 + col0Count) % col0Count
-			} else {
-				o.activeCol1 = (o.activeCol1 - 1 + col1Count) % col1Count
+
+	// Navigation. Dual-table (office-action) mode delegates to the shared
+	// dualTable controller (active pane, cursor, column cursor, sort, jump);
+	// single-table mode keeps its own cursor and jump.
+	if o.oa != nil {
+		if handled, sortReq := o.dt.HandleNav(msg, [2]int{len(o.items0), len(o.items1)}, [2]int{col0Count, col1Count}); handled {
+			if sortReq {
+				o.applySort()
 			}
+			return o, nil, true
 		}
-		return o, nil, true
-	case tea.KeyRight:
-		if o.oa != nil {
-			if o.activeTable == 0 {
-				o.activeCol0 = (o.activeCol0 + 1) % col0Count
-			} else {
-				o.activeCol1 = (o.activeCol1 + 1) % col1Count
-			}
+	} else {
+		if newCursor, handled := o.jump.HandleKey(msg, o.cursor, len(o.items)); handled {
+			o.cursor = newCursor
+			return o, nil, true
 		}
-		return o, nil, true
-	case tea.KeyEnter:
-		return o, o.viewSelected(), true
-	case tea.KeyRunes:
 		switch msg.String() {
 		case ";":
-			if !o.renaming && !o.tagging && !o.assigning && !o.confirmDelete {
-				o.jump.Active = true
-				o.jump.PendingCount = 0
-				o.jump.PendingG = false
-				return o, nil, true
-			}
-		case "k":
+			o.jump.Active = true
+			o.jump.PendingCount = 0
+			o.jump.PendingG = false
+			return o, nil, true
+		case "up", "k":
 			o.moveCursor(-1)
-		case "j":
+			return o, nil, true
+		case "down", "j":
 			o.moveCursor(1)
-		case ".":
-			if o.oa != nil {
-				if o.activeTable == 0 {
-					col := col0Type(o.activeCol0)
-					if o.sortCol0 == col {
-						o.sortDesc0 = !o.sortDesc0
-					} else {
-						o.sortCol0 = col
-						o.sortDesc0 = false
-					}
-					sortItems0(o.items0, o.sortCol0, o.sortDesc0, o.oa.ID)
-				} else {
-					col := col1Type(o.activeCol1)
-					if o.sortCol1 == col {
-						o.sortDesc1 = !o.sortDesc1
-					} else {
-						o.sortCol1 = col
-						o.sortDesc1 = false
-					}
-					sortItems1(o.items1, o.sortCol1, o.sortDesc1)
-				}
-			}
-		case "r":
-			o.beginRename()
-		case "s":
-			if cmd := o.cycleStage(1); cmd != nil {
-				return o, cmd, true
-			}
-		case "O":
-			if cmd := o.cycleOrigin(1); cmd != nil {
-				return o, cmd, true
-			}
-		case "t":
-			o.beginTag(false)
-		case "u":
-			o.beginTag(true)
-		case "a":
-			if o.oa != nil && o.activeTable == 1 {
-				// Instantly associate to the current OA
-				if doc, ok := o.selected(); ok {
-					return o, o.commitAssignFor(doc, o.oa.ID, false), true
-				}
-			} else {
-				// Prompt to assign selected doc to another OA
-				o.beginAssign(false)
-			}
-		case "x":
-			if o.oa != nil && o.activeTable == 0 {
-				// Instantly remove from the current OA
-				if doc, ok := o.selected(); ok {
-					return o, o.commitAssignFor(doc, o.oa.ID, true), true
-				}
-			} else {
-				// Prompt to unassign from another OA
-				o.beginAssign(true)
-			}
-		case "d":
-			hasSelection := false
-			if o.oa != nil {
-				if o.activeTable == 0 {
-					hasSelection = len(o.items0) > 0
-				} else {
-					hasSelection = len(o.items1) > 0
-				}
-			} else {
-				hasSelection = len(o.items) > 0
-			}
-			if hasSelection {
-				o.confirmDelete = true
-				o.msg = ""
-			}
-		case "l":
-			oaID := ""
-			if o.oa != nil {
-				oaID = o.oa.ID
-			}
-			return o, func() tea.Msg { return StartDocumentImportMsg{OfficeActionID: oaID} }, true
-		case "o":
-			if cmd := o.openSelected(); cmd != nil {
-				return o, cmd, true
-			}
-		case "e":
-			if cmd := o.extractSelected(); cmd != nil {
-				return o, cmd, true
-			}
-		case "q":
-			return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+			return o, nil, true
 		}
-		return o, nil, true
+	}
+
+	// Shared actions for both modes.
+	switch msg.String() {
+	case "esc", "q":
+		return o, func() tea.Msg { return CloseOverlayMsg{} }, true
+	case "enter":
+		return o, o.viewSelected(), true
+	case "r":
+		o.beginRename()
+	case "s":
+		if cmd := o.cycleStage(1); cmd != nil {
+			return o, cmd, true
+		}
+	case "O":
+		if cmd := o.cycleOrigin(1); cmd != nil {
+			return o, cmd, true
+		}
+	case "t":
+		o.beginTag(false)
+	case "u":
+		o.beginTag(true)
+	case "a":
+		if o.oa != nil && o.dt.Active() == 1 {
+			// Instantly associate the selected (all-table) document to the current OA.
+			if doc, ok := o.selected(); ok {
+				return o, o.commitAssignFor(doc, o.oa.ID, false), true
+			}
+		} else {
+			o.beginAssign(false)
+		}
+	case "x":
+		if o.oa != nil && o.dt.Active() == 0 {
+			// Instantly remove the selected (associated-table) document from the OA.
+			if doc, ok := o.selected(); ok {
+				return o, o.commitAssignFor(doc, o.oa.ID, true), true
+			}
+		} else {
+			o.beginAssign(true)
+		}
+	case "d":
+		hasSelection := false
+		if o.oa != nil {
+			if o.dt.Active() == 0 {
+				hasSelection = len(o.items0) > 0
+			} else {
+				hasSelection = len(o.items1) > 0
+			}
+		} else {
+			hasSelection = len(o.items) > 0
+		}
+		if hasSelection {
+			o.confirmDelete = true
+			o.msg = ""
+		}
+	case "l":
+		oaID := ""
+		if o.oa != nil {
+			oaID = o.oa.ID
+		}
+		return o, func() tea.Msg { return StartDocumentImportMsg{OfficeActionID: oaID} }, true
+	case "o":
+		if cmd := o.openSelected(); cmd != nil {
+			return o, cmd, true
+		}
+	case "e":
+		if cmd := o.extractSelected(); cmd != nil {
+			return o, cmd, true
+		}
 	}
 	return o, nil, true
+}
+
+// applySort re-orders the active dual-table pane by the controller's current sort
+// column and direction.
+func (o *MatterDocuments) applySort() {
+	if o.oa == nil {
+		return
+	}
+	if o.dt.Active() == 0 {
+		sortItems0(o.items0, col0Type(o.dt.SortColIn(0)), o.dt.SortDescIn(0), o.oa.ID)
+	} else {
+		sortItems1(o.items1, col1Type(o.dt.SortColIn(1)), o.dt.SortDescIn(1))
+	}
 }
 
 func (o *MatterDocuments) openSelected() tea.Cmd {
@@ -521,41 +457,31 @@ func (o *MatterDocuments) handleAssignKey(msg tea.KeyMsg) (Overlay, tea.Cmd, boo
 	return o, nil, true
 }
 
+// moveCursor moves the single-table cursor (dual-table mode navigates through the
+// shared dualTable controller).
 func (o *MatterDocuments) moveCursor(delta int) {
-	if o.oa != nil {
-		if o.activeTable == 0 {
-			if len(o.items0) == 0 {
-				return
-			}
-			o.cursor0 = max(0, min(o.cursor0+delta, len(o.items0)-1))
-		} else {
-			if len(o.items1) == 0 {
-				return
-			}
-			o.cursor1 = max(0, min(o.cursor1+delta, len(o.items1)-1))
-		}
-	} else {
-		if len(o.items) == 0 {
-			return
-		}
-		o.cursor = max(0, min(o.cursor+delta, len(o.items)-1))
+	if len(o.items) == 0 {
+		return
 	}
+	o.cursor = max(0, min(o.cursor+delta, len(o.items)-1))
 }
 
 func (o *MatterDocuments) selected() (domain.MatterDocument, bool) {
 	if o.oa != nil {
-		if o.activeTable == 0 {
-			if o.cursor0 < 0 || o.cursor0 >= len(o.items0) {
+		if o.dt.Active() == 0 {
+			i := o.dt.CursorIn(0)
+			if i < 0 || i >= len(o.items0) {
 				return domain.MatterDocument{}, false
 			}
-			return o.items0[o.cursor0], true
-		} else {
-			if o.cursor1 < 0 || o.cursor1 >= len(o.items1) {
-				return domain.MatterDocument{}, false
-			}
-			return o.items1[o.cursor1], true
+			return o.items0[i], true
 		}
-	} else {
+		i := o.dt.CursorIn(1)
+		if i < 0 || i >= len(o.items1) {
+			return domain.MatterDocument{}, false
+		}
+		return o.items1[i], true
+	}
+	{
 		if o.cursor < 0 || o.cursor >= len(o.items) {
 			return domain.MatterDocument{}, false
 		}
@@ -809,10 +735,11 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		// 1. Table 0 (Associated Documents)
 		b.WriteString(o.theme.Title.Render("Associated with Current Office Action:") + "\n")
 		bodyH0 := max(1, h0-1)
-		if o.cursor0 < o.offset0 {
-			o.offset0 = o.cursor0
-		} else if o.cursor0 >= o.offset0+bodyH0 {
-			o.offset0 = o.cursor0 - bodyH0 + 1
+		cur0 := o.dt.CursorIn(0)
+		if cur0 < o.offset0 {
+			o.offset0 = cur0
+		} else if cur0 >= o.offset0+bodyH0 {
+			o.offset0 = cur0 - bodyH0 + 1
 		}
 		renderRows0 := min(bodyH0, len(o.items0)-o.offset0)
 		if renderRows0 < 0 {
@@ -836,12 +763,12 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 			Theme:         o.theme,
 			Columns:       columns0,
 			RowCount:      renderRows0,
-			FocusedColIdx: o.activeCol0,
-			ActiveSort:    sortKeys0[o.sortCol0],
-			SortAscending: !o.sortDesc0,
-			FocusActive:   o.activeTable == 0,
+			FocusedColIdx: o.dt.ColCursorIn(0),
+			ActiveSort:    sortKeys0[o.dt.SortColIn(0)],
+			SortAscending: !o.dt.SortDescIn(0),
+			FocusActive:   o.dt.Active() == 0,
 			IsRowCursor: func(rIdx int) bool {
-				return o.offset0+rIdx == o.cursor0
+				return o.offset0+rIdx == o.dt.CursorIn(0)
 			},
 		}
 
@@ -853,11 +780,9 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 			switch col0Type(colIdx) {
 			case col0Name:
 				lineNum := o.offset0 + rowIdx + 1
-				gutter := ""
-				if o.activeTable == 0 {
-					gutter = o.jump.GutterPrefix(lineNum)
-				} else {
-					gutter = fmt.Sprintf(" %d ", lineNum)
+				gutter := fmt.Sprintf(" %d ", lineNum)
+				if o.dt.Active() == 0 {
+					gutter = o.dt.GutterPrefix(lineNum)
 				}
 				return gutter + doc.DisplayName
 			case col0Kind:
@@ -892,10 +817,11 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		// 2. Table 1 (All Documents)
 		b.WriteString(o.theme.Title.Render("All Loaded Documents:") + "\n")
 		bodyH1 := max(1, h1-1)
-		if o.cursor1 < o.offset1 {
-			o.offset1 = o.cursor1
-		} else if o.cursor1 >= o.offset1+bodyH1 {
-			o.offset1 = o.cursor1 - bodyH1 + 1
+		cur1 := o.dt.CursorIn(1)
+		if cur1 < o.offset1 {
+			o.offset1 = cur1
+		} else if cur1 >= o.offset1+bodyH1 {
+			o.offset1 = cur1 - bodyH1 + 1
 		}
 		renderRows1 := min(bodyH1, len(o.items1)-o.offset1)
 		if renderRows1 < 0 {
@@ -917,12 +843,12 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 			Theme:         o.theme,
 			Columns:       columns1,
 			RowCount:      renderRows1,
-			FocusedColIdx: o.activeCol1,
-			ActiveSort:    sortKeys1[o.sortCol1],
-			SortAscending: !o.sortDesc1,
-			FocusActive:   o.activeTable == 1,
+			FocusedColIdx: o.dt.ColCursorIn(1),
+			ActiveSort:    sortKeys1[o.dt.SortColIn(1)],
+			SortAscending: !o.dt.SortDescIn(1),
+			FocusActive:   o.dt.Active() == 1,
 			IsRowCursor: func(rIdx int) bool {
-				return o.offset1+rIdx == o.cursor1
+				return o.offset1+rIdx == o.dt.CursorIn(1)
 			},
 		}
 
@@ -934,11 +860,9 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 			switch col1Type(colIdx) {
 			case col1Name:
 				lineNum := o.offset1 + rowIdx + 1
-				gutter := ""
-				if o.activeTable == 1 {
-					gutter = o.jump.GutterPrefix(lineNum)
-				} else {
-					gutter = fmt.Sprintf(" %d ", lineNum)
+				gutter := fmt.Sprintf(" %d ", lineNum)
+				if o.dt.Active() == 1 {
+					gutter = o.dt.GutterPrefix(lineNum)
 				}
 				return gutter + doc.DisplayName
 			case col1Origin:
@@ -967,7 +891,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		b.WriteString("\n")
 
 		footer := "↑/↓ move · tab switch table · ←/→ move col cursor · . sort col · enter view · i load · o open · e extract · s stage · O origin · r rename · d delete · esc close"
-		if o.activeTable == 0 {
+		if o.dt.Active() == 0 {
 			footer += " · a assign OA · x remove from current OA"
 		} else {
 			footer += " · a add to current OA · x unassign OA"
@@ -995,12 +919,8 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		case o.msg != "":
 			footer = o.msg + " · " + footer
 		}
-		if o.jump.Active {
-			curr := o.cursor0
-			if o.activeTable == 1 {
-				curr = o.cursor1
-			}
-			footer = o.jump.HintSuffix(curr, -1, false)
+		if o.dt.JumpActive() {
+			footer = o.dt.JumpHint()
 		}
 		b.WriteString(o.theme.Dim.Render(render.Truncate(footer, maxW)))
 		return b.String()

@@ -313,6 +313,24 @@ type Repository interface {
 	OfficeActionTags(ctx context.Context, project domain.ProjectID, officeActionID string) ([]domain.Tag, error)
 	// OfficeActionTagsByOA returns tags for multiple office actions keyed by id.
 	OfficeActionTagsByOA(ctx context.Context, project domain.ProjectID, officeActionIDs []string) (map[string][]domain.Tag, error)
+	// AssignPatentsToOfficeAction links reference patents to an office action for
+	// review, defaulting new links to to_review and leaving existing links (and
+	// their review progress) untouched.
+	AssignPatentsToOfficeAction(ctx context.Context, officeActionID string, patents []domain.PatentNumber, assignedAt time.Time) error
+	// ReleasePatentsFromOfficeAction removes the review links between an office
+	// action and the given patents.
+	ReleasePatentsFromOfficeAction(ctx context.Context, officeActionID string, patents []domain.PatentNumber) error
+	// SetOfficeActionReviewStatus updates one assigned patent's review status,
+	// stamping reviewed_at on the move to reviewed. ErrNotFound when unassigned.
+	SetOfficeActionReviewStatus(ctx context.Context, officeActionID string, patent domain.PatentNumber, status domain.OAReviewStatus, now time.Time) error
+	// PatentsForOfficeAction returns the review links assigned to an office action.
+	PatentsForOfficeAction(ctx context.Context, officeActionID string) ([]domain.OfficeActionPatent, error)
+	// OfficeActionsForPatents returns review links for the given patents, keyed by
+	// canonical record number (PatentNumber.Normalized()).
+	OfficeActionsForPatents(ctx context.Context, patents []domain.PatentNumber) (map[string][]domain.OfficeActionPatent, error)
+	// OfficeActionAssignedCounts returns the count of patents assigned to each
+	// office action in a project, keyed by office action id.
+	OfficeActionAssignedCounts(ctx context.Context, project domain.ProjectID) (map[string]int, error)
 	// MatterDocumentOfficeActions returns office-action ids assigned to one preparation document.
 	MatterDocumentOfficeActions(ctx context.Context, documentID string) ([]string, error)
 	// MatterDocumentOfficeActionsByDocument returns office-action ids for multiple preparation documents keyed by id.

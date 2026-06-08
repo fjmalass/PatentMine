@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '16')
+VALUES ('schema_version', '17')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -830,6 +830,23 @@ CREATE TABLE IF NOT EXISTS office_action_tag (
 );
 
 CREATE INDEX IF NOT EXISTS idx_office_action_tag_oa ON office_action_tag (office_action_id);
+
+-- patent_office_action assigns prior-art / reference patents to an office action
+-- for review. The office action behaves like an assignable label on patents
+-- (mirrors patent_tag, but a typed reference instead of free text). patent_number
+-- is the canonical record number, so a link follows the patent across re-stamps
+-- and is carried onto the surviving record by a MergeRecords reconciliation (see
+-- recordNumberChildTables). status tracks review progress; release deletes the row.
+CREATE TABLE IF NOT EXISTS patent_office_action (
+    office_action_id TEXT NOT NULL REFERENCES office_action (id) ON DELETE CASCADE,
+    patent_number    TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
+    status           TEXT NOT NULL DEFAULT 'to_review',
+    assigned_at      TEXT NOT NULL,
+    reviewed_at      TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (patent_number, office_action_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_patent_office_action_oa ON patent_office_action (office_action_id);
 
 -- matter_event is one entry in a matter's communications log: an email, a phone
 -- call, an examiner interview, a filing, or a tracked deadline. Project-scoped,

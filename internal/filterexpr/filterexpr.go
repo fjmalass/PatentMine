@@ -21,6 +21,7 @@ const (
 	FieldAssignee   Field = "assignee"
 	FieldCountry    Field = "country"
 	FieldProvenance Field = "provenance"
+	FieldOA         Field = "oa"
 )
 
 const LegacySyntaxHint = "legacy filter syntax is no longer supported; use field:value expressions like :filter state:active"
@@ -42,6 +43,7 @@ var fieldSpecs = []fieldSpec{
 	{name: FieldAssignee, aliases: []string{"owner"}, parse: parseAssigneeTerm},
 	{name: FieldCountry, parse: parseCountryTerm},
 	{name: FieldProvenance, aliases: []string{"prov", "provenance"}, parse: parseProvenanceTerm},
+	{name: FieldOA, aliases: []string{"office_action", "officeaction"}, parse: parseOATerm},
 }
 
 var fieldByName = func() map[string]fieldSpec {
@@ -137,6 +139,9 @@ func ValidateProjectScope(expr Expr, projectActive bool) error {
 	}
 	if UsesField(expr, FieldProvenance) {
 		return fmt.Errorf("provenance filters require an active project")
+	}
+	if UsesField(expr, FieldOA) {
+		return fmt.Errorf("oa filters require an active project")
 	}
 	return nil
 }
@@ -354,6 +359,18 @@ func parseTagTerm(value string) (TermExpr, error) {
 		return TermExpr{}, err
 	}
 	return TermExpr{Field: FieldTag, Value: value}, nil
+}
+
+// parseOATerm parses an office-action review-assignment filter. The value is
+// either a reserved keyword — none (unassigned), any (assigned), to_review or
+// reviewed (assigned with that review status) — or an office-action name to match
+// (case-insensitive substring). Compiled in the store (compileFilterTerm).
+func parseOATerm(value string) (TermExpr, error) {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return TermExpr{}, fmt.Errorf("oa filter requires a value: none, any, to_review, reviewed, or an office-action name")
+	}
+	return TermExpr{Field: FieldOA, Value: v}, nil
 }
 
 func parseSearchTerm(value string) (TermExpr, error) {

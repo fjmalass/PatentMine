@@ -18,6 +18,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/export/docx"
 	"patentmine/internal/observability"
+	"patentmine/internal/proto"
 )
 
 // CreateDraft starts a new draft for a project, seeded with the conventional
@@ -416,6 +417,15 @@ func (e *Engine) ImportOfficeAction(ctx context.Context, in ImportOfficeActionIn
 			observability.AttrType:              string(oa.Type),
 		},
 	})
+	// Carry the previous office action's reviewed-against patents onto this one,
+	// so a chain (non-final → final → …) starts from the prior set. Best-effort:
+	// a copy failure must not fail the import.
+	if copied, cerr := e.copyAssignmentsFromPreviousOA(ctx, oa); cerr != nil {
+		e.log(ctx, slog.LevelWarn, "copy assignments from previous office action failed",
+			slog.String("office_action", oa.ID), slog.String("error", cerr.Error()))
+	} else {
+		oa.AssignedPatents = copied
+	}
 	e.announceChange()
 	return oa, nil
 }
@@ -636,6 +646,13 @@ func (e *Engine) ListOfficeActions(ctx context.Context, project domain.ProjectID
 	actions, err = e.repo.ListOfficeActions(ctx, project)
 	if err != nil {
 		return nil, err
+	}
+	// Stamp each action with how many reference patents are assigned to it for
+	// review, so the list can show the count without a per-row query.
+	if counts, cerr := e.repo.OfficeActionAssignedCounts(ctx, project); cerr == nil {
+		for i := range actions {
+			actions[i].AssignedPatents = counts[actions[i].ID]
+		}
 	}
 	e.setGauge(observability.MetricOfficeActionListReturned, int64(len(actions)))
 	e.recordActivity(ctx, observability.Record{
@@ -955,6 +972,266 @@ func (e *Engine) UntagOfficeAction(ctx context.Context, id, name string) (oa dom
 	})
 	e.announceChange()
 	return oa, nil
+}
+
+// AssignPatentsToOfficeAction links reference patents to an office action for
+// review and returns the action's updated assignment list. Re-assigning an
+// already-linked patent preserves its review progress.
+func (e *Engine) AssignPatentsToOfficeAction(ctx context.Context, oaID string, patents []domain.PatentNumber) (res proto.OfficeActionPatentsResult, err error) {
+	defer e.observeDuration("engine.assign_patents_office_action", time.Now(), &err)
+	oaID = strings.TrimSpace(oaID)
+	if oaID == "" {
+		return proto.OfficeActionPatentsResult{}, errors.New("engine: office action id required")
+	}
+	oa, err := e.repo.OfficeAction(ctx, oaID)
+	if err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	if err = e.repo.AssignPatentsToOfficeAction(ctx, oaID, patents, time.Now().UTC()); err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionAssignPatents,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: oaID,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+			observability.AttrName:    oa.Name,
+			observability.AttrCount:   len(patents),
+		},
+	})
+	e.announceChange()
+	return e.OfficeActionPatents(ctx, oaID)
+}
+
+// ReleasePatentsFromOfficeAction removes the review assignment of the given
+// patents from an office action and returns the action's updated list.
+func (e *Engine) ReleasePatentsFromOfficeAction(ctx context.Context, oaID string, patents []domain.PatentNumber) (res proto.OfficeActionPatentsResult, err error) {
+	defer e.observeDuration("engine.release_patents_office_action", time.Now(), &err)
+	oaID = strings.TrimSpace(oaID)
+	if oaID == "" {
+		return proto.OfficeActionPatentsResult{}, errors.New("engine: office action id required")
+	}
+	oa, err := e.repo.OfficeAction(ctx, oaID)
+	if err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	if err = e.repo.ReleasePatentsFromOfficeAction(ctx, oaID, patents); err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionReleasePatents,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: oaID,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+			observability.AttrName:    oa.Name,
+			observability.AttrCount:   len(patents),
+		},
+	})
+	e.announceChange()
+	return e.OfficeActionPatents(ctx, oaID)
+}
+
+// SetOfficeActionReviewStatus updates the review status of one patent assigned to
+// an office action and returns the action's updated list.
+func (e *Engine) SetOfficeActionReviewStatus(ctx context.Context, oaID string, patent domain.PatentNumber, status domain.OAReviewStatus) (res proto.OfficeActionPatentsResult, err error) {
+	defer e.observeDuration("engine.set_office_action_review_status", time.Now(), &err)
+	oaID = strings.TrimSpace(oaID)
+	if oaID == "" {
+		return proto.OfficeActionPatentsResult{}, errors.New("engine: office action id required")
+	}
+	if !status.Valid() {
+		return proto.OfficeActionPatentsResult{}, fmt.Errorf("engine: invalid review status %q", status)
+	}
+	oa, err := e.repo.OfficeAction(ctx, oaID)
+	if err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	if err = e.repo.SetOfficeActionReviewStatus(ctx, oaID, patent, status, time.Now().UTC()); err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionReviewStatus,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: oaID,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrProject: string(oa.Project),
+			observability.AttrName:    oa.Name,
+			"patent":                  patent.DisplayString(),
+			"status":                  string(status),
+		},
+	})
+	e.announceChange()
+	return e.OfficeActionPatents(ctx, oaID)
+}
+
+// CopyOfficeActionPatentsFromPrevious copies the patents assigned to the office
+// action's predecessor in the prosecution chain (same matter + application, latest
+// mail date before this one) onto it, each reset to to_review. Returns the action's
+// updated list. The manual counterpart to the automatic copy run at import.
+func (e *Engine) CopyOfficeActionPatentsFromPrevious(ctx context.Context, oaID string) (res proto.OfficeActionPatentsResult, err error) {
+	defer e.observeDuration("engine.copy_office_action_patents", time.Now(), &err)
+	oa, err := e.repo.OfficeAction(ctx, strings.TrimSpace(oaID))
+	if err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	if _, err = e.copyAssignmentsFromPreviousOA(ctx, oa); err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	e.announceChange()
+	return e.OfficeActionPatents(ctx, oa.ID)
+}
+
+// copyAssignmentsFromPreviousOA assigns the previous office action's reference
+// patents to current (reset to to_review via AssignPatentsToOfficeAction, which
+// leaves any already-present link untouched). It returns the number of patents
+// the predecessor carried (0 when there is no predecessor or it had none). The
+// "previous" action is the one in the same matter and application whose mail date
+// is the greatest strictly before current's; a current action with no mail date
+// has no determinable predecessor.
+func (e *Engine) copyAssignmentsFromPreviousOA(ctx context.Context, current domain.OfficeAction) (int, error) {
+	if current.MailDate.IsZero() {
+		return 0, nil
+	}
+	all, err := e.repo.ListOfficeActions(ctx, current.Project)
+	if err != nil {
+		return 0, err
+	}
+	var prev *domain.OfficeAction
+	for i := range all {
+		o := all[i]
+		if o.ID == current.ID || o.MailDate.IsZero() || !o.MailDate.Before(current.MailDate) {
+			continue
+		}
+		if !sameApplication(o.ApplicationNumber, current.ApplicationNumber) {
+			continue
+		}
+		if prev == nil || o.MailDate.After(prev.MailDate) {
+			prev = &all[i]
+		}
+	}
+	if prev == nil {
+		return 0, nil
+	}
+	links, err := e.repo.PatentsForOfficeAction(ctx, prev.ID)
+	if err != nil {
+		return 0, err
+	}
+	if len(links) == 0 {
+		return 0, nil
+	}
+	nums := make([]domain.PatentNumber, 0, len(links))
+	for _, l := range links {
+		nums = append(nums, l.Patent)
+	}
+	if err := e.repo.AssignPatentsToOfficeAction(ctx, current.ID, nums, time.Now().UTC()); err != nil {
+		return 0, err
+	}
+	e.recordActivity(ctx, observability.Record{
+		Action:   observability.ActionOfficeActionAssignPatents,
+		Entity:   observability.EntityOfficeAction,
+		EntityID: current.ID,
+		Status:   observability.StatusCommitted,
+		Attributes: map[string]any{
+			observability.AttrProject: string(current.Project),
+			observability.AttrName:    current.Name,
+			observability.AttrCount:   len(nums),
+			"via":                     "copy_previous",
+			"from_office_action":      prev.ID,
+		},
+	})
+	return len(nums), nil
+}
+
+// sameApplication reports whether two application numbers denote the same
+// application, comparing on alphanumerics only so "16/123,456" and "16123456"
+// match. Two blank numbers are treated as the same application (a matter whose
+// office actions share one implicit application).
+func sameApplication(a, b string) bool {
+	return normalizeAppNumber(a) == normalizeAppNumber(b)
+}
+
+func normalizeAppNumber(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') {
+			b.WriteRune(r)
+		} else if r >= 'A' && r <= 'Z' {
+			b.WriteRune(r + ('a' - 'A'))
+		}
+	}
+	return b.String()
+}
+
+// OfficeActionPatents returns the reference patents assigned to an office action,
+// enriched with each patent's latest public display number and title for the
+// review list. The enrichment is best-effort: a patent whose record is missing
+// still appears, shown by its canonical number with no title.
+func (e *Engine) OfficeActionPatents(ctx context.Context, oaID string) (proto.OfficeActionPatentsResult, error) {
+	links, err := e.repo.PatentsForOfficeAction(ctx, strings.TrimSpace(oaID))
+	if err != nil {
+		return proto.OfficeActionPatentsResult{}, err
+	}
+	out := proto.OfficeActionPatentsResult{Patents: make([]proto.OfficeActionAssignedPatent, 0, len(links))}
+	for _, l := range links {
+		row := proto.OfficeActionAssignedPatent{
+			Number:     l.Patent,
+			Display:    l.Patent,
+			Status:     l.Status,
+			AssignedAt: l.AssignedAt,
+			ReviewedAt: l.ReviewedAt,
+		}
+		if p, perr := e.Patent(ctx, l.Patent); perr == nil {
+			row.Title = p.Title
+			if !p.DisplayNumber.IsZero() {
+				row.Display = p.DisplayNumber
+			}
+		}
+		out.Patents = append(out.Patents, row)
+	}
+	return out, nil
+}
+
+// PatentOfficeActions reports, for each given patent (canonical record number),
+// the office actions it is assigned to — for annotating the catalog / patent
+// detail. Office-action names are resolved once each and cached.
+func (e *Engine) PatentOfficeActions(ctx context.Context, patents []domain.PatentNumber) (proto.PatentOfficeActionsResult, error) {
+	byPatent, err := e.repo.OfficeActionsForPatents(ctx, patents)
+	if err != nil {
+		return proto.PatentOfficeActionsResult{}, err
+	}
+	res := proto.PatentOfficeActionsResult{ByPatent: make(map[string][]proto.PatentOfficeActionRef, len(byPatent))}
+	nameCache := make(map[string]string)
+	oaName := func(id string) string {
+		if n, ok := nameCache[id]; ok {
+			return n
+		}
+		n := ""
+		if oa, oerr := e.repo.OfficeAction(ctx, id); oerr == nil {
+			if n = strings.TrimSpace(oa.Name); n == "" && !oa.MailDate.IsZero() {
+				n = oa.MailDate.Format(domain.DateLayout)
+			}
+		}
+		nameCache[id] = n
+		return n
+	}
+	for key, links := range byPatent {
+		refs := make([]proto.PatentOfficeActionRef, 0, len(links))
+		for _, l := range links {
+			refs = append(refs, proto.PatentOfficeActionRef{
+				OfficeActionID: l.OfficeActionID,
+				Name:           oaName(l.OfficeActionID),
+				Status:         l.Status,
+				AssignedAt:     l.AssignedAt,
+			})
+		}
+		res.ByPatent[key] = refs
+	}
+	return res, nil
 }
 
 // AssignMatterDocumentOfficeAction links a preparation document to one office action.

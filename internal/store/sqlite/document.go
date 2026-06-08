@@ -118,13 +118,44 @@ func (r *Repo) RecordOf(ctx context.Context, number domain.PatentNumber) (record
 // record's curated state. A blank state is the same as no membership row.
 const mergeAutoReviewStates = `('', 'unknown', 'needs_triage')`
 
+// recordNumberChildTables are the simple user-data tables that key a single
+// patent_number column to record(number) (ON DELETE CASCADE) and carry no
+// bespoke per-record logic. Listing them once here keeps the two paths that MUST
+// agree — MergeRecords (repoint rows onto the surviving record) and
+// SoftDeletePatents (drop rows with the demoted patent) — from drifting. That
+// drift was not hypothetical: before this list, MergeRecords repointed
+// membership/document/relation but silently CASCADE-dropped patent_tag /
+// project_patent_note / patent_renewal on every merge, while SoftDeletePatents
+// handled only tag/note. Tables with bespoke handling are intentionally excluded:
+// membership (review-state promotion), relation (two endpoints + inbound
+// preservation), document (record_number column), the id-keyed source-derived
+// tables, and mutation_item (an undo log whose entries describe the absorbed
+// record's own history, so they correctly cascade away rather than re-point).
+//
+// The names are compile-time constants concatenated into DDL/DML below; never
+// extend this with caller-supplied input.
+var recordNumberChildTables = []string{
+	"patent_tag",
+	"project_patent_note",
+	"patent_renewal",
+	"patent_office_action",
+}
+
+// mergeStep is one repoint/delete statement run inside MergeRecords.
+type mergeStep struct {
+	query string
+	args  []any
+}
+
 // MergeRecords folds the absorb record into keep and deletes absorb. It is
 // non-lossy: the graph/user tables keyed by record number (document, membership,
-// relation) are repointed, and the source-derived tables keyed by record id
-// (record_alias, source_bib, uspto_application, uspto_document, source_snapshot,
-// source_diff, assignee_history) are repointed too — otherwise deleting the
-// absorb row would CASCADE them away, silently discarding one side's fetched
-// data. On a per-project membership collision the more-curated review state
+// relation, plus the simple ones in recordNumberChildTables — patent_tag,
+// project_patent_note, patent_renewal, patent_office_action) are repointed, and
+// the source-derived tables keyed by record id (record_alias, source_bib,
+// uspto_application, uspto_document, source_snapshot, source_diff,
+// assignee_history) are repointed too — otherwise deleting the absorb row would
+// CASCADE them away, silently discarding one side's fetched or curated data. On a
+// per-project membership collision the more-curated review state
 // survives: keep keeps its own human decision, but an auto-default on keep is
 // promoted to absorb's curated state so a merge never reverts curation to
 // "unknown". A "deleted" absorb does not suppress a live keep membership (a
@@ -173,10 +204,7 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 	// Repoint by record id: the source-derived tables. OR IGNORE skips rows that
 	// would collide with one keep already owns; the skipped absorb rows cascade
 	// away with the DELETE FROM record below.
-	steps := []struct {
-		query string
-		args  []any
-	}{
+	steps := []mergeStep{
 		{`UPDATE membership SET state = (
 			SELECT a.state FROM membership a
 			WHERE a.patent_number = ? AND a.project_id = membership.project_id
@@ -203,8 +231,19 @@ func (r *Repo) MergeRecords(ctx context.Context, keep, absorb domain.PatentNumbe
 		{`UPDATE source_diff SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
 		{`UPDATE uspto_application SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
 		{`UPDATE uspto_document SET record_id = ? WHERE record_id = ?`, []any{kID, aID}},
-		{`DELETE FROM record WHERE number = ?`, []any{a}},
 	}
+	// Repoint the simple number-keyed user tables (tags, notes, renewals, OA
+	// review links) onto the surviving record before the absorb row's CASCADE
+	// would drop them. OR IGNORE skips a row that would collide with one keep
+	// already owns; the skipped absorb row then cascades away with the DELETE
+	// below. Centralized in recordNumberChildTables so this set never drifts from
+	// SoftDeletePatents.
+	for _, table := range recordNumberChildTables {
+		steps = append(steps, mergeStep{
+			`UPDATE OR IGNORE ` + table + ` SET patent_number = ? WHERE patent_number = ?`, []any{k, a},
+		})
+	}
+	steps = append(steps, mergeStep{`DELETE FROM record WHERE number = ?`, []any{a}})
 	for _, s := range steps {
 		if err := exec(s.query, s.args...); err != nil {
 			return err

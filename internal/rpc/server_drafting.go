@@ -488,6 +488,54 @@ func (s *Server) officeActionUntag(ctx context.Context, raw json.RawMessage) (an
 	return proto.OfficeActionResult{OfficeAction: oa}, nil
 }
 
+func (s *Server) officeActionAssignPatents(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionAssignPatentsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.AssignPatentsToOfficeAction(ctx, p.ID, p.Patents)
+}
+
+func (s *Server) officeActionReleasePatents(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionReleasePatentsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.ReleasePatentsFromOfficeAction(ctx, p.ID, p.Patents)
+}
+
+func (s *Server) officeActionReviewStatus(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionReviewStatusParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.SetOfficeActionReviewStatus(ctx, p.ID, p.Patent, p.Status)
+}
+
+func (s *Server) officeActionPatents(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionPatentsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.OfficeActionPatents(ctx, p.ID)
+}
+
+func (s *Server) officeActionCopyPatents(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.OfficeActionPatentsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.CopyOfficeActionPatentsFromPrevious(ctx, p.ID)
+}
+
+func (s *Server) patentOfficeActions(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentOfficeActionsParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	return s.engine.PatentOfficeActions(ctx, p.Patents)
+}
+
 func (s *Server) matterDocumentOpen(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.MatterDocumentIDParams](raw)
 	if err != nil {

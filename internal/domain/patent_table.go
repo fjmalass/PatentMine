@@ -18,6 +18,7 @@ const (
 	PatentColumnIDS            PatentTableColumnKey = PatentTableColumnKey(SortByIDS)
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)
 	PatentColumnProvenance     PatentTableColumnKey = PatentTableColumnKey(SortByProvenance)
+	PatentColumnOfficeActions  PatentTableColumnKey = "office_actions"
 )
 
 // ColumnCellType identifies standard cell rendering/content types.
@@ -69,6 +70,11 @@ func PatentTableColumns(projectID ProjectID) []PatentTableColumn {
 		PatentTableColumn{Key: PatentColumnIDS, Label: "IDS", SortKey: SortByIDS, Sortable: idsSortable, Width: 12},
 		PatentTableColumn{Key: PatentColumnReviewState, Label: stateLabel, SortKey: SortByReviewState, Sortable: true, Width: 13, CellType: CellTypeState},
 	)
+	if projectID != "" {
+		// OA review assignments only exist within a matter, so the column is shown
+		// only in a project view. Appended last per the agreed layout.
+		cols = append(cols, PatentTableColumn{Key: PatentColumnOfficeActions, Label: "OA", SortKey: SortByOfficeActions, Sortable: true, Width: 16})
+	}
 	return cols
 }
 

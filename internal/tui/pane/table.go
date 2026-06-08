@@ -151,6 +151,14 @@ func patentTableColumns(bodyWidth int, schema []domain.PatentTableColumn) []tabl
 		}
 	}
 
+	// The OA review-assignment column is project-only (present in the schema only
+	// within a matter) and shown last, after REVIEW STATE. Appended after the tier
+	// switch so it lands at the end of every wide-enough tier; the flexible TITLE
+	// column absorbs its width. Omitted on narrow terminals to avoid crowding.
+	if _, ok := lookup[domain.PatentColumnOfficeActions]; ok && bodyWidth >= 110 {
+		cols = append(cols, column(domain.PatentColumnOfficeActions, 0))
+	}
+
 	fixedW := 0
 	for _, col := range cols {
 		fixedW += col.width
@@ -245,6 +253,8 @@ func patentCellValue(theme render.Theme, row domain.PatentRow, col tableCol, pro
 		return strconv.Itoa(row.ParentsCount)
 	case domain.PatentColumnTags:
 		return formatTags(row.Tags)
+	case domain.PatentColumnOfficeActions:
+		return formatOfficeActions(row.OfficeActions)
 	case domain.PatentColumnProvenance:
 		if shouldShowStubAsLoading(row.FetchState, row.AddedMethod) {
 			return theme.ProvenanceGlyph("loading")
@@ -423,6 +433,25 @@ func formatTags(tags []string) string {
 		return "-"
 	}
 	return strings.Join(tags, " ")
+}
+
+// formatOfficeActions renders the OA column: the first assigned office action's
+// name with a review-state glyph (✓ reviewed, ○ to-review), and a "+N" tail when
+// the patent is assigned to more than one. Empty assignments render as "-",
+// matching formatTags.
+func formatOfficeActions(refs []domain.OfficeActionRef) string {
+	if len(refs) == 0 {
+		return "-"
+	}
+	glyph := "○"
+	if refs[0].Status == domain.OAReviewReviewed {
+		glyph = "✓"
+	}
+	s := refs[0].Name + " " + glyph
+	if extra := len(refs) - 1; extra > 0 {
+		s += fmt.Sprintf(" +%d", extra)
+	}
+	return s
 }
 
 func formatIDSSummary(theme render.Theme, entry *domain.IDSEntry) string {
