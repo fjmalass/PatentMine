@@ -83,6 +83,7 @@ func DefaultHints() map[command.Scope][]Hint {
 			{Commands: []command.ID{command.CrawlFamily}, Label: text.HintCrawl},
 			{Commands: []command.ID{command.LookupPatent}, Label: text.HintLookup},
 			{Commands: []command.ID{command.OpenPatentClassifications}, Label: text.HintClassifications},
+			{Commands: []command.ID{command.AssignOfficeAction}, Label: text.HintOAAssign},
 			{Commands: []command.ID{command.AddToProject, command.MarkActive, command.MarkUnderReview, command.MarkIgnored, command.MarkDeleted}, Label: text.HintProjectActions},
 			{Commands: []command.ID{command.OpenHistory}, Label: text.HintHistory},
 			{Commands: []command.ID{command.Back}, Label: text.HintBack},

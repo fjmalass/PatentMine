@@ -331,14 +331,6 @@ func (o *TagTaxonomyOverlay) View(maxW, maxH int) string {
 // TagPatentOverlay: For managing the tags assigned to selected patent(s) (:tag.patent)
 // -----------------------------------------------------------------------------
 
-type CheckState int
-
-const (
-	CheckUnchecked CheckState = iota
-	CheckChecked
-	CheckIndeterminate
-)
-
 type loadedPatentTagsMsg struct {
 	available []domain.Tag
 	counts    map[string]int
@@ -526,21 +518,11 @@ func (o *TagPatentOverlay) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			o.err = m.err
 		} else {
 			o.available = m.available
-			o.checked = make(map[string]CheckState)
-			o.initial = make(map[string]CheckState)
+			keys := make([]string, 0, len(o.available))
 			for _, t := range o.available {
-				count := m.counts[t.Name]
-				var state CheckState
-				if count == o.target.count() {
-					state = CheckChecked
-				} else if count > 0 {
-					state = CheckIndeterminate
-				} else {
-					state = CheckUnchecked
-				}
-				o.checked[t.Name] = state
-				o.initial[t.Name] = state
+				keys = append(keys, t.Name)
 			}
+			o.checked, o.initial = checklistStates(keys, m.counts, o.target.count())
 			if o.selected >= len(o.available) {
 				o.selected = max(0, len(o.available)-1)
 			}
@@ -682,14 +664,7 @@ func (o *TagPatentOverlay) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) {
 	case " ":
 		if len(o.available) > 0 && o.selected >= 0 && o.selected < len(o.available) {
 			tagName := o.available[o.selected].Name
-			switch o.checked[tagName] {
-			case CheckIndeterminate:
-				o.checked[tagName] = CheckChecked
-			case CheckChecked:
-				o.checked[tagName] = CheckUnchecked
-			default:
-				o.checked[tagName] = CheckChecked
-			}
+			o.checked[tagName] = toggleChecklistState(o.checked[tagName])
 		}
 		return o, nil, true
 	case "a", "n":
@@ -710,18 +685,18 @@ func (o *TagPatentOverlay) applyTagsCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		for tagName, finalState := range o.checked {
-			initialState := o.initial[tagName]
-			if finalState == initialState {
-				continue // No change
-			}
-			switch finalState {
-			case CheckChecked:
-				if err := o.target.apply(ctx, o.client, o.project, tagName, true); err != nil {
+		keys := make([]string, 0, len(o.available))
+		for _, tag := range o.available {
+			keys = append(keys, tag.Name)
+		}
+		for _, change := range checklistChanges(keys, o.checked, o.initial) {
+			switch change.on {
+			case true:
+				if err := o.target.apply(ctx, o.client, o.project, change.key, true); err != nil {
 					return applyFinishedMsg{status: pane.StatusMsg{Key: text.StatusTagPatentAddFailed, Args: []any{err.Error()}, Error: true}}
 				}
-			case CheckUnchecked:
-				if err := o.target.apply(ctx, o.client, o.project, tagName, false); err != nil {
+			case false:
+				if err := o.target.apply(ctx, o.client, o.project, change.key, false); err != nil {
 					return applyFinishedMsg{status: pane.StatusMsg{Key: text.StatusTagPatentDeleteFailed, Args: []any{err.Error()}, Error: true}}
 				}
 			}

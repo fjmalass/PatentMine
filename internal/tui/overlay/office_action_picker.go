@@ -30,7 +30,8 @@ type OfficeActionPicker struct {
 	release bool
 
 	items   []domain.OfficeAction
-	checked map[string]bool
+	checked map[string]CheckState
+	initial map[string]CheckState
 	cursor  int
 	loading bool
 	loadErr string
@@ -47,7 +48,8 @@ func NewOfficeActionPicker(client *rpc.Client, theme render.Theme, project domai
 		project: project,
 		patents: patents,
 		release: release,
-		checked: map[string]bool{},
+		checked: map[string]CheckState{},
+		initial: map[string]CheckState{},
 		loading: true,
 	}
 }
@@ -68,8 +70,9 @@ func (o *OfficeActionPicker) OverlaySize(termW, termH int) (int, int) {
 }
 
 type oaPickerLoadedMsg struct {
-	items []domain.OfficeAction
-	err   error
+	items  []domain.OfficeAction
+	counts map[string]int
+	err    error
 }
 
 type oaPickerDoneMsg struct {
@@ -78,13 +81,29 @@ type oaPickerDoneMsg struct {
 }
 
 func (o *OfficeActionPicker) Init() tea.Cmd {
-	client, project := o.client, o.project
+	client, project, patents := o.client, o.project, o.patents
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var res proto.OfficeActionListResult
-		err := client.Call(ctx, proto.MethodOfficeActionList, proto.OfficeActionListParams{Project: project}, &res)
-		return oaPickerLoadedMsg{items: res.OfficeActions, err: err}
+		if err := client.Call(ctx, proto.MethodOfficeActionList, proto.OfficeActionListParams{Project: project}, &res); err != nil {
+			return oaPickerLoadedMsg{err: err}
+		}
+
+		counts := make(map[string]int)
+		if len(patents) > 0 {
+			var assigned proto.PatentOfficeActionsResult
+			if err := client.Call(ctx, proto.MethodPatentOfficeActions, proto.PatentOfficeActionsParams{Patents: patents}, &assigned); err != nil {
+				return oaPickerLoadedMsg{err: err}
+			}
+			for _, refs := range assigned.ByPatent {
+				for _, ref := range refs {
+					counts[ref.OfficeActionID]++
+				}
+			}
+		}
+
+		return oaPickerLoadedMsg{items: res.OfficeActions, counts: counts}
 	}
 }
 
@@ -97,6 +116,11 @@ func (o *OfficeActionPicker) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			return o, nil
 		}
 		o.items = m.items
+		keys := make([]string, 0, len(o.items))
+		for _, it := range o.items {
+			keys = append(keys, it.ID)
+		}
+		o.checked, o.initial = checklistStates(keys, m.counts, len(o.patents))
 		if o.cursor >= len(o.items) {
 			o.cursor = max(0, len(o.items)-1)
 		}
@@ -134,7 +158,7 @@ func (o *OfficeActionPicker) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool) 
 	case " ":
 		if i := o.cursor; i >= 0 && i < len(o.items) {
 			id := o.items[i].ID
-			o.checked[id] = !o.checked[id]
+			o.checked[id] = toggleChecklistState(o.checked[id])
 		}
 	case "enter":
 		return o, o.apply(), true
@@ -153,38 +177,33 @@ func (o *OfficeActionPicker) move(delta int) {
 // closes with a status. Office actions are mutated one call each, reusing the
 // existing assign/release RPCs.
 func (o *OfficeActionPicker) apply() tea.Cmd {
-	var ids []string
+	keys := make([]string, 0, len(o.items))
 	for _, it := range o.items {
-		if o.checked[it.ID] {
-			ids = append(ids, it.ID)
-		}
+		keys = append(keys, it.ID)
 	}
-	if len(ids) == 0 {
-		o.msg = "select at least one office action with [space]"
+	changes := checklistChanges(keys, o.checked, o.initial)
+	if len(changes) == 0 {
+		o.msg = "select at least one office-action change with [space]"
 		return nil
 	}
-	client, patents, release := o.client, o.patents, o.release
+	client, patents := o.client, o.patents
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		for _, id := range ids {
+		for _, change := range changes {
 			var res proto.OfficeActionPatentsResult
 			var err error
-			if release {
-				err = client.Call(ctx, proto.MethodOfficeActionReleasePatents, proto.OfficeActionReleasePatentsParams{ID: id, Patents: patents}, &res)
+			if change.on {
+				err = client.Call(ctx, proto.MethodOfficeActionAssignPatents, proto.OfficeActionAssignPatentsParams{ID: change.key, Patents: patents}, &res)
 			} else {
-				err = client.Call(ctx, proto.MethodOfficeActionAssignPatents, proto.OfficeActionAssignPatentsParams{ID: id, Patents: patents}, &res)
+				err = client.Call(ctx, proto.MethodOfficeActionReleasePatents, proto.OfficeActionReleasePatentsParams{ID: change.key, Patents: patents}, &res)
 			}
 			if err != nil {
 				return oaPickerDoneMsg{status: pane.StatusMsg{Key: text.StatusGeneric, Args: []any{"office-action assignment failed: " + err.Error()}, Error: true}}
 			}
 		}
-		verb := "Assigned"
-		if release {
-			verb = "Removed"
-		}
 		status := pane.StatusMsg{Key: text.StatusGeneric, Args: []any{
-			fmt.Sprintf("%s %d patent(s) · %d office action(s)", verb, len(patents), len(ids)),
+			fmt.Sprintf("Updated %d patent(s) · %d office action(s)", len(patents), len(changes)),
 		}}
 		return oaPickerDoneMsg{changed: &pane.OfficeActionAssignmentsChangedMsg{Project: o.project, Patents: patents, Status: status}}
 	}
@@ -218,8 +237,11 @@ func (o *OfficeActionPicker) View(maxW, maxH int) string {
 	for i := start; i < len(o.items) && i < start+rows; i++ {
 		it := o.items[i]
 		box := "[ ]"
-		if o.checked[it.ID] {
+		switch o.checked[it.ID] {
+		case CheckChecked:
 			box = "[x]"
+		case CheckIndeterminate:
+			box = "[-]"
 		}
 		line := fmt.Sprintf("%s%s %s", o.jump.GutterPrefix(i+1), box, it.DisplayLabel())
 		if i == o.cursor {

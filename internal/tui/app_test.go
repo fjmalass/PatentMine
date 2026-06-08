@@ -368,6 +368,33 @@ func TestOpenIDSPickerPreservesVisualSelectionForRepeatedApply(t *testing.T) {
 	}
 }
 
+func TestAssignOfficeActionUsesVisualSelection(t *testing.T) {
+	app := newTestApp(t)
+	app.activeProject = &domain.Project{ID: "p-1", Name: "Case A"}
+	app.client = &rpc.Client{}
+	numbers := []domain.PatentNumber{
+		domain.MustParsePatentNumber("US11611785B2"),
+		domain.MustParsePatentNumber("US11700000B2"),
+	}
+	probe := &visualSavingPatentProbe{patentProbePane: &patentProbePane{selection: numbers[0], selections: numbers}}
+	app.panes = []pane.Pane{probe}
+
+	updated, cmd := app.cmdAssignOfficeAction(invocation{})
+	app = updated.(*App)
+	if cmd == nil {
+		t.Fatal("opening office-action picker should return its init command")
+	}
+	if probe.saves != 1 {
+		t.Fatalf("assign.officeaction should preserve visual selection before applying, saves=%d", probe.saves)
+	}
+	if len(app.overlays) != 1 {
+		t.Fatalf("overlays = %d, want office-action picker", len(app.overlays))
+	}
+	if _, ok := app.overlays[0].(*overlay.OfficeActionPicker); !ok {
+		t.Fatalf("overlay = %T, want OfficeActionPicker", app.overlays[0])
+	}
+}
+
 func TestAppRefreshesAllPanesOnDBChange(t *testing.T) {
 	app := newTestApp(t)
 	first := &refreshProbePane{}
@@ -649,10 +676,10 @@ func TestHistoryFeedGroupKeyKeepsIDSStatusTransitions(t *testing.T) {
 
 func TestHistoryFeedGroupKeyKeepsDistinctIDSSaveRecords(t *testing.T) {
 	base := observability.Record{
-		Action:   observability.ActionIDSEntrySave,
-		Entity:   "ids_entry",
-		EntityID: "project/US11611785B2",
-		Status:   "committed",
+		Action:     observability.ActionIDSEntrySave,
+		Entity:     "ids_entry",
+		EntityID:   "project/US11611785B2",
+		Status:     "committed",
 		Attributes: map[string]any{"prior_status": "ignored", "status": "pending"},
 	}
 	first := base
@@ -1067,8 +1094,3 @@ func TestAppFamilyExportMermaidCommandAvailability(t *testing.T) {
 		t.Fatal("expected executeTypedCommand to return a cmd in ScopeDetail")
 	}
 }
-
-
-
-
-

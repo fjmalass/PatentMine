@@ -164,6 +164,7 @@ const (
 	HintHistory         Key = "hint.history"
 	HintOAOpen          Key = "hint.oa_open"
 	HintOAAdd           Key = "hint.oa_add"
+	HintOAAssign        Key = "hint.oa_assign"
 	HintOAResponse      Key = "hint.oa_response"
 	HintDocuments       Key = "hint.documents"
 	HintComms           Key = "hint.comms"
@@ -529,6 +530,7 @@ var englishNamed = map[Key]string{
 	HintHistory:         "history",
 	HintOAOpen:          "open",
 	HintOAAdd:           "add OA",
+	HintOAAssign:        "assign OA",
 	HintOAResponse:      "respond",
 	HintDocuments:       "documents",
 	HintComms:           "communications",

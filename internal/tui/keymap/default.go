@@ -157,6 +157,7 @@ func Default() *Keymaps {
 			"A":     command.AIAnalyze,
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
+			"g o":   command.AssignOfficeAction,
 			"g c":   command.SourceCompare, // conditional source comparison (Option A)
 			"g b":   command.SourceBibs,    // all-fields side-by-side of every source
 			".":     command.FetchUSPTOGrant,

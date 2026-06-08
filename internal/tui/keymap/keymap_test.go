@@ -130,3 +130,13 @@ func TestShortcutsCollectBaseAndContextBindings(t *testing.T) {
 		t.Fatalf("Shortcuts(ProjectActivate) = %v, want [enter l right]", shortcuts)
 	}
 }
+
+func TestDetailGOAssignsOfficeAction(t *testing.T) {
+	stack := Default().StackFor(command.ScopeDetail)
+	if id, ok := stack.Resolve("g o"); !ok || id != command.AssignOfficeAction {
+		t.Fatalf("detail g o resolved to %q ok=%v, want officeaction.assign-patents", id, ok)
+	}
+	if id, ok := stack.Resolve("ctrl+o"); !ok || id != command.HistoryBack {
+		t.Fatalf("detail ctrl+o resolved to %q ok=%v, want history.back", id, ok)
+	}
+}

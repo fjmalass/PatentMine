@@ -1168,6 +1168,11 @@ func (a *App) assignOfficeAction(inv invocation, release bool) (tea.Model, tea.C
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
+	if len(numbers) >= 2 {
+		if vs, ok := a.focusedPane().(pane.VisualSelectionSaver); ok {
+			vs.SaveVisualSelection()
+		}
+	}
 	// A name argument assigns directly (scriptable, like :tag.patent.add <name>);
 	// no argument opens the interactive picker.
 	if name := strings.TrimSpace(strings.Join(inv.args, " ")); name != "" {
