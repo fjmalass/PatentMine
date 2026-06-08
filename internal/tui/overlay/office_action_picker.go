@@ -60,7 +60,7 @@ func (o *OfficeActionPicker) Title() string {
 	return fmt.Sprintf("%s office action — %d patent(s)", verb, len(o.patents))
 }
 
-func (o *OfficeActionPicker) Handles() []command.ID                       { return nil }
+func (o *OfficeActionPicker) Handles() []command.ID                      { return nil }
 func (o *OfficeActionPicker) Command(command.ID, int) (Overlay, tea.Cmd) { return o, nil }
 
 func (o *OfficeActionPicker) OverlaySize(termW, termH int) (int, int) {
@@ -72,7 +72,10 @@ type oaPickerLoadedMsg struct {
 	err   error
 }
 
-type oaPickerDoneMsg struct{ status pane.StatusMsg }
+type oaPickerDoneMsg struct {
+	status  pane.StatusMsg
+	changed *pane.OfficeActionAssignmentsChangedMsg
+}
 
 func (o *OfficeActionPicker) Init() tea.Cmd {
 	client, project := o.client, o.project
@@ -98,10 +101,13 @@ func (o *OfficeActionPicker) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 			o.cursor = max(0, len(o.items)-1)
 		}
 	case oaPickerDoneMsg:
-		return o, tea.Batch(
-			func() tea.Msg { return m.status },
-			func() tea.Msg { return CloseOverlayMsg{} },
-		)
+		cmds := []tea.Cmd{func() tea.Msg { return CloseOverlayMsg{} }}
+		if m.changed != nil {
+			cmds = append(cmds, func() tea.Msg { return *m.changed })
+		} else {
+			cmds = append(cmds, func() tea.Msg { return m.status })
+		}
+		return o, tea.Batch(cmds...)
 	}
 	return o, nil
 }
@@ -177,9 +183,10 @@ func (o *OfficeActionPicker) apply() tea.Cmd {
 		if release {
 			verb = "Removed"
 		}
-		return oaPickerDoneMsg{status: pane.StatusMsg{Key: text.StatusGeneric, Args: []any{
+		status := pane.StatusMsg{Key: text.StatusGeneric, Args: []any{
 			fmt.Sprintf("%s %d patent(s) · %d office action(s)", verb, len(patents), len(ids)),
-		}}}
+		}}
+		return oaPickerDoneMsg{changed: &pane.OfficeActionAssignmentsChangedMsg{Project: o.project, Patents: patents, Status: status}}
 	}
 }
 

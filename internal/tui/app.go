@@ -253,6 +253,8 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.SourceMode:              true,
 	command.Tag:                     true,
 	command.Untag:                   true,
+	command.AssignOfficeAction:      true,
+	command.ReleaseOfficeAction:     true,
 	command.TagTaxonomyAdd:          true,
 	command.TagTaxonomyDelete:       true,
 	command.TagStrict:               true,
@@ -1364,6 +1366,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setStatus(text.StatusSetState, m.Patents[0].String(), string(m.State), string(m.Project))
 		} else {
 			a.setStatus(text.StatusSetState, fmt.Sprintf("%d patents", len(m.Patents)), string(m.State), string(m.Project))
+		}
+		return a, a.broadcast(m)
+	case pane.OfficeActionAssignmentsChangedMsg:
+		if m.Status.Key != "" {
+			a.status, a.statusErr = a.text.Tf(m.Status.Key, m.Status.Args...), m.Status.Error
 		}
 		return a, a.broadcast(m)
 	case pane.IDSEntrySavedMsg:

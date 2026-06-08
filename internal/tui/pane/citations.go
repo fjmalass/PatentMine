@@ -495,6 +495,12 @@ func (c *Citations) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			c.loading = true
 			return c, c.load()
 		}
+	case OfficeActionAssignmentsChangedMsg:
+		if c.activeProject == nil || c.activeProject.ID != m.Project {
+			return c, nil
+		}
+		c.loading = true
+		return c, c.load()
 	case IDSEntryChangedMsg:
 		if c.activeProject == nil || c.activeProject.ID != m.Project {
 			return c, nil

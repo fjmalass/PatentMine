@@ -149,6 +149,15 @@ type ReviewStateChangedMsg struct {
 	State   domain.ReviewState
 }
 
+// OfficeActionAssignmentsChangedMsg reports a committed office-action patent
+// assignment/release/status change. OA labels are server-derived list/detail
+// fields, so panes reload the affected project rows when this arrives.
+type OfficeActionAssignmentsChangedMsg struct {
+	Project domain.ProjectID
+	Patents []domain.PatentNumber
+	Status  StatusMsg
+}
+
 // IDSEntrySavedMsg reports a successful save of an IDS entry from the daemon.
 type IDSEntrySavedMsg struct {
 	Project domain.ProjectID

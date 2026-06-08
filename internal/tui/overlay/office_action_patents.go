@@ -13,6 +13,7 @@ import (
 	"patentmine/internal/domain"
 	"patentmine/internal/proto"
 	"patentmine/internal/rpc"
+	"patentmine/internal/tui/pane"
 	"patentmine/internal/tui/render"
 )
 
@@ -46,6 +47,11 @@ type oaPatentsLoadedMsg struct {
 	assigned []proto.OfficeActionAssignedPatent
 	all      []domain.PatentRow
 	err      error
+}
+
+type oaPatentsMutatedMsg struct {
+	patents []domain.PatentNumber
+	err     error
 }
 
 // NewOfficeActionPatents builds the assignment overlay for one office action.
@@ -92,7 +98,8 @@ func (o *OfficeActionPatents) loadCmd() tea.Cmd {
 }
 
 func (o *OfficeActionPatents) Update(msg tea.Msg) (Overlay, tea.Cmd) {
-	if m, ok := msg.(oaPatentsLoadedMsg); ok {
+	switch m := msg.(type) {
+	case oaPatentsLoadedMsg:
 		o.loading = false
 		if m.err != nil {
 			o.loadErr = m.err.Error()
@@ -108,6 +115,15 @@ func (o *OfficeActionPatents) Update(msg tea.Msg) (Overlay, tea.Cmd) {
 		o.applyFilter() // builds o.all (filtered) and sorts it
 		o.sortAssigned()
 		o.table.clamp(o.rowCounts(), o.colCounts())
+	case oaPatentsMutatedMsg:
+		if m.err != nil {
+			o.loadErr = m.err.Error()
+			return o, nil
+		}
+		return o, tea.Batch(
+			o.loadCmd(),
+			func() tea.Msg { return pane.OfficeActionAssignmentsChangedMsg{Project: o.project, Patents: m.patents} },
+		)
 	}
 	return o, nil
 }
@@ -136,7 +152,9 @@ func (o *OfficeActionPatents) applyFilter() {
 }
 
 func (o *OfficeActionPatents) rowCounts() [2]int { return [2]int{len(o.assigned), len(o.all)} }
-func (o *OfficeActionPatents) colCounts() [2]int { return [2]int{len(topOAPatentCols), len(allOAPatentCols)} }
+func (o *OfficeActionPatents) colCounts() [2]int {
+	return [2]int{len(topOAPatentCols), len(allOAPatentCols)}
+}
 
 // Column keys for the two panes. Defined once and referenced by the column
 // slices, cell renderers, and sort comparators below so the identifier is never
@@ -207,7 +225,8 @@ func (o *OfficeActionPatents) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 		if !ok {
 			return o, nil, true
 		}
-		return o, o.mutate(proto.MethodOfficeActionAssignPatents, proto.OfficeActionAssignPatentsParams{ID: o.oa.ID, Patents: []domain.PatentNumber{row.Number}}), true
+		patents := []domain.PatentNumber{row.Number}
+		return o, o.mutate(proto.MethodOfficeActionAssignPatents, proto.OfficeActionAssignPatentsParams{ID: o.oa.ID, Patents: patents}, patents), true
 	case "x":
 		// Release the selected patent (top pane) from this office action.
 		if o.table.Active() != 0 {
@@ -218,7 +237,8 @@ func (o *OfficeActionPatents) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 		if !ok {
 			return o, nil, true
 		}
-		return o, o.mutate(proto.MethodOfficeActionReleasePatents, proto.OfficeActionReleasePatentsParams{ID: o.oa.ID, Patents: []domain.PatentNumber{a.Number}}), true
+		patents := []domain.PatentNumber{a.Number}
+		return o, o.mutate(proto.MethodOfficeActionReleasePatents, proto.OfficeActionReleasePatentsParams{ID: o.oa.ID, Patents: patents}, patents), true
 	case "v":
 		// Toggle the selected assigned patent's review status.
 		if o.table.Active() != 0 {
@@ -233,7 +253,7 @@ func (o *OfficeActionPatents) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 		if a.Status == domain.OAReviewReviewed {
 			next = domain.OAReviewToReview
 		}
-		return o, o.mutate(proto.MethodOfficeActionReviewStatus, proto.OfficeActionReviewStatusParams{ID: o.oa.ID, Patent: a.Number, Status: next}), true
+		return o, o.mutate(proto.MethodOfficeActionReviewStatus, proto.OfficeActionReviewStatusParams{ID: o.oa.ID, Patent: a.Number, Status: next}, []domain.PatentNumber{a.Number}), true
 	case "enter":
 		if n, ok := o.selectedNumber(); ok {
 			return o, func() tea.Msg { return OpenPatentDetailMsg{Number: n} }, true
@@ -243,17 +263,16 @@ func (o *OfficeActionPatents) HandleKey(msg tea.KeyMsg) (Overlay, tea.Cmd, bool)
 }
 
 // mutate runs an assign/release/status RPC and reloads both panes on success.
-func (o *OfficeActionPatents) mutate(method proto.Method, params any) tea.Cmd {
+func (o *OfficeActionPatents) mutate(method proto.Method, params any, patents []domain.PatentNumber) tea.Cmd {
 	client := o.client
-	reload := o.loadCmd()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var res proto.OfficeActionPatentsResult
 		if err := client.Call(ctx, method, params, &res); err != nil {
-			return oaPatentsLoadedMsg{err: err}
+			return oaPatentsMutatedMsg{err: err}
 		}
-		return reload()
+		return oaPatentsMutatedMsg{patents: patents}
 	}
 }
 

@@ -1216,9 +1216,13 @@ func (a *App) officeActionAssignByNameCmd(project domain.ProjectID, patents []do
 		if release {
 			verb = "Removed"
 		}
-		return pane.StatusMsg{Key: text.StatusGeneric, Args: []any{
-			fmt.Sprintf("%s %d patent(s) · %d office action(s)", verb, len(patents), len(matched)),
-		}}
+		return pane.OfficeActionAssignmentsChangedMsg{
+			Project: project,
+			Patents: patents,
+			Status: pane.StatusMsg{Key: text.StatusGeneric, Args: []any{
+				fmt.Sprintf("%s %d patent(s) · %d office action(s)", verb, len(patents), len(matched)),
+			}},
+		}
 	}
 }
 

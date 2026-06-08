@@ -420,6 +420,15 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 				break
 			}
 		}
+	case OfficeActionAssignmentsChangedMsg:
+		if d.project != m.Project {
+			return d, nil
+		}
+		for _, patent := range m.Patents {
+			if patentNumberMatches(d.number, d.patent.DisplayNumber, patent) {
+				return d, d.loadOfficeActions()
+			}
+		}
 	case IDSEntryChangedMsg:
 		if d.project != m.Project || !patentNumberMatches(d.number, d.patent.DisplayNumber, m.Patent) {
 			return d, nil
