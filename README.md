@@ -799,6 +799,7 @@ communications log, deadlines, and tracked time. See
 
 * `:add.officeaction [path]` : Import an Office Action (file picker if no path); a metadata form captures the **examiner**, mail date, type, art unit, and application number before the file is copied, text-extracted, and its response deadline computed.
 * `:open.officeaction` : Open the **Office Actions pane** — a table (mailed · type · examiner · response-due countdown · status); `a` add, `R` respond, `/` filter, **`enter` drills into** the detail pane (documents · timing · communications · response). From the detail, **`enter` or `Ctrl+N`** opens the split examiner-text / notes editor (`yy`/`p` copies examiner text into the notes).
+* `:assign.officeaction` / `:release.officeaction` (aliases `:assign.oa` / `:release.oa`) : Assign the **selected patent(s)** — from the **catalog** (use `v` for a range) or a **patent detail** — to office actions for review, via a checkbox picker (`space` toggles, `enter` applies); the inverse removes them. Assignments appear in the catalog **OA** column (sortable; filter with `oa:`) and on the patent detail's *Office Actions* line. The office-action-driven counterpart is **`p`** on an office action's detail (a two-pane *assigned / all patents* view: `a` assign · `x` remove · `v` toggle ✓/○ · `/` search · PageUp/Dn). A newly imported office action **auto-inherits** the previous one's assigned patents. See [Office Actions §8](./TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action).
 * `:add.document [path]` / `:open.documents` : File and browse supporting documents (references, prior responses). In the list, `enter` views the text, **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes.
 * `:draft.response` : Create a response draft linked to the latest OA and open the split editor — matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; `yy`/`p` copy passages across, `ctrl+s` saves, `ctrl-e` exports the `.docx`.
 * `:log.comm` / `:open.comms` : Record and browse the communications log (email · phone · interview · filing · note).
@@ -852,6 +853,7 @@ Supported fields:
 * `owner:` : Alias for `assignee:`.
 * `provenance:` : Project-scoped patent provenance filter (`manual` or `direct`, `related`, `system` or `auto`). Requires an active project.
 * `prov:` : Alias for `provenance:`.
+* `oa:` : Project-scoped office-action review assignment. `oa:any` / `oa:none` (assigned to any office action / unassigned), `oa:to_review` / `oa:reviewed` (has an assignment in that review state), or `oa:<name>` (assigned to an office action whose name matches a substring). Aliases `office_action:`, `officeaction:`. Requires an active project.
 
 Examples:
 
@@ -861,6 +863,7 @@ Examples:
 * `:filter inventor:"Ada Lovelace" and assignee:Acme*`
 * `:filter search:"widget sensor" and not class:H01L*`
 * `:filter provenance:system and state:under_review`
+* `:filter oa:"Final OA" and not oa:reviewed`
 
 Pattern rules:
 

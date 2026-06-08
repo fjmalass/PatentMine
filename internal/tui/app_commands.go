@@ -1141,6 +1141,37 @@ func (a *App) cmdTagPatentManage(inv invocation) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// cmdAssignOfficeAction opens the office-action picker to assign the selected
+// patent(s) to one or more of the matter's office actions for review.
+func (a *App) cmdAssignOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
+	return a.openOfficeActionPicker(false)
+}
+
+// cmdReleaseOfficeAction opens the picker to remove the selected patent(s) from
+// office action(s).
+func (a *App) cmdReleaseOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
+	return a.openOfficeActionPicker(true)
+}
+
+func (a *App) openOfficeActionPicker(release bool) (tea.Model, tea.Cmd) {
+	if a.activeProject == nil {
+		a.setErr(text.StatusNoActiveProject)
+		return a, nil
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	numbers := a.focusedSelections()
+	if len(numbers) == 0 {
+		a.setErr(text.StatusNoPatentSelected)
+		return a, nil
+	}
+	o := overlay.NewOfficeActionPicker(a.client, a.theme, a.activeProject.ID, numbers, release)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
 // cmdTagTaxonomyDelete removes a tag from the project's taxonomy.
 func (a *App) cmdTagTaxonomyDelete(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {

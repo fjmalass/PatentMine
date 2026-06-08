@@ -65,3 +65,48 @@ func TestOfficeActionPatentsAssignFlow(t *testing.T) {
 		t.Fatalf("enter emitted %T, want OpenPatentDetailMsg", cmd())
 	}
 }
+
+func TestOfficeActionPatentsSearch(t *testing.T) {
+	o := NewOfficeActionPatents(nil, render.NewTheme(), "p1", domain.OfficeAction{ID: "oa1"})
+	p1 := domain.MustParsePatentNumber("US0000001B2")
+	p2 := domain.MustParsePatentNumber("US0000002B2")
+	ov, _ := o.Update(oaPatentsLoadedMsg{
+		all: []domain.PatentRow{
+			{Number: p1, DisplayNumber: p1, Title: "Video streaming", Assignee: "Acme"},
+			{Number: p2, DisplayNumber: p2, Title: "Audio codec", Assignee: "Globex"},
+		},
+	})
+	o = ov.(*OfficeActionPatents)
+	if len(o.all) != 2 {
+		t.Fatalf("all = %d, want 2", len(o.all))
+	}
+
+	// '/' starts search and focuses the browse (bottom) table.
+	o.HandleKey(key("/"))
+	if !o.searchActive || o.table.Active() != 1 {
+		t.Fatalf("search not active or wrong pane (active=%v pane=%d)", o.searchActive, o.table.Active())
+	}
+
+	// Typing "video" narrows to the matching patent (by title).
+	for _, r := range "video" {
+		o.HandleKey(key(string(r)))
+	}
+	if len(o.all) != 1 || !o.all[0].Number.Equal(p1) {
+		t.Fatalf("title filter -> %+v, want only p1", o.all)
+	}
+
+	// Esc clears the filter and restores the full list.
+	o.HandleKey(key("esc"))
+	if o.searchActive || len(o.all) != 2 {
+		t.Fatalf("esc should clear search (active=%v all=%d)", o.searchActive, len(o.all))
+	}
+
+	// Search also matches assignee.
+	o.HandleKey(key("/"))
+	for _, r := range "globex" {
+		o.HandleKey(key(string(r)))
+	}
+	if len(o.all) != 1 || !o.all[0].Number.Equal(p2) {
+		t.Fatalf("assignee filter -> %+v, want only p2", o.all)
+	}
+}

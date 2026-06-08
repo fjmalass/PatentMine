@@ -410,13 +410,7 @@ func numberToShowRow(row domain.PatentRow) domain.PatentNumber {
 // formatInventorsShort returns the first inventor's name, appending "et al."
 // when there are multiple inventors.
 func formatInventorsShort(inventors []domain.Inventor) string {
-	if len(inventors) == 0 {
-		return "-"
-	}
-	if len(inventors) == 1 {
-		return string(inventors[0])
-	}
-	return string(inventors[0]) + " et al."
+	return domain.ShortInventors(inventors)
 }
 
 // formatExpires formats an expiration date for display; returns "-" when zero.
@@ -443,11 +437,7 @@ func formatOfficeActions(refs []domain.OfficeActionRef) string {
 	if len(refs) == 0 {
 		return "-"
 	}
-	glyph := "○"
-	if refs[0].Status == domain.OAReviewReviewed {
-		glyph = "✓"
-	}
-	s := refs[0].Name + " " + glyph
+	s := refs[0].Name + " " + refs[0].Status.Glyph()
 	if extra := len(refs) - 1; extra > 0 {
 		s += fmt.Sprintf(" +%d", extra)
 	}

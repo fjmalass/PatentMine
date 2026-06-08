@@ -31,10 +31,11 @@ type dualTable struct {
 	active    int    // 0 = top (associated), 1 = bottom (all)
 	cursor    [2]int // selected row per pane
 	offset    [2]int // scroll offset per pane
-	colCursor [2]int // focused column per pane
-	sortCol   [2]int // last-sorted column per pane
-	sortDesc  [2]bool
-	jump      JumpNavigator
+	colCursor  [2]int // focused column per pane
+	sortCol    [2]int // last-sorted column per pane
+	sortDesc   [2]bool
+	lastWindow [2]int // last-rendered visible rows per pane, for page up/down
+	jump       JumpNavigator
 }
 
 // newDualTable starts on the top pane, descending sort hint cleared.
@@ -42,6 +43,9 @@ func newDualTable() dualTable { return dualTable{} }
 
 // Active reports the focused pane (0 = associated, 1 = all).
 func (d *dualTable) Active() int { return d.active }
+
+// SetActive focuses a pane.
+func (d *dualTable) SetActive(pane int) { d.active = pane }
 
 // Cursor reports the selected row index within the active pane.
 func (d *dualTable) Cursor() int { return d.cursor[d.active] }
@@ -108,6 +112,12 @@ func (d *dualTable) HandleNav(msg tea.KeyMsg, rowCounts, colCounts [2]int) (hand
 	case "down", "j":
 		d.move(1, rowCounts)
 		return true, false
+	case "pgdown", "ctrl+d":
+		d.move(d.page(), rowCounts)
+		return true, false
+	case "pgup", "ctrl+u":
+		d.move(-d.page(), rowCounts)
+		return true, false
 	case "left":
 		d.colCursor[d.active] = wrapIndex(d.colCursor[d.active]-1, colCounts[d.active])
 		return true, false
@@ -142,6 +152,20 @@ func (d *dualTable) move(delta int, rowCounts [2]int) {
 	d.cursor[d.active] = max(0, min(d.cursor[d.active]+delta, n-1))
 }
 
+// page is the active pane's page step for PageUp/PageDown — one screenful less a
+// row of overlap, from the last render (defaulting to 10 before the first render).
+func (d *dualTable) page() int {
+	w := d.lastWindow[d.active]
+	if w < 2 {
+		return 10
+	}
+	return w - 1
+}
+
+// SetWindow records a pane's visible row count for consumers that render the pane
+// themselves (rather than via Render), so PageUp/PageDown have a page size.
+func (d *dualTable) SetWindow(pane, rows int) { d.lastWindow[pane] = rows }
+
 // Render lays out the two panes stacked with a divider, the active pane showing
 // its column cursor. The top pane is given enough height for its rows (it is
 // usually short — the items associated with the current office action), and the
@@ -174,6 +198,7 @@ func (d *dualTable) renderPane(theme render.Theme, w int, pane dualTablePane, id
 	b.WriteByte('\n')
 
 	// Scroll the active row into the visible window.
+	d.lastWindow[idx] = rowsAvail
 	d.offset[idx] = scrollOffset(d.offset[idx], d.cursor[idx], pane.rowCount, rowsAvail)
 	start := d.offset[idx]
 	end := min(start+rowsAvail, pane.rowCount)

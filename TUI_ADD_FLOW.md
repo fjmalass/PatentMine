@@ -136,3 +136,30 @@ Once patents are added to a project, they can be searched, highlighted, and filt
   * **Assignee**: Filters by current assignee.
   * **Tags**: Filters by tags assigned in the active project.
 
+---
+
+## Assigning Added Patents to Office Actions
+
+Patents added to a matter can be assigned to its **office actions** for review —
+the prior-art / reference patents vetted against the examiner's rejections. This
+is a typed many-to-many link (`patent_office_action`), distinct from tags and
+keyed by the canonical record number.
+
+- **From this list (the catalog):** select one or more patents (`v` for a range)
+  and run **`:assign.officeaction`** (alias `:assign.oa`) → check the office
+  action(s) in the picker → `enter`. **`:release.officeaction`** removes them.
+- **From a patent's detail:** the same commands act on the open patent; the detail
+  shows an **Office Actions** line of its current assignments.
+- **Where it shows in the list:** the catalog's **OA** column (matter view) lists
+  each patent's assigned office action(s) with a review glyph (`✓` reviewed / `○`
+  to review). It **sorts** (`.`) and **filters** with the **`oa:`** field —
+  `oa:any`, `oa:none`, `oa:to_review`, `oa:reviewed`, or `oa:<name>` — combinable
+  with `and`/`or`/`not`.
+- **From the office-action side:** `:open.officeaction` → `enter` → **`p`** opens a
+  two-pane *assigned / all matter patents* view (`a` assign · `x` remove · `v`
+  toggle ✓/○ · `/` search · PageUp/Dn).
+
+A newly imported office action automatically inherits the previous one's assigned
+patents. See [Office Actions §8](./TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action)
+for the full flow.
+

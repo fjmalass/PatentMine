@@ -20,6 +20,12 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRight}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "esc":
+		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -92,6 +98,24 @@ func TestDualTableSortToggle(t *testing.T) {
 	d.HandleNav(key("."), rows, cols)
 	if d.SortColumn() != 1 || !d.SortDescending() {
 		t.Fatalf("re-sort: col=%d desc=%v, want 1/true", d.SortColumn(), d.SortDescending())
+	}
+}
+
+func TestDualTablePaging(t *testing.T) {
+	d := newDualTable()
+	rows := [2]int{50, 50}
+	cols := [2]int{2, 2}
+	d.SetWindow(0, 11) // page step = 10
+
+	if handled, _ := d.HandleNav(key("pgdown"), rows, cols); !handled {
+		t.Fatal("pgdown not handled")
+	}
+	if d.Cursor() != 10 {
+		t.Fatalf("after pgdown cursor = %d, want 10", d.Cursor())
+	}
+	d.HandleNav(key("pgup"), rows, cols)
+	if d.Cursor() != 0 {
+		t.Fatalf("after pgup cursor = %d, want 0", d.Cursor())
 	}
 }
 

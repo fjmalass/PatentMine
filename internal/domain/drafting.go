@@ -442,6 +442,28 @@ func (s OAReviewStatus) Valid() bool {
 	}
 }
 
+// Glyph is the single source for the at-a-glance review-status marker shown
+// wherever an assignment is rendered (catalog OA column, patent detail, the
+// office-action assignment overlay): ✓ reviewed, ○ to-review.
+func (s OAReviewStatus) Glyph() string {
+	if s == OAReviewReviewed {
+		return "✓"
+	}
+	return "○"
+}
+
+// Label is the single source for the human-readable review-status word.
+func (s OAReviewStatus) Label() string {
+	switch s {
+	case OAReviewReviewed:
+		return "reviewed"
+	case OAReviewToReview:
+		return "to review"
+	default:
+		return string(s)
+	}
+}
+
 // OfficeActionPatent links a prior-art / reference patent to an office action for
 // review. The office action behaves like an assignable label on patents (mirrors
 // a Tag, but a typed reference instead of free text). Patent is the canonical

@@ -174,6 +174,8 @@ var appHandlers = map[command.ID]appHandler{
 	command.ExportAdded:                (*App).cmdExportAdded,
 	command.AddOfficeAction:            (*App).cmdAddOfficeAction,
 	command.ListOfficeActions:          (*App).cmdListOfficeActions,
+	command.AssignOfficeAction:         (*App).cmdAssignOfficeAction,
+	command.ReleaseOfficeAction:        (*App).cmdReleaseOfficeAction,
 	command.AddDocument:                (*App).cmdAddDocument,
 	command.OpenDocuments:              (*App).cmdOpenDocuments,
 	command.SetMatterType:              (*App).cmdSetMatterType,

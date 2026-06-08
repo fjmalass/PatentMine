@@ -18,7 +18,7 @@ const (
 	PatentColumnIDS            PatentTableColumnKey = PatentTableColumnKey(SortByIDS)
 	PatentColumnReviewState    PatentTableColumnKey = PatentTableColumnKey(SortByReviewState)
 	PatentColumnProvenance     PatentTableColumnKey = PatentTableColumnKey(SortByProvenance)
-	PatentColumnOfficeActions  PatentTableColumnKey = "office_actions"
+	PatentColumnOfficeActions  PatentTableColumnKey = PatentTableColumnKey(SortByOfficeActions)
 )
 
 // ColumnCellType identifies standard cell rendering/content types.

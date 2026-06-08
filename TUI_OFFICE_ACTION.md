@@ -346,7 +346,61 @@ per matter) and the project gains a **matter type** stage; office actions gain a
 
 ---
 
-## 8. Follow-ups
+## 8. Assigning reference patents to an office action
+
+Prosecuting an office action means reviewing prior-art / reference patents against
+the examiner's rejections. PatentMine models this as a first-class many-to-many
+link between patents and office actions (the `patent_office_action` join), keyed
+by the patent's **canonical record number** so a link survives re-stamps and
+record merges. An office action behaves like an *assignable label on patents* —
+the same mental model as tags, but a typed reference rather than free text.
+
+Each assignment carries a **review state** — `○ to review` → `✓ reviewed` — plus
+the assignment date, and every assign/release is journaled. The glyph/label come
+from one source (`domain.OAReviewStatus.Glyph()` / `.Label()`), so they read the
+same everywhere.
+
+### Two ways in
+
+- **From the office action (bulk review).** Open the OA detail
+  (`:open.officeaction` → `enter`) and press **`p`** for the two-pane
+  **assignment view** — *Assigned to this office action* on top, *All patents in
+  this matter* below. `tab` switches panes; in the lower table **`a`** assigns the
+  patent under the cursor, in the upper **`x`** removes it and **`v`** toggles its
+  review state; `enter` opens the patent; **`/`** searches the browse table by
+  number / title / inventor / assignee; **`PageUp`/`PageDown`** (and `ctrl+u`/`d`)
+  scroll; **`.`** sorts the focused column.
+- **From the patent list or a patent (per-patent).** Select one or more patents in
+  the **catalog** (visual mode `v` for a range) — or open a patent's **detail** —
+  and run **`:assign.officeaction`** (alias `:assign.oa`). An office-action picker
+  opens: **`space`** checks the office action(s), **`enter`** applies it to the
+  whole selection. **`:release.officeaction`** is the inverse.
+
+### Seeing assignments
+
+- The **catalog** carries an **OA** column (matter view only): the assigned office
+  action(s) with the review glyph (e.g. `Final 3/15 ✓ +1`). It is **sortable**
+  (`.`) and **filterable** with the `oa:` field — `oa:any`, `oa:none`,
+  `oa:to_review`, `oa:reviewed`, or `oa:<name>` (substring), combinable with
+  `and`/`or`/`not` like any other [`:filter`](./README.md#filter-expression-syntax) term.
+- The **patent detail** pane shows an **Office Actions** line listing the actions
+  the patent is assigned to, with the same glyph.
+
+### Carry-forward across the prosecution chain
+
+When a new office action is **imported**, it automatically inherits the previous
+office action's assigned patents — the most recent prior action in the same matter
+and application — each reset to *to review*. So the references you vetted against
+the non-final carry into the final without re-selecting them.
+
+> [!NOTE]
+> The data/RPC layer also exposes a manual *re-copy from previous* and a review
+> CSV export (`office_action.copy_patents`, and a planned `:export.review`); these
+> are not yet bound to TUI commands.
+
+---
+
+## 9. Follow-ups
 
 - **Hourly rates / billing amounts** — time and AI usage are tracked as
   durations/counts now; attaching rates (per activity/timekeeper, and a

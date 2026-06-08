@@ -63,6 +63,13 @@ type detailLoadedMsg struct {
 	err        error
 }
 
+// detailOfficeActionsMsg delivers the office actions the patent is assigned to.
+type detailOfficeActionsMsg struct {
+	requestID uint64
+	refs      []proto.PatentOfficeActionRef
+	err       error
+}
+
 // detailRelationCountMsg delivers a single relation kind's edge count.
 type detailRelationCountMsg struct {
 	requestID uint64
@@ -99,6 +106,7 @@ type Detail struct {
 	patent             domain.Patent
 	state              domain.ReviewState
 	tags               []domain.Tag
+	officeActions      []proto.PatentOfficeActionRef
 	idsEntry           *domain.IDSEntry
 	patentNote         *domain.PatentNote
 	usptoApp           *domain.USPTOApplication
@@ -255,7 +263,25 @@ func (d *Detail) Init() tea.Cmd { return d.reload() }
 
 // reload fetches the patent record and its family-graph edge counts.
 func (d *Detail) reload() tea.Cmd {
-	return tea.Batch(d.load(), d.loadRelations(), d.loadSourceDiffs())
+	return tea.Batch(d.load(), d.loadRelations(), d.loadSourceDiffs(), d.loadOfficeActions())
+}
+
+// loadOfficeActions fetches the office actions this patent is assigned to for
+// review, within the pane's project (empty when there is no active project).
+func (d *Detail) loadOfficeActions() tea.Cmd {
+	client, number, project, requestID := d.client, d.number, d.project, d.loadID
+	if client == nil || number.IsZero() || project == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentOfficeActionsResult
+		err := client.Call(ctx, proto.MethodPatentOfficeActions,
+			proto.PatentOfficeActionsParams{Patents: []domain.PatentNumber{number}}, &res)
+		refs := res.ByPatent[number.Normalized()]
+		return detailOfficeActionsMsg{requestID: requestID, refs: refs, err: err}
+	}
 }
 
 // load fetches the patent record from the daemon, scoped to the pane's project
@@ -359,6 +385,11 @@ func (d *Detail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 	case detailRelationCountMsg:
 		if m.requestID == d.loadID && m.err == nil {
 			d.relCounts[m.kind] = m.count
+			d.cachedLines = nil
+		}
+	case detailOfficeActionsMsg:
+		if m.requestID == d.loadID && m.err == nil {
+			d.officeActions = m.refs
 			d.cachedLines = nil
 		}
 	case detailSourceDiffsMsg:
@@ -643,6 +674,8 @@ func (d *Detail) body(w int) string {
 		tagsVal := tagsText(d.tags)
 		d.addAnchor(&b, d.jumpKey(detailLabelTags), detailLabelTags, tagsVal, true, 0)
 		d.field(&b, w, detailLabelTags, tagsVal)
+
+		d.field(&b, w, "Office Actions", detailOfficeActionsText(d.officeActions))
 
 		var notesVal string
 		if d.patentNote == nil || strings.TrimSpace(d.patentNote.Markdown) == "" {
@@ -1123,6 +1156,23 @@ func tagsText(tags []domain.Tag) string {
 		names[i] = t.Name
 	}
 	return strings.Join(names, ", ")
+}
+
+// detailOfficeActionsText lists the office actions a patent is assigned to for
+// review, each with a status glyph (✓ reviewed, ○ to-review). Em dash when none.
+func detailOfficeActionsText(refs []proto.PatentOfficeActionRef) string {
+	if len(refs) == 0 {
+		return "—"
+	}
+	parts := make([]string, len(refs))
+	for i, r := range refs {
+		name := strings.TrimSpace(r.Name)
+		if name == "" {
+			name = "(office action)"
+		}
+		parts[i] = name + " " + r.Status.Glyph()
+	}
+	return strings.Join(parts, ", ")
 }
 
 func detailClassificationsText(classifications []string) string {

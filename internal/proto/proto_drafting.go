@@ -183,6 +183,8 @@ type OfficeActionAssignedPatent struct {
 	Number     domain.PatentNumber   `json:"number"`
 	Display    domain.PatentNumber   `json:"display,omitempty"`
 	Title      string                `json:"title,omitempty"`
+	Inventor   string                `json:"inventor,omitempty"`
+	Assignee   string                `json:"assignee,omitempty"`
 	Status     domain.OAReviewStatus `json:"status"`
 	AssignedAt time.Time             `json:"assigned_at"`
 	ReviewedAt time.Time             `json:"reviewed_at,omitempty"`

@@ -1187,6 +1187,8 @@ func (e *Engine) OfficeActionPatents(ctx context.Context, oaID string) (proto.Of
 		}
 		if p, perr := e.Patent(ctx, l.Patent); perr == nil {
 			row.Title = p.Title
+			row.Inventor = domain.ShortInventors(p.Inventors)
+			row.Assignee = p.Assignee
 			if !p.DisplayNumber.IsZero() {
 				row.Display = p.DisplayNumber
 			}

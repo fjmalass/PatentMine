@@ -735,6 +735,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		// 1. Table 0 (Associated Documents)
 		b.WriteString(o.theme.Title.Render("Associated with Current Office Action:") + "\n")
 		bodyH0 := max(1, h0-1)
+		o.dt.SetWindow(0, bodyH0)
 		cur0 := o.dt.CursorIn(0)
 		if cur0 < o.offset0 {
 			o.offset0 = cur0
@@ -817,6 +818,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 		// 2. Table 1 (All Documents)
 		b.WriteString(o.theme.Title.Render("All Loaded Documents:") + "\n")
 		bodyH1 := max(1, h1-1)
+		o.dt.SetWindow(1, bodyH1)
 		cur1 := o.dt.CursorIn(1)
 		if cur1 < o.offset1 {
 			o.offset1 = cur1

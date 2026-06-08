@@ -170,6 +170,19 @@ type Patent struct {
 	Renewal *PatentRenewal `json:"renewal,omitempty"`
 }
 
+// ShortInventors renders the lead inventor, appending "et al." when there are
+// more — the compact inventor label shared by list/table views. Returns "-" when
+// there are none.
+func ShortInventors(inventors []Inventor) string {
+	if len(inventors) == 0 {
+		return "-"
+	}
+	if len(inventors) == 1 {
+		return string(inventors[0])
+	}
+	return string(inventors[0]) + " et al."
+}
+
 // PatentRow is the lightweight listing shape used by paged views. It keeps the
 // record key and display number separate so list UIs stay cheap without losing
 // the application/publication/grant distinction.
@@ -177,6 +190,7 @@ type PatentRow struct {
 	Number          PatentNumber `json:"number"`
 	DisplayNumber   PatentNumber `json:"display_number"`
 	Title           string       `json:"title"`
+	Assignee        string       `json:"assignee,omitempty"`
 	Inventors       []Inventor   `json:"inventors"`
 	PublicationDate time.Time    `json:"publication_date"`
 	ExpirationDate  time.Time    `json:"expiration_date"`

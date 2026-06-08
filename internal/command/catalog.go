@@ -122,6 +122,8 @@ const (
 	ExportAdded       ID = "project.export-added" // write the active project's manually-added patents to a plain-text list file
 	AddOfficeAction   ID = "officeaction.add"     // import an Office Action document (with examiner metadata) into the active project
 	ListOfficeActions ID = "officeaction.list"    // open the project's office-action table; select one to drill into the detail/notes editor
+	AssignOfficeAction  ID = "officeaction.assign-patents"  // assign the selected patent(s) to office action(s) for review (catalog/detail)
+	ReleaseOfficeAction ID = "officeaction.release-patents" // remove the selected patent(s) from office action(s)
 	AddDocument       ID = "matter.document.add"  // import a supporting document (reference, response, …) into the active matter
 	OpenDocuments     ID = "matter.document.open" // open the matter's document list (view / rename / delete)
 	SetMatterType     ID = "project.matter-type"  // set the project's prosecution stage (provisional / nonprovisional / …)

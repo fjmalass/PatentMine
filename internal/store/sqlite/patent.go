@@ -50,7 +50,7 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 	// before the WHERE join args.
 	if project != "" {
 		const conflictingCol = `, EXISTS(SELECT 1 FROM conflict cf WHERE cf.project_id = ? AND cf.record_number = p.number AND cf.status = 'open')`
-		return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
+		return `p.country, p.serial, p.kind, p.display_number, p.title, p.assignee, ` +
 				`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, COALESCE(m.state, ''), '[]', ` +
 				`COALESCE(m.ids_kind_code, ''), COALESCE(m.ids_in_full, 0), ` +
 				`COALESCE(m.ids_relevant_passages, ''), COALESCE(m.ids_notes, ''), COALESCE(m.ids_status, ''), ` +
@@ -61,7 +61,7 @@ func patentRowColumns(project domain.ProjectID) (cols string, extraArgs []any) {
 				renewalDateQueries + conflictingCol,
 			[]any{string(project)}
 	}
-	return `p.country, p.serial, p.kind, p.display_number, p.title, ` +
+	return `p.country, p.serial, p.kind, p.display_number, p.title, p.assignee, ` +
 		`p.inventors, p.publication_date, p.expiration_date, p.fetch_state, '', '[]', '', 0, '', '', '', '', ''` +
 		relationCounts + `, p.classifications, 'direct'` +
 		`, COALESCE((SELECT is_tracked FROM patent_renewal WHERE patent_number = p.number), 0)` +
@@ -610,7 +610,7 @@ func scanPatentRow(s rowScanner) (domain.PatentRow, error) {
 		nextDueStr, windowStr, graceStr string
 		conflicting                     int
 	)
-	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title,
+	if err := s.Scan(&country, &serial, &kind, &shown, &row.Title, &row.Assignee,
 		&inventorsJSON, &pubDate, &expirationDate, &fetchState, &reviewState, &tagsJSON,
 		&idsKindCode, &idsInFull, &idsRelevant, &idsNotes, &idsStatus, &idsAddedAt, &idsSubmittedAt,
 		&citationsCount, &citedByCount, &parentsCount, &classificationsJSON, &addedMethod,
