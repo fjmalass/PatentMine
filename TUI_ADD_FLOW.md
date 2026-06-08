@@ -146,8 +146,10 @@ is a typed many-to-many link (`patent_office_action`), distinct from tags and
 keyed by the canonical record number.
 
 - **From this list (the catalog):** select one or more patents (`v` for a range)
-  and run **`:assign.officeaction`** (alias `:assign.oa`) → check the office
-  action(s) in the picker → `enter`. **`:release.officeaction`** removes them.
+  and run **`:assign.officeaction [name]`** (alias `:assign.oa`). Like
+  `:tag.patent.add <name>`, a **name** assigns directly to the matching office
+  action(s); with **no argument** a checkbox picker opens (`space` toggles,
+  `enter` applies). **`:release.officeaction [name]`** removes them.
 - **From a patent's detail:** the same commands act on the open patent; the detail
   shows an **Office Actions** line of its current assignments.
 - **Where it shows in the list:** the catalog's **OA** column (matter view) lists

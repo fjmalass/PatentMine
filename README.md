@@ -914,6 +914,14 @@ Filter/search/sort usage is recorded through metrics and activity telemetry so c
 * `:tag.patent.delete <name>` : Remove a tag assignment from the selected patent.
 * `:tag.patent.list` : List all tags assigned to the selected patent, along with their assignment timestamps.
 
+**Office-action assignment** works the same way — an office action acts as a typed, assignable label on patents (a reference vetted against the examiner's rejections), the same mental model as a tag but pointing at an imported document rather than a free-text taxonomy entry:
+
+* `:assign.officeaction [name]` (aliases `:assign.oa`, `:assign-officeaction`) : Assign the selected patent(s) to the office action whose label matches `name` (case-insensitive substring) — the direct counterpart of `:tag.patent.add <name>`. With **no argument** it opens a checkbox **picker** of the matter's office actions (`space` toggles, `enter` applies). Works on the catalog selection (`v` for a range) or a patent detail.
+* `:release.officeaction [name]` (alias `:release.oa`) : Remove the selected patent(s) from the matching office action(s); no argument opens the picker. The counterpart of `:tag.patent.delete`.
+* **Listing** (the `:tag.patent.list` counterpart): the patent **detail** pane's *Office Actions* line shows the assignments with a review glyph (`✓` reviewed / `○` to review), the catalog **OA** column shows them per row, and `:filter oa:<name>` / `oa:any` / `oa:none` / `oa:to_review` / `oa:reviewed` filters by them.
+
+Unlike tags, office actions are not a registered free-text taxonomy — they are imported with `:add.officeaction`, so there is no `:officeaction.add <name>` taxonomy step; you assign against the office actions already in the matter. Assigning patents from the office-action side (a two-pane *assigned / all patents* view) is **`p`** on its detail. See [Office Actions §8](./TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action).
+
 For fuller metrics details, including API access paths, overlay behavior, limitations, and follow-up work, see [`metrics.md`](./metrics.md).
 
 For fuller telemetry and activity auditing details, including event catalogs, history feeds, configuration, adaptive size-based pruning, and analytical storage tiering, see [`ACTIVITY.md`](./ACTIVITY.md).

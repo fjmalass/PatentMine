@@ -372,9 +372,11 @@ same everywhere.
   scroll; **`.`** sorts the focused column.
 - **From the patent list or a patent (per-patent).** Select one or more patents in
   the **catalog** (visual mode `v` for a range) — or open a patent's **detail** —
-  and run **`:assign.officeaction`** (alias `:assign.oa`). An office-action picker
-  opens: **`space`** checks the office action(s), **`enter`** applies it to the
-  whole selection. **`:release.officeaction`** is the inverse.
+  and run **`:assign.officeaction [name]`** (alias `:assign.oa`). This mirrors
+  `:tag.patent.add <name>`: pass an office-action **name** to assign the selection
+  directly to the matching action(s); with **no argument** a checkbox **picker**
+  opens (**`space`** toggles, **`enter`** applies to the whole selection).
+  **`:release.officeaction [name]`** is the inverse.
 
 ### Seeing assignments
 

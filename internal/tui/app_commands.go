@@ -1141,19 +1141,20 @@ func (a *App) cmdTagPatentManage(inv invocation) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
-// cmdAssignOfficeAction opens the office-action picker to assign the selected
-// patent(s) to one or more of the matter's office actions for review.
+// cmdAssignOfficeAction assigns the selected patent(s) to office action(s) for
+// review. Like :tag.patent.add <name>, a name argument resolves the office
+// action(s) directly; with no argument it opens the office-action picker.
 func (a *App) cmdAssignOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
-	return a.openOfficeActionPicker(false)
+	return a.assignOfficeAction(inv, false)
 }
 
-// cmdReleaseOfficeAction opens the picker to remove the selected patent(s) from
-// office action(s).
+// cmdReleaseOfficeAction removes the selected patent(s) from office action(s),
+// mirroring cmdAssignOfficeAction (name argument or picker).
 func (a *App) cmdReleaseOfficeAction(inv invocation) (tea.Model, tea.Cmd) {
-	return a.openOfficeActionPicker(true)
+	return a.assignOfficeAction(inv, true)
 }
 
-func (a *App) openOfficeActionPicker(release bool) (tea.Model, tea.Cmd) {
+func (a *App) assignOfficeAction(inv invocation, release bool) (tea.Model, tea.Cmd) {
 	if a.activeProject == nil {
 		a.setErr(text.StatusNoActiveProject)
 		return a, nil
@@ -1167,9 +1168,58 @@ func (a *App) openOfficeActionPicker(release bool) (tea.Model, tea.Cmd) {
 		a.setErr(text.StatusNoPatentSelected)
 		return a, nil
 	}
+	// A name argument assigns directly (scriptable, like :tag.patent.add <name>);
+	// no argument opens the interactive picker.
+	if name := strings.TrimSpace(strings.Join(inv.args, " ")); name != "" {
+		return a, a.officeActionAssignByNameCmd(a.activeProject.ID, numbers, name, release)
+	}
 	o := overlay.NewOfficeActionPicker(a.client, a.theme, a.activeProject.ID, numbers, release)
 	a.overlays = append(a.overlays, o)
 	return a, o.Init()
+}
+
+// officeActionAssignByNameCmd resolves the matter's office action(s) whose label
+// matches name (case-insensitive substring) and assigns/releases the patents to
+// each, then reports a status.
+func (a *App) officeActionAssignByNameCmd(project domain.ProjectID, patents []domain.PatentNumber, name string, release bool) tea.Cmd {
+	client := a.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		var list proto.OfficeActionListResult
+		if err := client.Call(ctx, proto.MethodOfficeActionList, proto.OfficeActionListParams{Project: project}, &list); err != nil {
+			return pane.StatusMsg{Key: text.StatusGeneric, Args: []any{"office actions: " + err.Error()}, Error: true}
+		}
+		needle := strings.ToLower(name)
+		var matched []domain.OfficeAction
+		for _, oa := range list.OfficeActions {
+			if strings.Contains(strings.ToLower(oa.DisplayLabel()), needle) {
+				matched = append(matched, oa)
+			}
+		}
+		if len(matched) == 0 {
+			return pane.StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("no office action matches %q", name)}, Error: true}
+		}
+		for _, oa := range matched {
+			var res proto.OfficeActionPatentsResult
+			var err error
+			if release {
+				err = client.Call(ctx, proto.MethodOfficeActionReleasePatents, proto.OfficeActionReleasePatentsParams{ID: oa.ID, Patents: patents}, &res)
+			} else {
+				err = client.Call(ctx, proto.MethodOfficeActionAssignPatents, proto.OfficeActionAssignPatentsParams{ID: oa.ID, Patents: patents}, &res)
+			}
+			if err != nil {
+				return pane.StatusMsg{Key: text.StatusGeneric, Args: []any{"office-action assignment failed: " + err.Error()}, Error: true}
+			}
+		}
+		verb := "Assigned"
+		if release {
+			verb = "Removed"
+		}
+		return pane.StatusMsg{Key: text.StatusGeneric, Args: []any{
+			fmt.Sprintf("%s %d patent(s) · %d office action(s)", verb, len(patents), len(matched)),
+		}}
+	}
 }
 
 // cmdTagTaxonomyDelete removes a tag from the project's taxonomy.
