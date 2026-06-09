@@ -70,6 +70,7 @@ func patentActions() map[string]command.ID {
 		"s":   command.AddToProject,
 		"f":   command.CrawlFamily,
 		"g i": command.OpenIDS,
+		"g o": command.AssignOfficeAction,
 		"L":   command.LookupPatent,
 		"K":   command.OpenPatentClassifications,
 	}
@@ -157,7 +158,6 @@ func Default() *Keymaps {
 			"A":     command.AIAnalyze,
 			"enter": command.OpenInventors,
 			"v":     command.OpenInventorsDirect,
-			"g o":   command.AssignOfficeAction,
 			"g c":   command.SourceCompare, // conditional source comparison (Option A)
 			"g b":   command.SourceBibs,    // all-fields side-by-side of every source
 			".":     command.FetchUSPTOGrant,
@@ -299,9 +299,14 @@ func Default() *Keymaps {
 
 	matterOADetail := NewLayer("matter_oa_detail", false).
 		BindAll(map[string]command.ID{
+			"j":      command.NavDown,
+			"down":   command.NavDown,
+			"k":      command.NavUp,
+			"up":     command.NavUp,
 			"f":      command.OpenDocuments,
 			"c":      command.OpenComms,
 			"R":      command.DraftResponse,
+			"w":      command.ValidateTime,
 			"T":      command.OpenFullText,
 			"ctrl+r": command.Refresh,
 			"esc":    command.Back,

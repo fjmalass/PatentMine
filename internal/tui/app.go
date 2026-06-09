@@ -942,6 +942,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		o := overlay.NewOfficeActionPatents(a.client, a.theme, m.OA.Project, m.OA)
 		a.overlays = append(a.overlays, o)
 		return a, o.Init()
+	case pane.OpenOfficeActionDocumentsMsg:
+		oa := m.OA
+		project := oa.Project
+		if project == "" && a.activeProject != nil {
+			project = a.activeProject.ID
+		}
+		o := overlay.NewMatterDocuments(a.client, a.theme, project, &oa)
+		a.overlays = append(a.overlays, o)
+		return a, o.Init()
 	case overlay.IDSHeaderSubmitMsg:
 		a.popOverlay()
 		return a.handleIDSHeaderSubmit(m.Project)

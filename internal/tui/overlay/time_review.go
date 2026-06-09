@@ -127,6 +127,26 @@ func (o *TimeReview) handleRune(s string) (Overlay, tea.Cmd, bool) {
 		if e != nil {
 			e.Activity = nextActivity(e.Activity)
 		}
+	case "r":
+		if e != nil {
+			e.Activity = domain.TimeReading
+		}
+	case "w":
+		if e != nil {
+			e.Activity = domain.TimeWriting
+		}
+	case "i":
+		if e != nil {
+			e.Activity = domain.TimeAI
+		}
+	case "c":
+		if e != nil {
+			e.Activity = domain.TimeCall
+		}
+	case "m":
+		if e != nil {
+			e.Activity = domain.TimeAdmin
+		}
 	case "+", "=": // +5 min
 		if e != nil {
 			e.Seconds += 300
@@ -288,7 +308,7 @@ func (o *TimeReview) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "a activity · +/- 5m · n note · v validate · V all · d delete · esc close"
+	footer := "a cycle · r/w/i/c/m set activity · +/- 5m · n note · v validate · V all · d delete · esc close"
 	if o.editingNote {
 		footer = "note: type · enter save · esc cancel"
 	} else if o.msg != "" {

@@ -32,10 +32,17 @@ type OpenOfficeActionPatentsMsg struct {
 	OA domain.OfficeAction
 }
 
+// OpenOfficeActionDocumentsMsg asks the app to open the document manager scoped
+// to this office action.
+type OpenOfficeActionDocumentsMsg struct {
+	OA domain.OfficeAction
+}
+
 type oaDetailLoadedMsg struct {
 	requestID uint64
 	oa        domain.OfficeAction
-	docs      int
+	assigned  []proto.OfficeActionAssignedPatent
+	documents []domain.MatterDocument
 	comms     int
 	time      domain.TimeSummary
 	ai        domain.AIUsageSummary
@@ -53,19 +60,23 @@ type OfficeActionDetail struct {
 	handlers map[command.ID]cmdHandler
 	logger   *slog.Logger
 
-	loading bool
-	loadErr string
-	loadID  uint64
-	docs    int
-	comms   int
-	time    domain.TimeSummary
-	ai      domain.AIUsageSummary
+	loading   bool
+	loadErr   string
+	loadID    uint64
+	row       int
+	documents []domain.MatterDocument
+	comms     int
+	time      domain.TimeSummary
+	ai        domain.AIUsageSummary
+	assigned  []proto.OfficeActionAssignedPatent
 }
 
 // NewOfficeActionDetail builds the drill-down pane for one office action.
 func NewOfficeActionDetail(client *rpc.Client, theme render.Theme, oa domain.OfficeAction) *OfficeActionDetail {
 	o := &OfficeActionDetail{client: client, theme: theme, oa: oa, loading: true}
 	o.handlers = map[command.ID]cmdHandler{
+		command.NavDown: func(inv Invocation) tea.Cmd { o.moveRow(inv.Repeat); return nil },
+		command.NavUp:   func(inv Invocation) tea.Cmd { o.moveRow(-inv.Repeat); return nil },
 		command.Refresh: func(Invocation) tea.Cmd { o.loading = true; return o.load() },
 	}
 	return o
@@ -107,7 +118,7 @@ func (o *OfficeActionDetail) load() tea.Cmd {
 			out.err = err
 			return out
 		}
-		out.docs = len(docs.Documents)
+		out.documents = docs.Documents
 		var comms proto.MatterEventListResult
 		if err := client.Call(ctx, proto.MethodMatterEventList, proto.MatterEventListParams{Project: project}, &comms); err != nil {
 			out.err = err
@@ -138,9 +149,23 @@ func (o *OfficeActionDetail) load() tea.Cmd {
 		if !found {
 			out.oa = o.oa
 		}
+		var patents proto.OfficeActionPatentsResult
+		if err := client.Call(ctx, proto.MethodOfficeActionPatents, proto.OfficeActionPatentsParams{ID: out.oa.ID}, &patents); err != nil {
+			out.err = err
+			return out
+		}
+		out.assigned = patents.Patents
 
 		return out
 	}
+}
+
+func (o *OfficeActionDetail) moveRow(delta int) {
+	total := o.rowCount()
+	if total == 0 {
+		return
+	}
+	o.row = max(0, min(o.row+delta, total-1))
 }
 
 func (o *OfficeActionDetail) Command(id command.ID, inv Invocation) (Pane, tea.Cmd) {
@@ -163,8 +188,11 @@ func (o *OfficeActionDetail) Update(msg tea.Msg) (Pane, tea.Cmd) {
 			return o, nil
 		}
 		o.loadErr = ""
-		o.docs, o.comms, o.time, o.ai = m.docs, m.comms, m.time, m.ai
+		o.comms, o.time, o.ai = m.comms, m.time, m.ai
 		o.oa = m.oa
+		o.documents = m.documents
+		o.assigned = m.assigned
+		o.moveRow(0)
 	}
 	return o, nil
 }
@@ -181,9 +209,11 @@ func (o *OfficeActionDetail) FullTextNumber() (domain.PatentNumber, bool) {
 
 func (o *OfficeActionDetail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	switch msg.String() {
-	case "enter", "ctrl+n":
+	case "ctrl+n":
 		oa := o.oa
 		return o, func() tea.Msg { return OpenOfficeActionEditorMsg{OA: oa} }, true
+	case "enter":
+		return o, o.activateRow(), true
 	case "e":
 		oa := o.oa
 		return o, func() tea.Msg { return OpenOfficeActionEditFormMsg{OA: oa} }, true
@@ -194,12 +224,101 @@ func (o *OfficeActionDetail) HandleKey(msg tea.KeyMsg) (Pane, tea.Cmd, bool) {
 	return o, nil, false
 }
 
-func (o *OfficeActionDetail) View(w, h int) string {
+type oaDetailRowKind int
+
+const (
+	oaDetailMeta oaDetailRowKind = iota
+	oaDetailPatent
+	oaDetailDocument
+	oaDetailComms
+	oaDetailWorklog
+	oaDetailUnreviewed
+	oaDetailAI
+)
+
+type oaDetailRow struct {
+	kind  oaDetailRowKind
+	index int
+}
+
+func (o *OfficeActionDetail) rowCount() int {
+	return 9 + len(o.assigned) + len(o.documents) + o.matterRowCount()
+}
+
+func (o *OfficeActionDetail) matterRowCount() int {
+	n := 2 // Communications + Worklog
+	if o.time.UnvalidatedCount > 0 {
+		n++
+	}
+	if o.ai.Calls > 0 {
+		n++
+	}
+	return n
+}
+
+func (o *OfficeActionDetail) rowAt(cursor int) oaDetailRow {
+	if cursor < 9 {
+		return oaDetailRow{kind: oaDetailMeta, index: cursor}
+	}
+	cursor -= 9
+	if cursor < len(o.assigned) {
+		return oaDetailRow{kind: oaDetailPatent, index: cursor}
+	}
+	cursor -= len(o.assigned)
+	if cursor < len(o.documents) {
+		return oaDetailRow{kind: oaDetailDocument, index: cursor}
+	}
+	cursor -= len(o.documents)
+	if cursor == 0 {
+		return oaDetailRow{kind: oaDetailComms}
+	}
+	cursor--
+	if cursor == 0 {
+		return oaDetailRow{kind: oaDetailWorklog}
+	}
+	cursor--
+	if o.time.UnvalidatedCount > 0 {
+		if cursor == 0 {
+			return oaDetailRow{kind: oaDetailUnreviewed}
+		}
+		cursor--
+	}
+	return oaDetailRow{kind: oaDetailAI}
+}
+
+func (o *OfficeActionDetail) activateRow() tea.Cmd {
+	switch o.rowAt(o.row).kind {
+	case oaDetailMeta:
+		oa := o.oa
+		return func() tea.Msg { return OpenOfficeActionEditFormMsg{OA: oa} }
+	case oaDetailPatent:
+		oa := o.oa
+		return func() tea.Msg { return OpenOfficeActionPatentsMsg{OA: oa} }
+	case oaDetailDocument:
+		oa := o.oa
+		return func() tea.Msg { return OpenOfficeActionDocumentsMsg{OA: oa} }
+	default:
+		oa := o.oa
+		return func() tea.Msg { return OpenOfficeActionEditorMsg{OA: oa} }
+	}
+}
+
+func (o *OfficeActionDetail) View(w, _ int) string {
 	var b strings.Builder
-	field := func(label, value string) {
-		b.WriteString(o.theme.Dim.Render(render.Pad(label, 16)))
-		b.WriteString(o.theme.Row.Render(render.Truncate(orDash(value), max(w-16, 8))))
+	row := 0
+	selectable := func(line string, rowIdx int) {
+		cell := render.Pad(render.Truncate(line, max(w, 8)), max(w, 8))
+		if rowIdx == o.row {
+			b.WriteString(o.theme.Selected.Render(cell))
+		} else {
+			b.WriteString(o.theme.Row.Render(cell))
+		}
 		b.WriteByte('\n')
+	}
+	field := func(label, value string) {
+		line := render.Pad(label, 16) + render.Truncate(orDash(value), max(w-16, 8))
+		selectable(line, row)
+		row++
 	}
 	field("Name", o.oa.Name)
 	field("Examiner", o.oa.Examiner)
@@ -211,6 +330,30 @@ func (o *OfficeActionDetail) View(w, h int) string {
 	field("Status", statusAgeLabel(o.oa))
 	field("Tags", tagsText(o.oa.Tags))
 	b.WriteByte('\n')
+	b.WriteString(o.theme.Header.Render(render.Pad(fmt.Sprintf("ASSIGNED PATENTS (%d)", len(o.assigned)), max(w, 8))))
+	b.WriteByte('\n')
+	if len(o.assigned) == 0 {
+		b.WriteString(o.theme.Dim.Render("none assigned"))
+		b.WriteByte('\n')
+	} else {
+		for i := 0; i < len(o.assigned); i++ {
+			selectable(assignedPatentSummary(o.assigned[i]), row)
+			row++
+		}
+	}
+	b.WriteByte('\n')
+	b.WriteString(o.theme.Header.Render(render.Pad(fmt.Sprintf("DOCUMENTS (%d)", len(o.documents)), max(w, 8))))
+	b.WriteByte('\n')
+	if len(o.documents) == 0 {
+		b.WriteString(o.theme.Dim.Render("none loaded"))
+		b.WriteByte('\n')
+	} else {
+		for i := 0; i < len(o.documents); i++ {
+			selectable(documentSummary(o.documents[i], o.oa.ID), row)
+			row++
+		}
+	}
+	b.WriteByte('\n')
 
 	if o.loading {
 		b.WriteString(o.theme.Dim.Render("loading matter details…"))
@@ -221,11 +364,10 @@ func (o *OfficeActionDetail) View(w, h int) string {
 	} else {
 		b.WriteString(o.theme.Header.Render(render.Pad("MATTER", max(w, 8))))
 		b.WriteByte('\n')
-		field("Documents", fmt.Sprintf("%d", o.docs))
 		field("Communications", fmt.Sprintf("%d", o.comms))
 		field("Worklog", formatTimeSummary(o.time))
 		if o.time.UnvalidatedCount > 0 {
-			field("Unreviewed", fmt.Sprintf("%d entries (%s) — review before billing", o.time.UnvalidatedCount, fmtDuration(o.time.UnvalidatedSecs)))
+			field("Unreviewed", fmt.Sprintf("%d entries (%s) — press w to review before billing", o.time.UnvalidatedCount, fmtDuration(o.time.UnvalidatedSecs)))
 		}
 		if o.ai.Calls > 0 {
 			field("AI usage", fmt.Sprintf("%d calls, %d tokens", o.ai.Calls, o.ai.TotalTokens))
@@ -234,8 +376,56 @@ func (o *OfficeActionDetail) View(w, h int) string {
 
 	b.WriteByte('\n')
 	b.WriteString(o.theme.Dim.Render(render.Truncate(
-		"[enter/ctrl+n] notes editor  [e] edit  [f] documents  [p] patents  [c] communications  [R] draft response  [esc] back", w)))
+		"[j/k] move row  [enter] open/edit row  [ctrl+n] notes  [e] edit OA  [p] patents  [w] review worklog  [f] docs  [c] comms  [R] response  [esc] back", w)))
 	return b.String()
+}
+
+func assignedPatentSummary(a proto.OfficeActionAssignedPatent) string {
+	n := a.Number.DisplayString()
+	if !a.Display.IsZero() {
+		n = a.Display.DisplayString()
+	}
+	title := strings.TrimSpace(a.Title)
+	if title == "" {
+		title = "—"
+	}
+	return fmt.Sprintf("%s  %s  %s", render.Pad(render.Truncate(n, 16), 16), render.Pad(render.Truncate(a.Status.Label(), 12), 12), title)
+}
+
+func documentSummary(d domain.MatterDocument, oaID string) string {
+	name := strings.TrimSpace(d.DisplayName)
+	if name == "" {
+		name = "(unnamed)"
+	}
+	linked := "matter"
+	if documentLinkedToOA(d, oaID) {
+		linked = "linked"
+	}
+	date := "—"
+	if !d.AddedAt.IsZero() {
+		date = d.AddedAt.Format(domain.DateLayout)
+	}
+	return fmt.Sprintf("%s  %s  %s  %s  %s",
+		render.Pad(render.Truncate(name, 30), 30),
+		render.Pad(render.Truncate(d.Kind.Label(), 14), 14),
+		render.Pad(render.Truncate(d.Stage.Label(), 12), 12),
+		render.Pad(linked, 6),
+		date)
+}
+
+func documentLinkedToOA(d domain.MatterDocument, oaID string) bool {
+	if oaID == "" {
+		return false
+	}
+	if d.OfficeActionID == oaID {
+		return true
+	}
+	for _, id := range d.OfficeActionIDs {
+		if id == oaID {
+			return true
+		}
+	}
+	return false
 }
 
 // formatTimeSummary renders recorded time by activity, e.g. "reading 0:42 ·

@@ -999,6 +999,7 @@ func (e *Engine) AssignPatentsToOfficeAction(ctx context.Context, oaID string, p
 			observability.AttrProject: string(oa.Project),
 			observability.AttrName:    oa.Name,
 			observability.AttrCount:   len(patents),
+			observability.AttrPatents: patentDisplayStrings(patents),
 		},
 	})
 	e.announceChange()
@@ -1029,6 +1030,7 @@ func (e *Engine) ReleasePatentsFromOfficeAction(ctx context.Context, oaID string
 			observability.AttrProject: string(oa.Project),
 			observability.AttrName:    oa.Name,
 			observability.AttrCount:   len(patents),
+			observability.AttrPatents: patentDisplayStrings(patents),
 		},
 	})
 	e.announceChange()
@@ -1062,6 +1064,7 @@ func (e *Engine) SetOfficeActionReviewStatus(ctx context.Context, oaID string, p
 			observability.AttrProject: string(oa.Project),
 			observability.AttrName:    oa.Name,
 			"patent":                  patent.DisplayString(),
+			observability.AttrPatents: []string{patent.DisplayString()},
 			"status":                  string(status),
 		},
 	})
@@ -1140,11 +1143,23 @@ func (e *Engine) copyAssignmentsFromPreviousOA(ctx context.Context, current doma
 			observability.AttrProject: string(current.Project),
 			observability.AttrName:    current.Name,
 			observability.AttrCount:   len(nums),
+			observability.AttrPatents: patentDisplayStrings(nums),
 			"via":                     "copy_previous",
 			"from_office_action":      prev.ID,
 		},
 	})
 	return len(nums), nil
+}
+
+func patentDisplayStrings(patents []domain.PatentNumber) []string {
+	out := make([]string, 0, len(patents))
+	for _, patent := range patents {
+		if patent.IsZero() {
+			continue
+		}
+		out = append(out, patent.DisplayString())
+	}
+	return out
 }
 
 // sameApplication reports whether two application numbers denote the same
@@ -1781,11 +1796,16 @@ func (e *Engine) LogTime(ctx context.Context, in LogTimeInput) (entry domain.Tim
 	if err := e.repo.SaveTimeEntry(ctx, entry); err != nil {
 		return domain.TimeEntry{}, err
 	}
+	activityLabel, sourceLabel := timeMetricLabel(string(entry.Activity)), timeMetricLabel(string(entry.Source))
+	e.incCounter("engine.time_entry.log.total", 1)
+	e.incCounter("engine.time_entry.log.activity."+activityLabel, 1)
+	e.incCounter("engine.time_entry.log.source."+sourceLabel, 1)
 	e.recordActivity(ctx, observability.Record{
 		Action: observability.ActionTimeLog, Entity: "time_entry", EntityID: entry.ID, Status: "committed",
 		Attributes: map[string]any{
-			"project": string(in.Project), "activity": string(in.Activity),
-			"seconds": in.Seconds, "source": string(source),
+			"project": string(in.Project), "office_action_id": in.OfficeActionID,
+			"activity": string(entry.Activity), "seconds": entry.Seconds,
+			"source": string(entry.Source), "validated": entry.Validated,
 		},
 	})
 	e.announceChange()
@@ -1849,12 +1869,28 @@ func (e *Engine) UpdateTimeEntry(ctx context.Context, id string, seconds int, ac
 		return domain.TimeEntry{}, err
 	}
 	if validated {
+		activityLabel, sourceLabel := timeMetricLabel(string(entry.Activity)), timeMetricLabel(string(entry.Source))
+		e.incCounter("engine.time_entry.validate.total", 1)
+		e.incCounter("engine.time_entry.validate.activity."+activityLabel, 1)
+		e.incCounter("engine.time_entry.validate.source."+sourceLabel, 1)
 		e.recordActivity(ctx, observability.Record{
 			Action: observability.ActionTimeValidate, Entity: "time_entry", EntityID: id, Status: "committed",
+			Attributes: map[string]any{
+				"project": string(entry.Project), "office_action_id": entry.OfficeActionID,
+				"activity": string(entry.Activity), "seconds": entry.Seconds,
+				"source": string(entry.Source), "validated": entry.Validated,
+			},
 		})
 	}
 	e.announceChange()
 	return entry, nil
+}
+
+func timeMetricLabel(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "unknown"
+	}
+	return strings.ReplaceAll(strings.TrimSpace(strings.ToLower(s)), " ", "_")
 }
 
 // DeleteTimeEntry removes one time entry (a mistaken auto-capture the attorney

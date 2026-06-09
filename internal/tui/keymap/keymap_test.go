@@ -131,11 +131,15 @@ func TestShortcutsCollectBaseAndContextBindings(t *testing.T) {
 	}
 }
 
-func TestDetailGOAssignsOfficeAction(t *testing.T) {
-	stack := Default().StackFor(command.ScopeDetail)
-	if id, ok := stack.Resolve("g o"); !ok || id != command.AssignOfficeAction {
-		t.Fatalf("detail g o resolved to %q ok=%v, want officeaction.assign-patents", id, ok)
+func TestGOAssignsOfficeActionInPatentScopes(t *testing.T) {
+	km := Default()
+	for _, scope := range []command.Scope{command.ScopeCatalog, command.ScopeDetail, command.ScopeCitations, command.ScopeFamily} {
+		stack := km.StackFor(scope)
+		if id, ok := stack.Resolve("g o"); !ok || id != command.AssignOfficeAction {
+			t.Fatalf("%s g o resolved to %q ok=%v, want officeaction.assign-patents", scope, id, ok)
+		}
 	}
+	stack := km.StackFor(command.ScopeDetail)
 	if id, ok := stack.Resolve("ctrl+o"); !ok || id != command.HistoryBack {
 		t.Fatalf("detail ctrl+o resolved to %q ok=%v, want history.back", id, ok)
 	}

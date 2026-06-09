@@ -89,6 +89,9 @@ func TestHistoryFeedIncludesOfficeActionMutationsOnly(t *testing.T) {
 		{Action: ActionOfficeActionSaveNotes, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
 		{Action: ActionOfficeActionUpdate, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
 		{Action: ActionOfficeActionDelete, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+		{Action: ActionOfficeActionAssignPatents, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+		{Action: ActionOfficeActionReleasePatents, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
+		{Action: ActionOfficeActionReviewStatus, Entity: EntityOfficeAction, EntityID: "oa-1", Status: StatusCommitted},
 	} {
 		if err := rt.Activity.Record(context.Background(), rec); err != nil {
 			t.Fatalf("Record: %v", err)
@@ -99,12 +102,13 @@ func TestHistoryFeedIncludesOfficeActionMutationsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadHistoryFeed: %v", err)
 	}
-	if feed.Returned != 4 {
-		t.Fatalf("Returned = %d, want 4", feed.Returned)
+	if feed.Returned != 7 {
+		t.Fatalf("Returned = %d, want 7", feed.Returned)
 	}
 	for _, rec := range feed.Records {
 		switch rec.Action {
-		case ActionOfficeActionImport, ActionOfficeActionSaveNotes, ActionOfficeActionUpdate, ActionOfficeActionDelete:
+		case ActionOfficeActionImport, ActionOfficeActionSaveNotes, ActionOfficeActionUpdate, ActionOfficeActionDelete,
+			ActionOfficeActionAssignPatents, ActionOfficeActionReleasePatents, ActionOfficeActionReviewStatus:
 		default:
 			t.Fatalf("history included raw-only action %s", rec.Action)
 		}

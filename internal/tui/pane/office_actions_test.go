@@ -7,7 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"patentmine/internal/command"
 	"patentmine/internal/domain"
+	"patentmine/internal/proto"
 	"patentmine/internal/tui/render"
 )
 
@@ -35,11 +37,11 @@ func TestResponseDueLabel(t *testing.T) {
 
 func TestFmtDuration(t *testing.T) {
 	cases := map[int]string{
-		0:     "0:00",
-		42:    "0:42",
-		75:    "1:15",
-		3600:  "1:00",
-		3725:  "1:02",
+		0:    "0:00",
+		42:   "0:42",
+		75:   "1:15",
+		3600: "1:00",
+		3725: "1:02",
 	}
 	for secs, want := range cases {
 		if got := fmtDuration(secs); got != want {
@@ -57,6 +59,53 @@ func TestFormatTimeSummaryOrdersActivities(t *testing.T) {
 	ri, wi, ai := strings.Index(got, "Reading"), strings.Index(got, "Writing"), strings.Index(got, "AI")
 	if !(ri >= 0 && ri < wi && wi < ai) {
 		t.Fatalf("formatTimeSummary ordering wrong: %q", got)
+	}
+}
+
+func TestOfficeActionDetailNavMovesRowCursor(t *testing.T) {
+	o := NewOfficeActionDetail(nil, render.NewTheme(), domain.OfficeAction{ID: "oa-1", Project: "p1"})
+	o.loading = false
+
+	o.Command(command.NavDown, Invocation{Repeat: 2})
+	if o.row != 2 {
+		t.Fatalf("row after nav down = %d, want 2", o.row)
+	}
+	o.Command(command.NavUp, Invocation{Repeat: 1})
+	if o.row != 1 {
+		t.Fatalf("row after nav up = %d, want 1", o.row)
+	}
+}
+
+func TestOfficeActionDetailRendersAssignedPatentsDocumentsAndWorklogHint(t *testing.T) {
+	o := NewOfficeActionDetail(nil, render.NewTheme(), domain.OfficeAction{ID: "oa-1", Name: "Final Rejection"})
+	o.loading = false
+	o.assigned = []proto.OfficeActionAssignedPatent{
+		{Number: domain.MustParsePatentNumber("US7654321"), Title: "Widget system", Status: domain.OAReviewToReview},
+	}
+	o.documents = []domain.MatterDocument{
+		{ID: "doc-1", OfficeActionIDs: []string{"oa-1"}, Kind: domain.MatterDocOA, Stage: domain.StageReceived, DisplayName: "Examiner action.pdf"},
+	}
+
+	out := o.View(120, 24)
+	for _, want := range []string{"ASSIGNED PATENTS (1)", "US7,654,321", "Widget system", "DOCUMENTS (1)", "Examiner action.pdf", "review worklog"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("detail view missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestOfficeActionDetailEnterOnDocumentRowOpensDocuments(t *testing.T) {
+	o := NewOfficeActionDetail(nil, render.NewTheme(), domain.OfficeAction{ID: "oa-1", Name: "Final Rejection"})
+	o.loading = false
+	o.documents = []domain.MatterDocument{{ID: "doc-1", DisplayName: "Examiner action.pdf"}}
+	o.row = 9 // first document row: nine metadata rows, no patents
+
+	_, cmd, handled := o.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled || cmd == nil {
+		t.Fatalf("enter on document row not handled (handled=%v cmd=%v)", handled, cmd)
+	}
+	if _, ok := cmd().(OpenOfficeActionDocumentsMsg); !ok {
+		t.Fatalf("enter on document row emitted %T, want OpenOfficeActionDocumentsMsg", cmd())
 	}
 }
 
@@ -218,4 +267,3 @@ func TestOfficeActionsSortingAndFocus(t *testing.T) {
 		t.Fatalf("expected oa-1 to be first when sorted by worklog asc")
 	}
 }
-
