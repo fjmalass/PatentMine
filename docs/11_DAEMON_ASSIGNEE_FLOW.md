@@ -2,8 +2,8 @@
 
 This is the **server side** of assignee tracking — what happens inside the
 `patentmine serve` daemon when an assignee request arrives. For the user-facing
-commands and concepts, see [`TUI_ASSIGNEE_FLOW.md`](./TUI_ASSIGNEE_FLOW.md); for
-the broader architecture, [`README.md`](./README.md).
+commands and concepts, see [`10_TUI_ASSIGNEE_FLOW.md`](./10_TUI_ASSIGNEE_FLOW.md); for
+the broader architecture, [`01_README.md`](./01_README.md).
 
 Every assignee operation is the same four layers: **rpc dispatch → engine →
 crawl (USPTO ODP) / store → SQLite**, with telemetry emitted at each hop. Only the
@@ -103,7 +103,7 @@ which enumerates curated members via `ManualMemberships`). The engine then:
 
 The dominant cost is the ODP **1 req/s** cap, so the loop is sequential by design.
 Planned: bulk ODP queries (`OR` of several `applicationNumberText`) and a
-freshness TTL — see [`TODO.md`](./TODO.md).
+freshness TTL — see [`20_TODO.md`](./20_TODO.md).
 
 ## 6. Telemetry emitted by the daemon
 
@@ -117,7 +117,7 @@ freshness TTL — see [`TODO.md`](./TODO.md).
 | Activity journal | `uspto.fetch_assignments` and `uspto.fetch_assignments.batch` records (`observability.Record`) | engine `recordActivity` |
 | Bus event | `announceChange()` after a fetch so connected clients refresh | engine |
 
-See [`metrics.md`](./metrics.md) and [`ACTIVITY.md`](./ACTIVITY.md) for the metrics
+See [`07_metrics.md`](./07_metrics.md) and [`08_ACTIVITY.md`](./08_ACTIVITY.md) for the metrics
 and activity subsystems these feed.
 
 ## 7. Migration

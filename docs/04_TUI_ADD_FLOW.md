@@ -162,6 +162,5 @@ keyed by the canonical record number.
   toggle ✓/○ · `/` search · PageUp/Dn).
 
 A newly imported office action automatically inherits the previous one's assigned
-patents. See [Office Actions §8](./TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action)
+patents. See [Office Actions §8](./13_TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action)
 for the full flow.
-

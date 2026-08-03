@@ -17,7 +17,7 @@ optimized.
 > Sourced from the USPTO ODP applications-assignment endpoint:
 > `api.uspto.gov/api/v1/patent/applications/{applicationNumberText}/assignment`
 > For the daemon/server side of this flow, see
-> [`DAEMON_ASSIGNEE_FLOW.md`](./DAEMON_ASSIGNEE_FLOW.md).
+> [`11_DAEMON_ASSIGNEE_FLOW.md`](./11_DAEMON_ASSIGNEE_FLOW.md).
 
 ---
 
@@ -161,7 +161,7 @@ sequenceDiagram
 ## 6. Telemetry, logs & timing
 
 Every operation is observable, consistent with the rest of PatentMine
-(see [`metrics.md`](./metrics.md) and [`ACTIVITY.md`](./ACTIVITY.md)):
+(see [`07_metrics.md`](./07_metrics.md) and [`08_ACTIVITY.md`](./08_ACTIVITY.md)):
 
 | Signal | Where | What |
 |---|---|---|
@@ -191,7 +191,7 @@ Implemented:
   run stops promptly and still reports partial results.
 
 The dominant cost is the USPTO ODP **1 request/second** rate limit, so throughput is
-fetch-bound. Two further optimizations are tracked in [`TODO.md`](./TODO.md):
+fetch-bound. Two further optimizations are tracked in [`20_TODO.md`](./20_TODO.md):
 
 - **Bulk ODP queries** — the assignment search accepts a Lucene `OR` of several
   `applicationNumberText` values, so N applications can be pulled in one request
@@ -207,7 +207,7 @@ workers that would only queue behind the limiter.
 
 ## 8. Remaining
 
-Tracked in [`TODO.md`](./TODO.md) and in-code `TODO(assignee-…)` markers:
+Tracked in [`20_TODO.md`](./20_TODO.md) and in-code `TODO(assignee-...)` markers:
 
 - TUI wiring: `:open.assignees` (rollup), `:open.assignees.project` (statistics), and `:open.assignee.timeline` (timeline) are fully shipped, along with project batch `:fetch.uspto.assignments.project`. Still remaining: `:export.assignees` and `:fetch.uspto.assignments.file`.
 - Remote assignee-name **search** (`:find.assignee`, `GET /assignees/search`) via a new

@@ -191,6 +191,8 @@ const (
 	HelpSectionAvailable   Key = "help.section.available"
 	NewProjectTitle        Key = "overlay.new_project.title"
 	NewProjectCaption      Key = "overlay.new_project.caption"
+	AddPatentTitle         Key = "overlay.add_patent.title"
+	AddPatentCaption       Key = "overlay.add_patent.caption"
 	FullTextSearchTitle    Key = "overlay.fulltext_search.title"
 	FullTextSearchCaption  Key = "overlay.fulltext_search.caption"
 	EditIDSKindTitle       Key = "overlay.ids.kind.title"
@@ -556,6 +558,8 @@ var englishNamed = map[Key]string{
 	HelpSectionAvailable:   "Available keys",
 	NewProjectTitle:        "New project",
 	NewProjectCaption:      "Enter a name for the new project.",
+	AddPatentTitle:         "Add patent",
+	AddPatentCaption:       "Enter one patent number, or several separated by spaces.",
 	FullTextSearchTitle:    "Search full text",
 	FullTextSearchCaption:  "Enter a term to search the full text of the selected patents.",
 	EditIDSKindTitle:       "IDS kind code",

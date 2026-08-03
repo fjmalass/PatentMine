@@ -78,6 +78,13 @@ eval "$PM_VERSION_SCRIPT"
 go run -ldflags "$PM_LDFLAGS" ${BINARY} check-connectivity $CARGO_MAKE_TASK_ARGS
 '''
 
+[tasks.paths]
+description = "Print resolved PatentMine data paths."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} paths
+'''
+
 [tasks.check-uspto]
 description = "Check USPTO API key and connectivity."
 script = '''

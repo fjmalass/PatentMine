@@ -7,9 +7,9 @@ pipeline that sits behind them.
 
 Related docs:
 
-- [README.md](./README.md) — architectural overview, identity & data model.
-- [ACTIVITY.md](./ACTIVITY.md) — telemetry & journal.
-- [metrics.md](./metrics.md) — counters and timings.
+- [01_README.md](./01_README.md) — architectural overview, identity & data model.
+- [08_ACTIVITY.md](./08_ACTIVITY.md) — telemetry & journal.
+- [07_metrics.md](./07_metrics.md) — counters and timings.
 
 ---
 
@@ -218,9 +218,11 @@ single-patent fetch. They differ in **which** provider performs that fetch.
 
 All three commands accept three input forms:
 
-1. **Cursor / selection** — no arguments, single patent under the cursor or
-   the current visual selection. Multi-patent selections dispatch one RPC per
-   patent in parallel.
+1. **Cursor / selection or popup** — key-bound add commands with no arguments
+   add the single patent under the cursor or the current visual selection.
+   Multi-patent selections dispatch one RPC per patent in parallel. Typed
+   commands with no arguments, such as `:add.uspto`, open a patent-number input
+   popup instead.
 
    ```
    :add.uspto

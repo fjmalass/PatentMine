@@ -4,15 +4,15 @@ This guide covers the **office-action response** workflow: importing the
 examiner's Office Action, building a response (amended claims + remarks), and
 rendering it to **.docx** — with optional grounded AI drafting.
 
-It is the office-action-focused companion to [`DRAFTING.md`](./DRAFTING.md),
+It is the office-action-focused companion to [`12_DRAFTING.md`](./12_DRAFTING.md),
 which documents the underlying `Draft` model, the pure-Go `.docx` writer, and
 the AI grounding internals shared by first-application drafting.
 
 Related docs:
 
-- [DRAFTING.md](./DRAFTING.md) — the unified drafting subsystem (model, docx, AI).
-- [AI.md](./AI.md) — the multi-provider AI runtime (Gemini / Ollama).
-- [TUI_ADD_FLOW.md](./TUI_ADD_FLOW.md) · [TUI_ASSIGNEE_FLOW.md](./TUI_ASSIGNEE_FLOW.md) — sibling project flows.
+- [12_DRAFTING.md](./12_DRAFTING.md) — the unified drafting subsystem (model, docx, AI).
+- [17_AI.md](./17_AI.md) — the multi-provider AI runtime (Gemini / Ollama).
+- [04_TUI_ADD_FLOW.md](./04_TUI_ADD_FLOW.md) · [10_TUI_ASSIGNEE_FLOW.md](./10_TUI_ASSIGNEE_FLOW.md) — sibling project flows.
 
 > [!NOTE]
 > **Where the surface lives today.** The drafting/response internals run through
@@ -47,7 +47,7 @@ flowchart TD
 Because an OA response is the same kind of artifact as a first application — a
 project-scoped, section-structured document rendered to .docx — it reuses the
 single `domain.Draft` model with `Kind = oa_response`. See
-[DRAFTING.md §1](./DRAFTING.md#1-one-model-for-three-documents) for the schema.
+[12_DRAFTING.md §1](./12_DRAFTING.md#1-one-model-for-three-documents) for the schema.
 
 ---
 
@@ -141,7 +141,7 @@ AI drafting is opt-in, per section, and **never auto-saved** — the author
 reviews, edits, and accepts. The model is grounded only in the draft's own
 material, including the linked **office action's extracted text**, and is held to
 the anti-hallucination rules described in
-[DRAFTING.md §3](./DRAFTING.md#3-grounded-ai-drafting-and-how-it-avoids-hallucination):
+[12_DRAFTING.md §3](./12_DRAFTING.md#3-grounded-ai-drafting-and-how-it-avoids-hallucination):
 use only the supplied material, mark anything unsupported with
 `‹NEEDS ATTORNEY INPUT›`, and **reproduce pinned spans verbatim**.
 
@@ -282,8 +282,8 @@ text on the left (read-only reference), an editable **notes** buffer on the righ
 — for annotating the rejection while drafting the response. AI drafting of the
 response remarks is an in-view action (`a`), grounded in the OA text with
 pin-span verbatim enforcement (see §3.2). Editor affordances mirror the IDS pane
-in [README §9.G](./README.md#g-ids-curation-pane-bindings); wiring a new command
-follows the recipe in [README §6](./README.md#6-tui-key-binding-architecture).
+in [README §9.G](./01_README.md#g-ids-curation-pane-bindings); wiring a new command
+follows the recipe in [README §6](./01_README.md#6-tui-key-binding-architecture).
 
 ### Status — the prosecution-matter workspace (implemented)
 
@@ -324,7 +324,7 @@ per matter) and the project gains a **matter type** stage; office actions gain a
   list). Across patents, the catalog's `Ctrl+F` full-text search scans **both**
   the as-filed publication (`…A1`) and the granted (`…B2`) text, so prior-art and
   claim-language searches cover either version — see
-  [README §8.4](./README.md#84-view-source-xml-full-text-and-citations).
+  [README §8.4](./01_README.md#84-view-source-xml-full-text-and-citations).
 - **Time tracking + AI usage** — billable work is captured automatically: AI
   drafting and OCR calls log an `ai_usage` row + an auto, **unvalidated**
   `time_entry`, and the split editors record **reading** (left pane) vs
@@ -384,7 +384,7 @@ same everywhere.
   action(s) with the review glyph (e.g. `Final 3/15 ✓ +1`). It is **sortable**
   (`.`) and **filterable** with the `oa:` field — `oa:any`, `oa:none`,
   `oa:to_review`, `oa:reviewed`, or `oa:<name>` (substring), combinable with
-  `and`/`or`/`not` like any other [`:filter`](./README.md#filter-expression-syntax) term.
+  `and`/`or`/`not` like any other [`:filter`](./01_README.md#filter-expression-syntax) term.
 - The **patent detail** pane shows an **Office Actions** line listing the actions
   the patent is assigned to, with the same glyph.
 

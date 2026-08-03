@@ -109,6 +109,53 @@ CREATE TRIGGER patent_fts_insert AFTER INSERT ON patent BEGIN
 	INSERT INTO patent_fts(rowid,title,abstract,classifications_text) VALUES(new.rowid,new.title,new.abstract,new.classifications_text); END;
 `
 
+func TestMigrateV2ToV3BackfillsMembershipProvenance(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v2.db")
+
+	db, err := sql.Open(driverName, dsn(path))
+	if err != nil {
+		t.Fatalf("open v2 db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	for _, stmt := range []string{
+		`CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`INSERT INTO schema_meta VALUES ('schema_version','2')`,
+		`CREATE TABLE patent (number TEXT PRIMARY KEY)`,
+		`CREATE TABLE project (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE membership (project_id TEXT NOT NULL, patent_number TEXT NOT NULL, state TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY (project_id, patent_number))`,
+		`INSERT INTO patent VALUES ('US0000001B2')`,
+		`INSERT INTO project VALUES ('p-1')`,
+		`INSERT INTO membership VALUES ('p-1', 'US0000001B2', 'unknown', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed v2: %v\n%s", err, stmt)
+		}
+	}
+
+	repo := &Repo{writer: db}
+	if err := repo.migrateV2ToV3(ctx); err != nil {
+		t.Fatalf("migrateV2ToV3: %v", err)
+	}
+
+	var method string
+	if err := db.QueryRowContext(ctx, `SELECT added_method FROM membership_provenance WHERE project_id='p-1' AND patent_number='US0000001B2'`).Scan(&method); err != nil {
+		t.Fatalf("query provenance: %v", err)
+	}
+	if method != "direct" {
+		t.Fatalf("added_method = %q, want direct", method)
+	}
+
+	var version string
+	if err := db.QueryRowContext(ctx, `SELECT value FROM schema_meta WHERE key='schema_version'`).Scan(&version); err != nil {
+		t.Fatalf("query schema version: %v", err)
+	}
+	if version != "3" {
+		t.Fatalf("schema_version = %q, want 3", version)
+	}
+}
+
 // TestMigrateV3ToV4PreservesData opens a v3 database through the real Open()
 // path and asserts the upgrade preserves the corpus and user data, assigns
 // surrogate ids, recreates the source tables at the new shape, and leaves the

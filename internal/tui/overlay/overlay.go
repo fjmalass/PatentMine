@@ -79,6 +79,9 @@ type Purpose string
 const (
 	// PurposeCreateProject collects a name for a new project.
 	PurposeCreateProject   Purpose = "create-project"
+	PurposeAddPatent       Purpose = "add-patent"
+	PurposeAddUSPTOPatent  Purpose = "add-uspto-patent"
+	PurposeAddGooglePatent Purpose = "add-google-patent"
 	PurposeEditIDSKind     Purpose = "edit-ids-kind"
 	PurposeEditIDSCountry  Purpose = "edit-ids-country"
 	PurposeEditIDSPassages Purpose = "edit-ids-passages"

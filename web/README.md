@@ -26,4 +26,4 @@ patentmine api --web-dir ./web/dist
 
 Browse to `http://127.0.0.1:18080/ui/`.
 
-Remote access: see [REMOTE_API.md](../REMOTE_API.md).
+Remote access: see [06_REMOTE_API.md](../docs/06_REMOTE_API.md).

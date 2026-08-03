@@ -6,21 +6,21 @@ pure-Go driver, an embedded versioned schema, and a deliberate
 backups fast.
 
 This is the storage companion to the architecture manual — see
-[README §2 (data model)](./README.md#2-the-data-model--value-type-system) and
-[README §3–§4 (lifecycle, deletion)](./README.md#3-the-patent-lifecycle) for the
+[README §2 (data model)](./01_README.md#2-the-data-model--value-type-system) and
+[README §3–§4 (lifecycle, deletion)](./01_README.md#3-the-patent-lifecycle) for the
 identity/indirection concepts this doc grounds in the actual tables.
 
 Related docs:
 
-- [README.md](./README.md) — architecture, lifecycle, and indirection model.
-- [ACTIVITY.md](./ACTIVITY.md) — the JSONL activity journal used for delete backup/replay.
-- [USPTO_CONFIG_LOADING.md](./USPTO_CONFIG_LOADING.md) — how the USPTO source tables get filled.
-- [FILTER_VIEW.md](./FILTER_VIEW.md) — the saved-table-view storage model.
+- [01_README.md](./01_README.md) — architecture, lifecycle, and indirection model.
+- [08_ACTIVITY.md](./08_ACTIVITY.md) — the JSONL activity journal used for delete backup/replay.
+- [03_USPTO_CONFIG_LOADING.md](./03_USPTO_CONFIG_LOADING.md) — how the USPTO source tables get filled.
+- [15_FILTER_VIEW.md](./15_FILTER_VIEW.md) — the saved-table-view storage model.
 
 > [!NOTE]
-> Everything here lives under [`internal/store`](./internal/store): the
+> Everything here lives under [`internal/store`](../internal/store): the
 > backend-agnostic `store.Repository` interface (`repository.go`) and its only
-> implementation, [`internal/store/sqlite`](./internal/store/sqlite). The engine
+> implementation, [`internal/store/sqlite`](../internal/store/sqlite). The engine
 > talks to the interface, never to SQLite directly, so the persistence layer is
 > swappable in principle.
 
@@ -45,7 +45,7 @@ Related docs:
 
 ## 2. Connection architecture & concurrency
 
-`Repo` ([`sqlite.go`](./internal/store/sqlite/sqlite.go)) opens **two pools to
+`Repo` ([`sqlite.go`](../internal/store/sqlite/sqlite.go)) opens **two pools to
 the same file**:
 
 | Pool | `MaxOpenConns` | Role |
@@ -76,7 +76,7 @@ writer.
 ## 3. Schema management & migrations
 
 The schema is a single **embedded** file,
-[`schema.sql`](./internal/store/sqlite/schema.sql) (`//go:embed`), written with
+[`schema.sql`](../internal/store/sqlite/schema.sql) (`//go:embed`), written with
 `CREATE TABLE IF NOT EXISTS` so re-applying it is idempotent. A `schema_meta`
 key/value table pins the version:
 
@@ -112,7 +112,7 @@ refused; a current one is a no-op.
 ## 4. The identity model (record · document · relation)
 
 The schema implements the indirection described in
-[README §2](./README.md#2-the-data-model--value-type-system). The domain type
+[README §2](./01_README.md#2-the-data-model--value-type-system). The domain type
 `domain.Patent` is persisted as a **`record`** row (the table is named `record`,
 not `patent`):
 
@@ -236,7 +236,7 @@ Two complementary mechanisms:
   the JSONL activity journal (`observability.Record`). A deleted patent can be
   **fully** replayed (metadata + documents + relations) or **soft**-replayed
   (re-created as a `FetchStub` with only its relation edges, healing the graph
-  without heavy text). See [ACTIVITY.md](./ACTIVITY.md).
+  without heavy text). See [08_ACTIVITY.md](./08_ACTIVITY.md).
 
 ---
 

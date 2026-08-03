@@ -2,7 +2,7 @@
 
 This guide covers tracking **which patents to watch for renewal / maintenance-fee
 payments** and how reminders are delivered. It is the renewals-focused companion
-to [`TUI_OFFICE_ACTION.md`](./TUI_OFFICE_ACTION.md) (the prosecution-matter
+to [`13_TUI_OFFICE_ACTION.md`](./13_TUI_OFFICE_ACTION.md) (the prosecution-matter
 workspace) and shares the unified **deadline** model and the pluggable reminder
 engine documented there.
 
@@ -214,6 +214,6 @@ Operational:
 - **Dates, not dollars** — fee amounts depend on entity size and the current fee
   schedule and are intentionally not encoded.
 
-Related: [`TUI_OFFICE_ACTION.md`](./TUI_OFFICE_ACTION.md) (deadline model +
-reminder engine), [`EXPIRATION_DATE.md`](./EXPIRATION_DATE.md) (the term/expiration
+Related: [`13_TUI_OFFICE_ACTION.md`](./13_TUI_OFFICE_ACTION.md) (deadline model +
+reminder engine), [`09_EXPIRATION_DATE.md`](./09_EXPIRATION_DATE.md) (the term/expiration
 math that also keys off the grant date).

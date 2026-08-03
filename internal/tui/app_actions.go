@@ -23,6 +23,12 @@ func (a *App) handleTextSubmit(m overlay.TextSubmitMsg) (tea.Model, tea.Cmd) {
 	switch m.Purpose {
 	case overlay.PurposeCreateProject:
 		return a.createProject(m.Value)
+	case overlay.PurposeAddPatent:
+		return a.cmdAddToProjectFromSource(invocation{repeat: 1, args: strings.Fields(m.Value), source: "popup"}, "", command.AddToProject)
+	case overlay.PurposeAddUSPTOPatent:
+		return a.cmdAddToProjectFromSource(invocation{repeat: 1, args: strings.Fields(m.Value), source: "popup"}, domain.SourceUSPTO, command.AddUSPTO)
+	case overlay.PurposeAddGooglePatent:
+		return a.cmdAddToProjectFromSource(invocation{repeat: 1, args: strings.Fields(m.Value), source: "popup"}, domain.SourceGoogle, command.AddGoogle)
 	case overlay.PurposeFullTextSearch:
 		numbers := a.fullTextSearchTargets
 		a.fullTextSearchTargets = nil

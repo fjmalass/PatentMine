@@ -15,7 +15,7 @@ curl -s http://127.0.0.1:18080/metricsz | jq '.timings'
 curl -s http://127.0.0.1:18080/metricsz | jq '.timings'
 ```
 
-Key metrics: `store.sqlite.patent.list.*`, crawl, USPTO fetch (see [metrics.md](metrics.md)).
+Key metrics: `store.sqlite.patent.list.*`, crawl, USPTO fetch (see [07_metrics.md](./07_metrics.md)).
 
 ## 2. REST end-to-end
 
@@ -44,4 +44,4 @@ The web app logs no separate metrics today; use browser timestamps vs `/metricsz
 
 ## 5. TUI-local metrics
 
-TUI-only counters (clipboard, etc.) are **not** in `/metricsz` unless pushed via `POST /metrics`. See [metrics.md](metrics.md).
+TUI-only counters (clipboard, etc.) are **not** in `/metricsz` unless pushed via `POST /metrics`. See [07_metrics.md](./07_metrics.md).

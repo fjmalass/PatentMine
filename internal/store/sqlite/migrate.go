@@ -869,6 +869,7 @@ func (r *Repo) migrateV2ToV3(ctx context.Context) error {
 		INSERT INTO membership_provenance (project_id, patent_number, added_method)
 		SELECT project_id, patent_number, 'direct'
 		FROM membership
+		WHERE true
 		ON CONFLICT(project_id, patent_number) DO NOTHING`)
 	if err != nil {
 		return fmt.Errorf("backfill provenance: %w", err)

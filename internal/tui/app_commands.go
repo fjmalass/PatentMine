@@ -974,6 +974,9 @@ func (a *App) handleUSPTOXMLBatchTick(m pane.USPTOXMLFetchedMsg) (tea.Model, tea
 
 func (a *App) cmdAddToProjectFromSource(inv invocation, source domain.Source, usage command.ID) (tea.Model, tea.Cmd) {
 	if len(inv.args) == 0 {
+		if inv.source == "typed" {
+			return a.openAddPatentInput(source), nil
+		}
 		return a.runProjectAction(func(project domain.ProjectID, patent domain.PatentNumber) tea.Cmd {
 			return pane.AddToProjectFromSourceCmd(a.client, project, patent, source)
 		})
@@ -1019,6 +1022,18 @@ func (a *App) cmdAddToProjectFromSource(inv invocation, source domain.Source, us
 	}
 	_ = usage
 	return a, tea.Batch(cmds...)
+}
+
+func (a *App) openAddPatentInput(source domain.Source) tea.Model {
+	purpose := overlay.PurposeAddPatent
+	if source == domain.SourceUSPTO {
+		purpose = overlay.PurposeAddUSPTOPatent
+	} else if source == domain.SourceGoogle {
+		purpose = overlay.PurposeAddGooglePatent
+	}
+	a.overlays = append(a.overlays, overlay.NewTextInput(
+		a.theme, a.text, purpose, text.AddPatentTitle, text.AddPatentCaption))
+	return a
 }
 
 // cmdTag tags the selected patent(s) within the active project. The tag name

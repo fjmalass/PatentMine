@@ -6,9 +6,9 @@ rendering them to **.docx**, with optional grounded AI drafting.
 
 Related docs:
 
-- [README.md](./README.md) — architecture & data model.
-- [AI.md](./AI.md) — multi-provider AI runtime (Gemini / Ollama).
-- [USPTO_CONFIG_LOADING.md](./USPTO_CONFIG_LOADING.md) — API keys & provider modes.
+- [01_README.md](./01_README.md) — architecture & data model.
+- [17_AI.md](./17_AI.md) — multi-provider AI runtime (Gemini / Ollama).
+- [03_USPTO_CONFIG_LOADING.md](./03_USPTO_CONFIG_LOADING.md) — API keys & provider modes.
 
 ---
 

@@ -957,6 +957,44 @@ func TestAppSetPendingScrollAnchorOnAdd(t *testing.T) {
 	}
 }
 
+func TestAppTypedAddWithoutArgsOpensPatentInput(t *testing.T) {
+	app := newTestApp(t)
+	app.panes = []pane.Pane{&patentSelectionProbePane{ScopeVal: command.ScopeCatalog, TitleVal: "Catalog"}}
+
+	updated, cmd := app.cmdAddToProjectFromSource(invocation{repeat: 1, source: "typed"}, domain.SourceUSPTO, command.AddUSPTO)
+	app = updated.(*App)
+	if cmd != nil {
+		t.Fatalf("typed :add.uspto without args should only open the input, got cmd %T", cmd)
+	}
+	if len(app.overlays) != 1 {
+		t.Fatalf("expected one overlay, got %d", len(app.overlays))
+	}
+	input, ok := app.focusedOverlay().(*overlay.TextInput)
+	if !ok {
+		t.Fatalf("expected TextInput overlay, got %T", app.focusedOverlay())
+	}
+	if got := input.Title(); got != "Add patent" {
+		t.Fatalf("unexpected input title %q", got)
+	}
+}
+
+func TestAppAddPatentInputSubmitsBatch(t *testing.T) {
+	app := newRPCBackedTestApp(t)
+	catalog := pane.NewCatalog(app.client, render.NewTheme())
+	app.panes = []pane.Pane{catalog}
+	app.activeProject = &domain.Project{ID: "p-1", Name: "Project 1"}
+
+	updated, cmd := app.handleTextSubmit(overlay.TextSubmitMsg{Purpose: overlay.PurposeAddGooglePatent, Value: "US11611785B2 US11730671B2"})
+	app = updated.(*App)
+	if cmd == nil {
+		t.Fatal("expected popup submission to dispatch add command")
+	}
+	want := domain.MustParsePatentNumber("US11611785B2")
+	if got := catalog.PendingScrollAnchor(); got != want {
+		t.Fatalf("pending scroll anchor = %s, want %s", got.String(), want.String())
+	}
+}
+
 type patentSelectionProbePane struct {
 	ScopeVal command.Scope
 	TitleVal string
