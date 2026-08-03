@@ -200,6 +200,13 @@ echo "removed ${BIN_DIR}"
 description = "Stop the daemon, then clean logs and runtime artifacts."
 dependencies = ["stop-daemon", "clean-logs"]
 
+[tasks.clean-data]
+description = "Remove local database, logs, runtime files, and patent cache. Prompts unless --force is passed."
+script = '''
+eval "$PM_VERSION_SCRIPT"
+go run -ldflags "$PM_LDFLAGS" ${BINARY} clean-data $CARGO_MAKE_TASK_ARGS
+'''
+
 [tasks.backup-db]
 description = "Create a timestamped backup copy of the configured database using native hot backups."
 script = '''

@@ -20,6 +20,7 @@ usage:
   patentmine logs               manage log and activity files (list, archive, ship)
   patentmine db                 manage database tasks (backup, vacuum, status)
   patentmine uspto-manage       manage the patents/XML cache directory (list, archive, clean)
+  patentmine clean-data         remove local database, logs, runtime files, and patent cache
   patentmine check-connectivity check configured external service connectivity
   patentmine lookup             look up a patent by USPTO application number
   patentmine draft              draft applications / office-action responses and render .docx
@@ -56,6 +57,8 @@ func run(args []string) int {
 		return runDB(args[1:])
 	case "uspto-manage":
 		return runPatents(args[1:])
+	case "clean-data":
+		return runCleanData(args[1:])
 	case "check-connectivity":
 		return runCheck(args[1:])
 	case "lookup":
