@@ -29,7 +29,7 @@ type matterCommsLoadedMsg struct {
 
 // MatterComms is the matter's communications log: emails, phone calls, examiner
 // interviews, filings, and notes, newest first. Enter views the full comment, d
-// deletes an entry; new entries are added with :log.comm.
+// deletes an entry; new entries are added with :matter.comm.log.
 type MatterComms struct {
 	client  *rpc.Client
 	theme   render.Theme
@@ -189,7 +189,7 @@ func (o *MatterComms) View(maxW, maxH int) string {
 		return o.theme.Error.Render("error: " + o.loadErr)
 	}
 	if len(o.items) == 0 {
-		return o.theme.Dim.Render(render.Truncate("No communications yet. Add one with :log.comm", maxW))
+		return o.theme.Dim.Render(render.Truncate("No communications yet. Add one with :matter.comm.log", maxW))
 	}
 
 	var b strings.Builder
@@ -214,7 +214,7 @@ func (o *MatterComms) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "↑/↓ move · enter view comment · d delete · :log.comm adds · esc close"
+	footer := "↑/↓ move · enter view comment · d delete · :matter.comm.log adds · esc close"
 	switch {
 	case o.confirmDelete:
 		footer = "delete this entry? y to confirm, any key to cancel"

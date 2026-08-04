@@ -1489,7 +1489,7 @@ func isFixturePath(arg string) bool {
 // active project, exactly as repeated :add would. The daemon reads, validates,
 // and parses the file; each number is added with manual provenance. With a path
 // it imports directly; with none it opens the file picker rooted at the user's
-// home directory, like :add.document.
+// home directory, like :matter.document.add.
 func (a *App) cmdAddFile(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) > 1 {
 		return a.usageError(command.AddFile)
@@ -1558,7 +1558,7 @@ func (a *App) openOfficeActionMetaForm(path string) (tea.Model, tea.Cmd) {
 }
 
 // cmdAddDocument files a supporting document (reference, response, …) under the
-// active matter, unlinked to any office action (the typed :add.document command).
+// active matter, unlinked to any office action (the typed :matter.document.add command).
 func (a *App) cmdAddDocument(inv invocation) (tea.Model, tea.Cmd) {
 	return a.cmdAddDocumentFor(inv, "")
 }
@@ -1713,7 +1713,7 @@ func (a *App) cmdSetRenewalValidation(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.SetRenewalValidationCmd(a.client, inv.args[0], inv.args[1], status)
 }
 
-// cmdLogTime records a manual time entry: :log.time <activity> <duration> [note].
+// cmdLogTime records a manual time entry: :time.log <activity> <duration> [note].
 func (a *App) cmdLogTime(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) < 2 {
 		return a.usageError(command.LogTime)
@@ -1815,7 +1815,7 @@ func (a *App) cmdOpenComms(invocation) (tea.Model, tea.Cmd) {
 }
 
 // cmdFlagConflict flags a record as conflicting (material prior art, interfering
-// application) within the active matter: :flag.conflict <patent-number> [reason].
+// application) within the active matter: :conflict.flag <patent-number> [reason].
 func (a *App) cmdFlagConflict(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) < 1 {
 		return a.usageError(command.FlagConflict)

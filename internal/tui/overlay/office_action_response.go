@@ -119,7 +119,7 @@ func remarksSectionIndex(d *domain.Draft) int {
 
 func documentText(docs []domain.MatterDocument, i int) string {
 	if i < 0 || i >= len(docs) {
-		return "(no documents — add sources with :add.document, then ctrl-n to cycle them)"
+		return "(no documents — add sources with :matter.document.add, then ctrl-n to cycle them)"
 	}
 	if strings.TrimSpace(docs[i].ExtractedText) == "" {
 		return "(no embedded text; OCR appears needed but is not implemented)"

@@ -6,6 +6,10 @@ to the daemon — exactly as the TUI does. Both frontends are built from the sam
 command catalog (`internal/command/catalog.go`), so an action is defined once and
 every frontend stays in step.
 
+For the full daemon/client model, including why RPC is the canonical internal
+boundary and HTTP is a web-facing adapter over it, see
+[Client/Server RPC and HTTP Architecture](./23_CLIENT_SERVER_RPC_ARCHITECTURE.md).
+
 - **Base server:** `internal/api/server.go` (`NewServer` → `routes()`)
 - **Route table:** `internal/api/routes.go`
 - **Command catalog (source of truth):** `internal/command/catalog.go`

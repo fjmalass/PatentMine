@@ -30,7 +30,7 @@ type conflictListLoadedMsg struct {
 // ConflictList is the matter's conflicts list: records flagged as conflicting
 // (material prior art, interfering applications), newest first. r resolves, w
 // waives, o re-opens, and d deletes the selected edge; new ones are added with
-// :flag.conflict. The patent list shows a ⚠ badge for records with an open one.
+// :conflict.flag. The patent list shows a ⚠ badge for records with an open one.
 type ConflictList struct {
 	client  *rpc.Client
 	theme   render.Theme
@@ -219,7 +219,7 @@ func (o *ConflictList) View(maxW, maxH int) string {
 		return o.theme.Error.Render("error: " + o.loadErr)
 	}
 	if len(o.items) == 0 {
-		return o.theme.Dim.Render(render.Truncate("No conflicts yet. Flag one with :flag.conflict <patent> [reason]", maxW))
+		return o.theme.Dim.Render(render.Truncate("No conflicts yet. Flag one with :conflict.flag <patent> [reason]", maxW))
 	}
 
 	var b strings.Builder
@@ -240,7 +240,7 @@ func (o *ConflictList) View(maxW, maxH int) string {
 		b.WriteByte('\n')
 	}
 
-	footer := "↑/↓ move · enter view · r resolve · w waive · o reopen · d delete · :flag.conflict adds · esc close"
+	footer := "↑/↓ move · enter view · r resolve · w waive · o reopen · d delete · :conflict.flag adds · esc close"
 	switch {
 	case o.confirmDelete:
 		footer = "delete this conflict? y to confirm, any key to cancel"

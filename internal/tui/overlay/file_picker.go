@@ -12,10 +12,10 @@ import (
 	"patentmine/internal/tui/render"
 )
 
-// PurposeAddOfficeAction routes a picked file to the :add.officeaction import.
+// PurposeAddOfficeAction routes a picked file to the :officeaction.add import.
 const PurposeAddOfficeAction Purpose = "add-officeaction"
 
-// PurposeAddMatterDocument routes a picked file to the :add.document import (a
+// PurposeAddMatterDocument routes a picked file to the :matter.document.add import (a
 // supporting document — reference, response, etc. — filed under the matter).
 const PurposeAddMatterDocument Purpose = "add-matter-document"
 

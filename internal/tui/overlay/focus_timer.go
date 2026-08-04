@@ -20,7 +20,7 @@ const minAutoCaptureSeconds = 5
 // moves between the read-only source/examiner pane (reading) and the editable
 // notes/response pane (writing). The editor flushes it as auto, unvalidated time
 // entries when it closes — the automatic half of time tracking, which the
-// attorney then reviews via :validate.time.
+// attorney then reviews via :time.validate.
 type focusTimer struct {
 	reading   time.Duration
 	writing   time.Duration

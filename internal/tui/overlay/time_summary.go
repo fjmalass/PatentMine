@@ -29,7 +29,7 @@ type timeSummaryLoadedMsg struct {
 
 // TimeSummaryOverlay is the matter's billing readout: recorded time by activity,
 // the validated/unvalidated split, and AI usage. Read-only; the review/validate
-// flow lives in TimeReview (:validate.time).
+// flow lives in TimeReview (:time.validate).
 type TimeSummaryOverlay struct {
 	client  *rpc.Client
 	theme   render.Theme
@@ -119,7 +119,7 @@ func (o *TimeSummaryOverlay) View(maxW, maxH int) string {
 	row("— total", summaryDuration(total))
 	row("validated", summaryDuration(t.ValidatedSecs))
 	if t.UnvalidatedSecs > 0 {
-		row("unvalidated", fmt.Sprintf("%s · %d entries — :validate.time", summaryDuration(t.UnvalidatedSecs), t.UnvalidatedCount))
+		row("unvalidated", fmt.Sprintf("%s · %d entries — :time.validate", summaryDuration(t.UnvalidatedSecs), t.UnvalidatedCount))
 	}
 
 	b.WriteByte('\n')

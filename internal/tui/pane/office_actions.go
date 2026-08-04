@@ -374,7 +374,7 @@ func (o *OfficeActions) View(w, h int) string {
 	case o.loadErr != "":
 		return o.theme.Error.Render("error: " + o.loadErr)
 	case len(o.allItems) == 0:
-		return o.theme.Dim.Render("No office actions yet. Press a (or :add.officeaction) to import one.")
+		return o.theme.Dim.Render("No office actions yet. Press a (or :officeaction.add) to import one.")
 	}
 	o.page.SetPageSize(max(h-headerRows-2, 1))
 

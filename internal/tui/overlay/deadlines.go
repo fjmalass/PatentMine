@@ -199,7 +199,7 @@ func (o *Deadlines) View(maxW, maxH int) string {
 
 	if len(o.filtered) == 0 {
 		b.WriteString(o.theme.Dim.Render(render.Truncate(
-			"No pending deadlines matching filters. Track patent renewals with :track.renewals <number>.", maxW)))
+			"No pending deadlines matching filters. Track patent renewals with :renewal.track <number>.", maxW)))
 		b.WriteByte('\n')
 	} else {
 		bodyRows := max(maxH-4, 1)

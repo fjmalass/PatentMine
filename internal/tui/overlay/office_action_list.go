@@ -148,7 +148,7 @@ func (o *OfficeActionList) View(maxW, maxH int) string {
 		return o.theme.Error.Render("error: " + o.loadErr)
 	}
 	if len(o.items) == 0 {
-		return o.theme.Dim.Render(render.Truncate("No office actions yet. Add one with :add.officeaction", maxW))
+		return o.theme.Dim.Render(render.Truncate("No office actions yet. Add one with :officeaction.add", maxW))
 	}
 
 	var b strings.Builder

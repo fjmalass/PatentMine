@@ -79,7 +79,7 @@ type matterDocExtractedMsg struct {
 // the office action, its response, cited references, and so on. Enter opens a
 // read-only viewer over a document's text (to read it, and — once response
 // drafting lands — to copy from it); r renames; d deletes. New documents are
-// added with :add.document.
+// added with :matter.document.add.
 type MatterDocuments struct {
 	client  *rpc.Client
 	theme   render.Theme
@@ -930,7 +930,7 @@ func (o *MatterDocuments) View(maxW, maxH int) string {
 
 	if len(o.items) == 0 {
 		return o.theme.Dim.Render(render.Truncate(
-			"No documents yet. Add one with :add.officeaction or :add.document", maxW))
+			"No documents yet. Add one with :officeaction.add or :matter.document.add", maxW))
 	}
 
 	var b strings.Builder

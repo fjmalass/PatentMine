@@ -925,7 +925,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pane.DueDeadlineMsg:
 		// In-app deadline banner: surface overdue / due-soon deadlines on open.
 		if m.Count > 0 {
-			a.setStatus(text.StatusGeneric, fmt.Sprintf("⏰ %d deadline(s) due soon — run :show.deadlines", m.Count))
+			a.setStatus(text.StatusGeneric, fmt.Sprintf("⏰ %d deadline(s) due soon — run :deadline.show", m.Count))
 		}
 		return a, nil
 	case pane.OpenOfficeActionDetailMsg:

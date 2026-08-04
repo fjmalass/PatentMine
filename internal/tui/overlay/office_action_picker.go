@@ -19,8 +19,8 @@ import (
 
 // OfficeActionPicker assigns (or, in release mode, removes) the selected
 // patent(s) to/from one or more of the matter's office actions for review. It is
-// the catalog/patent-detail entry point (:assign.officeaction /
-// :release.officeaction) — the office-action-driven counterpart is the two-pane
+// the catalog/patent-detail entry point (:officeaction.assign /
+// :officeaction.release) — the office-action-driven counterpart is the two-pane
 // OfficeActionPatents overlay reached with `p` from the office-action detail.
 type OfficeActionPicker struct {
 	client  *rpc.Client
@@ -217,7 +217,7 @@ func (o *OfficeActionPicker) View(maxW, maxH int) string {
 		return o.theme.Error.Render("error: " + o.loadErr)
 	}
 	if len(o.items) == 0 {
-		return o.theme.Dim.Render(render.Truncate("No office actions in this matter. Add one with :add.officeaction", maxW))
+		return o.theme.Dim.Render(render.Truncate("No office actions in this matter. Add one with :officeaction.add", maxW))
 	}
 
 	var b strings.Builder

@@ -204,7 +204,7 @@ func ExportAddedCmd(client *rpc.Client, project domain.ProjectID, path string) t
 	}
 }
 
-// OfficeActionImportedMsg reports a successful :add.officeaction import so the
+// OfficeActionImportedMsg reports a successful :officeaction.add import so the
 // app can show a result modal with the new office-action id and where the
 // document was copied.
 type OfficeActionImportedMsg struct {
@@ -505,7 +505,7 @@ func validationSummary(validations []domain.PatentValidation) string {
 	return strings.Join(parts, ", ")
 }
 
-// ConflictFlaggedMsg reports a :flag.conflict result so the app can refresh the
+// ConflictFlaggedMsg reports a :conflict.flag result so the app can refresh the
 // patent list (so the ⚠ badge appears) and show a status line.
 type ConflictFlaggedMsg struct {
 	Number string

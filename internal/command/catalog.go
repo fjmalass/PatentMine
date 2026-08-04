@@ -208,6 +208,11 @@ var projectScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFami
 // IDs above are declared here once; the per-domain registration lists live in
 // catalog_<domain>.go (mirroring internal/proto and internal/rpc) and are
 // assembled below.
+//
+// Naming convention for typed commands: prefer resource.action for
+// domain-backed operations (deadline.show, renewal.track, matter.document.open),
+// keeping older verb.resource spellings as aliases. Generic local view commands
+// may keep view/open wording when it reads better (open.projects, browse.uspto).
 func Default() (*Registry, error) {
 	var cmds []Command
 	cmds = append(cmds, viewCommands()...)

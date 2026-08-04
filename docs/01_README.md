@@ -6,21 +6,47 @@ This manual details the architecture, dynamic value-type systems, lifecycle phas
 
 Related docs:
 
-1. [Metrics Guide](./07_metrics.md)
-2. [Telemetry & Activity Tracking Guide](./08_ACTIVITY.md)
-3. [USPTO Loading & Source Configuration](./03_USPTO_CONFIG_LOADING.md)
-4. [TUI :add Execution Flow](./04_TUI_ADD_FLOW.md)
-5. [U.S. Patent Expiration Date Computation](./09_EXPIRATION_DATE.md)
-6. [Web REST API Reference](./05_REST_API.md)
-7. [Assignee & Ownership History (usage)](./10_TUI_ASSIGNEE_FLOW.md)
-8. [Daemon-Side Assignee Flow](./11_DAEMON_ASSIGNEE_FLOW.md)
-9. [Drafting: Applications & Office-Action Responses](./12_DRAFTING.md)
-10. [Office Actions & the Prosecution-Matter Workspace](./13_TUI_OFFICE_ACTION.md) — multi-document matters (with AI/OCR text extraction), a copy-from-documents response editor, a communications log, deadlines, and time/AI-usage tracking.
-11. [Patent Renewals & Maintenance-Fee Tracking](./14_TUI_RENEWALS.md) — designating patents to watch for renewal, the unified deadline model, and reminders (in progress; includes a TODO).
-12. [Database Implementation](./02_DATABASE.md) — the SQLite store: connection/concurrency model, the versioned embedded schema, the identity tables, and the pointer-in-row / bytes-on-disk convention.
-13. [Build / Deploy Secret Architecture](./22_BUILD_DEPLOY_SECRETS.md) — build-host vs VPS/deploy-daemon setup, `file:` secret references, and redacted credential status for TUI/GUI clients.
+1. [TUI Add + Renewal Workflow](./00_HOW_TO_TUI.md) — top-level operator how-to for adding patents, checking US renewals, and managing EP validation countries.
+2. [Metrics Guide](./07_metrics.md)
+3. [Telemetry & Activity Tracking Guide](./08_ACTIVITY.md)
+4. [USPTO Loading & Source Configuration](./03_USPTO_CONFIG_LOADING.md)
+5. [TUI :add Execution Flow](./04_TUI_ADD_FLOW.md)
+6. [U.S. Patent Expiration Date Computation](./09_EXPIRATION_DATE.md)
+7. [Web REST API Reference](./05_REST_API.md)
+8. [Assignee & Ownership History (usage)](./10_TUI_ASSIGNEE_FLOW.md)
+9. [Daemon-Side Assignee Flow](./11_DAEMON_ASSIGNEE_FLOW.md)
+10. [Drafting: Applications & Office-Action Responses](./12_DRAFTING.md)
+11. [Office Actions & the Prosecution-Matter Workspace](./13_TUI_OFFICE_ACTION.md) — multi-document matters (with AI/OCR text extraction), a copy-from-documents response editor, a communications log, deadlines, and time/AI-usage tracking.
+12. [Patent Renewals & Maintenance-Fee Tracking](./14_TUI_RENEWALS.md) — designating patents to watch for renewal, the unified deadline model, and reminders (in progress; includes a TODO).
+13. [Database Implementation](./02_DATABASE.md) — the SQLite store: connection/concurrency model, the versioned embedded schema, the identity tables, and the pointer-in-row / bytes-on-disk convention.
+14. [Build / Deploy Secret Architecture](./22_BUILD_DEPLOY_SECRETS.md) — build-host vs VPS/deploy-daemon setup, `file:` secret references, and redacted credential status for TUI/GUI clients.
+15. [Client/Server RPC and HTTP Architecture](./23_CLIENT_SERVER_RPC_ARCHITECTURE.md) — daemon ownership, the internal RPC boundary, and HTTP as a thin web adapter over RPC.
 
 ---
+
+## Client/Server Boundary
+
+PatentMine is daemon-centered. `patentmine serve` owns the database, filesystem
+access, runtime configuration, secrets, and source-of-truth business logic.
+Clients are intentionally thin:
+
+- The TUI and daemon-aware CLI commands call the daemon over RPC.
+- The HTTP API is a web-facing adapter that translates HTTP requests into the
+  same daemon RPC calls.
+- Browser/GUI clients call the HTTP API, which then calls the daemon over RPC.
+
+```text
+TUI -------- RPC --------> daemon/engine
+CLI -------- RPC --------> daemon/engine
+Browser ---- HTTP API ---> api frontend ---- RPC ----> daemon/engine
+```
+
+New daemon-owned behavior should be implemented in the engine and exposed through
+`internal/proto` + `internal/rpc` first. TUI and HTTP code should present or adapt
+that RPC contract rather than reading daemon-owned files or reimplementing
+business rules. See
+[Client/Server RPC and HTTP Architecture](./23_CLIENT_SERVER_RPC_ARCHITECTURE.md)
+for the full rule set.
 
 ## 1. The Core Challenge: The Multi-Stage Patent Identifier
 
