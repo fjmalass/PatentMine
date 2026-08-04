@@ -120,15 +120,15 @@ or estimated dates.
 For a granted US utility patent:
 
 ```text
-:track.renewals US11611785B2
+:renewal.track US11611785B2
 ```
 
 Optionally set entity size:
 
 ```text
-:track.renewals US11611785B2 large
-:track.renewals US11611785B2 small
-:track.renewals US11611785B2 micro
+:renewal.track US11611785B2 large
+:renewal.track US11611785B2 small
+:renewal.track US11611785B2 micro
 ```
 
 This creates the US maintenance-fee deadlines from the grant date:
@@ -146,7 +146,7 @@ Each has:
 Stop tracking:
 
 ```text
-:untrack.renewals US11611785B2
+:renewal.untrack US11611785B2
 ```
 
 Important: this is a docketing assistant, not a system of record. Verify dates
@@ -159,7 +159,7 @@ against the official USPTO maintenance fee system.
 Open the unified deadline board:
 
 ```text
-:show.deadlines
+:deadline.show
 ```
 
 The board includes office-action response deadlines and renewal/maintenance
@@ -185,21 +185,21 @@ on validated countries.
 Fetch EPO OPS legal-status data for an EP patent:
 
 ```text
-:fetch.renewal-validations EP1234567B1
+:renewal.validation.fetch EP1234567B1
 ```
 
 Show stored validation-country state:
 
 ```text
-:show.renewal-validations EP1234567B1
+:renewal.validation.list EP1234567B1
 ```
 
 Manually set a country after review or agent/national-register confirmation:
 
 ```text
-:set.renewal-validation EP1234567B1 DE validated
-:set.renewal-validation EP1234567B1 FR potential
-:set.renewal-validation EP1234567B1 GB lapsed
+:renewal.validation.set EP1234567B1 DE validated
+:renewal.validation.set EP1234567B1 FR potential
+:renewal.validation.set EP1234567B1 GB lapsed
 ```
 
 Status meanings:
@@ -223,8 +223,8 @@ US patent renewal check:
 :source.mode uspto-first
 :add.uspto US11611785B2
 :patent.expiration-date refresh
-:track.renewals US11611785B2 small
-:show.deadlines
+:renewal.track US11611785B2 small
+:deadline.show
 ```
 
 EP patent country-phase check:
@@ -232,17 +232,17 @@ EP patent country-phase check:
 ```text
 :source.mode google-only
 :add.google EP1234567B1
-:fetch.renewal-validations EP1234567B1
-:show.renewal-validations EP1234567B1
-:set.renewal-validation EP1234567B1 DE validated
-:show.deadlines
+:renewal.validation.fetch EP1234567B1
+:renewal.validation.list EP1234567B1
+:renewal.validation.set EP1234567B1 DE validated
+:deadline.show
 ```
 
 Portfolio review:
 
 ```text
-:show.deadlines
-:show.renewal-validations EP1234567B1
+:deadline.show
+:renewal.validation.list EP1234567B1
 :source.bibs
 ```
 
@@ -255,7 +255,7 @@ Portfolio review:
 - Check `PATENTMINE_USPTO_API_KEY` and run `patentmine check uspto`.
 - If using a VPS, verify the daemon can read `/etc/patentmine/secrets/uspto_odp_key`.
 
-`:fetch.renewal-validations` fails:
+`:renewal.validation.fetch` fails:
 
 - Check `PATENTMINE_EPO_OPS_CONSUMER_KEY` and
   `PATENTMINE_EPO_OPS_CONSUMER_SECRET`.
@@ -267,7 +267,7 @@ No renewal deadlines appear:
 - US: confirm the patent has a grant date and is a US utility patent.
 - EP: confirm validation countries are `validated`; `potential` countries are not
   treated as active obligations by default.
-- Check `:show.deadlines` after tracking or validation updates.
+- Check `:deadline.show` after tracking or validation updates.
 
 Source values disagree:
 

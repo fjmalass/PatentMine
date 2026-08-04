@@ -21,6 +21,7 @@ Related docs:
 13. [Database Implementation](./02_DATABASE.md) — the SQLite store: connection/concurrency model, the versioned embedded schema, the identity tables, and the pointer-in-row / bytes-on-disk convention.
 14. [Build / Deploy Secret Architecture](./22_BUILD_DEPLOY_SECRETS.md) — build-host vs VPS/deploy-daemon setup, `file:` secret references, and redacted credential status for TUI/GUI clients.
 15. [Client/Server RPC and HTTP Architecture](./23_CLIENT_SERVER_RPC_ARCHITECTURE.md) — daemon ownership, the internal RPC boundary, and HTTP as a thin web adapter over RPC.
+16. [Changelog](../CHANGELOG.md) — release history; kept at repository root, but intended to be included by the daemon-backed TUI docs browser.
 
 ---
 
@@ -824,18 +825,18 @@ The active project is a prosecution **matter** that holds many documents, a
 communications log, deadlines, and tracked time. See
 [Office Actions & the Prosecution-Matter Workspace](./13_TUI_OFFICE_ACTION.md) for the full flow.
 
-* `:add.officeaction [path]` : Import an Office Action (file picker if no path); a metadata form captures the **examiner**, mail date, type, art unit, and application number before the file is copied, text-extracted, and its response deadline computed.
-* `:open.officeaction` : Open the **Office Actions pane** — a table (mailed · type · examiner · response-due countdown · status); `a` add, `R` respond, `/` filter, **`enter` drills into** the detail pane (documents · timing · communications · response). From the detail, **`enter` or `Ctrl+N`** opens the split examiner-text / notes editor (`yy`/`p` copies examiner text into the notes).
-* `:assign.officeaction` / `:release.officeaction` (aliases `:assign.oa` / `:release.oa`) : Assign the **selected patent(s)** — from the **catalog** (use `v` for a range) or a **patent detail** — to office actions for review, via a checkbox picker (`space` toggles, `enter` applies); the inverse removes them. Assignments appear in the catalog **OA** column (sortable; filter with `oa:`) and on the patent detail's *Office Actions* line. The office-action-driven counterpart is **`p`** on an office action's detail (a two-pane *assigned / all patents* view: `a` assign · `x` remove · `v` toggle ✓/○ · `/` search · PageUp/Dn). A newly imported office action **auto-inherits** the previous one's assigned patents. See [Office Actions §8](./13_TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action).
-* `:add.document [path]` / `:open.documents` : File and browse supporting documents (references, prior responses). In the list, `enter` views the text, **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes.
-* `:draft.response` : Create a response draft linked to the latest OA and open the split editor — matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; `yy`/`p` copy passages across, `ctrl+s` saves, `ctrl-e` exports the `.docx`.
-* `:log.comm` / `:open.comms` : Record and browse the communications log (email · phone · interview · filing · note).
-* `:set.matter <type>` : Set the prosecution stage (`provisional` / `nonprovisional` / `in_prosecution` / `issued`).
-* `:validate.time` : Review auto-captured time (AI calls, and editor reading/writing) — correct each entry's activity/duration/note, then validate or delete it before it is billed. Reopening a matter with unvalidated time prompts you here.
-* `:show.time` : Billing readout — recorded time by activity, the validated/unvalidated split, and AI usage (calls + tokens).
-* `:log.time <activity> <duration> [note]` : Add a manual (validated) time entry, e.g. `:log.time call 20m left a voicemail` (duration accepts `30m`, `1h15m`, `1:15`, or plain minutes).
-* `:show.deadlines` : Cross-matter docket — every pending office-action response and patent maintenance fee, soonest due first (overdue/due-soon cues; `p` marks done, `x` dismisses). Opening a matter banners anything due soon.
-* `:track.renewals <patent-number>` : Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (3.5 / 7.5 / 11.5 yr). Email reminders at 2 months / 15 days / 7 days are opt-in via `PATENTMINE_REMINDER_EMAIL_*` (SMTP); the in-app docket always works. Docketing assistance — verify all dates.
+* `:officeaction.add [path]` : Import an Office Action (file picker if no path); a metadata form captures the **examiner**, mail date, type, art unit, and application number before the file is copied, text-extracted, and its response deadline computed.
+* `:officeaction.list` : Open the **Office Actions pane** — a table (mailed · type · examiner · response-due countdown · status); `a` add, `R` respond, `/` filter, **`enter` drills into** the detail pane (documents · timing · communications · response). From the detail, **`enter` or `Ctrl+N`** opens the split examiner-text / notes editor (`yy`/`p` copies examiner text into the notes).
+* `:officeaction.assign` / `:officeaction.release` : Assign the **selected patent(s)** — from the **catalog** (use `v` for a range) or a **patent detail** — to office actions for review, via a checkbox picker (`space` toggles, `enter` applies); the inverse removes them. Assignments appear in the catalog **OA** column (sortable; filter with `oa:`) and on the patent detail's *Office Actions* line. The office-action-driven counterpart is **`p`** on an office action's detail (a two-pane *assigned / all patents* view: `a` assign · `x` remove · `v` toggle ✓/○ · `/` search · PageUp/Dn). A newly imported office action **auto-inherits** the previous one's assigned patents. See [Office Actions §8](./13_TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action).
+* `:matter.document.add [path]` / `:matter.document.open` : File and browse supporting documents (references, prior responses). In the list, `enter` views the text, **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes.
+* `:officeaction.respond` : Create a response draft linked to the latest OA and open the split editor — matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; `yy`/`p` copy passages across, `ctrl+s` saves, `ctrl-e` exports the `.docx`.
+* `:matter.comm.log` / `:matter.comm.open` : Record and browse the communications log (email · phone · interview · filing · note).
+* `:matter.type.set <type>` : Set the prosecution stage (`provisional` / `nonprovisional` / `in_prosecution` / `issued`).
+* `:time.validate` : Review auto-captured time (AI calls, and editor reading/writing) — correct each entry's activity/duration/note, then validate or delete it before it is billed. Reopening a matter with unvalidated time prompts you here.
+* `:time.show` : Billing readout — recorded time by activity, the validated/unvalidated split, and AI usage (calls + tokens).
+* `:time.log <activity> <duration> [note]` : Add a manual (validated) time entry, e.g. `:time.log call 20m left a voicemail` (duration accepts `30m`, `1h15m`, `1:15`, or plain minutes).
+* `:deadline.show` : Cross-matter docket — every pending office-action response and patent maintenance fee, soonest due first (overdue/due-soon cues; `p` marks done, `x` dismisses). Opening a matter banners anything due soon.
+* `:renewal.track <patent-number>` : Track a granted patent's U.S. maintenance-fee deadlines, derived from its grant date (3.5 / 7.5 / 11.5 yr). Email reminders at 2 months / 15 days / 7 days are opt-in via `PATENTMINE_REMINDER_EMAIL_*` (SMTP); the in-app docket always works. Docketing assistance — verify all dates.
 
 #### J. Full-Text Viewer Bindings (`T` / `:open.fulltext`)
 *(The claims + disclosure viewer for one patent, opened from Detail or an Office Action.)*
@@ -943,11 +944,11 @@ Filter/search/sort usage is recorded through metrics and activity telemetry so c
 
 **Office-action assignment** works the same way — an office action acts as a typed, assignable label on patents (a reference vetted against the examiner's rejections), the same mental model as a tag but pointing at an imported document rather than a free-text taxonomy entry:
 
-* `:assign.officeaction [name]` (aliases `:assign.oa`, `:assign-officeaction`) : Assign the selected patent(s) to the office action whose label matches `name` (case-insensitive substring) — the direct counterpart of `:tag.patent.add <name>`. With **no argument** it opens a checkbox **picker** of the matter's office actions (`space` toggles, `enter` applies). Works on the catalog selection (`v` for a range) or a patent detail.
-* `:release.officeaction [name]` (alias `:release.oa`) : Remove the selected patent(s) from the matching office action(s); no argument opens the picker. The counterpart of `:tag.patent.delete`.
+* `:officeaction.assign [name]` : Assign the selected patent(s) to the office action whose label matches `name` (case-insensitive substring) — the direct counterpart of `:tag.patent.add <name>`. With **no argument** it opens a checkbox **picker** of the matter's office actions (`space` toggles, `enter` applies). Works on the catalog selection (`v` for a range) or a patent detail.
+* `:officeaction.release [name]` : Remove the selected patent(s) from the matching office action(s); no argument opens the picker. The counterpart of `:tag.patent.delete`.
 * **Listing** (the `:tag.patent.list` counterpart): the patent **detail** pane's *Office Actions* line shows the assignments with a review glyph (`✓` reviewed / `○` to review), the catalog **OA** column shows them per row, and `:filter oa:<name>` / `oa:any` / `oa:none` / `oa:to_review` / `oa:reviewed` filters by them.
 
-Unlike tags, office actions are not a registered free-text taxonomy — they are imported with `:add.officeaction`, so there is no `:officeaction.add <name>` taxonomy step; you assign against the office actions already in the matter. Assigning patents from the office-action side (a two-pane *assigned / all patents* view) is **`p`** on its detail. See [Office Actions §8](./13_TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action).
+Unlike tags, office actions are not a registered free-text taxonomy — they are imported with `:officeaction.add`, so there is no `:officeaction.add <name>` taxonomy step; you assign against the office actions already in the matter. Assigning patents from the office-action side (a two-pane *assigned / all patents* view) is **`p`** on its detail. See [Office Actions §8](./13_TUI_OFFICE_ACTION.md#8-assigning-reference-patents-to-an-office-action).
 
 For fuller metrics details, including API access paths, overlay behavior, limitations, and follow-up work, see [`07_metrics.md`](./07_metrics.md).
 

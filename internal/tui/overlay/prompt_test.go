@@ -28,16 +28,16 @@ func TestPromptRanksExactAndPrefixMatchesFirst(t *testing.T) {
 	}
 }
 
-func TestPromptMatchesAliasesAndShortcuts(t *testing.T) {
+func TestPromptMatchesResourceAliasesAndShortcuts(t *testing.T) {
 	reg, err := command.Default()
 	if err != nil {
 		t.Fatalf("command.Default: %v", err)
 	}
 	prompt := NewPrompt(reg, keymap.Default(), render.NewTheme(), text.English(), command.ScopeProjects, PromptPalette)
-	prompt.query = "use-project"
+	prompt.query = "documents"
 	prompt.filter()
-	if len(prompt.shown) == 0 || prompt.shown[0].command.ID != command.ProjectActivate {
-		t.Fatalf("alias search top result = %+v, want ProjectActivate", prompt.shown)
+	if len(prompt.shown) == 0 || prompt.shown[0].command.ID != command.OpenDocuments {
+		t.Fatalf("alias search top result = %+v, want OpenDocuments", prompt.shown)
 	}
 	prompt.query = "enter"
 	prompt.filter()

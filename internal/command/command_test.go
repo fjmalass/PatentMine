@@ -1,6 +1,7 @@
 package command
 
 import (
+	"strings"
 	"testing"
 
 	"patentmine/internal/proto"
@@ -74,13 +75,49 @@ func TestLookupName(t *testing.T) {
 	if !ok || got.ID != ProjectActivate {
 		t.Fatalf("LookupName(project.use) = %+v ok=%v, want ProjectActivate", got, ok)
 	}
-	got, ok = reg.LookupName("use-project")
-	if !ok || got.ID != ProjectActivate {
-		t.Fatalf("LookupName(use-project) = %+v ok=%v, want ProjectActivate", got, ok)
-	}
 	got, ok = reg.LookupName("filter.clear")
 	if !ok || got.ID != Filter {
 		t.Fatalf("LookupName(filter.clear) = %+v ok=%v, want Filter", got, ok)
+	}
+	got, ok = reg.LookupName("renewal.track")
+	if !ok || got.ID != TrackRenewals {
+		t.Fatalf("LookupName(renewal.track) = %+v ok=%v, want TrackRenewals", got, ok)
+	}
+	if got, ok = reg.LookupName("use-project"); ok {
+		t.Fatalf("LookupName(use-project) = %+v ok=true, want removed legacy alias", got)
+	}
+}
+
+func TestDefaultRegistryHasNoLegacyVerbLeadingAliases(t *testing.T) {
+	reg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	legacyPrefixes := []string{
+		"add-", "assign-", "browse-", "clear-", "copy-", "create-", "delete-",
+		"draft-", "export-", "fetch-", "flag-", "jump-", "list-", "log-",
+		"lookup-", "next-", "open-", "prev-", "release-", "search-", "set-",
+		"show-", "track-", "untrack-", "use-", "validate-",
+	}
+	legacyDots := []string{
+		"add.", "assign.", "browse.", "clear.", "copy.", "create.", "delete.",
+		"draft.", "fetch.", "flag.", "jump.", "list.", "log.", "lookup.",
+		"open.", "release.", "search.", "set.", "show.", "track.",
+		"untrack.", "use.", "validate.",
+	}
+	for _, c := range reg.All() {
+		for _, alias := range c.Aliases {
+			for _, prefix := range legacyPrefixes {
+				if strings.HasPrefix(alias, prefix) {
+					t.Fatalf("command %q has legacy verb-leading alias %q", c.ID, alias)
+				}
+			}
+			for _, prefix := range legacyDots {
+				if strings.HasPrefix(alias, prefix) {
+					t.Fatalf("command %q has legacy verb-leading alias %q", c.ID, alias)
+				}
+			}
+		}
 	}
 }
 

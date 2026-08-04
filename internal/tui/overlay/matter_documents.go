@@ -87,9 +87,9 @@ type MatterDocuments struct {
 	oa      *domain.OfficeAction // current office action context if opened from one
 
 	// Single-table state (if oa == nil)
-	items   []domain.MatterDocument
-	cursor  int
-	offset  int
+	items  []domain.MatterDocument
+	cursor int
+	offset int
 
 	// Dual-table state (if oa != nil). The shared dualTable controller owns the
 	// active pane, per-pane row cursor / column cursor / sort, and jump; the scroll

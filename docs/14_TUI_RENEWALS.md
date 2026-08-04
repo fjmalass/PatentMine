@@ -26,10 +26,10 @@ engine documented there.
   three U.S. utility-patent maintenance windows from the grant date: **3.5 / 7.5 /
   11.5 years**, each with the **6-month pay window before** (`window_opens`) and
   the **6-month surcharge grace after** (`grace_ends`).
-- **`:track.renewals <patent-number>`** → `engine.TrackRenewals` looks up the
+- **`:renewal.track <patent-number>`** → `engine.TrackRenewals` looks up the
   patent, reads its grant date, and (re)creates its three `maintenance_fee`
   deadlines. Re-running replaces them so it never double-tracks.
-- **`:show.deadlines`** — the cross-matter docket: every pending deadline
+- **`:deadline.show`** — the cross-matter docket: every pending deadline
   (OA responses + maintenance fees), soonest due first, overdue/due-soon cues;
   `p` marks done, `x` dismisses.
 - **Reminders** — the pluggable `internal/remind` `Notifier` sends an **SMTP email
@@ -59,7 +59,7 @@ applies to that project's membership.
 - Reuses the existing **project + membership** machinery and the projects pane.
 - A project is already a curated set of patents, so "the tracked set" is just "its
   members."
-- Easy to scope `:show.deadlines` to one project.
+- Easy to scope `:deadline.show` to one project.
 
 **Cons**
 - **Conflates two meanings of "project."** A project today is a *body of work* —
@@ -75,7 +75,7 @@ applies to that project's membership.
 ### Approach B — Per-patent tracking (the patent/grant is the unit)
 
 A patent is tracked iff it has pending `maintenance_fee` deadlines.
-`:track.renewals` creates them (tracks); an untrack action removes/dismisses them.
+`:renewal.track` creates them (tracks); an untrack action removes/dismisses them.
 **This is what is built today.**
 
 **Pros**
@@ -95,14 +95,14 @@ A patent is tracked iff it has pending `maintenance_fee` deadlines.
 Tracking is per-patent (Approach B is the primitive). When you track from within a
 project, the deadline rows are **tagged** with that `project_id` for grouping and
 filtering — but a project is **never required**, and a patent can be tracked
-standalone. `:show.deadlines` is global by default and filterable by the active
+standalone. `:deadline.show` is global by default and filterable by the active
 project.
 
 **Pros**
 - Best of both: the correct per-patent primitive **plus** the optional
   client/matter lens you asked for.
 - Directly supports **"a specific project, and only some of its patents"**: inside
-  a project you selectively `:track.renewals` the members you want; the deadline
+  a project you selectively `:renewal.track` the members you want; the deadline
   rows carry the project tag; the rest are untracked.
 - No overloading of "project"; reuses the existing `deadline.project_id` column
   (already present, currently unused for renewals).
@@ -120,7 +120,7 @@ project.
 
 For the TUI layer and reminders, we aligned on the following choices:
 - **TUI Column representation (Option 1.2)**: Instead of a text column, we prefix the `NUMBER` column in the patent catalog table with a visual indicator dot (e.g., green dot if tracked, yellow if payment window open/grace, grey if untracked).
-- **Global docketing integration (Option 3.2)**: Integrate a tab/toggle inside the global `:show.deadlines` view (the main docketing board) that filters the view to show only upcoming renewals.
+- **Global docketing integration (Option 3.2)**: Integrate a tab/toggle inside the global `:deadline.show` view (the main docketing board) that filters the view to show only upcoming renewals.
 - **Entity Size assignment**: We assign `large`/`small`/`micro` on a per-renewal basis. This should only be done when validation is sent. Reminders (emails and other notifications) will include the estimated entity size tier.
 - **Enabling/Disabling Review Workflow**: An explicit flag/tag can be added to patents to enable or disable the human review workflow state for a given patent or group of patents.
 
@@ -149,11 +149,11 @@ The implemented schema (version 9) includes:
 
 ```mermaid
 flowchart TD
-    A["Issued patent in the DB (has a grant date)"] -->|":track.renewals <num>" or detail action| B["Create 3 maintenance_fee deadlines\n(3.5 / 7.5 / 11.5 yr), tagged with the active project (optional)"]
-    B --> C[":show.deadlines — global docket\n(tab/filter to show only renewals)"]
+    A["Issued patent in the DB (has a grant date)"] -->|":renewal.track <num>" or detail action| B["Create 3 maintenance_fee deadlines\n(3.5 / 7.5 / 11.5 yr), tagged with the active project (optional)"]
+    B --> C[":deadline.show — global docket\n(tab/filter to show only renewals)"]
     B --> D["Daily reminder loop → email digest\n(remind estimated entity size)"]
     C -->|"p paid / x dismiss"| E["Deadline done/dismissed\n(stops reminding)"]
-    A -->|":untrack.renewals <num>"| F["Remove the patent's maintenance deadlines / set is_tracked = 0"]
+    A -->|":renewal.untrack <num>"| F["Remove the patent's maintenance deadlines / set is_tracked = 0"]
 ```
 
 - **TUI Grid Display**: Prepend visual indicators to the `NUMBER` cell.
@@ -171,7 +171,7 @@ Tracking primitive + database schema (Option C):
 TUI integration:
 - [x] **Prefix NUMBER column with indicator dot (Option 1.2)**: Update catalog view row rendering to draw green/yellow/grey dots depending on renewal tracking and window status.
 - [x] **Tab on Deadlines view (Option 3.2)**: Modify deadlines view tabs to support filtering to renewals.
-- [x] **Toggle tag/flag for renewal tracking**: Enable/disable renewal tracking via `:track.renewals` and `:untrack.renewals`.
+- [x] **Toggle tag/flag for renewal tracking**: Enable/disable renewal tracking via `:renewal.track` and `:renewal.untrack`.
 - [x] **Per-renewal Entity Size**: Update the tracking command/RPC/DB and engine to assign entity size (large/small/micro) per renewal and include the size tier in reminders.
 
 Correctness / coverage:
@@ -237,10 +237,10 @@ PATENTMINE_EPO_OPS_CONSUMER_SECRET=file:${PATENTMINE_CREDENTIALS_DIR}/epo_ops_co
 
 TUI commands:
 
-- `:fetch.renewal-validations <EP-number>` pulls EPO OPS legal-status data and
+- `:renewal.validation.fetch <EP-number>` pulls EPO OPS legal-status data and
   derives country validation rows where the legal events support it.
-- `:show.renewal-validations <number>` lists stored country-phase states.
-- `:set.renewal-validation <number> <country> <potential|validated|lapsed|unknown>`
+- `:renewal.validation.list <number>` lists stored country-phase states.
+- `:renewal.validation.set <number> <country> <potential|validated|lapsed|unknown>`
   records a manual review result when EPO data is incomplete or a national
   register/agent confirmation is needed.
 

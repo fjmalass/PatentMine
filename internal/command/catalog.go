@@ -210,9 +210,9 @@ var projectScopes = []Scope{ScopeCatalog, ScopeDetail, ScopeCitations, ScopeFami
 // assembled below.
 //
 // Naming convention for typed commands: prefer resource.action for
-// domain-backed operations (deadline.show, renewal.track, matter.document.open),
-// keeping older verb.resource spellings as aliases. Generic local view commands
-// may keep view/open wording when it reads better (open.projects, browse.uspto).
+// domain-backed operations (deadline.show, renewal.track, matter.document.open).
+// Generic local view commands may keep view/open wording when it reads better
+// (open.projects, browse.uspto).
 func Default() (*Registry, error) {
 	var cmds []Command
 	cmds = append(cmds, viewCommands()...)
@@ -222,5 +222,6 @@ func Default() (*Registry, error) {
 	cmds = append(cmds, crawlCommands()...)
 	cmds = append(cmds, projectCommands()...)
 	cmds = append(cmds, draftingCommands()...)
+	cmds = append(cmds, renewalCommands()...)
 	return NewRegistry(cmds...)
 }

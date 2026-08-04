@@ -10,3 +10,5 @@ API is a web-facing adapter that forwards requests to the same daemon RPC layer.
 
 See [`docs/23_CLIENT_SERVER_RPC_ARCHITECTURE.md`](./docs/23_CLIENT_SERVER_RPC_ARCHITECTURE.md)
 for the RPC/HTTP client-server model.
+
+Release history is tracked in [`CHANGELOG.md`](./CHANGELOG.md).

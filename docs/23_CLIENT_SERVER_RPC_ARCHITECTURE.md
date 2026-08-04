@@ -105,6 +105,9 @@ The documentation browser should follow the same architecture.
 Correct placement:
 
 - The daemon owns the configured documentation directory.
+- The daemon docs index should also include root-level project docs such as
+  `README.md` and `CHANGELOG.md`, so TUI/API clients can read them even though
+  they are not numbered files under `docs/`.
 - The daemon lists available docs and reads document content.
 - The daemon validates relative document IDs and rejects path traversal.
 - RPC exposes methods such as `docs.list` and `docs.get`.

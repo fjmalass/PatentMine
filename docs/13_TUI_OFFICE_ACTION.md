@@ -18,7 +18,7 @@ Related docs:
 > **Where the surface lives today.** The drafting/response internals run through
 > the `patentmine draft` **CLI** and the daemon **RPC** (which also backs the web
 > API). In the TUI the office action is now a **prosecution-matter workspace**
-> reached through a dedicated **Office Actions pane** (`:open.officeaction`): a
+> reached through a dedicated **Office Actions pane** (`:officeaction.list`): a
 > navigable table of the matter's office actions, `a` to import a new one, and
 > `enter` to drill into a detail view (documents · timing · communications ·
 > response). See [§7](#7-tui-integration).
@@ -92,7 +92,7 @@ Office-action types (`--type`): `non_final`, `final`, `restriction`,
 > **Text extraction.** A `.txt` source is read inline; a **PDF** is text-extracted
 > by the pure-Go `internal/pdf` extractor (`ledongthuc/pdf`) on import. USPTO
 > Office Actions are frequently **scanned, image-only PDFs** with no text layer —
-> the extractor returns nothing for those, so `:open.documents` offers **`e`** to
+> the extractor returns nothing for those, so `:matter.document.open` offers **`e`** to
 > run **AI/OCR extraction** (Gemini multimodal) on demand, saving the transcribed
 > text back to the document (and recording it as billable AI usage). **ODP
 > auto-fetch** of the OA remains a deferred follow-up (see [§8](#8-follow-ups));
@@ -252,27 +252,27 @@ provisions the local AI path; `cargo make draft-demo` runs an end-to-end smoke
 
 ## 7. TUI integration
 
-All typed commands follow the **`<verb>.<object>`** convention — the same family
-as `:add.file`, `:open.notes`, and `:export.ids.pdf` — so the verb leads
-(`add` / `open` / `export`), never the object.
+Typed commands now prefer the **`<resource>.<action>`** convention for
+domain-backed operations. That keeps related commands grouped in the palette,
+for example `:officeaction.add`, `:matter.document.open`, and `:deadline.show`.
 
 Intended flow, mirroring the AI curation overlay (`a`) and the IDS editor (`I`):
 
 ```mermaid
 flowchart LR
-    P["any pane (active project)"] -->|":add.officeaction PATH"| OA["Import OA from any dir\n→ copied to the docs export store"]
-    P -->|":open.officeaction"| L["Office Actions table"]
+    P["any pane (active project)"] -->|":officeaction.add PATH"| OA["Import OA from any dir\n→ copied to the docs export store"]
+    P -->|":officeaction.list"| L["Office Actions table"]
     L -->|"enter / ctrl+n"| R["OA view: examiner text (read-only)\n+ notes editor (split)"]
     R -->|"a — AI draft, grounded + pinned"| AI["Response remarks"]
     R -->|":export.draft"| DX["Write .docx + show path"]
 ```
 
-Typed commands (verb-first):
+Typed commands:
 
 | Command | Maps to RPC | Action |
 | --- | --- | --- |
-| `:add.officeaction <path>` | `office_action.import` | Import an OA file from **any directory** into the active project; the file is copied into the docs export store (`<base>/<project>/office-actions/`) and hashed. |
-| `:open.officeaction` | `office_action.list` | Open the project's Office Actions table. |
+| `:officeaction.add <path>` | `office_action.import` | Import an OA file from **any directory** into the active project; the file is copied into the docs export store (`<base>/<project>/office-actions/`) and hashed. |
+| `:officeaction.list` | `office_action.list` | Open the project's Office Actions table. |
 | `:add.draft <kind>` | `draft.create` | Create a draft (`provisional` / `nonprovisional` / `oa-response`). |
 | `:export.draft <id>` | `draft.export.docx` | Render a draft to .docx and report the path. |
 
@@ -294,26 +294,26 @@ per matter) and the project gains a **matter type** stage; office actions gain a
 
 | Command | What it does |
 | --- | --- |
-| `:open.officeaction` | The **Office Actions pane** — a table of the matter's office actions (mailed · type · examiner · response-due countdown · status). `↑/↓`/`j`/`k` move, `/` filters, `a` imports a new OA, `R` drafts a response, and **`enter` drills into the detail pane** (documents · timing · communications · response). |
-| `:add.officeaction [path]` | Import an OA (also `a` in the pane). With no path it opens the hand-rolled **file picker** (`.pdf`/`.txt`); either way a **metadata form** then captures **examiner**, mail date, type, art unit, application number (pre-filled from the project). The file is copied + hashed + text-extracted, the response deadline computed, and the OA registered as the matter's first document. |
-| `:add.document [path]` | File a supporting document (reference, prior response, …) under the matter (picker or path). |
-| `:open.documents` | The matter's **document list**: `enter` views the text (read-only vim viewer), **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes. |
-| `:draft.response` | Create a `DraftOAResponse` linked to the latest OA and open the **split response editor**: matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; **`yy`/`p`** copy a passage across, `ctrl+s` saves, `ctrl-e` exports the `.docx`. |
-| `:log.comm` · `:open.comms` | Record / browse the **communications log** (email · phone · interview · filing · note — party + what happened). |
-| `:set.matter <type>` | Set the project's prosecution stage (provisional / nonprovisional / in_prosecution / issued). |
-| `:validate.time` | Review the **auto-captured time** queue: correct each entry's activity/duration/note, then validate (or delete). Reopening a matter with unvalidated time prompts here. |
-| `:show.time` | Billing readout: recorded time by activity, validated/unvalidated split, and AI usage (calls + tokens). |
-| `:log.time <activity> <duration> [note]` | Add a manual, validated time entry (duration: `30m`, `1h15m`, `1:15`, or plain minutes). |
-| `:show.deadlines` | Cross-matter docket: pending OA responses + patent maintenance fees, soonest due first (`p` done, `x` dismiss). |
-| `:track.renewals <patent>` | Track a granted patent's U.S. maintenance-fee deadlines (3.5 / 7.5 / 11.5 yr from grant). |
+| `:officeaction.list` | The **Office Actions pane** — a table of the matter's office actions (mailed · type · examiner · response-due countdown · status). `↑/↓`/`j`/`k` move, `/` filters, `a` imports a new OA, `R` drafts a response, and **`enter` drills into the detail pane** (documents · timing · communications · response). |
+| `:officeaction.add [path]` | Import an OA (also `a` in the pane). With no path it opens the hand-rolled **file picker** (`.pdf`/`.txt`); either way a **metadata form** then captures **examiner**, mail date, type, art unit, application number (pre-filled from the project). The file is copied + hashed + text-extracted, the response deadline computed, and the OA registered as the matter's first document. |
+| `:matter.document.add [path]` | File a supporting document (reference, prior response, …) under the matter (picker or path). |
+| `:matter.document.open` | The matter's **document list**: `enter` views the text (read-only vim viewer), **`e`** runs AI/OCR on a scanned PDF, `r` renames, `d` deletes. |
+| `:officeaction.respond` | Create a `DraftOAResponse` linked to the latest OA and open the **split response editor**: matter documents on the left (`ctrl-n`/`ctrl-p` cycle), REMARKS on the right; **`yy`/`p`** copy a passage across, `ctrl+s` saves, `ctrl-e` exports the `.docx`. |
+| `:matter.comm.log` · `:matter.comm.open` | Record / browse the **communications log** (email · phone · interview · filing · note — party + what happened). |
+| `:matter.type.set <type>` | Set the project's prosecution stage (provisional / nonprovisional / in_prosecution / issued). |
+| `:time.validate` | Review the **auto-captured time** queue: correct each entry's activity/duration/note, then validate (or delete). Reopening a matter with unvalidated time prompts here. |
+| `:time.show` | Billing readout: recorded time by activity, validated/unvalidated split, and AI usage (calls + tokens). |
+| `:time.log <activity> <duration> [note]` | Add a manual, validated time entry (duration: `30m`, `1h15m`, `1:15`, or plain minutes). |
+| `:deadline.show` | Cross-matter docket: pending OA responses + patent maintenance fees, soonest due first (`p` done, `x` dismiss). |
+| `:renewal.track <patent>` | Track a granted patent's U.S. maintenance-fee deadlines (3.5 / 7.5 / 11.5 yr from grant). |
 
-- **Split text/notes editor** (`:open.officeaction` → `enter`) — examiner
+- **Split text/notes editor** (`:officeaction.list` → `enter`) — examiner
   **extracted text** on the left (read-only, vim-navigable), **notes** on the
   right (editable, vim NORMAL). `ctrl-w h/l/w` switches panes, `ctrl+s` saves
   (`office_action.save_notes`), `esc` closes. A shared **yank register** lets
   `yy` in the examiner pane `p`-paste into the notes. Both panes are the shared
   `vimBuffer`.
-- **Office Actions pane + drill-down** (`:open.officeaction`) — the table above
+- **Office Actions pane + drill-down** (`:officeaction.list`) — the table above
   plus a **detail pane** (`enter`) showing the OA's metadata and response
   deadline, the matter's document/communication counts, and the **time + AI-usage
   tally** (with an "unvalidated — review before billing" cue). Detail keys: `f`
@@ -328,16 +328,16 @@ per matter) and the project gains a **matter type** stage; office actions gain a
 - **Time tracking + AI usage** — billable work is captured automatically: AI
   drafting and OCR calls log an `ai_usage` row + an auto, **unvalidated**
   `time_entry`, and the split editors record **reading** (left pane) vs
-  **writing** (right pane) time on close. `:validate.time` is the **review queue**
+  **writing** (right pane) time on close. `:time.validate` is the **review queue**
   — correct each entry's activity/duration/note, then validate or delete it
   (captured time is a draft until a human signs off); reopening a matter with
-  unvalidated time prompts here. `:show.time` is the billing readout and
-  `:log.time` adds a manual entry. Every operation carries duration metrics +
+  unvalidated time prompts here. `:time.show` is the billing readout and
+  `:time.log` adds a manual entry. Every operation carries duration metrics +
   activity records (reusing the existing observability stack).
 - **Deadlines + reminders** — one unified `deadline` model covers OA responses
   (auto-seeded from the mail date) and patent **maintenance fees**
-  (`:track.renewals <patent>` derives the U.S. 3.5/7.5/11.5-yr schedule from the
-  grant date). `:show.deadlines` is the cross-matter docket; opening a matter
+  (`:renewal.track <patent>` derives the U.S. 3.5/7.5/11.5-yr schedule from the
+  grant date). `:deadline.show` is the cross-matter docket; opening a matter
   banners anything due soon. A pluggable `internal/remind` Notifier sends **email
   over SMTP** at 2 months / 15 days / 7 days before due (+ overdue), deduped and
   fired by a daily loop — opt-in via `PATENTMINE_REMINDER_EMAIL_*`; the in-app
@@ -363,7 +363,7 @@ same everywhere.
 ### Two ways in
 
 - **From the office action (bulk review).** Open the OA detail
-  (`:open.officeaction` → `enter`) and press **`p`** for the two-pane
+  (`:officeaction.list` → `enter`) and press **`p`** for the two-pane
   **assignment view** — *Assigned to this office action* on top, *All patents in
   this matter* below. `tab` switches panes; in the lower table **`a`** assigns the
   patent under the cursor, in the upper **`x`** removes it and **`v`** toggles its
@@ -372,11 +372,11 @@ same everywhere.
   scroll; **`.`** sorts the focused column.
 - **From the patent list or a patent (per-patent).** Select one or more patents in
   the **catalog** (visual mode `v` for a range) — or open a patent's **detail** —
-  and run **`:assign.officeaction [name]`** (alias `:assign.oa`). This mirrors
+  and run **`:officeaction.assign [name]`**. This mirrors
   `:tag.patent.add <name>`: pass an office-action **name** to assign the selection
   directly to the matching action(s); with **no argument** a checkbox **picker**
   opens (**`space`** toggles, **`enter`** applies to the whole selection).
-  **`:release.officeaction [name]`** is the inverse.
+  **`:officeaction.release [name]`** is the inverse.
 
 ### Seeing assignments
 
