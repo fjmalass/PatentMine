@@ -64,6 +64,7 @@ type Config struct {
 	ActivityMinMS        int               // Minimum UI look/hover duration to record.
 	NotesExportDir       string            // Directory for exported notes .md files; empty means user home dir.
 	ImportFromDir        string            // Directory to import documents from; configured in .env or environment.
+	DocsDir              string            // Project documentation root; contains README.md, CHANGELOG.md, and docs/*.md.
 	DocsExportDir        string            // Base for rendered project documents (IDS PDF bundles, drafts, office-action files); empty means $HomeDir/exports.
 	BackupProvider       string            // Backup provider name, e.g. b2.
 	BackupBucket         string            // Remote backup bucket/container name.
@@ -306,6 +307,16 @@ func Load() (Config, error) {
 	}
 
 	notesExportDir := os.Getenv("PATENTMINE_NOTES_EXPORT_DIR")
+	docsDir := os.Getenv("PATENTMINE_DOCS_DIR")
+	if docsDir == "" {
+		docsDir, _ = os.Getwd()
+	}
+	if docsDir != "" {
+		docsDir = expandHomePath(expandBraceEnv(docsDir))
+		if abs, err := filepath.Abs(docsDir); err == nil {
+			docsDir = abs
+		}
+	}
 	// DocsExportDir is the base for rendered project documents (IDS PDF bundles,
 	// drafts, office-action files). PATENTMINE_IDS_EXPORT_DIR is honored as a
 	// deprecated fallback so pre-rename .env setups keep working.
@@ -398,6 +409,7 @@ func Load() (Config, error) {
 		ActivityMinMS:        activityMinMS,
 		NotesExportDir:       notesExportDir,
 		ImportFromDir:        importFromDir,
+		DocsDir:              docsDir,
 		DocsExportDir:        docsExportDir,
 		BackupProvider:       backupProvider,
 		BackupBucket:         backupBucket,

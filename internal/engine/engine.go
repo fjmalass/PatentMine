@@ -86,6 +86,7 @@ type Engine struct {
 	crawlMaxDepth    int
 	crawlWorkerCount int
 	docsExportDir    string
+	docsDir          string
 	templatesDir     string
 	drafter          ai.Drafter
 	usptoAPIKey      string
@@ -164,6 +165,11 @@ func WithCrawlWorkers(n int) Option {
 // leaves it unset; the IDS and draft exporters then return an error when called.
 func WithDocsExportDir(dir string) Option {
 	return func(e *Engine) { e.docsExportDir = dir }
+}
+
+// WithDocsDir sets the project documentation root used by ListDocs/GetDoc.
+func WithDocsDir(dir string) Option {
+	return func(e *Engine) { e.docsDir = dir }
 }
 
 // WithTemplatesDir sets the root of the user-managed document templates

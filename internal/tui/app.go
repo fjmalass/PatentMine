@@ -135,6 +135,9 @@ var appHandlers = map[command.ID]appHandler{
 	command.OpenSearch:                 (*App).cmdOpenSearch,
 	command.OpenCommand:                (*App).cmdOpenCommand,
 	command.OpenMetrics:                (*App).cmdOpenMetrics,
+	command.Docs:                       (*App).cmdDocs,
+	command.DocsOpen:                   (*App).cmdDocs,
+	command.DocsShow:                   (*App).cmdDocsShow,
 	command.OpenPatentNote:             (*App).cmdOpenPatentNote,
 	command.JumpMode:                   (*App).cmdJumpMode,
 	command.CloseOverlay:               (*App).cmdCloseOverlay,
@@ -272,6 +275,7 @@ var typedAcceptsArgs = map[command.ID]bool{
 	command.OpenBrowserUSPTOGrant:   true,
 	command.OpenBrowserUSPTOPGPub:   true,
 	command.OpenBrowserGoogle:       true,
+	command.DocsShow:                true,
 }
 
 // App is the bubbletea root model.
@@ -887,6 +891,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case overlay.OpenOfficeActionMsg:
 		// Open the split editor on top of the list, so closing it returns there.
 		a.overlays = append(a.overlays, overlay.NewOfficeActionEditor(a.client, a.theme, m.OA))
+		return a, nil
+	case overlay.OpenDocMsg:
+		return a.openDoc(m.ID, "preview")
+	case docLoadedMsg:
+		if m.err != nil {
+			a.setErr(text.StatusGeneric, "open docs failed: "+m.err.Error())
+			return a, nil
+		}
+		title := m.result.Doc.Title
+		if title == "" {
+			title = m.result.Doc.ID
+		}
+		a.overlays = append(a.overlays, overlay.NewTextViewer(a.theme, title, m.result.Content))
+		a.setStatus(text.StatusGeneric, "opened doc: "+m.result.Doc.ID)
 		return a, nil
 	case overlay.OfficeActionImportSubmitMsg:
 		a.popOverlay()

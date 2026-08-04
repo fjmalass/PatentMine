@@ -133,6 +133,8 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodAssigneeHistory:              s.assigneeHistory,
 		proto.MethodProjectAssignees:             s.projectAssignees,
 		proto.MethodUSPTOExpirationCalculate:     s.usptoExpirationCalculate,
+		proto.MethodDocsList:                     s.docsList,
+		proto.MethodDocsGet:                      s.docsGet,
 		proto.MethodSourceResolveDiffs:           s.sourceResolveDiffs,
 		proto.MethodSourceDiffsList:              s.sourceDiffsList,
 		proto.MethodSourceBibsList:               s.sourceBibsList,

@@ -185,6 +185,48 @@ func (a *App) cmdOpenMetrics(invocation) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+type docLoadedMsg struct {
+	result proto.DocsGetResult
+	err    error
+}
+
+func (a *App) cmdDocs(invocation) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	o := overlay.NewDocsList(a.client, a.theme)
+	a.overlays = append(a.overlays, o)
+	return a, o.Init()
+}
+
+func (a *App) cmdDocsShow(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) < 1 || len(inv.args) > 2 {
+		return a.usageError(command.DocsShow)
+	}
+	mode := "preview"
+	if len(inv.args) == 2 {
+		mode = inv.args[1]
+	}
+	return a.openDoc(inv.args[0], mode)
+}
+
+func (a *App) openDoc(id, mode string) (tea.Model, tea.Cmd) {
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	a.setStatus(text.StatusGeneric, "opening doc: "+id)
+	client := a.client
+	return a, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var res proto.DocsGetResult
+		err := client.Call(ctx, proto.MethodDocsGet, proto.DocsGetParams{ID: id, Mode: mode}, &res)
+		return docLoadedMsg{result: res, err: err}
+	}
+}
+
 func (a *App) cmdOpenActivity(invocation) (tea.Model, tea.Cmd) {
 	var records []observability.Record
 	if a.client != nil {

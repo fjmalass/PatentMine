@@ -50,6 +50,9 @@ const (
 	OpenBrowserUSPTOPGPub   ID = "view.browser-uspto-pgpub"
 	OpenBrowserGoogle       ID = "view.browser-google"
 	OpenMetrics             ID = "view.metrics"
+	Docs                    ID = "docs"
+	DocsOpen                ID = "docs.open"
+	DocsShow                ID = "docs.show"
 	OpenPatentNote          ID = "view.patent-note"
 	FamilyDepthMore         ID = "view.family-depth-more"
 	FamilyDepthLess         ID = "view.family-depth-less"
@@ -221,6 +224,7 @@ func Default() (*Registry, error) {
 	cmds = append(cmds, classificationCommands()...)
 	cmds = append(cmds, crawlCommands()...)
 	cmds = append(cmds, projectCommands()...)
+	cmds = append(cmds, docsCommands()...)
 	cmds = append(cmds, draftingCommands()...)
 	cmds = append(cmds, renewalCommands()...)
 	return NewRegistry(cmds...)

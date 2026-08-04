@@ -27,6 +27,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /activity/raw", s.handleActivityRaw)
 	s.mux.HandleFunc("POST /activity", s.handleActivityRecord)
 	s.mux.HandleFunc("GET /history", s.handleHistoryList)
+	s.mux.HandleFunc("GET /docs", s.handleDocsList)
+	s.mux.HandleFunc("GET /docs/{id...}", s.handleDocsGet)
 	s.mux.HandleFunc("GET /table_views", s.handleTableViewList)
 	s.mux.HandleFunc("POST /table_views", s.handleTableViewSave)
 	s.mux.HandleFunc("GET /table_views/{id}", s.handleTableViewGet)

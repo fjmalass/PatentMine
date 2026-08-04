@@ -160,6 +160,7 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 		engine.WithActivityRecorder(telemetry.Activity),
 		engine.WithMetrics(telemetry.Metrics),
 		engine.WithSourceModeController(registry),
+		engine.WithDocsDir(cfg.DocsDir),
 		engine.WithDocsExportDir(cfg.DocsExportDir),
 		engine.WithDrafter(drafter),
 		engine.WithUSPTOAPIKey(cfg.USPTOAPIKey),

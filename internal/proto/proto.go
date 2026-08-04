@@ -90,6 +90,8 @@ const (
 	MethodAssigneeHistory            Method = "assignee.history"
 	MethodProjectAssignees           Method = "project.assignees"
 	MethodUSPTOExpirationCalculate   Method = "uspto.expiration.calculate"
+	MethodDocsList                   Method = "docs.list"
+	MethodDocsGet                    Method = "docs.get"
 
 	// Drafting subsystem: provisional / non-provisional applications and
 	// office-action responses, rendered to .docx.
