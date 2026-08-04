@@ -1674,6 +1674,45 @@ func (a *App) cmdUntrackRenewals(inv invocation) (tea.Model, tea.Cmd) {
 	return a, pane.UntrackRenewalsCmd(a.client, inv.args[0])
 }
 
+// cmdFetchRenewalValidations pulls EPO OPS legal-status data and derives EP
+// post-grant country-phase validation rows.
+func (a *App) cmdFetchRenewalValidations(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 1 {
+		return a.usageError(command.FetchRenewalValidations)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.FetchRenewalValidationsCmd(a.client, inv.args[0])
+}
+
+func (a *App) cmdListRenewalValidations(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 1 {
+		return a.usageError(command.ListRenewalValidations)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.ListRenewalValidationsCmd(a.client, inv.args[0])
+}
+
+func (a *App) cmdSetRenewalValidation(inv invocation) (tea.Model, tea.Cmd) {
+	if len(inv.args) != 3 {
+		return a.usageError(command.SetRenewalValidation)
+	}
+	status, err := domain.ParseRenewalValidationStatus(inv.args[2])
+	if err != nil {
+		return a.usageError(command.SetRenewalValidation)
+	}
+	if a.client == nil {
+		a.setErr(text.StatusDaemonUnavailable)
+		return a, nil
+	}
+	return a, pane.SetRenewalValidationCmd(a.client, inv.args[0], inv.args[1], status)
+}
+
 // cmdLogTime records a manual time entry: :log.time <activity> <duration> [note].
 func (a *App) cmdLogTime(inv invocation) (tea.Model, tea.Cmd) {
 	if len(inv.args) < 2 {

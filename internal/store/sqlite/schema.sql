@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 );
 
 INSERT INTO schema_meta (key, value)
-VALUES ('schema_version', '17')
+VALUES ('schema_version', '18')
 ON CONFLICT(key) DO NOTHING;
 
 -- record is the entity: a stable surrogate id (never changes) plus the unique
@@ -968,6 +968,40 @@ CREATE TABLE IF NOT EXISTS patent_renewal (
     created_at    TEXT NOT NULL DEFAULT '',
     updated_at    TEXT NOT NULL DEFAULT ''
 );
+
+-- patent_validation records EP/national country-phase status for post-grant
+-- renewals. Designated states are only potential until legal-status or national
+-- register data confirms validation.
+CREATE TABLE IF NOT EXISTS patent_validation (
+    patent_number   TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
+    country         TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'unknown',
+    source          TEXT NOT NULL DEFAULT '',
+    certainty       TEXT NOT NULL DEFAULT 'derived',
+    event_code      TEXT NOT NULL DEFAULT '',
+    event_date      TEXT NOT NULL DEFAULT '',
+    last_checked_at TEXT NOT NULL DEFAULT '',
+    notes           TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (patent_number, country)
+);
+
+CREATE INDEX IF NOT EXISTS idx_patent_validation_country_status ON patent_validation (country, status);
+
+-- renewal_legal_event preserves raw authority events (EPO OPS / INPADOC / future
+-- national registers) from which patent_validation rows are derived.
+CREATE TABLE IF NOT EXISTS renewal_legal_event (
+    id            TEXT PRIMARY KEY,
+    patent_number TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
+    authority     TEXT NOT NULL,
+    country       TEXT NOT NULL DEFAULT '',
+    code          TEXT NOT NULL DEFAULT '',
+    description   TEXT NOT NULL DEFAULT '',
+    event_date    TEXT NOT NULL DEFAULT '',
+    raw_xml       TEXT NOT NULL DEFAULT '',
+    fetched_at    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_renewal_legal_event_patent ON renewal_legal_event (patent_number, event_date DESC);
 
 -- draft is a project-scoped, section-structured legal document rendered to .docx.
 -- One model unifies first-application drafting (provisional / non-provisional)

@@ -18,6 +18,7 @@ Related docs:
 10. [Office Actions & the Prosecution-Matter Workspace](./13_TUI_OFFICE_ACTION.md) — multi-document matters (with AI/OCR text extraction), a copy-from-documents response editor, a communications log, deadlines, and time/AI-usage tracking.
 11. [Patent Renewals & Maintenance-Fee Tracking](./14_TUI_RENEWALS.md) — designating patents to watch for renewal, the unified deadline model, and reminders (in progress; includes a TODO).
 12. [Database Implementation](./02_DATABASE.md) — the SQLite store: connection/concurrency model, the versioned embedded schema, the identity tables, and the pointer-in-row / bytes-on-disk convention.
+13. [Build / Deploy Secret Architecture](./22_BUILD_DEPLOY_SECRETS.md) — build-host vs VPS/deploy-daemon setup, `file:` secret references, and redacted credential status for TUI/GUI clients.
 
 ---
 

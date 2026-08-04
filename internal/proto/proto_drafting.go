@@ -445,6 +445,24 @@ type DeadlineRemindResult struct {
 	Sent int `json:"sent"`
 }
 
+// PatentValidationParams identifies a patent whose country-phase validations are listed or fetched.
+type PatentValidationParams struct {
+	PatentNumber string `json:"patent_number"`
+}
+
+// PatentValidationSetParams records a manually reviewed country-phase status.
+type PatentValidationSetParams struct {
+	PatentNumber string                         `json:"patent_number"`
+	Country      string                         `json:"country"`
+	Status       domain.RenewalValidationStatus `json:"status"`
+}
+
+// PatentValidationResult carries country-phase validations and optional raw legal events.
+type PatentValidationResult struct {
+	Validations []domain.PatentValidation  `json:"validations"`
+	Events      []domain.RenewalLegalEvent `json:"events,omitempty"`
+}
+
 // ConflictFlagParams flags one record as conflicting within a matter. Record is
 // the conflicting patent/application/reference number; Against and DocumentID are
 // optional second endpoints; Reason is free text.

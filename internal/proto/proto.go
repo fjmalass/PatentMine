@@ -158,11 +158,14 @@ const (
 	MethodTimeSummary     Method = "time_entry.summary"
 
 	// Deadlines + reminders (OA responses, patent maintenance fees).
-	MethodDeadlineList      Method = "deadline.list"
-	MethodTrackRenewals     Method = "deadline.track_renewals"
-	MethodUntrackRenewals   Method = "deadline.untrack_renewals"
-	MethodDeadlineSetStatus Method = "deadline.set_status"
-	MethodDeadlineRemind    Method = "deadline.remind"
+	MethodDeadlineList       Method = "deadline.list"
+	MethodTrackRenewals      Method = "deadline.track_renewals"
+	MethodUntrackRenewals    Method = "deadline.untrack_renewals"
+	MethodDeadlineSetStatus  Method = "deadline.set_status"
+	MethodDeadlineRemind     Method = "deadline.remind"
+	MethodValidationList     Method = "renewal.validation.list"
+	MethodValidationSet      Method = "renewal.validation.set"
+	MethodValidationFetchEPO Method = "renewal.validation.fetch_epo"
 
 	// Source comparison reconciliation (Option A): persist overlay choices.
 	MethodSourceResolveDiffs Method = "source.resolve_diffs"

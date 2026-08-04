@@ -260,8 +260,57 @@ func (r *Repo) migrate(ctx context.Context) error {
 		}
 		version = "17"
 	}
-	if version != "17" {
-		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 17", version)
+	if version == "17" {
+		if err := r.migrateV17ToV18(ctx); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v17 to v18: %w", err)
+		}
+		version = "18"
+	}
+	if version != "18" {
+		return fmt.Errorf("store/sqlite: unsupported schema version %q; expected 18", version)
+	}
+	return nil
+}
+
+// migrateV17ToV18 adds renewal country-phase validation and raw legal-status
+// event storage. This supports EP post-grant national validations without
+// overloading the per-patent patent_renewal configuration table.
+func (r *Repo) migrateV17ToV18(ctx context.Context) error {
+	if err := r.Backup(ctx, r.path+".v17-to-v18.bak"); err != nil {
+		return fmt.Errorf("store/sqlite: migrate v17 to v18: backup: %w", err)
+	}
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS patent_validation (
+			patent_number   TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
+			country         TEXT NOT NULL,
+			status          TEXT NOT NULL DEFAULT 'unknown',
+			source          TEXT NOT NULL DEFAULT '',
+			certainty       TEXT NOT NULL DEFAULT 'derived',
+			event_code      TEXT NOT NULL DEFAULT '',
+			event_date      TEXT NOT NULL DEFAULT '',
+			last_checked_at TEXT NOT NULL DEFAULT '',
+			notes           TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (patent_number, country)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_patent_validation_country_status ON patent_validation (country, status)`,
+		`CREATE TABLE IF NOT EXISTS renewal_legal_event (
+			id            TEXT PRIMARY KEY,
+			patent_number TEXT NOT NULL REFERENCES record (number) ON DELETE CASCADE,
+			authority     TEXT NOT NULL,
+			country       TEXT NOT NULL DEFAULT '',
+			code          TEXT NOT NULL DEFAULT '',
+			description   TEXT NOT NULL DEFAULT '',
+			event_date    TEXT NOT NULL DEFAULT '',
+			raw_xml       TEXT NOT NULL DEFAULT '',
+			fetched_at    TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_renewal_legal_event_patent ON renewal_legal_event (patent_number, event_date DESC)`,
+		`UPDATE schema_meta SET value = '18' WHERE key = 'schema_version'`,
+	}
+	for _, stmt := range stmts {
+		if _, err := r.writer.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("store/sqlite: migrate v17 to v18: %w", err)
+		}
 	}
 	return nil
 }

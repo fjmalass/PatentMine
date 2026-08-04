@@ -98,6 +98,14 @@ type Repository interface {
 	SavePatentRenewal(ctx context.Context, renewal domain.PatentRenewal) error
 	// PatentRenewal returns the renewal configuration for a patent, or ErrNotFound.
 	PatentRenewal(ctx context.Context, number domain.PatentNumber) (domain.PatentRenewal, error)
+	// SavePatentValidations upserts country-phase validation rows for a patent.
+	SavePatentValidations(ctx context.Context, validations []domain.PatentValidation) error
+	// PatentValidations returns country-phase validation rows for a patent.
+	PatentValidations(ctx context.Context, number domain.PatentNumber) ([]domain.PatentValidation, error)
+	// SaveRenewalLegalEvents appends raw legal-status events used to derive validations.
+	SaveRenewalLegalEvents(ctx context.Context, events []domain.RenewalLegalEvent) error
+	// RenewalLegalEvents returns raw legal-status events for a patent.
+	RenewalLegalEvents(ctx context.Context, number domain.PatentNumber) ([]domain.RenewalLegalEvent, error)
 	// SaveNode atomically writes one crawled patent: its record, documents,
 	// neighbour stubs, and family-graph edges.
 	SaveNode(ctx context.Context, batch NodeBatch) error

@@ -291,6 +291,30 @@ func (c *Cache) PatentRenewal(ctx context.Context, number domain.PatentNumber) (
 	return c.Repository.PatentRenewal(ctx, number)
 }
 
+func (c *Cache) SavePatentValidations(ctx context.Context, validations []domain.PatentValidation) error {
+	if err := c.Repository.SavePatentValidations(ctx, validations); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) PatentValidations(ctx context.Context, number domain.PatentNumber) ([]domain.PatentValidation, error) {
+	return c.Repository.PatentValidations(ctx, number)
+}
+
+func (c *Cache) SaveRenewalLegalEvents(ctx context.Context, events []domain.RenewalLegalEvent) error {
+	if err := c.Repository.SaveRenewalLegalEvents(ctx, events); err != nil {
+		return err
+	}
+	c.flush()
+	return nil
+}
+
+func (c *Cache) RenewalLegalEvents(ctx context.Context, number domain.PatentNumber) ([]domain.RenewalLegalEvent, error) {
+	return c.Repository.RenewalLegalEvents(ctx, number)
+}
+
 // queryKey builds a stable string key for a listing query.
 func queryKey(prefix string, q PatentQuery) string {
 	// Marshal the full query so newly added PatentQuery fields automatically

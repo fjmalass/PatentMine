@@ -214,6 +214,39 @@ Operational:
 - **Dates, not dollars** — fee amounts depend on entity size and the current fee
   schedule and are intentionally not encoded.
 
+---
+
+## 8. EP / National Validation Setup
+
+PatentMine now stores EP post-grant country-phase validation rows separately from
+the per-patent renewal tracking flag. The secure credential directory is printed
+by `patentmine paths` as `CREDENTIALS` / `secrets`; by default it is
+`~/.ssh/patentmine`. For a daemon running on a VPS, use the build/deploy secret
+layout in [22_BUILD_DEPLOY_SECRETS.md](./22_BUILD_DEPLOY_SECRETS.md): deploy
+runtime credentials under `/etc/patentmine/secrets`, keep admin/payment write
+keys on the build machine, and let TUI/GUI clients ask the daemon for redacted
+credential status.
+
+Recommended `.env` shape:
+
+```dotenv
+PATENTMINE_CREDENTIALS_DIR=~/.ssh/patentmine
+PATENTMINE_EPO_OPS_CONSUMER_KEY=file:${PATENTMINE_CREDENTIALS_DIR}/epo_ops_consumer_key
+PATENTMINE_EPO_OPS_CONSUMER_SECRET=file:${PATENTMINE_CREDENTIALS_DIR}/epo_ops_consumer_secret
+```
+
+TUI commands:
+
+- `:fetch.renewal-validations <EP-number>` pulls EPO OPS legal-status data and
+  derives country validation rows where the legal events support it.
+- `:show.renewal-validations <number>` lists stored country-phase states.
+- `:set.renewal-validation <number> <country> <potential|validated|lapsed|unknown>`
+  records a manual review result when EPO data is incomplete or a national
+  register/agent confirmation is needed.
+
+Designated states remain `potential` until legal-status or manual review confirms
+validation; they are not treated as active national renewal obligations by default.
+
 Related: [`13_TUI_OFFICE_ACTION.md`](./13_TUI_OFFICE_ACTION.md) (deadline model +
 reminder engine), [`09_EXPIRATION_DATE.md`](./09_EXPIRATION_DATE.md) (the term/expiration
 math that also keys off the grant date).

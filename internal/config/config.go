@@ -42,34 +42,37 @@ func (p Path) String() string { return string(p) }
 
 // Config holds the resolved paths the process needs.
 type Config struct {
-	HomeDir            Path              // Base directory; created if absent.
-	DBPath             Path              // SQLite database file.
-	LogsDir            Path              // Runtime logs and activity directory.
-	PatentsDir         Path              // Local cache for USPTO grant XML files (and ZIP extracts) used by lookup, engine, and file source.
-	PIDPath            Path              // Daemon pid file.
-	SocketPath         Path              // Unix domain socket for the daemon.
-	USPTOAPIKey        string            // USPTO Open Data Portal API Key.
-	SourceMode         domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
-	GeminiAPIKey       string            // Google Gemini Developer API Key.
-	GeminiModel        string            // Google Gemini Model ("gemini-2.5-flash", etc.)
-	OpenAIAPIKey       string            // OpenAI API Key.
-	OpenAIModel        string            // OpenAI Model ("gpt-4o-mini", etc.)
-	AIProvider         string            // Chosen AI Provider ("gemini", "ollama", "openai")
-	OllamaModel        string            // Local Ollama Model ("mistral", etc.)
-	OllamaHost         string            // Local Ollama server host
-	CrawlWorkers       int               // Concurrent crawl goroutines; 0 means use engine default.
-	ActivityMinMS      int               // Minimum UI look/hover duration to record.
-	NotesExportDir     string            // Directory for exported notes .md files; empty means user home dir.
-	ImportFromDir      string            // Directory to import documents from; configured in .env or environment.
-	DocsExportDir      string            // Base for rendered project documents (IDS PDF bundles, drafts, office-action files); empty means $HomeDir/exports.
-	BackupProvider     string            // Backup provider name, e.g. b2.
-	BackupBucket       string            // Remote backup bucket/container name.
-	BackupB2KeyID      string            // Backblaze B2 application key ID.
-	BackupB2Secret     string            // Backblaze B2 application key secret.
-	BackupB2APIURL     string            // Backblaze B2 native API base URL.
-	BackupRcloneRemote string            // rclone remote name used for backup checks.
-	LogRetainDays      int               // Number of days of log/activity files to keep.
-	LogMaxSizeBytes    int64             // Maximum size limit for the logs directory in bytes.
+	HomeDir              Path              // Base directory; created if absent.
+	DBPath               Path              // SQLite database file.
+	LogsDir              Path              // Runtime logs and activity directory.
+	PatentsDir           Path              // Local cache for USPTO grant XML files (and ZIP extracts) used by lookup, engine, and file source.
+	PIDPath              Path              // Daemon pid file.
+	SocketPath           Path              // Unix domain socket for the daemon.
+	USPTOAPIKey          string            // USPTO Open Data Portal API Key.
+	EPOOPSConsumerKey    string            // EPO OPS consumer key.
+	EPOOPSConsumerSecret string            // EPO OPS consumer secret.
+	EPOOPSBaseURL        string            // EPO OPS base URL.
+	SourceMode           domain.SourceMode // Provider policy: compare, uspto-first, uspto-only, google-only.
+	GeminiAPIKey         string            // Google Gemini Developer API Key.
+	GeminiModel          string            // Google Gemini Model ("gemini-2.5-flash", etc.)
+	OpenAIAPIKey         string            // OpenAI API Key.
+	OpenAIModel          string            // OpenAI Model ("gpt-4o-mini", etc.)
+	AIProvider           string            // Chosen AI Provider ("gemini", "ollama", "openai")
+	OllamaModel          string            // Local Ollama Model ("mistral", etc.)
+	OllamaHost           string            // Local Ollama server host
+	CrawlWorkers         int               // Concurrent crawl goroutines; 0 means use engine default.
+	ActivityMinMS        int               // Minimum UI look/hover duration to record.
+	NotesExportDir       string            // Directory for exported notes .md files; empty means user home dir.
+	ImportFromDir        string            // Directory to import documents from; configured in .env or environment.
+	DocsExportDir        string            // Base for rendered project documents (IDS PDF bundles, drafts, office-action files); empty means $HomeDir/exports.
+	BackupProvider       string            // Backup provider name, e.g. b2.
+	BackupBucket         string            // Remote backup bucket/container name.
+	BackupB2KeyID        string            // Backblaze B2 application key ID.
+	BackupB2Secret       string            // Backblaze B2 application key secret.
+	BackupB2APIURL       string            // Backblaze B2 native API base URL.
+	BackupRcloneRemote   string            // rclone remote name used for backup checks.
+	LogRetainDays        int               // Number of days of log/activity files to keep.
+	LogMaxSizeBytes      int64             // Maximum size limit for the logs directory in bytes.
 
 	// Deadline reminder email (opt-in). When ReminderEmailEnabled and an SMTP
 	// host + recipient are set, the daemon sends maintenance-fee / OA-response
@@ -236,6 +239,17 @@ func Load() (Config, error) {
 	loaded := loadDotEnv(".env", sshEnvPath, filepath.Join(home, ".env"))
 	resolveEnvRefs(loaded)
 	resolveFileRefs(loaded)
+	secretKeys := []string{
+		"PATENTMINE_USPTO_API_KEY",
+		"PATENTMINE_EPO_OPS_CONSUMER_KEY",
+		"PATENTMINE_EPO_OPS_CONSUMER_SECRET",
+		"PATENTMINE_REMINDER_SMTP_PASSWORD",
+		"PATENTMINE_BACKUP_B2_KEY_ID",
+		"PATENTMINE_BACKUP_B2_SECRET",
+	}
+	resolveEnvRefs(secretKeys)
+	resolveFileRefs(secretKeys)
+	_ = os.MkdirAll(CredentialsDir(), 0o700)
 
 	logsDir := filepath.Join(home, logsDirName)
 	if err := os.MkdirAll(logsDir, dirPerm); err != nil {
@@ -248,6 +262,10 @@ func Load() (Config, error) {
 	}
 
 	usptoKey := os.Getenv("PATENTMINE_USPTO_API_KEY")
+	epoOPSBaseURL := os.Getenv("PATENTMINE_EPO_OPS_BASE_URL")
+	if epoOPSBaseURL == "" {
+		epoOPSBaseURL = "https://ops.epo.org/3.2"
+	}
 	sourceMode, err := crawl.NormalizeSourceMode(os.Getenv("PATENTMINE_SOURCE_MODE"))
 	if err != nil {
 		return Config{}, fmt.Errorf("config: invalid PATENTMINE_SOURCE_MODE: %w", err)
@@ -358,34 +376,37 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		HomeDir:            Path(home),
-		DBPath:             Path(filepath.Join(home, dbFileName)),
-		LogsDir:            Path(logsDir),
-		PatentsDir:         Path(patentsDir),
-		PIDPath:            Path(filepath.Join(home, pidFileName)),
-		SocketPath:         Path(filepath.Join(home, socketFileName)),
-		USPTOAPIKey:        usptoKey,
-		SourceMode:         sourceMode,
-		GeminiAPIKey:       geminiKey,
-		GeminiModel:        geminiModel,
-		OpenAIAPIKey:       openaiKey,
-		OpenAIModel:        openaiModel,
-		AIProvider:         aiProvider,
-		OllamaModel:        ollamaModel,
-		OllamaHost:         ollamaHost,
-		CrawlWorkers:       crawlWorkers,
-		ActivityMinMS:      activityMinMS,
-		NotesExportDir:     notesExportDir,
-		ImportFromDir:      importFromDir,
-		DocsExportDir:      docsExportDir,
-		BackupProvider:     backupProvider,
-		BackupBucket:       backupBucket,
-		BackupB2KeyID:      backupB2KeyID,
-		BackupB2Secret:     backupB2Secret,
-		BackupB2APIURL:     backupB2APIURL,
-		BackupRcloneRemote: backupRcloneRemote,
-		LogRetainDays:      logRetainDays,
-		LogMaxSizeBytes:    logMaxSizeBytes,
+		HomeDir:              Path(home),
+		DBPath:               Path(filepath.Join(home, dbFileName)),
+		LogsDir:              Path(logsDir),
+		PatentsDir:           Path(patentsDir),
+		PIDPath:              Path(filepath.Join(home, pidFileName)),
+		SocketPath:           Path(filepath.Join(home, socketFileName)),
+		USPTOAPIKey:          usptoKey,
+		EPOOPSConsumerKey:    os.Getenv("PATENTMINE_EPO_OPS_CONSUMER_KEY"),
+		EPOOPSConsumerSecret: os.Getenv("PATENTMINE_EPO_OPS_CONSUMER_SECRET"),
+		EPOOPSBaseURL:        epoOPSBaseURL,
+		SourceMode:           sourceMode,
+		GeminiAPIKey:         geminiKey,
+		GeminiModel:          geminiModel,
+		OpenAIAPIKey:         openaiKey,
+		OpenAIModel:          openaiModel,
+		AIProvider:           aiProvider,
+		OllamaModel:          ollamaModel,
+		OllamaHost:           ollamaHost,
+		CrawlWorkers:         crawlWorkers,
+		ActivityMinMS:        activityMinMS,
+		NotesExportDir:       notesExportDir,
+		ImportFromDir:        importFromDir,
+		DocsExportDir:        docsExportDir,
+		BackupProvider:       backupProvider,
+		BackupBucket:         backupBucket,
+		BackupB2KeyID:        backupB2KeyID,
+		BackupB2Secret:       backupB2Secret,
+		BackupB2APIURL:       backupB2APIURL,
+		BackupRcloneRemote:   backupRcloneRemote,
+		LogRetainDays:        logRetainDays,
+		LogMaxSizeBytes:      logMaxSizeBytes,
 
 		ReminderEmailEnabled: reminderEmailEnabled,
 		ReminderSMTPHost:     os.Getenv("PATENTMINE_REMINDER_SMTP_HOST"),

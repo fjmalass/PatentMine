@@ -23,5 +23,8 @@ func draftingCommands() []Command {
 		Command{ID: ShowDeadlines, Name: "show.deadlines", Aliases: []string{"deadlines", "show-deadlines"}, Usage: ":show.deadlines", Kind: KindView, Scopes: projectScopes},
 		Command{ID: TrackRenewals, Name: "track.renewals", Aliases: []string{"track-renewals", "renewals"}, Usage: ":track.renewals <patent-number> [large|small|micro]", Kind: KindView, Scopes: projectScopes},
 		Command{ID: UntrackRenewals, Name: "untrack.renewals", Aliases: []string{"untrack-renewals", "untrack"}, Usage: ":untrack.renewals <patent-number>", Kind: KindView, Scopes: projectScopes},
+		Command{ID: FetchRenewalValidations, Name: "fetch.renewal-validations", Aliases: []string{"fetch-renewal-validations", "fetch.epo.validations"}, Usage: ":fetch.renewal-validations <ep-patent-number>", Kind: KindView, Scopes: patentScopes},
+		Command{ID: ListRenewalValidations, Name: "show.renewal-validations", Aliases: []string{"renewal-validations", "validations"}, Usage: ":show.renewal-validations <patent-number>", Kind: KindView, Scopes: patentScopes},
+		Command{ID: SetRenewalValidation, Name: "set.renewal-validation", Aliases: []string{"set-renewal-validation", "validation.set"}, Usage: ":set.renewal-validation <patent-number> <country> <potential|validated|lapsed|unknown>", Kind: KindView, Scopes: patentScopes},
 	}
 }

@@ -1381,7 +1381,7 @@ func TestSaveMutationGroup(t *testing.T) {
 		Action:            "membership.set_state",
 		CreatedAt:         time.Now().UTC(),
 		SelectionSnapshot: []domain.PatentNumber{patent.Number},
-		Attributes:          map[string]any{"target_state": domain.ReviewStateUnderReview},
+		Attributes:        map[string]any{"target_state": domain.ReviewStateUnderReview},
 	}, []domain.MutationItem{{Patent: patent.Number, Kind: "membership.state", Before: map[string]any{"state": domain.ReviewStateUnknown}, After: map[string]any{"state": domain.ReviewStateUnderReview}, Inverse: map[string]any{"state": domain.ReviewStateUnknown}}})
 	if err != nil {
 		t.Fatalf("SaveMutationGroup: %v", err)
@@ -1768,3 +1768,54 @@ func TestPatentRenewalRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPatentValidationRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	repo := openTestRepo(t)
+	p := samplePatent("EP1234567B1")
+	if err := repo.SavePatent(ctx, p); err != nil {
+		t.Fatalf("SavePatent: %v", err)
+	}
+	now := time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)
+	validations := []domain.PatentValidation{
+		{PatentNumber: p.Number, Country: "de", Status: domain.RenewalValidationValidated, Source: "manual", Certainty: domain.RenewalCertaintyExact, EventCode: "VAL", EventDate: now, LastCheckedAt: now},
+		{PatentNumber: p.Number, Country: "FR", Status: domain.RenewalValidationPotential, Source: "epo_ops", Certainty: domain.RenewalCertaintyDerived, LastCheckedAt: now},
+	}
+	if err := repo.SavePatentValidations(ctx, validations); err != nil {
+		t.Fatalf("SavePatentValidations: %v", err)
+	}
+	got, err := repo.PatentValidations(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("PatentValidations: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d validations, want 2", len(got))
+	}
+	if got[0].Country != "DE" || got[0].Status != domain.RenewalValidationValidated {
+		t.Fatalf("first validation = %+v, want DE validated", got[0])
+	}
+
+	validations[0].Status = domain.RenewalValidationLapsed
+	validations[0].EventCode = "LAPSE"
+	if err := repo.SavePatentValidations(ctx, validations[:1]); err != nil {
+		t.Fatalf("SavePatentValidations update: %v", err)
+	}
+	got, err = repo.PatentValidations(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("PatentValidations after update: %v", err)
+	}
+	if got[0].Status != domain.RenewalValidationLapsed || got[0].EventCode != "LAPSE" {
+		t.Fatalf("updated validation = %+v, want lapsed/LAPSE", got[0])
+	}
+
+	events := []domain.RenewalLegalEvent{{PatentNumber: p.Number, Authority: "epo_ops", Country: "DE", Code: "VAL", Description: "validation", EventDate: now, FetchedAt: now}}
+	if err := repo.SaveRenewalLegalEvents(ctx, events); err != nil {
+		t.Fatalf("SaveRenewalLegalEvents: %v", err)
+	}
+	storedEvents, err := repo.RenewalLegalEvents(ctx, p.Number)
+	if err != nil {
+		t.Fatalf("RenewalLegalEvents: %v", err)
+	}
+	if len(storedEvents) != 1 || storedEvents[0].Country != "DE" || storedEvents[0].Code != "VAL" {
+		t.Fatalf("events = %+v, want one DE VAL", storedEvents)
+	}
+}

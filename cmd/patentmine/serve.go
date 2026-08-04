@@ -17,6 +17,7 @@ import (
 	"patentmine/internal/crawl"
 	"patentmine/internal/domain"
 	"patentmine/internal/engine"
+	"patentmine/internal/epo"
 	"patentmine/internal/observability"
 	"patentmine/internal/remind"
 	"patentmine/internal/rpc"
@@ -167,6 +168,9 @@ func buildEngine(ctx context.Context, cfg config.Config, repo *sqlite.Repo, tele
 			return crawl.SearchUSPTO(ctx, cfg.USPTOAPIKey, number)
 		}),
 		engine.WithUSPTOAssignmentFetcher(crawl.FetchUSPTOAssignments),
+		engine.WithEPORenewalValidationFetcher(func(ctx context.Context, number domain.PatentNumber) ([]domain.PatentValidation, []domain.RenewalLegalEvent, error) {
+			return epo.FetchValidations(ctx, cfg.EPOOPSBaseURL, cfg.EPOOPSConsumerKey, cfg.EPOOPSConsumerSecret, number)
+		}),
 	)
 	// Deliver deadline reminders on a daily tick when an email channel is
 	// configured; the in-app deadline surface needs no loop.

@@ -763,6 +763,45 @@ func (s *Server) deadlineRemind(ctx context.Context, _ json.RawMessage) (any, er
 	return proto.DeadlineRemindResult{Sent: sent}, nil
 }
 
+func (s *Server) validationList(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentValidationParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	validations, err := s.engine.PatentValidations(ctx, p.PatentNumber)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentValidationResult{Validations: validations}, nil
+}
+
+func (s *Server) validationSet(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentValidationSetParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.engine.SetPatentValidation(ctx, p.PatentNumber, p.Country, p.Status); err != nil {
+		return nil, err
+	}
+	validations, err := s.engine.PatentValidations(ctx, p.PatentNumber)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentValidationResult{Validations: validations}, nil
+}
+
+func (s *Server) validationFetchEPO(ctx context.Context, raw json.RawMessage) (any, error) {
+	p, err := decodeParams[proto.PatentValidationParams](raw)
+	if err != nil {
+		return nil, err
+	}
+	validations, events, err := s.engine.FetchEPOPatentValidations(ctx, p.PatentNumber)
+	if err != nil {
+		return nil, err
+	}
+	return proto.PatentValidationResult{Validations: validations, Events: events}, nil
+}
+
 func (s *Server) projectSetMatterType(ctx context.Context, raw json.RawMessage) (any, error) {
 	p, err := decodeParams[proto.ProjectSetMatterTypeParams](raw)
 	if err != nil {

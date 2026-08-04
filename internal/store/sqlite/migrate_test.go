@@ -196,8 +196,8 @@ func TestMigrateV3ToV4PreservesData(t *testing.T) {
 		}
 		return n
 	}
-	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 17 {
-		t.Fatalf("schema_version = %d, want 17", v)
+	if v := count(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != 18 {
+		t.Fatalf("schema_version = %d, want 18", v)
 	}
 	if n := count(`SELECT COUNT(*) FROM record`); n != 2 {
 		t.Fatalf("records = %d, want 2", n)
@@ -274,8 +274,8 @@ func TestMigrateV4ToV5BackfillsGrantKind(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "17" {
-		t.Fatalf("schema_version = %q, want 17", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "18" {
+		t.Fatalf("schema_version = %q, want 18", v)
 	}
 	if k := scan(`SELECT kind FROM document WHERE record_number='US14047231' AND stage='grant'`); k != "B2" {
 		t.Fatalf("grant document kind = %q, want B2", k)
@@ -336,8 +336,8 @@ func TestMigrateV7ToV8BackfillsMatterDocument(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "17" {
-		t.Fatalf("schema_version = %q, want 17", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "18" {
+		t.Fatalf("schema_version = %q, want 18", v)
 	}
 
 	docs, err := repo.ListMatterDocuments(ctx, "p-1")
@@ -407,8 +407,8 @@ func TestMigrateV10ToV11(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "17" {
-		t.Fatalf("schema_version = %q, want 17", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "18" {
+		t.Fatalf("schema_version = %q, want 18", v)
 	}
 
 	// Verify columns were added with empty string default values
@@ -464,8 +464,8 @@ func TestMigrateV11ToV12BackfillsOriginStage(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "17" {
-		t.Fatalf("schema_version = %q, want 17", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "18" {
+		t.Fatalf("schema_version = %q, want 18", v)
 	}
 	// Each row's origin/stage is inferred from its kind (domain.InferOriginStage).
 	for _, tc := range []struct{ id, origin, stage string }{
@@ -519,8 +519,8 @@ func TestMigrateV12ToV13BackfillsStatusChangedAt(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "17" {
-		t.Fatalf("schema_version = %q, want 17", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "18" {
+		t.Fatalf("schema_version = %q, want 18", v)
 	}
 	// A row with an import time gets its status_changed_at backfilled from it.
 	if sc := scan(`SELECT status_changed_at FROM office_action WHERE id='oa-1'`); sc != "2026-01-10T00:00:00Z" {
@@ -567,8 +567,8 @@ func TestMigrateV13ToV14CreatesOfficeActionTag(t *testing.T) {
 		}
 		return s
 	}
-	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "17" {
-		t.Fatalf("schema_version = %q, want 17", v)
+	if v := scan(`SELECT value FROM schema_meta WHERE key='schema_version'`); v != "18" {
+		t.Fatalf("schema_version = %q, want 18", v)
 	}
 	// The office_action_tag table is recreated by the migration and is usable: a
 	// tag can be created and assigned to the seeded office action.

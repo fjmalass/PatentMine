@@ -51,6 +51,10 @@ type USPTOSearcher func(ctx context.Context, number domain.PatentNumber) ([]doma
 // for HTTP work.
 type USPTOAssignmentFetcher func(ctx context.Context, apiKey, applicationNumber string) ([]domain.USPTOAssignment, error)
 
+// EPORenewalValidationFetcher pulls EP legal-status data and derives national
+// validation rows for post-grant renewal tracking.
+type EPORenewalValidationFetcher func(ctx context.Context, number domain.PatentNumber) ([]domain.PatentValidation, []domain.RenewalLegalEvent, error)
+
 // FileImporter loads a patent record from a local file into the store. Like
 // CrawlFactory it is injected, so the engine never imports the crawl package.
 type FileImporter interface {
@@ -75,6 +79,7 @@ type Engine struct {
 	cpcLookup        CPCLookup
 	usptoSearcher    USPTOSearcher
 	usptoAssignments USPTOAssignmentFetcher
+	epoValidations   EPORenewalValidationFetcher
 	logger           *slog.Logger
 	activities       *observability.Recorder
 	metrics          *observability.Metrics
@@ -207,6 +212,11 @@ func WithUSPTOSearcher(s USPTOSearcher) Option {
 // capability; the RPC returns an error in that case.
 func WithUSPTOAssignmentFetcher(f USPTOAssignmentFetcher) Option {
 	return func(e *Engine) { e.usptoAssignments = f }
+}
+
+// WithEPORenewalValidationFetcher wires EPO OPS / legal-status validation pulls.
+func WithEPORenewalValidationFetcher(f EPORenewalValidationFetcher) Option {
+	return func(e *Engine) { e.epoValidations = f }
 }
 
 // WithUSPTOAPIKey supplies the API key used when downloading USPTO XML files.

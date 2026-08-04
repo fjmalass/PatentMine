@@ -10,10 +10,17 @@ Related docs:
 - [01_README.md](./01_README.md) — architectural overview, identity & data model.
 - [08_ACTIVITY.md](./08_ACTIVITY.md) — telemetry & journal.
 - [07_metrics.md](./07_metrics.md) — counters and timings.
+- [22_BUILD_DEPLOY_SECRETS.md](./22_BUILD_DEPLOY_SECRETS.md) — build-host vs
+  deploy/VPS secret architecture and `file:` credential references.
 
 ---
 
 ## 1. API Key Setup
+
+For local-only use, the simple `~/.ssh/patentmine` setup below is sufficient. For
+a VPS or shared daemon, use the build/deploy layout in
+[22_BUILD_DEPLOY_SECRETS.md](./22_BUILD_DEPLOY_SECRETS.md): keep `.env` on the
+deploy machine and point it at runtime secret files with `file:` references.
 
 PatentMine talks to the USPTO Open Data Portal (ODP) for bibliographic
 searches and to the USPTO bulk dataset for grant / pre-grant XML files. Both

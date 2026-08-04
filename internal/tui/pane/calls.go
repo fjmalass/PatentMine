@@ -455,6 +455,56 @@ func UntrackRenewalsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
 	}
 }
 
+func FetchRenewalValidationsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentValidationResult
+		if err := client.Call(ctx, proto.MethodValidationFetchEPO,
+			proto.PatentValidationParams{PatentNumber: patentNumber}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Fetch EPO validations failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Fetched %d EPO legal event(s), derived %d country validation(s): %s", len(res.Events), len(res.Validations), validationSummary(res.Validations))}}
+	}
+}
+
+func ListRenewalValidationsCmd(client *rpc.Client, patentNumber string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentValidationResult
+		if err := client.Call(ctx, proto.MethodValidationList,
+			proto.PatentValidationParams{PatentNumber: patentNumber}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"List renewal validations failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Renewal validations for %s: %s", patentNumber, validationSummary(res.Validations))}}
+	}
+}
+
+func SetRenewalValidationCmd(client *rpc.Client, patentNumber, country string, status domain.RenewalValidationStatus) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := callContext()
+		defer cancel()
+		var res proto.PatentValidationResult
+		if err := client.Call(ctx, proto.MethodValidationSet,
+			proto.PatentValidationSetParams{PatentNumber: patentNumber, Country: country, Status: status}, &res); err != nil {
+			return StatusMsg{Key: text.StatusGeneric, Args: []any{"Set renewal validation failed: " + err.Error()}, Error: true}
+		}
+		return StatusMsg{Key: text.StatusGeneric, Args: []any{fmt.Sprintf("Renewal validations for %s: %s", patentNumber, validationSummary(res.Validations))}}
+	}
+}
+
+func validationSummary(validations []domain.PatentValidation) string {
+	if len(validations) == 0 {
+		return "none (fetch EPO data or set countries manually)"
+	}
+	parts := make([]string, 0, len(validations))
+	for _, v := range validations {
+		parts = append(parts, strings.ToUpper(v.Country)+"="+string(v.Status)+"/"+string(v.Certainty))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // ConflictFlaggedMsg reports a :flag.conflict result so the app can refresh the
 // patent list (so the ⚠ badge appears) and show a status line.
 type ConflictFlaggedMsg struct {

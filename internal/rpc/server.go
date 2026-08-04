@@ -196,6 +196,9 @@ func NewServer(eng *engine.Engine, usptoConfigured bool, opts ...Option) *Server
 		proto.MethodUntrackRenewals:              s.untrackRenewals,
 		proto.MethodDeadlineSetStatus:            s.deadlineSetStatus,
 		proto.MethodDeadlineRemind:               s.deadlineRemind,
+		proto.MethodValidationList:               s.validationList,
+		proto.MethodValidationSet:                s.validationSet,
+		proto.MethodValidationFetchEPO:           s.validationFetchEPO,
 	}
 	return s
 }
