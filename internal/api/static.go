@@ -21,12 +21,26 @@ func (s *Server) registerWebUI() {
 	if _, err := os.Stat(filepath.Join(root, "index.html")); err != nil {
 		return
 	}
-	fileServer := http.StripPrefix(webUIPrefix, http.FileServer(http.Dir(root)))
-	s.mux.Handle("GET "+webUIPrefix, http.StripPrefix(strings.TrimSuffix(webUIPrefix, "/"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	s.mux.HandleFunc("GET /ui/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("path")
+
+		// Serve index.html for the UI root
+		if path == "" || path == "/" {
+			http.ServeFile(w, r, filepath.Join(root, "index.html"))
+			return
+		}
+
+		// Try to serve the requested file
+		fullPath := filepath.Join(root, path)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			http.ServeFile(w, r, fullPath)
+			return
+		}
+
+		// Fallback to index.html for SPA client-side routing
 		http.ServeFile(w, r, filepath.Join(root, "index.html"))
-	})))
-	s.mux.Handle("GET "+webUIPrefix+"assets/", fileServer)
-	s.mux.Handle("GET "+webUIPrefix, fileServer)
+	})
 }
 
 // SecurityFromEnv builds API security settings from environment variables.
